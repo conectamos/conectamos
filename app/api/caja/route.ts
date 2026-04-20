@@ -9,6 +9,7 @@ const CONCEPTOS_PROTEGIDOS = new Set([
   "ABONO TRANSFERENCIA",
   "ABONO FINANCIERA",
 ]);
+const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
 
 function parseSedeId(value: string | null) {
   const sedeId = Number(value);
@@ -43,9 +44,9 @@ export async function GET(req: Request) {
     const movimientos = await prisma.cajaMovimiento.findMany({
       where: esAdmin
         ? sedeIdFiltro
-          ? { sedeId: sedeIdFiltro }
-          : {}
-        : { sedeId: user.sedeId },
+          ? { sedeId: sedeIdFiltro, NOT: { concepto: CONCEPTO_GASTO_CARTERA } }
+          : { NOT: { concepto: CONCEPTO_GASTO_CARTERA } }
+        : { sedeId: user.sedeId, NOT: { concepto: CONCEPTO_GASTO_CARTERA } },
       orderBy: { id: "desc" },
       include: {
         sede: {

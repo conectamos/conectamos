@@ -10,6 +10,8 @@ import {
 } from "@/lib/prestamos";
 import { extraerFinancierasDetalle } from "@/lib/ventas-financieras";
 
+const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
+
 function n(v: unknown) {
   if (!v) return 0;
 
@@ -113,7 +115,12 @@ export async function GET(req: Request) {
           },
         }),
         prisma.cajaMovimiento.findMany({
-          where: whereSede,
+          where: {
+            ...whereSede,
+            NOT: {
+              concepto: CONCEPTO_GASTO_CARTERA,
+            },
+          },
           select: {
             id: true,
             tipo: true,

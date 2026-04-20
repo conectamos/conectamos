@@ -4,7 +4,6 @@ import { requireFinancialAccess } from "@/lib/financial-access";
 import prisma from "@/lib/prisma";
 
 const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
-const DESCRIPCION_GASTO_CARTERA = "Registro de gasto de cartera";
 const VENTANA_BUSQUEDA_MS = 1000 * 60 * 10;
 
 type GastoBase = {
@@ -19,16 +18,6 @@ type MovimientoLookupTx = Pick<typeof prisma, "cajaMovimiento">;
 
 function normalizarNumero(valor: unknown) {
   return Number(valor || 0);
-}
-
-function construirDescripcionMovimiento(gastoId: number, observacion: string) {
-  const observacionNormalizada = observacion.trim();
-
-  if (!observacionNormalizada) {
-    return `${CONCEPTO_GASTO_CARTERA} #${gastoId}`;
-  }
-
-  return `${CONCEPTO_GASTO_CARTERA} #${gastoId} - ${observacionNormalizada}`;
 }
 
 async function buscarMovimientoCajaRelacionado(
@@ -61,8 +50,7 @@ async function buscarMovimientoCajaRelacionado(
   const ventanaInicio = new Date(gasto.createdAt.getTime() - VENTANA_BUSQUEDA_MS);
   const ventanaFin = new Date(gasto.createdAt.getTime() + VENTANA_BUSQUEDA_MS);
 
-  const descripcionEsperada =
-    String(gasto.observacion || "").trim() || DESCRIPCION_GASTO_CARTERA;
+  const descripcionEsperada = String(gasto.observacion || "").trim();
 
   const ordenarPorAfinidad = (
     a: { createdAt: Date; descripcion: string | null },
@@ -258,16 +246,6 @@ export async function POST(req: Request) {
         },
       });
 
-      await tx.cajaMovimiento.create({
-        data: {
-          tipo: "EGRESO",
-          concepto: CONCEPTO_GASTO_CARTERA,
-          valor,
-          descripcion: construirDescripcionMovimiento(gasto.id, observacion),
-          sedeId,
-        },
-      });
-
       return gasto;
     });
 
@@ -377,23 +355,8 @@ export async function PATCH(req: Request) {
       });
 
       if (movimientoRelacionado) {
-        await tx.cajaMovimiento.update({
+        await tx.cajaMovimiento.delete({
           where: { id: movimientoRelacionado.id },
-          data: {
-            valor,
-            descripcion: construirDescripcionMovimiento(id, observacion),
-            sedeId,
-          },
-        });
-      } else {
-        await tx.cajaMovimiento.create({
-          data: {
-            tipo: "EGRESO",
-            concepto: CONCEPTO_GASTO_CARTERA,
-            valor,
-            descripcion: construirDescripcionMovimiento(id, observacion),
-            sedeId,
-          },
         });
       }
 

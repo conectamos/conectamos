@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireFinancialAccess } from "@/lib/financial-access";
 import prisma from "@/lib/prisma";
 
+const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
+
 export async function GET() {
   try {
     const access = await requireFinancialAccess();
@@ -16,7 +18,9 @@ export async function GET() {
     // 1) MOVIMIENTOS DE CAJA
     // =========================
     const movimientosCaja = await prisma.cajaMovimiento.findMany({
-      where: esAdmin ? {} : { sedeId: user.sedeId },
+      where: esAdmin
+        ? { NOT: { concepto: CONCEPTO_GASTO_CARTERA } }
+        : { sedeId: user.sedeId, NOT: { concepto: CONCEPTO_GASTO_CARTERA } },
       select: {
         tipo: true,
         valor: true,

@@ -2,6 +2,8 @@ import prisma from "@/lib/prisma";
 import { getCurrentBogotaMonthRange } from "@/lib/ventas-utils";
 import { extraerFinancierasDetalle } from "@/lib/ventas-financieras";
 
+const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
+
 export type CommercialRankingItem = {
   nombre: string;
   total: number;
@@ -126,6 +128,9 @@ export async function getMonthlyCommercialSummary(options?: {
           lt: periodo.end,
         },
         tipo: "INGRESO",
+        NOT: {
+          concepto: CONCEPTO_GASTO_CARTERA,
+        },
         ...scope,
       },
       _sum: {
@@ -139,6 +144,9 @@ export async function getMonthlyCommercialSummary(options?: {
           lt: periodo.end,
         },
         tipo: "EGRESO",
+        NOT: {
+          concepto: CONCEPTO_GASTO_CARTERA,
+        },
         ...scope,
       },
       _sum: {
