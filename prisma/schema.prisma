@@ -1,0 +1,296 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Rol {
+  id          Int       @id @default(autoincrement())
+  nombre      String    @unique
+  descripcion String?
+  usuarios    Usuario[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Sede {
+  id                  Int                  @id @default(autoincrement())
+  nombre              String               @unique
+  codigo              String?              @unique
+  activa              Boolean              @default(true)
+  clavePanelFinancieroHash String?
+  usuarios            Usuario[]
+  inventario          Inventario[]
+  ventas              Venta[]
+  inventariosSede     InventarioSede[]
+  cajaMovimientos     CajaMovimiento[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  movimientoCajaSedes MovimientoCajaSede[]
+  abonosFinancieros   AbonoFinanciero[]
+  gastosCartera       GastoCartera[]
+  arqueosDiarios      ArqueoDiario[]
+}
+
+model Usuario {
+  id        Int      @id @default(autoincrement())
+  nombre    String
+  usuario   String   @unique
+  claveHash String
+  activo    Boolean  @default(true)
+  rolId     Int
+  sedeId    Int
+  rol       Rol      @relation(fields: [rolId], references: [id])
+  sede      Sede     @relation(fields: [sedeId], references: [id])
+  ventas    Venta[]
+  arqueosDiarios ArqueoDiario[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Inventario {
+  id               Int       @id @default(autoincrement())
+  fechaIngreso     DateTime
+  distribuidor     String?
+  referencia       String
+  color            String?
+  imei             String    @unique
+  deboA            String?
+  vendidoEn        String?
+  asesor           String?
+  estadoActual     String
+  costo            Decimal?  @db.Decimal(12, 2)
+  estadoAnterior   String?
+  fechaMovimiento  DateTime?
+  origenMovimiento String?
+  observacion      String?
+  sedeActualId     Int
+  sedeActual       Sede      @relation(fields: [sedeActualId], references: [id])
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model Venta {
+  id           Int      @id @default(autoincrement())
+  idVenta      String   @unique
+  fecha        DateTime
+  hora         String?
+  servicio     String
+  descripcion  String?
+  serial       String
+  jalador      String?
+  ingreso      Decimal? @db.Decimal(12, 2)
+  alcanos      Decimal? @db.Decimal(12, 2)
+  payjoy       Decimal? @db.Decimal(12, 2)
+  sistecredito Decimal? @db.Decimal(12, 2)
+  addi         Decimal? @db.Decimal(12, 2)
+  sumaspay     Decimal? @db.Decimal(12, 2)
+  celya        Decimal? @db.Decimal(12, 2)
+  bogota       Decimal? @db.Decimal(12, 2)
+  alocredit    Decimal? @db.Decimal(12, 2)
+  esmio        Decimal? @db.Decimal(12, 2)
+  kaiowa       Decimal? @db.Decimal(12, 2)
+  finser       Decimal? @db.Decimal(12, 2)
+  gora         Decimal? @db.Decimal(12, 2)
+  financierasDetalle Json?
+  utilidad     Decimal? @db.Decimal(12, 2)
+  cerrador     String?
+  comision     Decimal? @db.Decimal(12, 2)
+  salida       Decimal? @db.Decimal(12, 2)
+  cajaOficina  Decimal? @db.Decimal(12, 2)
+  tipoIngreso  String?
+  ingreso1     String?
+  ingreso2     String?
+  primerValor  Decimal? @db.Decimal(12, 2)
+  segundoValor Decimal? @db.Decimal(12, 2)
+
+  usuarioId        Int
+  sedeId           Int
+  inventarioSedeId Int?
+
+  usuario        Usuario         @relation(fields: [usuarioId], references: [id])
+  sede           Sede            @relation(fields: [sedeId], references: [id])
+  inventarioSede InventarioSede? @relation(fields: [inventarioSedeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CatalogoPersonalVenta {
+  id                Int      @id @default(autoincrement())
+  tipo              String
+  nombre            String
+  nombreNormalizado String
+  aplicaIntermediacion Boolean @default(false)
+  porcentajeIntermediacion Float @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([tipo, nombreNormalizado])
+}
+
+model InventarioPrincipal {
+  id              Int              @id @default(autoincrement())
+  imei            String           @unique
+  referencia      String
+  color           String?
+  costo           Float
+  numeroFactura   String?
+  distribuidor    String?
+
+  // NUEVO: control interno bodega -> sede
+  estado          String           @default("BODEGA")
+  sedeDestinoId   Int?
+  estadoCobro     String?          // PENDIENTE / PAGADO / CANCELADO
+  fechaEnvio      DateTime?
+  observacion     String?
+
+  inventariosSede InventarioSede[]
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model InventarioSede {
+  id           Int     @id @default(autoincrement())
+  imei         String
+  referencia   String
+  color        String?
+  costo        Float
+  distribuidor String?
+
+  sedeId Int
+  sede   Sede @relation(fields: [sedeId], references: [id])
+
+  deboA            String?
+  estadoFinanciero String
+  origen           String
+
+  inventarioPrincipalId Int?
+  inventarioPrincipal   InventarioPrincipal? @relation(fields: [inventarioPrincipalId], references: [id])
+  ventas                Venta[]
+  estadoActual          String               @default("BODEGA")
+  estadoAnterior        String?
+  fechaMovimiento       DateTime?
+  observacion           String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+}
+
+model PrestamoSede {
+  id                  Int       @id @default(autoincrement())
+  imei                String
+  referencia          String
+  color               String?
+  costo               Float
+  sedeOrigenId        Int
+  sedeDestinoId       Int
+  estado              String    @default("PENDIENTE")
+  montoPago           Float?
+  fechaSolicitudPago  DateTime?
+  fechaAprobacionPago DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  movimientosCaja MovimientoCajaSede[]
+}
+
+model MovimientoInventario {
+  id               Int     @id @default(autoincrement())
+  imei             String
+  tipoMovimiento   String
+  referencia       String?
+  color            String?
+  costo            Float?
+  sedeId           Int?
+  deboA            String?
+  estadoFinanciero String?
+  origen           String?
+  observacion      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CajaMovimiento {
+  id          Int      @id @default(autoincrement())
+  tipo        String
+  concepto    String
+  valor       Float
+  descripcion String?
+  sedeId      Int
+  sede        Sede     @relation(fields: [sedeId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MovimientoCajaSede {
+  id         Int      @id @default(autoincrement())
+  sedeId     Int
+  tipo       String
+  concepto   String
+  valor      Float
+  prestamoId Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sede     Sede          @relation(fields: [sedeId], references: [id])
+  prestamo PrestamoSede? @relation(fields: [prestamoId], references: [id])
+}
+
+model AbonoFinanciero {
+  id          Int      @id @default(autoincrement())
+  tipo        String
+  entidad     String?
+  valor       Float
+  observacion String?
+  sedeId      Int
+  sede        Sede     @relation(fields: [sedeId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model GastoCartera {
+  id          Int      @id @default(autoincrement())
+  valor       Float
+  observacion String?
+  sedeId      Int
+  sede        Sede     @relation(fields: [sedeId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ArqueoDiario {
+  id               Int      @id @default(autoincrement())
+  sedeId           Int
+  usuarioId        Int
+  fechaCorte       DateTime
+  billetes100000   Int      @default(0)
+  billetes50000    Int      @default(0)
+  billetes20000    Int      @default(0)
+  billetes10000    Int      @default(0)
+  billetes5000     Int      @default(0)
+  billetes2000     Int      @default(0)
+  billetes1000     Int      @default(0)
+  monedas500       Int      @default(0)
+  monedas200       Int      @default(0)
+  monedas100       Int      @default(0)
+  monedas50        Int      @default(0)
+  voucher          Float    @default(0)
+  cheques          Float    @default(0)
+  totalContado     Float
+  cajaSistema      Float
+  diferencia       Float
+  estado           String
+  observacion      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  sede             Sede     @relation(fields: [sedeId], references: [id])
+  usuario          Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@unique([sedeId, fechaCorte])
+}
