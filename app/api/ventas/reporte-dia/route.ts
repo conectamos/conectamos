@@ -24,6 +24,12 @@ const REPORT_LOGO_PATH = path.join(
   "branding",
   "conectamos-logo.png"
 );
+const BUNDLED_FONT_REGULAR = path.join(
+  process.cwd(),
+  "public",
+  "pdf-fonts",
+  "Geist-Regular.ttf"
+);
 const BOGOTA_OFFSET = "-05:00";
 
 function getPdfFonts() {
@@ -34,9 +40,16 @@ function getPdfFonts() {
     };
   }
 
+  if (existsSync(BUNDLED_FONT_REGULAR)) {
+    return {
+      regular: BUNDLED_FONT_REGULAR,
+      bold: BUNDLED_FONT_REGULAR,
+    };
+  }
+
   return {
-    regular: "Helvetica",
-    bold: "Helvetica-Bold",
+    regular: SYSTEM_FONT_REGULAR,
+    bold: SYSTEM_FONT_BOLD,
   };
 }
 

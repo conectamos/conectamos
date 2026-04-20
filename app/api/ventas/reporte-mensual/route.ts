@@ -13,6 +13,12 @@ export const dynamic = "force-dynamic";
 const windowsFontDir = path.join(process.env.WINDIR || "C:\\Windows", "Fonts");
 const SYSTEM_FONT_REGULAR = path.join(windowsFontDir, "arial.ttf");
 const SYSTEM_FONT_BOLD = path.join(windowsFontDir, "arialbd.ttf");
+const BUNDLED_FONT_REGULAR = path.join(
+  process.cwd(),
+  "public",
+  "pdf-fonts",
+  "Geist-Regular.ttf"
+);
 
 function getPdfFonts() {
   if (existsSync(SYSTEM_FONT_REGULAR) && existsSync(SYSTEM_FONT_BOLD)) {
@@ -22,9 +28,16 @@ function getPdfFonts() {
     };
   }
 
+  if (existsSync(BUNDLED_FONT_REGULAR)) {
+    return {
+      regular: BUNDLED_FONT_REGULAR,
+      bold: BUNDLED_FONT_REGULAR,
+    };
+  }
+
   return {
-    regular: "Helvetica",
-    bold: "Helvetica-Bold",
+    regular: SYSTEM_FONT_REGULAR,
+    bold: SYSTEM_FONT_BOLD,
   };
 }
 
