@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
+  NOMBRE_SEDE_BODEGA,
   esDeudaProveedor,
   esEstadoDeuda,
-  SEDE_BODEGA_ID,
 } from "@/lib/prestamos";
 
 export async function POST(req: Request) {
@@ -26,6 +26,19 @@ export async function POST(req: Request) {
     }
 
     const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const sedeBodegaPrincipal = await prisma.sede.findFirst({
+      where: {
+        nombre: {
+          equals: NOMBRE_SEDE_BODEGA,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+        nombre: true,
+      },
+    });
+    const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
 
     const prestamo = await prisma.prestamoSede.findUnique({
       where: { id },
@@ -62,34 +75,6 @@ export async function POST(req: Request) {
       );
     }
 
-    if (prestamo.sedeOrigenId === SEDE_BODEGA_ID) {
-      const existePrestamoIntermedioActivo = await prisma.prestamoSede.findFirst({
-        where: {
-          imei: prestamo.imei,
-          sedeDestinoId: prestamo.sedeDestinoId,
-          sedeOrigenId: {
-            not: SEDE_BODEGA_ID,
-          },
-          estado: {
-            in: ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
-          },
-        },
-        select: {
-          id: true,
-          sedeOrigenId: true,
-        },
-      });
-
-      if (existePrestamoIntermedioActivo) {
-        return NextResponse.json(
-          {
-            error: `Este equipo debe devolverse primero a SEDE ${existePrestamoIntermedioActivo.sedeOrigenId} antes de regresar a bodega principal.`,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
     const equipoDestino = await prisma.inventarioSede.findFirst({
       where: {
         imei: prestamo.imei,
@@ -117,6 +102,45 @@ export async function POST(req: Request) {
       );
     }
 
+    const prestamoDesdePrincipal =
+      prestamo.sedeOrigenId === sedeBodegaId ||
+      ((String(equipoDestino.origen || "").trim().toUpperCase() ===
+        "PRINCIPAL" ||
+        !!equipoDestino.inventarioPrincipalId) &&
+        esEstadoDeuda(equipoDestino.estadoFinanciero) &&
+        esDeudaProveedor(equipoDestino.deboA));
+
+    if (prestamoDesdePrincipal) {
+      const existePrestamoIntermedioActivo = await prisma.prestamoSede.findFirst({
+        where: {
+          id: {
+            not: prestamo.id,
+          },
+          imei: prestamo.imei,
+          sedeDestinoId: prestamo.sedeDestinoId,
+          sedeOrigenId: {
+            not: sedeBodegaId,
+          },
+          estado: {
+            in: ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
+          },
+        },
+        select: {
+          id: true,
+          sedeOrigenId: true,
+        },
+      });
+
+      if (existePrestamoIntermedioActivo) {
+        return NextResponse.json(
+          {
+            error: `Este equipo debe devolverse primero a SEDE ${existePrestamoIntermedioActivo.sedeOrigenId} antes de regresar a bodega principal.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     if (String(equipoDestino.estadoActual || "").toUpperCase() !== "BODEGA") {
       return NextResponse.json(
         {
@@ -127,7 +151,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const retornoDirectoAPrincipal = prestamo.sedeOrigenId === SEDE_BODEGA_ID;
+    const retornoDirectoAPrincipal = prestamoDesdePrincipal;
 
     const equipoOrigen = retornoDirectoAPrincipal
       ? null
@@ -160,6 +184,27 @@ export async function POST(req: Request) {
       String(equipoOrigen.origen || "").toUpperCase() === "PRINCIPAL" &&
       esEstadoDeuda(equipoDestino.estadoFinanciero) &&
       esDeudaProveedor(equipoDestino.deboA);
+    const prestamoPrincipalActivo = deudaPrincipalSeDevuelveAlOrigen
+      ? await prisma.prestamoSede.findFirst({
+          where: {
+            imei: prestamo.imei,
+            sedeDestinoId: prestamo.sedeDestinoId,
+            id: {
+              not: prestamo.id,
+            },
+            estado: {
+              in: ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
+            },
+          },
+          orderBy: {
+            id: "desc",
+          },
+          select: {
+            id: true,
+            sedeOrigenId: true,
+          },
+        })
+      : null;
 
     await prisma.$transaction(async (tx) => {
       await tx.prestamoSede.update({
@@ -242,22 +287,26 @@ export async function POST(req: Request) {
             });
           }
 
-          await tx.prestamoSede.updateMany({
-            where: {
-              imei: prestamo.imei,
-              sedeOrigenId: SEDE_BODEGA_ID,
-              estado: {
-                in: ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
+          if (prestamoPrincipalActivo) {
+            await tx.prestamoSede.update({
+              where: {
+                id: prestamoPrincipalActivo.id,
               },
-            },
-            data: {
-              sedeDestinoId: prestamo.sedeOrigenId,
-              estado: "APROBADO",
-              montoPago: null,
-              fechaSolicitudPago: null,
-              fechaAprobacionPago: null,
-            },
-          });
+              data: {
+                sedeOrigenId:
+                  prestamoPrincipalActivo.sedeOrigenId === sedeBodegaId
+                    ? prestamoPrincipalActivo.sedeOrigenId
+                    : sedeBodegaId > 0
+                      ? sedeBodegaId
+                      : prestamoPrincipalActivo.sedeOrigenId,
+                sedeDestinoId: prestamo.sedeOrigenId,
+                estado: "APROBADO",
+                montoPago: null,
+                fechaSolicitudPago: null,
+                fechaAprobacionPago: null,
+              },
+            });
+          }
         }
       }
 
@@ -287,7 +336,11 @@ export async function POST(req: Request) {
           referencia: prestamo.referencia,
           color: prestamo.color || null,
           costo: prestamo.costo,
-          sedeId: prestamo.sedeOrigenId,
+          sedeId: retornoDirectoAPrincipal
+            ? sedeBodegaId > 0
+              ? sedeBodegaId
+              : prestamo.sedeOrigenId
+            : prestamo.sedeOrigenId,
           deboA: retornoDirectoAPrincipal
             ? null
             : deudaPrincipalSeDevuelveAlOrigen

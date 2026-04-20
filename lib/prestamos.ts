@@ -1,4 +1,4 @@
-export const SEDE_BODEGA_ID = 10;
+export const NOMBRE_SEDE_BODEGA = "BODEGA PRINCIPAL";
 export const PROVEEDOR_FINSER = "Proveedor Finser";
 
 function normalizarTexto(valor: string | null | undefined) {

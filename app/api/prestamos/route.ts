@@ -3,8 +3,9 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
   esDeudaEntreSedes,
+  esDeudaProveedor,
   esEstadoDeuda,
-  SEDE_BODEGA_ID,
+  NOMBRE_SEDE_BODEGA,
 } from "@/lib/prestamos";
 
 function parseSedeId(value: string | null) {
@@ -23,6 +24,19 @@ export async function GET(req: Request) {
     const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
     const requestUrl = new URL(req.url);
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
+    const sedeBodegaPrincipal = await prisma.sede.findFirst({
+      where: {
+        nombre: {
+          equals: NOMBRE_SEDE_BODEGA,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+        nombre: true,
+      },
+    });
+    const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
 
     const where = esAdmin
       ? sedeIdFiltro
@@ -40,7 +54,7 @@ export async function GET(req: Request) {
     });
 
     const prestamos = prestamosCrudos.filter((prestamo) => {
-      if (prestamo.sedeOrigenId !== SEDE_BODEGA_ID) {
+      if (prestamo.sedeOrigenId !== sedeBodegaId) {
         return true;
       }
 
@@ -67,7 +81,7 @@ export async function GET(req: Request) {
           otroActivo &&
           otro.imei === prestamo.imei &&
           otro.sedeDestinoId === prestamo.sedeDestinoId &&
-          otro.sedeOrigenId !== SEDE_BODEGA_ID
+          otro.sedeOrigenId !== sedeBodegaId
         );
       });
 
@@ -93,6 +107,8 @@ export async function GET(req: Request) {
               deboA: true,
               estadoFinanciero: true,
               estadoActual: true,
+              origen: true,
+              inventarioPrincipalId: true,
             },
           })
         : [];
@@ -134,6 +150,12 @@ export async function GET(req: Request) {
       const equipoDestino = inventarioPorDestino.get(
         `${prestamo.imei}:${prestamo.sedeDestinoId}`
       );
+      const prestamoDesdePrincipal =
+        prestamo.sedeOrigenId === sedeBodegaId ||
+        ((String(equipoDestino?.origen || "").trim().toUpperCase() ===
+          "PRINCIPAL" ||
+          !!equipoDestino?.inventarioPrincipalId) &&
+          esDeudaProveedor(equipoDestino?.deboA));
 
       const deudaActiva = esEstadoDeuda(equipoDestino?.estadoFinanciero);
       const requiereAprobacionEntreSedes =
@@ -141,9 +163,10 @@ export async function GET(req: Request) {
 
       return {
         ...prestamo,
-        sedeOrigenNombre:
-          nombresSede.get(prestamo.sedeOrigenId) ||
-          `SEDE ${prestamo.sedeOrigenId}`,
+        sedeOrigenNombre: prestamoDesdePrincipal
+          ? sedeBodegaPrincipal?.nombre || NOMBRE_SEDE_BODEGA
+          : nombresSede.get(prestamo.sedeOrigenId) ||
+            `SEDE ${prestamo.sedeOrigenId}`,
         sedeDestinoNombre:
           nombresSede.get(prestamo.sedeDestinoId) ||
           `SEDE ${prestamo.sedeDestinoId}`,
@@ -151,6 +174,7 @@ export async function GET(req: Request) {
         estadoFinancieroActual: equipoDestino?.estadoFinanciero ?? null,
         estadoActualActual: equipoDestino?.estadoActual ?? null,
         requiereAprobacionEntreSedes,
+        prestamoDesdePrincipal,
       };
     });
 

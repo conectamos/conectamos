@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { requireFinancialAccess } from "@/lib/financial-access";
 import prisma from "@/lib/prisma";
 import {
+  NOMBRE_SEDE_BODEGA,
   esDeudaEntreSedes,
   esDeudaProveedor,
   esEstadoDeuda,
   etiquetaSedeAcreedora,
-  SEDE_BODEGA_ID,
 } from "@/lib/prestamos";
 import { extraerFinancierasDetalle } from "@/lib/ventas-financieras";
 
@@ -66,6 +66,18 @@ export async function GET(req: Request) {
         : esAdmin
           ? null
           : user.sedeId;
+    const sedeBodegaPrincipal = await prisma.sede.findFirst({
+      where: {
+        nombre: {
+          equals: NOMBRE_SEDE_BODEGA,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+    const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
 
     const wherePrestamosPorCobrar = sedeCoberturaId
       ? {
@@ -177,6 +189,8 @@ export async function GET(req: Request) {
               sedeId: true,
               deboA: true,
               estadoFinanciero: true,
+              origen: true,
+              inventarioPrincipalId: true,
             },
           })
         : [];
@@ -281,7 +295,14 @@ export async function GET(req: Request) {
         return acc;
       }
 
-      if (item.sedeOrigenId === SEDE_BODEGA_ID) {
+      const prestamoDesdePrincipal =
+        item.sedeOrigenId === sedeBodegaId ||
+        ((String(inventarioDestino.origen || "").trim().toUpperCase() ===
+          "PRINCIPAL" ||
+          !!inventarioDestino.inventarioPrincipalId) &&
+          esDeudaProveedor(inventarioDestino.deboA));
+
+      if (prestamoDesdePrincipal) {
         return esDeudaProveedor(inventarioDestino.deboA)
           ? acc + n(item.costo)
           : acc;

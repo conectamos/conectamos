@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { PROVEEDOR_FINSER, SEDE_BODEGA_ID } from "@/lib/prestamos";
+import { NOMBRE_SEDE_BODEGA, PROVEEDOR_FINSER } from "@/lib/prestamos";
 
 export async function POST(req: Request) {
   try {
@@ -25,8 +25,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Datos invalidos" }, { status: 400 });
     }
 
-    const sedeBodega = await prisma.sede.findUnique({
-      where: { id: SEDE_BODEGA_ID },
+    const sedeBodega = await prisma.sede.findFirst({
+      where: {
+        nombre: {
+          equals: NOMBRE_SEDE_BODEGA,
+          mode: "insensitive",
+        },
+      },
       select: { id: true, nombre: true },
     });
 
@@ -81,7 +86,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (sedeDestino.id === SEDE_BODEGA_ID) {
+    if (sedeDestino.id === sedeBodega.id) {
       return NextResponse.json(
         {
           error:
@@ -109,7 +114,7 @@ export async function POST(req: Request) {
     const existePrestamoActivo = await prisma.prestamoSede.findFirst({
       where: {
         imei: item.imei,
-        sedeOrigenId: SEDE_BODEGA_ID,
+        sedeOrigenId: sedeBodega.id,
         sedeDestinoId,
         estado: {
           in: ["PENDIENTE", "APROBADO", "PAGO_PENDIENTE_APROBACION"],
@@ -159,7 +164,7 @@ export async function POST(req: Request) {
           referencia: item.referencia,
           color: item.color || null,
           costo: item.costo,
-          sedeOrigenId: SEDE_BODEGA_ID,
+          sedeOrigenId: sedeBodega.id,
           sedeDestinoId,
           estado: "APROBADO",
         },
