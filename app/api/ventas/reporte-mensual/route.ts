@@ -11,13 +11,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const windowsFontDir = path.join(process.env.WINDIR || "C:\\Windows", "Fonts");
-const PDF_FONT_REGULAR = path.join(windowsFontDir, "arial.ttf");
-const PDF_FONT_BOLD = path.join(windowsFontDir, "arialbd.ttf");
+const SYSTEM_FONT_REGULAR = path.join(windowsFontDir, "arial.ttf");
+const SYSTEM_FONT_BOLD = path.join(windowsFontDir, "arialbd.ttf");
 
-function ensurePdfFonts() {
-  if (!existsSync(PDF_FONT_REGULAR) || !existsSync(PDF_FONT_BOLD)) {
-    throw new Error("No se encontraron las fuentes del sistema para generar el PDF");
+function getPdfFonts() {
+  if (existsSync(SYSTEM_FONT_REGULAR) && existsSync(SYSTEM_FONT_BOLD)) {
+    return {
+      regular: SYSTEM_FONT_REGULAR,
+      bold: SYSTEM_FONT_BOLD,
+    };
   }
+
+  return {
+    regular: "Helvetica",
+    bold: "Helvetica-Bold",
+  };
 }
 
 function toBuffer(doc: PDFKit.PDFDocument) {
@@ -47,13 +55,14 @@ function drawStatCard(
   y: number,
   width: number,
   label: string,
-  value: string
+  value: string,
+  fonts: { regular: string; bold: string }
 ) {
   doc.save().roundedRect(x, y, width, 54, 12).fillAndStroke("#FFFFFF", "#E2E8F0").restore();
-  doc.fillColor("#64748B").font(PDF_FONT_REGULAR).fontSize(8.5).text(label, x + 12, y + 10, {
+  doc.fillColor("#64748B").font(fonts.regular).fontSize(8.5).text(label, x + 12, y + 10, {
     width: width - 24,
   });
-  doc.fillColor("#0F172A").font(PDF_FONT_BOLD).fontSize(16).text(value, x + 12, y + 24, {
+  doc.fillColor("#0F172A").font(fonts.bold).fontSize(16).text(value, x + 12, y + 24, {
     width: width - 24,
   });
 }
@@ -75,12 +84,13 @@ function drawSectionTable<T extends Record<string, unknown>>(
     columns: Array<{ key: keyof T; title: string; width: number; align?: "left" | "right" }>;
     rows: T[];
     emptyLabel: string;
+    fonts: { regular: string; bold: string };
   }
 ) {
   const pageWidth = doc.page.width - 56;
   let y = ensurePageSpace(doc, options.startY, 80);
 
-  doc.fillColor("#0F172A").font(PDF_FONT_BOLD).fontSize(15).text(options.title, 28, y);
+  doc.fillColor("#0F172A").font(options.fonts.bold).fontSize(15).text(options.title, 28, y);
   y += 18;
 
   doc.save().roundedRect(28, y, pageWidth, 24, 10).fill("#0F172A").restore();
@@ -89,7 +99,7 @@ function drawSectionTable<T extends Record<string, unknown>>(
   for (const column of options.columns) {
     doc
       .fillColor("#FFFFFF")
-      .font(PDF_FONT_BOLD)
+      .font(options.fonts.bold)
       .fontSize(8.5)
       .text(column.title, x, y + 8, {
         width: column.width - 8,
@@ -108,7 +118,7 @@ function drawSectionTable<T extends Record<string, unknown>>(
       .restore();
     doc
       .fillColor("#64748B")
-      .font(PDF_FONT_REGULAR)
+      .font(options.fonts.regular)
       .fontSize(10)
       .text(options.emptyLabel, 28, y + 14, {
         width: pageWidth,
@@ -130,7 +140,7 @@ function drawSectionTable<T extends Record<string, unknown>>(
     for (const column of options.columns) {
       doc
         .fillColor("#0F172A")
-        .font(PDF_FONT_REGULAR)
+        .font(options.fonts.regular)
         .fontSize(9.5)
         .text(String(row[column.key] ?? "-"), x, y + 11, {
           width: column.width - 8,
@@ -189,7 +199,7 @@ export async function GET(req: Request) {
       sedeId,
     });
 
-    ensurePdfFonts();
+    const pdfFonts = getPdfFonts();
 
     const doc = new PDFDocument({
       size: "A4",
@@ -197,7 +207,7 @@ export async function GET(req: Request) {
       margin: 28,
       compress: true,
       bufferPages: true,
-      font: PDF_FONT_REGULAR,
+      font: pdfFonts.regular,
       info: {
         Title: `Reporte mensual comercial - ${reporte.periodo.label}`,
         Author: "Conectamos",
@@ -217,9 +227,9 @@ export async function GET(req: Request) {
       .restore();
     doc.save().roundedRect(28, 28, 6, headerHeight, 3).fill("#DC2626").restore();
 
-    doc.fillColor("#B91C1C").font(PDF_FONT_BOLD).fontSize(10).text("REPORTE MENSUAL", 52, 42);
-    doc.fillColor("#0F172A").font(PDF_FONT_BOLD).fontSize(28).text("Comercial por sede", 52, 58);
-    doc.fillColor("#475569").font(PDF_FONT_REGULAR).fontSize(11).text(
+    doc.fillColor("#B91C1C").font(pdfFonts.bold).fontSize(10).text("REPORTE MENSUAL", 52, 42);
+    doc.fillColor("#0F172A").font(pdfFonts.bold).fontSize(28).text("Comercial por sede", 52, 58);
+    doc.fillColor("#475569").font(pdfFonts.regular).fontSize(11).text(
       `Periodo: ${reporte.periodo.label}\nCobertura: ${sedeNombre}\nGenerado por: ${user.nombre}`,
       52,
       92,
@@ -231,14 +241,15 @@ export async function GET(req: Request) {
     const statsGap = 12;
     const smallCardWidth = 140;
 
-    drawStatCard(doc, statsStartX, statsTopY, smallCardWidth, "Ventas del mes", String(reporte.ventasTotal));
+    drawStatCard(doc, statsStartX, statsTopY, smallCardWidth, "Ventas del mes", String(reporte.ventasTotal), pdfFonts);
     drawStatCard(
       doc,
       statsStartX + smallCardWidth + statsGap,
       statsTopY,
       smallCardWidth,
       "Comision jaladores",
-      formatoPesos(reporte.comisionTotal)
+      formatoPesos(reporte.comisionTotal),
+      pdfFonts
     );
     drawStatCard(
       doc,
@@ -246,7 +257,8 @@ export async function GET(req: Request) {
       statsTopY + 62,
       smallCardWidth,
       "Financieras",
-      String(reporte.financierasUnidades)
+      String(reporte.financierasUnidades),
+      pdfFonts
     );
     drawStatCard(
       doc,
@@ -254,7 +266,8 @@ export async function GET(req: Request) {
       statsTopY + 62,
       smallCardWidth,
       "Valor bruto",
-      formatoPesos(reporte.financierasValor)
+      formatoPesos(reporte.financierasValor),
+      pdfFonts
     );
 
     let y = 178;
@@ -273,6 +286,7 @@ export async function GET(req: Request) {
         comision: formatoPesos(item.comision),
       })),
       emptyLabel: "No hay jaladores con ventas en este mes.",
+      fonts: pdfFonts,
     });
 
     y += 12;
@@ -289,6 +303,7 @@ export async function GET(req: Request) {
         ventas: item.ventas,
       })),
       emptyLabel: "No hay cerradores con ventas en este mes.",
+      fonts: pdfFonts,
     });
 
     y += 12;
@@ -307,6 +322,7 @@ export async function GET(req: Request) {
         valor: formatoPesos(item.valor),
       })),
       emptyLabel: "No hay financieras registradas en este mes.",
+      fonts: pdfFonts,
     });
 
     doc.end();

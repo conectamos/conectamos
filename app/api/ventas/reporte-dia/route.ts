@@ -16,8 +16,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const windowsFontDir = path.join(process.env.WINDIR || "C:\\Windows", "Fonts");
-const PDF_FONT_REGULAR = path.join(windowsFontDir, "arial.ttf");
-const PDF_FONT_BOLD = path.join(windowsFontDir, "arialbd.ttf");
+const SYSTEM_FONT_REGULAR = path.join(windowsFontDir, "arial.ttf");
+const SYSTEM_FONT_BOLD = path.join(windowsFontDir, "arialbd.ttf");
 const REPORT_LOGO_PATH = path.join(
   process.cwd(),
   "public",
@@ -26,10 +26,18 @@ const REPORT_LOGO_PATH = path.join(
 );
 const BOGOTA_OFFSET = "-05:00";
 
-function ensurePdfFonts() {
-  if (!existsSync(PDF_FONT_REGULAR) || !existsSync(PDF_FONT_BOLD)) {
-    throw new Error("No se encontraron las fuentes del sistema para generar el PDF");
+function getPdfFonts() {
+  if (existsSync(SYSTEM_FONT_REGULAR) && existsSync(SYSTEM_FONT_BOLD)) {
+    return {
+      regular: SYSTEM_FONT_REGULAR,
+      bold: SYSTEM_FONT_BOLD,
+    };
   }
+
+  return {
+    regular: "Helvetica",
+    bold: "Helvetica-Bold",
+  };
 }
 
 function hasReportLogo() {
@@ -236,6 +244,7 @@ function drawHeaderMetric(
     w: number;
     label: string;
     value: string;
+    fonts: { regular: string; bold: string };
     tone?: "slate" | "emerald" | "red";
   }
 ) {
@@ -251,7 +260,7 @@ function drawHeaderMetric(
 
   doc
     .fillColor(tone.label)
-    .font(PDF_FONT_REGULAR)
+    .font(options.fonts.regular)
     .fontSize(8.5)
     .text(options.label, options.x + 12, options.y + 1, {
       width: options.w - 84,
@@ -259,7 +268,7 @@ function drawHeaderMetric(
 
   doc
     .fillColor(tone.value)
-    .font(PDF_FONT_BOLD)
+    .font(options.fonts.bold)
     .fontSize(10.5)
     .text(options.value, options.x + options.w - 80, options.y, {
       width: 80,
@@ -282,6 +291,7 @@ function drawMainHeader(
     totalCaja: number;
     totalIngresos: number;
     totalUtilidad: number;
+    fonts: { regular: string; bold: string };
   }
 ) {
   const x = PAGE_MARGIN;
@@ -323,7 +333,7 @@ function drawMainHeader(
 
   doc
     .fillColor("#B91C1C")
-    .font(PDF_FONT_BOLD)
+    .font(options.fonts.bold)
     .fontSize(9.5)
     .text("REPORTE DIARIO", textX, y + 18, {
       width: summaryX - textX - 18,
@@ -331,7 +341,7 @@ function drawMainHeader(
 
   doc
     .fillColor("#0F172A")
-    .font(PDF_FONT_BOLD)
+    .font(options.fonts.bold)
     .fontSize(22)
     .text(options.title, textX, y + 32, {
       width: summaryX - textX - 18,
@@ -339,7 +349,7 @@ function drawMainHeader(
 
   doc
     .fillColor("#475569")
-    .font(PDF_FONT_REGULAR)
+    .font(options.fonts.regular)
     .fontSize(9)
     .text(`${options.labelPrefix}: ${options.label}`, textX, y + 62)
     .text(`Cobertura: ${options.coverage}`, textX, y + 75)
@@ -347,7 +357,7 @@ function drawMainHeader(
 
   doc
     .fillColor("#64748B")
-    .font(PDF_FONT_REGULAR)
+    .font(options.fonts.regular)
     .fontSize(8.5)
     .text(
       `Ingreso bruto ${formatoPesosCompacto(options.totalIngresos)} | Utilidad ${formatoPesosCompacto(
@@ -373,6 +383,7 @@ function drawMainHeader(
     w: summaryWidth - 32,
     label: options.ventasLabel,
     value: `${options.ventasCount}`,
+    fonts: options.fonts,
   });
   drawHeaderMetric(doc, {
     x: summaryX + 16,
@@ -380,6 +391,7 @@ function drawMainHeader(
     w: summaryWidth - 32,
     label: "Comisiones del dia",
     value: formatoPesosCompacto(options.totalComision),
+    fonts: options.fonts,
   });
   drawHeaderMetric(doc, {
     x: summaryX + 16,
@@ -387,6 +399,7 @@ function drawMainHeader(
     w: summaryWidth - 32,
     label: "Salidas del dia",
     value: formatoPesosCompacto(options.totalSalida),
+    fonts: options.fonts,
     tone: options.totalSalida > 0 ? "red" : "slate",
   });
   drawHeaderMetric(doc, {
@@ -395,6 +408,7 @@ function drawMainHeader(
     w: summaryWidth - 32,
     label: "Dinero en CAJA",
     value: formatoPesosCompacto(options.totalCaja),
+    fonts: options.fonts,
     tone: options.totalCaja >= 0 ? "emerald" : "red",
   });
 
@@ -406,6 +420,7 @@ function drawContinuationHeader(
   options: {
     label: string;
     coverage: string;
+    fonts: { regular: string; bold: string };
   }
 ) {
   const x = PAGE_MARGIN;
@@ -437,13 +452,13 @@ function drawContinuationHeader(
 
   doc
     .fillColor("#0F172A")
-    .font(PDF_FONT_BOLD)
+    .font(options.fonts.bold)
     .fontSize(11.5)
     .text("Detalle de ventas", x + 70, y + 11);
 
   doc
     .fillColor("#64748B")
-    .font(PDF_FONT_REGULAR)
+    .font(options.fonts.regular)
     .fontSize(8.5)
     .text(`${options.label} | ${options.coverage}`, x + width - 220, y + 13, {
       width: 190,
@@ -453,7 +468,11 @@ function drawContinuationHeader(
   return y + 56;
 }
 
-function drawTableHeader(doc: PDFKit.PDFDocument, y: number) {
+function drawTableHeader(
+  doc: PDFKit.PDFDocument,
+  y: number,
+  fonts: { regular: string; bold: string }
+) {
   const x = PAGE_MARGIN;
   const width = doc.page.width - PAGE_MARGIN * 2;
 
@@ -463,7 +482,7 @@ function drawTableHeader(doc: PDFKit.PDFDocument, y: number) {
   for (const column of TABLE_COLUMNS) {
     doc
       .fillColor("#FFFFFF")
-      .font(PDF_FONT_BOLD)
+      .font(fonts.bold)
       .fontSize(8.5)
       .text(column.title, cursorX + 8, y + 7, {
         width: column.width - 16,
@@ -475,8 +494,12 @@ function drawTableHeader(doc: PDFKit.PDFDocument, y: number) {
   return y + 28;
 }
 
-function getVentaRowHeight(doc: PDFKit.PDFDocument, cells: ReturnType<typeof buildVentaCells>) {
-  doc.font(PDF_FONT_REGULAR).fontSize(7.8);
+function getVentaRowHeight(
+  doc: PDFKit.PDFDocument,
+  cells: ReturnType<typeof buildVentaCells>,
+  fonts: { regular: string; bold: string }
+) {
+  doc.font(fonts.regular).fontSize(7.8);
 
   const maxHeight = TABLE_COLUMNS.reduce((acc, column) => {
     const text = cells[column.key];
@@ -495,12 +518,13 @@ function drawVentaRow(
   doc: PDFKit.PDFDocument,
   venta: ReportVenta,
   y: number,
-  index: number
+  index: number,
+  fonts: { regular: string; bold: string }
 ) {
   const x = PAGE_MARGIN;
   const width = doc.page.width - PAGE_MARGIN * 2;
   const cells = buildVentaCells(venta);
-  const height = getVentaRowHeight(doc, cells);
+  const height = getVentaRowHeight(doc, cells, fonts);
 
   doc
     .save()
@@ -530,7 +554,7 @@ function drawVentaRow(
 
     doc
       .fillColor(column.key === "financieras" ? "#475569" : "#0F172A")
-      .font(column.key === "venta" || column.key === "cobro" ? PDF_FONT_BOLD : PDF_FONT_REGULAR)
+      .font(column.key === "venta" || column.key === "cobro" ? fonts.bold : fonts.regular)
       .fontSize(column.key === "financieras" ? 7.4 : 7.8)
       .text(cells[column.key], cursorX + 6, y + 6, {
         width: column.width - 12,
@@ -640,14 +664,14 @@ export async function GET(request: Request) {
     const totalComision = ventas.reduce((acc, venta) => acc + dinero(venta.comision), 0);
     const totalSalida = ventas.reduce((acc, venta) => acc + dinero(venta.salida), 0);
 
-    ensurePdfFonts();
+    const pdfFonts = getPdfFonts();
 
     const doc = new PDFDocument({
       size: "A4",
       layout: "landscape",
       margin: PAGE_MARGIN,
       bufferPages: true,
-      font: PDF_FONT_REGULAR,
+      font: pdfFonts.regular,
     });
 
     const bufferPromise = toBuffer(doc);
@@ -678,9 +702,10 @@ export async function GET(request: Request) {
       totalCaja,
       totalIngresos,
       totalUtilidad,
+      fonts: pdfFonts,
     });
 
-    currentY = drawTableHeader(doc, currentY);
+    currentY = drawTableHeader(doc, currentY, pdfFonts);
 
     if (ventas.length === 0) {
       doc
@@ -691,7 +716,7 @@ export async function GET(request: Request) {
 
       doc
         .fillColor("#475569")
-        .font(PDF_FONT_REGULAR)
+        .font(pdfFonts.regular)
         .fontSize(11)
         .text(
           "No hay ventas registradas para este alcance en la fecha consultada.",
@@ -704,16 +729,16 @@ export async function GET(request: Request) {
         );
     } else {
       ventas.forEach((venta, index) => {
-        const previewHeight = getVentaRowHeight(doc, buildVentaCells(venta)) + 4;
+        const previewHeight = getVentaRowHeight(doc, buildVentaCells(venta), pdfFonts) + 4;
 
         if (currentY + previewHeight > doc.page.height - PAGE_BOTTOM - 10) {
           doc.addPage();
           paintPageBackground();
-          currentY = drawContinuationHeader(doc, { label: period.label, coverage });
-          currentY = drawTableHeader(doc, currentY);
+          currentY = drawContinuationHeader(doc, { label: period.label, coverage, fonts: pdfFonts });
+          currentY = drawTableHeader(doc, currentY, pdfFonts);
         }
 
-        currentY = drawVentaRow(doc, venta, currentY, index);
+        currentY = drawVentaRow(doc, venta, currentY, index, pdfFonts);
       });
     }
 
@@ -723,7 +748,7 @@ export async function GET(request: Request) {
       doc.switchToPage(index);
       doc
         .fillColor("#94A3B8")
-        .font(PDF_FONT_REGULAR)
+        .font(pdfFonts.regular)
         .fontSize(8)
         .text(
           `Conectamos | Reporte ${period.footerLabel} | Pagina ${index + 1} de ${pageCount}`,
