@@ -64,8 +64,9 @@ function limpiarNumero(v: string) {
 }
 
 function formatoPesos(v: string | number) {
-  const num = Number(v || 0);
-  if (!num) return "";
+  if (v === "" || v === null || v === undefined) return "";
+  const num = Number(v);
+  if (!Number.isFinite(num)) return "";
   return `$ ${num.toLocaleString("es-CO")}`;
 }
 
@@ -372,7 +373,7 @@ export default function EditarVentaPage() {
       if (!descripcion) return setMensaje("La descripcion es obligatoria");
       if (!jalador) return setMensaje("Selecciona el jalador");
       if (!cerrador) return setMensaje("Selecciona el cerrador");
-      if (!ingreso1Base) return setMensaje("Ingresa el valor del ingreso 1");
+      if (ingreso1Base === "") return setMensaje("Ingresa el valor del ingreso 1");
       if (usarIngreso2 && !ingreso2Base) return setMensaje("Ingresa el valor del ingreso 2");
       if (usarIngreso2 && !tipoIngreso2) return setMensaje("Selecciona el tipo del ingreso 2");
 

@@ -118,7 +118,7 @@ function validateVentaInput(input: VentaInput, options?: { requireSerial?: boole
     return "Debes seleccionar el cerrador";
   }
 
-  if (input.ingreso1Base <= 0) {
+  if (input.ingreso1Base < 0) {
     return "Debes ingresar el valor del ingreso 1";
   }
 
