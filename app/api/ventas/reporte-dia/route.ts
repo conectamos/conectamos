@@ -671,8 +671,8 @@ export async function GET(request: Request) {
       layout: "landscape",
       margin: PAGE_MARGIN,
       bufferPages: true,
-      font: pdfFonts.regular,
     });
+    doc.font(pdfFonts.regular);
 
     const bufferPromise = toBuffer(doc);
     const coverage = esAdmin
@@ -787,9 +787,7 @@ export async function GET(request: Request) {
             ? error.message
             : "Error generando reporte PDF del dia",
         detail:
-          process.env.NODE_ENV !== "production" && error instanceof Error
-            ? error.message
-            : undefined,
+          error instanceof Error ? error.message : undefined,
       },
       {
         status:

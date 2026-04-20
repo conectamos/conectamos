@@ -315,7 +315,7 @@ export default function VentasPage() {
 
         try {
           const data = await res.json();
-          errorMessage = data.error || errorMessage;
+          errorMessage = data.detail || data.error || errorMessage;
         } catch {}
 
         setMensaje(errorMessage);
