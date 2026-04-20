@@ -684,8 +684,8 @@ export async function GET(request: Request) {
       layout: "landscape",
       margin: PAGE_MARGIN,
       bufferPages: true,
+      font: pdfFonts.regular,
     });
-    doc.font(pdfFonts.regular);
 
     const bufferPromise = toBuffer(doc);
     const coverage = esAdmin

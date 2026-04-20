@@ -220,12 +220,12 @@ export async function GET(req: Request) {
       margin: 28,
       compress: true,
       bufferPages: true,
+      font: pdfFonts.regular,
       info: {
         Title: `Reporte mensual comercial - ${reporte.periodo.label}`,
         Author: "Conectamos",
       },
     });
-    doc.font(pdfFonts.regular);
 
     const bufferPromise = toBuffer(doc);
     const pageWidth = doc.page.width - 56;
