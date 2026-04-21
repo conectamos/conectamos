@@ -13,6 +13,15 @@ function parseSedeId(value: string | null) {
   return Number.isInteger(sedeId) && sedeId > 0 ? sedeId : null;
 }
 
+function esPrestamoActivo(estado: string | null | undefined) {
+  const normalizado = String(estado || "").trim().toUpperCase();
+  return (
+    normalizado === "APROBADO" ||
+    normalizado === "PAGO_PENDIENTE_APROBACION" ||
+    normalizado === "DEVOLUCION_PENDIENTE"
+  );
+}
+
 export async function GET(req: Request) {
   try {
     const user = await getSessionUser();
@@ -53,53 +62,28 @@ export async function GET(req: Request) {
       orderBy: { id: "desc" },
     });
 
-    const prestamos = prestamosCrudos.filter((prestamo) => {
-      if (prestamo.sedeOrigenId !== sedeBodegaId) {
-        return true;
-      }
+    const equiposRelacionados = Array.from(
+      new Map(
+        prestamosCrudos
+          .flatMap((prestamo) => [
+            {
+              imei: prestamo.imei,
+              sedeId: prestamo.sedeDestinoId,
+            },
+            {
+              imei: prestamo.imei,
+              sedeId: prestamo.sedeOrigenId,
+            },
+          ])
+          .map((item) => [`${item.imei}:${item.sedeId}`, item])
+      ).values()
+    );
 
-      const estadoPrestamo = String(prestamo.estado || "").toUpperCase();
-      const esActivo =
-        estadoPrestamo === "APROBADO" ||
-        estadoPrestamo === "PAGO_PENDIENTE_APROBACION";
-
-      if (!esActivo) {
-        return true;
-      }
-
-      const existePrestamoIntermedioActivo = prestamosCrudos.some((otro) => {
-        if (otro.id === prestamo.id) {
-          return false;
-        }
-
-        const estadoOtro = String(otro.estado || "").toUpperCase();
-        const otroActivo =
-          estadoOtro === "APROBADO" ||
-          estadoOtro === "PAGO_PENDIENTE_APROBACION";
-
-        return (
-          otroActivo &&
-          otro.imei === prestamo.imei &&
-          otro.sedeDestinoId === prestamo.sedeDestinoId &&
-          otro.sedeOrigenId !== sedeBodegaId
-        );
-      });
-
-      return !existePrestamoIntermedioActivo;
-    });
-
-    const equiposDestino = prestamos
-      .filter((prestamo) => prestamo.estado !== "DEVUELTO")
-      .map((prestamo) => ({
-        imei: prestamo.imei,
-        sedeId: prestamo.sedeDestinoId,
-      }));
-
-    const inventarioDestino =
-      equiposDestino.length > 0
+    const inventarioRelacionado =
+      equiposRelacionados.length > 0
         ? await prisma.inventarioSede.findMany({
             where: {
-              OR: equiposDestino,
+              OR: equiposRelacionados,
             },
             select: {
               imei: true,
@@ -113,12 +97,77 @@ export async function GET(req: Request) {
           })
         : [];
 
-    const inventarioPorDestino = new Map(
-      inventarioDestino.map((item) => [
+    const inventarioPorSede = new Map(
+      inventarioRelacionado.map((item) => [
         `${item.imei}:${item.sedeId}`,
         item,
       ])
     );
+
+    const prestamosConContexto = prestamosCrudos.map((prestamo) => {
+      const equipoDestino = inventarioPorSede.get(
+        `${prestamo.imei}:${prestamo.sedeDestinoId}`
+      );
+      const equipoOrigen = inventarioPorSede.get(
+        `${prestamo.imei}:${prestamo.sedeOrigenId}`
+      );
+
+      const destinoVieneDePrincipal =
+        ((String(equipoDestino?.origen || "").trim().toUpperCase() ===
+          "PRINCIPAL" ||
+          !!equipoDestino?.inventarioPrincipalId) &&
+          esDeudaProveedor(equipoDestino?.deboA)) ||
+        false;
+      const origenTieneEquipoEnPrestamo =
+        String(equipoOrigen?.estadoActual || "").trim().toUpperCase() ===
+        "PRESTAMO";
+      const origenEsProxyDePrincipal =
+        origenTieneEquipoEnPrestamo &&
+        String(equipoOrigen?.origen || "").trim().toUpperCase() ===
+          "PRINCIPAL" &&
+        esEstadoDeuda(equipoOrigen?.estadoFinanciero) &&
+        esDeudaProveedor(equipoOrigen?.deboA);
+      const origenRepresentaPrestamoEntreSedesReal =
+        origenTieneEquipoEnPrestamo && !origenEsProxyDePrincipal;
+
+      const prestamoDesdePrincipal =
+        prestamo.sedeOrigenId === sedeBodegaId ||
+        (destinoVieneDePrincipal && !origenRepresentaPrestamoEntreSedesReal);
+
+      return {
+        ...prestamo,
+        equipoDestino,
+        equipoOrigen,
+        prestamoDesdePrincipal,
+      };
+    });
+
+    const prestamos = prestamosConContexto.filter((prestamo) => {
+      if (!esPrestamoActivo(prestamo.estado)) {
+        return true;
+      }
+
+      if (!prestamo.prestamoDesdePrincipal) {
+        return true;
+      }
+
+      const existePrestamoIntermedioActivo = prestamosConContexto.some((otro) => {
+        if (otro.id === prestamo.id) {
+          return false;
+        }
+
+        return (
+          esPrestamoActivo(otro.estado) &&
+          otro.imei === prestamo.imei &&
+          otro.sedeDestinoId === prestamo.sedeDestinoId &&
+          !otro.prestamoDesdePrincipal &&
+          String(otro.equipoOrigen?.estadoActual || "").trim().toUpperCase() ===
+            "PRESTAMO"
+        );
+      });
+
+      return !existePrestamoIntermedioActivo;
+    });
 
     const sedeIds = Array.from(
       new Set(
@@ -147,34 +196,24 @@ export async function GET(req: Request) {
     const nombresSede = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
 
     const resultado = prestamos.map((prestamo) => {
-      const equipoDestino = inventarioPorDestino.get(
-        `${prestamo.imei}:${prestamo.sedeDestinoId}`
-      );
-      const prestamoDesdePrincipal =
-        prestamo.sedeOrigenId === sedeBodegaId ||
-        ((String(equipoDestino?.origen || "").trim().toUpperCase() ===
-          "PRINCIPAL" ||
-          !!equipoDestino?.inventarioPrincipalId) &&
-          esDeudaProveedor(equipoDestino?.deboA));
-
+      const { equipoDestino, ...prestamoBase } = prestamo;
       const deudaActiva = esEstadoDeuda(equipoDestino?.estadoFinanciero);
       const requiereAprobacionEntreSedes =
         deudaActiva && esDeudaEntreSedes(equipoDestino?.deboA);
 
       return {
-        ...prestamo,
-        sedeOrigenNombre: prestamoDesdePrincipal
+        ...prestamoBase,
+        sedeOrigenNombre: prestamoBase.prestamoDesdePrincipal
           ? sedeBodegaPrincipal?.nombre || NOMBRE_SEDE_BODEGA
-          : nombresSede.get(prestamo.sedeOrigenId) ||
-            `SEDE ${prestamo.sedeOrigenId}`,
+          : nombresSede.get(prestamoBase.sedeOrigenId) ||
+            `SEDE ${prestamoBase.sedeOrigenId}`,
         sedeDestinoNombre:
-          nombresSede.get(prestamo.sedeDestinoId) ||
-          `SEDE ${prestamo.sedeDestinoId}`,
+          nombresSede.get(prestamoBase.sedeDestinoId) ||
+          `SEDE ${prestamoBase.sedeDestinoId}`,
         deboAActual: equipoDestino?.deboA ?? null,
         estadoFinancieroActual: equipoDestino?.estadoFinanciero ?? null,
         estadoActualActual: equipoDestino?.estadoActual ?? null,
         requiereAprobacionEntreSedes,
-        prestamoDesdePrincipal,
       };
     });
 
