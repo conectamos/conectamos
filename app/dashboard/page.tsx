@@ -390,6 +390,9 @@ export default async function DashboardPage() {
     { href: "/dashboard/nuovopay", label: "Nuovo dispositivos" },
     { href: "/dashboard/nuovopay/cartera", label: "Nuovo cartera" },
     { href: "/ventas", label: "Ventas" },
+    ...(esAdmin
+      ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores" }] as NavItem[])
+      : []),
     { href: "/caja", label: "Caja" },
     { href: "/prestamos", label: "Prestamos" },
     { href: "/dashboard/financiero", label: "Panel financiero" },
@@ -482,6 +485,12 @@ export default async function DashboardPage() {
       actions: [
         { href: "/ventas", label: "Ver ventas", tone: "primary" },
         { href: "/ventas/nuevo", label: "Nueva venta" },
+        ...(esAdmin
+          ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores" }] as ModuleAction[])
+          : []),
+        ...(esAdmin
+          ? ([{ href: "/ventas/equipo-comercial", label: "Catalogos de ventas" }] as ModuleAction[])
+          : []),
       ],
     },
     {

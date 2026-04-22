@@ -502,6 +502,15 @@ export default function VentasPage() {
             <div className="relative z-10 flex flex-col gap-3 sm:flex-row">
               {esAdmin && (
                 <Link
+                  href="/ventas/perfiles"
+                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                >
+                  Perfiles vendedores
+                </Link>
+              )}
+
+              {esAdmin && (
+                <Link
                   href="/ventas/equipo-comercial"
                   className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
                 >

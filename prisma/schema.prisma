@@ -7,6 +7,12 @@ datasource db {
   provider = "postgresql"
 }
 
+enum TipoPerfilVendedor {
+  ADMINISTRADOR
+  FACTURADOR
+  SUPERVISOR_TIENDA
+}
+
 model Rol {
   id          Int       @id @default(autoincrement())
   nombre      String    @unique
@@ -33,6 +39,7 @@ model Sede {
   abonosFinancieros   AbonoFinanciero[]
   gastosCartera       GastoCartera[]
   arqueosDiarios      ArqueoDiario[]
+  perfilesVendedor    PerfilVendedorSede[]
 }
 
 model Usuario {
@@ -118,6 +125,34 @@ model Venta {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model PerfilVendedor {
+  id             Int                  @id @default(autoincrement())
+  nombre         String
+  documento      String?              @unique
+  telefono       String?
+  correo         String?              @unique
+  pinHash        String
+  activo         Boolean              @default(true)
+  tipo           TipoPerfilVendedor   @default(SUPERVISOR_TIENDA)
+  debeCambiarPin Boolean              @default(true)
+  sedes          PerfilVendedorSede[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+}
+
+model PerfilVendedorSede {
+  id               Int             @id @default(autoincrement())
+  perfilVendedorId Int
+  sedeId           Int
+  createdAt        DateTime        @default(now())
+
+  perfilVendedor PerfilVendedor @relation(fields: [perfilVendedorId], references: [id], onDelete: Cascade)
+  sede           Sede           @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+
+  @@unique([perfilVendedorId, sedeId])
+  @@index([sedeId])
 }
 
 model CatalogoPersonalVenta {

@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run prisma:generate && next build",
+    "build": "npm run db:ensure-vendor-profiles && npm run prisma:generate && next build",
     "start": "next start",
     "start:standalone": "node .next/standalone/server.js",
     "db:push": "npx prisma db push",
+    "db:ensure-vendor-profiles": "npx prisma db execute --file scripts/ensure-vendor-profiles.sql",
     "seed:initial": "npx prisma db execute --file scripts/seed-initial-data.sql",
     "prisma:generate": "npx prisma generate",
     "lint": "eslint"
