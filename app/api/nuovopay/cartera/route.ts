@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 
 const PREVIEW_ROWS = 10;
 const TOP_LIMIT = 10;
-const BLOCK_LIMIT = 20;
+const BLOCKING_MORA_MIN_DAYS = 2;
 
 type ImportSummary = Awaited<ReturnType<typeof getLatestImportSummary>>;
 
@@ -212,11 +212,14 @@ function buildAnalytics(rows: Array<Parameters<typeof serializeRegistro>[0]>) {
 
   const blockCandidates = groupedByCedula
     .map((items) =>
-      pickBestRecord(items, (item) => item.diasVencido > 5, compareBlockCandidates)
+      pickBestRecord(
+        items,
+        (item) => item.diasVencido >= BLOCKING_MORA_MIN_DAYS,
+        compareBlockCandidates
+      )
     )
     .filter((item): item is RegistroAnalitico => item !== null)
-    .sort(compareBlockCandidates)
-    .slice(0, BLOCK_LIMIT);
+    .sort(compareBlockCandidates);
 
   const topGoodClients = groupedByCedula
     .filter(hasHealthyPortfolio)
@@ -428,7 +431,7 @@ export async function POST(req: Request) {
     }
 
     const totalMoraMayorCinco = countUniqueCedulas(
-      rows.filter((item) => item.diasVencido > 5)
+      rows.filter((item) => item.diasVencido >= BLOCKING_MORA_MIN_DAYS)
     );
 
     const carga = await prisma.$transaction(async (tx) => {
@@ -530,7 +533,7 @@ export async function PATCH(req: Request) {
     const registros = await prisma.registroCarteraNuovo.findMany({
       where: {
         cargaId: carga.id,
-        diasVencido: { gt: 5 },
+        diasVencido: { gte: BLOCKING_MORA_MIN_DAYS },
       },
       orderBy: [{ diasVencido: "desc" }, { id: "asc" }],
     });
@@ -551,7 +554,7 @@ export async function PATCH(req: Request) {
       const latestImport = await getLatestImportSummary();
       return NextResponse.json({
         ok: true,
-        mensaje: "No hay registros con mora mayor a 5 dias para bloquear.",
+        mensaje: `No hay registros con mora mayor o igual a ${BLOCKING_MORA_MIN_DAYS} dias para bloquear.`,
         ...responsePayload(latestImport),
       });
     }

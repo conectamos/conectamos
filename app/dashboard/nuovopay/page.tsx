@@ -130,6 +130,8 @@ type CarteraResponse = {
   latestImport: CarteraImportSummary | null;
 };
 
+const CARTERA_BLOCKING_MORA_MIN_DAYS = 2;
+
 function limpiarImei(valor: string) {
   return String(valor || "").replace(/\D/g, "").slice(0, 15);
 }
@@ -570,7 +572,7 @@ export function NuovoPayWorkspace({
             <p className="mt-2 max-w-3xl text-sm text-slate-600 md:text-base">
               {panel === "devices"
                 ? "Consulta dispositivos directamente desde Nuovo, valida si la inscripcion quedo aprobada y ejecuta bloqueo o desbloqueo desde tu sistema."
-                : "Carga el archivo de cartera, detecta mora mayor a 5 dias y revisa analitica comercial exclusiva de Nuovo Pay."}
+                : `Carga el archivo de cartera, detecta mora de ${CARTERA_BLOCKING_MORA_MIN_DAYS} o mas dias y revisa analitica comercial exclusiva de Nuovo Pay.`}
             </p>
           </div>
 
@@ -710,9 +712,10 @@ export function NuovoPayWorkspace({
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 Sube el archivo TXT de cartera para conservar el historico del
-                ultimo corte, detectar dispositivos bloqueables por mora mayor a
-                5 dias y revisar el comportamiento comercial de tus clientes. En
-                Nuovo el cruce se hace contra el{" "}
+                ultimo corte, detectar cedulas bloqueables por mora de{" "}
+                {CARTERA_BLOCKING_MORA_MIN_DAYS} o mas dias y revisar el
+                comportamiento comercial de tus clientes. En Nuovo el cruce se
+                hace contra el{" "}
                 <span className="font-semibold text-slate-700">Device Name</span>{" "}
                 usando la cedula del cliente y, si hay varias coincidencias
                 exactas, se procesan todos los devices.
@@ -749,7 +752,7 @@ export function NuovoPayWorkspace({
               >
                 {bloqueandoCartera
                   ? "Procesando bloqueo..."
-                  : "Generar bloqueo mora > 5 dias"}
+                  : `Generar bloqueo mora desde ${CARTERA_BLOCKING_MORA_MIN_DAYS} dias`}
               </button>
             </div>
           </div>
@@ -757,7 +760,7 @@ export function NuovoPayWorkspace({
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-600">
-                Clientes con mora mayor a 5 dias
+                Clientes con mora de {CARTERA_BLOCKING_MORA_MIN_DAYS} o mas dias
               </p>
               <p className="mt-3 text-3xl font-black text-red-700">
                 {analytics?.totalBloqueables ?? 0}
@@ -797,13 +800,12 @@ export function NuovoPayWorkspace({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Clientes y devices por bloquear
+                    Tabla analitica de bloqueo masivo
                   </p>
                   <p className="mt-2 text-sm text-slate-500">
-                    Cedulas con mora mayor a 5 dias identificadas en el ultimo
-                    archivo cargado. Se priorizan por dias vencidos y saldo, y
-                    al bloquear se procesan todos los devices con coincidencia
-                    exacta en Nuovo.
+                    Cedulas con mora de {CARTERA_BLOCKING_MORA_MIN_DAYS} o mas
+                    dias identificadas en el ultimo archivo cargado, ordenadas
+                    por dias de mora de mayor a menor.
                   </p>
                 </div>
 
@@ -814,80 +816,45 @@ export function NuovoPayWorkspace({
                 )}
               </div>
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-4">
                 {!latestImport ? (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
                     Todavia no hay registros de cartera cargados.
                   </div>
                 ) : !analytics || analytics.blockCandidates.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-emerald-200 bg-white px-4 py-6 text-sm text-emerald-700">
-                    No hay dispositivos con mora mayor a 5 dias en el ultimo
-                    cargue.
+                    No hay cedulas con mora de {CARTERA_BLOCKING_MORA_MIN_DAYS}{" "}
+                    o mas dias en el ultimo cargue.
                   </div>
                 ) : (
-                  analytics.blockCandidates.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <p className="text-base font-black text-slate-950">
-                            {item.deviceName || `Cedula ${item.cedula}`}
-                          </p>
-                          <p className="mt-1 text-sm text-slate-500">
-                            Cedula {item.cedula} | Credito {item.numeroCredito || "-"} |{" "}
-                            {item.sucursal || item.ubicacion || "Sin ubicacion"}
-                          </p>
-                        </div>
-
-                        <div className="grid gap-2 text-left lg:text-right">
-                          <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
-                            {item.diasVencido} dias vencido
-                          </span>
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                            {item.resultadoBloqueo || (item.bloqueoAplicado ? "Bloqueado" : "Pendiente")}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid gap-3 md:grid-cols-4">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Saldo
-                          </p>
-                          <p className="mt-2 text-base font-bold text-slate-950">
-                            {formatoPesos(item.saldoObligacion || 0)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Cuotas pendientes
-                          </p>
-                          <p className="mt-2 text-base font-bold text-slate-950">
-                            {formatoCuotas(item.cuotasPendientes)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Proxima cuota
-                          </p>
-                          <p className="mt-2 text-base font-bold text-slate-950">
-                            {formatoFechaCorta(item.fechaProximaCuota)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Device / IMEI
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-950">
-                            {item.deviceId ? `#${item.deviceId}` : "Sin cruce"}
-                            {item.deviceImei ? ` | ${item.deviceImei}` : ""}
-                          </p>
-                        </div>
-                      </div>
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <div className="max-h-[720px] overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="sticky top-0 bg-slate-100 text-slate-700">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                              Cedula
+                            </th>
+                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                              Dias de mora
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {analytics.blockCandidates.map((item) => (
+                            <tr key={item.id} className="hover:bg-slate-50">
+                              <td className="px-4 py-3 font-semibold text-slate-950">
+                                {item.cedula}
+                              </td>
+                              <td className="px-4 py-3 text-slate-700">
+                                {item.diasVencido}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  ))
+                  </div>
                 )}
               </div>
             </div>
@@ -904,7 +871,8 @@ export function NuovoPayWorkspace({
                     </p>
                     <p className="mt-2 text-sm text-slate-500">
                       {latestImport.totalRegistros} registros |{" "}
-                      {latestImport.totalMoraMayorCinco} cedulas con mora mayor a 5 dias
+                      {latestImport.totalMoraMayorCinco} cedulas con mora de{" "}
+                      {CARTERA_BLOCKING_MORA_MIN_DAYS} o mas dias
                     </p>
                     <p className="mt-2 text-sm text-slate-500">
                       Subido por {latestImport.subidoPor.nombre} el{" "}
