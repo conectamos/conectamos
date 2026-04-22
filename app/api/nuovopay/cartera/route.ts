@@ -7,7 +7,7 @@ import { normalizeCedula, parseCarteraTxt } from "@/lib/cartera-import";
 export const runtime = "nodejs";
 
 const PREVIEW_ROWS = 10;
-const TOP_LIMIT = 10;
+const NEAR_FINISH_LIMIT = 20;
 const BLOCKING_MORA_MIN_DAYS = 2;
 
 type ImportSummary = Awaited<ReturnType<typeof getLatestImportSummary>>;
@@ -106,49 +106,8 @@ function serializeRegistro(item: {
   };
 }
 
-function hasCriticalState(value: string | null | undefined) {
-  const normalized = String(value || "").toUpperCase();
-  return (
-    normalized.includes("PREJURIDICO") ||
-    normalized.includes("JURIDICO") ||
-    normalized.includes("CASTIGADO") ||
-    normalized.includes("MORA") ||
-    normalized.includes("VENC")
-  );
-}
-
 function byMoneyDesc(a: number | null | undefined, b: number | null | undefined) {
   return (b || 0) - (a || 0);
-}
-
-function byDateAsc(a: string | null, b: string | null) {
-  const timeA = a ? new Date(a).getTime() : Number.MAX_SAFE_INTEGER;
-  const timeB = b ? new Date(b).getTime() : Number.MAX_SAFE_INTEGER;
-  return timeA - timeB;
-}
-
-function isGoodClient(item: RegistroAnalitico) {
-  return (
-    item.diasVencido <= 0 &&
-    !hasCriticalState(item.estado) &&
-    !hasCriticalState(item.estadoGestion) &&
-    !item.abonoInsuficiente &&
-    !item.beneficioPerdido &&
-    item.cuotasPendientes !== null
-  );
-}
-
-function hasHealthyPortfolio(items: RegistroAnalitico[]) {
-  return (
-    items.every(
-      (item) =>
-        item.diasVencido <= 0 &&
-        !hasCriticalState(item.estado) &&
-        !hasCriticalState(item.estadoGestion) &&
-        !item.abonoInsuficiente &&
-        !item.beneficioPerdido
-    ) && items.some((item) => item.cuotasPendientes !== null)
-  );
 }
 
 function isNearFinishClient(item: RegistroAnalitico) {
@@ -159,22 +118,15 @@ function isNearFinishClient(item: RegistroAnalitico) {
   );
 }
 
+function isProcessingError(item: RegistroAnalitico) {
+  return String(item.resultadoBloqueo || "")
+    .toLowerCase()
+    .startsWith("error procesando bloqueo");
+}
+
 function compareBlockCandidates(a: RegistroAnalitico, b: RegistroAnalitico) {
   if (b.diasVencido !== a.diasVencido) {
     return b.diasVencido - a.diasVencido;
-  }
-
-  return byMoneyDesc(a.saldoObligacion, b.saldoObligacion);
-}
-
-function compareGoodClients(a: RegistroAnalitico, b: RegistroAnalitico) {
-  if ((a.cuotasPendientes ?? 999) !== (b.cuotasPendientes ?? 999)) {
-    return (a.cuotasPendientes ?? 999) - (b.cuotasPendientes ?? 999);
-  }
-
-  const aperturaComparison = byDateAsc(a.fechaApertura, b.fechaApertura);
-  if (aperturaComparison !== 0) {
-    return aperturaComparison;
   }
 
   return byMoneyDesc(a.saldoObligacion, b.saldoObligacion);
@@ -221,25 +173,26 @@ function buildAnalytics(rows: Array<Parameters<typeof serializeRegistro>[0]>) {
     .filter((item): item is RegistroAnalitico => item !== null)
     .sort(compareBlockCandidates);
 
-  const topGoodClients = groupedByCedula
-    .filter(hasHealthyPortfolio)
-    .map((items) => pickBestRecord(items, isGoodClient, compareGoodClients))
+  const errorRows = groupedByCedula
+    .map((items) =>
+      pickBestRecord(items, isProcessingError, compareBlockCandidates)
+    )
     .filter((item): item is RegistroAnalitico => item !== null)
-    .sort(compareGoodClients)
-    .slice(0, TOP_LIMIT);
+    .sort(compareBlockCandidates);
 
-  const topNearFinishClients = groupedByCedula
+  const nearFinishCandidates = groupedByCedula
     .map((items) => pickBestRecord(items, isNearFinishClient, compareNearFinishClients))
     .filter((item): item is RegistroAnalitico => item !== null)
-    .sort(compareNearFinishClients)
-    .slice(0, TOP_LIMIT);
+    .sort(compareNearFinishClients);
+
+  const topNearFinishClients = nearFinishCandidates.slice(0, NEAR_FINISH_LIMIT);
 
   return {
     totalBloqueables: blockCandidates.length,
-    totalBuenosClientes: topGoodClients.length,
-    totalPorFinalizar: topNearFinishClients.length,
+    totalErrores: errorRows.length,
+    totalPorFinalizar: nearFinishCandidates.length,
     blockCandidates,
-    topGoodClients,
+    errorRows,
     topNearFinishClients,
   };
 }
@@ -619,7 +572,7 @@ export async function PATCH(req: Request) {
           },
           data: {
             deviceId: primaryDevice.deviceId,
-            deviceName: primaryDevice.name || primaryDevice.customerName,
+            deviceName: primaryDevice.customerName || primaryDevice.name,
             deviceImei: primaryDevice.imei || primaryDevice.imei2,
             bloqueoAplicado: true,
             bloqueadoEn: now,
@@ -667,7 +620,7 @@ export async function PATCH(req: Request) {
       ok: true,
       mensaje:
         erroresProcesamiento > 0
-          ? `Bloqueo masivo procesado para ${totalCedulasAnalizadas} cedulas. ${erroresProcesamiento} quedaron con error y deben revisarse.`
+          ? `Bloqueo masivo procesado para ${totalCedulasAnalizadas} cedulas. ${erroresProcesamiento} ${erroresProcesamiento === 1 ? "quedo" : "quedaron"} con error y ${erroresProcesamiento === 1 ? "debe" : "deben"} revisarse abajo.`
           : `Bloqueo masivo procesado para ${totalCedulasAnalizadas} cedulas.`,
       ...responsePayload(latestImport),
     });

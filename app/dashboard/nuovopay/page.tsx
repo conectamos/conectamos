@@ -96,10 +96,10 @@ type CarteraInsightRow = {
 
 type CarteraAnalytics = {
   totalBloqueables: number;
-  totalBuenosClientes: number;
+  totalErrores: number;
   totalPorFinalizar: number;
   blockCandidates: CarteraInsightRow[];
-  topGoodClients: CarteraInsightRow[];
+  errorRows: CarteraInsightRow[];
   topNearFinishClients: CarteraInsightRow[];
 };
 
@@ -771,26 +771,26 @@ export function NuovoPayWorkspace({
             </div>
 
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                Top clientes al dia
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                Con errores
               </p>
-              <p className="mt-3 text-3xl font-black text-emerald-700">
-                {analytics?.totalBuenosClientes ?? 0}
+              <p className="mt-3 text-3xl font-black text-amber-700">
+                {analytics?.totalErrores ?? 0}
               </p>
-              <p className="mt-2 text-sm text-emerald-700/80">
-                Clientes con buen comportamiento de pago y sin mora.
+              <p className="mt-2 text-sm text-amber-700/80">
+                Cedulas que quedaron con error durante el bloqueo masivo.
               </p>
             </div>
 
             <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
-                Por finalizar credito
+                Top 20 por finalizar
               </p>
               <p className="mt-3 text-3xl font-black text-indigo-700">
-                {analytics?.totalPorFinalizar ?? 0}
+                {Math.min(analytics?.totalPorFinalizar ?? 0, 20)}
               </p>
               <p className="mt-2 text-sm text-indigo-700/80">
-                Clientes que solo tienen 1 o 2 cuotas pendientes.
+                Clientes con 1 o 2 cuotas pendientes de su credito.
               </p>
             </div>
           </div>
@@ -833,6 +833,9 @@ export function NuovoPayWorkspace({
                         <thead className="sticky top-0 bg-slate-100 text-slate-700">
                           <tr>
                             <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                              Customer Name
+                            </th>
+                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
                               Cedula
                             </th>
                             <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
@@ -843,6 +846,9 @@ export function NuovoPayWorkspace({
                         <tbody className="divide-y divide-slate-100 bg-white">
                           {analytics.blockCandidates.map((item) => (
                             <tr key={item.id} className="hover:bg-slate-50">
+                              <td className="px-4 py-3 text-slate-700">
+                                {item.deviceName || "-"}
+                              </td>
                               <td className="px-4 py-3 font-semibold text-slate-950">
                                 {item.cedula}
                               </td>
@@ -960,180 +966,156 @@ export function NuovoPayWorkspace({
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 xl:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Top 10 mejores clientes
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Clientes con mejor comportamiento segun mora, cuotas
-                    pendientes y constancia de pago.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {!latestImport ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                    Todavia no hay cargues para calcular el top de clientes.
-                  </div>
-                ) : !analytics || analytics.topGoodClients.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                    El ultimo cargue no tiene clientes destacados para este top.
-                  </div>
-                ) : (
-                  analytics.topGoodClients.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <p className="text-base font-black text-slate-950">
-                            #{index + 1} {item.deviceName || `Cedula ${item.cedula}`}
-                          </p>
-                          <p className="mt-1 text-sm text-slate-500">
-                            Credito {item.numeroCredito || "-"} | Cedula {item.cedula}
-                          </p>
-                        </div>
-
-                        <div className="grid gap-2 text-left lg:text-right">
-                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                            Sin mora
-                          </span>
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                            {formatoCuotas(item.cuotasPendientes)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid gap-3 md:grid-cols-4">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Saldo
-                          </p>
-                          <p className="mt-2 text-base font-bold text-slate-950">
-                            {formatoPesos(item.saldoObligacion || 0)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Modalidad
-                          </p>
-                          <p className="mt-2 text-base font-bold text-slate-950">
-                            {item.modalidad || "-"}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Ultimo abono
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-700">
-                            {formatoFechaCorta(item.ultimoAbonoEn)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Proxima cuota
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-700">
-                            {formatoFechaCorta(item.fechaProximaCuota)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Top 20 clientes por finalizar
+                </p>
+                <p className="mt-2 text-sm text-slate-500">
+                  Clientes que estan a 1 o 2 cuotas de terminar su credito.
+                </p>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Top 10 clientes por finalizar
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Clientes que estan a 1 o 2 cuotas de terminar su credito.
-                  </p>
+            <div className="mt-4 space-y-3">
+              {!latestImport ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                  Todavia no hay cargues para calcular este top.
                 </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {!latestImport ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                    Todavia no hay cargues para calcular este top.
-                  </div>
-                ) : !analytics || analytics.topNearFinishClients.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                    El ultimo cargue no tiene clientes con 1 o 2 cuotas pendientes.
-                  </div>
-                ) : (
-                  analytics.topNearFinishClients.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <p className="text-base font-black text-slate-950">
-                            #{index + 1} {item.deviceName || `Cedula ${item.cedula}`}
-                          </p>
-                          <p className="mt-1 text-sm text-slate-500">
-                            Credito {item.numeroCredito || "-"} | Cedula {item.cedula}
-                          </p>
-                        </div>
-
-                        <div className="grid gap-2 text-left lg:text-right">
-                          <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
-                            {formatoCuotas(item.cuotasPendientes)}
-                          </span>
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                            {item.diasVencido} dias vencido
-                          </span>
-                        </div>
+              ) : !analytics || analytics.topNearFinishClients.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                  El ultimo cargue no tiene clientes con 1 o 2 cuotas pendientes.
+                </div>
+              ) : (
+                analytics.topNearFinishClients.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-base font-black text-slate-950">
+                          #{index + 1} {item.deviceName || `Cedula ${item.cedula}`}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Credito {item.numeroCredito || "-"} | Cedula {item.cedula}
+                        </p>
                       </div>
 
-                      <div className="mt-4 grid gap-3 md:grid-cols-4">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Saldo
-                          </p>
-                          <p className="mt-2 text-base font-bold text-slate-950">
-                            {formatoPesos(item.saldoObligacion || 0)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Valor cuota
-                          </p>
-                          <p className="mt-2 text-base font-bold text-slate-950">
-                            {formatoPesos(item.valorCuota || 0)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Proxima cuota
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-700">
-                            {formatoFechaCorta(item.fechaProximaCuota)}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Gestion / Estado
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-700">
-                            {item.estadoGestion || item.estado || "-"}
-                          </p>
-                        </div>
+                      <div className="grid gap-2 text-left lg:text-right">
+                        <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                          {formatoCuotas(item.cuotasPendientes)}
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                          {item.diasVencido} dias vencido
+                        </span>
                       </div>
                     </div>
-                  ))
-                )}
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Saldo
+                        </p>
+                        <p className="mt-2 text-base font-bold text-slate-950">
+                          {formatoPesos(item.saldoObligacion || 0)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Valor cuota
+                        </p>
+                        <p className="mt-2 text-base font-bold text-slate-950">
+                          {formatoPesos(item.valorCuota || 0)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Proxima cuota
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-700">
+                          {formatoFechaCorta(item.fechaProximaCuota)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Gestion / Estado
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-700">
+                          {item.estadoGestion || item.estado || "-"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Errores de procesamiento
+                </p>
+                <p className="mt-2 text-sm text-slate-500">
+                  Cedulas que quedaron con error durante el bloqueo masivo y deben revisarse manualmente.
+                </p>
               </div>
+            </div>
+
+            <div className="mt-4">
+              {!latestImport ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                  Todavia no hay cargues de cartera cargados.
+                </div>
+              ) : !analytics || analytics.errorRows.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-emerald-200 bg-white px-4 py-6 text-sm text-emerald-700">
+                  No hay errores registrados en el ultimo proceso de bloqueo.
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                  <div className="max-h-[420px] overflow-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="sticky top-0 bg-slate-100 text-slate-700">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                            Customer Name
+                          </th>
+                          <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                            Cedula
+                          </th>
+                          <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                            Dias de mora
+                          </th>
+                          <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                            Error
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {analytics.errorRows.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 text-slate-700">
+                              {item.deviceName || "-"}
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-slate-950">
+                              {item.cedula}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {item.diasVencido}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {item.resultadoBloqueo || "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
