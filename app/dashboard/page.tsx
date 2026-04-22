@@ -389,6 +389,8 @@ export default async function DashboardPage() {
       : []),
     { href: "/dashboard/nuovopay", label: "Nuovo dispositivos" },
     { href: "/dashboard/nuovopay/cartera", label: "Nuovo cartera" },
+    { href: "/dashboard/payjoy", label: "PayJoy cartera" },
+    { href: "/dashboard/payjoy/40-60", label: "PayJoy 40/60" },
     { href: "/ventas", label: "Ventas" },
     ...(esAdmin
       ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores" }] as NavItem[])
@@ -491,6 +493,25 @@ export default async function DashboardPage() {
         ...(esAdmin
           ? ([{ href: "/ventas/equipo-comercial", label: "Catalogos de ventas" }] as ModuleAction[])
           : []),
+      ],
+    },
+    {
+      accent: "bg-emerald-500",
+      badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      eyebrow: "PayJoy / Gestion",
+      title: "PayJoy",
+      description:
+        "Consolida varias cargas de transacciones, agrega la columna CORTE y evita duplicados antes de consultar estado y pago maximo en PayJoy.",
+      actions: [
+        {
+          href: "/dashboard/payjoy",
+          label: "Cartera PayJoy",
+          tone: "primary",
+        },
+        {
+          href: "/dashboard/payjoy/40-60",
+          label: "40/60",
+        },
       ],
     },
     {
