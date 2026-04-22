@@ -450,30 +450,19 @@ export default async function DashboardPage() {
     {
       accent: "bg-amber-500",
       badge: "border-amber-200 bg-amber-50 text-amber-700",
-      eyebrow: "Nuovo / Dispositivos",
-      title: "Nuovo Dispositivos",
+      eyebrow: "Nuovo / Gestion",
+      title: "Nuovo Pay",
       description:
-        "Consulta por IMEI o DEVICE, valida el estado del enrolamiento y ejecuta bloqueo o desbloqueo del equipo desde Conectamos.",
+        "Administra Nuovo desde un mismo panel y entra por botones separados a Dispositivos o Cartera segun la operacion que necesites.",
       actions: [
         {
           href: "/dashboard/nuovopay",
-          label: "Abrir dispositivos",
+          label: "Nuovo / Dispositivos",
           tone: "primary",
         },
-      ],
-    },
-    {
-      accent: "bg-orange-500",
-      badge: "border-orange-200 bg-orange-50 text-orange-700",
-      eyebrow: "Nuovo / Cartera",
-      title: "Nuovo Cartera",
-      description:
-        "Carga el TXT de cartera, detecta mora por cedula, genera bloqueos masivos y revisa rankings comerciales para seguimiento.",
-      actions: [
         {
           href: "/dashboard/nuovopay/cartera",
-          label: "Abrir cartera",
-          tone: "primary",
+          label: "Nuovo / Cartera",
         },
       ],
     },
