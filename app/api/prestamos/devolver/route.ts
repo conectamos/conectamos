@@ -61,16 +61,18 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!esAdmin && user.sedeId !== prestamo.sedeDestinoId) {
+    if (!esAdmin && user.sedeId !== prestamo.sedeOrigenId) {
       return NextResponse.json(
-        { error: "Solo la sede destino puede devolver este prestamo" },
+        { error: "Solo la sede origen puede aprobar esta devolucion" },
         { status: 403 }
       );
     }
 
-    if (prestamo.estado !== "APROBADO") {
+    if (prestamo.estado !== "DEVOLUCION_PENDIENTE") {
       return NextResponse.json(
-        { error: `No se puede devolver. Estado actual: ${prestamo.estado}` },
+        {
+          error: `No se puede aprobar la devolucion. Estado actual: ${prestamo.estado}`,
+        },
         { status: 400 }
       );
     }
@@ -111,34 +113,13 @@ export async function POST(req: Request) {
         esDeudaProveedor(equipoDestino.deboA));
 
     if (prestamoDesdePrincipal) {
-      const existePrestamoIntermedioActivo = await prisma.prestamoSede.findFirst({
-        where: {
-          id: {
-            not: prestamo.id,
-          },
-          imei: prestamo.imei,
-          sedeDestinoId: prestamo.sedeDestinoId,
-          sedeOrigenId: {
-            not: sedeBodegaId,
-          },
-          estado: {
-            in: ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
-          },
+      return NextResponse.json(
+        {
+          error:
+            "Los equipos enviados desde bodega principal no usan este flujo de devolucion. Deben pagarse desde la sede destino.",
         },
-        select: {
-          id: true,
-          sedeOrigenId: true,
-        },
-      });
-
-      if (existePrestamoIntermedioActivo) {
-        return NextResponse.json(
-          {
-            error: `Este equipo debe devolverse primero a SEDE ${existePrestamoIntermedioActivo.sedeOrigenId} antes de regresar a bodega principal.`,
-          },
-          { status: 400 }
-        );
-      }
+        { status: 400 }
+      );
     }
 
     if (String(equipoDestino.estadoActual || "").toUpperCase() !== "BODEGA") {

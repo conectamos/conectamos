@@ -47,6 +47,7 @@ model Usuario {
   sede      Sede     @relation(fields: [sedeId], references: [id])
   ventas    Venta[]
   arqueosDiarios ArqueoDiario[]
+  importacionesCartera CargaCarteraNuovo[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -293,4 +294,60 @@ model ArqueoDiario {
   usuario          Usuario  @relation(fields: [usuarioId], references: [id])
 
   @@unique([sedeId, fechaCorte])
+}
+
+model CargaCarteraNuovo {
+  id                    Int                   @id @default(autoincrement())
+  nombreArchivo         String
+  totalRegistros        Int                   @default(0)
+  totalMoraMayorCinco   Int                   @default(0)
+  totalCedulasAnalizadas Int                  @default(0)
+  totalCoincidenciasNuovo Int                 @default(0)
+  totalBloqueados       Int                   @default(0)
+  totalYaBloqueados     Int                   @default(0)
+  totalSinCoincidencia  Int                   @default(0)
+  procesadoBloqueoEn    DateTime?
+  subidoPorId           Int
+  subidoPor             Usuario               @relation(fields: [subidoPorId], references: [id])
+  registros             RegistroCarteraNuovo[]
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+}
+
+model RegistroCarteraNuovo {
+  id                Int                @id @default(autoincrement())
+  cargaId           Int
+  carga             CargaCarteraNuovo  @relation(fields: [cargaId], references: [id], onDelete: Cascade)
+  cedula            String
+  numeroCredito     String?
+  modalidad         String?
+  sucursal          String?
+  ubicacion         String?
+  diasVencido       Int                @default(0)
+  cuotasPendientes  Int?
+  valorCuota        Float?
+  saldoObligacion   Float?
+  saldoCapital      Float?
+  saldoGarantia     Float?
+  estadoGestion     String?
+  estado            String?
+  garantia          String?
+  marca             String?
+  abogado           String?
+  abonoInsuficiente Boolean            @default(false)
+  beneficioPerdido  Boolean            @default(false)
+  fechaApertura     DateTime?
+  fechaConsulta     DateTime?
+  fechaProximaCuota DateTime?
+  ultimoAbonoEn     DateTime?
+  deviceId          Int?
+  deviceName        String?
+  deviceImei        String?
+  bloqueoAplicado   Boolean            @default(false)
+  bloqueadoEn       DateTime?
+  resultadoBloqueo  String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([cargaId, cedula])
 }

@@ -19,6 +19,7 @@ type Prestamo = {
   estadoFinancieroActual?: string | null;
   estadoActualActual?: string | null;
   requiereAprobacionEntreSedes?: boolean;
+  prestamoDesdePrincipal?: boolean;
 };
 
 type SessionUser = {
@@ -154,7 +155,36 @@ export default function PrestamosPage() {
     );
   }, [esAdmin, sedeFiltroId, sedes, user?.sedeNombre]);
 
-  const devolverPrestamo = async (id: number) => {
+  const solicitarDevolucionPrestamo = async (id: number) => {
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/prestamos/solicitar-devolucion", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "Error solicitando devolucion");
+        return;
+      }
+
+      setMensaje("Solicitud de devolucion enviada correctamente");
+      await cargarPrestamos();
+    } catch {
+      setMensaje("Error de conexion al solicitar devolucion");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const aprobarDevolucionPrestamo = async (id: number) => {
     try {
       setCargando(true);
       setMensaje("");
@@ -170,14 +200,43 @@ export default function PrestamosPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMensaje(data.error || "Error devolviendo prestamo");
+        setMensaje(data.error || "Error aprobando devolucion");
         return;
       }
 
-      setMensaje("Prestamo devuelto correctamente");
+      setMensaje("Devolucion aprobada correctamente");
       await cargarPrestamos();
     } catch {
-      setMensaje("Error de conexion al devolver prestamo");
+      setMensaje("Error de conexion al aprobar devolucion");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const rechazarDevolucionPrestamo = async (id: number) => {
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/prestamos/rechazar-devolucion", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "Error rechazando devolucion");
+        return;
+      }
+
+      setMensaje("Devolucion rechazada correctamente");
+      await cargarPrestamos();
+    } catch {
+      setMensaje("Error de conexion al rechazar devolucion");
     } finally {
       setCargando(false);
     }
@@ -306,7 +365,7 @@ export default function PrestamosPage() {
     }
   };
 
-  const puedeDevolver = (prestamo: Prestamo) => {
+  const puedeSolicitarDevolucion = (prestamo: Prestamo) => {
     if (!user) return false;
 
     const destino = user.sedeId === prestamo.sedeDestinoId;
@@ -315,10 +374,25 @@ export default function PrestamosPage() {
       .toUpperCase();
 
     return (
+      !prestamo.prestamoDesdePrincipal &&
       prestamo.estado === "APROBADO" &&
       estadoActual === "BODEGA" &&
       (esAdmin || destino)
     );
+  };
+
+  const puedeAprobarDevolucion = (prestamo: Prestamo) => {
+    if (!user) return false;
+
+    const origen = user.sedeId === prestamo.sedeOrigenId;
+    return prestamo.estado === "DEVOLUCION_PENDIENTE" && (esAdmin || origen);
+  };
+
+  const puedeRechazarDevolucion = (prestamo: Prestamo) => {
+    if (!user) return false;
+
+    const origen = user.sedeId === prestamo.sedeOrigenId;
+    return prestamo.estado === "DEVOLUCION_PENDIENTE" && (esAdmin || origen);
   };
 
   const puedeSolicitarPago = (prestamo: Prestamo) => {
@@ -410,6 +484,7 @@ export default function PrestamosPage() {
     "TODOS",
     "PENDIENTE",
     "APROBADO",
+    "DEVOLUCION_PENDIENTE",
     "PAGO_PENDIENTE_APROBACION",
     "PAGADO",
     "RECHAZADO",
@@ -423,6 +498,9 @@ export default function PrestamosPage() {
 
     if (normalizado === "PENDIENTE") return "bg-amber-100 text-amber-700";
     if (normalizado === "APROBADO") return "bg-sky-100 text-sky-700";
+    if (normalizado === "DEVOLUCION_PENDIENTE") {
+      return "bg-violet-100 text-violet-700";
+    }
     if (normalizado === "PAGO_PENDIENTE_APROBACION") {
       return "bg-yellow-100 text-yellow-700";
     }
@@ -680,14 +758,42 @@ export default function PrestamosPage() {
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-2">
-                          {puedeDevolver(item) && (
+                          {puedeSolicitarDevolucion(item) && (
                             <button
                               type="button"
-                              onClick={() => void devolverPrestamo(item.id)}
+                              onClick={() =>
+                                void solicitarDevolucionPrestamo(item.id)
+                              }
                               disabled={cargando}
                               className="rounded-xl bg-[#111318] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d2330] disabled:opacity-70"
                             >
-                              Devolver
+                              Solicitar devolucion
+                            </button>
+                          )}
+
+                          {puedeAprobarDevolucion(item) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void aprobarDevolucionPrestamo(item.id)
+                              }
+                              disabled={cargando}
+                              className="rounded-xl bg-[#111318] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d2330] disabled:opacity-70"
+                            >
+                              Aprobar devolucion
+                            </button>
+                          )}
+
+                          {puedeRechazarDevolucion(item) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void rechazarDevolucionPrestamo(item.id)
+                              }
+                              disabled={cargando}
+                              className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-70"
+                            >
+                              Rechazar devolucion
                             </button>
                           )}
 
@@ -750,7 +856,9 @@ export default function PrestamosPage() {
                             </button>
                           )}
 
-                          {!puedeDevolver(item) &&
+                          {!puedeSolicitarDevolucion(item) &&
+                            !puedeAprobarDevolucion(item) &&
+                            !puedeRechazarDevolucion(item) &&
                             !puedeAprobarPrestamo(item) &&
                             !puedeRechazarPrestamo(item) &&
                             !puedeCancelarPrestamo(item) &&

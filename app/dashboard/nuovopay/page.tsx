@@ -67,6 +67,68 @@ type NuovoPayResponse = {
   localPrincipal: LocalPrincipal;
 };
 
+type CarteraInsightRow = {
+  id: number;
+  cedula: string;
+  numeroCredito: string | null;
+  modalidad: string | null;
+  sucursal: string | null;
+  ubicacion: string | null;
+  diasVencido: number;
+  cuotasPendientes: number | null;
+  valorCuota: number | null;
+  saldoObligacion: number | null;
+  estadoGestion: string | null;
+  estado: string | null;
+  abogado: string | null;
+  abonoInsuficiente: boolean;
+  beneficioPerdido: boolean;
+  fechaApertura: string | null;
+  fechaProximaCuota: string | null;
+  ultimoAbonoEn: string | null;
+  deviceId: number | null;
+  deviceName: string | null;
+  deviceImei: string | null;
+  bloqueoAplicado: boolean;
+  resultadoBloqueo: string | null;
+};
+
+type CarteraAnalytics = {
+  totalBloqueables: number;
+  totalBuenosClientes: number;
+  totalPorFinalizar: number;
+  blockCandidates: CarteraInsightRow[];
+  topGoodClients: CarteraInsightRow[];
+  topNearFinishClients: CarteraInsightRow[];
+};
+
+type CarteraImportSummary = {
+  id: number;
+  nombreArchivo: string;
+  totalRegistros: number;
+  totalMoraMayorCinco: number;
+  totalCedulasAnalizadas: number;
+  totalCoincidenciasNuovo: number;
+  totalBloqueados: number;
+  totalYaBloqueados: number;
+  totalSinCoincidencia: number;
+  procesadoBloqueoEn: string | null;
+  createdAt: string;
+  updatedAt: string;
+  subidoPor: {
+    id: number;
+    nombre: string;
+    usuario: string;
+  };
+  previewRows: CarteraInsightRow[];
+  analytics: CarteraAnalytics;
+};
+
+type CarteraResponse = {
+  configured: boolean;
+  latestImport: CarteraImportSummary | null;
+};
+
 function limpiarImei(valor: string) {
   return String(valor || "").replace(/\D/g, "").slice(0, 15);
 }
@@ -82,6 +144,19 @@ function formatoPesos(valor: number) {
 function formatoFecha(valor: string | null) {
   if (!valor) return "-";
   return new Date(valor).toLocaleString("es-CO");
+}
+
+function formatoFechaCorta(valor: string | null) {
+  if (!valor) return "-";
+  return new Date(valor).toLocaleDateString("es-CO");
+}
+
+function formatoCuotas(valor: number | null) {
+  if (valor === null || Number.isNaN(Number(valor))) {
+    return "-";
+  }
+
+  return `${valor} cuota${valor === 1 ? "" : "s"}`;
 }
 
 function toneClass(tone: string) {
@@ -119,9 +194,13 @@ export default function NuovoPayPage() {
   const [queryType, setQueryType] = useState<QueryType>("imei");
   const [search, setSearch] = useState("");
   const [resultado, setResultado] = useState<NuovoPayResponse | null>(null);
+  const [carteraData, setCarteraData] = useState<CarteraResponse | null>(null);
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
   const [procesando, setProcesando] = useState(false);
+  const [subiendoCartera, setSubiendoCartera] = useState(false);
+  const [bloqueandoCartera, setBloqueandoCartera] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const consultarRef = useRef<
     (
       options?: {
@@ -160,6 +239,24 @@ export default function NuovoPayPage() {
     },
     []
   );
+
+  const cargarCartera = useCallback(async () => {
+    try {
+      const res = await fetch("/api/nuovopay/cartera", {
+        cache: "no-store",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Error consultando cartera");
+      }
+
+      setCarteraData(data);
+    } catch (error) {
+      console.error("ERROR CARGANDO CARTERA NUOVO:", error);
+    }
+  }, []);
 
   const consultar = useCallback(
     async (options?: {
@@ -224,6 +321,10 @@ export default function NuovoPayPage() {
   }, [consultar]);
 
   useEffect(() => {
+    void cargarCartera();
+  }, [cargarCartera]);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const imeiUrl = limpiarImei(params.get("imei") || params.get("search") || "");
     const deviceUrl = limpiarDevice(params.get("device") || "");
@@ -285,6 +386,16 @@ export default function NuovoPayPage() {
     }
   );
 
+  useLiveRefresh(
+    async () => {
+      await cargarCartera();
+    },
+    {
+      intervalMs: 15000,
+      enabled: Boolean(carteraData?.latestImport),
+    }
+  );
+
   const ejecutarAccion = async (action: "lock" | "unlock") => {
     if (!resultado?.selectedDevice?.deviceId) {
       return;
@@ -338,6 +449,86 @@ export default function NuovoPayPage() {
     }
   };
 
+  const cargarArchivoCartera = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setSubiendoCartera(true);
+      setMensaje("");
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/nuovopay/cartera", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "Error cargando archivo de cartera");
+        return;
+      }
+
+      setCarteraData({
+        configured: Boolean(data.configured),
+        latestImport: data.latestImport,
+      });
+      setMensaje(data.mensaje || "Archivo cargado correctamente");
+    } catch {
+      setMensaje("Error cargando archivo de cartera");
+    } finally {
+      event.target.value = "";
+      setSubiendoCartera(false);
+    }
+  };
+
+  const ejecutarBloqueoCartera = async () => {
+    if (!carteraData?.latestImport?.id) {
+      setMensaje("Primero debes cargar un archivo de cartera.");
+      return;
+    }
+
+    try {
+      setBloqueandoCartera(true);
+      setMensaje("");
+
+      const res = await fetch("/api/nuovopay/cartera", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cargaId: carteraData.latestImport.id,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "Error generando bloqueo por cartera");
+        return;
+      }
+
+      setCarteraData({
+        configured: Boolean(data.configured),
+        latestImport: data.latestImport,
+      });
+      setMensaje(data.mensaje || "Bloqueo procesado correctamente");
+    } catch {
+      setMensaje("Error generando bloqueo por cartera");
+    } finally {
+      setBloqueandoCartera(false);
+    }
+  };
+
   const lookupImei = useMemo(
     () =>
       resultado?.selectedDevice?.imei ||
@@ -347,6 +538,8 @@ export default function NuovoPayPage() {
   );
 
   const cantidadRegistrosLocales = resultado?.localItems.length ?? 0;
+  const latestImport = carteraData?.latestImport ?? null;
+  const analytics = latestImport?.analytics ?? null;
 
   return (
     <div className="min-h-screen bg-[#f5f6fa] px-4 py-8">
@@ -476,6 +669,568 @@ export default function NuovoPayPage() {
           <p className="mt-4 text-sm text-slate-500">
             {estadoBusqueda(queryType, search)}
           </p>
+        </div>
+
+        <div className="mb-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+            <div className="max-w-3xl">
+              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                Panel Nuovo exclusivo
+              </div>
+              <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+                Cargar archivo de cartera y analitica de riesgo
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Sube el archivo TXT de cartera para conservar el historico del
+                ultimo corte, detectar dispositivos bloqueables por mora mayor a
+                5 dias y revisar el comportamiento comercial de tus clientes. En
+                Nuovo el cruce se hace contra el{" "}
+                <span className="font-semibold text-slate-700">Device Name</span>.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,text/plain"
+                onChange={(event) => void cargarArchivoCartera(event)}
+                className="hidden"
+              />
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={subiendoCartera}
+                className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
+              >
+                {subiendoCartera
+                  ? "Cargando archivo..."
+                  : "CARGAR ARCHIVO DE CARTERA"}
+              </button>
+
+              <button
+                onClick={() => void ejecutarBloqueoCartera()}
+                disabled={
+                  bloqueandoCartera ||
+                  !latestImport?.id ||
+                  !Boolean(carteraData?.configured)
+                }
+                className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {bloqueandoCartera
+                  ? "Procesando bloqueo..."
+                  : "Generar bloqueo mora > 5 dias"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-600">
+                Mora mayor a 5 dias
+              </p>
+              <p className="mt-3 text-3xl font-black text-red-700">
+                {analytics?.totalBloqueables ?? 0}
+              </p>
+              <p className="mt-2 text-sm text-red-700/80">
+                Dispositivos listos para bloqueo desde el ultimo cargue.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                Top clientes al dia
+              </p>
+              <p className="mt-3 text-3xl font-black text-emerald-700">
+                {analytics?.totalBuenosClientes ?? 0}
+              </p>
+              <p className="mt-2 text-sm text-emerald-700/80">
+                Clientes con buen comportamiento de pago y sin mora.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+                Por finalizar credito
+              </p>
+              <p className="mt-3 text-3xl font-black text-indigo-700">
+                {analytics?.totalPorFinalizar ?? 0}
+              </p>
+              <p className="mt-2 text-sm text-indigo-700/80">
+                Clientes que solo tienen 1 o 2 cuotas pendientes.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Dispositivos que tengo que bloquear
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Clientes con mora mayor a 5 dias identificados en el ultimo
+                    archivo cargado. Se priorizan por dias vencidos y saldo.
+                  </p>
+                </div>
+
+                {latestImport && (
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    #{latestImport.id}
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {!latestImport ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                    Todavia no hay registros de cartera cargados.
+                  </div>
+                ) : !analytics || analytics.blockCandidates.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-emerald-200 bg-white px-4 py-6 text-sm text-emerald-700">
+                    No hay dispositivos con mora mayor a 5 dias en el ultimo
+                    cargue.
+                  </div>
+                ) : (
+                  analytics.blockCandidates.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <p className="text-base font-black text-slate-950">
+                            {item.deviceName || `Cedula ${item.cedula}`}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Cedula {item.cedula} | Credito {item.numeroCredito || "-"} |{" "}
+                            {item.sucursal || item.ubicacion || "Sin ubicacion"}
+                          </p>
+                        </div>
+
+                        <div className="grid gap-2 text-left lg:text-right">
+                          <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                            {item.diasVencido} dias vencido
+                          </span>
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                            {item.resultadoBloqueo || (item.bloqueoAplicado ? "Bloqueado" : "Pendiente")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-4">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Saldo
+                          </p>
+                          <p className="mt-2 text-base font-bold text-slate-950">
+                            {formatoPesos(item.saldoObligacion || 0)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Cuotas pendientes
+                          </p>
+                          <p className="mt-2 text-base font-bold text-slate-950">
+                            {formatoCuotas(item.cuotasPendientes)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Proxima cuota
+                          </p>
+                          <p className="mt-2 text-base font-bold text-slate-950">
+                            {formatoFechaCorta(item.fechaProximaCuota)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Device / IMEI
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-950">
+                            {item.deviceId ? `#${item.deviceId}` : "Sin cruce"}
+                            {item.deviceImei ? ` | ${item.deviceImei}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Ultimo cargue
+                </p>
+                {latestImport ? (
+                  <>
+                    <p className="mt-2 text-lg font-black text-slate-950">
+                      {latestImport.nombreArchivo}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      {latestImport.totalRegistros} registros |{" "}
+                      {latestImport.totalMoraMayorCinco} con mora mayor a 5 dias
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Subido por {latestImport.subidoPor.nombre} el{" "}
+                      {formatoFecha(latestImport.createdAt)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    Aun no se ha cargado un archivo de cartera.
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Resumen de procesamiento
+                </p>
+                {latestImport ? (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Cedulas analizadas
+                      </p>
+                      <p className="mt-1 text-lg font-black text-slate-950">
+                        {latestImport.totalCedulasAnalizadas || 0}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Coincidencias Nuovo
+                      </p>
+                      <p className="mt-1 text-lg font-black text-slate-950">
+                        {latestImport.totalCoincidenciasNuovo || 0}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Bloqueados
+                      </p>
+                      <p className="mt-1 text-lg font-black text-red-600">
+                        {latestImport.totalBloqueados || 0}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Ya bloqueados
+                      </p>
+                      <p className="mt-1 text-lg font-black text-amber-600">
+                        {latestImport.totalYaBloqueados || 0}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Sin coincidencia
+                      </p>
+                      <p className="mt-1 text-lg font-black text-slate-950">
+                        {latestImport.totalSinCoincidencia || 0}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Ultimo proceso
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-700">
+                        {latestImport.procesadoBloqueoEn
+                          ? formatoFecha(latestImport.procesadoBloqueoEn)
+                          : "Pendiente"}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    Cuando cargues el primer archivo veras aqui el resumen del
+                    procesamiento.
+                  </p>
+                )}
+              </div>
+
+              {carteraData && !carteraData.configured && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                  Configura <span className="font-semibold">NUOVOPAY_API_TOKEN</span>{" "}
+                  para habilitar el bloqueo masivo.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 xl:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Top 10 mejores clientes
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Clientes con mejor comportamiento segun mora, cuotas
+                    pendientes y constancia de pago.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {!latestImport ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                    Todavia no hay cargues para calcular el top de clientes.
+                  </div>
+                ) : !analytics || analytics.topGoodClients.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                    El ultimo cargue no tiene clientes destacados para este top.
+                  </div>
+                ) : (
+                  analytics.topGoodClients.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <p className="text-base font-black text-slate-950">
+                            #{index + 1} {item.deviceName || `Cedula ${item.cedula}`}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Credito {item.numeroCredito || "-"} | Cedula {item.cedula}
+                          </p>
+                        </div>
+
+                        <div className="grid gap-2 text-left lg:text-right">
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                            Sin mora
+                          </span>
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                            {formatoCuotas(item.cuotasPendientes)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-4">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Saldo
+                          </p>
+                          <p className="mt-2 text-base font-bold text-slate-950">
+                            {formatoPesos(item.saldoObligacion || 0)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Modalidad
+                          </p>
+                          <p className="mt-2 text-base font-bold text-slate-950">
+                            {item.modalidad || "-"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Ultimo abono
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-700">
+                            {formatoFechaCorta(item.ultimoAbonoEn)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Proxima cuota
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-700">
+                            {formatoFechaCorta(item.fechaProximaCuota)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Top 10 clientes por finalizar
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Clientes que estan a 1 o 2 cuotas de terminar su credito.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {!latestImport ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                    Todavia no hay cargues para calcular este top.
+                  </div>
+                ) : !analytics || analytics.topNearFinishClients.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                    El ultimo cargue no tiene clientes con 1 o 2 cuotas pendientes.
+                  </div>
+                ) : (
+                  analytics.topNearFinishClients.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <p className="text-base font-black text-slate-950">
+                            #{index + 1} {item.deviceName || `Cedula ${item.cedula}`}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Credito {item.numeroCredito || "-"} | Cedula {item.cedula}
+                          </p>
+                        </div>
+
+                        <div className="grid gap-2 text-left lg:text-right">
+                          <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                            {formatoCuotas(item.cuotasPendientes)}
+                          </span>
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                            {item.diasVencido} dias vencido
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-4">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Saldo
+                          </p>
+                          <p className="mt-2 text-base font-bold text-slate-950">
+                            {formatoPesos(item.saldoObligacion || 0)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Valor cuota
+                          </p>
+                          <p className="mt-2 text-base font-bold text-slate-950">
+                            {formatoPesos(item.valorCuota || 0)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Proxima cuota
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-700">
+                            {formatoFechaCorta(item.fechaProximaCuota)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Gestion / Estado
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-700">
+                            {item.estadoGestion || item.estado || "-"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Vista previa del ultimo cargue
+                </p>
+                <p className="mt-2 text-sm text-slate-500">
+                  Primeros registros del archivo para validar el corte cargado,
+                  el cruce con Nuovo y el estado del bloqueo.
+                </p>
+              </div>
+
+              {latestImport && (
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  #{latestImport.id}
+                </span>
+              )}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {!latestImport ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                  Todavia no hay registros de cartera cargados.
+                </div>
+              ) : latestImport.previewRows.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                  El cargue existe, pero no hay filas para mostrar en la vista previa.
+                </div>
+              ) : (
+                latestImport.previewRows.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-base font-black text-slate-950">
+                          Cedula {item.cedula}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Credito {item.numeroCredito || "-"} | {item.modalidad || "Sin modalidad"} |{" "}
+                          {item.sucursal || item.ubicacion || "Sin ubicacion"}
+                        </p>
+                      </div>
+
+                      <div className="grid gap-2 text-left lg:text-right">
+                        <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                          {item.diasVencido} dias vencido
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                          {item.resultadoBloqueo || (item.bloqueoAplicado ? "Bloqueado" : "Pendiente")}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Saldo obligacion
+                        </p>
+                        <p className="mt-2 text-base font-bold text-slate-950">
+                          {formatoPesos(item.saldoObligacion || 0)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Device Nuovo
+                        </p>
+                        <p className="mt-2 text-base font-bold text-slate-950">
+                          {item.deviceName || "Pendiente de cruce"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Cuotas pendientes
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-700">
+                          {formatoCuotas(item.cuotasPendientes)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Resultado
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-700">
+                          {item.resultadoBloqueo || "Pendiente"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
 
         {resultado && !resultado.configured && (
