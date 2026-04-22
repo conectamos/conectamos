@@ -367,24 +367,32 @@ export default function PayJoyCarteraWorkspace() {
   const [selectedMerchant, setSelectedMerchant] = useState("TODOS");
   const [merchantQuery, setMerchantQuery] = useState("");
   const deferredMerchantQuery = useDeferredValue(merchantQuery);
+  const normalizedMerchantQuery = normalizeSearchText(deferredMerchantQuery);
+  const hasSelectedMerchant = selectedMerchant !== "TODOS";
+  const effectiveMerchantQuery = hasSelectedMerchant ? "" : normalizedMerchantQuery;
 
   const merchantSummaries = buildMerchantSummaries(rows);
   const filteredMerchantSummaries = merchantSummaries.filter((summary) =>
     matchesMerchantFilter(
       summary.merchantName,
       selectedMerchant,
-      normalizeSearchText(deferredMerchantQuery)
+      effectiveMerchantQuery
     )
   );
   const filteredRows = rows.filter((row) =>
     matchesMerchantFilter(
       row.merchantName,
       selectedMerchant,
-      normalizeSearchText(deferredMerchantQuery)
+      effectiveMerchantQuery
     )
   );
   const liveSummary = summarizeRows(rows);
   const visibleSummary = summarizeRows(filteredRows);
+  const hasActiveFilter = hasSelectedMerchant || Boolean(normalizedMerchantQuery);
+  const summaryCards = hasActiveFilter ? visibleSummary : liveSummary;
+  const visibleSourceNames = Array.from(
+    new Set(filteredRows.map((row) => row.corteName).filter(Boolean))
+  );
 
   const processSources = async () => {
     if (!files.length && !linksText.trim()) {
@@ -463,6 +471,11 @@ export default function PayJoyCarteraWorkspace() {
 
   const clearFilters = () => {
     setSelectedMerchant("TODOS");
+    setMerchantQuery("");
+  };
+
+  const handleMerchantSelection = (value: string) => {
+    setSelectedMerchant(value);
     setMerchantQuery("");
   };
 
@@ -635,10 +648,10 @@ export default function PayJoyCarteraWorkspace() {
                   Unicas
                 </p>
                 <p className="mt-3 text-3xl font-black text-slate-950">
-                  {rows.length}
+                  {hasActiveFilter ? filteredRows.length : rows.length}
                 </p>
                 <p className="mt-2 text-sm text-slate-500">
-                  Sin duplicados
+                  {hasActiveFilter ? "Filtradas" : "Sin duplicados"}
                 </p>
               </div>
 
@@ -647,7 +660,7 @@ export default function PayJoyCarteraWorkspace() {
                   Mora
                 </p>
                 <p className="mt-3 text-3xl font-black text-red-700">
-                  {liveSummary.mora}
+                  {summaryCards.mora}
                 </p>
               </div>
 
@@ -656,10 +669,10 @@ export default function PayJoyCarteraWorkspace() {
                   Pago
                 </p>
                 <p className="mt-3 text-3xl font-black text-emerald-700">
-                  {liveSummary.pago}
+                  {summaryCards.pago}
                 </p>
                 <p className="mt-2 text-sm text-emerald-700/80">
-                  Sin datos: {liveSummary.sinDatos}
+                  Sin datos: {summaryCards.sinDatos}
                 </p>
               </div>
             </section>
@@ -715,7 +728,9 @@ export default function PayJoyCarteraWorkspace() {
                   </span>
                   <select
                     value={selectedMerchant}
-                    onChange={(event) => setSelectedMerchant(event.target.value)}
+                    onChange={(event) =>
+                      handleMerchantSelection(event.target.value)
+                    }
                     className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-slate-500"
                   >
                     <option value="TODOS">Todos los merchant</option>
@@ -822,7 +837,7 @@ export default function PayJoyCarteraWorkspace() {
                         <td className="px-4 py-4 text-sm text-slate-700">
                           <button
                             onClick={() =>
-                              setSelectedMerchant(summary.merchantName)
+                              handleMerchantSelection(summary.merchantName)
                             }
                             className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                           >
@@ -853,7 +868,7 @@ export default function PayJoyCarteraWorkspace() {
                 Cortes detectados
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                {data.sourceNames.map((name) => (
+                {(hasActiveFilter ? visibleSourceNames : data.sourceNames).map((name) => (
                   <span
                     key={name}
                     className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600"
