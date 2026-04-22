@@ -387,7 +387,8 @@ export default async function DashboardPage() {
     ...(esAdmin
       ? ([{ href: "/inventario-principal", label: "Bodega principal" }] as NavItem[])
       : []),
-    { href: "/dashboard/nuovopay", label: "Nuovo Pay" },
+    { href: "/dashboard/nuovopay", label: "Nuovo dispositivos" },
+    { href: "/dashboard/nuovopay/cartera", label: "Nuovo cartera" },
     { href: "/ventas", label: "Ventas" },
     { href: "/caja", label: "Caja" },
     { href: "/prestamos", label: "Prestamos" },
@@ -443,8 +444,19 @@ export default async function DashboardPage() {
         ...(esAdmin
           ? ([{ href: "/inventario-principal", label: "Bodega principal" }] as ModuleAction[])
           : []),
-        { href: "/dashboard/nuovopay", label: "Nuovo Pay" },
         { href: "/inventario/historial", label: "IMEI historico" },
+      ],
+    },
+    {
+      accent: "bg-amber-500",
+      badge: "border-amber-200 bg-amber-50 text-amber-700",
+      eyebrow: "Nuovo Pay / Gestion",
+      title: "Nuovo Pay",
+      description:
+        "Separa la gestion del dispositivo y el analisis de cartera en dos paneles dedicados para operar Nuovo con mas control.",
+      actions: [
+        { href: "/dashboard/nuovopay", label: "Dispositivos", tone: "primary" },
+        { href: "/dashboard/nuovopay/cartera", label: "Cartera Nuovo" },
       ],
     },
     {

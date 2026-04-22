@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
 type QueryType = "imei" | "device";
+type NuovoPanelMode = "devices" | "cartera";
 
 type LocalItem = {
   id: number;
@@ -190,7 +191,11 @@ function estadoBusqueda(queryType: QueryType, search: string) {
     : `Coincidencias en Nuovo para IMEI ${search}.`;
 }
 
-export default function NuovoPayPage() {
+export function NuovoPayWorkspace({
+  panel = "devices",
+}: {
+  panel?: NuovoPanelMode;
+}) {
   const [queryType, setQueryType] = useState<QueryType>("imei");
   const [search, setSearch] = useState("");
   const [resultado, setResultado] = useState<NuovoPayResponse | null>(null);
@@ -321,10 +326,18 @@ export default function NuovoPayPage() {
   }, [consultar]);
 
   useEffect(() => {
+    if (panel !== "cartera") {
+      return;
+    }
+
     void cargarCartera();
-  }, [cargarCartera]);
+  }, [cargarCartera, panel]);
 
   useEffect(() => {
+    if (panel !== "devices") {
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const imeiUrl = limpiarImei(params.get("imei") || params.get("search") || "");
     const deviceUrl = limpiarDevice(params.get("device") || "");
@@ -379,10 +392,12 @@ export default function NuovoPayPage() {
     },
     {
       intervalMs: 12000,
-      enabled: Boolean(
-        resultado?.configured &&
-          (resultado?.matches.length || resultado?.selectedDevice)
-      ),
+      enabled:
+        panel === "devices" &&
+        Boolean(
+          resultado?.configured &&
+            (resultado?.matches.length || resultado?.selectedDevice)
+        ),
     }
   );
 
@@ -392,7 +407,7 @@ export default function NuovoPayPage() {
     },
     {
       intervalMs: 15000,
-      enabled: Boolean(carteraData?.latestImport),
+      enabled: panel === "cartera" && Boolean(carteraData?.latestImport),
     }
   );
 
@@ -547,19 +562,29 @@ export default function NuovoPayPage() {
         <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-              Integracion
+              {panel === "devices" ? "Nuovo dispositivos" : "Nuovo cartera"}
             </div>
             <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-950">
-              Nuovo Pay
+              {panel === "devices" ? "Nuovo dispositivos" : "Nuovo cartera"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-600 md:text-base">
-              Consulta dispositivos directamente desde Nuovo, valida si la
-              inscripcion quedo aprobada y ejecuta bloqueo o desbloqueo desde tu
-              sistema.
+              {panel === "devices"
+                ? "Consulta dispositivos directamente desde Nuovo, valida si la inscripcion quedo aprobada y ejecuta bloqueo o desbloqueo desde tu sistema."
+                : "Carga el archivo de cartera, detecta mora mayor a 5 dias y revisa analitica comercial exclusiva de Nuovo Pay."}
             </p>
           </div>
 
           <div className="flex gap-3">
+            <Link
+              href={
+                panel === "devices"
+                  ? "/dashboard/nuovopay/cartera"
+                  : "/dashboard/nuovopay"
+              }
+              className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              {panel === "devices" ? "Nuovo cartera" : "Nuovo dispositivos"}
+            </Link>
             <Link
               href="/dashboard"
               className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
@@ -575,7 +600,8 @@ export default function NuovoPayPage() {
           </div>
         )}
 
-        <div className="mb-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+        {panel === "devices" && (
+          <div className="mb-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
             <div className="flex flex-col gap-3 lg:w-56">
               <span className="text-sm font-semibold text-slate-700">
@@ -669,9 +695,11 @@ export default function NuovoPayPage() {
           <p className="mt-4 text-sm text-slate-500">
             {estadoBusqueda(queryType, search)}
           </p>
-        </div>
+          </div>
+        )}
 
-        <div className="mb-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+        {panel === "cartera" && (
+          <div className="mb-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-3xl">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
@@ -1231,9 +1259,10 @@ export default function NuovoPayPage() {
               )}
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
-        {resultado && !resultado.configured && (
+        {panel === "devices" && resultado && !resultado.configured && (
           <div className="mb-6 rounded-[28px] border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900 shadow-sm">
             Falta configurar <span className="font-semibold">NUOVOPAY_API_TOKEN</span>{" "}
             en el entorno del servidor para poder consultar dispositivos de
@@ -1241,7 +1270,7 @@ export default function NuovoPayPage() {
           </div>
         )}
 
-        {resultado && (
+        {panel === "devices" && resultado && (
           <>
             <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
               <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
@@ -1707,4 +1736,8 @@ export default function NuovoPayPage() {
       </div>
     </div>
   );
+}
+
+export default function NuovoPayPage() {
+  return <NuovoPayWorkspace panel="devices" />;
 }
