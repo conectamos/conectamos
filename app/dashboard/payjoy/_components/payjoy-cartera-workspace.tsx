@@ -356,6 +356,16 @@ const cellInputClass =
 const cellReadonlyClass =
   "rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700";
 
+const tableColCorteClass = "w-[190px] min-w-[190px] px-4 py-4";
+const tableColTransactionClass = "w-[270px] min-w-[270px] px-4 py-4";
+const tableColMerchantClass = "w-[300px] min-w-[300px] px-4 py-4";
+const tableColDeviceClass = "w-[170px] min-w-[170px] px-4 py-4";
+const tableColDeviceFamilyClass = "w-[240px] min-w-[240px] px-4 py-4";
+const tableColImeiClass = "w-[210px] min-w-[210px] px-4 py-4";
+const tableColNationalIdClass = "w-[190px] min-w-[190px] px-4 py-4";
+const tableColDateClass = "w-[190px] min-w-[190px] px-4 py-4";
+const tableColStatusClass = "w-[170px] min-w-[170px] px-4 py-4";
+
 export default function PayJoyCarteraWorkspace() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -481,7 +491,7 @@ export default function PayJoyCarteraWorkspace() {
 
   return (
     <div className="min-h-screen bg-[#f5f6fa] px-4 py-8">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-none">
         <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
@@ -897,26 +907,30 @@ export default function PayJoyCarteraWorkspace() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="min-w-[1480px] divide-y divide-slate-200">
+                <table className="min-w-[2320px] divide-y divide-slate-200">
                   <thead className="bg-slate-50">
                     <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      <th className="px-4 py-4">CORTE</th>
-                      <th className="px-4 py-4">Transaction time</th>
-                      <th className="px-4 py-4">Merchant name</th>
-                      <th className="px-4 py-4">Device</th>
-                      <th className="px-4 py-4">Device family</th>
-                      <th className="px-4 py-4">IMEI</th>
-                      <th className="px-4 py-4">National ID</th>
-                      <th className="px-4 py-4">Fecha device</th>
-                      <th className="px-4 py-4">Fecha de pago</th>
-                      <th className="px-4 py-4">Estado</th>
-                      <th className="px-4 py-4">Pago maximo</th>
+                      <th className={tableColCorteClass}>CORTE</th>
+                      <th className={tableColTransactionClass}>
+                        Transaction time
+                      </th>
+                      <th className={tableColMerchantClass}>Merchant name</th>
+                      <th className={tableColDeviceClass}>Device</th>
+                      <th className={tableColDeviceFamilyClass}>
+                        Device family
+                      </th>
+                      <th className={tableColImeiClass}>IMEI</th>
+                      <th className={tableColNationalIdClass}>National ID</th>
+                      <th className={tableColDateClass}>Fecha device</th>
+                      <th className={tableColDateClass}>Fecha de pago</th>
+                      <th className={tableColStatusClass}>Estado</th>
+                      <th className={tableColDateClass}>Pago maximo</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {filteredRows.map((row) => (
                       <tr key={row.localId}>
-                        <td className="px-4 py-4">
+                        <td className={tableColCorteClass}>
                           <input
                             value={row.corteName}
                             onChange={(event) =>
@@ -929,7 +943,7 @@ export default function PayJoyCarteraWorkspace() {
                             className={cellInputClass}
                           />
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColTransactionClass}>
                           <input
                             type="datetime-local"
                             value={toDateTimeInputValue(row.transactionTime)}
@@ -946,7 +960,7 @@ export default function PayJoyCarteraWorkspace() {
                             {formatDateTime(row.transactionTime)}
                           </div>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColMerchantClass}>
                           <input
                             value={row.merchantName}
                             onChange={(event) =>
@@ -959,7 +973,7 @@ export default function PayJoyCarteraWorkspace() {
                             className={cellInputClass}
                           />
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColDeviceClass}>
                           <input
                             value={row.device}
                             onChange={(event) =>
@@ -977,7 +991,7 @@ export default function PayJoyCarteraWorkspace() {
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColDeviceFamilyClass}>
                           <input
                             value={row.deviceFamily}
                             onChange={(event) =>
@@ -990,7 +1004,7 @@ export default function PayJoyCarteraWorkspace() {
                             className={cellInputClass}
                           />
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColImeiClass}>
                           <input
                             value={row.imei}
                             onChange={(event) =>
@@ -1003,7 +1017,7 @@ export default function PayJoyCarteraWorkspace() {
                             className={cellInputClass}
                           />
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColNationalIdClass}>
                           <input
                             value={row.nationalId}
                             onChange={(event) =>
@@ -1016,7 +1030,7 @@ export default function PayJoyCarteraWorkspace() {
                             className={cellInputClass}
                           />
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColDateClass}>
                           <input
                             type="date"
                             value={toDateInputValue(row.devicePaymentDate)}
@@ -1033,12 +1047,12 @@ export default function PayJoyCarteraWorkspace() {
                             {formatDate(row.devicePaymentDate)}
                           </div>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColDateClass}>
                           <div className={cellReadonlyClass}>
                             {formatDate(row.paymentDueDate)}
                           </div>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColStatusClass}>
                           <div className="flex flex-col gap-2">
                             <select
                               value={row.manualStatus || "AUTO"}
@@ -1066,7 +1080,7 @@ export default function PayJoyCarteraWorkspace() {
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className={tableColDateClass}>
                           <div className={cellReadonlyClass}>
                             {formatDate(row.maximumPaymentDate)}
                           </div>
