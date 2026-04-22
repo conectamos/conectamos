@@ -259,7 +259,7 @@ async function buildLookupMap(rows: ConsolidatedTransaction[]) {
             validThrough: snapshot.validThrough?.toISOString() ?? null,
             remainingBalance: snapshot.remainingBalance,
             currency: snapshot.currency,
-            installmentAmount: snapshot.cost7,
+            installmentAmount: snapshot.cost14,
             paidInFull: snapshot.paidInFull,
             message: snapshot.message,
           } satisfies LookupSuccess,

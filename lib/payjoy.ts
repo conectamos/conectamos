@@ -14,6 +14,7 @@ type PayJoyPublicResponse = {
     validThrough?: string | number | null;
     cost7?: string | number | null;
     cost30?: string | number | null;
+    feeSchema?: string | null;
   } | null;
 };
 
@@ -22,6 +23,7 @@ export type PayJoyPaymentSnapshot = {
   validThrough: Date | null;
   remainingBalance: number | null;
   currency: string | null;
+  cost14: number | null;
   cost7: number | null;
   cost30: number | null;
   paidInFull: boolean;
@@ -79,6 +81,26 @@ function isPaidInFullMessage(message: string | null | undefined) {
   );
 }
 
+function parseCost14FromFeeSchema(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      installmentFees?: {
+        cost14?: string | number | null;
+      } | null;
+    };
+
+    return parseNumber(parsed.installmentFees?.cost14);
+  } catch {
+    return null;
+  }
+}
+
 export async function getPayJoyPaymentSnapshot(deviceTag: string) {
   const normalizedDeviceTag = normalizeDeviceTag(deviceTag);
 
@@ -134,6 +156,7 @@ export async function getPayJoyPaymentSnapshot(deviceTag: string) {
     validThrough: parseUnixDate(payload.deviceDetails?.validThrough),
     remainingBalance,
     currency: payload.currency || null,
+    cost14: parseCost14FromFeeSchema(payload.deviceDetails?.feeSchema),
     cost7: parseNumber(payload.deviceDetails?.cost7),
     cost30: parseNumber(payload.deviceDetails?.cost30),
     paidInFull,

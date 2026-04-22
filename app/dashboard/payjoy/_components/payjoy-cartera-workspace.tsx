@@ -1031,7 +1031,9 @@ export default function PayJoyCarteraWorkspace() {
                       </th>
                       <th className={tableColImeiClass}>IMEI</th>
                       <th className={tableColNationalIdClass}>National ID</th>
-                      <th className={tableColInstallmentClass}>Valor cuota</th>
+                      <th className={tableColInstallmentClass}>
+                        Cuota 14 dias
+                      </th>
                       <th className={tableColDateClass}>Fecha device</th>
                       <th className={tableColDateClass}>Fecha de pago</th>
                       <th className={tableColStatusClass}>Estado</th>
