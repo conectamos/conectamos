@@ -453,17 +453,23 @@ export default async function DashboardPage() {
       eyebrow: "Nuovo / Gestion",
       title: "Nuovo Pay",
       description:
-        "Administra Nuovo desde un mismo panel y entra por botones separados a Dispositivos o Cartera segun la operacion que necesites.",
+        esAdmin
+          ? "Administra Nuovo desde un mismo panel y entra por botones separados a Dispositivos o Cartera segun la operacion que necesites."
+          : "Consulta Nuovo / Dispositivos desde este panel. Nuovo / Cartera queda reservado solo para el admin.",
       actions: [
         {
           href: "/dashboard/nuovopay",
           label: "Nuovo / Dispositivos",
           tone: "primary",
         },
-        {
-          href: "/dashboard/nuovopay/cartera",
-          label: "Nuovo / Cartera",
-        },
+        ...(esAdmin
+          ? ([
+              {
+                href: "/dashboard/nuovopay/cartera",
+                label: "Nuovo / Cartera",
+              },
+            ] as ModuleAction[])
+          : []),
       ],
     },
     {

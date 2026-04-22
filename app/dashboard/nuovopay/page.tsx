@@ -94,13 +94,39 @@ type CarteraInsightRow = {
   resultadoBloqueo: string | null;
 };
 
+type CarteraMoraBucket = {
+  id: string;
+  label: string;
+  range: string;
+  totalCreditos: number;
+  saldo: number;
+  percentage: number;
+};
+
 type CarteraAnalytics = {
   totalBloqueables: number;
   totalErrores: number;
   totalPorFinalizar: number;
+  totalCreditos: number;
+  creditosEnMora: number;
+  porcentajeCreditosEnMora: number;
+  saldoTotal: number;
+  saldoEnMora: number;
+  moraBuckets: CarteraMoraBucket[];
+  maxBucketCount: number;
   blockCandidates: CarteraInsightRow[];
   errorRows: CarteraInsightRow[];
   topNearFinishClients: CarteraInsightRow[];
+};
+
+type SessionUser = {
+  id: number;
+  nombre: string;
+  usuario: string;
+  sedeId: number;
+  sedeNombre: string;
+  rolId: number;
+  rolNombre: string;
 };
 
 type CarteraImportSummary = {
@@ -162,6 +188,13 @@ function formatoCuotas(valor: number | null) {
   return `${valor} cuota${valor === 1 ? "" : "s"}`;
 }
 
+function formatoPorcentaje(valor: number) {
+  return `${Number(valor || 0).toLocaleString("es-CO", {
+    minimumFractionDigits: Number.isInteger(valor) ? 0 : 1,
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
 function toneClass(tone: string) {
   switch (tone) {
     case "emerald":
@@ -174,6 +207,47 @@ function toneClass(tone: string) {
       return "border-indigo-200 bg-indigo-50 text-indigo-700";
     default:
       return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+}
+
+function moraBucketStyles(id: string) {
+  switch (id) {
+    case "al_dia":
+      return {
+        card: "border-emerald-200 bg-[linear-gradient(180deg,#ffffff_0%,#f2fbf6_100%)]",
+        badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+        bar: "bg-emerald-500",
+      };
+    case "mora_leve":
+      return {
+        card: "border-sky-200 bg-[linear-gradient(180deg,#ffffff_0%,#eff6ff_100%)]",
+        badge: "border-sky-200 bg-sky-50 text-sky-700",
+        bar: "bg-sky-500",
+      };
+    case "mora_media":
+      return {
+        card: "border-amber-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff8eb_100%)]",
+        badge: "border-amber-200 bg-amber-50 text-amber-700",
+        bar: "bg-amber-500",
+      };
+    case "mora_alta":
+      return {
+        card: "border-orange-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff2eb_100%)]",
+        badge: "border-orange-200 bg-orange-50 text-orange-700",
+        bar: "bg-orange-500",
+      };
+    case "mora_critica":
+      return {
+        card: "border-red-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff1f2_100%)]",
+        badge: "border-red-200 bg-red-50 text-red-700",
+        bar: "bg-red-500",
+      };
+    default:
+      return {
+        card: "border-slate-200 bg-white",
+        badge: "border-slate-200 bg-slate-50 text-slate-700",
+        bar: "bg-slate-500",
+      };
   }
 }
 
@@ -200,6 +274,7 @@ export function NuovoPayWorkspace({
 }) {
   const [queryType, setQueryType] = useState<QueryType>("imei");
   const [search, setSearch] = useState("");
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [resultado, setResultado] = useState<NuovoPayResponse | null>(null);
   const [carteraData, setCarteraData] = useState<CarteraResponse | null>(null);
   const [mensaje, setMensaje] = useState("");
@@ -217,6 +292,7 @@ export function NuovoPayWorkspace({
       }
     ) => Promise<void>
   >(async () => {});
+  const esAdmin = sessionUser?.rolNombre?.toUpperCase() === "ADMIN";
 
   const syncUrl = useCallback(
     (
@@ -256,12 +332,18 @@ export function NuovoPayWorkspace({
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Error consultando cartera");
+        const errorMessage = data.error || "Error consultando cartera";
+        setMensaje(errorMessage);
+        throw new Error(errorMessage);
       }
 
       setCarteraData(data);
+      setMensaje("");
     } catch (error) {
       console.error("ERROR CARGANDO CARTERA NUOVO:", error);
+      setMensaje(
+        error instanceof Error ? error.message : "Error consultando cartera"
+      );
     }
   }, []);
 
@@ -326,6 +408,21 @@ export function NuovoPayWorkspace({
   useEffect(() => {
     consultarRef.current = consultar;
   }, [consultar]);
+
+  useEffect(() => {
+    const cargarUsuario = async () => {
+      try {
+        const res = await fetch("/api/session", { cache: "no-store" });
+        const data = await res.json();
+
+        if (res.ok) {
+          setSessionUser(data);
+        }
+      } catch {}
+    };
+
+    void cargarUsuario();
+  }, []);
 
   useEffect(() => {
     if (panel !== "cartera") {
@@ -566,6 +663,11 @@ export function NuovoPayWorkspace({
             <div className="inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
               {panel === "devices" ? "Nuovo dispositivos" : "Nuovo cartera"}
             </div>
+            {panel === "cartera" && (
+              <div className="mt-3 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                Solo admin
+              </div>
+            )}
             <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-950">
               {panel === "devices" ? "Nuovo dispositivos" : "Nuovo cartera"}
             </h1>
@@ -576,17 +678,30 @@ export function NuovoPayWorkspace({
             </p>
           </div>
 
-          <div className="flex gap-3">
-            <Link
-              href={
-                panel === "devices"
-                  ? "/dashboard/nuovopay/cartera"
-                  : "/dashboard/nuovopay"
-              }
-              className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              {panel === "devices" ? "Nuovo cartera" : "Nuovo dispositivos"}
-            </Link>
+          <div className="flex flex-wrap gap-3">
+            {panel === "devices" && esAdmin && (
+              <Link
+                href="/dashboard/nuovopay/cartera"
+                className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                Nuovo cartera
+              </Link>
+            )}
+
+            {panel === "devices" && sessionUser && !esAdmin && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-800 shadow-sm">
+                Nuovo / Cartera solo admin
+              </div>
+            )}
+
+            {panel === "cartera" && (
+              <Link
+                href="/dashboard/nuovopay"
+                className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                Nuovo dispositivos
+              </Link>
+            )}
             <Link
               href="/dashboard"
               className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
@@ -701,11 +816,16 @@ export function NuovoPayWorkspace({
         )}
 
         {panel === "cartera" && (
-          <div className="mb-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-6 overflow-hidden rounded-[32px] border border-[#dbe5ff] bg-[linear-gradient(135deg,#ffffff_0%,#eef4ff_46%,#f8fafc_100%)] p-6 shadow-[0_24px_60px_rgba(37,99,235,0.10)]">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Panel Nuovo exclusivo
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-full border border-slate-200 bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Panel Nuovo exclusivo
+                </div>
+                <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                  Acceso solo admin
+                </div>
               </div>
               <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
                 Cargar archivo de cartera y analitica de riesgo
@@ -770,7 +890,7 @@ export function NuovoPayWorkspace({
               </p>
             </div>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-5">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
                 Con errores
               </p>
@@ -792,6 +912,158 @@ export function NuovoPayWorkspace({
               <p className="mt-2 text-sm text-indigo-700/80">
                 Clientes con 1 o 2 cuotas pendientes de su credito.
               </p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 xl:grid-cols-[0.94fr_1.06fr]">
+            <div className="rounded-[28px] border border-sky-200 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_52%,#f8fafc_100%)] p-5 shadow-sm">
+              <div className="inline-flex rounded-full border border-sky-200 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                Radar de mora
+              </div>
+              <h3 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+                Nivel de mora sobre tus creditos
+              </h3>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Lectura ejecutiva del ultimo archivo cargado, calculada por
+                credito individual para que veas rapidamente que tanto del
+                portafolio esta entrando en mora.
+              </p>
+              <div className="mt-4 inline-flex rounded-full border border-white/70 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">
+                Saldo total del corte: {formatoPesos(analytics?.saldoTotal ?? 0)}
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Creditos analizados
+                  </p>
+                  <p className="mt-3 text-3xl font-black text-slate-950">
+                    {analytics?.totalCreditos ?? 0}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Total de creditos leidos desde el ultimo TXT.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-red-200 bg-white/80 px-4 py-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
+                    Creditos en mora
+                  </p>
+                  <p className="mt-3 text-3xl font-black text-red-700">
+                    {analytics?.creditosEnMora ?? 0}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Creditos con al menos 1 dia de vencimiento.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-indigo-200 bg-white/80 px-4 py-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+                    Portafolio en mora
+                  </p>
+                  <p className="mt-3 text-3xl font-black text-indigo-700">
+                    {formatoPorcentaje(analytics?.porcentajeCreditosEnMora ?? 0)}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Participacion de creditos vencidos frente al total.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-amber-200 bg-white/80 px-4 py-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                    Saldo en mora
+                  </p>
+                  <p className="mt-3 text-3xl font-black text-amber-700">
+                    {formatoPesos(analytics?.saldoEnMora ?? 0)}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Exposicion del saldo con creditos vencidos.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Distribucion por tramo
+                  </p>
+                  <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
+                    Donde esta concentrada la mora
+                  </h3>
+                </div>
+
+                <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Basado en creditos
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                {!latestImport ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                    Carga un archivo para ver el radar de mora.
+                  </div>
+                ) : !analytics ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                    No fue posible construir la distribucion de mora.
+                  </div>
+                ) : (
+                  analytics.moraBuckets.map((bucket) => {
+                    const styles = moraBucketStyles(bucket.id);
+                    const width = analytics.maxBucketCount
+                      ? Math.max(
+                          (bucket.totalCreditos / analytics.maxBucketCount) * 100,
+                          bucket.totalCreditos > 0 ? 8 : 0
+                        )
+                      : 0;
+
+                    return (
+                      <div
+                        key={bucket.id}
+                        className={`rounded-2xl border px-4 py-4 ${styles.card}`}
+                      >
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`rounded-full border px-3 py-1 text-xs font-semibold ${styles.badge}`}
+                            >
+                              {bucket.label}
+                            </span>
+                            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                              {bucket.range}
+                            </span>
+                          </div>
+
+                          <div className="text-left md:text-right">
+                            <p className="text-lg font-black text-slate-950">
+                              {bucket.totalCreditos}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {formatoPorcentaje(bucket.percentage)} del total
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200/70">
+                          <div
+                            className={`h-full rounded-full ${styles.bar}`}
+                            style={{ width: `${width}%` }}
+                          />
+                        </div>
+
+                        <div className="mt-3 flex flex-col gap-1 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                          <span>
+                            {bucket.totalCreditos} credito
+                            {bucket.totalCreditos === 1 ? "" : "s"}
+                          </span>
+                          <span>Saldo {formatoPesos(bucket.saldo)}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
 

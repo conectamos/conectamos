@@ -9,6 +9,13 @@ export const runtime = "nodejs";
 const PREVIEW_ROWS = 10;
 const NEAR_FINISH_LIMIT = 20;
 const BLOCKING_MORA_MIN_DAYS = 2;
+const MORA_BUCKETS = [
+  { id: "al_dia", label: "Al dia", range: "0 dias", minDays: Number.NEGATIVE_INFINITY, maxDays: 0 },
+  { id: "mora_leve", label: "Mora leve", range: "1 a 2 dias", minDays: 1, maxDays: 2 },
+  { id: "mora_media", label: "Mora media", range: "3 a 7 dias", minDays: 3, maxDays: 7 },
+  { id: "mora_alta", label: "Mora alta", range: "8 a 30 dias", minDays: 8, maxDays: 30 },
+  { id: "mora_critica", label: "Mora critica", range: "31+ dias", minDays: 31, maxDays: null },
+] as const;
 
 type ImportSummary = Awaited<ReturnType<typeof getLatestImportSummary>>;
 
@@ -110,6 +117,24 @@ function byMoneyDesc(a: number | null | undefined, b: number | null | undefined)
   return (b || 0) - (a || 0);
 }
 
+function isAdminUser(rolNombre: string | null | undefined) {
+  return String(rolNombre || "").toUpperCase() === "ADMIN";
+}
+
+function isWithinMoraRange(
+  diasVencido: number,
+  bucket: (typeof MORA_BUCKETS)[number]
+) {
+  return (
+    diasVencido >= bucket.minDays &&
+    (bucket.maxDays === null || diasVencido <= bucket.maxDays)
+  );
+}
+
+function sumSaldo(items: RegistroAnalitico[]) {
+  return items.reduce((total, item) => total + Number(item.saldoObligacion || 0), 0);
+}
+
 function isNearFinishClient(item: RegistroAnalitico) {
   return (
     item.cuotasPendientes !== null &&
@@ -161,6 +186,7 @@ function pickBestRecord(
 function buildAnalytics(rows: Array<Parameters<typeof serializeRegistro>[0]>) {
   const serialized = rows.map(serializeRegistro);
   const groupedByCedula = groupByCedula(serialized);
+  const creditosEnMora = serialized.filter((item) => item.diasVencido > 0);
 
   const blockCandidates = groupedByCedula
     .map((items) =>
@@ -186,11 +212,38 @@ function buildAnalytics(rows: Array<Parameters<typeof serializeRegistro>[0]>) {
     .sort(compareNearFinishClients);
 
   const topNearFinishClients = nearFinishCandidates.slice(0, NEAR_FINISH_LIMIT);
+  const moraBuckets = MORA_BUCKETS.map((bucket) => {
+    const items = serialized.filter((item) => isWithinMoraRange(item.diasVencido, bucket));
+
+    return {
+      id: bucket.id,
+      label: bucket.label,
+      range: bucket.range,
+      totalCreditos: items.length,
+      saldo: sumSaldo(items),
+      percentage: serialized.length
+        ? Number(((items.length / serialized.length) * 100).toFixed(1))
+        : 0,
+    };
+  });
+  const maxBucketCount = moraBuckets.reduce(
+    (currentMax, bucket) => Math.max(currentMax, bucket.totalCreditos),
+    0
+  );
 
   return {
     totalBloqueables: blockCandidates.length,
     totalErrores: errorRows.length,
     totalPorFinalizar: nearFinishCandidates.length,
+    totalCreditos: serialized.length,
+    creditosEnMora: creditosEnMora.length,
+    porcentajeCreditosEnMora: serialized.length
+      ? Number(((creditosEnMora.length / serialized.length) * 100).toFixed(1))
+      : 0,
+    saldoTotal: sumSaldo(serialized),
+    saldoEnMora: sumSaldo(creditosEnMora),
+    moraBuckets,
+    maxBucketCount,
     blockCandidates,
     errorRows,
     topNearFinishClients,
@@ -346,6 +399,13 @@ export async function GET() {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
+    if (!isAdminUser(user.rolNombre)) {
+      return NextResponse.json(
+        { error: "Solo el admin puede acceder a Nuovo / Cartera." },
+        { status: 403 }
+      );
+    }
+
     const latestImport = await getLatestImportSummary();
 
     return NextResponse.json(responsePayload(latestImport));
@@ -369,6 +429,13 @@ export async function POST(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!isAdminUser(user.rolNombre)) {
+      return NextResponse.json(
+        { error: "Solo el admin puede acceder a Nuovo / Cartera." },
+        { status: 403 }
+      );
     }
 
     const formData = await req.formData();
@@ -456,6 +523,13 @@ export async function PATCH(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!isAdminUser(user.rolNombre)) {
+      return NextResponse.json(
+        { error: "Solo el admin puede acceder a Nuovo / Cartera." },
+        { status: 403 }
+      );
     }
 
     if (!isNuovoPayConfigured()) {
