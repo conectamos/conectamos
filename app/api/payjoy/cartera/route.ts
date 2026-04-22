@@ -78,13 +78,13 @@ function computeStatus(
   transactionTime: Date | null,
   validThrough: Date | null,
   paidInFull: boolean
-): "MORA" | "PAGO" | "SIN DATOS" {
+): "MORA" | "PAGO" | "PAGO X" {
   if (paidInFull) {
     return "PAGO";
   }
 
   if (!transactionTime || !validThrough) {
-    return "SIN DATOS";
+    return "PAGO X";
   }
 
   const expectedPaymentDate = addCalendarDays(transactionTime, 14);
@@ -282,7 +282,7 @@ async function buildLookupMap(rows: ConsolidatedTransaction[]) {
 
 function summarizeRows(
   rows: Array<{
-    status: "MORA" | "PAGO" | "SIN DATOS";
+    status: "MORA" | "PAGO" | "PAGO X";
   }>
 ) {
   return rows.reduce(
@@ -292,7 +292,7 @@ function summarizeRows(
       } else if (row.status === "PAGO") {
         summary.pago += 1;
       } else {
-        summary.sinDatos += 1;
+        summary.pagoX += 1;
       }
 
       return summary;
@@ -300,7 +300,7 @@ function summarizeRows(
     {
       mora: 0,
       pago: 0,
-      sinDatos: 0,
+      pagoX: 0,
     }
   );
 }

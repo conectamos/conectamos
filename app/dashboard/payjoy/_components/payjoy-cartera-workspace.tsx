@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useDeferredValue, useRef, useState } from "react";
 
-type RowStatus = "MORA" | "PAGO" | "SIN DATOS";
+type RowStatus = "MORA" | "PAGO" | "PAGO X";
 
 type PayJoyRow = {
   corteName: string;
@@ -37,7 +37,7 @@ type PayJoyResponse = {
   summary: {
     mora: number;
     pago: number;
-    sinDatos: number;
+    pagoX: number;
   };
   rows: PayJoyRow[];
 };
@@ -48,7 +48,7 @@ type MerchantSummary = {
   activeCredits: number;
   overdueCredits: number;
   paidCredits: number;
-  noDataCredits: number;
+  pagoXCredits: number;
   delinquencyRate: number;
 };
 
@@ -115,7 +115,7 @@ function computeStatus(
   const deviceDate = parseIsoDate(devicePaymentDate);
 
   if (!transactionDate || !deviceDate) {
-    return "SIN DATOS";
+    return "PAGO X";
   }
 
   const expectedPaymentDate = addCalendarDays(transactionDate, 14);
@@ -182,7 +182,7 @@ function statusClass(status: RowStatus) {
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
     case "MORA":
       return "border-red-200 bg-red-50 text-red-700";
-    default:
+    case "PAGO X":
       return "border-amber-200 bg-amber-50 text-amber-700";
   }
 }
@@ -213,7 +213,7 @@ function summarizeRows(rows: Array<{ status: RowStatus }>) {
       } else if (row.status === "PAGO") {
         summary.pago += 1;
       } else {
-        summary.sinDatos += 1;
+        summary.pagoX += 1;
       }
 
       return summary;
@@ -221,7 +221,7 @@ function summarizeRows(rows: Array<{ status: RowStatus }>) {
     {
       mora: 0,
       pago: 0,
-      sinDatos: 0,
+      pagoX: 0,
     }
   );
 }
@@ -239,7 +239,7 @@ function buildMerchantSummaries(rows: EditablePayJoyRow[]) {
         activeCredits: 0,
         overdueCredits: 0,
         paidCredits: 0,
-        noDataCredits: 0,
+        pagoXCredits: 0,
         delinquencyRate: 0,
       } satisfies MerchantSummary);
 
@@ -252,7 +252,7 @@ function buildMerchantSummaries(rows: EditablePayJoyRow[]) {
       existing.activeCredits += 1;
       existing.paidCredits += 1;
     } else {
-      existing.noDataCredits += 1;
+      existing.pagoXCredits += 1;
     }
 
     summaryMap.set(merchantName, existing);
@@ -356,6 +356,13 @@ function matchesMerchantFilter(
   return true;
 }
 
+function matchesStatusFilter(
+  status: RowStatus,
+  selectedStatus: "TODOS" | RowStatus
+) {
+  return selectedStatus === "TODOS" || status === selectedStatus;
+}
+
 const cellInputClass =
   "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white";
 
@@ -380,13 +387,19 @@ export default function PayJoyCarteraWorkspace() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedMerchant, setSelectedMerchant] = useState("TODOS");
+  const [selectedStatus, setSelectedStatus] = useState<"TODOS" | RowStatus>(
+    "TODOS"
+  );
   const [merchantQuery, setMerchantQuery] = useState("");
   const deferredMerchantQuery = useDeferredValue(merchantQuery);
   const normalizedMerchantQuery = normalizeSearchText(deferredMerchantQuery);
   const hasSelectedMerchant = selectedMerchant !== "TODOS";
   const effectiveMerchantQuery = hasSelectedMerchant ? "" : normalizedMerchantQuery;
 
-  const merchantSummaries = buildMerchantSummaries(rows);
+  const statusFilteredRows = rows.filter((row) =>
+    matchesStatusFilter(row.status, selectedStatus)
+  );
+  const merchantSummaries = buildMerchantSummaries(statusFilteredRows);
   const filteredMerchantSummaries = merchantSummaries.filter((summary) =>
     matchesMerchantFilter(
       summary.merchantName,
@@ -394,7 +407,7 @@ export default function PayJoyCarteraWorkspace() {
       effectiveMerchantQuery
     )
   );
-  const filteredRows = rows.filter((row) =>
+  const filteredRows = statusFilteredRows.filter((row) =>
     matchesMerchantFilter(
       row.merchantName,
       selectedMerchant,
@@ -403,7 +416,10 @@ export default function PayJoyCarteraWorkspace() {
   );
   const liveSummary = summarizeRows(rows);
   const visibleSummary = summarizeRows(filteredRows);
-  const hasActiveFilter = hasSelectedMerchant || Boolean(normalizedMerchantQuery);
+  const hasActiveFilter =
+    hasSelectedMerchant ||
+    Boolean(normalizedMerchantQuery) ||
+    selectedStatus !== "TODOS";
   const summaryCards = hasActiveFilter ? visibleSummary : liveSummary;
   const visibleSourceNames = Array.from(
     new Set(filteredRows.map((row) => row.corteName).filter(Boolean))
@@ -443,6 +459,7 @@ export default function PayJoyCarteraWorkspace() {
       setData(payload);
       setRows(buildEditableRows(payload.rows));
       setSelectedMerchant("TODOS");
+      setSelectedStatus("TODOS");
       setMerchantQuery("");
       setMessage(
         `Se procesaron ${payload.totalSources} carga(s) y se consolidaron ${payload.uniqueRows} transaccion(es) sin duplicados. Ahora puedes filtrar por Merchant name y editar la tabla.`
@@ -485,6 +502,7 @@ export default function PayJoyCarteraWorkspace() {
 
   const clearFilters = () => {
     setSelectedMerchant("TODOS");
+    setSelectedStatus("TODOS");
     setMerchantQuery("");
   };
 
@@ -729,7 +747,7 @@ export default function PayJoyCarteraWorkspace() {
                   {summaryCards.pago}
                 </p>
                 <p className="mt-2 text-sm text-emerald-700/80">
-                  Sin datos: {summaryCards.sinDatos}
+                  Pago X: {summaryCards.pagoX}
                 </p>
               </div>
             </section>
@@ -812,6 +830,30 @@ export default function PayJoyCarteraWorkspace() {
                 </div>
               </div>
 
+              <div className="mt-5">
+                <p className="mb-3 text-sm font-semibold text-slate-700">
+                  Filtrar por estado
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(["TODOS", "PAGO", "MORA", "PAGO X"] as const).map(
+                    (statusOption) => (
+                      <button
+                        key={statusOption}
+                        onClick={() => setSelectedStatus(statusOption)}
+                        className={[
+                          "rounded-full border px-4 py-2 text-sm font-semibold transition",
+                          selectedStatus === statusOption
+                            ? "border-slate-950 bg-slate-950 text-white"
+                            : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                        ].join(" ")}
+                      >
+                        {statusOption}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+
               <div className="mt-6 grid gap-4 md:grid-cols-4">
                 <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -828,6 +870,9 @@ export default function PayJoyCarteraWorkspace() {
                   </p>
                   <p className="mt-3 text-3xl font-black text-slate-950">
                     {visibleSummary.mora + visibleSummary.pago}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Pago X: {visibleSummary.pagoX}
                   </p>
                 </div>
 
@@ -1115,7 +1160,7 @@ export default function PayJoyCarteraWorkspace() {
                               <option value="AUTO">AUTO</option>
                               <option value="PAGO">PAGO</option>
                               <option value="MORA">MORA</option>
-                              <option value="SIN DATOS">SIN DATOS</option>
+                              <option value="PAGO X">PAGO X</option>
                             </select>
                             <span
                               className={[
