@@ -119,90 +119,6 @@ function buildDefaultCorteName(fileName: string) {
   return baseName || "Corte sin nombre";
 }
 
-function parseLinkLines(linksText: string) {
-  return String(linksText || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [left, ...rest] = line.split("|");
-
-      if (rest.length === 0) {
-        return {
-          corteName: null as string | null,
-          url: left.trim(),
-        };
-      }
-
-      return {
-        corteName: left.trim() || null,
-        url: rest.join("|").trim(),
-      };
-    })
-    .filter((item) => item.url);
-}
-
-function extractFileNameFromContentDisposition(value: string | null) {
-  const raw = String(value || "");
-  const utf8Match = raw.match(/filename\*=UTF-8''([^;]+)/i);
-
-  if (utf8Match?.[1]) {
-    return decodeURIComponent(utf8Match[1]);
-  }
-
-  const classicMatch = raw.match(/filename="?([^"]+)"?/i);
-  return classicMatch?.[1] ? classicMatch[1] : null;
-}
-
-function buildGoogleSpreadsheetExportUrl(rawUrl: string) {
-  const url = new URL(rawUrl);
-  const match = url.pathname.match(/\/spreadsheets\/d\/([^/]+)/i);
-
-  if (!match?.[1]) {
-    return rawUrl;
-  }
-
-  const gid = url.searchParams.get("gid");
-  const exportUrl = new URL(
-    `https://docs.google.com/spreadsheets/d/${match[1]}/export`
-  );
-
-  exportUrl.searchParams.set("format", "xlsx");
-
-  if (gid) {
-    exportUrl.searchParams.set("gid", gid);
-  }
-
-  return exportUrl.toString();
-}
-
-function buildRemoteDownloadError(rawUrl: string, status: number) {
-  const isGoogleSheet = rawUrl.includes("docs.google.com/spreadsheets");
-
-  if (isGoogleSheet && (status === 401 || status === 403)) {
-    return "Google no permitio descargar ese Sheet. Para usar links en produccion, debes compartirlo como publico o subir el archivo directamente.";
-  }
-
-  if (isGoogleSheet && status === 404) {
-    return "Google no encontro ese Sheet. Revisa que el link sea correcto y que el documento exista.";
-  }
-
-  return `No fue posible descargar el link (${status}): ${rawUrl}`;
-}
-
-function getDownloadUrl(rawUrl: string) {
-  const url = new URL(rawUrl);
-
-  if (
-    url.hostname.includes("docs.google.com") &&
-    url.pathname.includes("/spreadsheets/")
-  ) {
-    return buildGoogleSpreadsheetExportUrl(rawUrl);
-  }
-
-  return rawUrl;
-}
-
 function getUploadedFiles(formData: FormData) {
   const files = [
     ...formData.getAll("files"),
@@ -210,41 +126,6 @@ function getUploadedFiles(formData: FormData) {
   ].filter((item): item is File => item instanceof File);
 
   return files;
-}
-
-async function getRemoteImports(linksText: string) {
-  const links = parseLinkLines(linksText);
-
-  return Promise.all(
-    links.map(async (item) => {
-      const downloadUrl = getDownloadUrl(item.url);
-      const response = await fetch(downloadUrl, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error(buildRemoteDownloadError(item.url, response.status));
-      }
-
-      const fileName =
-        extractFileNameFromContentDisposition(
-          response.headers.get("content-disposition")
-        ) ||
-        `${new URL(item.url).hostname}.xlsx`;
-
-      const imported = parsePayJoyImportFile(
-        Buffer.from(await response.arrayBuffer()),
-        fileName,
-        response.headers.get("content-type")
-      );
-
-      return {
-        fileName: imported.fileName,
-        corteName: item.corteName || buildDefaultCorteName(imported.fileName),
-        rows: imported.rows,
-      } satisfies ImportSource;
-    })
-  );
 }
 
 async function getFileImports(files: File[]) {
@@ -432,21 +313,35 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
+    if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+      return NextResponse.json(
+        { error: "No autorizado para usar este modulo." },
+        { status: 403 }
+      );
+    }
+
     const formData = await req.formData();
     const files = getUploadedFiles(formData);
-    const linksText = String(formData.get("linksText") || "");
+    const linksText = String(formData.get("linksText") || "").trim();
 
-    if (!files.length && !linksText.trim()) {
+    if (linksText) {
       return NextResponse.json(
-        { error: "Debes subir archivos o pegar links de transacciones." },
+        {
+          error:
+            "Este modulo ahora solo acepta archivos cargados directamente. Los links fueron deshabilitados.",
+        },
         { status: 400 }
       );
     }
 
-    const imports = [
-      ...(await getFileImports(files)),
-      ...(await getRemoteImports(linksText)),
-    ];
+    if (!files.length) {
+      return NextResponse.json(
+        { error: "Debes subir al menos un archivo de transacciones." },
+        { status: 400 }
+      );
+    }
+
+    const imports = [...(await getFileImports(files))];
 
     if (!imports.length) {
       return NextResponse.json(

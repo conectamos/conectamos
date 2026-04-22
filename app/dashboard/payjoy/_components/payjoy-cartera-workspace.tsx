@@ -375,7 +375,6 @@ const tableColStatusClass = "w-[170px] min-w-[170px] px-4 py-4";
 export default function PayJoyCarteraWorkspace() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [files, setFiles] = useState<File[]>([]);
-  const [linksText, setLinksText] = useState("");
   const [data, setData] = useState<PayJoyResponse | null>(null);
   const [rows, setRows] = useState<EditablePayJoyRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -409,10 +408,11 @@ export default function PayJoyCarteraWorkspace() {
   const visibleSourceNames = Array.from(
     new Set(filteredRows.map((row) => row.corteName).filter(Boolean))
   );
+  const totalSelectedFiles = files.length;
 
   const processSources = async () => {
-    if (!files.length && !linksText.trim()) {
-      setMessage("Debes subir archivos o pegar links de transacciones.");
+    if (!files.length) {
+      setMessage("Debes subir al menos un archivo de transacciones.");
       return;
     }
 
@@ -425,8 +425,6 @@ export default function PayJoyCarteraWorkspace() {
       files.forEach((file) => {
         formData.append("files", file);
       });
-
-      formData.append("linksText", linksText);
 
       const response = await fetch("/api/payjoy/cartera", {
         method: "POST",
@@ -496,63 +494,107 @@ export default function PayJoyCarteraWorkspace() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f5f6fa] px-4 py-8">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f6f3ec_0%,#eef3f8_100%)] px-4 py-8">
       <div className="mx-auto w-full max-w-none">
-        <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-              PayJoy cartera
-            </div>
-            <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-950">
-              Cartera PayJoy
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600 md:text-base">
-              Mezcla de 5 a 7 cargas, valida la hoja Transacciones, agrega la
-              columna CORTE y consolida sin repetir transacciones.
-            </p>
-          </div>
+        <section className="relative overflow-hidden rounded-[34px] border border-[#20242c] bg-[linear-gradient(135deg,#0d1014_0%,#171c24_58%,#212938_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] sm:px-8">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(197,154,87,0.25),transparent_22%),radial-gradient(circle_at_left_center,rgba(255,255,255,0.08),transparent_24%)]" />
+          <div className="pointer-events-none absolute -right-10 top-8 hidden h-44 w-44 rounded-full border border-white/10 lg:block" />
 
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/dashboard/payjoy"
-              className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-            >
-              Cartera PayJoy
-            </Link>
-            <Link
-              href="/dashboard/payjoy/40-60"
-              className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              40/60
-            </Link>
-            <Link
-              href="/dashboard"
-              className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              Volver
-            </Link>
+          <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+            <div className="max-w-4xl">
+              <div className="flex flex-wrap gap-2">
+                <div className="inline-flex rounded-full border border-white/15 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f1d19c]">
+                  PayJoy cartera
+                </div>
+                <div className="inline-flex rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-200">
+                  Solo admin
+                </div>
+              </div>
+
+              <h1 className="mt-5 text-4xl font-black tracking-tight text-white sm:text-5xl">
+                Cartera PayJoy
+              </h1>
+              <div className="mt-4 h-[3px] w-18 rounded-full bg-[#c79a57]" />
+              <p className="mt-5 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
+                Consolida cortes de transacciones, elimina duplicados y calcula
+                el estado de cartera por merchant desde un panel reservado para
+                administracion.
+              </p>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-4 backdrop-blur">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Cargas listas
+                  </p>
+                  <p className="mt-2 text-3xl font-black text-white">
+                    {totalSelectedFiles}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-4 backdrop-blur">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Formatos
+                  </p>
+                  <p className="mt-2 text-lg font-black text-white">
+                    XLSX, CSV, TXT
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-4 backdrop-blur">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Flujo
+                  </p>
+                  <p className="mt-2 text-lg font-black text-white">
+                    Solo por archivo
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="relative flex flex-wrap gap-3">
+              <Link
+                href="/dashboard/payjoy"
+                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-100"
+              >
+                Cartera PayJoy
+              </Link>
+              <Link
+                href="/dashboard/payjoy/40-60"
+                className="rounded-2xl border border-white/12 bg-white/8 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
+              >
+                40/60
+              </Link>
+              <Link
+                href="/dashboard"
+                className="rounded-2xl border border-white/12 bg-transparent px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/8"
+              >
+                Volver
+              </Link>
+            </div>
           </div>
-        </div>
+        </section>
 
         {message && (
-          <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
+          <div className="mb-6 mt-6 rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-700 shadow-sm">
             {message}
           </div>
         )}
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div>
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Archivos
+        <section className="mt-6 rounded-[30px] border border-[#e3d9c8] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-6 shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+            <div className="rounded-[28px] border border-dashed border-[#d8cbb5] bg-[linear-gradient(180deg,#fdfbf6_0%,#f7f1e7_100%)] p-6">
+              <div className="inline-flex rounded-full border border-[#dfcfb3] bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
+                Cargue de archivos
               </div>
-              <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+
+              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
                 Subir multiples transacciones
               </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Puedes subir varios archivos Excel, CSV o TXT. Cada archivo
-                genera su nombre de CORTE a partir del nombre del archivo.
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                Carga archivos Excel, CSV o TXT exportados desde PayJoy. Cada
+                archivo genera su nombre de corte a partir del nombre del
+                archivo y el modulo consolida la cartera sin repetir
+                transacciones.
               </p>
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -563,26 +605,34 @@ export default function PayJoyCarteraWorkspace() {
                   setFiles(Array.from(event.target.files || []))
                 }
               />
-              <div className="mt-4 flex flex-wrap gap-3">
+
+              <div className="mt-6 flex flex-wrap gap-3">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="rounded-2xl bg-[#111318] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b1f27]"
                 >
                   Seleccionar archivos
                 </button>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <button
+                  onClick={() => void processSources()}
+                  disabled={loading}
+                  className="rounded-2xl border border-[#d2c4ad] bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-[#fcfaf5] disabled:opacity-70"
+                >
+                  {loading ? "Procesando..." : "Procesar cargas"}
+                </button>
+                <div className="rounded-2xl border border-[#e2d8c7] bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700">
                   {files.length
                     ? `${files.length} archivo(s) listo(s)`
-                    : "Sin archivos seleccionados"}
+                    : "Aun no has seleccionado archivos"}
                 </div>
               </div>
 
               {files.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-5 flex flex-wrap gap-2">
                   {files.map((file) => (
                     <span
                       key={`${file.name}-${file.size}`}
-                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600"
+                      className="rounded-full border border-[#ddd3c2] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
                     >
                       {file.name}
                     </span>
@@ -591,50 +641,41 @@ export default function PayJoyCarteraWorkspace() {
               )}
             </div>
 
-            <div>
+            <div className="rounded-[28px] border border-[#e6dece] bg-white p-6 shadow-sm">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Links
+                Reglas del modulo
               </div>
-              <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-                Pegar links de transacciones
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Pega un link por linea. Si quieres definir el corte manualmente,
-                usa este formato:{" "}
-                <span className="font-semibold">Corte abril | URL</span>
-              </p>
-              <p className="mt-2 text-sm leading-6 text-amber-700">
-                Si el link es de Google Sheets, el archivo debe ser publico o
-                descargable sin iniciar sesion. Si no, subelo como archivo.
-              </p>
-              <textarea
-                value={linksText}
-                onChange={(event) => setLinksText(event.target.value)}
-                placeholder={
-                  "Corte 1 | https://docs.google.com/spreadsheets/d/.../edit\nhttps://docs.google.com/spreadsheets/d/.../edit"
-                }
-                className="mt-4 h-40 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-slate-500"
-              />
+
+              <div className="mt-5 space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Hoja o contenido valido
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">
+                    El archivo debe traer la hoja <span className="font-semibold">Transacciones</span> o una tabla con columnas validas.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Campos base
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">
+                    transaction time, merchant name, device, device family,
+                    imei y national id.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                    Calculo automatico
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-amber-800">
+                    Fecha de pago = +14 dias calendario. Pago maximo = +18 dias calendario. Si PayJoy indica que el equipo esta pagado por completo, se marca como <span className="font-semibold">PAGO</span>.
+                  </p>
+                </div>
+              </div>
             </div>
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-            Si subes Excel o Google Sheets, la hoja debe llamarse{" "}
-            <span className="font-semibold">Transacciones</span> o contener
-            esas columnas: transaction time, merchant name, device, device
-            family, imei y national id. Si subes TXT, puede venir tabulado
-            como exportacion de PayJoy. Fecha de pago = +14 dias calendario.
-            Pago maximo = +18 dias calendario.
-          </div>
-
-          <div className="mt-6">
-            <button
-              onClick={() => void processSources()}
-              disabled={loading}
-              className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
-            >
-              {loading ? "Procesando..." : "Procesar cargas"}
-            </button>
           </div>
         </section>
 

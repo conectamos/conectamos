@@ -1,6 +1,18 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getSessionUser } from "@/lib/auth";
 
-export default function PayJoyFortySixtyPage() {
+export default async function PayJoyFortySixtyPage() {
+  const user = await getSessionUser();
+
+  if (!user) {
+    redirect("/");
+  }
+
+  if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+    redirect("/dashboard");
+  }
+
   return (
     <div className="min-h-screen bg-[#f5f6fa] px-4 py-8">
       <div className="mx-auto max-w-5xl">
