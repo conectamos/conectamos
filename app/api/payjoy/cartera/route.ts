@@ -13,6 +13,8 @@ type LookupSuccess = {
   validThrough: string | null;
   remainingBalance: number | null;
   currency: string | null;
+  paidInFull: boolean;
+  message: string | null;
 };
 
 type LookupFailure = {
@@ -74,8 +76,13 @@ function getDateKeyInBogota(date: Date) {
 
 function computeStatus(
   transactionTime: Date | null,
-  validThrough: Date | null
+  validThrough: Date | null,
+  paidInFull: boolean
 ): "MORA" | "PAGO" | "SIN DATOS" {
+  if (paidInFull) {
+    return "PAGO";
+  }
+
   if (!transactionTime || !validThrough) {
     return "SIN DATOS";
   }
@@ -370,6 +377,8 @@ async function buildLookupMap(rows: ConsolidatedTransaction[]) {
             validThrough: snapshot.validThrough?.toISOString() ?? null,
             remainingBalance: snapshot.remainingBalance,
             currency: snapshot.currency,
+            paidInFull: snapshot.paidInFull,
+            message: snapshot.message,
           } satisfies LookupSuccess,
         ] as const;
       } catch (error) {
@@ -454,13 +463,14 @@ export async function POST(req: Request) {
       const lookup = lookupMap.get(normalizedDeviceTag);
       const validThrough =
         lookup?.ok && lookup.validThrough ? new Date(lookup.validThrough) : null;
+      const paidInFull = lookup?.ok ? lookup.paidInFull : false;
       const paymentDueDate = row.transactionTime
         ? addCalendarDays(row.transactionTime, 14)
         : null;
       const maximumPaymentDate = row.transactionTime
         ? addCalendarDays(row.transactionTime, 18)
         : null;
-      const status = computeStatus(row.transactionTime, validThrough);
+      const status = computeStatus(row.transactionTime, validThrough, paidInFull);
 
       return {
         corteName: row.cortes.join(" | "),
@@ -472,6 +482,7 @@ export async function POST(req: Request) {
         nationalId: row.nationalId,
         paymentDueDate: paymentDueDate?.toISOString() ?? null,
         devicePaymentDate: validThrough?.toISOString() ?? null,
+        paidInFull,
         status,
         maximumPaymentDate: maximumPaymentDate?.toISOString() ?? null,
         currency: lookup?.ok ? lookup.currency : null,
@@ -480,7 +491,9 @@ export async function POST(req: Request) {
             ? "La fila no trae device."
             : normalizedDeviceTag.startsWith("D")
               ? lookup?.ok
-                ? null
+                ? paidInFull
+                  ? lookup.message || "Equipo pagado por completo."
+                  : null
                 : lookup?.error || "No fue posible consultar el device."
               : "El device no parece ser un Device Tag valido.",
       };

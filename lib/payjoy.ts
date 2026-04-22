@@ -24,6 +24,8 @@ export type PayJoyPaymentSnapshot = {
   currency: string | null;
   cost7: number | null;
   cost30: number | null;
+  paidInFull: boolean;
+  message: string | null;
 };
 
 function parseNumber(value: string | number | null | undefined) {
@@ -56,6 +58,25 @@ function parseUnixDate(value: string | number | null | undefined) {
 
 function normalizeDeviceTag(value: string) {
   return String(value || "").trim().toUpperCase();
+}
+
+function normalizeMessage(value: string | null | undefined) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function isPaidInFullMessage(message: string | null | undefined) {
+  const normalized = normalizeMessage(message);
+
+  return (
+    normalized.includes("no debe un pago adicional") ||
+    normalized.includes("pagado por completo") ||
+    normalized.includes("paid in full") ||
+    normalized.includes("paid off")
+  );
 }
 
 export async function getPayJoyPaymentSnapshot(deviceTag: string) {
@@ -91,22 +112,31 @@ export async function getPayJoyPaymentSnapshot(deviceTag: string) {
     throw new Error("PayJoy devolvio una respuesta no valida.");
   }
 
+  const payload: PayJoyPublicResponse = data || {};
+
   if (!response.ok) {
     throw new Error(
-      data?.message || `PayJoy respondio con estado ${response.status}.`
+      payload.message || `PayJoy respondio con estado ${response.status}.`
     );
   }
 
-  if (!data?.valid) {
-    throw new Error(data?.message || "PayJoy no devolvio datos validos.");
+  const remainingBalance = parseNumber(payload.remainingBalance);
+  const paidInFull =
+    isPaidInFullMessage(payload.message) ||
+    (remainingBalance !== null && remainingBalance <= 0);
+
+  if (!payload.valid && !paidInFull) {
+    throw new Error(payload.message || "PayJoy no devolvio datos validos.");
   }
 
   return {
     deviceTag: normalizedDeviceTag,
-    validThrough: parseUnixDate(data.deviceDetails?.validThrough),
-    remainingBalance: parseNumber(data.remainingBalance),
-    currency: data.currency || null,
-    cost7: parseNumber(data.deviceDetails?.cost7),
-    cost30: parseNumber(data.deviceDetails?.cost30),
+    validThrough: parseUnixDate(payload.deviceDetails?.validThrough),
+    remainingBalance,
+    currency: payload.currency || null,
+    cost7: parseNumber(payload.deviceDetails?.cost7),
+    cost30: parseNumber(payload.deviceDetails?.cost30),
+    paidInFull,
+    message: payload.message || null,
   } satisfies PayJoyPaymentSnapshot;
 }

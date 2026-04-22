@@ -15,6 +15,7 @@ type PayJoyRow = {
   nationalId: string;
   paymentDueDate: string | null;
   devicePaymentDate: string | null;
+  paidInFull: boolean;
   status: RowStatus;
   maximumPaymentDate: string | null;
   currency: string | null;
@@ -103,8 +104,13 @@ function getDateKeyInBogota(date: Date) {
 
 function computeStatus(
   transactionTime: string | null,
-  devicePaymentDate: string | null
+  devicePaymentDate: string | null,
+  paidInFull: boolean
 ): RowStatus {
+  if (paidInFull) {
+    return "PAGO";
+  }
+
   const transactionDate = parseIsoDate(transactionTime);
   const deviceDate = parseIsoDate(devicePaymentDate);
 
@@ -139,7 +145,7 @@ function recalculateDerivedFields(row: EditablePayJoyRow) {
     maximumPaymentDate,
     status:
       row.manualStatus ||
-      computeStatus(row.transactionTime, row.devicePaymentDate),
+      computeStatus(row.transactionTime, row.devicePaymentDate, row.paidInFull),
   };
 }
 
