@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
   actualizarPerfilVendedor,
   crearPerfilVendedor,
@@ -46,6 +47,8 @@ async function requireAdmin() {
 }
 
 async function cargarRespuestaAdmin() {
+  await ensureVendorProfilesSchema();
+
   const [perfiles, sedes] = await Promise.all([
     obtenerPerfilesVendedor(),
     prisma.sede.findMany({

@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
 export const TIPOS_PERFIL_VENDEDOR = [
   "ADMINISTRADOR",
@@ -140,6 +141,8 @@ async function syncPerfilSedes(perfilId: number, sedeIds: number[]) {
 export async function obtenerPerfilesVendedor(options?: {
   soloActivos?: boolean;
 }) {
+  await ensureVendorProfilesSchema();
+
   const perfiles = await prisma.perfilVendedor.findMany({
     where: options?.soloActivos ? { activo: true } : undefined,
     select: {
@@ -193,6 +196,7 @@ export async function obtenerPerfilesVendedor(options?: {
 }
 
 export async function crearPerfilVendedor(payload: PerfilVendedorPayload) {
+  await ensureVendorProfilesSchema();
   await validarSedesExistentes(payload.sedeIds);
   await validarDuplicadosPerfil(payload);
 
@@ -221,6 +225,7 @@ export async function actualizarPerfilVendedor(
   perfilId: number,
   payload: PerfilVendedorPayload
 ) {
+  await ensureVendorProfilesSchema();
   await validarSedesExistentes(payload.sedeIds);
   await validarDuplicadosPerfil(payload, perfilId);
 

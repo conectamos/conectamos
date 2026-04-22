@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run db:ensure-vendor-profiles && npm run prisma:generate && next build",
+    "build": "npm run prisma:generate && next build",
     "start": "next start",
     "start:standalone": "node .next/standalone/server.js",
     "db:push": "npx prisma db push",
