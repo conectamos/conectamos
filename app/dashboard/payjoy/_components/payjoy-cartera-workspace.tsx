@@ -224,6 +224,10 @@ export default function PayJoyCarteraWorkspace() {
                 Pega un link por linea. Si quieres definir el corte manualmente,
                 usa este formato: <span className="font-semibold">Corte abril | URL</span>
               </p>
+              <p className="mt-2 text-sm leading-6 text-amber-700">
+                Si el link es de Google Sheets, el archivo debe ser publico o
+                descargable sin iniciar sesion. Si no, subelo como archivo.
+              </p>
               <textarea
                 value={linksText}
                 onChange={(event) => setLinksText(event.target.value)}
