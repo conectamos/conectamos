@@ -1,17 +1,11 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import {
-  getNuovoPayDeviceById,
-  isNuovoPayConfigured,
-  lockNuovoPayDevices,
-  searchNuovoPayDevices,
-} from "@/lib/nuovopay";
+import { isNuovoPayConfigured, lockNuovoPayDevices, searchNuovoPayDevices } from "@/lib/nuovopay";
 import { normalizeCedula, parseCarteraTxt } from "@/lib/cartera-import";
 
 export const runtime = "nodejs";
 
-const PREVIEW_ROWS = 10;
 const NEAR_FINISH_LIMIT = 20;
 const BLOCKING_MORA_MIN_DAYS = 2;
 const MORA_BUCKETS = [
@@ -46,7 +40,6 @@ type RegistroAnalitico = {
   deviceId: number | null;
   deviceName: string | null;
   deviceImei: string | null;
-  devicePhone: string | null;
   bloqueoAplicado: boolean;
   resultadoBloqueo: string | null;
 };
@@ -89,7 +82,6 @@ function serializeRegistro(item: {
   deviceId: number | null;
   deviceName: string | null;
   deviceImei: string | null;
-  devicePhone?: string | null;
   bloqueoAplicado: boolean;
   resultadoBloqueo: string | null;
 }): RegistroAnalitico {
@@ -115,7 +107,6 @@ function serializeRegistro(item: {
     deviceId: item.deviceId,
     deviceName: item.deviceName,
     deviceImei: item.deviceImei,
-    devicePhone: item.devicePhone ?? null,
     bloqueoAplicado: item.bloqueoAplicado,
     resultadoBloqueo: item.resultadoBloqueo,
   };
@@ -283,11 +274,7 @@ function uniqueNuovoMatches<
   return Array.from(unique.values());
 }
 
-function buildBlockingResultMessage(
-  totalMatches: number,
-  blockedNow: number,
-  alreadyLocked: number
-) {
+function buildBlockingResultMessage(totalMatches: number, blockedNow: number, alreadyLocked: number) {
   const fragments = [
     totalMatches === 1
       ? "Coincidencia exacta encontrada en Nuovo."
@@ -311,48 +298,6 @@ function buildBlockingResultMessage(
   }
 
   return fragments.join(" ");
-}
-
-async function enrichRegistrosWithNuovoData<
-  T extends { deviceId: number | null; deviceImei: string | null }
->(rows: T[]) {
-  if (!isNuovoPayConfigured()) {
-    return rows.map((row) => ({
-      ...row,
-      devicePhone: null,
-    }));
-  }
-
-  const uniqueDeviceIds = Array.from(
-    new Set(rows.map((row) => row.deviceId).filter((deviceId): deviceId is number => Boolean(deviceId)))
-  );
-  const cache = new Map<number, { deviceImei: string | null; devicePhone: string | null }>();
-
-  for (const deviceId of uniqueDeviceIds) {
-    try {
-      const device = await getNuovoPayDeviceById(deviceId);
-
-      cache.set(deviceId, {
-        deviceImei: device.imei || device.imei2 || null,
-        devicePhone: device.phone || null,
-      });
-    } catch (error) {
-      console.error(
-        `ERROR ENRIQUECIENDO CONTACTO NUOVO PARA DEVICE ${deviceId}:`,
-        error
-      );
-    }
-  }
-
-  return rows.map((row) => {
-    const enriched = row.deviceId ? cache.get(row.deviceId) : null;
-
-    return {
-      ...row,
-      deviceImei: enriched?.deviceImei || row.deviceImei,
-      devicePhone: enriched?.devicePhone || null,
-    };
-  });
 }
 
 async function getLatestImportSummary() {
@@ -404,7 +349,6 @@ async function getLatestImportSummary() {
       resultadoBloqueo: true,
     },
   });
-  const registrosEnriquecidos = await enrichRegistrosWithNuovoData(registros);
 
   return {
     id: latest.id,
@@ -420,8 +364,7 @@ async function getLatestImportSummary() {
     createdAt: latest.createdAt.toISOString(),
     updatedAt: latest.updatedAt.toISOString(),
     subidoPor: latest.subidoPor,
-    previewRows: registrosEnriquecidos.slice(0, PREVIEW_ROWS).map(serializeRegistro),
-    analytics: buildAnalytics(registrosEnriquecidos),
+    analytics: buildAnalytics(registros),
   };
 }
 

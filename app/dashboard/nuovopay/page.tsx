@@ -90,7 +90,6 @@ type CarteraInsightRow = {
   deviceId: number | null;
   deviceName: string | null;
   deviceImei: string | null;
-  devicePhone: string | null;
   bloqueoAplicado: boolean;
   resultadoBloqueo: string | null;
 };
@@ -148,7 +147,6 @@ type CarteraImportSummary = {
     nombre: string;
     usuario: string;
   };
-  previewRows: CarteraInsightRow[];
   analytics: CarteraAnalytics;
 };
 
@@ -1109,12 +1107,6 @@ export function NuovoPayWorkspace({
                               Cedula
                             </th>
                             <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
-                              Contacto
-                            </th>
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
-                              IMEI
-                            </th>
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
                               Ultimo pago
                             </th>
                             <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
@@ -1127,12 +1119,6 @@ export function NuovoPayWorkspace({
                             <tr key={item.id} className="hover:bg-slate-50">
                               <td className="px-4 py-3 font-semibold text-slate-950">
                                 {item.cedula}
-                              </td>
-                              <td className="px-4 py-3 text-slate-700">
-                                {item.devicePhone || "-"}
-                              </td>
-                              <td className="px-4 py-3 text-slate-700">
-                                {item.deviceImei || "-"}
                               </td>
                               <td className="px-4 py-3 text-slate-700">
                                 {item.ultimoAbonoEn
@@ -1286,8 +1272,7 @@ export function NuovoPayWorkspace({
                           #{index + 1} Cedula {item.cedula}
                         </p>
                         <p className="mt-1 text-sm text-slate-500">
-                          Credito {item.numeroCredito || "-"} | IMEI{" "}
-                          {item.deviceImei || "-"}
+                          Credito {item.numeroCredito || "-"} | {item.modalidad || "Sin modalidad"}
                         </p>
                       </div>
 
@@ -1372,12 +1357,6 @@ export function NuovoPayWorkspace({
                             Cedula
                           </th>
                           <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
-                            Contacto
-                          </th>
-                          <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
-                            IMEI
-                          </th>
-                          <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
                             Ultimo pago
                           </th>
                           <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
@@ -1393,12 +1372,6 @@ export function NuovoPayWorkspace({
                           <tr key={item.id} className="hover:bg-slate-50">
                             <td className="px-4 py-3 font-semibold text-slate-950">
                               {item.cedula}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {item.devicePhone || "-"}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {item.deviceImei || "-"}
                             </td>
                             <td className="px-4 py-3 text-slate-700">
                               {item.ultimoAbonoEn
@@ -1421,110 +1394,6 @@ export function NuovoPayWorkspace({
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Vista previa del ultimo cargue
-                </p>
-                <p className="mt-2 text-sm text-slate-500">
-                  Primeros registros del archivo para validar el corte cargado,
-                  el cruce con Nuovo y el estado del bloqueo.
-                </p>
-              </div>
-
-              {latestImport && (
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  #{latestImport.id}
-                </span>
-              )}
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {!latestImport ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                  Todavia no hay registros de cartera cargados.
-                </div>
-              ) : latestImport.previewRows.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                  El cargue existe, pero no hay filas para mostrar en la vista previa.
-                </div>
-              ) : (
-                latestImport.previewRows.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
-                  >
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <p className="text-base font-black text-slate-950">
-                          Cedula {item.cedula}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Credito {item.numeroCredito || "-"} | {item.modalidad || "Sin modalidad"} |{" "}
-                          {item.sucursal || item.ubicacion || "Sin ubicacion"}
-                        </p>
-                      </div>
-
-                      <div className="grid gap-2 text-left lg:text-right">
-                        <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
-                          {item.diasVencido} dias vencido
-                        </span>
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                          {item.resultadoBloqueo || (item.bloqueoAplicado ? "Bloqueado" : "Pendiente")}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Saldo obligacion
-                        </p>
-                        <p className="mt-2 text-base font-bold text-slate-950">
-                          {formatoPesos(item.saldoObligacion || 0)}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          IMEI Nuovo
-                        </p>
-                        <p className="mt-2 text-base font-bold text-slate-950">
-                          {item.deviceImei || "Pendiente de cruce"}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Contacto
-                        </p>
-                        <p className="mt-2 text-sm font-semibold text-slate-700">
-                          {item.devicePhone || "Sin registro"}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Cuotas pendientes
-                        </p>
-                        <p className="mt-2 text-sm font-semibold text-slate-700">
-                          {formatoCuotas(item.cuotasPendientes)}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Ultimo pago
-                        </p>
-                        <p className="mt-2 text-sm font-semibold text-slate-700">
-                          {item.ultimoAbonoEn
-                            ? formatoFecha(item.ultimoAbonoEn)
-                            : "Sin registro"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
           </div>
         )}
 
