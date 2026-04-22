@@ -13,6 +13,7 @@ type PayJoyRow = {
   deviceFamily: string;
   imei: string;
   nationalId: string;
+  installmentAmount: number | null;
   paymentDueDate: string | null;
   devicePaymentDate: string | null;
   paidInFull: boolean;
@@ -174,6 +175,22 @@ function formatDate(value: string | null) {
 
 function formatPercent(value: number) {
   return `${value.toFixed(1)}%`;
+}
+
+function formatCurrency(value: number | null, currency: string | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "-";
+  }
+
+  try {
+    return new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: currency || "COP",
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `${currency || "COP"} ${value.toLocaleString("es-CO")}`;
+  }
 }
 
 function statusClass(status: RowStatus) {
@@ -376,6 +393,7 @@ const tableColDeviceClass = "w-[170px] min-w-[170px] px-4 py-4";
 const tableColDeviceFamilyClass = "w-[240px] min-w-[240px] px-4 py-4";
 const tableColImeiClass = "w-[210px] min-w-[210px] px-4 py-4";
 const tableColNationalIdClass = "w-[190px] min-w-[190px] px-4 py-4";
+const tableColInstallmentClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColDateClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColStatusClass = "w-[170px] min-w-[170px] px-4 py-4";
 
@@ -999,7 +1017,7 @@ export default function PayJoyCarteraWorkspace() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="min-w-[2320px] divide-y divide-slate-200">
+                <table className="min-w-[2510px] divide-y divide-slate-200">
                   <thead className="bg-slate-50">
                     <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       <th className={tableColCorteClass}>CORTE</th>
@@ -1013,6 +1031,7 @@ export default function PayJoyCarteraWorkspace() {
                       </th>
                       <th className={tableColImeiClass}>IMEI</th>
                       <th className={tableColNationalIdClass}>National ID</th>
+                      <th className={tableColInstallmentClass}>Valor cuota</th>
                       <th className={tableColDateClass}>Fecha device</th>
                       <th className={tableColDateClass}>Fecha de pago</th>
                       <th className={tableColStatusClass}>Estado</th>
@@ -1122,6 +1141,14 @@ export default function PayJoyCarteraWorkspace() {
                             className={cellInputClass}
                           />
                         </td>
+                        <td className={tableColInstallmentClass}>
+                          <div className={cellReadonlyClass}>
+                            {formatCurrency(
+                              row.installmentAmount,
+                              row.currency
+                            )}
+                          </div>
+                        </td>
                         <td className={tableColDateClass}>
                           <input
                             type="date"
@@ -1183,7 +1210,7 @@ export default function PayJoyCarteraWorkspace() {
                     {!filteredRows.length && (
                       <tr>
                         <td
-                          colSpan={11}
+                          colSpan={12}
                           className="px-4 py-8 text-center text-sm text-slate-500"
                         >
                           No hay filas para mostrar con el filtro actual.

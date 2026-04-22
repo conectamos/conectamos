@@ -13,6 +13,7 @@ type LookupSuccess = {
   validThrough: string | null;
   remainingBalance: number | null;
   currency: string | null;
+  installmentAmount: number | null;
   paidInFull: boolean;
   message: string | null;
 };
@@ -258,6 +259,7 @@ async function buildLookupMap(rows: ConsolidatedTransaction[]) {
             validThrough: snapshot.validThrough?.toISOString() ?? null,
             remainingBalance: snapshot.remainingBalance,
             currency: snapshot.currency,
+            installmentAmount: snapshot.cost7,
             paidInFull: snapshot.paidInFull,
             message: snapshot.message,
           } satisfies LookupSuccess,
@@ -375,6 +377,7 @@ export async function POST(req: Request) {
         deviceFamily: row.deviceFamily,
         imei: row.imei,
         nationalId: row.nationalId,
+        installmentAmount: lookup?.ok ? lookup.installmentAmount : null,
         paymentDueDate: paymentDueDate?.toISOString() ?? null,
         devicePaymentDate: validThrough?.toISOString() ?? null,
         paidInFull,
