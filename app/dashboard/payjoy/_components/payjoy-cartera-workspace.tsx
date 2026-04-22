@@ -172,13 +172,13 @@ export default function PayJoyCarteraWorkspace() {
                 Subir multiples transacciones
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Puedes subir varios archivos Excel o CSV. Cada archivo genera su
+                Puedes subir varios archivos Excel, CSV o TXT. Cada archivo genera su
                 nombre de CORTE a partir del nombre del archivo.
               </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
                 multiple
                 className="hidden"
                 onChange={(event) =>
@@ -240,10 +240,12 @@ export default function PayJoyCarteraWorkspace() {
           </div>
 
           <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-            La hoja debe llamarse <span className="font-semibold">Transacciones</span> y
-            traer estas columnas: transaction time, merchant name, device,
-            device family, imei y national id. Fecha de pago = +14 dias
-            calendario. Pago maximo = +18 dias calendario.
+            Si subes Excel o Google Sheets, la hoja debe llamarse{" "}
+            <span className="font-semibold">Transacciones</span> o contener
+            esas columnas: transaction time, merchant name, device, device
+            family, imei y national id. Si subes TXT, puede venir tabulado
+            como exportacion de PayJoy. Fecha de pago = +14 dias calendario.
+            Pago maximo = +18 dias calendario.
           </div>
 
           <div className="mt-6">

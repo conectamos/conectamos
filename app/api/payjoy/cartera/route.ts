@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import {
-  parsePayJoyWorkbook,
+  parsePayJoyImportFile,
   type PayJoyTransactionRow,
 } from "@/lib/payjoy-cartera-import";
 import { getPayJoyPaymentSnapshot } from "@/lib/payjoy";
@@ -225,9 +225,10 @@ async function getRemoteImports(linksText: string) {
         ) ||
         `${new URL(item.url).hostname}.xlsx`;
 
-      const imported = parsePayJoyWorkbook(
+      const imported = parsePayJoyImportFile(
         Buffer.from(await response.arrayBuffer()),
-        fileName
+        fileName,
+        response.headers.get("content-type")
       );
 
       return {
@@ -242,9 +243,10 @@ async function getRemoteImports(linksText: string) {
 async function getFileImports(files: File[]) {
   return Promise.all(
     files.map(async (file) => {
-      const imported = parsePayJoyWorkbook(
+      const imported = parsePayJoyImportFile(
         Buffer.from(await file.arrayBuffer()),
-        file.name || "transacciones.xlsx"
+        file.name || "transacciones.xlsx",
+        file.type
       );
 
       return {

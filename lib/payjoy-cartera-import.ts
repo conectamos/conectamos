@@ -69,6 +69,11 @@ function normalizeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function normalizeFileExtension(fileName: string) {
+  const match = String(fileName || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match?.[1] || "";
+}
+
 function parseDateCell(value: unknown) {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? null : value;
@@ -125,6 +130,36 @@ function parseDateCell(value: unknown) {
 
 function hasMeaningfulData(row: unknown[]) {
   return row.some((cell) => normalizeText(cell) !== "");
+}
+
+function detectDelimiter(headerLine: string) {
+  const candidates = [
+    { delimiter: "\t", score: (headerLine.match(/\t/g) || []).length },
+    { delimiter: ",", score: (headerLine.match(/,/g) || []).length },
+    { delimiter: ";", score: (headerLine.match(/;/g) || []).length },
+    { delimiter: "|", score: (headerLine.match(/\|/g) || []).length },
+  ];
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]?.score ? candidates[0].delimiter : "\t";
+}
+
+function parseDelimitedText(content: string) {
+  const sanitized = String(content || "").replace(/\uFEFF/g, "");
+  const lines = sanitized
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== "");
+
+  if (!lines.length) {
+    throw new Error("El archivo de texto esta vacio.");
+  }
+
+  const delimiter = detectDelimiter(lines[0]);
+
+  return lines.map((line) =>
+    line.split(delimiter).map((cell) => cell.trim())
+  );
 }
 
 function resolveColumnIndexes(headerRow: unknown[]) {
@@ -260,4 +295,81 @@ export function parsePayJoyWorkbook(
     totalRows: rows.length,
     rows,
   };
+}
+
+export function parsePayJoyImportFile(
+  buffer: Buffer,
+  fileName: string,
+  contentType?: string | null
+): PayJoyWorkbookImport {
+  const extension = normalizeFileExtension(fileName);
+  const isTextLike =
+    ["txt", "tsv", "csv"].includes(extension) ||
+    String(contentType || "").includes("text/");
+
+  if (isTextLike) {
+    const matrix = parseDelimitedText(buffer.toString("utf8"));
+    const headerIndex = findHeaderIndex(matrix);
+
+    if (headerIndex === -1) {
+      throw new Error(
+        "No se encontro una cabecera valida de transacciones en el TXT/CSV."
+      );
+    }
+
+    const headerRow = matrix[headerIndex] || [];
+    const columnIndexes = resolveColumnIndexes(headerRow);
+    const rows: PayJoyTransactionRow[] = [];
+
+    for (let index = headerIndex + 1; index < matrix.length; index += 1) {
+      const row = matrix[index];
+
+      if (!Array.isArray(row) || !hasMeaningfulData(row)) {
+        continue;
+      }
+
+      const transactionTime = parseDateCell(row[columnIndexes.transactionTime]);
+      const merchantName = normalizeText(row[columnIndexes.merchantName]);
+      const device = normalizeText(row[columnIndexes.device]).toUpperCase();
+      const deviceFamily = normalizeText(row[columnIndexes.deviceFamily]);
+      const imei = normalizeText(row[columnIndexes.imei]);
+      const nationalId = normalizeText(row[columnIndexes.nationalId]);
+
+      if (
+        !transactionTime &&
+        !merchantName &&
+        !device &&
+        !deviceFamily &&
+        !imei &&
+        !nationalId
+      ) {
+        continue;
+      }
+
+      rows.push({
+        rowNumber: index + 1,
+        transactionTime,
+        merchantName,
+        device,
+        deviceFamily,
+        imei,
+        nationalId,
+      });
+    }
+
+    if (!rows.length) {
+      throw new Error(
+        "El TXT/CSV no contiene filas validas para procesar transacciones."
+      );
+    }
+
+    return {
+      fileName,
+      sheetName: "Texto delimitado",
+      totalRows: rows.length,
+      rows,
+    };
+  }
+
+  return parsePayJoyWorkbook(buffer, fileName);
 }
