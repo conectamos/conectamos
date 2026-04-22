@@ -127,20 +127,6 @@ function hasMeaningfulData(row: unknown[]) {
   return row.some((cell) => normalizeText(cell) !== "");
 }
 
-function findTargetSheetName(sheetNames: string[]) {
-  const exact = sheetNames.find(
-    (sheetName) => normalizeHeader(sheetName) === TARGET_SHEET_NAME
-  );
-
-  if (exact) {
-    return exact;
-  }
-
-  throw new Error(
-    `No se encontro la hoja "Transacciones". Hojas disponibles: ${sheetNames.join(", ")}`
-  );
-}
-
 function resolveColumnIndexes(headerRow: unknown[]) {
   const normalizedHeaders = headerRow.map((cell) => normalizeHeader(cell));
   const resolved = {} as Record<ImportField, number>;
@@ -161,30 +147,8 @@ function resolveColumnIndexes(headerRow: unknown[]) {
   return resolved;
 }
 
-export function parsePayJoyWorkbook(
-  buffer: Buffer,
-  fileName: string
-): PayJoyWorkbookImport {
-  const workbook = XLSX.read(buffer, {
-    type: "buffer",
-    cellDates: true,
-    raw: true,
-  });
-
-  const sheetName = findTargetSheetName(workbook.SheetNames);
-  const sheet = workbook.Sheets[sheetName];
-
-  if (!sheet) {
-    throw new Error(`No fue posible leer la hoja "${sheetName}".`);
-  }
-
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-    header: 1,
-    raw: true,
-    defval: null,
-  });
-
-  const headerIndex = matrix.findIndex((row) => {
+function findHeaderIndex(matrix: unknown[][]) {
+  return matrix.findIndex((row) => {
     if (!Array.isArray(row) || !row.length) {
       return false;
     }
@@ -197,12 +161,52 @@ export function parsePayJoyWorkbook(
       normalizedHeaders.includes("device")
     );
   });
+}
 
-  if (headerIndex === -1) {
-    throw new Error(
-      'No se encontro una fila de encabezados valida dentro de la hoja "Transacciones".'
-    );
+function findBestSheet(workbook: XLSX.WorkBook) {
+  const candidates = workbook.SheetNames.map((sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      raw: true,
+      defval: null,
+    });
+    const headerIndex = findHeaderIndex(matrix);
+
+    return {
+      sheetName,
+      matrix,
+      headerIndex,
+      exactName: normalizeHeader(sheetName) === TARGET_SHEET_NAME,
+    };
+  }).filter((item) => item.headerIndex !== -1);
+
+  const exact = candidates.find((item) => item.exactName);
+
+  if (exact) {
+    return exact;
   }
+
+  if (candidates[0]) {
+    return candidates[0];
+  }
+
+  throw new Error(
+    `No se encontro una hoja con columnas de transacciones. Hojas disponibles: ${workbook.SheetNames.join(", ")}`
+  );
+}
+
+export function parsePayJoyWorkbook(
+  buffer: Buffer,
+  fileName: string
+): PayJoyWorkbookImport {
+  const workbook = XLSX.read(buffer, {
+    type: "buffer",
+    cellDates: true,
+    raw: true,
+  });
+
+  const { sheetName, matrix, headerIndex } = findBestSheet(workbook);
 
   const headerRow = matrix[headerIndex] || [];
   const columnIndexes = resolveColumnIndexes(headerRow);
