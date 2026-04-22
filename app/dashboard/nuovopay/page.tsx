@@ -90,6 +90,7 @@ type CarteraInsightRow = {
   deviceId: number | null;
   deviceName: string | null;
   deviceImei: string | null;
+  devicePhone: string | null;
   bloqueoAplicado: boolean;
   resultadoBloqueo: string | null;
 };
@@ -1105,10 +1106,16 @@ export function NuovoPayWorkspace({
                         <thead className="sticky top-0 bg-slate-100 text-slate-700">
                           <tr>
                             <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
-                              Customer Name
+                              Cedula
                             </th>
                             <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
-                              Cedula
+                              Contacto
+                            </th>
+                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                              IMEI
+                            </th>
+                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                              Ultimo pago
                             </th>
                             <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
                               Dias de mora
@@ -1118,11 +1125,19 @@ export function NuovoPayWorkspace({
                         <tbody className="divide-y divide-slate-100 bg-white">
                           {analytics.blockCandidates.map((item) => (
                             <tr key={item.id} className="hover:bg-slate-50">
-                              <td className="px-4 py-3 text-slate-700">
-                                {item.deviceName || "-"}
-                              </td>
                               <td className="px-4 py-3 font-semibold text-slate-950">
                                 {item.cedula}
+                              </td>
+                              <td className="px-4 py-3 text-slate-700">
+                                {item.devicePhone || "-"}
+                              </td>
+                              <td className="px-4 py-3 text-slate-700">
+                                {item.deviceImei || "-"}
+                              </td>
+                              <td className="px-4 py-3 text-slate-700">
+                                {item.ultimoAbonoEn
+                                  ? formatoFechaCorta(item.ultimoAbonoEn)
+                                  : "Sin registro"}
                               </td>
                               <td className="px-4 py-3 text-slate-700">
                                 {item.diasVencido}
@@ -1268,10 +1283,11 @@ export function NuovoPayWorkspace({
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div>
                         <p className="text-base font-black text-slate-950">
-                          #{index + 1} {item.deviceName || `Cedula ${item.cedula}`}
+                          #{index + 1} Cedula {item.cedula}
                         </p>
                         <p className="mt-1 text-sm text-slate-500">
-                          Credito {item.numeroCredito || "-"} | Cedula {item.cedula}
+                          Credito {item.numeroCredito || "-"} | IMEI{" "}
+                          {item.deviceImei || "-"}
                         </p>
                       </div>
 
@@ -1353,10 +1369,16 @@ export function NuovoPayWorkspace({
                       <thead className="sticky top-0 bg-slate-100 text-slate-700">
                         <tr>
                           <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
-                            Customer Name
+                            Cedula
                           </th>
                           <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
-                            Cedula
+                            Contacto
+                          </th>
+                          <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                            IMEI
+                          </th>
+                          <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
+                            Ultimo pago
                           </th>
                           <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em]">
                             Dias de mora
@@ -1369,11 +1391,19 @@ export function NuovoPayWorkspace({
                       <tbody className="divide-y divide-slate-100 bg-white">
                         {analytics.errorRows.map((item) => (
                           <tr key={item.id} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 text-slate-700">
-                              {item.deviceName || "-"}
-                            </td>
                             <td className="px-4 py-3 font-semibold text-slate-950">
                               {item.cedula}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {item.devicePhone || "-"}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {item.deviceImei || "-"}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {item.ultimoAbonoEn
+                                ? formatoFechaCorta(item.ultimoAbonoEn)
+                                : "Sin registro"}
                             </td>
                             <td className="px-4 py-3 text-slate-700">
                               {item.diasVencido}
@@ -1446,7 +1476,7 @@ export function NuovoPayWorkspace({
                       </div>
                     </div>
 
-                    <div className="mt-4 grid gap-3 md:grid-cols-4">
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                           Saldo obligacion
@@ -1457,10 +1487,18 @@ export function NuovoPayWorkspace({
                       </div>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Device Nuovo
+                          IMEI Nuovo
                         </p>
                         <p className="mt-2 text-base font-bold text-slate-950">
-                          {item.deviceName || "Pendiente de cruce"}
+                          {item.deviceImei || "Pendiente de cruce"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Contacto
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-700">
+                          {item.devicePhone || "Sin registro"}
                         </p>
                       </div>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -1473,10 +1511,12 @@ export function NuovoPayWorkspace({
                       </div>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Resultado
+                          Ultimo pago
                         </p>
                         <p className="mt-2 text-sm font-semibold text-slate-700">
-                          {item.resultadoBloqueo || "Pendiente"}
+                          {item.ultimoAbonoEn
+                            ? formatoFecha(item.ultimoAbonoEn)
+                            : "Sin registro"}
                         </p>
                       </div>
                     </div>
