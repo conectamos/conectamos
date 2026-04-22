@@ -38,6 +38,22 @@ type RegistroAnalitico = {
   resultadoBloqueo: string | null;
 };
 
+function groupByCedula<T extends { cedula: string }>(items: T[]) {
+  const groups = new Map<string, T[]>();
+
+  for (const item of items) {
+    const current = groups.get(item.cedula) ?? [];
+    current.push(item);
+    groups.set(item.cedula, current);
+  }
+
+  return Array.from(groups.values());
+}
+
+function countUniqueCedulas<T extends { cedula: string }>(items: T[]) {
+  return new Set(items.map((item) => item.cedula)).size;
+}
+
 function serializeRegistro(item: {
   id: number;
   cedula: string;
@@ -105,63 +121,114 @@ function byMoneyDesc(a: number | null | undefined, b: number | null | undefined)
   return (b || 0) - (a || 0);
 }
 
-function buildAnalytics(rows: Array<Parameters<typeof serializeRegistro>[0]>) {
-  const serialized = rows.map(serializeRegistro);
+function byDateAsc(a: string | null, b: string | null) {
+  const timeA = a ? new Date(a).getTime() : Number.MAX_SAFE_INTEGER;
+  const timeB = b ? new Date(b).getTime() : Number.MAX_SAFE_INTEGER;
+  return timeA - timeB;
+}
 
-  const blockCandidates = serialized
-    .filter((item) => item.diasVencido > 5)
-    .sort((a, b) => {
-      if (b.diasVencido !== a.diasVencido) {
-        return b.diasVencido - a.diasVencido;
-      }
+function isGoodClient(item: RegistroAnalitico) {
+  return (
+    item.diasVencido <= 0 &&
+    !hasCriticalState(item.estado) &&
+    !hasCriticalState(item.estadoGestion) &&
+    !item.abonoInsuficiente &&
+    !item.beneficioPerdido &&
+    item.cuotasPendientes !== null
+  );
+}
 
-      return byMoneyDesc(a.saldoObligacion, b.saldoObligacion);
-    })
-    .slice(0, BLOCK_LIMIT);
-
-  const topGoodClients = serialized
-    .filter(
+function hasHealthyPortfolio(items: RegistroAnalitico[]) {
+  return (
+    items.every(
       (item) =>
         item.diasVencido <= 0 &&
         !hasCriticalState(item.estado) &&
         !hasCriticalState(item.estadoGestion) &&
         !item.abonoInsuficiente &&
-        !item.beneficioPerdido &&
-        item.cuotasPendientes !== null
+        !item.beneficioPerdido
+    ) && items.some((item) => item.cuotasPendientes !== null)
+  );
+}
+
+function isNearFinishClient(item: RegistroAnalitico) {
+  return (
+    item.cuotasPendientes !== null &&
+    item.cuotasPendientes > 0 &&
+    item.cuotasPendientes <= 2
+  );
+}
+
+function compareBlockCandidates(a: RegistroAnalitico, b: RegistroAnalitico) {
+  if (b.diasVencido !== a.diasVencido) {
+    return b.diasVencido - a.diasVencido;
+  }
+
+  return byMoneyDesc(a.saldoObligacion, b.saldoObligacion);
+}
+
+function compareGoodClients(a: RegistroAnalitico, b: RegistroAnalitico) {
+  if ((a.cuotasPendientes ?? 999) !== (b.cuotasPendientes ?? 999)) {
+    return (a.cuotasPendientes ?? 999) - (b.cuotasPendientes ?? 999);
+  }
+
+  const aperturaComparison = byDateAsc(a.fechaApertura, b.fechaApertura);
+  if (aperturaComparison !== 0) {
+    return aperturaComparison;
+  }
+
+  return byMoneyDesc(a.saldoObligacion, b.saldoObligacion);
+}
+
+function compareNearFinishClients(a: RegistroAnalitico, b: RegistroAnalitico) {
+  if ((a.cuotasPendientes ?? 99) !== (b.cuotasPendientes ?? 99)) {
+    return (a.cuotasPendientes ?? 99) - (b.cuotasPendientes ?? 99);
+  }
+
+  if (a.diasVencido !== b.diasVencido) {
+    return a.diasVencido - b.diasVencido;
+  }
+
+  return byMoneyDesc(a.saldoObligacion, b.saldoObligacion);
+}
+
+function pickBestRecord(
+  items: RegistroAnalitico[],
+  predicate: (item: RegistroAnalitico) => boolean,
+  compare: (a: RegistroAnalitico, b: RegistroAnalitico) => number
+) {
+  const candidates = items.filter(predicate);
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  return [...candidates].sort(compare)[0];
+}
+
+function buildAnalytics(rows: Array<Parameters<typeof serializeRegistro>[0]>) {
+  const serialized = rows.map(serializeRegistro);
+  const groupedByCedula = groupByCedula(serialized);
+
+  const blockCandidates = groupedByCedula
+    .map((items) =>
+      pickBestRecord(items, (item) => item.diasVencido > 5, compareBlockCandidates)
     )
-    .sort((a, b) => {
-      if ((a.cuotasPendientes ?? 999) !== (b.cuotasPendientes ?? 999)) {
-        return (a.cuotasPendientes ?? 999) - (b.cuotasPendientes ?? 999);
-      }
+    .filter((item): item is RegistroAnalitico => item !== null)
+    .sort(compareBlockCandidates)
+    .slice(0, BLOCK_LIMIT);
 
-      const aperturaA = a.fechaApertura ? new Date(a.fechaApertura).getTime() : Number.MAX_SAFE_INTEGER;
-      const aperturaB = b.fechaApertura ? new Date(b.fechaApertura).getTime() : Number.MAX_SAFE_INTEGER;
-      if (aperturaA !== aperturaB) {
-        return aperturaA - aperturaB;
-      }
-
-      return byMoneyDesc(a.saldoObligacion, b.saldoObligacion);
-    })
+  const topGoodClients = groupedByCedula
+    .filter(hasHealthyPortfolio)
+    .map((items) => pickBestRecord(items, isGoodClient, compareGoodClients))
+    .filter((item): item is RegistroAnalitico => item !== null)
+    .sort(compareGoodClients)
     .slice(0, TOP_LIMIT);
 
-  const topNearFinishClients = serialized
-    .filter(
-      (item) =>
-        item.cuotasPendientes !== null &&
-        item.cuotasPendientes > 0 &&
-        item.cuotasPendientes <= 2
-    )
-    .sort((a, b) => {
-      if ((a.cuotasPendientes ?? 99) !== (b.cuotasPendientes ?? 99)) {
-        return (a.cuotasPendientes ?? 99) - (b.cuotasPendientes ?? 99);
-      }
-
-      if (a.diasVencido !== b.diasVencido) {
-        return a.diasVencido - b.diasVencido;
-      }
-
-      return byMoneyDesc(a.saldoObligacion, b.saldoObligacion);
-    })
+  const topNearFinishClients = groupedByCedula
+    .map((items) => pickBestRecord(items, isNearFinishClient, compareNearFinishClients))
+    .filter((item): item is RegistroAnalitico => item !== null)
+    .sort(compareNearFinishClients)
     .slice(0, TOP_LIMIT);
 
   return {
@@ -176,6 +243,57 @@ function buildAnalytics(rows: Array<Parameters<typeof serializeRegistro>[0]>) {
 
 function exactCedulaMatch(value: string | null | undefined, cedula: string) {
   return normalizeCedula(value) === cedula;
+}
+
+function uniqueNuovoMatches<
+  T extends { deviceId: number; name: string | null; customerName: string | null }
+>(devices: T[], cedula: string) {
+  const unique = new Map<number, T>();
+
+  for (const device of devices) {
+    if (
+      !exactCedulaMatch(device.name, cedula) &&
+      !exactCedulaMatch(device.customerName, cedula)
+    ) {
+      continue;
+    }
+
+    if (!unique.has(device.deviceId)) {
+      unique.set(device.deviceId, device);
+    }
+  }
+
+  return Array.from(unique.values());
+}
+
+function buildBlockingResultMessage(
+  totalMatches: number,
+  blockedNow: number,
+  alreadyLocked: number
+) {
+  const fragments = [
+    totalMatches === 1
+      ? "Coincidencia exacta encontrada en Nuovo."
+      : `${totalMatches} dispositivos coinciden exactamente en Nuovo.`,
+  ];
+
+  if (blockedNow > 0) {
+    fragments.push(
+      blockedNow === 1
+        ? "1 dispositivo fue bloqueado ahora."
+        : `${blockedNow} dispositivos fueron bloqueados ahora.`
+    );
+  }
+
+  if (alreadyLocked > 0) {
+    fragments.push(
+      alreadyLocked === 1
+        ? "1 dispositivo ya estaba bloqueado."
+        : `${alreadyLocked} dispositivos ya estaban bloqueados.`
+    );
+  }
+
+  return fragments.join(" ");
 }
 
 async function getLatestImportSummary() {
@@ -309,7 +427,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const totalMoraMayorCinco = rows.filter((item) => item.diasVencido > 5).length;
+    const totalMoraMayorCinco = countUniqueCedulas(
+      rows.filter((item) => item.diasVencido > 5)
+    );
 
     const carga = await prisma.$transaction(async (tx) => {
       const created = await tx.cargaCarteraNuovo.create({
@@ -436,31 +556,79 @@ export async function PATCH(req: Request) {
       });
     }
 
-    const byCedula = new Map<string, typeof registros>();
-
-    for (const registro of registros) {
-      const current = byCedula.get(registro.cedula) ?? [];
-      current.push(registro);
-      byCedula.set(registro.cedula, current);
-    }
+    const byCedula = groupByCedula(registros);
 
     let totalCedulasAnalizadas = 0;
     let totalCoincidenciasNuovo = 0;
     let totalBloqueados = 0;
     let totalYaBloqueados = 0;
     let totalSinCoincidencia = 0;
+    let erroresProcesamiento = 0;
 
-    for (const [cedula, items] of byCedula) {
+    for (const items of byCedula) {
+      const cedula = items[0]?.cedula || "";
       totalCedulasAnalizadas += 1;
 
-      const matches = (await searchNuovoPayDevices(cedula)).filter(
-        (device) =>
-          exactCedulaMatch(device.name, cedula) ||
-          exactCedulaMatch(device.customerName, cedula)
-      );
+      try {
+        const matches = uniqueNuovoMatches(
+          await searchNuovoPayDevices(cedula),
+          cedula
+        );
 
-      if (!matches.length) {
-        totalSinCoincidencia += 1;
+        if (!matches.length) {
+          totalSinCoincidencia += 1;
+          await prisma.registroCarteraNuovo.updateMany({
+            where: {
+              id: {
+                in: items.map((item) => item.id),
+              },
+            },
+            data: {
+              bloqueoAplicado: false,
+              resultadoBloqueo:
+                "Sin coincidencia exacta en Nuovo por Device Name o Customer Name.",
+            },
+          });
+          continue;
+        }
+
+        const devicesToLock = matches.filter((device) => !device.locked);
+        const alreadyLockedDevices = matches.filter((device) => device.locked);
+
+        if (devicesToLock.length) {
+          await lockNuovoPayDevices(devicesToLock.map((device) => device.deviceId));
+        }
+
+        totalCoincidenciasNuovo += matches.length;
+        totalBloqueados += devicesToLock.length;
+        totalYaBloqueados += alreadyLockedDevices.length;
+
+        const primaryDevice = matches[0];
+        const previousBlockedAt =
+          items.find((item) => item.bloqueadoEn)?.bloqueadoEn ?? null;
+        const now = devicesToLock.length ? new Date() : previousBlockedAt;
+
+        await prisma.registroCarteraNuovo.updateMany({
+          where: {
+            id: {
+              in: items.map((item) => item.id),
+            },
+          },
+          data: {
+            deviceId: primaryDevice.deviceId,
+            deviceName: primaryDevice.name || primaryDevice.customerName,
+            deviceImei: primaryDevice.imei || primaryDevice.imei2,
+            bloqueoAplicado: true,
+            bloqueadoEn: now,
+            resultadoBloqueo: buildBlockingResultMessage(
+              matches.length,
+              devicesToLock.length,
+              alreadyLockedDevices.length
+            ),
+          },
+        });
+      } catch (error) {
+        erroresProcesamiento += 1;
         await prisma.registroCarteraNuovo.updateMany({
           where: {
             id: {
@@ -469,48 +637,13 @@ export async function PATCH(req: Request) {
           },
           data: {
             bloqueoAplicado: false,
-            resultadoBloqueo: "Sin coincidencia exacta en Nuovo por cedula.",
+            resultadoBloqueo:
+              error instanceof Error
+                ? `Error procesando bloqueo en Nuovo: ${error.message}`
+                : "Error procesando bloqueo en Nuovo.",
           },
         });
-        continue;
       }
-
-      totalCoincidenciasNuovo += 1;
-
-      const device = matches[0];
-      let blockedNow = false;
-      let alreadyLocked = false;
-
-      if (device.locked) {
-        alreadyLocked = true;
-        totalYaBloqueados += 1;
-      } else {
-        await lockNuovoPayDevices([device.deviceId]);
-        blockedNow = true;
-        totalBloqueados += 1;
-      }
-
-      const resultMessage = alreadyLocked
-        ? "El dispositivo ya estaba bloqueado en Nuovo."
-        : blockedNow
-          ? "Bloqueo aplicado correctamente en Nuovo."
-          : "Coincidencia encontrada en Nuovo.";
-
-      await prisma.registroCarteraNuovo.updateMany({
-        where: {
-          id: {
-            in: items.map((item) => item.id),
-          },
-        },
-        data: {
-          deviceId: device.deviceId,
-          deviceName: device.name,
-          deviceImei: device.imei || device.imei2,
-          bloqueoAplicado: true,
-          bloqueadoEn: blockedNow ? new Date() : null,
-          resultadoBloqueo: resultMessage,
-        },
-      });
     }
 
     await prisma.cargaCarteraNuovo.update({
@@ -529,7 +662,10 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      mensaje: `Bloqueo masivo procesado para ${totalCedulasAnalizadas} cedulas.`,
+      mensaje:
+        erroresProcesamiento > 0
+          ? `Bloqueo masivo procesado para ${totalCedulasAnalizadas} cedulas. ${erroresProcesamiento} quedaron con error y deben revisarse.`
+          : `Bloqueo masivo procesado para ${totalCedulasAnalizadas} cedulas.`,
       ...responsePayload(latestImport),
     });
   } catch (error) {

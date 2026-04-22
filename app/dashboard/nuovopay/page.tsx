@@ -380,7 +380,7 @@ export function NuovoPayWorkspace({
       queryType: "imei",
       search: "",
     });
-  }, []);
+  }, [panel]);
 
   useLiveRefresh(
     async () => {
@@ -713,7 +713,9 @@ export function NuovoPayWorkspace({
                 ultimo corte, detectar dispositivos bloqueables por mora mayor a
                 5 dias y revisar el comportamiento comercial de tus clientes. En
                 Nuovo el cruce se hace contra el{" "}
-                <span className="font-semibold text-slate-700">Device Name</span>.
+                <span className="font-semibold text-slate-700">Device Name</span>{" "}
+                usando la cedula del cliente y, si hay varias coincidencias
+                exactas, se procesan todos los devices.
               </p>
             </div>
 
@@ -755,13 +757,13 @@ export function NuovoPayWorkspace({
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-600">
-                Mora mayor a 5 dias
+                Clientes con mora mayor a 5 dias
               </p>
               <p className="mt-3 text-3xl font-black text-red-700">
                 {analytics?.totalBloqueables ?? 0}
               </p>
               <p className="mt-2 text-sm text-red-700/80">
-                Dispositivos listos para bloqueo desde el ultimo cargue.
+                Cedulas unicas listas para bloqueo desde el ultimo cargue.
               </p>
             </div>
 
@@ -795,11 +797,13 @@ export function NuovoPayWorkspace({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Dispositivos que tengo que bloquear
+                    Clientes y devices por bloquear
                   </p>
                   <p className="mt-2 text-sm text-slate-500">
-                    Clientes con mora mayor a 5 dias identificados en el ultimo
-                    archivo cargado. Se priorizan por dias vencidos y saldo.
+                    Cedulas con mora mayor a 5 dias identificadas en el ultimo
+                    archivo cargado. Se priorizan por dias vencidos y saldo, y
+                    al bloquear se procesan todos los devices con coincidencia
+                    exacta en Nuovo.
                   </p>
                 </div>
 
@@ -900,7 +904,7 @@ export function NuovoPayWorkspace({
                     </p>
                     <p className="mt-2 text-sm text-slate-500">
                       {latestImport.totalRegistros} registros |{" "}
-                      {latestImport.totalMoraMayorCinco} con mora mayor a 5 dias
+                      {latestImport.totalMoraMayorCinco} cedulas con mora mayor a 5 dias
                     </p>
                     <p className="mt-2 text-sm text-slate-500">
                       Subido por {latestImport.subidoPor.nombre} el{" "}
@@ -930,7 +934,7 @@ export function NuovoPayWorkspace({
                     </div>
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                        Coincidencias Nuovo
+                        Devices exactos
                       </p>
                       <p className="mt-1 text-lg font-black text-slate-950">
                         {latestImport.totalCoincidenciasNuovo || 0}
