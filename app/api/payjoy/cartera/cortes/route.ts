@@ -222,16 +222,16 @@ function resolveReloadedStatus(
     return "PAGO X";
   }
 
-  if (manualStatus === "PAGO" && automaticStatus !== "PAGO") {
-    return automaticStatus;
-  }
-
-  if (manualStatus === "GESTIONAR" || manualStatus === "MORA") {
-    return manualStatus;
-  }
-
-  if (manualStatus === "PAGO" && automaticStatus === "PAGO") {
+  if (automaticStatus === "PAGO") {
     return "PAGO";
+  }
+
+  if (manualStatus === "GESTIONAR") {
+    return "GESTIONAR";
+  }
+
+  if (manualStatus === "MORA") {
+    return "MORA";
   }
 
   return automaticStatus;
@@ -326,12 +326,16 @@ async function reloadStoredRows(rows: PayJoyStoredRow[]) {
       validThrough?.toISOString() ?? null,
       paidInFull
     );
-    const nextManualStatus =
+    const nextManualStatus: PayJoyStoredRow["manualStatus"] =
       automaticStatus === "PAGO X"
         ? null
-        : row.manualStatus === "PAGO" && automaticStatus !== "PAGO"
-          ? null
-          : row.manualStatus;
+        : automaticStatus === "PAGO"
+          ? "PAGO"
+          : row.manualStatus === "GESTIONAR"
+            ? "GESTIONAR"
+            : row.manualStatus === "MORA"
+              ? "MORA"
+              : null;
 
     return {
       ...row,

@@ -176,11 +176,19 @@ function resolveEffectiveStatus(row: EditablePayJoyRow) {
     return "PAGO X" as RowStatus;
   }
 
-  if (row.manualStatus === "PAGO" && automaticStatus !== "PAGO") {
-    return automaticStatus;
+  if (automaticStatus === "PAGO") {
+    return "PAGO";
   }
 
-  return row.manualStatus || automaticStatus;
+  if (row.manualStatus === "GESTIONAR") {
+    return "GESTIONAR";
+  }
+
+  if (row.manualStatus === "MORA") {
+    return "MORA";
+  }
+
+  return automaticStatus;
 }
 
 function recalculateDerivedFields(row: EditablePayJoyRow) {
@@ -192,12 +200,16 @@ function recalculateDerivedFields(row: EditablePayJoyRow) {
     ? addCalendarDays(transactionDate, 18).toISOString()
     : null;
   const automaticStatus = getAutomaticStatusForRow(row);
-  const nextManualStatus =
+  const nextManualStatus: RowStatus | null =
     automaticStatus === "PAGO X"
       ? null
-      : row.manualStatus === "PAGO" && automaticStatus !== "PAGO"
-        ? null
-        : row.manualStatus;
+      : automaticStatus === "PAGO"
+        ? "PAGO"
+        : row.manualStatus === "GESTIONAR"
+          ? "GESTIONAR"
+          : row.manualStatus === "MORA"
+            ? "MORA"
+            : null;
 
   return {
     ...row,
