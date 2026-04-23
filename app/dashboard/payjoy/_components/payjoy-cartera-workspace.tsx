@@ -204,34 +204,15 @@ function getAutomaticStatusForRow(
 }
 
 function resolveEffectiveStatus(row: EditablePayJoyRow) {
-  if (row.status === "PAGO X" || row.manualStatus === "PAGO X") {
-    return "PAGO X" as RowStatus;
+  if (row.manualStatus) {
+    return row.manualStatus;
   }
 
-  const policy = getStatusPolicy(
+  return getStatusPolicy(
     row.transactionTime,
     row.devicePaymentDate,
     row.paidInFull
-  );
-  const automaticStatus = policy.automaticStatus;
-
-  if (automaticStatus === "PAGO X") {
-    return "PAGO X" as RowStatus;
-  }
-
-  if (automaticStatus === "PAGO") {
-    return "PAGO";
-  }
-
-  if (row.manualStatus === "GESTIONAR") {
-    return "GESTIONAR";
-  }
-
-  if (row.manualStatus === "MORA") {
-    return "MORA";
-  }
-
-  return automaticStatus;
+  ).automaticStatus;
 }
 
 function recalculateDerivedFields(row: EditablePayJoyRow) {
@@ -248,18 +229,7 @@ function recalculateDerivedFields(row: EditablePayJoyRow) {
     row.paidInFull
   );
   const automaticStatus = policy.automaticStatus;
-  const nextManualStatus: RowStatus | null =
-    row.status === "PAGO X" || row.manualStatus === "PAGO X"
-      ? "PAGO X"
-      : automaticStatus === "PAGO X"
-        ? "PAGO X"
-      : automaticStatus === "PAGO"
-        ? "PAGO"
-        : row.manualStatus === "GESTIONAR"
-          ? "GESTIONAR"
-          : row.manualStatus === "MORA"
-            ? "MORA"
-            : null;
+  const nextManualStatus: RowStatus | null = row.manualStatus;
 
   return {
     ...row,
@@ -760,49 +730,6 @@ export default function PayJoyCarteraWorkspace() {
     field: EditableField,
     value: string | RowStatus
   ) => {
-    if (field === "status") {
-      const currentRow = rows.find((row) => row.localId === localId);
-
-      if (!currentRow) {
-        return;
-      }
-
-      const policy = getStatusPolicy(
-        currentRow.transactionTime,
-        currentRow.devicePaymentDate,
-        currentRow.paidInFull
-      );
-      const nextManualStatus = value === "AUTO" ? null : (value as RowStatus);
-
-      if (
-        currentRow.status === "PAGO X" ||
-        currentRow.manualStatus === "PAGO X" ||
-        policy.automaticStatus === "PAGO X"
-      ) {
-        setMessage("Los registros en PAGO X no se pueden mover manualmente.");
-        return;
-      }
-
-      if (policy.lockedByMaxWindow) {
-        setMessage(
-          "Este registro supero 14 dias sobre la fecha maxima de pago y ya no puede modificarse manualmente."
-        );
-        return;
-      }
-
-      if (nextManualStatus === "PAGO" && policy.automaticStatus !== "PAGO") {
-        setMessage(
-          "Este registro solo puede pasar a PAGO cuando la regla automatica de PayJoy lo permite."
-        );
-        return;
-      }
-
-      if (nextManualStatus === "PAGO X") {
-        setMessage("PAGO X solo se asigna automaticamente por la politica.");
-        return;
-      }
-    }
-
     setRows((currentRows) =>
       currentRows.map((row) => {
         if (row.localId !== localId) {
@@ -1878,26 +1805,15 @@ export default function PayJoyCarteraWorkspace() {
                         row.devicePaymentDate,
                         row.paidInFull
                       );
-                      const statusLocked =
-                        row.status === "PAGO X" ||
-                        row.manualStatus === "PAGO X" ||
-                        policy.automaticStatus === "PAGO X" ||
-                        policy.lockedByMaxWindow;
-                      const canMoveToPago =
-                        policy.automaticStatus === "PAGO" ||
-                        row.status === "PAGO";
-                      const statusSelectValue =
-                        row.status === "PAGO X" || row.manualStatus === "PAGO X"
-                          ? "PAGO X"
-                          : row.manualStatus || "AUTO";
-                      const statusLockMessage =
-                        row.status === "PAGO X" ||
-                        row.manualStatus === "PAGO X" ||
-                        policy.automaticStatus === "PAGO X"
-                          ? "Bloqueado por regla PAGO X"
-                          : policy.lockedByMaxWindow
-                            ? "Bloqueado por superar 14 dias sobre la fecha maxima"
-                            : null;
+                      const statusSelectValue = row.manualStatus || "AUTO";
+                      const statusPolicyMessage = [
+                        `Politica: ${policy.automaticStatus}`,
+                        policy.lockedByMaxWindow
+                          ? "supera 14 dias sobre la fecha maxima"
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" | ");
 
                       return (
                         <tr
@@ -2023,15 +1939,12 @@ export default function PayJoyCarteraWorkspace() {
                                     event.target.value
                                   )
                                 }
-                                disabled={statusLocked}
                                 className={[cellInputClass, appearance.input].join(
                                   " "
                                 )}
                               >
                                 <option value="AUTO">AUTO</option>
-                                {canMoveToPago && (
-                                  <option value="PAGO">PAGO</option>
-                                )}
+                                <option value="PAGO">PAGO</option>
                                 <option value="MORA">MORA</option>
                                 <option value="GESTIONAR">GESTIONAR</option>
                                 <option value="PAGO X">PAGO X</option>
@@ -2054,9 +1967,9 @@ export default function PayJoyCarteraWorkspace() {
                                   {row.lookupMessage}
                                 </div>
                               )}
-                              {statusLockMessage && (
+                              {statusPolicyMessage && (
                                 <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800/80">
-                                  {statusLockMessage}
+                                  {statusPolicyMessage}
                                 </div>
                               )}
                             </div>
