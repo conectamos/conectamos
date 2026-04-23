@@ -417,10 +417,10 @@ function matchesStatusFilter(
 }
 
 const cellInputClass =
-  "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white";
+  "w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition focus:border-[#c79a57] focus:ring-2 focus:ring-[#f4dfbc]";
 
 const cellReadonlyClass =
-  "rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700";
+  "rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-3 py-2.5 text-sm font-medium text-slate-700";
 
 const tableColCorteClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColTransactionClass = "w-[270px] min-w-[270px] px-4 py-4";
@@ -450,7 +450,9 @@ export default function PayJoyCarteraWorkspace() {
   const [savedCuts, setSavedCuts] = useState<PayJoyCutListItem[]>([]);
   const [savedCutsLoading, setSavedCutsLoading] = useState(true);
   const [savedCutsError, setSavedCutsError] = useState("");
+  const [savedCutsExpanded, setSavedCutsExpanded] = useState(false);
   const [consultingCutId, setConsultingCutId] = useState<number | null>(null);
+  const [deletingCutId, setDeletingCutId] = useState<number | null>(null);
   const [activeSavedCutId, setActiveSavedCutId] = useState<number | null>(null);
   const deferredMerchantQuery = useDeferredValue(merchantQuery);
   const normalizedMerchantQuery = normalizeSearchText(deferredMerchantQuery);
@@ -487,6 +489,7 @@ export default function PayJoyCarteraWorkspace() {
   );
   const totalSelectedFiles = files.length;
   const canSaveCut = Boolean(data && rows.length);
+  const savedCutsCount = savedCuts.length;
 
   const loadSavedCuts = async () => {
     try {
@@ -511,7 +514,12 @@ export default function PayJoyCarteraWorkspace() {
         return;
       }
 
-      setSavedCuts(payload.cortes || []);
+      const loadedCuts = payload.cortes || [];
+      setSavedCuts(loadedCuts);
+
+      if (!loadedCuts.length) {
+        setSavedCutsExpanded(false);
+      }
     } catch {
       setSavedCutsError("No fue posible cargar el historial de cortes.");
     } finally {
@@ -655,6 +663,7 @@ export default function PayJoyCarteraWorkspace() {
 
       setSaveName(payload.corte.recordName);
       setActiveSavedCutId(payload.corte.id);
+      setSavedCutsExpanded(true);
       setMessage(
         payload.mensaje ||
           `Corte guardado correctamente como "${payload.corte.recordName}".`
@@ -689,6 +698,7 @@ export default function PayJoyCarteraWorkspace() {
       }
 
       applyStoredCut(payload.corte);
+      setSavedCutsExpanded(true);
       setMessage(
         `Consultando el corte guardado "${payload.corte.recordName}" con ${payload.corte.uniqueRows} transaccion(es).`
       );
@@ -696,6 +706,50 @@ export default function PayJoyCarteraWorkspace() {
       setMessage("No fue posible consultar el corte guardado.");
     } finally {
       setConsultingCutId(null);
+    }
+  };
+
+  const deleteStoredCut = async (cutId: number, recordName: string) => {
+    const confirmed =
+      typeof window === "undefined"
+        ? true
+        : window.confirm(
+            `Vas a eliminar el corte guardado "${recordName}". Esta accion no se puede deshacer.`
+          );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingCutId(cutId);
+      setMessage("");
+
+      const response = await fetch(`/api/payjoy/cartera/cortes?id=${cutId}`, {
+        method: "DELETE",
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        mensaje?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setMessage(payload.error || "No fue posible eliminar el corte guardado.");
+        return;
+      }
+
+      if (activeSavedCutId === cutId) {
+        setActiveSavedCutId(null);
+      }
+
+      setMessage(payload.mensaje || "Corte guardado eliminado correctamente.");
+      await loadSavedCuts();
+    } catch {
+      setMessage("No fue posible eliminar el corte guardado.");
+    } finally {
+      setDeletingCutId(null);
     }
   };
 
@@ -713,7 +767,7 @@ export default function PayJoyCarteraWorkspace() {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f6f3ec_0%,#eef3f8_100%)] px-4 py-8">
       <div className="mx-auto w-full max-w-none">
-        <section className="relative overflow-hidden rounded-[34px] border border-[#20242c] bg-[linear-gradient(135deg,#0d1014_0%,#171c24_58%,#212938_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] sm:px-8">
+        <section className="relative overflow-hidden rounded-[34px] border border-[#20242c] bg-[linear-gradient(135deg,#0d1014_0%,#171c24_58%,#212938_100%)] px-6 py-6 text-white shadow-[0_30px_90px_rgba(15,23,42,0.16)] sm:px-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(197,154,87,0.25),transparent_22%),radial-gradient(circle_at_left_center,rgba(255,255,255,0.08),transparent_24%)]" />
           <div className="pointer-events-none absolute -right-10 top-8 hidden h-44 w-44 rounded-full border border-white/10 lg:block" />
 
@@ -728,39 +782,47 @@ export default function PayJoyCarteraWorkspace() {
                 </div>
               </div>
 
-              <h1 className="mt-5 text-4xl font-black tracking-tight text-white sm:text-5xl">
+              <h1 className="mt-5 text-4xl font-black tracking-tight text-white sm:text-[3.6rem]">
                 Cartera PayJoy
               </h1>
               <div className="mt-4 h-[3px] w-18 rounded-full bg-[#c79a57]" />
-              <p className="mt-5 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
-                Consolida cortes de transacciones, elimina duplicados y calcula
-                el estado de cartera por merchant desde un panel reservado para
-                administracion.
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
+                Consolida cortes de transacciones, detecta cartera por merchant
+                y administra el historial desde una vista mas limpia para
+                operacion.
               </p>
 
-              <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-4 backdrop-blur">
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Cargas listas
+                    Archivos listos
                   </p>
-                  <p className="mt-2 text-3xl font-black text-white">
+                  <p className="mt-2 text-2xl font-black text-white">
                     {totalSelectedFiles}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-4 backdrop-blur">
+                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Cortes guardados
+                  </p>
+                  <p className="mt-2 text-2xl font-black text-white">
+                    {savedCutsCount}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Filas activas
+                  </p>
+                  <p className="mt-2 text-2xl font-black text-white">
+                    {rows.length}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                     Formatos
                   </p>
-                  <p className="mt-2 text-lg font-black text-white">
+                  <p className="mt-2 text-base font-black text-white">
                     XLSX, CSV, TXT
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-4 backdrop-blur">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Flujo
-                  </p>
-                  <p className="mt-2 text-lg font-black text-white">
-                    Solo por archivo
                   </p>
                 </div>
               </div>
@@ -790,26 +852,24 @@ export default function PayJoyCarteraWorkspace() {
         </section>
 
         {message && (
-          <div className="mb-6 mt-6 rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-700 shadow-sm">
+          <div className="mb-6 mt-6 rounded-[22px] border border-[#d8c8aa] bg-[linear-gradient(180deg,#fffdf8_0%,#faf5eb_100%)] px-5 py-4 text-sm font-medium text-slate-700 shadow-sm">
             {message}
           </div>
         )}
 
-        <section className="mt-6 rounded-[30px] border border-[#e3d9c8] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-6 shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+        <section className="mt-6 rounded-[30px] border border-[#e3d9c8] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-            <div className="rounded-[28px] border border-dashed border-[#d8cbb5] bg-[linear-gradient(180deg,#fdfbf6_0%,#f7f1e7_100%)] p-6">
+            <div className="rounded-[28px] border border-dashed border-[#d8cbb5] bg-[linear-gradient(180deg,#fdfbf6_0%,#f8f2e9_100%)] p-5">
               <div className="inline-flex rounded-full border border-[#dfcfb3] bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
-                Cargue de archivos
+                Operacion actual
               </div>
 
-              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-                Subir multiples transacciones
+              <h2 className="mt-4 text-[2rem] font-black tracking-tight text-slate-950">
+                Cargar transacciones
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                Carga archivos Excel, CSV o TXT exportados desde PayJoy. Cada
-                archivo genera su nombre de corte a partir del nombre del
-                archivo y el modulo consolida la cartera sin repetir
-                transacciones.
+                Sube archivos exportados desde PayJoy, consolida sin duplicados
+                y deja listo el corte para guardar o analizar.
               </p>
 
               <input
@@ -837,7 +897,7 @@ export default function PayJoyCarteraWorkspace() {
                 >
                   {loading ? "Procesando..." : "Procesar cargas"}
                 </button>
-                <div className="rounded-2xl border border-[#e2d8c7] bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700">
+                <div className="rounded-2xl border border-[#e2d8c7] bg-white/90 px-4 py-3 text-sm font-semibold text-slate-700">
                   {files.length
                     ? `${files.length} archivo(s) listo(s)`
                     : "Aun no has seleccionado archivos"}
@@ -858,22 +918,23 @@ export default function PayJoyCarteraWorkspace() {
               )}
             </div>
 
-            <div className="rounded-[28px] border border-[#e6dece] bg-white p-6 shadow-sm">
+            <div className="rounded-[28px] border border-[#e6dece] bg-white p-5 shadow-sm">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Reglas del modulo
+                Checklist rapido
               </div>
 
-              <div className="mt-5 space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div className="mt-5 space-y-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Hoja o contenido valido
+                    Validacion
                   </p>
                   <p className="mt-2 text-sm leading-6 text-slate-700">
-                    El archivo debe traer la hoja <span className="font-semibold">Transacciones</span> o una tabla con columnas validas.
+                    Hoja <span className="font-semibold">Transacciones</span> o
+                    tabla con columnas validas.
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Campos base
                   </p>
@@ -883,12 +944,14 @@ export default function PayJoyCarteraWorkspace() {
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
                     Calculo automatico
                   </p>
                   <p className="mt-2 text-sm leading-6 text-amber-800">
-                    Fecha de pago = +14 dias calendario. Pago maximo = +18 dias calendario. Si PayJoy indica que el equipo esta pagado por completo, se marca como <span className="font-semibold">PAGO</span>.
+                    Fecha de pago = +14 dias. Pago maximo = +18 dias. Si el
+                    equipo ya esta pagado, se marca como{" "}
+                    <span className="font-semibold">PAGO</span>.
                   </p>
                 </div>
               </div>
@@ -896,8 +959,8 @@ export default function PayJoyCarteraWorkspace() {
           </div>
         </section>
 
-        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.22fr)]">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
             <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
               Guardar corte
             </div>
@@ -906,8 +969,8 @@ export default function PayJoyCarteraWorkspace() {
               Registro persistente
             </h2>
             <p className="mt-3 text-sm leading-7 text-slate-600">
-              Guarda el corte ya procesado y editado para volverlo a consultar
-              despues desde este mismo modulo.
+              Guarda la cartera actual para volver a consultarla sin recalcular
+              todo el modulo.
             </p>
 
             {canSaveCut ? (
@@ -920,7 +983,7 @@ export default function PayJoyCarteraWorkspace() {
                     value={saveName}
                     onChange={(event) => setSaveName(event.target.value)}
                     placeholder="Ej: Corte abril 4 PayJoy"
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-slate-500"
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-[#c79a57] focus:ring-2 focus:ring-[#f4dfbc]"
                   />
                 </label>
 
@@ -948,23 +1011,21 @@ export default function PayJoyCarteraWorkspace() {
                   >
                     {savingCut ? "Guardando..." : "Guardar corte"}
                   </button>
-                  <p className="text-sm text-slate-500">
-                    Se guarda la tabla actual, incluyendo ediciones manuales y
-                    estados ajustados.
-                  </p>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    {rows.length} fila(s) listas para guardar
+                  </div>
                 </div>
               </>
             ) : (
               <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
-                Procesa una cartera primero y luego podras usar el boton{" "}
-                <span className="font-semibold">Guardar corte</span> para dejar
-                el registro disponible a futuro.
+                Procesa una cartera primero y luego podras guardarla en el
+                historial.
               </div>
             )}
           </div>
 
-          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                   Historial de cortes
@@ -973,18 +1034,30 @@ export default function PayJoyCarteraWorkspace() {
                   Cortes guardados
                 </h2>
                 <p className="mt-3 text-sm leading-7 text-slate-600">
-                  Consulta cualquier corte guardado y cargalo otra vez en la
-                  tabla para seguir revisandolo.
+                  Mantenlo oculto cuando estes trabajando la cartera actual y
+                  expandelo solo cuando necesites consultar o borrar cortes.
                 </p>
               </div>
 
-              <button
-                onClick={() => void loadSavedCuts()}
-                disabled={savedCutsLoading}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
-              >
-                {savedCutsLoading ? "Actualizando..." : "Actualizar"}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
+                  {savedCutsCount} corte(s)
+                </div>
+                <button
+                  onClick={() => setSavedCutsExpanded((current) => !current)}
+                  disabled={!savedCutsCount}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savedCutsExpanded ? "Ocultar cortes" : "Visualizar cortes"}
+                </button>
+                <button
+                  onClick={() => void loadSavedCuts()}
+                  disabled={savedCutsLoading}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+                >
+                  {savedCutsLoading ? "Actualizando..." : "Actualizar"}
+                </button>
+              </div>
             </div>
 
             {savedCutsError && (
@@ -997,19 +1070,46 @@ export default function PayJoyCarteraWorkspace() {
               <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
                 Cargando historial de cortes guardados...
               </div>
-            ) : savedCuts.length ? (
-              <div className="mt-5 space-y-4">
+            ) : !savedCuts.length ? (
+              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+                Aun no hay cortes guardados. Cuando uses{" "}
+                <span className="font-semibold">Guardar corte</span>, te
+                quedaran listados aqui para futuras consultas.
+              </div>
+            ) : !savedCutsExpanded ? (
+              <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">
+                      Historial oculto para mantener el panel liviano
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Tienes {savedCutsCount} corte(s) guardado(s). Pulsa{" "}
+                      <span className="font-semibold">Visualizar cortes</span>{" "}
+                      cuando necesites consultarlos.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                    Ultimo guardado:{" "}
+                    <span className="font-semibold text-slate-950">
+                      {savedCuts[0]?.recordName || "-"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 max-h-[560px] space-y-3 overflow-y-auto pr-1">
                 {savedCuts.map((cut) => (
                   <article
                     key={cut.id}
                     className={[
-                      "rounded-[24px] border p-5 transition",
+                      "rounded-[24px] border px-4 py-4 transition",
                       activeSavedCutId === cut.id
-                        ? "border-[#c79a57] bg-[#fff9f0] shadow-sm"
-                        : "border-slate-200 bg-slate-50",
+                        ? "border-[#d8b476] bg-[#fff9ef] shadow-sm"
+                        : "border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]",
                     ].join(" ")}
                   >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-lg font-black tracking-tight text-slate-950">
@@ -1027,72 +1127,78 @@ export default function PayJoyCarteraWorkspace() {
                             {cut.savedByName || cut.savedByUser || "Admin"}
                           </span>
                         </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {cut.sourceNames.map((name) => (
+                            <span
+                              key={`${cut.id}-${name}`}
+                              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+                            >
+                              {name}
+                            </span>
+                          ))}
+                        </div>
                       </div>
 
-                      <button
-                        onClick={() => void loadStoredCut(cut.id)}
-                        disabled={consultingCutId === cut.id}
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-70"
-                      >
-                        {consultingCutId === cut.id
-                          ? "Consultando..."
-                          : "Consultar"}
-                      </button>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {cut.sourceNames.map((name) => (
-                        <span
-                          key={`${cut.id}-${name}`}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => void loadStoredCut(cut.id)}
+                          disabled={consultingCutId === cut.id}
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-70"
                         >
-                          {name}
-                        </span>
-                      ))}
+                          {consultingCutId === cut.id
+                            ? "Consultando..."
+                            : "Consultar"}
+                        </button>
+                        <button
+                          onClick={() =>
+                            void deleteStoredCut(cut.id, cut.recordName)
+                          }
+                          disabled={deletingCutId === cut.id}
+                          className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                        >
+                          {deletingCutId === cut.id
+                            ? "Eliminando..."
+                            : "Eliminar"}
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                    <div className="mt-4 grid gap-2 sm:grid-cols-4">
                       <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                           Transacciones
                         </p>
-                        <p className="mt-2 text-xl font-black text-slate-950">
+                        <p className="mt-1 text-lg font-black text-slate-950">
                           {cut.uniqueRows}
                         </p>
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          PAGO
+                          Pago
                         </p>
-                        <p className="mt-2 text-xl font-black text-emerald-700">
+                        <p className="mt-1 text-lg font-black text-emerald-700">
                           {cut.summary.pago}
                         </p>
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          MORA
+                          Mora
                         </p>
-                        <p className="mt-2 text-xl font-black text-red-700">
+                        <p className="mt-1 text-lg font-black text-red-700">
                           {cut.summary.mora}
                         </p>
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          PAGO X
+                          Pago X
                         </p>
-                        <p className="mt-2 text-xl font-black text-amber-700">
+                        <p className="mt-1 text-lg font-black text-amber-700">
                           {cut.summary.pagoX}
                         </p>
                       </div>
                     </div>
                   </article>
                 ))}
-              </div>
-            ) : (
-              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
-                Aun no hay cortes guardados. Cuando uses{" "}
-                <span className="font-semibold">Guardar corte</span>, te
-                quedaran listados aqui para futuras consultas.
               </div>
             )}
           </div>
@@ -1101,29 +1207,29 @@ export default function PayJoyCarteraWorkspace() {
         {data && (
           <>
             <section className="mt-6 grid gap-4 md:grid-cols-5">
-              <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Cargas
                 </p>
-                <p className="mt-3 text-3xl font-black text-slate-950">
+                <p className="mt-2 text-3xl font-black text-slate-950">
                   {data.totalSources}
                 </p>
               </div>
 
-              <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Filas brutas
                 </p>
-                <p className="mt-3 text-3xl font-black text-slate-950">
+                <p className="mt-2 text-3xl font-black text-slate-950">
                   {data.rawRows}
                 </p>
               </div>
 
-              <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Unicas
                 </p>
-                <p className="mt-3 text-3xl font-black text-slate-950">
+                <p className="mt-2 text-3xl font-black text-slate-950">
                   {hasActiveFilter ? filteredRows.length : rows.length}
                 </p>
                 <p className="mt-2 text-sm text-slate-500">
@@ -1131,20 +1237,20 @@ export default function PayJoyCarteraWorkspace() {
                 </p>
               </div>
 
-              <div className="rounded-[24px] border border-red-200 bg-red-50 p-5 shadow-sm">
+              <div className="rounded-[24px] border border-red-200 bg-[linear-gradient(180deg,#fff5f5_0%,#fef2f2_100%)] p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
                   Mora
                 </p>
-                <p className="mt-3 text-3xl font-black text-red-700">
+                <p className="mt-2 text-3xl font-black text-red-700">
                   {summaryCards.mora}
                 </p>
               </div>
 
-              <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+              <div className="rounded-[24px] border border-emerald-200 bg-[linear-gradient(180deg,#f0fdf4_0%,#ecfdf5_100%)] p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
                   Pago
                 </p>
-                <p className="mt-3 text-3xl font-black text-emerald-700">
+                <p className="mt-2 text-3xl font-black text-emerald-700">
                   {summaryCards.pago}
                 </p>
                 <p className="mt-2 text-sm text-emerald-700/80">
@@ -1157,15 +1263,14 @@ export default function PayJoyCarteraWorkspace() {
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                    Filtros y resumen
+                    Analitica
                   </div>
                   <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-                    Merchant name y mora por comercio
+                    Filtros de cartera
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm text-slate-500">
-                    Filtra por Merchant name, revisa cuantos registros tiene
-                    cada comercio y edita la tabla para recalcular la mora en
-                    vivo.
+                    Filtra por tienda, estado y revisa el comportamiento de la
+                    cartera visible sin salir del panel.
                   </p>
                 </div>
 
@@ -1305,7 +1410,7 @@ export default function PayJoyCarteraWorkspace() {
 
             <section className="mt-6 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Resumen por merchant
+                Resumen por tienda
               </div>
               <div className="mt-4 overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200">
@@ -1385,10 +1490,10 @@ export default function PayJoyCarteraWorkspace() {
               </p>
             </section>
 
-            <section className="mt-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 px-6 py-5">
+            <section className="mt-6 overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-5">
                 <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Tabla editable
+                  Tabla operativa
                 </div>
                 <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
                   Tabla de cartera PayJoy
@@ -1403,7 +1508,7 @@ export default function PayJoyCarteraWorkspace() {
 
               <div className="overflow-x-auto">
                 <table className="min-w-[2370px] divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
+                  <thead className="bg-[#f7f9fc]">
                     <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       <th className={tableColTransactionClass}>
                         Fecha crédito
@@ -1423,7 +1528,7 @@ export default function PayJoyCarteraWorkspace() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {filteredRows.map((row) => (
-                      <tr key={row.localId}>
+                      <tr key={row.localId} className="align-top even:bg-[#fbfcfe]">
                         <td className={tableColTransactionClass}>
                           <div className={cellReadonlyClass}>
                             {formatDateTime(row.transactionTime)}

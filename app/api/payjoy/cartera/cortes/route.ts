@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import {
+  deleteStoredPayJoyCutById,
   getStoredPayJoyCutById,
   listStoredPayJoyCuts,
   saveStoredPayJoyCut,
@@ -265,6 +266,51 @@ export async function POST(req: Request) {
           error instanceof Error
             ? error.message
             : "No fue posible guardar el corte PayJoy.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const user = await getAdminUser();
+
+    if (user instanceof NextResponse) {
+      return user;
+    }
+
+    const { searchParams } = new URL(req.url);
+    const requestedId = Number(searchParams.get("id") || 0);
+
+    if (!Number.isFinite(requestedId) || requestedId <= 0) {
+      return NextResponse.json(
+        { error: "Debes indicar un corte valido para eliminar." },
+        { status: 400 }
+      );
+    }
+
+    const removed = await deleteStoredPayJoyCutById(requestedId);
+
+    if (!removed) {
+      return NextResponse.json(
+        { error: "No se encontro el corte guardado para eliminar." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      mensaje: "Corte guardado eliminado correctamente.",
+    });
+  } catch (error) {
+    console.error("ERROR ELIMINANDO CORTE PAYJOY:", error);
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "No fue posible eliminar el corte guardado.",
       },
       { status: 500 }
     );

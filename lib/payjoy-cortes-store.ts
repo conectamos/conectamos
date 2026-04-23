@@ -383,3 +383,18 @@ export async function saveStoredPayJoyCut(input: SavePayJoyCutInput) {
 
   return mapStoredCutRow(rows[0]);
 }
+
+export async function deleteStoredPayJoyCutById(id: number) {
+  await ensurePayJoyCutsTable();
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
+    `
+      DELETE FROM payjoy_cortes_guardados
+      WHERE id = $1
+      RETURNING id
+    `,
+    Math.floor(id)
+  );
+
+  return rows.length > 0;
+}
