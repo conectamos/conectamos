@@ -131,32 +131,66 @@ function getDateKeyInBogota(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function computeStatus(
+function getCalendarDiffInBogota(laterDate: Date, earlierDate: Date) {
+  const laterKey = getDateKeyInBogota(laterDate);
+  const earlierKey = getDateKeyInBogota(earlierDate);
+  const [laterYear, laterMonth, laterDay] = laterKey.split("-").map(Number);
+  const [earlierYear, earlierMonth, earlierDay] = earlierKey
+    .split("-")
+    .map(Number);
+
+  const laterUtc = Date.UTC(laterYear, laterMonth - 1, laterDay);
+  const earlierUtc = Date.UTC(earlierYear, earlierMonth - 1, earlierDay);
+
+  return Math.round((laterUtc - earlierUtc) / 86_400_000);
+}
+
+function getStatusPolicy(
   transactionTime: string | null,
   devicePaymentDate: string | null,
   paidInFull: boolean
-): RowStatus {
+) {
   if (paidInFull) {
-    return "PAGO";
+    return {
+      automaticStatus: "PAGO" as RowStatus,
+      lockedByMaxWindow: false,
+    };
   }
 
   const transactionDate = parseIsoDate(transactionTime);
   const deviceDate = parseIsoDate(devicePaymentDate);
 
   if (!transactionDate || !deviceDate) {
-    return "PAGO X";
+    return {
+      automaticStatus: "PAGO X" as RowStatus,
+      lockedByMaxWindow: false,
+    };
   }
 
-  const expectedPaymentDate = addCalendarDays(transactionDate, 14);
-  const pagoThresholdDate = addCalendarDays(expectedPaymentDate, 10);
-  const expectedKey = getDateKeyInBogota(expectedPaymentDate);
-  const deviceKey = getDateKeyInBogota(deviceDate);
+  const paymentDate = addCalendarDays(transactionDate, 14);
+  const maximumPaymentDate = addCalendarDays(paymentDate, 4);
+  const daysAfterMaximumPayment = getCalendarDiffInBogota(
+    deviceDate,
+    maximumPaymentDate
+  );
+  const automaticStatus =
+    daysAfterMaximumPayment >= 10 && daysAfterMaximumPayment <= 14
+      ? ("PAGO" as RowStatus)
+      : ("MORA" as RowStatus);
 
-  if (deviceKey === expectedKey) {
-    return "MORA";
-  }
+  return {
+    automaticStatus,
+    lockedByMaxWindow: daysAfterMaximumPayment > 14,
+  };
+}
 
-  return deviceDate > pagoThresholdDate ? "PAGO" : "MORA";
+function computeStatus(
+  transactionTime: string | null,
+  devicePaymentDate: string | null,
+  paidInFull: boolean
+): RowStatus {
+  return getStatusPolicy(transactionTime, devicePaymentDate, paidInFull)
+    .automaticStatus;
 }
 
 function getAutomaticStatusForRow(
@@ -170,7 +204,16 @@ function getAutomaticStatusForRow(
 }
 
 function resolveEffectiveStatus(row: EditablePayJoyRow) {
-  const automaticStatus = getAutomaticStatusForRow(row);
+  if (row.status === "PAGO X" || row.manualStatus === "PAGO X") {
+    return "PAGO X" as RowStatus;
+  }
+
+  const policy = getStatusPolicy(
+    row.transactionTime,
+    row.devicePaymentDate,
+    row.paidInFull
+  );
+  const automaticStatus = policy.automaticStatus;
 
   if (automaticStatus === "PAGO X") {
     return "PAGO X" as RowStatus;
@@ -199,10 +242,17 @@ function recalculateDerivedFields(row: EditablePayJoyRow) {
   const maximumPaymentDate = transactionDate
     ? addCalendarDays(transactionDate, 18).toISOString()
     : null;
-  const automaticStatus = getAutomaticStatusForRow(row);
+  const policy = getStatusPolicy(
+    row.transactionTime,
+    row.devicePaymentDate,
+    row.paidInFull
+  );
+  const automaticStatus = policy.automaticStatus;
   const nextManualStatus: RowStatus | null =
-    automaticStatus === "PAGO X"
-      ? null
+    row.status === "PAGO X" || row.manualStatus === "PAGO X"
+      ? "PAGO X"
+      : automaticStatus === "PAGO X"
+        ? "PAGO X"
       : automaticStatus === "PAGO"
         ? "PAGO"
         : row.manualStatus === "GESTIONAR"
@@ -287,7 +337,7 @@ function statusClass(status: RowStatus) {
     case "MORA":
       return "border-red-600 bg-red-600 text-white";
     case "PAGO X":
-      return "border-lime-200 bg-lime-100 text-lime-800";
+      return "border-emerald-200 bg-emerald-100 text-emerald-800";
   }
 }
 
@@ -319,11 +369,11 @@ function getRowAppearance(status: RowStatus) {
       };
     case "PAGO X":
       return {
-        row: "bg-[#f2fbef] hover:bg-[#e9f8e4]",
-        surface: "border-lime-200 bg-white/85 text-slate-900",
+        row: "bg-[#ecfdf3] hover:bg-[#e2f8eb]",
+        surface: "border-emerald-200 bg-white/85 text-slate-900",
         input:
-          "border-lime-200 bg-white/95 text-slate-900 focus:border-lime-400 focus:ring-lime-100",
-        helper: "text-lime-800/80",
+          "border-emerald-200 bg-white/95 text-slate-900 focus:border-emerald-400 focus:ring-emerald-100",
+        helper: "text-emerald-800/80",
       };
   }
 }
@@ -346,7 +396,7 @@ function statusFilterClass(
     case "PAGO":
       return "border-emerald-200 bg-emerald-100 text-emerald-800";
     case "PAGO X":
-      return "border-lime-200 bg-lime-100 text-lime-800";
+      return "border-emerald-200 bg-emerald-100 text-emerald-800";
     case "TODOS":
     default:
       return "border-slate-950 bg-slate-950 text-white";
@@ -717,18 +767,38 @@ export default function PayJoyCarteraWorkspace() {
         return;
       }
 
-      const automaticStatus = getAutomaticStatusForRow(currentRow);
+      const policy = getStatusPolicy(
+        currentRow.transactionTime,
+        currentRow.devicePaymentDate,
+        currentRow.paidInFull
+      );
       const nextManualStatus = value === "AUTO" ? null : (value as RowStatus);
 
-      if (automaticStatus === "PAGO X") {
+      if (
+        currentRow.status === "PAGO X" ||
+        currentRow.manualStatus === "PAGO X" ||
+        policy.automaticStatus === "PAGO X"
+      ) {
         setMessage("Los registros en PAGO X no se pueden mover manualmente.");
         return;
       }
 
-      if (nextManualStatus === "PAGO" && automaticStatus !== "PAGO") {
+      if (policy.lockedByMaxWindow) {
+        setMessage(
+          "Este registro supero 14 dias sobre la fecha maxima de pago y ya no puede modificarse manualmente."
+        );
+        return;
+      }
+
+      if (nextManualStatus === "PAGO" && policy.automaticStatus !== "PAGO") {
         setMessage(
           "Este registro solo puede pasar a PAGO cuando la regla automatica de PayJoy lo permite."
         );
+        return;
+      }
+
+      if (nextManualStatus === "PAGO X") {
+        setMessage("PAGO X solo se asigna automaticamente por la politica.");
         return;
       }
     }
@@ -1464,7 +1534,7 @@ export default function PayJoyCarteraWorkspace() {
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                           Pago X
                         </p>
-                        <p className="mt-1 text-lg font-black text-lime-700">
+                        <p className="mt-1 text-lg font-black text-emerald-700">
                           {cut.summary.pagoX}
                         </p>
                       </div>
@@ -1803,10 +1873,31 @@ export default function PayJoyCarteraWorkspace() {
                   <tbody className="divide-y divide-white/60">
                     {filteredRows.map((row) => {
                       const appearance = getRowAppearance(row.status);
-                      const automaticStatus = getAutomaticStatusForRow(row);
-                      const statusLocked = automaticStatus === "PAGO X";
+                      const policy = getStatusPolicy(
+                        row.transactionTime,
+                        row.devicePaymentDate,
+                        row.paidInFull
+                      );
+                      const statusLocked =
+                        row.status === "PAGO X" ||
+                        row.manualStatus === "PAGO X" ||
+                        policy.automaticStatus === "PAGO X" ||
+                        policy.lockedByMaxWindow;
                       const canMoveToPago =
-                        automaticStatus === "PAGO" || row.status === "PAGO";
+                        policy.automaticStatus === "PAGO" ||
+                        row.status === "PAGO";
+                      const statusSelectValue =
+                        row.status === "PAGO X" || row.manualStatus === "PAGO X"
+                          ? "PAGO X"
+                          : row.manualStatus || "AUTO";
+                      const statusLockMessage =
+                        row.status === "PAGO X" ||
+                        row.manualStatus === "PAGO X" ||
+                        policy.automaticStatus === "PAGO X"
+                          ? "Bloqueado por regla PAGO X"
+                          : policy.lockedByMaxWindow
+                            ? "Bloqueado por superar 14 dias sobre la fecha maxima"
+                            : null;
 
                       return (
                         <tr
@@ -1924,7 +2015,7 @@ export default function PayJoyCarteraWorkspace() {
                           <td className={tableColStatusClass}>
                             <div className="flex flex-col gap-2">
                               <select
-                                value={row.manualStatus || "AUTO"}
+                                value={statusSelectValue}
                                 onChange={(event) =>
                                   updateRowField(
                                     row.localId,
@@ -1943,7 +2034,10 @@ export default function PayJoyCarteraWorkspace() {
                                 )}
                                 <option value="MORA">MORA</option>
                                 <option value="GESTIONAR">GESTIONAR</option>
-                                <option value="PAGO X">PAGO X</option>
+                                {(row.status === "PAGO X" ||
+                                  row.manualStatus === "PAGO X") && (
+                                  <option value="PAGO X">PAGO X</option>
+                                )}
                               </select>
                               <span
                                 className={[
@@ -1963,9 +2057,9 @@ export default function PayJoyCarteraWorkspace() {
                                   {row.lookupMessage}
                                 </div>
                               )}
-                              {statusLocked && (
-                                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-lime-800/80">
-                                  Bloqueado por regla PAGO X
+                              {statusLockMessage && (
+                                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800/80">
+                                  {statusLockMessage}
                                 </div>
                               )}
                             </div>

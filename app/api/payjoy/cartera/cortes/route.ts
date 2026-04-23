@@ -177,6 +177,20 @@ function getDateKeyInBogota(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function getCalendarDiffInBogota(laterDate: Date, earlierDate: Date) {
+  const laterKey = getDateKeyInBogota(laterDate);
+  const earlierKey = getDateKeyInBogota(earlierDate);
+  const [laterYear, laterMonth, laterDay] = laterKey.split("-").map(Number);
+  const [earlierYear, earlierMonth, earlierDay] = earlierKey
+    .split("-")
+    .map(Number);
+
+  const laterUtc = Date.UTC(laterYear, laterMonth - 1, laterDay);
+  const earlierUtc = Date.UTC(earlierYear, earlierMonth - 1, earlierDay);
+
+  return Math.round((laterUtc - earlierUtc) / 86_400_000);
+}
+
 function parseIsoDate(value: string | null) {
   if (!value) {
     return null;
@@ -186,32 +200,52 @@ function parseIsoDate(value: string | null) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function computeAutomaticStatus(
+function getReloadPolicy(
   transactionTime: string | null,
   devicePaymentDate: string | null,
   paidInFull: boolean
-): PayJoyStoredRow["status"] | "PAGO X" {
+) {
   if (paidInFull) {
-    return "PAGO";
+    return {
+      automaticStatus: "PAGO" as PayJoyStoredRow["status"],
+      lockedByMaxWindow: false,
+    };
   }
 
   const transactionDate = parseIsoDate(transactionTime);
   const deviceDate = parseIsoDate(devicePaymentDate);
 
   if (!transactionDate || !deviceDate) {
-    return "PAGO X";
+    return {
+      automaticStatus: "PAGO X" as const,
+      lockedByMaxWindow: false,
+    };
   }
 
-  const expectedPaymentDate = addCalendarDays(transactionDate, 14);
-  const pagoThresholdDate = addCalendarDays(expectedPaymentDate, 10);
-  const expectedKey = getDateKeyInBogota(expectedPaymentDate);
-  const deviceKey = getDateKeyInBogota(deviceDate);
+  const paymentDate = addCalendarDays(transactionDate, 14);
+  const maximumPaymentDate = addCalendarDays(paymentDate, 4);
+  const daysAfterMaximumPayment = getCalendarDiffInBogota(
+    deviceDate,
+    maximumPaymentDate
+  );
+  const automaticStatus =
+    daysAfterMaximumPayment >= 10 && daysAfterMaximumPayment <= 14
+      ? ("PAGO" as PayJoyStoredRow["status"])
+      : ("MORA" as PayJoyStoredRow["status"]);
 
-  if (deviceKey === expectedKey) {
-    return "MORA";
-  }
+  return {
+    automaticStatus,
+    lockedByMaxWindow: daysAfterMaximumPayment > 14,
+  };
+}
 
-  return deviceDate > pagoThresholdDate ? "PAGO" : "MORA";
+function computeAutomaticStatus(
+  transactionTime: string | null,
+  devicePaymentDate: string | null,
+  paidInFull: boolean
+): PayJoyStoredRow["status"] | "PAGO X" {
+  return getReloadPolicy(transactionTime, devicePaymentDate, paidInFull)
+    .automaticStatus;
 }
 
 function resolveReloadedStatus(
@@ -321,14 +355,16 @@ async function reloadStoredRows(rows: PayJoyStoredRow[]) {
     const maximumPaymentDate = row.transactionTime
       ? addCalendarDays(new Date(row.transactionTime), 18)
       : null;
-    const automaticStatus = computeAutomaticStatus(
+    const automaticStatus = getReloadPolicy(
       row.transactionTime,
       validThrough?.toISOString() ?? null,
       paidInFull
-    );
+    ).automaticStatus;
     const nextManualStatus: PayJoyStoredRow["manualStatus"] =
-      automaticStatus === "PAGO X"
-        ? null
+      row.status === "PAGO X" || row.manualStatus === "PAGO X"
+        ? "PAGO X"
+        : automaticStatus === "PAGO X"
+          ? "PAGO X"
         : automaticStatus === "PAGO"
           ? "PAGO"
           : row.manualStatus === "GESTIONAR"

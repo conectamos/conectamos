@@ -75,6 +75,20 @@ function getDateKeyInBogota(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function getCalendarDiffInBogota(laterDate: Date, earlierDate: Date) {
+  const laterKey = getDateKeyInBogota(laterDate);
+  const earlierKey = getDateKeyInBogota(earlierDate);
+  const [laterYear, laterMonth, laterDay] = laterKey.split("-").map(Number);
+  const [earlierYear, earlierMonth, earlierDay] = earlierKey
+    .split("-")
+    .map(Number);
+
+  const laterUtc = Date.UTC(laterYear, laterMonth - 1, laterDay);
+  const earlierUtc = Date.UTC(earlierYear, earlierMonth - 1, earlierDay);
+
+  return Math.round((laterUtc - earlierUtc) / 86_400_000);
+}
+
 function computeStatus(
   transactionTime: Date | null,
   validThrough: Date | null,
@@ -88,16 +102,16 @@ function computeStatus(
     return "PAGO X";
   }
 
-  const expectedPaymentDate = addCalendarDays(transactionTime, 14);
-  const pagoThresholdDate = addCalendarDays(expectedPaymentDate, 10);
-  const expectedKey = getDateKeyInBogota(expectedPaymentDate);
-  const validThroughKey = getDateKeyInBogota(validThrough);
+  const paymentDate = addCalendarDays(transactionTime, 14);
+  const maximumPaymentDate = addCalendarDays(paymentDate, 4);
+  const daysAfterMaximumPayment = getCalendarDiffInBogota(
+    validThrough,
+    maximumPaymentDate
+  );
 
-  if (validThroughKey === expectedKey) {
-    return "MORA";
-  }
-
-  return validThrough > pagoThresholdDate ? "PAGO" : "MORA";
+  return daysAfterMaximumPayment >= 10 && daysAfterMaximumPayment <= 14
+    ? "PAGO"
+    : "MORA";
 }
 
 function buildTransactionKey(row: ConsolidatedTransaction) {
