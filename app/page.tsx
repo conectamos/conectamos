@@ -248,6 +248,23 @@ export default function Home() {
   const perfilSeleccionado =
     perfiles.find((perfil) => String(perfil.id) === perfilId) ?? null;
 
+  useEffect(() => {
+    if (!perfilSeleccionado) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !cargando) {
+        setPerfilId("");
+        setPin("");
+        setMensaje("");
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [perfilSeleccionado, cargando]);
+
   const login = async () => {
     try {
       setCargando(true);
@@ -276,7 +293,7 @@ export default function Home() {
         setPin("");
         setPerfilId("");
         setBusqueda("");
-        setMensaje("Selecciona tu perfil y valida el PIN para entrar.");
+        setMensaje("");
         return;
       }
 
@@ -353,6 +370,16 @@ export default function Home() {
     setMensaje("");
   };
 
+  const cerrarModalPerfil = () => {
+    if (cargando) {
+      return;
+    }
+
+    setPerfilId("");
+    setPin("");
+    setMensaje("");
+  };
+
   if (pasoPerfil) {
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f8fbff_0%,#e9eef7_48%,#dde5f0_100%)] text-slate-900">
@@ -413,8 +440,19 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="grid gap-6 lg:grid-cols-[minmax(0,2.15fr)_minmax(320px,1fr)]">
-            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <section>
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-medium text-slate-600">
+                Selecciona una tarjeta para abrir el acceso con PIN del perfil.
+              </p>
+              <div className="inline-flex self-start rounded-full border border-slate-200 bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.26em] text-slate-500 shadow-[0_12px_28px_rgba(148,163,184,0.12)]">
+                {perfilesFiltrados.length} perfil
+                {perfilesFiltrados.length === 1 ? "" : "es"} disponible
+                {perfilesFiltrados.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
               {perfilesFiltrados.map((perfil) => {
                 const seleccionado = String(perfil.id) === perfilId;
 
@@ -424,9 +462,10 @@ export default function Home() {
                     type="button"
                     onClick={() => {
                       setPerfilId(String(perfil.id));
+                      setPin("");
                       setMensaje("");
                     }}
-                    className={`group rounded-[2rem] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(239,244,252,0.9)_100%)] p-6 text-left shadow-[0_22px_55px_rgba(71,85,105,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_70px_rgba(51,65,85,0.18)] ${
+                    className={`group rounded-[2rem] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(239,244,252,0.92)_100%)] p-6 text-left shadow-[0_22px_55px_rgba(71,85,105,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_70px_rgba(51,65,85,0.18)] ${
                       seleccionado
                         ? "border-slate-900 ring-4 ring-slate-200"
                         : "border-white/75"
@@ -464,75 +503,71 @@ export default function Home() {
                 </div>
               )}
             </div>
+          </section>
+        </main>
 
-            <aside className="rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(240,245,253,0.94)_100%)] p-6 shadow-[0_22px_60px_rgba(71,85,105,0.14)] sm:p-7">
+        {perfilSeleccionado && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.26)] px-4 backdrop-blur-[3px]">
+            <button
+              type="button"
+              aria-label="Cerrar modal"
+              onClick={cerrarModalPerfil}
+              className="absolute inset-0 cursor-default"
+            />
+
+            <div className="relative z-10 w-full max-w-md rounded-[2rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(245,249,255,0.96)_100%)] p-6 shadow-[0_28px_80px_rgba(15,23,42,0.24)] sm:p-7">
+              <button
+                type="button"
+                onClick={cerrarModalPerfil}
+                disabled={cargando}
+                className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                <span className="text-xl leading-none">×</span>
+              </button>
+
               <p className="text-[0.68rem] font-bold uppercase tracking-[0.32em] text-slate-500">
-                Acceso con PIN
+                Acceso al perfil
+              </p>
+              <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] text-slate-950">
+                Ingresa tu PIN
+              </h2>
+              <p className="mt-2 text-sm font-medium text-slate-500">
+                {perfilSeleccionado.tipoLabel}{" "}
+                {usuarioPendiente?.sedeNombre || `SEDE ${usuarioPendiente?.sedeId || ""}`}
               </p>
 
-              {perfilSeleccionado ? (
-                <>
-                  <div className="mt-5 rounded-[1.6rem] border border-slate-200 bg-white/85 p-5">
-                    <p className="text-sm text-slate-500">Perfil seleccionado</p>
-                    <h3 className="mt-2 text-2xl font-black tracking-[-0.03em] text-slate-950">
-                      {perfilSeleccionado.nombre}
-                    </h3>
-                    <p className="mt-2 text-sm font-semibold text-slate-600">
-                      {perfilSeleccionado.tipoLabel}
-                    </p>
-                    <p className="mt-4 text-sm leading-6 text-slate-500">
-                      Ingresa el PIN personal de este perfil para abrir la sesion
-                      dentro de la sede.
-                    </p>
-                  </div>
-
-                  <label className="mt-6 block text-sm font-semibold text-slate-600">
-                    PIN del perfil
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      value={pin}
-                      onChange={(event) =>
-                        setPin(event.target.value.replace(/\D/g, "").slice(0, 6))
-                      }
-                      placeholder="4 a 6 digitos"
-                      className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-xl text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-                    />
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={() => void confirmarPerfil()}
-                    disabled={cargando}
-                    className="mt-6 w-full rounded-2xl bg-[linear-gradient(135deg,#0f172a_0%,#111827_45%,#1e293b_100%)] px-6 py-4 text-base font-bold text-white shadow-[0_18px_40px_rgba(15,23,42,0.28)] transition hover:brightness-110 disabled:opacity-65"
-                  >
-                    {cargando ? "Validando perfil..." : "Entrar con este perfil"}
-                  </button>
-                </>
-              ) : (
-                <div className="mt-5 rounded-[1.6rem] border border-dashed border-slate-300 bg-white/80 p-6 text-sm leading-6 text-slate-600">
-                  Selecciona una tarjeta para habilitar el ingreso con PIN del
-                  supervisor o vendedor.
-                </div>
-              )}
+              <label className="mt-7 block">
+                <span className="sr-only">PIN del perfil</span>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoFocus
+                  value={pin}
+                  onChange={(event) =>
+                    setPin(event.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  placeholder="PIN de 4 a 6 digitos"
+                  className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-5 py-4 text-2xl tracking-[0.22em] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:tracking-[0.16em] placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
+                />
+              </label>
 
               <button
                 type="button"
-                onClick={() => void volverAlInicio()}
+                onClick={() => void confirmarPerfil()}
                 disabled={cargando}
-                className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-65"
+                className="mt-5 w-full rounded-[1.35rem] bg-[linear-gradient(135deg,#1b1f28_0%,#171c24_46%,#2a2d33_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_20px_40px_rgba(15,23,42,0.22)] transition hover:brightness-110 disabled:opacity-65"
               >
-                Cambiar sede
+                {cargando ? "Confirmando..." : "Confirmar"}
               </button>
 
               {mensaje && (
-                <p className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <p className="mt-4 rounded-[1.2rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {mensaje}
                 </p>
               )}
-            </aside>
-          </section>
-        </main>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
