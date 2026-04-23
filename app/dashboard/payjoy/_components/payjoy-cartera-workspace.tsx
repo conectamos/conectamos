@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 
-type RowStatus = "MORA" | "PAGO" | "PAGO X";
+type RowStatus = "MORA" | "GESTIONAR" | "PAGO" | "PAGO X";
 
 type PayJoyRow = {
   corteName: string;
@@ -236,11 +236,75 @@ function formatCurrency(value: number | null, currency: string | null) {
 function statusClass(status: RowStatus) {
   switch (status) {
     case "PAGO":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+      return "border-emerald-200 bg-emerald-100 text-emerald-800";
+    case "GESTIONAR":
+      return "border-rose-200 bg-rose-100 text-rose-700";
     case "MORA":
-      return "border-red-200 bg-red-50 text-red-700";
+      return "border-red-600 bg-red-600 text-white";
     case "PAGO X":
-      return "border-amber-200 bg-amber-50 text-amber-700";
+      return "border-lime-200 bg-lime-100 text-lime-800";
+  }
+}
+
+function getRowAppearance(status: RowStatus) {
+  switch (status) {
+    case "MORA":
+      return {
+        row: "bg-[#ffd5d5] hover:bg-[#ffc8c8]",
+        surface: "border-red-300/80 bg-white/55 text-slate-900",
+        input:
+          "border-red-300 bg-white/75 text-slate-900 focus:border-red-500 focus:ring-red-100",
+        helper: "text-red-900/80",
+      };
+    case "GESTIONAR":
+      return {
+        row: "bg-[#fff1f3] hover:bg-[#ffe7eb]",
+        surface: "border-rose-200 bg-white/80 text-slate-900",
+        input:
+          "border-rose-200 bg-white/90 text-slate-900 focus:border-rose-400 focus:ring-rose-100",
+        helper: "text-rose-800/80",
+      };
+    case "PAGO":
+      return {
+        row: "bg-[#ecfdf3] hover:bg-[#e2f8eb]",
+        surface: "border-emerald-200 bg-white/85 text-slate-900",
+        input:
+          "border-emerald-200 bg-white/95 text-slate-900 focus:border-emerald-400 focus:ring-emerald-100",
+        helper: "text-emerald-800/80",
+      };
+    case "PAGO X":
+      return {
+        row: "bg-[#f2fbef] hover:bg-[#e9f8e4]",
+        surface: "border-lime-200 bg-white/85 text-slate-900",
+        input:
+          "border-lime-200 bg-white/95 text-slate-900 focus:border-lime-400 focus:ring-lime-100",
+        helper: "text-lime-800/80",
+      };
+  }
+}
+
+function statusFilterClass(
+  statusOption: "TODOS" | RowStatus,
+  selectedStatus: "TODOS" | RowStatus
+) {
+  const isActive = selectedStatus === statusOption;
+
+  if (!isActive) {
+    return "border-slate-300 bg-white text-slate-700 hover:bg-slate-50";
+  }
+
+  switch (statusOption) {
+    case "MORA":
+      return "border-red-600 bg-red-600 text-white";
+    case "GESTIONAR":
+      return "border-rose-200 bg-rose-100 text-rose-700";
+    case "PAGO":
+      return "border-emerald-200 bg-emerald-100 text-emerald-800";
+    case "PAGO X":
+      return "border-lime-200 bg-lime-100 text-lime-800";
+    case "TODOS":
+    default:
+      return "border-slate-950 bg-slate-950 text-white";
   }
 }
 
@@ -265,7 +329,7 @@ function buildLocalRowId(row: PayJoyRow, index: number) {
 function summarizeRows(rows: Array<{ status: RowStatus }>) {
   return rows.reduce(
     (summary, row) => {
-      if (row.status === "MORA") {
+      if (row.status === "MORA" || row.status === "GESTIONAR") {
         summary.mora += 1;
       } else if (row.status === "PAGO") {
         summary.pago += 1;
@@ -302,7 +366,7 @@ function buildMerchantSummaries(rows: EditablePayJoyRow[]) {
 
     existing.records += 1;
 
-    if (row.status === "MORA") {
+    if (row.status === "MORA" || row.status === "GESTIONAR") {
       existing.activeCredits += 1;
       existing.overdueCredits += 1;
     } else if (row.status === "PAGO") {
@@ -418,10 +482,10 @@ function matchesStatusFilter(
 }
 
 const cellInputClass =
-  "w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition focus:border-[#c79a57] focus:ring-2 focus:ring-[#f4dfbc]";
+  "w-full rounded-2xl border px-3 py-2.5 text-sm font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition focus:ring-2";
 
 const cellReadonlyClass =
-  "rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-3 py-2.5 text-sm font-medium text-slate-700";
+  "rounded-2xl border px-3 py-2.5 text-sm font-medium";
 
 const tableColCorteClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColTransactionClass = "w-[270px] min-w-[270px] px-4 py-4";
@@ -827,63 +891,59 @@ export default function PayJoyCarteraWorkspace() {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f6f3ec_0%,#eef3f8_100%)] px-4 py-8">
+    <div className="min-h-screen bg-[#f4f7fb] px-4 py-6">
       <div className="mx-auto w-full max-w-none">
-        <section className="relative overflow-hidden rounded-[34px] border border-[#20242c] bg-[linear-gradient(135deg,#0d1014_0%,#171c24_58%,#212938_100%)] px-6 py-6 text-white shadow-[0_30px_90px_rgba(15,23,42,0.16)] sm:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(197,154,87,0.25),transparent_22%),radial-gradient(circle_at_left_center,rgba(255,255,255,0.08),transparent_24%)]" />
-          <div className="pointer-events-none absolute -right-10 top-8 hidden h-44 w-44 rounded-full border border-white/10 lg:block" />
-
+        <section className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-6 py-6 text-slate-950 shadow-[0_16px_50px_rgba(15,23,42,0.07)] sm:px-8">
           <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-4xl">
               <div className="flex flex-wrap gap-2">
-                <div className="inline-flex rounded-full border border-white/15 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f1d19c]">
+                <div className="inline-flex rounded-full border border-[#dfcfb3] bg-[#fff8ec] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
                   PayJoy cartera
                 </div>
-                <div className="inline-flex rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-200">
+                <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
                   Solo admin
                 </div>
               </div>
 
-              <h1 className="mt-5 text-4xl font-black tracking-tight text-white sm:text-[3.6rem]">
+              <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 sm:text-[3.2rem]">
                 Cartera PayJoy
               </h1>
               <div className="mt-4 h-[3px] w-18 rounded-full bg-[#c79a57]" />
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
-                Consolida cortes de transacciones, detecta cartera por merchant
-                y administra el historial desde una vista mas limpia para
-                operacion.
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
+                Consolida cortes, revisa cartera por tienda y administra el
+                historial desde un panel mas limpio para operacion.
               </p>
 
-              <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              <div className="mt-6 flex flex-wrap gap-3">
+                <div className="min-w-[170px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Archivos listos
                   </p>
-                  <p className="mt-2 text-2xl font-black text-white">
+                  <p className="mt-2 text-2xl font-black text-slate-950">
                     {totalSelectedFiles}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <div className="min-w-[170px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Cortes guardados
                   </p>
-                  <p className="mt-2 text-2xl font-black text-white">
+                  <p className="mt-2 text-2xl font-black text-slate-950">
                     {savedCutsCount}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <div className="min-w-[170px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Filas activas
                   </p>
-                  <p className="mt-2 text-2xl font-black text-white">
+                  <p className="mt-2 text-2xl font-black text-slate-950">
                     {rows.length}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 backdrop-blur">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <div className="min-w-[200px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Formatos
                   </p>
-                  <p className="mt-2 text-base font-black text-white">
+                  <p className="mt-2 text-base font-black text-slate-950">
                     XLSX, CSV, TXT
                   </p>
                 </div>
@@ -893,19 +953,19 @@ export default function PayJoyCarteraWorkspace() {
             <div className="relative flex flex-wrap gap-3">
               <Link
                 href="/dashboard/payjoy"
-                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-100"
+                className="rounded-2xl border border-slate-200 bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
               >
                 Cartera PayJoy
               </Link>
               <Link
                 href="/dashboard/payjoy/40-60"
-                className="rounded-2xl border border-white/12 bg-white/8 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 40/60
               </Link>
               <Link
                 href="/dashboard"
-                className="rounded-2xl border border-white/12 bg-transparent px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/8"
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 Volver
               </Link>
@@ -914,15 +974,15 @@ export default function PayJoyCarteraWorkspace() {
         </section>
 
         {message && (
-          <div className="mb-6 mt-6 rounded-[22px] border border-[#d8c8aa] bg-[linear-gradient(180deg,#fffdf8_0%,#faf5eb_100%)] px-5 py-4 text-sm font-medium text-slate-700 shadow-sm">
+          <div className="mb-5 mt-5 rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-700 shadow-sm">
             {message}
           </div>
         )}
 
-        <section className="mt-6 rounded-[30px] border border-[#e3d9c8] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+        <section className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_12px_38px_rgba(15,23,42,0.06)]">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-            <div className="rounded-[28px] border border-dashed border-[#d8cbb5] bg-[linear-gradient(180deg,#fdfbf6_0%,#f8f2e9_100%)] p-5">
-              <div className="inline-flex rounded-full border border-[#dfcfb3] bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+              <div className="inline-flex rounded-full border border-[#dfcfb3] bg-[#fff8ec] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
                 Operacion actual
               </div>
 
@@ -980,7 +1040,7 @@ export default function PayJoyCarteraWorkspace() {
               )}
             </div>
 
-            <div className="rounded-[28px] border border-[#e6dece] bg-white p-5 shadow-sm">
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 shadow-sm">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                 Checklist rapido
               </div>
@@ -1269,7 +1329,7 @@ export default function PayJoyCarteraWorkspace() {
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Mora
+                          Mora / gestionar
                         </p>
                         <p className="mt-1 text-lg font-black text-red-700">
                           {cut.summary.mora}
@@ -1279,7 +1339,7 @@ export default function PayJoyCarteraWorkspace() {
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                           Pago X
                         </p>
-                        <p className="mt-1 text-lg font-black text-amber-700">
+                        <p className="mt-1 text-lg font-black text-lime-700">
                           {cut.summary.pagoX}
                         </p>
                       </div>
@@ -1326,7 +1386,7 @@ export default function PayJoyCarteraWorkspace() {
 
               <div className="rounded-[24px] border border-red-200 bg-[linear-gradient(180deg,#fff5f5_0%,#fef2f2_100%)] p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
-                  Mora
+                  Mora / gestionar
                 </p>
                 <p className="mt-2 text-3xl font-black text-red-700">
                   {summaryCards.mora}
@@ -1428,16 +1488,16 @@ export default function PayJoyCarteraWorkspace() {
                   Filtrar por estado
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {(["TODOS", "PAGO", "MORA", "PAGO X"] as const).map(
+                  {(
+                    ["TODOS", "PAGO", "MORA", "GESTIONAR", "PAGO X"] as const
+                  ).map(
                     (statusOption) => (
                       <button
                         key={statusOption}
                         onClick={() => setSelectedStatus(statusOption)}
                         className={[
                           "rounded-full border px-4 py-2 text-sm font-semibold transition",
-                          selectedStatus === statusOption
-                            ? "border-slate-950 bg-slate-950 text-white"
-                            : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                          statusFilterClass(statusOption, selectedStatus),
                         ].join(" ")}
                       >
                         {statusOption}
@@ -1445,6 +1505,27 @@ export default function PayJoyCarteraWorkspace() {
                     )
                   )}
                 </div>
+              </div>
+
+              <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Cortes detectados
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(hasActiveFilter ? visibleSourceNames : data.sourceNames).map(
+                    (name) => (
+                      <span
+                        key={name}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+                      >
+                        {name}
+                      </span>
+                    )
+                  )}
+                </div>
+                <p className="mt-3 text-sm text-slate-500">
+                  Duplicados removidos: {data.duplicatesRemoved}
+                </p>
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-4">
@@ -1471,7 +1552,7 @@ export default function PayJoyCarteraWorkspace() {
 
                 <div className="rounded-[24px] border border-red-200 bg-red-50 p-5">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
-                    Mora visible
+                    Mora / gestionar
                   </p>
                   <p className="mt-3 text-3xl font-black text-red-700">
                     {visibleSummary.mora}
@@ -1558,25 +1639,6 @@ export default function PayJoyCarteraWorkspace() {
               </div>
             </section>
 
-            <section className="mt-6 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Cortes detectados
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {(hasActiveFilter ? visibleSourceNames : data.sourceNames).map((name) => (
-                  <span
-                    key={name}
-                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600"
-                  >
-                    {name}
-                  </span>
-                ))}
-              </div>
-              <p className="mt-4 text-sm text-slate-500">
-                Duplicados removidos: {data.duplicatesRemoved}
-              </p>
-            </section>
-
             <section className="mt-6 overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-5">
                 <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
@@ -1595,7 +1657,7 @@ export default function PayJoyCarteraWorkspace() {
 
               <div className="overflow-x-auto">
                 <table className="min-w-[2370px] divide-y divide-slate-200">
-                  <thead className="bg-[#f7f9fc]">
+                  <thead className="sticky top-0 z-10 bg-[#f7f9fc]">
                     <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       <th className={tableColTransactionClass}>
                         Fecha crédito
@@ -1613,108 +1675,167 @@ export default function PayJoyCarteraWorkspace() {
                       <th className={tableColStatusClass}>Estado</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {filteredRows.map((row) => (
-                      <tr key={row.localId} className="align-top even:bg-[#fbfcfe]">
-                        <td className={tableColTransactionClass}>
-                          <div className={cellReadonlyClass}>
-                            {formatDateTime(row.transactionTime)}
-                          </div>
-                        </td>
-                        <td className={tableColImeiClass}>
-                          <div className={cellReadonlyClass}>{row.imei || "-"}</div>
-                        </td>
-                        <td className={tableColNationalIdClass}>
-                          <div className={cellReadonlyClass}>
-                            {row.nationalId || "-"}
-                          </div>
-                        </td>
-                        <td className={tableColDateClass}>
-                          <div className={cellReadonlyClass}>
-                            {formatDate(row.devicePaymentDate)}
-                          </div>
-                        </td>
-                        <td className={tableColDateClass}>
-                          <div className={cellReadonlyClass}>
-                            {formatDate(row.paymentDueDate)}
-                          </div>
-                        </td>
-                        <td className={tableColDateClass}>
-                          <div className={cellReadonlyClass}>
-                            {formatDate(row.maximumPaymentDate)}
-                          </div>
-                        </td>
-                        <td className={tableColDeviceClass}>
-                          <div className={cellReadonlyClass}>
-                            {row.device || "-"}
-                          </div>
-                        </td>
-                        <td className={tableColDeviceFamilyClass}>
-                          <div className={cellReadonlyClass}>
-                            {row.deviceFamily || "-"}
-                          </div>
-                        </td>
-                        <td className={tableColCorteClass}>
-                          <div className={cellReadonlyClass}>
-                            {row.corteName || "-"}
-                          </div>
-                        </td>
-                        <td className={tableColMerchantClass}>
-                          <input
-                            value={row.merchantName}
-                            onChange={(event) =>
-                              updateRowField(
-                                row.localId,
-                                "merchantName",
-                                event.target.value
-                              )
-                            }
-                            className={cellInputClass}
-                          />
-                        </td>
-                        <td className={tableColInstallmentClass}>
-                          <div className={cellReadonlyClass}>
-                            {formatCurrency(
-                              row.installmentAmount,
-                              row.currency
-                            )}
-                          </div>
-                        </td>
-                        <td className={tableColStatusClass}>
-                          <div className="flex flex-col gap-2">
-                            <select
-                              value={row.manualStatus || "AUTO"}
+                  <tbody className="divide-y divide-white/60">
+                    {filteredRows.map((row) => {
+                      const appearance = getRowAppearance(row.status);
+
+                      return (
+                        <tr
+                          key={row.localId}
+                          className={["align-top transition-colors", appearance.row].join(
+                            " "
+                          )}
+                        >
+                          <td className={tableColTransactionClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
+                            >
+                              {formatDateTime(row.transactionTime)}
+                            </div>
+                          </td>
+                          <td className={tableColImeiClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
+                            >
+                              {row.imei || "-"}
+                            </div>
+                          </td>
+                          <td className={tableColNationalIdClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
+                            >
+                              {row.nationalId || "-"}
+                            </div>
+                          </td>
+                          <td className={tableColDateClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
+                            >
+                              {formatDate(row.devicePaymentDate)}
+                            </div>
+                          </td>
+                          <td className={tableColDateClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
+                            >
+                              {formatDate(row.paymentDueDate)}
+                            </div>
+                          </td>
+                          <td className={tableColDateClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
+                            >
+                              {formatDate(row.maximumPaymentDate)}
+                            </div>
+                          </td>
+                          <td className={tableColDeviceClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
+                            >
+                              {row.device || "-"}
+                            </div>
+                          </td>
+                          <td className={tableColDeviceFamilyClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
+                            >
+                              {row.deviceFamily || "-"}
+                            </div>
+                          </td>
+                          <td className={tableColCorteClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
+                            >
+                              {row.corteName || "-"}
+                            </div>
+                          </td>
+                          <td className={tableColMerchantClass}>
+                            <input
+                              value={row.merchantName}
                               onChange={(event) =>
                                 updateRowField(
                                   row.localId,
-                                  "status",
+                                  "merchantName",
                                   event.target.value
                                 )
                               }
-                              className={cellInputClass}
+                              className={[cellInputClass, appearance.input].join(" ")}
+                            />
+                          </td>
+                          <td className={tableColInstallmentClass}>
+                            <div
+                              className={[cellReadonlyClass, appearance.surface].join(
+                                " "
+                              )}
                             >
-                              <option value="AUTO">AUTO</option>
-                              <option value="PAGO">PAGO</option>
-                              <option value="MORA">MORA</option>
-                              <option value="PAGO X">PAGO X</option>
-                            </select>
-                            <span
-                              className={[
-                                "inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]",
-                                statusClass(row.status),
-                              ].join(" ")}
-                            >
-                              {row.status}
-                            </span>
-                            {row.lookupMessage && (
-                              <div className="text-xs leading-5 text-slate-500">
-                                {row.lookupMessage}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {formatCurrency(
+                                row.installmentAmount,
+                                row.currency
+                              )}
+                            </div>
+                          </td>
+                          <td className={tableColStatusClass}>
+                            <div className="flex flex-col gap-2">
+                              <select
+                                value={row.manualStatus || "AUTO"}
+                                onChange={(event) =>
+                                  updateRowField(
+                                    row.localId,
+                                    "status",
+                                    event.target.value
+                                  )
+                                }
+                                className={[cellInputClass, appearance.input].join(
+                                  " "
+                                )}
+                              >
+                                <option value="AUTO">AUTO</option>
+                                <option value="PAGO">PAGO</option>
+                                <option value="MORA">MORA</option>
+                                <option value="GESTIONAR">GESTIONAR</option>
+                                <option value="PAGO X">PAGO X</option>
+                              </select>
+                              <span
+                                className={[
+                                  "inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]",
+                                  statusClass(row.status),
+                                ].join(" ")}
+                              >
+                                {row.status}
+                              </span>
+                              {row.lookupMessage && (
+                                <div
+                                  className={[
+                                    "text-xs leading-5",
+                                    appearance.helper,
+                                  ].join(" ")}
+                                >
+                                  {row.lookupMessage}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
 
                     {!filteredRows.length && (
                       <tr>

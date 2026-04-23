@@ -1,6 +1,10 @@
 import prisma from "@/lib/prisma";
 
-export type PayJoyStoredRowStatus = "MORA" | "PAGO" | "PAGO X";
+export type PayJoyStoredRowStatus =
+  | "MORA"
+  | "GESTIONAR"
+  | "PAGO"
+  | "PAGO X";
 
 export type PayJoyStoredRow = {
   corteName: string;
@@ -131,7 +135,12 @@ function normalizeStoredRow(row: unknown): PayJoyStoredRow | null {
     ? String(manualStatusValue).trim().toUpperCase()
     : "";
 
-  if (status !== "MORA" && status !== "PAGO" && status !== "PAGO X") {
+  if (
+    status !== "MORA" &&
+    status !== "GESTIONAR" &&
+    status !== "PAGO" &&
+    status !== "PAGO X"
+  ) {
     return null;
   }
 
@@ -168,6 +177,7 @@ function normalizeStoredRow(row: unknown): PayJoyStoredRow | null {
       : null,
     manualStatus:
       manualStatus === "MORA" ||
+      manualStatus === "GESTIONAR" ||
       manualStatus === "PAGO" ||
       manualStatus === "PAGO X"
         ? manualStatus

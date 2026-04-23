@@ -28,7 +28,7 @@ function formatBogotaTimestamp(date = new Date()) {
 function summarizeRows(rows: PayJoyStoredRow[]): PayJoyStoredSummary {
   return rows.reduce(
     (summary, row) => {
-      if (row.status === "MORA") {
+      if (row.status === "MORA" || row.status === "GESTIONAR") {
         summary.mora += 1;
       } else if (row.status === "PAGO") {
         summary.pago += 1;
@@ -57,7 +57,12 @@ function normalizeStoredRow(value: unknown): PayJoyStoredRow | null {
     .trim()
     .toUpperCase();
 
-  if (status !== "MORA" && status !== "PAGO" && status !== "PAGO X") {
+  if (
+    status !== "MORA" &&
+    status !== "GESTIONAR" &&
+    status !== "PAGO" &&
+    status !== "PAGO X"
+  ) {
     return null;
   }
 
@@ -96,6 +101,7 @@ function normalizeStoredRow(value: unknown): PayJoyStoredRow | null {
       : null,
     manualStatus:
       manualStatus === "MORA" ||
+      manualStatus === "GESTIONAR" ||
       manualStatus === "PAGO" ||
       manualStatus === "PAGO X"
         ? manualStatus
