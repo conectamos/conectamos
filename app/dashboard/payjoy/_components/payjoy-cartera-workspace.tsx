@@ -216,22 +216,6 @@ function buildDefaultSaveName(sourceNames: string[]) {
   }).format(new Date())}`;
 }
 
-function formatCurrency(value: number | null, currency: string | null) {
-  if (value === null || !Number.isFinite(value)) {
-    return "-";
-  }
-
-  try {
-    return new Intl.NumberFormat("es-CO", {
-      style: "currency",
-      currency: currency || "COP",
-      maximumFractionDigits: 0,
-    }).format(value);
-  } catch {
-    return `${currency || "COP"} ${value.toLocaleString("es-CO")}`;
-  }
-}
-
 function statusClass(status: RowStatus) {
   switch (status) {
     case "PAGO":
@@ -346,41 +330,6 @@ function fromDateInputValue(value: string) {
   return new Date(`${value}T00:00:00-05:00`).toISOString();
 }
 
-function toDateTimeInputValue(value: string | null) {
-  const date = parseIsoDate(value);
-
-  if (!date) {
-    return "";
-  }
-
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Bogota",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-
-  const parts = formatter.formatToParts(date);
-  const year = parts.find((part) => part.type === "year")?.value || "0000";
-  const month = parts.find((part) => part.type === "month")?.value || "00";
-  const day = parts.find((part) => part.type === "day")?.value || "00";
-  const hour = parts.find((part) => part.type === "hour")?.value || "00";
-  const minute = parts.find((part) => part.type === "minute")?.value || "00";
-
-  return `${year}-${month}-${day}T${hour}:${minute}`;
-}
-
-function fromDateTimeInputValue(value: string) {
-  if (!value) {
-    return null;
-  }
-
-  return new Date(`${value}:00-05:00`).toISOString();
-}
-
 function buildEditableRows(rows: StoredPayJoyRow[]) {
   return rows.map((row, index) =>
     recalculateDerivedFields({
@@ -478,11 +427,9 @@ const cellReadonlyClass =
 const tableColCorteClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColTransactionClass = "w-[270px] min-w-[270px] px-4 py-4";
 const tableColMerchantClass = "w-[300px] min-w-[300px] px-4 py-4";
-const tableColDeviceClass = "w-[170px] min-w-[170px] px-4 py-4";
 const tableColDeviceFamilyClass = "w-[240px] min-w-[240px] px-4 py-4";
 const tableColImeiClass = "w-[210px] min-w-[210px] px-4 py-4";
 const tableColNationalIdClass = "w-[190px] min-w-[190px] px-4 py-4";
-const tableColInstallmentClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColDateClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColStatusClass = "w-[170px] min-w-[170px] px-4 py-4";
 
@@ -1447,144 +1394,45 @@ export default function PayJoyCarteraWorkspace() {
                   Tabla de cartera PayJoy
                 </h2>
                 <p className="mt-2 text-sm text-slate-500">
-                  Puedes editar Merchant name, device, fecha del device, estado
-                  y demas campos. El resumen por comercio se recalcula en vivo.
+                  Los campos base del credito quedan bloqueados. Solo puedes
+                  ajustar <span className="font-semibold">Fecha device</span> y{" "}
+                  <span className="font-semibold">Estado</span>; el resumen por
+                  comercio se recalcula en vivo.
                 </p>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="min-w-[2510px] divide-y divide-slate-200">
+                <table className="min-w-[1990px] divide-y divide-slate-200">
                   <thead className="bg-slate-50">
                     <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      <th className={tableColCorteClass}>CORTE</th>
                       <th className={tableColTransactionClass}>
-                        Transaction time
-                      </th>
-                      <th className={tableColMerchantClass}>Merchant name</th>
-                      <th className={tableColDeviceClass}>Device</th>
-                      <th className={tableColDeviceFamilyClass}>
-                        Device family
+                        Fecha credito
                       </th>
                       <th className={tableColImeiClass}>IMEI</th>
-                      <th className={tableColNationalIdClass}>National ID</th>
-                      <th className={tableColInstallmentClass}>
-                        Cuota 14 dias
-                      </th>
+                      <th className={tableColNationalIdClass}>Cedula</th>
                       <th className={tableColDateClass}>Fecha device</th>
                       <th className={tableColDateClass}>Fecha de pago</th>
-                      <th className={tableColStatusClass}>Estado</th>
                       <th className={tableColDateClass}>Pago maximo</th>
+                      <th className={tableColDeviceFamilyClass}>Referencia</th>
+                      <th className={tableColCorteClass}>Corte</th>
+                      <th className={tableColMerchantClass}>Tienda</th>
+                      <th className={tableColStatusClass}>Estado</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {filteredRows.map((row) => (
                       <tr key={row.localId}>
-                        <td className={tableColCorteClass}>
-                          <input
-                            value={row.corteName}
-                            onChange={(event) =>
-                              updateRowField(
-                                row.localId,
-                                "corteName",
-                                event.target.value
-                              )
-                            }
-                            className={cellInputClass}
-                          />
-                        </td>
                         <td className={tableColTransactionClass}>
-                          <input
-                            type="datetime-local"
-                            value={toDateTimeInputValue(row.transactionTime)}
-                            onChange={(event) =>
-                              updateRowField(
-                                row.localId,
-                                "transactionTime",
-                                fromDateTimeInputValue(event.target.value) || ""
-                              )
-                            }
-                            className={cellInputClass}
-                          />
-                          <div className="mt-2 text-xs text-slate-500">
+                          <div className={cellReadonlyClass}>
                             {formatDateTime(row.transactionTime)}
                           </div>
                         </td>
-                        <td className={tableColMerchantClass}>
-                          <input
-                            value={row.merchantName}
-                            onChange={(event) =>
-                              updateRowField(
-                                row.localId,
-                                "merchantName",
-                                event.target.value
-                              )
-                            }
-                            className={cellInputClass}
-                          />
-                        </td>
-                        <td className={tableColDeviceClass}>
-                          <input
-                            value={row.device}
-                            onChange={(event) =>
-                              updateRowField(
-                                row.localId,
-                                "device",
-                                event.target.value.toUpperCase()
-                              )
-                            }
-                            className={cellInputClass}
-                          />
-                          {row.lookupMessage && (
-                            <div className="mt-2 text-xs text-slate-500">
-                              {row.lookupMessage}
-                            </div>
-                          )}
-                        </td>
-                        <td className={tableColDeviceFamilyClass}>
-                          <input
-                            value={row.deviceFamily}
-                            onChange={(event) =>
-                              updateRowField(
-                                row.localId,
-                                "deviceFamily",
-                                event.target.value
-                              )
-                            }
-                            className={cellInputClass}
-                          />
-                        </td>
                         <td className={tableColImeiClass}>
-                          <input
-                            value={row.imei}
-                            onChange={(event) =>
-                              updateRowField(
-                                row.localId,
-                                "imei",
-                                event.target.value
-                              )
-                            }
-                            className={cellInputClass}
-                          />
+                          <div className={cellReadonlyClass}>{row.imei || "-"}</div>
                         </td>
                         <td className={tableColNationalIdClass}>
-                          <input
-                            value={row.nationalId}
-                            onChange={(event) =>
-                              updateRowField(
-                                row.localId,
-                                "nationalId",
-                                event.target.value
-                              )
-                            }
-                            className={cellInputClass}
-                          />
-                        </td>
-                        <td className={tableColInstallmentClass}>
                           <div className={cellReadonlyClass}>
-                            {formatCurrency(
-                              row.installmentAmount,
-                              row.currency
-                            )}
+                            {row.nationalId || "-"}
                           </div>
                         </td>
                         <td className={tableColDateClass}>
@@ -1607,6 +1455,26 @@ export default function PayJoyCarteraWorkspace() {
                         <td className={tableColDateClass}>
                           <div className={cellReadonlyClass}>
                             {formatDate(row.paymentDueDate)}
+                          </div>
+                        </td>
+                        <td className={tableColDateClass}>
+                          <div className={cellReadonlyClass}>
+                            {formatDate(row.maximumPaymentDate)}
+                          </div>
+                        </td>
+                        <td className={tableColDeviceFamilyClass}>
+                          <div className={cellReadonlyClass}>
+                            {row.deviceFamily || "-"}
+                          </div>
+                        </td>
+                        <td className={tableColCorteClass}>
+                          <div className={cellReadonlyClass}>
+                            {row.corteName || "-"}
+                          </div>
+                        </td>
+                        <td className={tableColMerchantClass}>
+                          <div className={cellReadonlyClass}>
+                            {row.merchantName || "-"}
                           </div>
                         </td>
                         <td className={tableColStatusClass}>
@@ -1635,11 +1503,11 @@ export default function PayJoyCarteraWorkspace() {
                             >
                               {row.status}
                             </span>
-                          </div>
-                        </td>
-                        <td className={tableColDateClass}>
-                          <div className={cellReadonlyClass}>
-                            {formatDate(row.maximumPaymentDate)}
+                            {row.lookupMessage && (
+                              <div className="text-xs leading-5 text-slate-500">
+                                {row.lookupMessage}
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1648,7 +1516,7 @@ export default function PayJoyCarteraWorkspace() {
                     {!filteredRows.length && (
                       <tr>
                         <td
-                          colSpan={12}
+                          colSpan={10}
                           className="px-4 py-8 text-center text-sm text-slate-500"
                         >
                           No hay filas para mostrar con el filtro actual.
