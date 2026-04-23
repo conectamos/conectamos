@@ -280,7 +280,9 @@ export function NuovoPayWorkspace({
   const [cargando, setCargando] = useState(false);
   const [procesando, setProcesando] = useState(false);
   const [subiendoCartera, setSubiendoCartera] = useState(false);
-  const [bloqueandoCartera, setBloqueandoCartera] = useState(false);
+  const [accionCarteraEnProceso, setAccionCarteraEnProceso] = useState<
+    "lock" | "unlock" | null
+  >(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const consultarRef = useRef<
     (
@@ -603,14 +605,14 @@ export function NuovoPayWorkspace({
     }
   };
 
-  const ejecutarBloqueoCartera = async () => {
+  const ejecutarAccionCartera = async (action: "lock" | "unlock") => {
     if (!carteraData?.latestImport?.id) {
       setMensaje("Primero debes cargar un archivo de cartera.");
       return;
     }
 
     try {
-      setBloqueandoCartera(true);
+      setAccionCarteraEnProceso(action);
       setMensaje("");
 
       const res = await fetch("/api/nuovopay/cartera", {
@@ -620,13 +622,19 @@ export function NuovoPayWorkspace({
         },
         body: JSON.stringify({
           cargaId: carteraData.latestImport.id,
+          action,
         }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setMensaje(data.error || "Error generando bloqueo por cartera");
+        setMensaje(
+          data.error ||
+            `Error generando ${
+              action === "lock" ? "bloqueo" : "desbloqueo"
+            } por cartera`
+        );
         return;
       }
 
@@ -634,11 +642,20 @@ export function NuovoPayWorkspace({
         configured: Boolean(data.configured),
         latestImport: data.latestImport,
       });
-      setMensaje(data.mensaje || "Bloqueo procesado correctamente");
+      setMensaje(
+        data.mensaje ||
+          `${
+            action === "lock" ? "Bloqueo" : "Desbloqueo"
+          } procesado correctamente`
+      );
     } catch {
-      setMensaje("Error generando bloqueo por cartera");
+      setMensaje(
+        `Error generando ${
+          action === "lock" ? "bloqueo" : "desbloqueo"
+        } por cartera`
+      );
     } finally {
-      setBloqueandoCartera(false);
+      setAccionCarteraEnProceso(null);
     }
   };
 
@@ -861,20 +878,34 @@ export function NuovoPayWorkspace({
               </button>
 
               <button
-                onClick={() => void ejecutarBloqueoCartera()}
-                disabled={
-                  bloqueandoCartera ||
-                  !latestImport?.id ||
-                  !Boolean(carteraData?.configured)
-                }
-                className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {bloqueandoCartera
-                  ? "Procesando bloqueo..."
-                  : `Generar bloqueo mora desde ${CARTERA_BLOCKING_MORA_MIN_DAYS} dias`}
-              </button>
+                  onClick={() => void ejecutarAccionCartera("lock")}
+                  disabled={
+                    accionCarteraEnProceso !== null ||
+                    !latestImport?.id ||
+                    !Boolean(carteraData?.configured)
+                  }
+                  className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {accionCarteraEnProceso === "lock"
+                    ? "Procesando bloqueo..."
+                    : `Generar bloqueo mora desde ${CARTERA_BLOCKING_MORA_MIN_DAYS} dias`}
+                </button>
+
+                <button
+                  onClick={() => void ejecutarAccionCartera("unlock")}
+                  disabled={
+                    accionCarteraEnProceso !== null ||
+                    !latestImport?.id ||
+                    !Boolean(carteraData?.configured)
+                  }
+                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {accionCarteraEnProceso === "unlock"
+                    ? "Procesando desbloqueo..."
+                    : "Desbloquear clientes con 0 o menos dias"}
+                </button>
+              </div>
             </div>
-          </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-5">
@@ -897,7 +928,7 @@ export function NuovoPayWorkspace({
                 {analytics?.totalErrores ?? 0}
               </p>
               <p className="mt-2 text-sm text-amber-700/80">
-                Cedulas que quedaron con error durante el bloqueo masivo.
+                Cedulas que quedaron con error durante el proceso masivo.
               </p>
             </div>
 
@@ -1333,7 +1364,7 @@ export function NuovoPayWorkspace({
                   Errores de procesamiento
                 </p>
                 <p className="mt-2 text-sm text-slate-500">
-                  Cedulas que quedaron con error durante el bloqueo masivo y deben revisarse manualmente.
+                  Cedulas que quedaron con error durante el proceso masivo y deben revisarse manualmente.
                 </p>
               </div>
             </div>

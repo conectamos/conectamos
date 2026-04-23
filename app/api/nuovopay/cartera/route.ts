@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { isNuovoPayConfigured, lockNuovoPayDevices, searchNuovoPayDevices } from "@/lib/nuovopay";
+import {
+  isNuovoPayConfigured,
+  lockNuovoPayDevices,
+  searchNuovoPayDevices,
+  unlockNuovoPayDevices,
+} from "@/lib/nuovopay";
 import { normalizeCedula, parseCarteraTxt } from "@/lib/cartera-import";
 
 export const runtime = "nodejs";
 
 const NEAR_FINISH_LIMIT = 20;
 const BLOCKING_MORA_MIN_DAYS = 2;
+const UNLOCKING_MORA_MAX_DAYS = 0;
 const MORA_BUCKETS = [
   { id: "al_dia", label: "Al dia", range: "0 dias", minDays: Number.NEGATIVE_INFINITY, maxDays: 0 },
   { id: "mora_leve", label: "Mora leve", range: "1 a 2 dias", minDays: 1, maxDays: 2 },
@@ -145,7 +151,7 @@ function isNearFinishClient(item: RegistroAnalitico) {
 function isProcessingError(item: RegistroAnalitico) {
   return String(item.resultadoBloqueo || "")
     .toLowerCase()
-    .startsWith("error procesando bloqueo");
+    .startsWith("error procesando");
 }
 
 function compareBlockCandidates(a: RegistroAnalitico, b: RegistroAnalitico) {
@@ -294,6 +300,36 @@ function buildBlockingResultMessage(totalMatches: number, blockedNow: number, al
       alreadyLocked === 1
         ? "1 dispositivo ya estaba bloqueado."
         : `${alreadyLocked} dispositivos ya estaban bloqueados.`
+    );
+  }
+
+  return fragments.join(" ");
+}
+
+function buildUnlockingResultMessage(
+  totalMatches: number,
+  unlockedNow: number,
+  alreadyUnlocked: number
+) {
+  const fragments = [
+    totalMatches === 1
+      ? "Coincidencia exacta encontrada en Nuovo."
+      : `${totalMatches} dispositivos coinciden exactamente en Nuovo.`,
+  ];
+
+  if (unlockedNow > 0) {
+    fragments.push(
+      unlockedNow === 1
+        ? "1 dispositivo fue desbloqueado ahora."
+        : `${unlockedNow} dispositivos fueron desbloqueados ahora.`
+    );
+  }
+
+  if (alreadyUnlocked > 0) {
+    fragments.push(
+      alreadyUnlocked === 1
+        ? "1 dispositivo ya estaba desbloqueado."
+        : `${alreadyUnlocked} dispositivos ya estaban desbloqueados.`
     );
   }
 
@@ -535,6 +571,16 @@ export async function PATCH(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const requestedImportId = Number(body?.cargaId || 0);
+    const action = String(body?.action || "lock").trim().toLowerCase() === "unlock"
+      ? "unlock"
+      : "lock";
+    const isUnlockAction = action === "unlock";
+    const targetWhere = isUnlockAction
+      ? { lte: UNLOCKING_MORA_MAX_DAYS }
+      : { gte: BLOCKING_MORA_MIN_DAYS };
+    const emptyActionMessage = isUnlockAction
+      ? `No hay registros con mora menor o igual a ${UNLOCKING_MORA_MAX_DAYS} dias para desbloquear.`
+      : `No hay registros con mora mayor o igual a ${BLOCKING_MORA_MIN_DAYS} dias para bloquear.`;
 
     const carga = requestedImportId
       ? await prisma.cargaCarteraNuovo.findUnique({
@@ -554,28 +600,37 @@ export async function PATCH(req: Request) {
     const registros = await prisma.registroCarteraNuovo.findMany({
       where: {
         cargaId: carga.id,
-        diasVencido: { gte: BLOCKING_MORA_MIN_DAYS },
+        diasVencido: targetWhere,
       },
       orderBy: [{ diasVencido: "desc" }, { id: "asc" }],
     });
 
     if (!registros.length) {
-      await prisma.cargaCarteraNuovo.update({
-        where: { id: carga.id },
-        data: {
-          totalCedulasAnalizadas: 0,
-          totalCoincidenciasNuovo: 0,
-          totalBloqueados: 0,
-          totalYaBloqueados: 0,
-          totalSinCoincidencia: 0,
-          procesadoBloqueoEn: new Date(),
-        },
-      });
+      if (isUnlockAction) {
+        await prisma.cargaCarteraNuovo.update({
+          where: { id: carga.id },
+          data: {
+            procesadoBloqueoEn: new Date(),
+          },
+        });
+      } else {
+        await prisma.cargaCarteraNuovo.update({
+          where: { id: carga.id },
+          data: {
+            totalCedulasAnalizadas: 0,
+            totalCoincidenciasNuovo: 0,
+            totalBloqueados: 0,
+            totalYaBloqueados: 0,
+            totalSinCoincidencia: 0,
+            procesadoBloqueoEn: new Date(),
+          },
+        });
+      }
 
       const latestImport = await getLatestImportSummary();
       return NextResponse.json({
         ok: true,
-        mensaje: `No hay registros con mora mayor o igual a ${BLOCKING_MORA_MIN_DAYS} dias para bloquear.`,
+        mensaje: emptyActionMessage,
         ...responsePayload(latestImport),
       });
     }
@@ -608,7 +663,11 @@ export async function PATCH(req: Request) {
               },
             },
             data: {
-              bloqueoAplicado: false,
+              ...(isUnlockAction
+                ? {}
+                : {
+                    bloqueoAplicado: false,
+                  }),
               resultadoBloqueo:
                 "Sin coincidencia exacta en Nuovo por Device Name o Customer Name.",
             },
@@ -616,21 +675,35 @@ export async function PATCH(req: Request) {
           continue;
         }
 
-        const devicesToLock = matches.filter((device) => !device.locked);
-        const alreadyLockedDevices = matches.filter((device) => device.locked);
+        const devicesToProcess = isUnlockAction
+          ? matches.filter((device) => device.locked)
+          : matches.filter((device) => !device.locked);
+        const alreadyOnTargetState = isUnlockAction
+          ? matches.filter((device) => !device.locked)
+          : matches.filter((device) => device.locked);
 
-        if (devicesToLock.length) {
-          await lockNuovoPayDevices(devicesToLock.map((device) => device.deviceId));
+        if (devicesToProcess.length) {
+          await (isUnlockAction
+            ? unlockNuovoPayDevices(
+                devicesToProcess.map((device) => device.deviceId)
+              )
+            : lockNuovoPayDevices(
+                devicesToProcess.map((device) => device.deviceId)
+              ));
         }
 
         totalCoincidenciasNuovo += matches.length;
-        totalBloqueados += devicesToLock.length;
-        totalYaBloqueados += alreadyLockedDevices.length;
+        totalBloqueados += devicesToProcess.length;
+        totalYaBloqueados += alreadyOnTargetState.length;
 
         const primaryDevice = matches[0];
         const previousBlockedAt =
           items.find((item) => item.bloqueadoEn)?.bloqueadoEn ?? null;
-        const now = devicesToLock.length ? new Date() : previousBlockedAt;
+        const now = isUnlockAction
+          ? null
+          : devicesToProcess.length
+            ? new Date()
+            : previousBlockedAt;
 
         await prisma.registroCarteraNuovo.updateMany({
           where: {
@@ -642,13 +715,19 @@ export async function PATCH(req: Request) {
             deviceId: primaryDevice.deviceId,
             deviceName: primaryDevice.customerName || primaryDevice.name,
             deviceImei: primaryDevice.imei || primaryDevice.imei2,
-            bloqueoAplicado: true,
+            bloqueoAplicado: !isUnlockAction,
             bloqueadoEn: now,
-            resultadoBloqueo: buildBlockingResultMessage(
-              matches.length,
-              devicesToLock.length,
-              alreadyLockedDevices.length
-            ),
+            resultadoBloqueo: isUnlockAction
+              ? buildUnlockingResultMessage(
+                  matches.length,
+                  devicesToProcess.length,
+                  alreadyOnTargetState.length
+                )
+              : buildBlockingResultMessage(
+                  matches.length,
+                  devicesToProcess.length,
+                  alreadyOnTargetState.length
+                ),
           },
         });
       } catch (error) {
@@ -660,46 +739,59 @@ export async function PATCH(req: Request) {
             },
           },
           data: {
-            bloqueoAplicado: false,
-            resultadoBloqueo:
-              error instanceof Error
-                ? `Error procesando bloqueo en Nuovo: ${error.message}`
-                : "Error procesando bloqueo en Nuovo.",
+            ...(isUnlockAction
+              ? {}
+              : {
+                  bloqueoAplicado: false,
+                }),
+            resultadoBloqueo: error instanceof Error
+              ? `Error procesando ${isUnlockAction ? "desbloqueo" : "bloqueo"} en Nuovo: ${error.message}`
+              : `Error procesando ${isUnlockAction ? "desbloqueo" : "bloqueo"} en Nuovo.`,
           },
         });
       }
     }
 
-    await prisma.cargaCarteraNuovo.update({
-      where: { id: carga.id },
-      data: {
-        totalCedulasAnalizadas,
-        totalCoincidenciasNuovo,
-        totalBloqueados,
-        totalYaBloqueados,
-        totalSinCoincidencia,
-        procesadoBloqueoEn: new Date(),
-      },
-    });
+    if (isUnlockAction) {
+      await prisma.cargaCarteraNuovo.update({
+        where: { id: carga.id },
+        data: {
+          procesadoBloqueoEn: new Date(),
+        },
+      });
+    } else {
+      await prisma.cargaCarteraNuovo.update({
+        where: { id: carga.id },
+        data: {
+          totalCedulasAnalizadas,
+          totalCoincidenciasNuovo,
+          totalBloqueados,
+          totalYaBloqueados,
+          totalSinCoincidencia,
+          procesadoBloqueoEn: new Date(),
+        },
+      });
+    }
 
     const latestImport = await getLatestImportSummary();
+    const actionLabel = isUnlockAction ? "Desbloqueo" : "Bloqueo";
 
     return NextResponse.json({
       ok: true,
       mensaje:
         erroresProcesamiento > 0
-          ? `Bloqueo masivo procesado para ${totalCedulasAnalizadas} cedulas. ${erroresProcesamiento} ${erroresProcesamiento === 1 ? "quedo" : "quedaron"} con error y ${erroresProcesamiento === 1 ? "debe" : "deben"} revisarse abajo.`
-          : `Bloqueo masivo procesado para ${totalCedulasAnalizadas} cedulas.`,
+          ? `${actionLabel} masivo procesado para ${totalCedulasAnalizadas} cedulas. ${erroresProcesamiento} ${erroresProcesamiento === 1 ? "quedo" : "quedaron"} con error y ${erroresProcesamiento === 1 ? "debe" : "deben"} revisarse abajo.`
+          : `${actionLabel} masivo procesado para ${totalCedulasAnalizadas} cedulas.`,
       ...responsePayload(latestImport),
     });
   } catch (error) {
-    console.error("ERROR BLOQUEANDO CARTERA NUOVO:", error);
+    console.error("ERROR PROCESANDO CARTERA NUOVO:", error);
     return NextResponse.json(
       {
         error:
           error instanceof Error
             ? error.message
-            : "Error procesando bloqueo de cartera",
+            : "Error procesando cartera de Nuovo",
       },
       { status: 500 }
     );
