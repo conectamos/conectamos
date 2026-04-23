@@ -36,6 +36,11 @@ export async function POST(req: Request) {
         claveHash: true,
         rol: true,
         sedeId: true,
+        sede: {
+          select: {
+            nombre: true,
+          },
+        },
         activo: true,
       },
     });
@@ -83,6 +88,7 @@ export async function POST(req: Request) {
             usuario: user.usuario,
             rol: user.rol,
             sedeId: user.sedeId,
+            sedeNombre: user.sede?.nombre ?? `SEDE ${user.sedeId}`,
           },
           perfiles,
         });
@@ -111,6 +117,7 @@ export async function POST(req: Request) {
         usuario: user.usuario,
         rol: user.rol,
         sedeId: user.sedeId,
+        sedeNombre: user.sede?.nombre ?? `SEDE ${user.sedeId}`,
       },
     });
 
