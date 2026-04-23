@@ -216,6 +216,22 @@ function buildDefaultSaveName(sourceNames: string[]) {
   }).format(new Date())}`;
 }
 
+function formatCurrency(value: number | null, currency: string | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "-";
+  }
+
+  try {
+    return new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: currency || "COP",
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `${currency || "COP"} ${value.toLocaleString("es-CO")}`;
+  }
+}
+
 function statusClass(status: RowStatus) {
   switch (status) {
     case "PAGO":
@@ -310,24 +326,6 @@ function buildMerchantSummaries(rows: EditablePayJoyRow[]) {
         right.records - left.records ||
         left.merchantName.localeCompare(right.merchantName)
     );
-}
-
-function toDateInputValue(value: string | null) {
-  const date = parseIsoDate(value);
-
-  if (!date) {
-    return "";
-  }
-
-  return getDateKeyInBogota(date);
-}
-
-function fromDateInputValue(value: string) {
-  if (!value) {
-    return null;
-  }
-
-  return new Date(`${value}T00:00:00-05:00`).toISOString();
 }
 
 function buildEditableRows(rows: StoredPayJoyRow[]) {
@@ -427,9 +425,11 @@ const cellReadonlyClass =
 const tableColCorteClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColTransactionClass = "w-[270px] min-w-[270px] px-4 py-4";
 const tableColMerchantClass = "w-[300px] min-w-[300px] px-4 py-4";
+const tableColDeviceClass = "w-[170px] min-w-[170px] px-4 py-4";
 const tableColDeviceFamilyClass = "w-[240px] min-w-[240px] px-4 py-4";
 const tableColImeiClass = "w-[210px] min-w-[210px] px-4 py-4";
 const tableColNationalIdClass = "w-[190px] min-w-[190px] px-4 py-4";
+const tableColInstallmentClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColDateClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColStatusClass = "w-[170px] min-w-[170px] px-4 py-4";
 
@@ -1395,27 +1395,29 @@ export default function PayJoyCarteraWorkspace() {
                 </h2>
                 <p className="mt-2 text-sm text-slate-500">
                   Los campos base del credito quedan bloqueados. Solo puedes
-                  ajustar <span className="font-semibold">Fecha device</span> y{" "}
+                  ajustar <span className="font-semibold">Tienda</span> y{" "}
                   <span className="font-semibold">Estado</span>; el resumen por
                   comercio se recalcula en vivo.
                 </p>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="min-w-[1990px] divide-y divide-slate-200">
+                <table className="min-w-[2370px] divide-y divide-slate-200">
                   <thead className="bg-slate-50">
                     <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       <th className={tableColTransactionClass}>
-                        Fecha credito
+                        Fecha crédito
                       </th>
                       <th className={tableColImeiClass}>IMEI</th>
-                      <th className={tableColNationalIdClass}>Cedula</th>
+                      <th className={tableColNationalIdClass}>Cédula</th>
                       <th className={tableColDateClass}>Fecha device</th>
                       <th className={tableColDateClass}>Fecha de pago</th>
-                      <th className={tableColDateClass}>Pago maximo</th>
+                      <th className={tableColDateClass}>Pago máximo</th>
+                      <th className={tableColDeviceClass}>Device</th>
                       <th className={tableColDeviceFamilyClass}>Referencia</th>
-                      <th className={tableColCorteClass}>Corte</th>
+                      <th className={tableColCorteClass}>CORTE</th>
                       <th className={tableColMerchantClass}>Tienda</th>
+                      <th className={tableColInstallmentClass}>Cuota</th>
                       <th className={tableColStatusClass}>Estado</th>
                     </tr>
                   </thead>
@@ -1436,19 +1438,7 @@ export default function PayJoyCarteraWorkspace() {
                           </div>
                         </td>
                         <td className={tableColDateClass}>
-                          <input
-                            type="date"
-                            value={toDateInputValue(row.devicePaymentDate)}
-                            onChange={(event) =>
-                              updateRowField(
-                                row.localId,
-                                "devicePaymentDate",
-                                fromDateInputValue(event.target.value) || ""
-                              )
-                            }
-                            className={cellInputClass}
-                          />
-                          <div className="mt-2 text-xs text-slate-500">
+                          <div className={cellReadonlyClass}>
                             {formatDate(row.devicePaymentDate)}
                           </div>
                         </td>
@@ -1462,6 +1452,11 @@ export default function PayJoyCarteraWorkspace() {
                             {formatDate(row.maximumPaymentDate)}
                           </div>
                         </td>
+                        <td className={tableColDeviceClass}>
+                          <div className={cellReadonlyClass}>
+                            {row.device || "-"}
+                          </div>
+                        </td>
                         <td className={tableColDeviceFamilyClass}>
                           <div className={cellReadonlyClass}>
                             {row.deviceFamily || "-"}
@@ -1473,8 +1468,24 @@ export default function PayJoyCarteraWorkspace() {
                           </div>
                         </td>
                         <td className={tableColMerchantClass}>
+                          <input
+                            value={row.merchantName}
+                            onChange={(event) =>
+                              updateRowField(
+                                row.localId,
+                                "merchantName",
+                                event.target.value
+                              )
+                            }
+                            className={cellInputClass}
+                          />
+                        </td>
+                        <td className={tableColInstallmentClass}>
                           <div className={cellReadonlyClass}>
-                            {row.merchantName || "-"}
+                            {formatCurrency(
+                              row.installmentAmount,
+                              row.currency
+                            )}
                           </div>
                         </td>
                         <td className={tableColStatusClass}>
@@ -1516,7 +1527,7 @@ export default function PayJoyCarteraWorkspace() {
                     {!filteredRows.length && (
                       <tr>
                         <td
-                          colSpan={10}
+                          colSpan={12}
                           className="px-4 py-8 text-center text-sm text-slate-500"
                         >
                           No hay filas para mostrar con el filtro actual.
