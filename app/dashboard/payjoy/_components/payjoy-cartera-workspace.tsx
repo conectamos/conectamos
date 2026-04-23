@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 
 type RowStatus = "MORA" | "PAGO" | "PAGO X";
 
@@ -28,6 +28,10 @@ type EditablePayJoyRow = PayJoyRow & {
   manualStatus: RowStatus | null;
 };
 
+type StoredPayJoyRow = PayJoyRow & {
+  manualStatus?: RowStatus | null;
+};
+
 type PayJoyResponse = {
   ok: boolean;
   totalSources: number;
@@ -41,6 +45,29 @@ type PayJoyResponse = {
     pagoX: number;
   };
   rows: PayJoyRow[];
+};
+
+type PayJoyCutListItem = {
+  id: number;
+  recordName: string;
+  totalSources: number;
+  sourceNames: string[];
+  rawRows: number;
+  uniqueRows: number;
+  duplicatesRemoved: number;
+  summary: {
+    mora: number;
+    pago: number;
+    pagoX: number;
+  };
+  savedById: number | null;
+  savedByName: string;
+  savedByUser: string;
+  savedAt: string;
+};
+
+type PayJoyCutDetail = PayJoyCutListItem & {
+  rows: StoredPayJoyRow[];
 };
 
 type MerchantSummary = {
@@ -175,6 +202,18 @@ function formatDate(value: string | null) {
 
 function formatPercent(value: number) {
   return `${value.toFixed(1)}%`;
+}
+
+function buildDefaultSaveName(sourceNames: string[]) {
+  if (sourceNames.length === 1) {
+    return sourceNames[0];
+  }
+
+  return `Corte PayJoy ${new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Bogota",
+  }).format(new Date())}`;
 }
 
 function formatCurrency(value: number | null, currency: string | null) {
@@ -342,14 +381,64 @@ function fromDateTimeInputValue(value: string) {
   return new Date(`${value}:00-05:00`).toISOString();
 }
 
-function buildEditableRows(rows: PayJoyRow[]) {
+function buildEditableRows(rows: StoredPayJoyRow[]) {
   return rows.map((row, index) =>
     recalculateDerivedFields({
       ...row,
       localId: buildLocalRowId(row, index),
-      manualStatus: null,
+      manualStatus: row.manualStatus ?? null,
     })
   );
+}
+
+function serializeEditableRows(rows: EditablePayJoyRow[]) {
+  return rows.map((row) => ({
+    corteName: row.corteName,
+    transactionTime: row.transactionTime,
+    merchantName: row.merchantName,
+    device: row.device,
+    deviceFamily: row.deviceFamily,
+    imei: row.imei,
+    nationalId: row.nationalId,
+    installmentAmount: row.installmentAmount,
+    paymentDueDate: row.paymentDueDate,
+    devicePaymentDate: row.devicePaymentDate,
+    paidInFull: row.paidInFull,
+    status: row.status,
+    maximumPaymentDate: row.maximumPaymentDate,
+    currency: row.currency,
+    lookupMessage: row.lookupMessage,
+    manualStatus: row.manualStatus,
+  }));
+}
+
+function buildPayJoyResponseFromSavedCut(cut: PayJoyCutDetail): PayJoyResponse {
+  return {
+    ok: true,
+    totalSources: cut.totalSources || cut.sourceNames.length,
+    sourceNames: cut.sourceNames,
+    rawRows: cut.rawRows,
+    uniqueRows: cut.uniqueRows || cut.rows.length,
+    duplicatesRemoved: cut.duplicatesRemoved,
+    summary: cut.summary,
+    rows: cut.rows.map((row) => ({
+      corteName: row.corteName,
+      transactionTime: row.transactionTime,
+      merchantName: row.merchantName,
+      device: row.device,
+      deviceFamily: row.deviceFamily,
+      imei: row.imei,
+      nationalId: row.nationalId,
+      installmentAmount: row.installmentAmount,
+      paymentDueDate: row.paymentDueDate,
+      devicePaymentDate: row.devicePaymentDate,
+      paidInFull: row.paidInFull,
+      status: row.status,
+      maximumPaymentDate: row.maximumPaymentDate,
+      currency: row.currency,
+      lookupMessage: row.lookupMessage,
+    })),
+  };
 }
 
 function matchesMerchantFilter(
@@ -409,6 +498,13 @@ export default function PayJoyCarteraWorkspace() {
     "TODOS"
   );
   const [merchantQuery, setMerchantQuery] = useState("");
+  const [saveName, setSaveName] = useState("");
+  const [savingCut, setSavingCut] = useState(false);
+  const [savedCuts, setSavedCuts] = useState<PayJoyCutListItem[]>([]);
+  const [savedCutsLoading, setSavedCutsLoading] = useState(true);
+  const [savedCutsError, setSavedCutsError] = useState("");
+  const [consultingCutId, setConsultingCutId] = useState<number | null>(null);
+  const [activeSavedCutId, setActiveSavedCutId] = useState<number | null>(null);
   const deferredMerchantQuery = useDeferredValue(merchantQuery);
   const normalizedMerchantQuery = normalizeSearchText(deferredMerchantQuery);
   const hasSelectedMerchant = selectedMerchant !== "TODOS";
@@ -443,6 +539,57 @@ export default function PayJoyCarteraWorkspace() {
     new Set(filteredRows.map((row) => row.corteName).filter(Boolean))
   );
   const totalSelectedFiles = files.length;
+  const canSaveCut = Boolean(data && rows.length);
+
+  const loadSavedCuts = async () => {
+    try {
+      setSavedCutsLoading(true);
+      setSavedCutsError("");
+
+      const response = await fetch("/api/payjoy/cartera/cortes", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        cortes?: PayJoyCutListItem[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setSavedCutsError(
+          payload.error || "No fue posible cargar el historial de cortes."
+        );
+        return;
+      }
+
+      setSavedCuts(payload.cortes || []);
+    } catch {
+      setSavedCutsError("No fue posible cargar el historial de cortes.");
+    } finally {
+      setSavedCutsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadSavedCuts();
+  }, []);
+
+  const applyStoredCut = (cut: PayJoyCutDetail) => {
+    setData(buildPayJoyResponseFromSavedCut(cut));
+    setRows(buildEditableRows(cut.rows));
+    setSelectedMerchant("TODOS");
+    setSelectedStatus("TODOS");
+    setMerchantQuery("");
+    setSaveName(cut.recordName);
+    setActiveSavedCutId(cut.id);
+    setFiles([]);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
   const processSources = async () => {
     if (!files.length) {
@@ -479,6 +626,8 @@ export default function PayJoyCarteraWorkspace() {
       setSelectedMerchant("TODOS");
       setSelectedStatus("TODOS");
       setMerchantQuery("");
+      setSaveName(buildDefaultSaveName(payload.sourceNames));
+      setActiveSavedCutId(null);
       setMessage(
         `Se procesaron ${payload.totalSources} carga(s) y se consolidaron ${payload.uniqueRows} transaccion(es) sin duplicados. Ahora puedes filtrar por Merchant name y editar la tabla.`
       );
@@ -516,6 +665,91 @@ export default function PayJoyCarteraWorkspace() {
         });
       })
     );
+  };
+
+  const saveCurrentCut = async () => {
+    if (!data || !rows.length) {
+      setMessage("Primero debes procesar una cartera antes de guardarla.");
+      return;
+    }
+
+    try {
+      setSavingCut(true);
+      setMessage("");
+
+      const response = await fetch("/api/payjoy/cartera/cortes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          recordName: saveName.trim() || buildDefaultSaveName(data.sourceNames),
+          totalSources: data.totalSources,
+          sourceNames: data.sourceNames,
+          rawRows: data.rawRows,
+          uniqueRows: rows.length,
+          duplicatesRemoved: data.duplicatesRemoved,
+          summary: liveSummary,
+          rows: serializeEditableRows(rows),
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        corte?: PayJoyCutListItem;
+        mensaje?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.corte) {
+        setMessage(payload.error || "No fue posible guardar el corte.");
+        return;
+      }
+
+      setSaveName(payload.corte.recordName);
+      setActiveSavedCutId(payload.corte.id);
+      setMessage(
+        payload.mensaje ||
+          `Corte guardado correctamente como "${payload.corte.recordName}".`
+      );
+      await loadSavedCuts();
+    } catch {
+      setMessage("No fue posible guardar el corte.");
+    } finally {
+      setSavingCut(false);
+    }
+  };
+
+  const loadStoredCut = async (cutId: number) => {
+    try {
+      setConsultingCutId(cutId);
+      setMessage("");
+
+      const response = await fetch(`/api/payjoy/cartera/cortes?id=${cutId}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        corte?: PayJoyCutDetail;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.corte) {
+        setMessage(payload.error || "No fue posible consultar el corte guardado.");
+        return;
+      }
+
+      applyStoredCut(payload.corte);
+      setMessage(
+        `Consultando el corte guardado "${payload.corte.recordName}" con ${payload.corte.uniqueRows} transaccion(es).`
+      );
+    } catch {
+      setMessage("No fue posible consultar el corte guardado.");
+    } finally {
+      setConsultingCutId(null);
+    }
   };
 
   const clearFilters = () => {
@@ -712,6 +946,208 @@ export default function PayJoyCarteraWorkspace() {
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              Guardar corte
+            </div>
+
+            <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+              Registro persistente
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-slate-600">
+              Guarda el corte ya procesado y editado para volverlo a consultar
+              despues desde este mismo modulo.
+            </p>
+
+            {canSaveCut ? (
+              <>
+                <label className="mt-5 block">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700">
+                    Nombre del registro
+                  </span>
+                  <input
+                    value={saveName}
+                    onChange={(event) => setSaveName(event.target.value)}
+                    placeholder="Ej: Corte abril 4 PayJoy"
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-slate-500"
+                  />
+                </label>
+
+                <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Cortes incluidos
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {data?.sourceNames.map((name) => (
+                      <span
+                        key={name}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+                      >
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => void saveCurrentCut()}
+                    disabled={savingCut}
+                    className="rounded-2xl bg-[#111318] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b1f27] disabled:opacity-70"
+                  >
+                    {savingCut ? "Guardando..." : "Guardar corte"}
+                  </button>
+                  <p className="text-sm text-slate-500">
+                    Se guarda la tabla actual, incluyendo ediciones manuales y
+                    estados ajustados.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+                Procesa una cartera primero y luego podras usar el boton{" "}
+                <span className="font-semibold">Guardar corte</span> para dejar
+                el registro disponible a futuro.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Historial de cortes
+                </div>
+                <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+                  Cortes guardados
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-slate-600">
+                  Consulta cualquier corte guardado y cargalo otra vez en la
+                  tabla para seguir revisandolo.
+                </p>
+              </div>
+
+              <button
+                onClick={() => void loadSavedCuts()}
+                disabled={savedCutsLoading}
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+              >
+                {savedCutsLoading ? "Actualizando..." : "Actualizar"}
+              </button>
+            </div>
+
+            {savedCutsError && (
+              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                {savedCutsError}
+              </div>
+            )}
+
+            {savedCutsLoading && !savedCuts.length ? (
+              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+                Cargando historial de cortes guardados...
+              </div>
+            ) : savedCuts.length ? (
+              <div className="mt-5 space-y-4">
+                {savedCuts.map((cut) => (
+                  <article
+                    key={cut.id}
+                    className={[
+                      "rounded-[24px] border p-5 transition",
+                      activeSavedCutId === cut.id
+                        ? "border-[#c79a57] bg-[#fff9f0] shadow-sm"
+                        : "border-slate-200 bg-slate-50",
+                    ].join(" ")}
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-lg font-black tracking-tight text-slate-950">
+                            {cut.recordName}
+                          </h3>
+                          {activeSavedCutId === cut.id && (
+                            <span className="rounded-full border border-[#e1c38d] bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8f5b24]">
+                              En pantalla
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500">
+                          Guardado el {formatDateTime(cut.savedAt)} por{" "}
+                          <span className="font-semibold text-slate-700">
+                            {cut.savedByName || cut.savedByUser || "Admin"}
+                          </span>
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => void loadStoredCut(cut.id)}
+                        disabled={consultingCutId === cut.id}
+                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-70"
+                      >
+                        {consultingCutId === cut.id
+                          ? "Consultando..."
+                          : "Consultar"}
+                      </button>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {cut.sourceNames.map((name) => (
+                        <span
+                          key={`${cut.id}-${name}`}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+                        >
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Transacciones
+                        </p>
+                        <p className="mt-2 text-xl font-black text-slate-950">
+                          {cut.uniqueRows}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          PAGO
+                        </p>
+                        <p className="mt-2 text-xl font-black text-emerald-700">
+                          {cut.summary.pago}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          MORA
+                        </p>
+                        <p className="mt-2 text-xl font-black text-red-700">
+                          {cut.summary.mora}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          PAGO X
+                        </p>
+                        <p className="mt-2 text-xl font-black text-amber-700">
+                          {cut.summary.pagoX}
+                        </p>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+                Aun no hay cortes guardados. Cuando uses{" "}
+                <span className="font-semibold">Guardar corte</span>, te
+                quedaran listados aqui para futuras consultas.
+              </div>
+            )}
           </div>
         </section>
 
