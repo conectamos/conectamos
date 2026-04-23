@@ -5,6 +5,7 @@ import {
   getStoredPayJoyCutById,
   listStoredPayJoyCuts,
   saveStoredPayJoyCut,
+  updateStoredPayJoyCut,
   type PayJoyStoredCutDetail,
   type PayJoyStoredRow,
   type PayJoyStoredSummary,
@@ -311,6 +312,98 @@ export async function DELETE(req: Request) {
           error instanceof Error
             ? error.message
             : "No fue posible eliminar el corte guardado.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const user = await getAdminUser();
+
+    if (user instanceof NextResponse) {
+      return user;
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const requestedId = Number(body?.id || 0);
+
+    if (!Number.isFinite(requestedId) || requestedId <= 0) {
+      return NextResponse.json(
+        { error: "Debes indicar un corte valido para actualizar." },
+        { status: 400 }
+      );
+    }
+
+    const rows = Array.isArray(body?.rows)
+      ? body.rows
+          .map(normalizeStoredRow)
+          .filter(
+            (candidate: PayJoyStoredRow | null): candidate is PayJoyStoredRow =>
+              candidate !== null
+          )
+      : [];
+
+    if (!rows.length) {
+      return NextResponse.json(
+        { error: "No hay filas listas para actualizar en este corte." },
+        { status: 400 }
+      );
+    }
+
+    const sourceNames = normalizeSourceNames(body?.sourceNames, rows);
+    const rawRows = Math.max(0, Math.floor(Number(body?.rawRows || rows.length)));
+    const uniqueRows = rows.length;
+    const duplicatesRemoved = Math.max(
+      0,
+      Math.floor(Number(body?.duplicatesRemoved || 0))
+    );
+    const summary = summarizeRows(rows);
+    const recordName =
+      String(body?.recordName || "").trim() ||
+      buildDefaultRecordName(sourceNames);
+
+    const updatedCut = await updateStoredPayJoyCut({
+      id: requestedId,
+      recordName,
+      totalSources: Math.max(
+        sourceNames.length,
+        Math.floor(Number(body?.totalSources || sourceNames.length))
+      ),
+      sourceNames,
+      rawRows,
+      uniqueRows,
+      duplicatesRemoved,
+      summary,
+      rows,
+      savedBy: {
+        id: user.id ?? null,
+        nombre: user.nombre || "Admin",
+        usuario: user.usuario || "",
+      },
+    });
+
+    if (!updatedCut) {
+      return NextResponse.json(
+        { error: "No se encontro el corte guardado para actualizar." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      mensaje: `Corte actualizado correctamente como "${updatedCut.recordName}".`,
+      corte: updatedCut,
+    });
+  } catch (error) {
+    console.error("ERROR ACTUALIZANDO CORTE PAYJOY:", error);
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "No fue posible actualizar el corte guardado.",
       },
       { status: 500 }
     );

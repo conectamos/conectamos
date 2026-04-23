@@ -40,6 +40,7 @@ export type PayJoyStoredCutListItem = {
   savedByName: string;
   savedByUser: string;
   savedAt: string;
+  updatedAt: string;
 };
 
 export type PayJoyStoredCutDetail = PayJoyStoredCutListItem & {
@@ -62,6 +63,10 @@ type SavePayJoyCutInput = {
   };
 };
 
+type UpdatePayJoyCutInput = SavePayJoyCutInput & {
+  id: number;
+};
+
 type StoredCutRowRecord = {
   id: number;
   recordName: string;
@@ -78,6 +83,7 @@ type StoredCutRowRecord = {
   savedByName: string;
   savedByUser: string;
   savedAt: Date | string;
+  updatedAt?: Date | string;
 };
 
 let ensurePayJoyCutsTablePromise: Promise<void> | null = null;
@@ -200,6 +206,14 @@ function mapStoredCutRow(record: StoredCutRowRecord): PayJoyStoredCutListItem {
     savedAt: Number.isNaN(savedAtDate.getTime())
       ? new Date().toISOString()
       : savedAtDate.toISOString(),
+    updatedAt:
+      record.updatedAt instanceof Date
+        ? record.updatedAt.toISOString()
+        : record.updatedAt
+          ? new Date(String(record.updatedAt)).toISOString()
+          : Number.isNaN(savedAtDate.getTime())
+            ? new Date().toISOString()
+            : savedAtDate.toISOString(),
   };
 }
 
@@ -222,13 +236,35 @@ async function ensurePayJoyCutsTable() {
           guardado_por_id INTEGER,
           guardado_por_nombre TEXT NOT NULL DEFAULT '',
           guardado_por_usuario TEXT NOT NULL DEFAULT '',
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE payjoy_cortes_guardados
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        UPDATE payjoy_cortes_guardados
+        SET updated_at = COALESCE(updated_at, created_at)
+        WHERE updated_at IS NULL
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE payjoy_cortes_guardados
+        ALTER COLUMN updated_at SET DEFAULT NOW()
       `);
 
       await prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS idx_payjoy_cortes_guardados_created_at
         ON payjoy_cortes_guardados (created_at DESC)
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_payjoy_cortes_guardados_updated_at
+        ON payjoy_cortes_guardados (updated_at DESC)
       `);
     })().catch((error) => {
       ensurePayJoyCutsTablePromise = null;
@@ -258,9 +294,10 @@ export async function listStoredPayJoyCuts(limit = 24) {
         guardado_por_id AS "savedById",
         guardado_por_nombre AS "savedByName",
         guardado_por_usuario AS "savedByUser",
-        created_at AS "savedAt"
+        created_at AS "savedAt",
+        updated_at AS "updatedAt"
       FROM payjoy_cortes_guardados
-      ORDER BY created_at DESC
+      ORDER BY updated_at DESC, id DESC
       LIMIT $1
     `,
     Math.max(1, Math.floor(limit))
@@ -289,7 +326,8 @@ export async function getStoredPayJoyCutById(id: number) {
         guardado_por_id AS "savedById",
         guardado_por_nombre AS "savedByName",
         guardado_por_usuario AS "savedByUser",
-        created_at AS "savedAt"
+        created_at AS "savedAt",
+        updated_at AS "updatedAt"
       FROM payjoy_cortes_guardados
       WHERE id = $1
       LIMIT 1
@@ -333,7 +371,8 @@ export async function saveStoredPayJoyCut(input: SavePayJoyCutInput) {
         rows_json,
         guardado_por_id,
         guardado_por_nombre,
-        guardado_por_usuario
+        guardado_por_usuario,
+        updated_at
       )
       VALUES (
         $1,
@@ -348,7 +387,8 @@ export async function saveStoredPayJoyCut(input: SavePayJoyCutInput) {
         $10::jsonb,
         $11,
         $12,
-        $13
+        $13,
+        NOW()
       )
       RETURNING
         id,
@@ -364,7 +404,8 @@ export async function saveStoredPayJoyCut(input: SavePayJoyCutInput) {
         guardado_por_id AS "savedById",
         guardado_por_nombre AS "savedByName",
         guardado_por_usuario AS "savedByUser",
-        created_at AS "savedAt"
+        created_at AS "savedAt",
+        updated_at AS "updatedAt"
     `,
     input.recordName,
     input.totalSources,
@@ -382,6 +423,64 @@ export async function saveStoredPayJoyCut(input: SavePayJoyCutInput) {
   );
 
   return mapStoredCutRow(rows[0]);
+}
+
+export async function updateStoredPayJoyCut(input: UpdatePayJoyCutInput) {
+  await ensurePayJoyCutsTable();
+
+  const rows = await prisma.$queryRawUnsafe<StoredCutRowRecord[]>(
+    `
+      UPDATE payjoy_cortes_guardados
+      SET
+        nombre_registro = $2,
+        total_sources = $3,
+        source_names = $4::jsonb,
+        raw_rows = $5,
+        unique_rows = $6,
+        duplicates_removed = $7,
+        summary_mora = $8,
+        summary_pago = $9,
+        summary_pago_x = $10,
+        rows_json = $11::jsonb,
+        guardado_por_id = $12,
+        guardado_por_nombre = $13,
+        guardado_por_usuario = $14,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING
+        id,
+        nombre_registro AS "recordName",
+        total_sources AS "totalSources",
+        source_names AS "sourceNames",
+        raw_rows AS "rawRows",
+        unique_rows AS "uniqueRows",
+        duplicates_removed AS "duplicatesRemoved",
+        summary_mora AS "summaryMora",
+        summary_pago AS "summaryPago",
+        summary_pago_x AS "summaryPagoX",
+        guardado_por_id AS "savedById",
+        guardado_por_nombre AS "savedByName",
+        guardado_por_usuario AS "savedByUser",
+        created_at AS "savedAt",
+        updated_at AS "updatedAt"
+    `,
+    input.id,
+    input.recordName,
+    input.totalSources,
+    JSON.stringify(input.sourceNames),
+    input.rawRows,
+    input.uniqueRows,
+    input.duplicatesRemoved,
+    input.summary.mora,
+    input.summary.pago,
+    input.summary.pagoX,
+    JSON.stringify(input.rows),
+    input.savedBy.id,
+    input.savedBy.nombre,
+    input.savedBy.usuario
+  );
+
+  return rows[0] ? mapStoredCutRow(rows[0]) : null;
 }
 
 export async function deleteStoredPayJoyCutById(id: number) {

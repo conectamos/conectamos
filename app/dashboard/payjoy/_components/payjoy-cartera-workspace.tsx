@@ -64,6 +64,7 @@ type PayJoyCutListItem = {
   savedByName: string;
   savedByUser: string;
   savedAt: string;
+  updatedAt: string;
 };
 
 type PayJoyCutDetail = PayJoyCutListItem & {
@@ -447,6 +448,7 @@ export default function PayJoyCarteraWorkspace() {
   const [merchantQuery, setMerchantQuery] = useState("");
   const [saveName, setSaveName] = useState("");
   const [savingCut, setSavingCut] = useState(false);
+  const [updatingCut, setUpdatingCut] = useState(false);
   const [savedCuts, setSavedCuts] = useState<PayJoyCutListItem[]>([]);
   const [savedCutsLoading, setSavedCutsLoading] = useState(true);
   const [savedCutsError, setSavedCutsError] = useState("");
@@ -622,8 +624,27 @@ export default function PayJoyCarteraWorkspace() {
     );
   };
 
-  const saveCurrentCut = async () => {
+  const buildCurrentCutPayload = () => {
     if (!data || !rows.length) {
+      return null;
+    }
+
+    return {
+      recordName: saveName.trim() || buildDefaultSaveName(data.sourceNames),
+      totalSources: data.totalSources,
+      sourceNames: data.sourceNames,
+      rawRows: data.rawRows,
+      uniqueRows: rows.length,
+      duplicatesRemoved: data.duplicatesRemoved,
+      summary: liveSummary,
+      rows: serializeEditableRows(rows),
+    };
+  };
+
+  const saveCurrentCut = async () => {
+    const currentPayload = buildCurrentCutPayload();
+
+    if (!currentPayload) {
       setMessage("Primero debes procesar una cartera antes de guardarla.");
       return;
     }
@@ -637,16 +658,7 @@ export default function PayJoyCarteraWorkspace() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          recordName: saveName.trim() || buildDefaultSaveName(data.sourceNames),
-          totalSources: data.totalSources,
-          sourceNames: data.sourceNames,
-          rawRows: data.rawRows,
-          uniqueRows: rows.length,
-          duplicatesRemoved: data.duplicatesRemoved,
-          summary: liveSummary,
-          rows: serializeEditableRows(rows),
-        }),
+        body: JSON.stringify(currentPayload),
       });
 
       const payload = (await response.json()) as {
@@ -673,6 +685,56 @@ export default function PayJoyCarteraWorkspace() {
       setMessage("No fue posible guardar el corte.");
     } finally {
       setSavingCut(false);
+    }
+  };
+
+  const updateCurrentStoredCut = async (cutId: number) => {
+    const currentPayload = buildCurrentCutPayload();
+
+    if (!currentPayload) {
+      setMessage("Primero debes procesar o consultar una cartera antes de actualizarla.");
+      return;
+    }
+
+    try {
+      setUpdatingCut(true);
+      setMessage("");
+
+      const response = await fetch("/api/payjoy/cartera/cortes", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: cutId,
+          ...currentPayload,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        corte?: PayJoyCutListItem;
+        mensaje?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.corte) {
+        setMessage(payload.error || "No fue posible actualizar el corte guardado.");
+        return;
+      }
+
+      setSaveName(payload.corte.recordName);
+      setActiveSavedCutId(payload.corte.id);
+      setSavedCutsExpanded(true);
+      setMessage(
+        payload.mensaje ||
+          `Corte actualizado correctamente como "${payload.corte.recordName}".`
+      );
+      await loadSavedCuts();
+    } catch {
+      setMessage("No fue posible actualizar el corte guardado.");
+    } finally {
+      setUpdatingCut(false);
     }
   };
 
@@ -1011,6 +1073,17 @@ export default function PayJoyCarteraWorkspace() {
                   >
                     {savingCut ? "Guardando..." : "Guardar corte"}
                   </button>
+                  {activeSavedCutId && (
+                    <button
+                      onClick={() => void updateCurrentStoredCut(activeSavedCutId)}
+                      disabled={updatingCut}
+                      className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-5 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
+                    >
+                      {updatingCut
+                        ? "Actualizando..."
+                        : "Actualizar corte guardado"}
+                    </button>
+                  )}
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                     {rows.length} fila(s) listas para guardar
                   </div>
@@ -1127,6 +1200,11 @@ export default function PayJoyCarteraWorkspace() {
                             {cut.savedByName || cut.savedByUser || "Admin"}
                           </span>
                         </p>
+                        {cut.updatedAt !== cut.savedAt && (
+                          <p className="mt-1 text-sm text-slate-500">
+                            Actualizado el {formatDateTime(cut.updatedAt)}
+                          </p>
+                        )}
                         <div className="mt-3 flex flex-wrap gap-2">
                           {cut.sourceNames.map((name) => (
                             <span
@@ -1149,6 +1227,15 @@ export default function PayJoyCarteraWorkspace() {
                             ? "Consultando..."
                             : "Consultar"}
                         </button>
+                        {activeSavedCutId === cut.id && (
+                          <button
+                            onClick={() => void updateCurrentStoredCut(cut.id)}
+                            disabled={updatingCut}
+                            className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-4 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
+                          >
+                            {updatingCut ? "Actualizando..." : "Actualizar"}
+                          </button>
+                        )}
                         <button
                           onClick={() =>
                             void deleteStoredCut(cut.id, cut.recordName)
