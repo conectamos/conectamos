@@ -71,6 +71,16 @@ type PayJoyCutDetail = PayJoyCutListItem & {
   rows: StoredPayJoyRow[];
 };
 
+type PayJoyReloadSummary = {
+  total: number;
+  movedToPago: number;
+  keptPago: number;
+  keptPagoX: number;
+  stayedGestionar: number;
+  stayedMora: number;
+  otherChanges: number;
+};
+
 type MerchantSummary = {
   merchantName: string;
   records: number;
@@ -570,6 +580,9 @@ export default function PayJoyCarteraWorkspace() {
   const [rows, setRows] = useState<EditablePayJoyRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [reloadSummary, setReloadSummary] = useState<PayJoyReloadSummary | null>(
+    null
+  );
   const [selectedMerchant, setSelectedMerchant] = useState("TODOS");
   const [selectedStatus, setSelectedStatus] = useState<"TODOS" | RowStatus>(
     "TODOS"
@@ -687,6 +700,7 @@ export default function PayJoyCarteraWorkspace() {
     try {
       setLoading(true);
       setMessage("");
+      setReloadSummary(null);
 
       const formData = new FormData();
 
@@ -782,6 +796,7 @@ export default function PayJoyCarteraWorkspace() {
     try {
       setSavingCut(true);
       setMessage("");
+      setReloadSummary(null);
 
       const response = await fetch("/api/payjoy/cartera/cortes", {
         method: "POST",
@@ -829,6 +844,7 @@ export default function PayJoyCarteraWorkspace() {
     try {
       setUpdatingCut(true);
       setMessage("");
+      setReloadSummary(null);
 
       const response = await fetch("/api/payjoy/cartera/cortes", {
         method: "PATCH",
@@ -872,6 +888,7 @@ export default function PayJoyCarteraWorkspace() {
     try {
       setConsultingCutId(cutId);
       setMessage("");
+      setReloadSummary(null);
 
       const response = await fetch(`/api/payjoy/cartera/cortes?id=${cutId}`, {
         method: "GET",
@@ -918,6 +935,7 @@ export default function PayJoyCarteraWorkspace() {
         ok?: boolean;
         corte?: PayJoyCutDetail;
         mensaje?: string;
+        resumenRecarga?: PayJoyReloadSummary;
         error?: string;
       };
 
@@ -927,6 +945,7 @@ export default function PayJoyCarteraWorkspace() {
       }
 
       applyStoredCut(payload.corte);
+      setReloadSummary(payload.resumenRecarga || null);
       setSavedCutsExpanded(true);
       setMessage(
         payload.mensaje ||
@@ -954,6 +973,7 @@ export default function PayJoyCarteraWorkspace() {
     try {
       setDeletingCutId(cutId);
       setMessage("");
+      setReloadSummary(null);
 
       const response = await fetch(`/api/payjoy/cartera/cortes?id=${cutId}`, {
         method: "DELETE",
@@ -1081,6 +1101,79 @@ export default function PayJoyCarteraWorkspace() {
           <div className="mb-5 mt-5 rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-700 shadow-sm">
             {message}
           </div>
+        )}
+
+        {reloadSummary && (
+          <section className="mb-5 rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                  Resumen de recarga
+                </div>
+                <p className="mt-3 text-sm text-slate-600">
+                  Resultado del ultimo corte recargado desde PayJoy.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Total revisado:{" "}
+                <span className="font-semibold text-slate-950">
+                  {reloadSummary.total}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-5">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Pasaron a pago
+                </p>
+                <p className="mt-1 text-2xl font-black text-emerald-700">
+                  {reloadSummary.movedToPago}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Siguen en mora
+                </p>
+                <p className="mt-1 text-2xl font-black text-slate-950">
+                  {reloadSummary.stayedMora}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">
+                  Siguen gestionar
+                </p>
+                <p className="mt-1 text-2xl font-black text-rose-700">
+                  {reloadSummary.stayedGestionar}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Se conservaron pago
+                </p>
+                <p className="mt-1 text-2xl font-black text-emerald-700">
+                  {reloadSummary.keptPago}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Se conservaron pago x
+                </p>
+                <p className="mt-1 text-2xl font-black text-emerald-700">
+                  {reloadSummary.keptPagoX}
+                </p>
+              </div>
+            </div>
+
+            {reloadSummary.otherChanges > 0 && (
+              <p className="mt-3 text-sm text-slate-500">
+                Otros cambios detectados:{" "}
+                <span className="font-semibold text-slate-950">
+                  {reloadSummary.otherChanges}
+                </span>
+              </p>
+            )}
+          </section>
         )}
 
         <section className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_12px_38px_rgba(15,23,42,0.06)]">

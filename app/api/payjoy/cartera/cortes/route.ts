@@ -31,6 +31,16 @@ type LookupFailure = {
 
 type LookupResult = LookupSuccess | LookupFailure;
 
+type PayJoyReloadSummary = {
+  total: number;
+  movedToPago: number;
+  keptPago: number;
+  keptPagoX: number;
+  stayedGestionar: number;
+  stayedMora: number;
+  otherChanges: number;
+};
+
 function isAdmin(roleName: string | null | undefined) {
   return String(roleName || "").trim().toUpperCase() === "ADMIN";
 }
@@ -62,6 +72,59 @@ function summarizeRows(rows: PayJoyStoredRow[]): PayJoyStoredSummary {
       pagoX: 0,
     }
   );
+}
+
+function summarizeReloadChanges(
+  previousRows: PayJoyStoredRow[],
+  nextRows: PayJoyStoredRow[]
+): PayJoyReloadSummary {
+  const summary: PayJoyReloadSummary = {
+    total: nextRows.length,
+    movedToPago: 0,
+    keptPago: 0,
+    keptPagoX: 0,
+    stayedGestionar: 0,
+    stayedMora: 0,
+    otherChanges: 0,
+  };
+
+  for (let index = 0; index < nextRows.length; index += 1) {
+    const previousStatus = previousRows[index]?.status || null;
+    const nextStatus = nextRows[index]?.status || null;
+
+    if (previousStatus === "PAGO" && nextStatus === "PAGO") {
+      summary.keptPago += 1;
+      continue;
+    }
+
+    if (previousStatus === "PAGO X" && nextStatus === "PAGO X") {
+      summary.keptPagoX += 1;
+      continue;
+    }
+
+    if (previousStatus === "GESTIONAR" && nextStatus === "GESTIONAR") {
+      summary.stayedGestionar += 1;
+      continue;
+    }
+
+    if (previousStatus === "MORA" && nextStatus === "MORA") {
+      summary.stayedMora += 1;
+      continue;
+    }
+
+    if (
+      previousStatus !== "PAGO" &&
+      previousStatus !== "PAGO X" &&
+      nextStatus === "PAGO"
+    ) {
+      summary.movedToPago += 1;
+      continue;
+    }
+
+    summary.otherChanges += 1;
+  }
+
+  return summary;
 }
 
 function normalizeStoredRow(value: unknown): PayJoyStoredRow | null {
@@ -626,6 +689,7 @@ export async function PUT(req: Request) {
     }
 
     const reloadedRows = await reloadStoredRows(storedCut.rows);
+    const resumenRecarga = summarizeReloadChanges(storedCut.rows, reloadedRows);
     const reloadedCut = {
       ...storedCut,
       rows: reloadedRows,
@@ -637,6 +701,7 @@ export async function PUT(req: Request) {
       ok: true,
       mensaje: `Corte "${storedCut.recordName}" recargado correctamente con la informacion actual de PayJoy.`,
       corte: toCutResponse(reloadedCut),
+      resumenRecarga,
     });
   } catch (error) {
     console.error("ERROR RECARGANDO CORTE PAYJOY:", error);
