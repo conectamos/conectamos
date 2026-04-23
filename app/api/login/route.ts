@@ -2,10 +2,17 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { hashPassword, isPasswordHash, verifyPassword } from "@/lib/password";
 import {
+  createPendingProfileToken,
   createSessionToken,
   getSessionCookieOptions,
+  PENDING_PROFILE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
 } from "@/lib/session";
+import { obtenerPerfilesAccesoPorSede } from "@/lib/vendor-profiles";
+
+function esAdmin(rolNombre: string | null | undefined) {
+  return String(rolNombre || "").trim().toUpperCase() === "ADMIN";
+}
 
 export async function POST(req: Request) {
   try {
@@ -63,7 +70,40 @@ export async function POST(req: Request) {
       });
     }
 
+    if (!esAdmin(user.rol?.nombre)) {
+      const perfiles = await obtenerPerfilesAccesoPorSede(user.sedeId);
+
+      if (perfiles.length > 0) {
+        const response = NextResponse.json({
+          requiresProfile: true,
+          mensaje: "Selecciona tu perfil y valida el PIN",
+          usuario: {
+            id: user.id,
+            nombre: user.nombre,
+            usuario: user.usuario,
+            rol: user.rol,
+            sedeId: user.sedeId,
+          },
+          perfiles,
+        });
+
+        response.cookies.set(
+          PENDING_PROFILE_COOKIE_NAME,
+          createPendingProfileToken(user.id),
+          getSessionCookieOptions()
+        );
+        response.cookies.set(SESSION_COOKIE_NAME, "", {
+          ...getSessionCookieOptions(),
+          expires: new Date(0),
+          maxAge: 0,
+        });
+        response.cookies.delete("userId");
+        return response;
+      }
+    }
+
     const response = NextResponse.json({
+      requiresProfile: false,
       mensaje: "Login correcto",
       usuario: {
         id: user.id,
@@ -79,8 +119,12 @@ export async function POST(req: Request) {
       createSessionToken(user.id),
       getSessionCookieOptions()
     );
+    response.cookies.set(PENDING_PROFILE_COOKIE_NAME, "", {
+      ...getSessionCookieOptions(),
+      expires: new Date(0),
+      maxAge: 0,
+    });
     response.cookies.delete("userId");
-
     return response;
   } catch (error) {
     console.error("ERROR LOGIN API:", error);

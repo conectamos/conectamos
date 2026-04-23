@@ -1,9 +1,16 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const SESSION_COOKIE_NAME = "session";
+export const PENDING_PROFILE_COOKIE_NAME = "pending_profile_session";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 type SessionPayload = {
+  exp: number;
+  profileId?: number;
+  userId: number;
+};
+
+type PendingProfilePayload = {
   exp: number;
   userId: number;
 };
@@ -34,19 +41,33 @@ function sign(value: string) {
   return createHmac("sha256", getSessionSecret()).update(value).digest("base64url");
 }
 
-export function createSessionToken(userId: number) {
-  const payload: SessionPayload = {
-    userId,
-    exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS,
-  };
-
+function createSignedToken(payload: SessionPayload | PendingProfilePayload) {
   const serializedPayload = JSON.stringify(payload);
   const encodedPayload = base64UrlEncode(serializedPayload);
 
   return `${encodedPayload}.${sign(encodedPayload)}`;
 }
 
-export function verifySessionToken(token?: string | null) {
+export function createSessionToken(userId: number, profileId?: number | null) {
+  const payload: SessionPayload = {
+    userId,
+    exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS,
+    ...(profileId ? { profileId } : {}),
+  };
+
+  return createSignedToken(payload);
+}
+
+export function createPendingProfileToken(userId: number) {
+  const payload: PendingProfilePayload = {
+    userId,
+    exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS,
+  };
+
+  return createSignedToken(payload);
+}
+
+function verifySignedToken(token?: string | null) {
   if (!token) {
     return null;
   }
@@ -65,25 +86,47 @@ export function verifySessionToken(token?: string | null) {
     return null;
   }
 
-  if (!timingSafeEqual(expectedBuffer, signatureBuffer)) {
-    return null;
-  }
-
-  try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as SessionPayload;
-
-    if (!payload?.userId || !payload?.exp) {
+    if (!timingSafeEqual(expectedBuffer, signatureBuffer)) {
       return null;
+    }
+
+    try {
+      const payload = JSON.parse(base64UrlDecode(encodedPayload)) as
+        | SessionPayload
+        | PendingProfilePayload;
+
+      if (!payload?.userId || !payload?.exp) {
+        return null;
     }
 
     if (payload.exp <= Math.floor(Date.now() / 1000)) {
       return null;
     }
 
-    return payload;
-  } catch {
+      return payload;
+    } catch {
+      return null;
+    }
+}
+
+export function verifySessionToken(token?: string | null) {
+  const payload = verifySignedToken(token);
+
+  if (!payload) {
     return null;
   }
+
+  return payload as SessionPayload;
+}
+
+export function verifyPendingProfileToken(token?: string | null) {
+  const payload = verifySignedToken(token);
+
+  if (!payload) {
+    return null;
+  }
+
+  return payload as PendingProfilePayload;
 }
 
 export function getSessionCookieOptions() {

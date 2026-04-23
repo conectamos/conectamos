@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { verifyPassword } from "@/lib/password";
 
 export const TIPOS_PERFIL_VENDEDOR = [
   "ADMINISTRADOR",
@@ -193,6 +194,89 @@ export async function obtenerPerfilesVendedor(options?: {
     createdAt: perfil.createdAt,
     updatedAt: perfil.updatedAt,
   }));
+}
+
+export async function obtenerPerfilesAccesoPorSede(sedeId: number) {
+  await ensureVendorProfilesSchema();
+
+  const perfiles = await prisma.perfilVendedor.findMany({
+    where: {
+      activo: true,
+      OR: [
+        { tipo: "ADMINISTRADOR" },
+        {
+          sedes: {
+            some: {
+              sedeId,
+            },
+          },
+        },
+      ],
+    },
+    select: {
+      id: true,
+      nombre: true,
+      tipo: true,
+      debeCambiarPin: true,
+    },
+    orderBy: [{ tipo: "asc" }, { nombre: "asc" }],
+  });
+
+  return perfiles.map((perfil) => ({
+    id: perfil.id,
+    nombre: perfil.nombre,
+    tipo: perfil.tipo,
+    tipoLabel: etiquetaTipoPerfilVendedor(perfil.tipo as TipoPerfilVendedor),
+    debeCambiarPin: perfil.debeCambiarPin,
+  }));
+}
+
+export async function validarPerfilAccesoPorSede(params: {
+  pin: string;
+  perfilId: number;
+  sedeId: number;
+}) {
+  await ensureVendorProfilesSchema();
+
+  const perfil = await prisma.perfilVendedor.findFirst({
+    where: {
+      id: params.perfilId,
+      activo: true,
+      OR: [
+        { tipo: "ADMINISTRADOR" },
+        {
+          sedes: {
+            some: {
+              sedeId: params.sedeId,
+            },
+          },
+        },
+      ],
+    },
+    select: {
+      id: true,
+      nombre: true,
+      tipo: true,
+      debeCambiarPin: true,
+      pinHash: true,
+    },
+  });
+
+  if (!perfil) {
+    return null;
+  }
+
+  if (!verifyPassword(params.pin, perfil.pinHash)) {
+    return null;
+  }
+
+  return {
+    id: perfil.id,
+    nombre: perfil.nombre,
+    tipo: perfil.tipo,
+    tipoLabel: etiquetaTipoPerfilVendedor(perfil.tipo as TipoPerfilVendedor),
+    debeCambiarPin: perfil.debeCambiarPin,
+  };
 }
 
 export async function crearPerfilVendedor(payload: PerfilVendedorPayload) {
