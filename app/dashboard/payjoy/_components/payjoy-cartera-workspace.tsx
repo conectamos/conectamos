@@ -81,6 +81,22 @@ type PayJoyReloadSummary = {
   otherChanges: number;
 };
 
+function describeReloadSummary(summary: PayJoyReloadSummary) {
+  const parts = [
+    `${summary.movedToPago} pasaron a PAGO`,
+    `${summary.stayedGestionar} siguen en GESTIONAR`,
+    `${summary.stayedMora} siguen en MORA`,
+    `${summary.keptPago} se conservaron en PAGO`,
+    `${summary.keptPagoX} se conservaron en PAGO X`,
+  ];
+
+  if (summary.otherChanges > 0) {
+    parts.push(`${summary.otherChanges} tuvieron otros cambios`);
+  }
+
+  return parts.join(" · ");
+}
+
 type MerchantSummary = {
   merchantName: string;
   records: number;
@@ -575,6 +591,7 @@ const tableColStatusClass = "w-[170px] min-w-[170px] px-4 py-4";
 
 export default function PayJoyCarteraWorkspace() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const reloadSummaryRef = useRef<HTMLElement | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [data, setData] = useState<PayJoyResponse | null>(null);
   const [rows, setRows] = useState<EditablePayJoyRow[]>([]);
@@ -947,10 +964,25 @@ export default function PayJoyCarteraWorkspace() {
       applyStoredCut(payload.corte);
       setReloadSummary(payload.resumenRecarga || null);
       setSavedCutsExpanded(true);
+      const summaryMessage = payload.resumenRecarga
+        ? describeReloadSummary(payload.resumenRecarga)
+        : "";
       setMessage(
-        payload.mensaje ||
-          `Corte "${payload.corte.recordName}" recargado correctamente.`
+        [
+          payload.mensaje ||
+            `Corte "${payload.corte.recordName}" recargado correctamente.`,
+          summaryMessage,
+        ]
+          .filter(Boolean)
+          .join(" ")
       );
+
+      window.setTimeout(() => {
+        reloadSummaryRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 120);
     } catch {
       setMessage("No fue posible recargar el corte guardado.");
     } finally {
@@ -1104,7 +1136,10 @@ export default function PayJoyCarteraWorkspace() {
         )}
 
         {reloadSummary && (
-          <section className="mb-5 rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+          <section
+            ref={reloadSummaryRef}
+            className="mb-5 rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm"
+          >
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
