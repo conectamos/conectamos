@@ -538,76 +538,228 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f6f8fb_0%,#e8edf4_42%,#dde5f0_100%)] px-4 py-8">
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center">
-        <div className="grid w-full gap-8 lg:grid-cols-[1.15fr_0.85fr]">
-          <section className="rounded-[2.5rem] border border-white/70 bg-[linear-gradient(145deg,rgba(18,23,37,0.98)_0%,rgba(22,35,54,0.92)_45%,rgba(16,71,77,0.88)_100%)] p-8 text-white shadow-[0_28px_90px_rgba(15,23,42,0.28)] sm:p-10">
-            <div className="inline-flex items-center gap-3 rounded-full border border-white/15 bg-white/8 px-4 py-2">
-              <BrandMark compact />
-              <span className="text-sm font-semibold tracking-[0.16em] text-white/92">
-                CONECTAMOS
-              </span>
-            </div>
+    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef3fa_0%,#e8eef8_38%,#dfe8f4_100%)] px-4 py-8">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.8),transparent_68%)]" />
+      <div className="pointer-events-none absolute -left-20 top-20 h-72 w-72 rounded-full bg-cyan-200/35 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-10 right-0 h-80 w-80 rounded-full bg-emerald-200/25 blur-3xl" />
 
-            <h1 className="mt-8 max-w-xl text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
-              Control de acceso por sede y perfil operativo
-            </h1>
-            <p className="mt-5 max-w-2xl text-base leading-8 text-white/78">
-              Primero entra la sede con usuario y clave. Si esta sede tiene
-              supervisores o vendedores activos, el sistema pedira un segundo paso
-              con perfil y PIN personal.
-            </p>
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-7xl items-center">
+        <div className="grid w-full gap-8 lg:grid-cols-[1.18fr_0.82fr]">
+          <section className="relative overflow-hidden rounded-[2.75rem] border border-white/50 bg-[linear-gradient(145deg,#121827_0%,#172437_42%,#164b52_100%)] p-8 text-white shadow-[0_35px_110px_rgba(15,23,42,0.32)] sm:p-10 lg:p-12">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(125,211,252,0.2),transparent_34%),radial-gradient(circle_at_100%_100%,rgba(52,211,153,0.16),transparent_38%)]" />
+            <div className="pointer-events-none absolute -right-16 top-10 h-56 w-56 rounded-full border border-white/8 bg-white/5 blur-2xl" />
+            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-44 bg-[linear-gradient(180deg,transparent_0%,rgba(255,255,255,0.03)_100%)]" />
+
+            <div className="relative">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="inline-flex items-center gap-3 self-start rounded-full border border-white/12 bg-white/8 px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-sm">
+                  <BrandMark compact />
+                  <div>
+                    <p className="text-sm font-bold tracking-[0.22em] text-white/95">
+                      CONECTAMOS
+                    </p>
+                    <p className="text-xs text-white/58">
+                      Acceso operativo por sede
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-full border border-emerald-300/18 bg-emerald-300/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-100/90">
+                  Sesion segura
+                </div>
+              </div>
+
+              <div className="mt-10 max-w-3xl">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.42em] text-cyan-100/72">
+                  Plataforma comercial
+                </p>
+                <h1 className="mt-5 max-w-2xl text-5xl font-black leading-[0.92] tracking-[-0.065em] text-white sm:text-6xl xl:text-[4.5rem]">
+                  Un acceso mas
+                  <span className="block bg-[linear-gradient(90deg,#ffffff_0%,#dffafe_40%,#a7f3d0_100%)] bg-clip-text text-transparent">
+                    fino, claro y confiable
+                  </span>
+                </h1>
+                <p className="mt-6 max-w-2xl text-base leading-8 text-slate-200/82 sm:text-lg">
+                  La sede abre la operacion y luego cada supervisor o vendedor
+                  firma su propia sesion con PIN. Mas control, mas trazabilidad
+                  y una experiencia mucho mas cuidada.
+                </p>
+              </div>
+
+              <div className="mt-10 grid gap-4 sm:grid-cols-3">
+                <div className="rounded-[1.7rem] border border-white/10 bg-white/8 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm">
+                  <p className="text-[0.68rem] font-bold uppercase tracking-[0.26em] text-cyan-100/76">
+                    Paso 1
+                  </p>
+                  <h3 className="mt-3 text-lg font-bold text-white">
+                    La sede se autentica
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-200/72">
+                    Usuario y clave principal para habilitar el acceso operativo.
+                  </p>
+                </div>
+
+                <div className="rounded-[1.7rem] border border-white/10 bg-white/8 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm">
+                  <p className="text-[0.68rem] font-bold uppercase tracking-[0.26em] text-cyan-100/76">
+                    Paso 2
+                  </p>
+                  <h3 className="mt-3 text-lg font-bold text-white">
+                    El perfil se identifica
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-200/72">
+                    Supervisor o vendedor entra con PIN propio y queda trazado.
+                  </p>
+                </div>
+
+                <div className="rounded-[1.7rem] border border-white/10 bg-white/8 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm">
+                  <p className="text-[0.68rem] font-bold uppercase tracking-[0.26em] text-cyan-100/76">
+                    Resultado
+                  </p>
+                  <h3 className="mt-3 text-lg font-bold text-white">
+                    Operacion mas segura
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-200/72">
+                    Cada movimiento queda mejor asociado al equipo comercial.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-10 flex flex-wrap gap-3">
+                <span className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm font-medium text-white/78">
+                  Control por sede
+                </span>
+                <span className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm font-medium text-white/78">
+                  Perfil con PIN
+                </span>
+                <span className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm font-medium text-white/78">
+                  Experiencia mas premium
+                </span>
+              </div>
+            </div>
           </section>
 
-          <section className="rounded-[2.3rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(242,246,252,0.94)_100%)] p-8 shadow-[0_24px_70px_rgba(71,85,105,0.15)] sm:p-10">
-            <p className="text-[0.68rem] font-bold uppercase tracking-[0.32em] text-slate-500">
-              Ingreso de sede
-            </p>
-            <h2 className="mt-4 text-3xl font-black tracking-[-0.03em] text-slate-950">
-              Accede con tu usuario principal
-            </h2>
-            <p className="mt-3 text-sm leading-7 text-slate-600">
-              Este acceso habilita la sede. Si hay perfiles activos, luego se
-              solicitara el PIN del supervisor o vendedor.
-            </p>
+          <section className="relative overflow-hidden rounded-[2.6rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.97)_0%,rgba(246,250,255,0.95)_100%)] p-8 shadow-[0_34px_90px_rgba(71,85,105,0.18)] sm:p-10">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.16),transparent_72%)]" />
+            <div className="pointer-events-none absolute right-8 top-8 h-20 w-20 rounded-full bg-emerald-100/55 blur-2xl" />
 
-            <div className="mt-8 space-y-4">
-              <label className="block text-sm font-semibold text-slate-600">
-                Usuario
-                <input
-                  type="text"
-                  placeholder="Usuario de la sede"
-                  value={usuario}
-                  onChange={(event) => setUsuario(event.target.value)}
-                  className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-                />
-              </label>
+            <div className="relative">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[0.68rem] font-bold uppercase tracking-[0.34em] text-slate-500">
+                    Ingreso de sede
+                  </p>
+                  <h2 className="mt-4 max-w-sm text-4xl font-black leading-tight tracking-[-0.045em] text-slate-950">
+                    Accede con una presencia mas elegante
+                  </h2>
+                </div>
 
-              <label className="block text-sm font-semibold text-slate-600">
-                Clave
-                <input
-                  type="password"
-                  placeholder="Clave de acceso"
-                  value={clave}
-                  onChange={(event) => setClave(event.target.value)}
-                  className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-                />
-              </label>
-            </div>
+                <div className="hidden rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-xs font-semibold uppercase tracking-[0.26em] text-slate-500 shadow-[0_10px_30px_rgba(148,163,184,0.16)] sm:block">
+                  Premium
+                </div>
+              </div>
 
-            <button
-              onClick={() => void login()}
-              disabled={cargando}
-              className="mt-8 w-full rounded-2xl bg-[linear-gradient(135deg,#0f172a_0%,#111827_45%,#1e293b_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_18px_40px_rgba(15,23,42,0.26)] transition hover:brightness-110 disabled:opacity-65"
-            >
-              {cargando ? "Ingresando..." : "Ingresar"}
-            </button>
-
-            {mensaje && (
-              <p className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                {mensaje}
+              <p className="mt-5 max-w-md text-sm leading-7 text-slate-600">
+                Abre la sede con tu usuario principal. Si tiene perfiles activos,
+                el sistema continuara con la seleccion del supervisor o vendedor.
               </p>
-            )}
+
+              <div className="mt-8 grid gap-4 rounded-[2rem] border border-slate-200/80 bg-white/75 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                <label className="block text-sm font-semibold text-slate-600">
+                  Usuario
+                  <div className="relative mt-3">
+                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                        />
+                        <path
+                          d="M4 21C4 17.6863 7.58172 15 12 15C16.4183 15 20 17.6863 20 21"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Usuario de la sede"
+                      value={usuario}
+                      onChange={(event) => setUsuario(event.target.value)}
+                      className="w-full rounded-[1.45rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] py-4 pl-12 pr-5 text-lg text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-cyan-100/70"
+                    />
+                  </div>
+                </label>
+
+                <label className="block text-sm font-semibold text-slate-600">
+                  Clave
+                  <div className="relative mt-3">
+                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <rect
+                          x="5"
+                          y="11"
+                          width="14"
+                          height="10"
+                          rx="2.5"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                        />
+                        <path
+                          d="M8 11V8.5C8 6.01472 10.0147 4 12.5 4C14.9853 4 17 6.01472 17 8.5V11"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </span>
+                    <input
+                      type="password"
+                      placeholder="Clave de acceso"
+                      value={clave}
+                      onChange={(event) => setClave(event.target.value)}
+                      className="w-full rounded-[1.45rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] py-4 pl-12 pr-5 text-lg text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-cyan-100/70"
+                    />
+                  </div>
+                </label>
+              </div>
+
+              <button
+                onClick={() => void login()}
+                disabled={cargando}
+                className="mt-7 w-full rounded-[1.55rem] bg-[linear-gradient(135deg,#0f172a_0%,#16213a_46%,#143f4b_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_22px_45px_rgba(15,23,42,0.24)] transition hover:-translate-y-0.5 hover:brightness-110 disabled:opacity-65"
+              >
+                {cargando ? "Ingresando..." : "Ingresar"}
+              </button>
+
+              <div className="mt-6 flex flex-wrap items-center gap-3 text-xs font-medium uppercase tracking-[0.24em] text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-2">
+                  Usuario principal
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-2">
+                  Validacion privada
+                </span>
+              </div>
+
+              {mensaje && (
+                <p className="mt-5 rounded-[1.4rem] border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                  {mensaje}
+                </p>
+              )}
+            </div>
           </section>
         </div>
       </div>
