@@ -57,6 +57,24 @@ export type PayJoyFortySixtyImport = {
   rows: PayJoyFortySixtyImportRow[];
 };
 
+export function listPayJoyFortySixtyWeeks(rows: PayJoyFortySixtyImportRow[]) {
+  const seen = new Set<string>();
+  const weeks: string[] = [];
+
+  for (const row of rows) {
+    const week = normalizeText(row.week);
+
+    if (!week || seen.has(week)) {
+      continue;
+    }
+
+    seen.add(week);
+    weeks.push(week);
+  }
+
+  return weeks;
+}
+
 function normalizeHeader(value: unknown) {
   return String(value || "")
     .normalize("NFD")

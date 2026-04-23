@@ -34,6 +34,13 @@ type FortySixtyResponse = {
   rows: FortySixtyRow[];
 };
 
+type FortySixtyWeeksResponse = {
+  ok: boolean;
+  fileName: string;
+  sheetName: string;
+  weeks: string[];
+};
+
 function formatNumber(value: number | null) {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "-";
@@ -52,7 +59,9 @@ export default function PayJoyFortySixtyWorkspace() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [week, setWeek] = useState("");
+  const [weekOptions, setWeekOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingWeeks, setLoadingWeeks] = useState(false);
   const [message, setMessage] = useState("");
   const [data, setData] = useState<FortySixtyResponse | null>(null);
   const [rows, setRows] = useState<FortySixtyRow[]>([]);
@@ -87,6 +96,62 @@ export default function PayJoyFortySixtyWorkspace() {
     );
   };
 
+  const loadWeeksFromFile = async (selectedFile: File) => {
+    try {
+      setLoadingWeeks(true);
+      setMessage("");
+      setWeek("");
+      setWeekOptions([]);
+      setData(null);
+      setRows([]);
+
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const response = await fetch("/api/payjoy/40-60/weeks", {
+        method: "POST",
+        body: formData,
+      });
+
+      const payload = (await response.json()) as FortySixtyWeeksResponse & {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setMessage(
+          payload.error || "No fue posible leer las weeks del archivo 40/60."
+        );
+        return;
+      }
+
+      setWeekOptions(payload.weeks);
+      setWeek(payload.weeks.length === 1 ? payload.weeks[0] : "");
+      setMessage(
+        payload.weeks.length
+          ? `Se detectaron ${payload.weeks.length} week(s) en el archivo. Selecciona la que quieres consultar.`
+          : "El archivo no trae weeks disponibles para consultar."
+      );
+    } catch {
+      setMessage("No fue posible leer las weeks del archivo 40/60.");
+    } finally {
+      setLoadingWeeks(false);
+    }
+  };
+
+  const handleFileChange = async (nextFile: File | null) => {
+    setFile(nextFile);
+
+    if (!nextFile) {
+      setWeek("");
+      setWeekOptions([]);
+      setData(null);
+      setRows([]);
+      return;
+    }
+
+    await loadWeeksFromFile(nextFile);
+  };
+
   const processFile = async () => {
     if (!file) {
       setMessage("Debes subir un archivo Excel para procesar el 40/60.");
@@ -94,7 +159,7 @@ export default function PayJoyFortySixtyWorkspace() {
     }
 
     if (!String(week || "").trim()) {
-      setMessage("Debes escribir la WEEK que quieres consultar.");
+      setMessage("Debes seleccionar la WEEK que quieres consultar.");
       return;
     }
 
@@ -153,9 +218,9 @@ export default function PayJoyFortySixtyWorkspace() {
                 40/60
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-200/85 md:text-base">
-                Carga el Excel, escribe la WEEK que quieres consultar y el modulo
-                cruza el DEVICE_TAG contra Cartera PayJoy para autollenar la
-                cédula cuando exista coincidencia.
+                Carga el Excel, selecciona la WEEK exactamente como viene en el
+                archivo y el modulo cruza el DEVICE_TAG contra Cartera PayJoy
+                para autollenar la cedula cuando exista coincidencia.
               </p>
             </div>
 
@@ -205,7 +270,7 @@ export default function PayJoyFortySixtyWorkspace() {
               <span className="font-semibold">PAY_40_AT_60</span>.
             </p>
 
-            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_220px_auto] lg:items-end">
+            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_260px_auto] lg:items-end">
               <div>
                 <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Archivo Excel
@@ -219,7 +284,11 @@ export default function PayJoyFortySixtyWorkspace() {
                     Seleccionar archivo
                   </button>
                   <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                    {file ? file.name : "Aun no has seleccionado archivo"}
+                    {file
+                      ? loadingWeeks
+                        ? `Leyendo weeks de ${file.name}...`
+                        : file.name
+                      : "Aun no has seleccionado archivo"}
                   </div>
                 </div>
                 <input
@@ -228,30 +297,45 @@ export default function PayJoyFortySixtyWorkspace() {
                   accept=".xlsx,.xls,.csv"
                   className="hidden"
                   onChange={(event) =>
-                    setFile(event.target.files?.[0] ? event.target.files[0] : null)
+                    void handleFileChange(
+                      event.target.files?.[0] ? event.target.files[0] : null
+                    )
                   }
                 />
               </div>
 
               <div>
                 <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Week
+                  Buscar week
                 </label>
-                <input
+                <select
                   value={week}
                   onChange={(event) => setWeek(event.target.value)}
-                  placeholder="Ej: 17"
+                  disabled={!weekOptions.length || loadingWeeks}
                   className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-950 outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
-                />
+                >
+                  <option value="">
+                    {loadingWeeks
+                      ? "Leyendo weeks..."
+                      : weekOptions.length
+                        ? "Selecciona una week del archivo"
+                        : "Primero sube el archivo"}
+                  </option>
+                  {weekOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <button
                 type="button"
                 onClick={() => void processFile()}
-                disabled={loading}
+                disabled={loading || loadingWeeks}
                 className="rounded-2xl border border-[#b98746]/30 bg-[#b98746] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#a9793c] disabled:opacity-70"
               >
-                {loading ? "Procesando..." : "Procesar"}
+                {loading ? "Procesando..." : loadingWeeks ? "Leyendo..." : "Procesar"}
               </button>
             </div>
           </div>
@@ -273,7 +357,7 @@ export default function PayJoyFortySixtyWorkspace() {
                 Si viene en blanco y <span className="font-semibold text-slate-950">LOAN_AGE_DAYS</span>{" "}
                 es 60 o menos, se aprueba cuando{" "}
                 <span className="font-semibold text-slate-950">NUMBER_OF_PAYMENTS</span>{" "}
-                es 3 o más.
+                es 3 o mas.
               </p>
               <p>
                 Si viene en blanco y el equipo ya no debe pagos en PayJoy, tambien
@@ -310,7 +394,7 @@ export default function PayJoyFortySixtyWorkspace() {
               </div>
               <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Cédulas encontradas
+                  Cedulas encontradas
                 </p>
                 <p className="mt-2 text-3xl font-black text-slate-950">
                   {liveSummary.cedulasEncontradas}
@@ -331,7 +415,7 @@ export default function PayJoyFortySixtyWorkspace() {
                     Registros procesados
                   </h2>
                   <p className="mt-2 text-sm text-slate-500">
-                    La cédula se autocompleta cuando el DEVICE_TAG existe en tus
+                    La cedula se autocompleta cuando el DEVICE_TAG existe en tus
                     cortes guardados de Cartera PayJoy.
                   </p>
                 </div>
@@ -350,7 +434,7 @@ export default function PayJoyFortySixtyWorkspace() {
                       <th className="px-4 py-4">Device tag</th>
                       <th className="px-4 py-4">Loan age days</th>
                       <th className="px-4 py-4">Number of payments</th>
-                      <th className="px-4 py-4">Cédula</th>
+                      <th className="px-4 py-4">Cedula</th>
                       <th className="px-4 py-4">40/60</th>
                     </tr>
                   </thead>
@@ -394,7 +478,7 @@ export default function PayJoyFortySixtyWorkspace() {
                               onChange={(event) =>
                                 updateCedula(row.id, event.target.value)
                               }
-                              placeholder="Escribe la cédula"
+                              placeholder="Escribe la cedula"
                               className="w-[180px] rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-950 outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
                             />
                           </td>

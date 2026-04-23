@@ -201,6 +201,7 @@ export async function POST(req: Request) {
     );
     const lookupMap = await buildPayJoyLookupMap(rowsRequiringLookup);
 
+    const selectedWeekLabel = filteredRows[0]?.week || weekInput;
     const rows = filteredRows.map((row, index) => {
       const deviceTag = normalizeDeviceTag(row.deviceTag);
       const lookup = lookupMap.get(deviceTag);
@@ -230,7 +231,7 @@ export async function POST(req: Request) {
       ok: true,
       fileName: imported.fileName,
       sheetName: imported.sheetName,
-      week: weekInput,
+      week: selectedWeekLabel,
       totalRows: imported.totalRows,
       filteredRows: rows.length,
       summary: summarizeRows(rows),
