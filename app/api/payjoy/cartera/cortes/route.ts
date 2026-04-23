@@ -252,6 +252,14 @@ function resolveReloadedStatus(
   manualStatus: PayJoyStoredRow["manualStatus"],
   automaticStatus: PayJoyStoredRow["status"] | "PAGO X"
 ): PayJoyStoredRow["status"] {
+  if (manualStatus === "PAGO X") {
+    return "PAGO X";
+  }
+
+  if (manualStatus === "PAGO") {
+    return "PAGO";
+  }
+
   if (automaticStatus === "PAGO X") {
     return "PAGO X";
   }
@@ -363,6 +371,8 @@ async function reloadStoredRows(rows: PayJoyStoredRow[]) {
     const nextManualStatus: PayJoyStoredRow["manualStatus"] =
       row.status === "PAGO X" || row.manualStatus === "PAGO X"
         ? "PAGO X"
+        : row.status === "PAGO" || row.manualStatus === "PAGO"
+          ? "PAGO"
         : automaticStatus === "PAGO X"
           ? "PAGO X"
         : automaticStatus === "PAGO"
