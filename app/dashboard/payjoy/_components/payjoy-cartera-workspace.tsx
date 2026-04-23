@@ -1594,6 +1594,27 @@ export default function PayJoyCarteraWorkspace() {
                         </p>
                       </div>
                     </div>
+
+                    {activeSavedCutId === cut.id && reloadSummary && (
+                      <div className="mt-4 rounded-[22px] border border-sky-200 bg-sky-50/80 p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                              Resumen de recarga
+                            </p>
+                            <p className="mt-1 text-sm text-sky-900">
+                              {describeReloadSummary(reloadSummary)}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl border border-sky-200 bg-white px-4 py-3 text-sm text-sky-900">
+                            Total revisado:{" "}
+                            <span className="font-semibold">
+                              {reloadSummary.total}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
