@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { getPayJoyPaymentSnapshot } from "@/lib/payjoy";
 import {
   deleteStoredPayJoyCutById,
   getStoredPayJoyCutById,
@@ -12,6 +13,23 @@ import {
 } from "@/lib/payjoy-cortes-store";
 
 export const runtime = "nodejs";
+
+type LookupSuccess = {
+  ok: true;
+  validThrough: string | null;
+  remainingBalance: number | null;
+  currency: string | null;
+  installmentAmount: number | null;
+  paidInFull: boolean;
+  message: string | null;
+};
+
+type LookupFailure = {
+  ok: false;
+  error: string;
+};
+
+type LookupResult = LookupSuccess | LookupFailure;
 
 function isAdmin(roleName: string | null | undefined) {
   return String(roleName || "").trim().toUpperCase() === "ADMIN";
@@ -131,6 +149,212 @@ function buildDefaultRecordName(sourceNames: string[]) {
   }
 
   return `Corte PayJoy ${formatBogotaTimestamp()}`;
+}
+
+function normalizeDeviceTag(value: string | null | undefined) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function addCalendarDays(date: Date, days: number) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+function getDateKeyInBogota(date: Date) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "0000";
+  const month = parts.find((part) => part.type === "month")?.value || "00";
+  const day = parts.find((part) => part.type === "day")?.value || "00";
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseIsoDate(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function computeAutomaticStatus(
+  transactionTime: string | null,
+  devicePaymentDate: string | null,
+  paidInFull: boolean
+): PayJoyStoredRow["status"] | "PAGO X" {
+  if (paidInFull) {
+    return "PAGO";
+  }
+
+  const transactionDate = parseIsoDate(transactionTime);
+  const deviceDate = parseIsoDate(devicePaymentDate);
+
+  if (!transactionDate || !deviceDate) {
+    return "PAGO X";
+  }
+
+  const expectedPaymentDate = addCalendarDays(transactionDate, 14);
+  const pagoThresholdDate = addCalendarDays(expectedPaymentDate, 10);
+  const expectedKey = getDateKeyInBogota(expectedPaymentDate);
+  const deviceKey = getDateKeyInBogota(deviceDate);
+
+  if (deviceKey === expectedKey) {
+    return "MORA";
+  }
+
+  return deviceDate > pagoThresholdDate ? "PAGO" : "MORA";
+}
+
+function resolveReloadedStatus(
+  manualStatus: PayJoyStoredRow["manualStatus"],
+  automaticStatus: PayJoyStoredRow["status"] | "PAGO X"
+): PayJoyStoredRow["status"] {
+  if (automaticStatus === "PAGO X") {
+    return "PAGO X";
+  }
+
+  if (manualStatus === "PAGO" && automaticStatus !== "PAGO") {
+    return automaticStatus;
+  }
+
+  if (manualStatus === "GESTIONAR" || manualStatus === "MORA") {
+    return manualStatus;
+  }
+
+  if (manualStatus === "PAGO" && automaticStatus === "PAGO") {
+    return "PAGO";
+  }
+
+  return automaticStatus;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(concurrency, items.length)) },
+    async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(items[currentIndex]);
+      }
+    }
+  );
+
+  await Promise.all(workers);
+  return results;
+}
+
+async function buildLookupMap(rows: PayJoyStoredRow[]) {
+  const uniqueDeviceTags = Array.from(
+    new Set(
+      rows
+        .map((row) => normalizeDeviceTag(row.device))
+        .filter((deviceTag) => deviceTag.startsWith("D"))
+    )
+  );
+
+  const lookupEntries = await mapWithConcurrency(
+    uniqueDeviceTags,
+    4,
+    async (deviceTag) => {
+      try {
+        const snapshot = await getPayJoyPaymentSnapshot(deviceTag);
+
+        return [
+          deviceTag,
+          {
+            ok: true,
+            validThrough: snapshot.validThrough?.toISOString() ?? null,
+            remainingBalance: snapshot.remainingBalance,
+            currency: snapshot.currency,
+            installmentAmount: snapshot.cost14,
+            paidInFull: snapshot.paidInFull,
+            message: snapshot.message,
+          } satisfies LookupSuccess,
+        ] as const;
+      } catch (error) {
+        return [
+          deviceTag,
+          {
+            ok: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "No fue posible consultar el device en PayJoy.",
+          } satisfies LookupFailure,
+        ] as const;
+      }
+    }
+  );
+
+  return new Map<string, LookupResult>(lookupEntries);
+}
+
+async function reloadStoredRows(rows: PayJoyStoredRow[]) {
+  const lookupMap = await buildLookupMap(rows);
+
+  return rows.map((row) => {
+    const normalizedDeviceTag = normalizeDeviceTag(row.device);
+    const lookup = lookupMap.get(normalizedDeviceTag);
+    const validThrough =
+      lookup?.ok && lookup.validThrough ? new Date(lookup.validThrough) : null;
+    const paidInFull = lookup?.ok ? lookup.paidInFull : false;
+    const paymentDueDate = row.transactionTime
+      ? addCalendarDays(new Date(row.transactionTime), 14)
+      : null;
+    const maximumPaymentDate = row.transactionTime
+      ? addCalendarDays(new Date(row.transactionTime), 18)
+      : null;
+    const automaticStatus = computeAutomaticStatus(
+      row.transactionTime,
+      validThrough?.toISOString() ?? null,
+      paidInFull
+    );
+    const nextManualStatus =
+      automaticStatus === "PAGO X"
+        ? null
+        : row.manualStatus === "PAGO" && automaticStatus !== "PAGO"
+          ? null
+          : row.manualStatus;
+
+    return {
+      ...row,
+      installmentAmount: lookup?.ok ? lookup.installmentAmount : null,
+      paymentDueDate: paymentDueDate?.toISOString() ?? null,
+      devicePaymentDate: validThrough?.toISOString() ?? null,
+      paidInFull,
+      status: resolveReloadedStatus(nextManualStatus, automaticStatus),
+      maximumPaymentDate: maximumPaymentDate?.toISOString() ?? null,
+      currency: lookup?.ok ? lookup.currency : null,
+      lookupMessage:
+        !normalizedDeviceTag
+          ? "La fila no trae device."
+          : normalizedDeviceTag.startsWith("D")
+            ? lookup?.ok
+              ? paidInFull
+                ? lookup.message || "Equipo pagado por completo."
+                : null
+              : lookup?.error || "No fue posible consultar el device."
+            : "El device no parece ser un Device Tag valido.",
+      manualStatus: nextManualStatus,
+    } satisfies PayJoyStoredRow;
+  });
 }
 
 function toCutResponse(cut: PayJoyStoredCutDetail) {
@@ -318,6 +542,60 @@ export async function DELETE(req: Request) {
           error instanceof Error
             ? error.message
             : "No fue posible eliminar el corte guardado.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(req: Request) {
+  try {
+    const user = await getAdminUser();
+
+    if (user instanceof NextResponse) {
+      return user;
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const requestedId = Number(body?.id || 0);
+
+    if (!Number.isFinite(requestedId) || requestedId <= 0) {
+      return NextResponse.json(
+        { error: "Debes indicar un corte valido para recargar." },
+        { status: 400 }
+      );
+    }
+
+    const storedCut = await getStoredPayJoyCutById(requestedId);
+
+    if (!storedCut) {
+      return NextResponse.json(
+        { error: "No se encontro el corte guardado para recargar." },
+        { status: 404 }
+      );
+    }
+
+    const reloadedRows = await reloadStoredRows(storedCut.rows);
+    const reloadedCut = {
+      ...storedCut,
+      rows: reloadedRows,
+      uniqueRows: reloadedRows.length,
+      summary: summarizeRows(reloadedRows),
+    } satisfies PayJoyStoredCutDetail;
+
+    return NextResponse.json({
+      ok: true,
+      mensaje: `Corte "${storedCut.recordName}" recargado correctamente con la informacion actual de PayJoy.`,
+      corte: toCutResponse(reloadedCut),
+    });
+  } catch (error) {
+    console.error("ERROR RECARGANDO CORTE PAYJOY:", error);
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "No fue posible recargar el corte guardado.",
       },
       { status: 500 }
     );

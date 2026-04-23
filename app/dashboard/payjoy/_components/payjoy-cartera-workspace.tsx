@@ -159,6 +159,30 @@ function computeStatus(
   return deviceDate > pagoThresholdDate ? "PAGO" : "MORA";
 }
 
+function getAutomaticStatusForRow(
+  row: Pick<PayJoyRow, "transactionTime" | "devicePaymentDate" | "paidInFull">
+) {
+  return computeStatus(
+    row.transactionTime,
+    row.devicePaymentDate,
+    row.paidInFull
+  );
+}
+
+function resolveEffectiveStatus(row: EditablePayJoyRow) {
+  const automaticStatus = getAutomaticStatusForRow(row);
+
+  if (automaticStatus === "PAGO X") {
+    return "PAGO X" as RowStatus;
+  }
+
+  if (row.manualStatus === "PAGO" && automaticStatus !== "PAGO") {
+    return automaticStatus;
+  }
+
+  return row.manualStatus || automaticStatus;
+}
+
 function recalculateDerivedFields(row: EditablePayJoyRow) {
   const transactionDate = parseIsoDate(row.transactionTime);
   const paymentDueDate = transactionDate
@@ -167,14 +191,23 @@ function recalculateDerivedFields(row: EditablePayJoyRow) {
   const maximumPaymentDate = transactionDate
     ? addCalendarDays(transactionDate, 18).toISOString()
     : null;
+  const automaticStatus = getAutomaticStatusForRow(row);
+  const nextManualStatus =
+    automaticStatus === "PAGO X"
+      ? null
+      : row.manualStatus === "PAGO" && automaticStatus !== "PAGO"
+        ? null
+        : row.manualStatus;
 
   return {
     ...row,
+    manualStatus: nextManualStatus,
     paymentDueDate,
     maximumPaymentDate,
-    status:
-      row.manualStatus ||
-      computeStatus(row.transactionTime, row.devicePaymentDate, row.paidInFull),
+    status: resolveEffectiveStatus({
+      ...row,
+      manualStatus: nextManualStatus,
+    }),
   };
 }
 
@@ -518,6 +551,7 @@ export default function PayJoyCarteraWorkspace() {
   const [savedCutsError, setSavedCutsError] = useState("");
   const [savedCutsExpanded, setSavedCutsExpanded] = useState(false);
   const [consultingCutId, setConsultingCutId] = useState<number | null>(null);
+  const [reloadingCutId, setReloadingCutId] = useState<number | null>(null);
   const [deletingCutId, setDeletingCutId] = useState<number | null>(null);
   const [activeSavedCutId, setActiveSavedCutId] = useState<number | null>(null);
   const deferredMerchantQuery = useDeferredValue(merchantQuery);
@@ -664,6 +698,29 @@ export default function PayJoyCarteraWorkspace() {
     field: EditableField,
     value: string | RowStatus
   ) => {
+    if (field === "status") {
+      const currentRow = rows.find((row) => row.localId === localId);
+
+      if (!currentRow) {
+        return;
+      }
+
+      const automaticStatus = getAutomaticStatusForRow(currentRow);
+      const nextManualStatus = value === "AUTO" ? null : (value as RowStatus);
+
+      if (automaticStatus === "PAGO X") {
+        setMessage("Los registros en PAGO X no se pueden mover manualmente.");
+        return;
+      }
+
+      if (nextManualStatus === "PAGO" && automaticStatus !== "PAGO") {
+        setMessage(
+          "Este registro solo puede pasar a PAGO cuando la regla automatica de PayJoy lo permite."
+        );
+        return;
+      }
+    }
+
     setRows((currentRows) =>
       currentRows.map((row) => {
         if (row.localId !== localId) {
@@ -832,6 +889,44 @@ export default function PayJoyCarteraWorkspace() {
       setMessage("No fue posible consultar el corte guardado.");
     } finally {
       setConsultingCutId(null);
+    }
+  };
+
+  const reloadStoredCut = async (cutId: number) => {
+    try {
+      setReloadingCutId(cutId);
+      setMessage("");
+
+      const response = await fetch("/api/payjoy/cartera/cortes", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: cutId }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        corte?: PayJoyCutDetail;
+        mensaje?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.corte) {
+        setMessage(payload.error || "No fue posible recargar el corte guardado.");
+        return;
+      }
+
+      applyStoredCut(payload.corte);
+      setSavedCutsExpanded(true);
+      setMessage(
+        payload.mensaje ||
+          `Corte "${payload.corte.recordName}" recargado correctamente.`
+      );
+    } catch {
+      setMessage("No fue posible recargar el corte guardado.");
+    } finally {
+      setReloadingCutId(null);
     }
   };
 
@@ -1287,6 +1382,15 @@ export default function PayJoyCarteraWorkspace() {
                             ? "Consultando..."
                             : "Consultar"}
                         </button>
+                        <button
+                          onClick={() => void reloadStoredCut(cut.id)}
+                          disabled={reloadingCutId === cut.id}
+                          className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-70"
+                        >
+                          {reloadingCutId === cut.id
+                            ? "Recargando..."
+                            : "Recargar"}
+                        </button>
                         {activeSavedCutId === cut.id && (
                           <button
                             onClick={() => void updateCurrentStoredCut(cut.id)}
@@ -1678,6 +1782,10 @@ export default function PayJoyCarteraWorkspace() {
                   <tbody className="divide-y divide-white/60">
                     {filteredRows.map((row) => {
                       const appearance = getRowAppearance(row.status);
+                      const automaticStatus = getAutomaticStatusForRow(row);
+                      const statusLocked = automaticStatus === "PAGO X";
+                      const canMoveToPago =
+                        automaticStatus === "PAGO" || row.status === "PAGO";
 
                       return (
                         <tr
@@ -1803,12 +1911,15 @@ export default function PayJoyCarteraWorkspace() {
                                     event.target.value
                                   )
                                 }
+                                disabled={statusLocked}
                                 className={[cellInputClass, appearance.input].join(
                                   " "
                                 )}
                               >
                                 <option value="AUTO">AUTO</option>
-                                <option value="PAGO">PAGO</option>
+                                {canMoveToPago && (
+                                  <option value="PAGO">PAGO</option>
+                                )}
                                 <option value="MORA">MORA</option>
                                 <option value="GESTIONAR">GESTIONAR</option>
                                 <option value="PAGO X">PAGO X</option>
@@ -1829,6 +1940,11 @@ export default function PayJoyCarteraWorkspace() {
                                   ].join(" ")}
                                 >
                                   {row.lookupMessage}
+                                </div>
+                              )}
+                              {statusLocked && (
+                                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-lime-800/80">
+                                  Bloqueado por regla PAGO X
                                 </div>
                               )}
                             </div>
