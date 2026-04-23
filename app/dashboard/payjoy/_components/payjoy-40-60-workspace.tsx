@@ -49,6 +49,13 @@ function formatNumber(value: number | null) {
   return Number(value).toLocaleString("es-CO");
 }
 
+function formatPercent(value: number) {
+  return `${value.toLocaleString("es-CO", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
 function statusRowClass(status: FortySixtyStatus) {
   return status === "40/60 APROBADO"
     ? "bg-emerald-50/80"
@@ -89,6 +96,10 @@ export default function PayJoyFortySixtyWorkspace() {
       cedulasPendientes: 0,
     }
   );
+
+  const totalEvaluated = liveSummary.aprobados + liveSummary.noAprobados;
+  const approvalRate =
+    totalEvaluated > 0 ? (liveSummary.aprobados / totalEvaluated) * 100 : 0;
 
   const updateCedula = (id: string, value: string) => {
     setRows((currentRows) =>
@@ -369,7 +380,7 @@ export default function PayJoyFortySixtyWorkspace() {
 
         {data && (
           <>
-            <section className="mt-6 grid gap-4 md:grid-cols-4">
+            <section className="mt-6 grid gap-4 md:grid-cols-5">
               <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Week consultada
@@ -401,6 +412,17 @@ export default function PayJoyFortySixtyWorkspace() {
                 </p>
                 <p className="mt-2 text-sm text-slate-500">
                   Pendientes: {liveSummary.cedulasPendientes}
+                </p>
+              </div>
+              <div className="rounded-[24px] border border-[#d8b476] bg-[linear-gradient(180deg,#fff9ef_0%,#fff4de_100%)] p-4 shadow-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8f5b24]">
+                  % 40/60
+                </p>
+                <p className="mt-2 text-3xl font-black text-[#8f5b24]">
+                  {formatPercent(approvalRate)}
+                </p>
+                <p className="mt-2 text-sm text-[#8f5b24]/80">
+                  {liveSummary.aprobados} de {totalEvaluated} aprobados
                 </p>
               </div>
             </section>
