@@ -90,6 +90,10 @@ type StoredCutRowRecord = {
   updatedAt?: Date | string;
 };
 
+type StoredRowsOnlyRecord = {
+  rows: unknown;
+};
+
 let ensurePayJoyCutsTablePromise: Promise<void> | null = null;
 
 function parseJsonColumn<T>(value: unknown, fallback: T): T {
@@ -121,6 +125,10 @@ function toNumber(value: unknown, fallback = 0) {
         : Number.NaN;
 
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeDeviceTag(value: string | null | undefined) {
+  return String(value || "").trim().toUpperCase();
 }
 
 function normalizeStoredRow(row: unknown): PayJoyStoredRow | null {
@@ -506,4 +514,49 @@ export async function deleteStoredPayJoyCutById(id: number) {
   );
 
   return rows.length > 0;
+}
+
+export async function getLatestNationalIdsByDeviceTags(deviceTags: string[]) {
+  await ensurePayJoyCutsTable();
+
+  const requestedTags = new Set(
+    deviceTags.map((deviceTag) => normalizeDeviceTag(deviceTag)).filter(Boolean)
+  );
+
+  if (!requestedTags.size) {
+    return new Map<string, string>();
+  }
+
+  const cuts = await prisma.$queryRawUnsafe<StoredRowsOnlyRecord[]>(`
+    SELECT rows_json AS "rows"
+    FROM payjoy_cortes_guardados
+    ORDER BY updated_at DESC, id DESC
+    LIMIT 120
+  `);
+
+  const nationalIds = new Map<string, string>();
+
+  for (const cut of cuts) {
+    const rawRows = parseJsonColumn<unknown[]>(cut.rows, []);
+    const parsedRows = (Array.isArray(rawRows) ? rawRows : [])
+      .map(normalizeStoredRow)
+      .filter((candidate): candidate is PayJoyStoredRow => candidate !== null);
+
+    for (const row of parsedRows) {
+      const deviceTag = normalizeDeviceTag(row.device);
+      const nationalId = String(row.nationalId || "").trim();
+
+      if (!requestedTags.has(deviceTag) || nationalIds.has(deviceTag) || !nationalId) {
+        continue;
+      }
+
+      nationalIds.set(deviceTag, nationalId);
+
+      if (nationalIds.size === requestedTags.size) {
+        return nationalIds;
+      }
+    }
+  }
+
+  return nationalIds;
 }
