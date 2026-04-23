@@ -2034,10 +2034,7 @@ export default function PayJoyCarteraWorkspace() {
                                 )}
                                 <option value="MORA">MORA</option>
                                 <option value="GESTIONAR">GESTIONAR</option>
-                                {(row.status === "PAGO X" ||
-                                  row.manualStatus === "PAGO X") && (
-                                  <option value="PAGO X">PAGO X</option>
-                                )}
+                                <option value="PAGO X">PAGO X</option>
                               </select>
                               <span
                                 className={[
