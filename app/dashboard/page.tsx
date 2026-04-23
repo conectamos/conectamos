@@ -1,5 +1,4 @@
 import Link from "next/link";
-import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import DashboardUtilityGate from "./_components/dashboard-utility-gate";
 import LogoutButton from "./_components/logout-button";
@@ -355,27 +354,19 @@ export default async function DashboardPage() {
     return <div className="p-10">No autenticado</div>;
   }
 
-  const usuario = await prisma.usuario.findUnique({
-    where: { id: session.id },
-    include: {
-      rol: true,
-      sede: true,
-    },
-  });
-
-  const esAdmin = usuario?.rol?.nombre === "ADMIN";
-  const nombreUsuario = usuario?.nombre ?? "Usuario";
-  const rolUsuario = usuario?.rol?.nombre ?? "USUARIO";
+  const esAdmin = String(session.rolNombre || "").toUpperCase() === "ADMIN";
+  const nombreUsuario = session.nombre ?? "Usuario";
+  const rolUsuario = session.perfilTipoLabel ?? session.rolNombre ?? "USUARIO";
   const sedeLabel = esAdmin
     ? "TODAS LAS SEDES"
-    : usuario?.sede?.nombre ?? "SIN SEDE";
+    : session.sedeNombre ?? "SIN SEDE";
   const saludo = esAdmin
     ? `Bienvenido, ${nombreUsuario}. Vista general del sistema.`
     : `Bienvenido, ${nombreUsuario}. Vista operativa de ${sedeLabel}.`;
   const mesActual = getCurrentBogotaMonthRange();
 
   const resumenComercialMensual = await getMonthlyCommercialSummary({
-    sedeId: esAdmin ? null : usuario?.sede?.id ?? null,
+    sedeId: esAdmin ? null : session.sedeId ?? null,
   });
 
   const navItems: NavItem[] = [
@@ -417,7 +408,11 @@ export default async function DashboardPage() {
     {
       label: "Rol",
       value: rolUsuario,
-      detail: esAdmin ? "Permisos globales" : "Permisos operativos",
+      detail: esAdmin
+        ? "Permisos globales"
+        : session.perfilNombre
+          ? "Permisos del perfil activo"
+          : "Permisos operativos",
       dot: "bg-red-500",
     },
     {
@@ -426,6 +421,16 @@ export default async function DashboardPage() {
       detail: esAdmin ? "Vision consolidada" : "Trabajo por sede",
       dot: "bg-amber-500",
     },
+    ...(session.perfilNombre
+      ? ([
+          {
+            label: "Perfil",
+            value: session.perfilNombre,
+            detail: session.perfilTipoLabel ?? "Perfil activo",
+            dot: "bg-violet-500",
+          },
+        ] as SessionItem[])
+      : []),
     {
       label: "Estado",
       value: "Activo",
