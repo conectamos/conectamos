@@ -19,6 +19,8 @@ type UsuarioPendiente = {
   sedeNombre?: string;
 };
 
+type ModalModo = "pin" | "cambiar-pin";
+
 function obtenerDescripcionPerfil(tipo: PerfilAcceso["tipo"]) {
   if (tipo === "ADMINISTRADOR") {
     return "Acceso total";
@@ -213,6 +215,8 @@ export default function Home() {
   const [usuario, setUsuario] = useState("");
   const [clave, setClave] = useState("");
   const [pin, setPin] = useState("");
+  const [nuevoPin, setNuevoPin] = useState("");
+  const [confirmarPin, setConfirmarPin] = useState("");
   const [perfilId, setPerfilId] = useState("");
   const [perfiles, setPerfiles] = useState<PerfilAcceso[]>([]);
   const [usuarioPendiente, setUsuarioPendiente] = useState<UsuarioPendiente | null>(null);
@@ -220,10 +224,30 @@ export default function Home() {
   const [cargando, setCargando] = useState(false);
   const [pasoPerfil, setPasoPerfil] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [modalModo, setModalModo] = useState<ModalModo | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
+        const pendingPinChangeRes = await fetch("/api/login/perfil/cambiar-pin", {
+          cache: "no-store",
+        });
+
+        if (pendingPinChangeRes.ok) {
+          const data = await pendingPinChangeRes.json();
+
+          setPasoPerfil(true);
+          setPerfiles(Array.isArray(data.perfiles) ? data.perfiles : []);
+          setUsuarioPendiente(data.usuario ?? null);
+          setPerfilId(String(data.perfil?.id ?? ""));
+          setPin("");
+          setNuevoPin("");
+          setConfirmarPin("");
+          setMensaje("Debes cambiar tu PIN para continuar");
+          setModalModo("cambiar-pin");
+          return;
+        }
+
         const res = await fetch("/api/login/perfil", {
           cache: "no-store",
         });
@@ -236,6 +260,12 @@ export default function Home() {
         setPasoPerfil(true);
         setPerfiles(Array.isArray(data.perfiles) ? data.perfiles : []);
         setUsuarioPendiente(data.usuario ?? null);
+
+        if (data.pendingPinChange) {
+          setPerfilId(String(data.pendingPinChange));
+          setMensaje("Debes cambiar tu PIN para continuar");
+          setModalModo("cambiar-pin");
+        }
       } catch {}
     })();
   }, []);
@@ -247,23 +277,50 @@ export default function Home() {
 
   const perfilSeleccionado =
     perfiles.find((perfil) => String(perfil.id) === perfilId) ?? null;
+  const nombreSedeActual =
+    usuarioPendiente?.sedeNombre || `SEDE ${usuarioPendiente?.sedeId || ""}`;
+
+  const limpiarEstadoModal = () => {
+    setPin("");
+    setNuevoPin("");
+    setConfirmarPin("");
+    setMensaje("");
+  };
+
+  const abrirModalPin = (id: string) => {
+    setPerfilId(id);
+    setModalModo("pin");
+    limpiarEstadoModal();
+  };
+
+  const abrirModalCambioPin = (
+    id: string,
+    texto = "Debes cambiar tu PIN para continuar"
+  ) => {
+    setPerfilId(id);
+    setModalModo("cambiar-pin");
+    setPin("");
+    setNuevoPin("");
+    setConfirmarPin("");
+    setMensaje(texto);
+  };
 
   useEffect(() => {
-    if (!perfilSeleccionado) {
+    if (!perfilSeleccionado || modalModo !== "pin") {
       return;
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !cargando) {
         setPerfilId("");
-        setPin("");
-        setMensaje("");
+        setModalModo(null);
+        limpiarEstadoModal();
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [perfilSeleccionado, cargando]);
+  }, [perfilSeleccionado, cargando, modalModo]);
 
   const login = async () => {
     try {
@@ -290,7 +347,8 @@ export default function Home() {
         setPerfiles(Array.isArray(data.perfiles) ? data.perfiles : []);
         setUsuarioPendiente(data.usuario ?? null);
         setClave("");
-        setPin("");
+        setModalModo(null);
+        limpiarEstadoModal();
         setPerfilId("");
         setBusqueda("");
         setMensaje("");
@@ -342,6 +400,21 @@ export default function Home() {
         return;
       }
 
+      if (data.requiresPinChange) {
+        setPerfiles((actuales) =>
+          actuales.map((perfil) =>
+            perfil.id === data.perfil?.id
+              ? {
+                  ...perfil,
+                  debeCambiarPin: true,
+                }
+              : perfil
+          )
+        );
+        abrirModalCambioPin(String(data.perfil?.id ?? perfilId), data.mensaje);
+        return;
+      }
+
       setMensaje(data.mensaje || "Acceso correcto");
 
       setTimeout(() => {
@@ -349,6 +422,61 @@ export default function Home() {
       }, 700);
     } catch {
       setMensaje("Error validando el perfil");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const confirmarCambioPin = async () => {
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      if (!/^\d{4,6}$/.test(nuevoPin)) {
+        setMensaje("El nuevo PIN debe tener entre 4 y 6 digitos");
+        return;
+      }
+
+      if (nuevoPin !== confirmarPin) {
+        setMensaje("La confirmacion del PIN no coincide");
+        return;
+      }
+
+      const res = await fetch("/api/login/perfil/cambiar-pin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          nuevoPin,
+          confirmarPin,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "No se pudo actualizar el PIN");
+        return;
+      }
+
+      setPerfiles((actuales) =>
+        actuales.map((perfil) =>
+          perfil.id === Number(perfilId)
+            ? {
+                ...perfil,
+                debeCambiarPin: false,
+              }
+            : perfil
+        )
+      );
+      setMensaje(data.mensaje || "PIN actualizado correctamente");
+
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 700);
+    } catch {
+      setMensaje("Error actualizando el PIN");
     } finally {
       setCargando(false);
     }
@@ -365,19 +493,20 @@ export default function Home() {
     setPerfiles([]);
     setUsuarioPendiente(null);
     setPerfilId("");
-    setPin("");
+    setModalModo(null);
+    limpiarEstadoModal();
     setBusqueda("");
     setMensaje("");
   };
 
   const cerrarModalPerfil = () => {
-    if (cargando) {
+    if (cargando || modalModo !== "pin") {
       return;
     }
 
     setPerfilId("");
-    setPin("");
-    setMensaje("");
+    setModalModo(null);
+    limpiarEstadoModal();
   };
 
   if (pasoPerfil) {
@@ -395,7 +524,7 @@ export default function Home() {
                 <p className="text-sm text-white/78">
                   Ingreso por sede:{" "}
                   <span className="font-semibold text-white">
-                    {usuarioPendiente?.sedeNombre || `SEDE ${usuarioPendiente?.sedeId || ""}`}
+                    {nombreSedeActual}
                   </span>
                 </p>
               </div>
@@ -460,11 +589,7 @@ export default function Home() {
                   <button
                     key={perfil.id}
                     type="button"
-                    onClick={() => {
-                      setPerfilId(String(perfil.id));
-                      setPin("");
-                      setMensaje("");
-                    }}
+                    onClick={() => abrirModalPin(String(perfil.id))}
                     className={`group rounded-[2rem] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(239,244,252,0.92)_100%)] p-6 text-left shadow-[0_22px_55px_rgba(71,85,105,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_70px_rgba(51,65,85,0.18)] ${
                       seleccionado
                         ? "border-slate-900 ring-4 ring-slate-200"
@@ -506,59 +631,122 @@ export default function Home() {
           </section>
         </main>
 
-        {perfilSeleccionado && (
+        {perfilSeleccionado && modalModo && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.26)] px-4 backdrop-blur-[3px]">
-            <button
-              type="button"
-              aria-label="Cerrar modal"
-              onClick={cerrarModalPerfil}
-              className="absolute inset-0 cursor-default"
-            />
+            {modalModo === "pin" && (
+              <button
+                type="button"
+                aria-label="Cerrar modal"
+                onClick={cerrarModalPerfil}
+                className="absolute inset-0 cursor-default"
+              />
+            )}
 
             <div className="relative z-10 w-full max-w-md rounded-[2rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(245,249,255,0.96)_100%)] p-6 shadow-[0_28px_80px_rgba(15,23,42,0.24)] sm:p-7">
-              <button
+              {modalModo === "pin" && (
+                <button
                 type="button"
                 onClick={cerrarModalPerfil}
                 disabled={cargando}
                 className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-60"
               >
                 <span className="text-xl leading-none">×</span>
-              </button>
+                </button>
+              )}
 
               <p className="text-[0.68rem] font-bold uppercase tracking-[0.32em] text-slate-500">
-                Acceso al perfil
+                {modalModo === "pin" ? "Acceso al perfil" : "Cambio de PIN"}
               </p>
               <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] text-slate-950">
-                Ingresa tu PIN
+                {modalModo === "pin" ? "Ingresa tu PIN" : "Cambia tu PIN"}
               </h2>
               <p className="mt-2 text-sm font-medium text-slate-500">
-                {perfilSeleccionado.tipoLabel}{" "}
-                {usuarioPendiente?.sedeNombre || `SEDE ${usuarioPendiente?.sedeId || ""}`}
+                {perfilSeleccionado.nombre} · {perfilSeleccionado.tipoLabel}
+              </p>
+              <p className="mt-2 text-sm text-slate-500">
+                {modalModo === "pin"
+                  ? `Sucursal activa: ${nombreSedeActual}`
+                  : "Es tu primer ingreso. Define un PIN personal de 4 a 6 digitos para continuar."}
               </p>
 
-              <label className="mt-7 block">
-                <span className="sr-only">PIN del perfil</span>
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  autoFocus
-                  value={pin}
-                  onChange={(event) =>
-                    setPin(event.target.value.replace(/\D/g, "").slice(0, 6))
-                  }
-                  placeholder="PIN de 4 a 6 digitos"
-                  className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-5 py-4 text-2xl tracking-[0.22em] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:tracking-[0.16em] placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-                />
-              </label>
+              {modalModo === "pin" ? (
+                <>
+                  <label className="mt-7 block">
+                    <span className="sr-only">PIN del perfil</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoFocus
+                      value={pin}
+                      onChange={(event) =>
+                        setPin(event.target.value.replace(/\D/g, "").slice(0, 6))
+                      }
+                      placeholder="PIN de 4 a 6 digitos"
+                      className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-5 py-4 text-2xl tracking-[0.22em] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:tracking-[0.16em] placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
+                    />
+                  </label>
 
-              <button
-                type="button"
-                onClick={() => void confirmarPerfil()}
-                disabled={cargando}
-                className="mt-5 w-full rounded-[1.35rem] bg-[linear-gradient(135deg,#1b1f28_0%,#171c24_46%,#2a2d33_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_20px_40px_rgba(15,23,42,0.22)] transition hover:brightness-110 disabled:opacity-65"
-              >
-                {cargando ? "Confirmando..." : "Confirmar"}
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => void confirmarPerfil()}
+                    disabled={cargando}
+                    className="mt-5 w-full rounded-[1.35rem] bg-[linear-gradient(135deg,#1b1f28_0%,#171c24_46%,#2a2d33_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_20px_40px_rgba(15,23,42,0.22)] transition hover:brightness-110 disabled:opacity-65"
+                  >
+                    {cargando ? "Confirmando..." : "Confirmar"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <label className="mt-7 block">
+                    <span className="sr-only">Nuevo PIN</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoFocus
+                      value={nuevoPin}
+                      onChange={(event) =>
+                        setNuevoPin(event.target.value.replace(/\D/g, "").slice(0, 6))
+                      }
+                      placeholder="Nuevo PIN"
+                      className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-5 py-4 text-2xl tracking-[0.22em] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:tracking-[0.12em] placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
+                    />
+                  </label>
+
+                  <label className="mt-4 block">
+                    <span className="sr-only">Confirmar PIN</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      value={confirmarPin}
+                      onChange={(event) =>
+                        setConfirmarPin(
+                          event.target.value.replace(/\D/g, "").slice(0, 6)
+                        )
+                      }
+                      placeholder="Confirmar PIN"
+                      className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-5 py-4 text-2xl tracking-[0.22em] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:tracking-[0.12em] placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => void confirmarCambioPin()}
+                    disabled={cargando}
+                    className="mt-5 w-full rounded-[1.35rem] bg-[linear-gradient(135deg,#1b1f28_0%,#171c24_46%,#2a2d33_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_20px_40px_rgba(15,23,42,0.22)] transition hover:brightness-110 disabled:opacity-65"
+                  >
+                    {cargando ? "Actualizando..." : "Guardar PIN"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void volverAlInicio()}
+                    disabled={cargando}
+                    className="mt-3 w-full rounded-[1.2rem] border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Cerrar sesion
+                  </button>
+                </>
+              )}
 
               {mensaje && (
                 <p className="mt-4 rounded-[1.2rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">

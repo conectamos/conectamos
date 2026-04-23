@@ -2,10 +2,13 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import {
+  createPendingPinChangeToken,
   createSessionToken,
   getSessionCookieOptions,
+  PENDING_PIN_CHANGE_COOKIE_NAME,
   PENDING_PROFILE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
+  verifyPendingPinChangeToken,
   verifyPendingProfileToken,
 } from "@/lib/session";
 import {
@@ -68,6 +71,10 @@ export async function GET() {
         sedeNombre: user.sede?.nombre ?? `SEDE ${user.sedeId}`,
       },
       perfiles,
+      pendingPinChange:
+        verifyPendingPinChangeToken(
+          (await cookies()).get(PENDING_PIN_CHANGE_COOKIE_NAME)?.value
+        )?.profileId ?? null,
     });
   } catch (error) {
     console.error("ERROR GET LOGIN PERFIL:", error);
@@ -120,8 +127,31 @@ export async function POST(req: Request) {
       );
     }
 
+    if (perfil.debeCambiarPin) {
+      const response = NextResponse.json({
+        ok: true,
+        requiresPinChange: true,
+        mensaje: "Debes cambiar tu PIN para continuar",
+        perfil,
+      });
+
+      response.cookies.set(
+        PENDING_PIN_CHANGE_COOKIE_NAME,
+        createPendingPinChangeToken(user.id, perfil.id),
+        getSessionCookieOptions()
+      );
+      response.cookies.set(SESSION_COOKIE_NAME, "", {
+        ...getSessionCookieOptions(),
+        expires: new Date(0),
+        maxAge: 0,
+      });
+
+      return response;
+    }
+
     const response = NextResponse.json({
       ok: true,
+      requiresPinChange: false,
       mensaje: `Bienvenido ${perfil.nombre}`,
       perfil,
     });
@@ -132,6 +162,11 @@ export async function POST(req: Request) {
       getSessionCookieOptions()
     );
     response.cookies.set(PENDING_PROFILE_COOKIE_NAME, "", {
+      ...getSessionCookieOptions(),
+      expires: new Date(0),
+      maxAge: 0,
+    });
+    response.cookies.set(PENDING_PIN_CHANGE_COOKIE_NAME, "", {
       ...getSessionCookieOptions(),
       expires: new Date(0),
       maxAge: 0,

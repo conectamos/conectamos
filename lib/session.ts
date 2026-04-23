@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const SESSION_COOKIE_NAME = "session";
 export const PENDING_PROFILE_COOKIE_NAME = "pending_profile_session";
+export const PENDING_PIN_CHANGE_COOKIE_NAME = "pending_profile_pin_change";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 type SessionPayload = {
@@ -12,6 +13,12 @@ type SessionPayload = {
 
 type PendingProfilePayload = {
   exp: number;
+  userId: number;
+};
+
+type PendingPinChangePayload = {
+  exp: number;
+  profileId: number;
   userId: number;
 };
 
@@ -41,7 +48,9 @@ function sign(value: string) {
   return createHmac("sha256", getSessionSecret()).update(value).digest("base64url");
 }
 
-function createSignedToken(payload: SessionPayload | PendingProfilePayload) {
+function createSignedToken(
+  payload: SessionPayload | PendingProfilePayload | PendingPinChangePayload
+) {
   const serializedPayload = JSON.stringify(payload);
   const encodedPayload = base64UrlEncode(serializedPayload);
 
@@ -67,6 +76,16 @@ export function createPendingProfileToken(userId: number) {
   return createSignedToken(payload);
 }
 
+export function createPendingPinChangeToken(userId: number, profileId: number) {
+  const payload: PendingPinChangePayload = {
+    userId,
+    profileId,
+    exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS,
+  };
+
+  return createSignedToken(payload);
+}
+
 function verifySignedToken(token?: string | null) {
   if (!token) {
     return null;
@@ -86,27 +105,28 @@ function verifySignedToken(token?: string | null) {
     return null;
   }
 
-    if (!timingSafeEqual(expectedBuffer, signatureBuffer)) {
+  if (!timingSafeEqual(expectedBuffer, signatureBuffer)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as
+      | SessionPayload
+      | PendingProfilePayload
+      | PendingPinChangePayload;
+
+    if (!payload?.userId || !payload?.exp) {
       return null;
-    }
-
-    try {
-      const payload = JSON.parse(base64UrlDecode(encodedPayload)) as
-        | SessionPayload
-        | PendingProfilePayload;
-
-      if (!payload?.userId || !payload?.exp) {
-        return null;
     }
 
     if (payload.exp <= Math.floor(Date.now() / 1000)) {
       return null;
     }
 
-      return payload;
-    } catch {
-      return null;
-    }
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 export function verifySessionToken(token?: string | null) {
@@ -127,6 +147,16 @@ export function verifyPendingProfileToken(token?: string | null) {
   }
 
   return payload as PendingProfilePayload;
+}
+
+export function verifyPendingPinChangeToken(token?: string | null) {
+  const payload = verifySignedToken(token);
+
+  if (!payload) {
+    return null;
+  }
+
+  return payload as PendingPinChangePayload;
 }
 
 export function getSessionCookieOptions() {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { clearFinancialAccessCookie } from "@/lib/financial-access";
 import {
   getSessionCookieOptions,
+  PENDING_PIN_CHANGE_COOKIE_NAME,
   PENDING_PROFILE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
 } from "@/lib/session";
@@ -15,6 +16,11 @@ export async function POST() {
     maxAge: 0,
   });
   response.cookies.set(PENDING_PROFILE_COOKIE_NAME, "", {
+    ...getSessionCookieOptions(),
+    expires: new Date(0),
+    maxAge: 0,
+  });
+  response.cookies.set(PENDING_PIN_CHANGE_COOKIE_NAME, "", {
     ...getSessionCookieOptions(),
     expires: new Date(0),
     maxAge: 0,
