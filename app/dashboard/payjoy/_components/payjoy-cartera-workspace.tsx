@@ -1372,45 +1372,54 @@ export default function PayJoyCarteraWorkspace() {
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => void loadStoredCut(cut.id)}
-                          disabled={consultingCutId === cut.id}
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-70"
-                        >
-                          {consultingCutId === cut.id
-                            ? "Consultando..."
-                            : "Consultar"}
-                        </button>
-                        <button
-                          onClick={() => void reloadStoredCut(cut.id)}
-                          disabled={reloadingCutId === cut.id}
-                          className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-70"
-                        >
-                          {reloadingCutId === cut.id
-                            ? "Recargando..."
-                            : "Recargar"}
-                        </button>
-                        {activeSavedCutId === cut.id && (
-                          <button
-                            onClick={() => void updateCurrentStoredCut(cut.id)}
-                            disabled={updatingCut}
-                            className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-4 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
-                          >
-                            {updatingCut ? "Actualizando..." : "Actualizar"}
-                          </button>
-                        )}
-                        <button
-                          onClick={() =>
-                            void deleteStoredCut(cut.id, cut.recordName)
-                          }
-                          disabled={deletingCutId === cut.id}
-                          className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
-                        >
-                          {deletingCutId === cut.id
-                            ? "Eliminando..."
-                            : "Eliminar"}
-                        </button>
+                      <div className="w-full xl:w-[340px]">
+                        <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Acciones del corte
+                          </p>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            <button
+                              onClick={() => void loadStoredCut(cut.id)}
+                              disabled={consultingCutId === cut.id}
+                              className="rounded-2xl border border-slate-950 bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
+                            >
+                              {consultingCutId === cut.id
+                                ? "Abriendo..."
+                                : "Ver corte"}
+                            </button>
+                            <button
+                              onClick={() => void reloadStoredCut(cut.id)}
+                              disabled={reloadingCutId === cut.id}
+                              className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-70"
+                            >
+                              {reloadingCutId === cut.id
+                                ? "Recargando..."
+                                : "Recargar PayJoy"}
+                            </button>
+                            {activeSavedCutId === cut.id && (
+                              <button
+                                onClick={() => void updateCurrentStoredCut(cut.id)}
+                                disabled={updatingCut}
+                                className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-4 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
+                              >
+                                {updatingCut
+                                  ? "Guardando..."
+                                  : "Guardar cambios"}
+                              </button>
+                            )}
+                            <button
+                              onClick={() =>
+                                void deleteStoredCut(cut.id, cut.recordName)
+                              }
+                              disabled={deletingCutId === cut.id}
+                              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                            >
+                              {deletingCutId === cut.id
+                                ? "Eliminando..."
+                                : "Eliminar corte"}
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
