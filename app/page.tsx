@@ -578,14 +578,13 @@ export default function Home() {
       <div className="pointer-events-none absolute -left-12 top-14 h-64 w-64 rounded-full bg-cyan-200/28 blur-3xl" />
       <div className="pointer-events-none absolute bottom-0 right-0 h-72 w-72 rounded-full bg-emerald-200/22 blur-3xl" />
 
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center">
-        <div className="grid w-full gap-8 lg:grid-cols-[minmax(0,1fr)_430px]">
-          <section className="relative overflow-hidden rounded-[2.75rem] border border-white/50 bg-[linear-gradient(145deg,#142032_0%,#1a2840_48%,#174653_100%)] p-8 text-white shadow-[0_32px_100px_rgba(15,23,42,0.28)] sm:p-10 lg:p-12">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(125,211,252,0.16),transparent_34%),radial-gradient(circle_at_100%_100%,rgba(52,211,153,0.14),transparent_40%)]" />
-            <div className="pointer-events-none absolute -right-12 top-10 h-48 w-48 rounded-full border border-white/8 bg-white/5 blur-2xl" />
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl items-center">
+        <div className="grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+          <section className="relative overflow-hidden rounded-[2.5rem] border border-white/50 bg-[linear-gradient(145deg,#162235_0%,#1b2a41_52%,#18444f_100%)] p-8 text-white shadow-[0_28px_80px_rgba(15,23,42,0.24)] sm:p-10">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(125,211,252,0.14),transparent_34%),radial-gradient(circle_at_100%_100%,rgba(52,211,153,0.12),transparent_40%)]" />
 
             <div className="relative">
-              <div className="inline-flex items-center gap-3 rounded-full border border-white/12 bg-white/8 px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-sm">
+              <div className="inline-flex items-center gap-3 rounded-full border border-white/12 bg-white/8 px-4 py-2.5 backdrop-blur-sm">
                 <BrandMark compact />
                 <div>
                   <p className="text-sm font-bold tracking-[0.2em] text-white/95">
@@ -595,46 +594,44 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="mt-12 max-w-2xl">
+              <div className="mt-12 max-w-xl">
                 <p className="text-[0.68rem] font-semibold uppercase tracking-[0.34em] text-cyan-100/72">
                   Ingreso principal
                 </p>
                 <h1 className="mt-5 text-5xl font-black leading-[0.95] tracking-[-0.055em] text-white sm:text-6xl">
-                  Acceso por sede
+                  Acceso de sede
                 </h1>
-                <p className="mt-6 max-w-xl text-base leading-8 text-slate-200/80 sm:text-lg">
-                  Ingresa con el usuario principal de la sede. Si existen perfiles
-                  activos, luego se solicitara el PIN del supervisor o vendedor.
+                <p className="mt-6 text-base leading-8 text-slate-200/80 sm:text-lg">
+                  Usa el usuario principal de la sede. Si existen perfiles
+                  activos, luego se solicitara el PIN del perfil asignado.
                 </p>
               </div>
 
-              <div className="mt-12 grid gap-4 sm:grid-cols-3">
-                <div className="rounded-[1.7rem] border border-white/10 bg-white/8 p-5 backdrop-blur-sm">
-                  <p className="text-sm font-semibold text-white">Usuario de sede</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-200/70">
-                    Acceso principal.
-                  </p>
+              <div className="mt-12 space-y-3">
+                <div className="flex items-center gap-3 rounded-[1.35rem] border border-white/10 bg-white/8 px-4 py-4">
+                  <span className="h-2.5 w-2.5 rounded-full bg-cyan-200" />
+                  <span className="text-sm font-medium text-white/90">
+                    Usuario principal de la sede
+                  </span>
                 </div>
-
-                <div className="rounded-[1.7rem] border border-white/10 bg-white/8 p-5 backdrop-blur-sm">
-                  <p className="text-sm font-semibold text-white">Perfil asignado</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-200/70">
-                    Supervisor o vendedor.
-                  </p>
+                <div className="flex items-center gap-3 rounded-[1.35rem] border border-white/10 bg-white/8 px-4 py-4">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-200" />
+                  <span className="text-sm font-medium text-white/90">
+                    Perfil asignado para operar
+                  </span>
                 </div>
-
-                <div className="rounded-[1.7rem] border border-white/10 bg-white/8 p-5 backdrop-blur-sm">
-                  <p className="text-sm font-semibold text-white">PIN personal</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-200/70">
-                    Validacion individual.
-                  </p>
+                <div className="flex items-center gap-3 rounded-[1.35rem] border border-white/10 bg-white/8 px-4 py-4">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
+                  <span className="text-sm font-medium text-white/90">
+                    PIN individual cuando aplique
+                  </span>
                 </div>
               </div>
             </div>
           </section>
 
-          <section className="relative overflow-hidden rounded-[2.5rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.97)_0%,rgba(246,250,255,0.95)_100%)] p-8 shadow-[0_30px_80px_rgba(71,85,105,0.16)] sm:p-10">
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.14),transparent_72%)]" />
+          <section className="relative overflow-hidden rounded-[2.35rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.97)_0%,rgba(246,250,255,0.95)_100%)] p-8 shadow-[0_28px_70px_rgba(71,85,105,0.16)] sm:p-9">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.12),transparent_72%)]" />
 
             <div className="relative">
               <p className="text-[0.68rem] font-bold uppercase tracking-[0.32em] text-slate-500">
@@ -643,9 +640,6 @@ export default function Home() {
               <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] text-slate-950">
                 Ingresar
               </h2>
-              <p className="mt-4 max-w-sm text-sm leading-7 text-slate-600">
-                Usa el usuario principal de la sede para continuar.
-              </p>
 
               <div className="mt-8 space-y-4">
                 <label className="block text-sm font-semibold text-slate-600">
@@ -677,7 +671,7 @@ export default function Home() {
                       placeholder="Usuario de la sede"
                       value={usuario}
                       onChange={(event) => setUsuario(event.target.value)}
-                      className="w-full rounded-[1.45rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] py-4 pl-12 pr-5 text-lg text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-cyan-100/70"
+                      className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] py-4 pl-12 pr-5 text-lg text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-cyan-100/70"
                     />
                   </div>
                 </label>
@@ -715,7 +709,7 @@ export default function Home() {
                       placeholder="Clave de acceso"
                       value={clave}
                       onChange={(event) => setClave(event.target.value)}
-                      className="w-full rounded-[1.45rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] py-4 pl-12 pr-5 text-lg text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-cyan-100/70"
+                      className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] py-4 pl-12 pr-5 text-lg text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-cyan-100/70"
                     />
                   </div>
                 </label>
@@ -724,15 +718,10 @@ export default function Home() {
               <button
                 onClick={() => void login()}
                 disabled={cargando}
-                className="mt-8 w-full rounded-[1.55rem] bg-[linear-gradient(135deg,#0f172a_0%,#16213a_46%,#143f4b_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_22px_45px_rgba(15,23,42,0.22)] transition hover:-translate-y-0.5 hover:brightness-110 disabled:opacity-65"
+                className="mt-8 w-full rounded-[1.45rem] bg-[linear-gradient(135deg,#0f172a_0%,#16213a_46%,#143f4b_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_20px_42px_rgba(15,23,42,0.22)] transition hover:-translate-y-0.5 hover:brightness-110 disabled:opacity-65"
               >
                 {cargando ? "Ingresando..." : "Ingresar"}
               </button>
-
-              <p className="mt-5 text-sm leading-7 text-slate-500">
-                Si la sede tiene perfiles activos, el siguiente paso solicitara el
-                PIN correspondiente.
-              </p>
 
               {mensaje && (
                 <p className="mt-5 rounded-[1.35rem] border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
