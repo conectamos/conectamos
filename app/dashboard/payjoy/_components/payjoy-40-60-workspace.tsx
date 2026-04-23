@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type FortySixtyStatus = "40/60 APROBADO" | "40/60 NO APROBADO";
 
@@ -18,6 +18,13 @@ type FortySixtyRow = {
   paidInFull: boolean;
 };
 
+type FortySixtySummary = {
+  aprobados: number;
+  noAprobados: number;
+  cedulasEncontradas: number;
+  cedulasPendientes: number;
+};
+
 type FortySixtyResponse = {
   ok: boolean;
   fileName: string;
@@ -25,12 +32,7 @@ type FortySixtyResponse = {
   week: string;
   totalRows: number;
   filteredRows: number;
-  summary: {
-    aprobados: number;
-    noAprobados: number;
-    cedulasEncontradas: number;
-    cedulasPendientes: number;
-  };
+  summary: FortySixtySummary;
   rows: FortySixtyRow[];
 };
 
@@ -39,6 +41,26 @@ type FortySixtyWeeksResponse = {
   fileName: string;
   sheetName: string;
   weeks: string[];
+};
+
+type FortySixtyStoredListItem = {
+  id: number;
+  recordName: string;
+  week: string;
+  fileName: string;
+  sheetName: string;
+  totalRows: number;
+  filteredRows: number;
+  summary: FortySixtySummary;
+  savedById: number | null;
+  savedByName: string;
+  savedByUser: string;
+  savedAt: string;
+  updatedAt: string;
+};
+
+type FortySixtyStoredDetail = FortySixtyStoredListItem & {
+  rows: FortySixtyRow[];
 };
 
 function formatNumber(value: number | null) {
@@ -56,24 +78,28 @@ function formatPercent(value: number) {
   })}%`;
 }
 
+function formatDateTime(value: string) {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Bogota",
+  }).format(parsed);
+}
+
 function statusRowClass(status: FortySixtyStatus) {
   return status === "40/60 APROBADO"
     ? "bg-emerald-50/80"
     : "bg-red-50/80";
 }
 
-export default function PayJoyFortySixtyWorkspace() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [week, setWeek] = useState("");
-  const [weekOptions, setWeekOptions] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingWeeks, setLoadingWeeks] = useState(false);
-  const [message, setMessage] = useState("");
-  const [data, setData] = useState<FortySixtyResponse | null>(null);
-  const [rows, setRows] = useState<FortySixtyRow[]>([]);
-
-  const liveSummary = rows.reduce(
+function summarizeRows(rows: FortySixtyRow[]): FortySixtySummary {
+  return rows.reduce(
     (summary, row) => {
       if (row.status === "40/60 APROBADO") {
         summary.aprobados += 1;
@@ -96,15 +122,131 @@ export default function PayJoyFortySixtyWorkspace() {
       cedulasPendientes: 0,
     }
   );
+}
 
+function buildDefaultSaveName(week: string) {
+  return `40/60 - ${String(week || "").trim() || "Semana"}`;
+}
+
+export default function PayJoyFortySixtyWorkspace() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [week, setWeek] = useState("");
+  const [weekOptions, setWeekOptions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingWeeks, setLoadingWeeks] = useState(false);
+  const [message, setMessage] = useState("");
+  const [data, setData] = useState<FortySixtyResponse | null>(null);
+  const [rows, setRows] = useState<FortySixtyRow[]>([]);
+  const [saveName, setSaveName] = useState("");
+  const [savingRecord, setSavingRecord] = useState(false);
+  const [updatingRecord, setUpdatingRecord] = useState(false);
+  const [savedRecords, setSavedRecords] = useState<FortySixtyStoredListItem[]>([]);
+  const [savedRecordsLoading, setSavedRecordsLoading] = useState(true);
+  const [savedRecordsError, setSavedRecordsError] = useState("");
+  const [savedRecordsExpanded, setSavedRecordsExpanded] = useState(false);
+  const [consultingRecordId, setConsultingRecordId] = useState<number | null>(
+    null
+  );
+  const [deletingRecordId, setDeletingRecordId] = useState<number | null>(null);
+  const [activeSavedRecordId, setActiveSavedRecordId] = useState<number | null>(
+    null
+  );
+
+  const liveSummary = summarizeRows(rows);
   const totalEvaluated = liveSummary.aprobados + liveSummary.noAprobados;
   const approvalRate =
     totalEvaluated > 0 ? (liveSummary.aprobados / totalEvaluated) * 100 : 0;
+  const canSaveRecord = Boolean(data && rows.length);
+  const savedRecordsCount = savedRecords.length;
 
   const updateCedula = (id: string, value: string) => {
     setRows((currentRows) =>
       currentRows.map((row) => (row.id === id ? { ...row, cedula: value } : row))
     );
+  };
+
+  const buildCurrentRecordPayload = () => {
+    if (!data || !rows.length) {
+      return null;
+    }
+
+    return {
+      recordName: saveName.trim() || buildDefaultSaveName(data.week),
+      week: data.week,
+      fileName: data.fileName,
+      sheetName: data.sheetName,
+      totalRows: data.totalRows,
+      filteredRows: rows.length,
+      summary: liveSummary,
+      rows,
+    };
+  };
+
+  const loadSavedRecords = async () => {
+    try {
+      setSavedRecordsLoading(true);
+      setSavedRecordsError("");
+
+      const response = await fetch("/api/payjoy/40-60/registros", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        registros?: FortySixtyStoredListItem[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setSavedRecordsError(
+          payload.error ||
+            "No fue posible cargar el historial de semanas guardadas."
+        );
+        return;
+      }
+
+      const loadedRecords = Array.isArray(payload.registros) ? payload.registros : [];
+      setSavedRecords(loadedRecords);
+
+      if (!loadedRecords.length) {
+        setSavedRecordsExpanded(false);
+      }
+    } catch {
+      setSavedRecordsError(
+        "No fue posible cargar el historial de semanas guardadas."
+      );
+    } finally {
+      setSavedRecordsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadSavedRecords();
+  }, []);
+
+  const applyStoredRecord = (record: FortySixtyStoredDetail) => {
+    setData({
+      ok: true,
+      fileName: record.fileName,
+      sheetName: record.sheetName,
+      week: record.week,
+      totalRows: record.totalRows,
+      filteredRows: record.filteredRows,
+      summary: record.summary,
+      rows: record.rows,
+    });
+    setRows(record.rows);
+    setSaveName(record.recordName);
+    setActiveSavedRecordId(record.id);
+    setWeek(record.week);
+    setWeekOptions(record.week ? [record.week] : []);
+    setFile(null);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const loadWeeksFromFile = async (selectedFile: File) => {
@@ -115,6 +257,8 @@ export default function PayJoyFortySixtyWorkspace() {
       setWeekOptions([]);
       setData(null);
       setRows([]);
+      setSaveName("");
+      setActiveSavedRecordId(null);
 
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -157,6 +301,8 @@ export default function PayJoyFortySixtyWorkspace() {
       setWeekOptions([]);
       setData(null);
       setRows([]);
+      setSaveName("");
+      setActiveSavedRecordId(null);
       return;
     }
 
@@ -198,6 +344,8 @@ export default function PayJoyFortySixtyWorkspace() {
 
       setData(payload);
       setRows(payload.rows);
+      setActiveSavedRecordId(null);
+      setSaveName(buildDefaultSaveName(payload.week));
       setMessage(
         payload.rows.length
           ? `Se procesaron ${payload.filteredRows} registro(s) para la WEEK ${payload.week}.`
@@ -207,6 +355,186 @@ export default function PayJoyFortySixtyWorkspace() {
       setMessage("No fue posible procesar el archivo 40/60.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveCurrentRecord = async () => {
+    const currentPayload = buildCurrentRecordPayload();
+
+    if (!currentPayload) {
+      setMessage("Primero debes procesar una semana antes de guardarla.");
+      return;
+    }
+
+    try {
+      setSavingRecord(true);
+      setMessage("");
+
+      const response = await fetch("/api/payjoy/40-60/registros", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(currentPayload),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        registro?: FortySixtyStoredListItem;
+        mensaje?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.registro) {
+        setMessage(payload.error || "No fue posible guardar la semana.");
+        return;
+      }
+
+      setSaveName(payload.registro.recordName);
+      setActiveSavedRecordId(payload.registro.id);
+      setSavedRecordsExpanded(true);
+      setMessage(
+        payload.mensaje ||
+          `Semana guardada correctamente como "${payload.registro.recordName}".`
+      );
+      await loadSavedRecords();
+    } catch {
+      setMessage("No fue posible guardar la semana.");
+    } finally {
+      setSavingRecord(false);
+    }
+  };
+
+  const updateCurrentStoredRecord = async (recordId: number) => {
+    const currentPayload = buildCurrentRecordPayload();
+
+    if (!currentPayload) {
+      setMessage("Primero debes procesar o consultar una semana antes de actualizarla.");
+      return;
+    }
+
+    try {
+      setUpdatingRecord(true);
+      setMessage("");
+
+      const response = await fetch("/api/payjoy/40-60/registros", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: recordId,
+          ...currentPayload,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        registro?: FortySixtyStoredListItem;
+        mensaje?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.registro) {
+        setMessage(
+          payload.error || "No fue posible actualizar la semana guardada."
+        );
+        return;
+      }
+
+      setSaveName(payload.registro.recordName);
+      setActiveSavedRecordId(payload.registro.id);
+      setSavedRecordsExpanded(true);
+      setMessage(
+        payload.mensaje ||
+          `Semana actualizada correctamente como "${payload.registro.recordName}".`
+      );
+      await loadSavedRecords();
+    } catch {
+      setMessage("No fue posible actualizar la semana guardada.");
+    } finally {
+      setUpdatingRecord(false);
+    }
+  };
+
+  const loadStoredRecord = async (recordId: number) => {
+    try {
+      setConsultingRecordId(recordId);
+      setMessage("");
+
+      const response = await fetch(`/api/payjoy/40-60/registros?id=${recordId}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        registro?: FortySixtyStoredDetail;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.registro) {
+        setMessage(
+          payload.error || "No fue posible consultar la semana guardada."
+        );
+        return;
+      }
+
+      applyStoredRecord(payload.registro);
+      setSavedRecordsExpanded(true);
+      setMessage(
+        `Consultando la semana guardada "${payload.registro.recordName}" con ${payload.registro.filteredRows} registro(s).`
+      );
+    } catch {
+      setMessage("No fue posible consultar la semana guardada.");
+    } finally {
+      setConsultingRecordId(null);
+    }
+  };
+
+  const deleteStoredRecord = async (recordId: number, recordName: string) => {
+    const confirmed =
+      typeof window === "undefined"
+        ? true
+        : window.confirm(
+            `Vas a eliminar la semana guardada "${recordName}". Esta accion no se puede deshacer.`
+          );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingRecordId(recordId);
+      setMessage("");
+
+      const response = await fetch(`/api/payjoy/40-60/registros?id=${recordId}`, {
+        method: "DELETE",
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        mensaje?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setMessage(
+          payload.error || "No fue posible eliminar la semana guardada."
+        );
+        return;
+      }
+
+      if (activeSavedRecordId === recordId) {
+        setActiveSavedRecordId(null);
+      }
+
+      setMessage(payload.mensaje || "Semana guardada eliminada correctamente.");
+      await loadSavedRecords();
+    } catch {
+      setMessage("No fue posible eliminar la semana guardada.");
+    } finally {
+      setDeletingRecordId(null);
     }
   };
 
@@ -424,6 +752,303 @@ export default function PayJoyFortySixtyWorkspace() {
                 <p className="mt-2 text-sm text-[#8f5b24]/80">
                   {liveSummary.aprobados} de {totalEvaluated} aprobados
                 </p>
+              </div>
+            </section>
+
+            <section className="mt-6 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Guardar semana
+                </div>
+                <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+                  Registro persistente
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-slate-600">
+                  Guarda la semana procesada y las cedulas editadas para volver a
+                  consultarla despues desde este mismo modulo.
+                </p>
+
+                {canSaveRecord ? (
+                  <>
+                    <label className="mt-5 block">
+                      <span className="mb-2 block text-sm font-semibold text-slate-700">
+                        Nombre del registro
+                      </span>
+                      <input
+                        value={saveName}
+                        onChange={(event) => setSaveName(event.target.value)}
+                        placeholder="Ej: 40/60 - Week 02"
+                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-[#c79a57] focus:ring-2 focus:ring-[#f4dfbc]"
+                      />
+                    </label>
+
+                    <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Semana activa
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                          {data.week}
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                          {data.fileName}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap items-center gap-3">
+                      <button
+                        onClick={() => void saveCurrentRecord()}
+                        disabled={savingRecord}
+                        className="rounded-2xl bg-[#111318] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b1f27] disabled:opacity-70"
+                      >
+                        {savingRecord ? "Guardando..." : "Guardar semana"}
+                      </button>
+                      {activeSavedRecordId && (
+                        <button
+                          onClick={() =>
+                            void updateCurrentStoredRecord(activeSavedRecordId)
+                          }
+                          disabled={updatingRecord}
+                          className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-5 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
+                        >
+                          {updatingRecord
+                            ? "Actualizando..."
+                            : "Actualizar guardado"}
+                        </button>
+                      )}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        {rows.length} fila(s) listas para guardar
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+                    Procesa una semana primero y luego podras guardarla en el
+                    historial.
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                      Historial de semanas
+                    </div>
+                    <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+                      Semanas guardadas
+                    </h2>
+                    <p className="mt-3 text-sm leading-7 text-slate-600">
+                      Mantenlo oculto mientras trabajas la semana actual y abrelo
+                      solo cuando necesites consultar, actualizar o borrar una
+                      guardada.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
+                      {savedRecordsCount} registro(s)
+                    </div>
+                    <button
+                      onClick={() =>
+                        setSavedRecordsExpanded((current) => !current)
+                      }
+                      disabled={!savedRecordsCount}
+                      className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {savedRecordsExpanded
+                        ? "Ocultar guardados"
+                        : "Visualizar guardados"}
+                    </button>
+                    <button
+                      onClick={() => void loadSavedRecords()}
+                      disabled={savedRecordsLoading}
+                      className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+                    >
+                      {savedRecordsLoading ? "Actualizando..." : "Actualizar"}
+                    </button>
+                  </div>
+                </div>
+
+                {savedRecordsError && (
+                  <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                    {savedRecordsError}
+                  </div>
+                )}
+
+                {savedRecordsLoading && !savedRecords.length ? (
+                  <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+                    Cargando historial de semanas guardadas...
+                  </div>
+                ) : !savedRecords.length ? (
+                  <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+                    Aun no hay semanas guardadas. Cuando uses{" "}
+                    <span className="font-semibold">Guardar semana</span>, te
+                    quedaran listadas aqui para futuras consultas.
+                  </div>
+                ) : !savedRecordsExpanded ? (
+                  <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">
+                          Historial oculto para mantener el panel liviano
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Tienes {savedRecordsCount} registro(s) guardado(s). Pulsa{" "}
+                          <span className="font-semibold">
+                            Visualizar guardados
+                          </span>{" "}
+                          cuando necesites consultarlos.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                        Ultimo guardado:{" "}
+                        <span className="font-semibold text-slate-950">
+                          {savedRecords[0]?.recordName || "-"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-5 max-h-[560px] space-y-3 overflow-y-auto pr-1">
+                    {savedRecords.map((record) => {
+                      const totalRecordEvaluated =
+                        record.summary.aprobados + record.summary.noAprobados;
+                      const recordRate =
+                        totalRecordEvaluated > 0
+                          ? (record.summary.aprobados / totalRecordEvaluated) * 100
+                          : 0;
+
+                      return (
+                        <article
+                          key={record.id}
+                          className={[
+                            "rounded-[24px] border px-4 py-4 transition",
+                            activeSavedRecordId === record.id
+                              ? "border-[#d8b476] bg-[#fff9ef] shadow-sm"
+                              : "border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]",
+                          ].join(" ")}
+                        >
+                          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="text-lg font-black tracking-tight text-slate-950">
+                                  {record.recordName}
+                                </h3>
+                                {activeSavedRecordId === record.id && (
+                                  <span className="rounded-full border border-[#e1c38d] bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8f5b24]">
+                                    En pantalla
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-2 text-sm text-slate-500">
+                                Guardado el {formatDateTime(record.savedAt)} por{" "}
+                                <span className="font-semibold text-slate-700">
+                                  {record.savedByName || record.savedByUser || "Admin"}
+                                </span>
+                              </p>
+                              {record.updatedAt !== record.savedAt && (
+                                <p className="mt-1 text-sm text-slate-500">
+                                  Actualizado el {formatDateTime(record.updatedAt)}
+                                </p>
+                              )}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                                  {record.week}
+                                </span>
+                                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                                  {record.fileName}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="w-full xl:w-[320px]">
+                              <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-3">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                  Acciones de la semana
+                                </p>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                  <button
+                                    onClick={() => void loadStoredRecord(record.id)}
+                                    disabled={consultingRecordId === record.id}
+                                    className="rounded-2xl border border-slate-950 bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
+                                  >
+                                    {consultingRecordId === record.id
+                                      ? "Abriendo..."
+                                      : "Consultar"}
+                                  </button>
+                                  {activeSavedRecordId === record.id && (
+                                    <button
+                                      onClick={() =>
+                                        void updateCurrentStoredRecord(record.id)
+                                      }
+                                      disabled={updatingRecord}
+                                      className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-4 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
+                                    >
+                                      {updatingRecord
+                                        ? "Guardando..."
+                                        : "Actualizar"}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() =>
+                                      void deleteStoredRecord(
+                                        record.id,
+                                        record.recordName
+                                      )
+                                    }
+                                    disabled={deletingRecordId === record.id}
+                                    className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                                  >
+                                    {deletingRecordId === record.id
+                                      ? "Eliminando..."
+                                      : "Borrar"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid gap-2 sm:grid-cols-4">
+                            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Registros
+                              </p>
+                              <p className="mt-1 text-lg font-black text-slate-950">
+                                {record.filteredRows}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Aprobados
+                              </p>
+                              <p className="mt-1 text-lg font-black text-emerald-700">
+                                {record.summary.aprobados}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                No aprobados
+                              </p>
+                              <p className="mt-1 text-lg font-black text-red-700">
+                                {record.summary.noAprobados}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                % 40/60
+                              </p>
+                              <p className="mt-1 text-lg font-black text-[#8f5b24]">
+                                {formatPercent(recordRate)}
+                              </p>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </section>
 
