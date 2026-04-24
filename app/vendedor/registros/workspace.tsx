@@ -212,15 +212,19 @@ function formatDate(value: string) {
   }
 }
 
-function hasFinancialData(item: FinancialFormState) {
-  return Boolean(
-    item.plataformaCredito ||
-      item.creditoAutorizado ||
-      item.cuotaInicial ||
-      item.tipoPagoInicial ||
-      item.valorCuota ||
-      item.numeroCuotas ||
-      item.frecuenciaCuota
+function isTextFilled(value: string) {
+  return value.trim().length > 0;
+}
+
+function isFinancieraCompleta(item: FinancialFormState) {
+  return (
+    isTextFilled(item.plataformaCredito) &&
+    isTextFilled(item.creditoAutorizado) &&
+    isTextFilled(item.cuotaInicial) &&
+    isTextFilled(item.tipoPagoInicial) &&
+    isTextFilled(item.valorCuota) &&
+    isTextFilled(item.numeroCuotas) &&
+    isTextFilled(item.frecuenciaCuota)
   );
 }
 
@@ -441,6 +445,7 @@ export default function VendedorRegistroWorkspace({
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const [imeiDetalle, setImeiDetalle] = useState("");
   const [signaturePadKey, setSignaturePadKey] = useState(0);
+  const [financierasVisibles, setFinancierasVisibles] = useState(1);
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const [errorCamara, setErrorCamara] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -553,6 +558,16 @@ export default function VendedorRegistroWorkspace({
         itemIndex === index ? createEmptyFinanciera() : item
       ),
     }));
+  };
+
+  const quitarUltimaFinanciera = () => {
+    if (financierasVisibles <= 1) {
+      return;
+    }
+
+    const indexToReset = financierasVisibles - 1;
+    resetFinanciera(indexToReset);
+    setFinancierasVisibles((current) => Math.max(1, current - 1));
   };
 
   const buscarImei = async () => {
@@ -702,14 +717,84 @@ export default function VendedorRegistroWorkspace({
     };
   }, []);
 
-  const guardarRegistro = async () => {
-    if (!form.firmaClienteDataUrl) {
-      setFormMessage("Debes capturar la firma digital del cliente", "error");
-      return;
+  const validarFormularioVisible = () => {
+    if (!isTextFilled(form.ciudad)) return "La ciudad es obligatoria";
+    if (!isTextFilled(form.puntoVenta)) return "Debes seleccionar el punto de venta";
+    if (!isTextFilled(form.clienteNombre)) return "El nombre del cliente es obligatorio";
+    if (!isTextFilled(form.tipoDocumento)) return "Debes seleccionar el tipo de documento";
+    if (!isTextFilled(form.documentoNumero)) return "El documento del cliente es obligatorio";
+    if (!isTextFilled(form.serialImei) || form.serialImei.length !== 15) {
+      return "El IMEI debe tener 15 digitos";
+    }
+    if (!isTextFilled(form.referenciaEquipo)) {
+      return "La referencia del equipo es obligatoria";
+    }
+    if (!isTextFilled(form.almacenamiento)) return "El almacenamiento es obligatorio";
+    if (!isTextFilled(form.color)) return "El color es obligatorio";
+    if (!isTextFilled(form.tipoEquipo)) return "Debes seleccionar el tipo de equipo";
+
+    const financierasActivas = form.financierasDetalle.slice(0, financierasVisibles);
+
+    for (let index = 0; index < financierasActivas.length; index += 1) {
+      if (!isFinancieraCompleta(financierasActivas[index])) {
+        return `Todos los campos de la financiera ${index + 1} son obligatorios`;
+      }
     }
 
+    if (!isTextFilled(form.correo)) return "El correo es obligatorio";
+    if (!isTextFilled(form.whatsapp)) return "El WhatsApp es obligatorio";
+    if (!isTextFilled(form.telefono)) return "El telefono es obligatorio";
+    if (!isTextFilled(form.barrio)) return "El barrio es obligatorio";
+    if (!isTextFilled(form.fechaNacimiento)) {
+      return "La fecha de nacimiento es obligatoria";
+    }
+    if (!isTextFilled(form.fechaExpedicion)) {
+      return "La fecha de expedicion es obligatoria";
+    }
+    if (!isTextFilled(form.direccion)) return "La direccion es obligatoria";
+    if (!isTextFilled(form.referenciaContacto)) {
+      return "El punto de referencia de la direccion es obligatorio";
+    }
+    if (!isTextFilled(form.referenciaFamiliar1Nombre)) {
+      return "La referencia familiar 1 es obligatoria";
+    }
+    if (!isTextFilled(form.referenciaFamiliar1Telefono)) {
+      return "El telefono de la referencia familiar 1 es obligatorio";
+    }
+    if (!isTextFilled(form.referenciaFamiliar2Nombre)) {
+      return "La referencia familiar 2 es obligatoria";
+    }
+    if (!isTextFilled(form.referenciaFamiliar2Telefono)) {
+      return "El telefono de la referencia familiar 2 es obligatorio";
+    }
+    if (!isTextFilled(form.simCardRegistro1)) return "El registro SIM 1 es obligatorio";
+    if (!isTextFilled(form.simCardRegistro2)) return "El registro SIM 2 es obligatorio";
+    if (!form.aceptaDeclaracionIntermediacion) {
+      return "Debes confirmar el primer texto visible del formato";
+    }
+    if (!form.aceptaPoliticaGarantia) {
+      return "Debes confirmar el segundo texto visible del formato";
+    }
+    if (!form.aceptaCondicionesCredito) {
+      return "Debes confirmar el tercer texto visible del formato";
+    }
+    if (!isTextFilled(form.jaladorNombre)) return "Debes seleccionar el jalador";
+    if (!isTextFilled(form.observacion)) return "La observacion es obligatoria";
+    if (!form.firmaClienteDataUrl) {
+      return "Debes capturar la firma digital del cliente";
+    }
     if (!form.fotoEntregaDataUrl) {
-      setFormMessage("Debes adjuntar la foto de entrega del producto", "error");
+      return "Debes adjuntar la foto de entrega del producto";
+    }
+
+    return null;
+  };
+
+  const guardarRegistro = async () => {
+    const errorValidacion = validarFormularioVisible();
+
+    if (errorValidacion) {
+      setFormMessage(errorValidacion, "error");
       return;
     }
 
@@ -720,6 +805,7 @@ export default function VendedorRegistroWorkspace({
       const payload = {
         ...form,
         confirmacionCliente: true,
+        financierasDetalle: form.financierasDetalle.slice(0, financierasVisibles),
       };
 
       const res = await fetch("/api/vendedor/registros", {
@@ -740,6 +826,7 @@ export default function VendedorRegistroWorkspace({
       setFormMessage(data.mensaje || "Registro guardado correctamente", "success");
       setImeiDetalle("");
       setSignaturePadKey((current) => current + 1);
+      setFinancierasVisibles(1);
       setForm((current) => ({
         ...createInitialState(session),
         ciudad: current.ciudad,
@@ -983,8 +1070,7 @@ export default function VendedorRegistroWorkspace({
 
               <div className="mt-6 space-y-4">
                 {form.financierasDetalle.map((item, index) => {
-                  const shouldShow =
-                    index === 0 || hasFinancialData(form.financierasDetalle[index - 1]);
+                  const shouldShow = index < financierasVisibles;
 
                   if (!shouldShow) {
                     return null;
@@ -1164,6 +1250,37 @@ export default function VendedorRegistroWorkspace({
                     </div>
                   );
                 })}
+
+                <div className="flex flex-wrap gap-3">
+                  {financierasVisibles < MAX_FINANCIERAS_REGISTRO && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFinancierasVisibles((current) =>
+                          Math.min(MAX_FINANCIERAS_REGISTRO, current + 1)
+                        )
+                      }
+                      disabled={
+                        !isFinancieraCompleta(
+                          form.financierasDetalle[financierasVisibles - 1]
+                        )
+                      }
+                      className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      Agregar financiera
+                    </button>
+                  )}
+
+                  {financierasVisibles > 1 && (
+                    <button
+                      type="button"
+                      onClick={quitarUltimaFinanciera}
+                      className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                    >
+                      Quitar ultima financiera
+                    </button>
+                  )}
+                </div>
               </div>
             </section>
 
@@ -1577,10 +1694,7 @@ export default function VendedorRegistroWorkspace({
                     Financieras cargadas
                   </span>
                   <span className="mt-1 block font-semibold text-slate-900">
-                    {
-                      form.financierasDetalle.filter((item) => hasFinancialData(item))
-                        .length
-                    }{" "}
+                    {financierasVisibles}{" "}
                     / {MAX_FINANCIERAS_REGISTRO}
                   </span>
                 </div>

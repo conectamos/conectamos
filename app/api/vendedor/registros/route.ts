@@ -96,8 +96,23 @@ function validarPayload(body: Record<string, unknown>) {
   if (!tipoEquipo) {
     return { error: "Debes seleccionar un tipo de equipo valido" };
   }
+  if (!observacion) return { error: "La observacion es obligatoria" };
+  if (!referenciaEquipo) return { error: "La referencia del equipo es obligatoria" };
+  if (!almacenamiento) return { error: "El almacenamiento es obligatorio" };
+  if (!color) return { error: "El color es obligatorio" };
+  if (!correo) return { error: "El correo es obligatorio" };
+  if (!whatsapp) return { error: "El WhatsApp es obligatorio" };
+  if (!fechaNacimiento) return { error: "La fecha de nacimiento es obligatoria" };
+  if (!fechaExpedicion) return { error: "La fecha de expedicion es obligatoria" };
   if (!direccion) return { error: "La direccion es obligatoria" };
+  if (!barrio) return { error: "El barrio es obligatorio" };
+  if (!referenciaContacto) {
+    return { error: "El punto de referencia de la direccion es obligatorio" };
+  }
   if (!telefono) return { error: "El telefono es obligatorio" };
+  if (!simCardRegistro1) return { error: "El registro SIM 1 es obligatorio" };
+  if (!simCardRegistro2) return { error: "El registro SIM 2 es obligatorio" };
+  if (!asesorNombre) return { error: "El asesor es obligatorio" };
   if (!referenciaFamiliar1Nombre || !referenciaFamiliar1Telefono) {
     return {
       error:
