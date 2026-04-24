@@ -355,6 +355,10 @@ export default async function DashboardPage() {
   }
 
   const esAdmin = String(session.rolNombre || "").toUpperCase() === "ADMIN";
+  const esSupervisor =
+    String(session.perfilTipo || "").toUpperCase() === "SUPERVISOR_TIENDA" ||
+    String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
+  const puedeVerEquality = esAdmin || esSupervisor;
   const nombreUsuario = session.nombre ?? "Usuario";
   const rolUsuario = session.perfilTipoLabel ?? session.rolNombre ?? "USUARIO";
   const sedeLabel = esAdmin
@@ -380,6 +384,9 @@ export default async function DashboardPage() {
       : []),
     { href: "/dashboard/nuovopay", label: "Nuovo dispositivos" },
     { href: "/dashboard/nuovopay/cartera", label: "Nuovo cartera" },
+    ...(puedeVerEquality
+      ? ([{ href: "/dashboard/equality", label: "Equality Zero Touch" }] as NavItem[])
+      : []),
     ...(esAdmin
       ? ([
           { href: "/dashboard/payjoy", label: "PayJoy cartera" },
@@ -468,16 +475,45 @@ export default async function DashboardPage() {
       title: "Nuovo Pay",
       description:
         esAdmin
-          ? "Gestiona dispositivos desde un solo acceso. Supervisor: consultar, inscribir, validar estado, bloquear y desbloquear. Admin: ademas puede liberar."
-          : "Entra a un solo panel operativo para consultar, validar estado, bloquear y desbloquear dispositivos desde Nuovo.",
+          ? "Administra Nuovo desde un mismo panel y entra por botones separados a Dispositivos o Cartera segun la operacion que necesites."
+          : "Consulta Nuovo / Dispositivos desde este panel. Nuovo / Cartera queda reservado solo para el admin.",
       actions: [
         {
           href: "/dashboard/nuovopay",
-          label: "Nuovo / Gestion",
+          label: "Nuovo / Dispositivos",
           tone: "primary",
         },
+        ...(esAdmin
+          ? ([
+              {
+                href: "/dashboard/nuovopay/cartera",
+                label: "Nuovo / Cartera",
+              },
+            ] as ModuleAction[])
+          : []),
       ],
     },
+    ...(puedeVerEquality
+      ? ([
+          {
+            accent: "bg-violet-500",
+            badge: "border-violet-200 bg-violet-50 text-violet-700",
+            eyebrow: "Equality / Zero Touch",
+            title: "Equality Zero Touch",
+            description:
+              esAdmin
+                ? "Modulo independiente de Nuovo para consultar, inscribir, validar estado, bloquear, desbloquear y liberar dispositivos desde HBM Equality."
+                : "Modulo independiente de Nuovo para consultar, inscribir, validar estado, bloquear y desbloquear dispositivos desde HBM Equality.",
+            actions: [
+              {
+                href: "/dashboard/equality",
+                label: "Equality / Zero Touch",
+                tone: "primary",
+              },
+            ],
+          },
+        ] as ModuleCard[])
+      : []),
     {
       accent: "bg-indigo-500",
       badge: "border-indigo-200 bg-indigo-50 text-indigo-700",

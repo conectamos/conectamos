@@ -266,23 +266,6 @@ function estadoBusqueda(queryType: QueryType, search: string) {
     : `Coincidencias en Nuovo para IMEI ${search}.`;
 }
 
-function actionHintClass(tone: "slate" | "amber" | "indigo" | "red" | "emerald" | "violet") {
-  switch (tone) {
-    case "amber":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    case "indigo":
-      return "border-indigo-200 bg-indigo-50 text-indigo-700";
-    case "red":
-      return "border-red-200 bg-red-50 text-red-700";
-    case "emerald":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    case "violet":
-      return "border-violet-200 bg-violet-50 text-violet-700";
-    default:
-      return "border-slate-200 bg-slate-50 text-slate-700";
-  }
-}
-
 export function NuovoPayWorkspace({
   panel = "devices",
 }: {
@@ -687,50 +670,6 @@ export function NuovoPayWorkspace({
   const cantidadRegistrosLocales = resultado?.localItems.length ?? 0;
   const latestImport = carteraData?.latestImport ?? null;
   const analytics = latestImport?.analytics ?? null;
-  const roleOperations = [
-    {
-      id: "consultar",
-      label: "Consultar",
-      detail: "Busca por IMEI o device para abrir el detalle del equipo.",
-      tone: "slate" as const,
-    },
-    {
-      id: "inscribir",
-      label: "Inscribir",
-      detail: "Reservado para la siguiente fase de integracion del panel.",
-      tone: "amber" as const,
-      pending: true,
-    },
-    {
-      id: "validar",
-      label: "Validar estado",
-      detail: "Confirma el estado antes de entregar el dispositivo.",
-      tone: "indigo" as const,
-    },
-    {
-      id: "lock",
-      label: "Bloquear",
-      detail: "Se habilita cuando el equipo esta desbloqueado.",
-      tone: "red" as const,
-    },
-    {
-      id: "unlock",
-      label: "Desbloquear",
-      detail: "Se habilita cuando el equipo ya esta bloqueado.",
-      tone: "emerald" as const,
-    },
-    ...(esAdmin
-      ? [
-          {
-            id: "release",
-            label: "Liberar",
-            detail: "Solo admin. Se mostrara aqui cuando terminemos de conectar esa accion.",
-            tone: "violet" as const,
-            pending: true,
-          },
-        ]
-      : []),
-  ];
 
   return (
     <div className="min-h-screen bg-[#f5f6fa] px-4 py-8">
@@ -750,7 +689,7 @@ export function NuovoPayWorkspace({
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-600 md:text-base">
               {panel === "devices"
-                ? "Consulta dispositivos directamente desde Nuovo, valida su estado operativo y ejecuta las acciones disponibles segun el rol del usuario."
+                ? "Consulta dispositivos directamente desde Nuovo, valida si la inscripcion quedo aprobada y ejecuta bloqueo o desbloqueo desde tu sistema."
                 : `Carga el archivo de cartera, detecta mora de ${CARTERA_BLOCKING_MORA_MIN_DAYS} o mas dias y revisa analitica comercial exclusiva de Nuovo Pay.`}
             </p>
           </div>
@@ -796,146 +735,99 @@ export function NuovoPayWorkspace({
 
         {panel === "devices" && (
           <div className="mb-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-              <div>
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-                  <div className="flex flex-col gap-3 lg:w-56">
-                    <span className="text-sm font-semibold text-slate-700">
-                      Tipo de consulta
-                    </span>
-                    <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
-                      <button
-                        onClick={() => {
-                          setQueryType("imei");
-                          setSearch("");
-                          setResultado(null);
-                          setMensaje("");
-                          syncUrl("imei", "", null);
-                          void consultar({
-                            queryType: "imei",
-                            search: "",
-                          });
-                        }}
-                        className={[
-                          "rounded-[18px] px-4 py-3 text-sm font-semibold transition",
-                          queryType === "imei"
-                            ? "bg-white text-slate-950 shadow-sm"
-                            : "text-slate-500 hover:text-slate-700",
-                        ].join(" ")}
-                      >
-                        IMEI
-                      </button>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            <div className="flex flex-col gap-3 lg:w-56">
+              <span className="text-sm font-semibold text-slate-700">
+                Tipo de consulta
+              </span>
+              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+                <button
+                  onClick={() => {
+                    setQueryType("imei");
+                    setSearch("");
+                    setResultado(null);
+                    setMensaje("");
+                    syncUrl("imei", "", null);
+                    void consultar({
+                      queryType: "imei",
+                      search: "",
+                    });
+                  }}
+                  className={[
+                    "rounded-[18px] px-4 py-3 text-sm font-semibold transition",
+                    queryType === "imei"
+                      ? "bg-white text-slate-950 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700",
+                  ].join(" ")}
+                >
+                  IMEI
+                </button>
 
-                      <button
-                        onClick={() => {
-                          setQueryType("device");
-                          setSearch("");
-                          setResultado(null);
-                          setMensaje("");
-                          syncUrl("device", "", null);
-                        }}
-                        className={[
-                          "rounded-[18px] px-4 py-3 text-sm font-semibold transition",
-                          queryType === "device"
-                            ? "bg-white text-slate-950 shadow-sm"
-                            : "text-slate-500 hover:text-slate-700",
-                        ].join(" ")}
-                      >
-                        DEVICE
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex-1">
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      {queryType === "imei"
-                        ? "Buscar IMEI en dispositivos Nuovo"
-                        : "Buscar por DEVICE ID"}
-                    </label>
-                    <input
-                      value={search}
-                      onChange={(event) =>
-                        setSearch(
-                          queryType === "imei"
-                            ? limpiarImei(event.target.value)
-                            : limpiarDevice(event.target.value)
-                        )
-                      }
-                      placeholder={
-                        queryType === "imei"
-                          ? "Ingresa un IMEI o deja vacio para ver dispositivos"
-                          : "Ingresa el DEVICE ID"
-                      }
-                      className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                    />
-                  </div>
-
-                  <button
-                    onClick={() =>
-                      void consultar({
-                        queryType,
-                        search,
-                      })
-                    }
-                    disabled={cargando}
-                    className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
-                  >
-                    {cargando ? "Consultando..." : "Consultar"}
-                  </button>
-                </div>
-
-                <p className="mt-4 text-sm text-slate-500">
-                  {estadoBusqueda(queryType, search)}
-                </p>
-              </div>
-
-              <div className="rounded-[24px] border border-[#eadbc2] bg-[linear-gradient(180deg,#fffdfa_0%,#fbf5eb_100%)] p-5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="inline-flex rounded-full border border-[#eadbc2] bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#b26b19]">
-                    Panel operativo
-                  </div>
-                  <div className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                    {esAdmin ? "Admin" : "Supervisor"}
-                  </div>
-                </div>
-                <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-                  Operaciones visibles por rol
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  El supervisor ve consultar, inscribir, validar estado, bloquear
-                  y desbloquear. El administrador ve ademas la opcion de liberar.
-                </p>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {roleOperations.map((operation) => (
-                    <div
-                      key={operation.id}
-                      className={[
-                        "rounded-2xl border px-4 py-4",
-                        actionHintClass(operation.tone),
-                      ].join(" ")}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-black tracking-tight">
-                            {operation.label}
-                          </p>
-                          <p className="mt-2 text-xs leading-5 opacity-90">
-                            {operation.detail}
-                          </p>
-                        </div>
-
-                        {operation.pending && (
-                          <span className="rounded-full border border-current/20 bg-white/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
-                            Proximo
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <button
+                  onClick={() => {
+                    setQueryType("device");
+                    setSearch("");
+                    setResultado(null);
+                    setMensaje("");
+                    syncUrl("device", "", null);
+                  }}
+                  className={[
+                    "rounded-[18px] px-4 py-3 text-sm font-semibold transition",
+                    queryType === "device"
+                      ? "bg-white text-slate-950 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700",
+                  ].join(" ")}
+                >
+                  DEVICE
+                </button>
               </div>
             </div>
+
+            <div className="flex-1">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                {queryType === "imei"
+                  ? "Buscar IMEI en dispositivos Nuovo"
+                  : "Buscar por DEVICE ID"}
+              </label>
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(
+                    queryType === "imei"
+                      ? limpiarImei(event.target.value)
+                      : limpiarDevice(event.target.value)
+                  )
+                }
+                placeholder={
+                  queryType === "imei"
+                    ? "Ingresa un IMEI o deja vacio para ver dispositivos"
+                    : "Ingresa el DEVICE ID"
+                }
+                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+              />
+            </div>
+
+            <button
+              onClick={() =>
+                void consultar({
+                  queryType,
+                  search,
+                })
+              }
+              disabled={cargando}
+              className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
+            >
+              {cargando
+                ? "Consultando..."
+                : queryType === "imei"
+                  ? "Buscar en Nuovo"
+                  : "Consultar device"}
+            </button>
+          </div>
+
+          <p className="mt-4 text-sm text-slate-500">
+            {estadoBusqueda(queryType, search)}
+          </p>
           </div>
         )}
 
@@ -1863,15 +1755,7 @@ export function NuovoPayWorkspace({
                         disabled={cargando}
                         className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
                       >
-                        Validar estado
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled
-                        className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-700 opacity-75"
-                      >
-                        Inscribir
+                        Refrescar estado
                       </button>
 
                       {resultado.canManage && !resultado.selectedDevice.locked && (
@@ -1891,16 +1775,6 @@ export function NuovoPayWorkspace({
                           className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-70"
                         >
                           {procesando ? "Procesando..." : "Desbloquear dispositivo"}
-                        </button>
-                      )}
-
-                      {esAdmin && (
-                        <button
-                          type="button"
-                          disabled
-                          className="rounded-2xl border border-violet-200 bg-violet-50 px-5 py-3 text-sm font-semibold text-violet-700 opacity-75"
-                        >
-                          Liberar
                         </button>
                       )}
                     </div>
