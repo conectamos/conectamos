@@ -133,6 +133,9 @@ export default function PayJoyFortySixtyWorkspace() {
   const [file, setFile] = useState<File | null>(null);
   const [week, setWeek] = useState("");
   const [weekOptions, setWeekOptions] = useState<string[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState<
+    "TODOS" | FortySixtyStatus
+  >("TODOS");
   const [loading, setLoading] = useState(false);
   const [loadingWeeks, setLoadingWeeks] = useState(false);
   const [message, setMessage] = useState("");
@@ -154,6 +157,9 @@ export default function PayJoyFortySixtyWorkspace() {
   );
 
   const liveSummary = summarizeRows(rows);
+  const visibleRows = rows.filter((row) =>
+    selectedStatus === "TODOS" ? true : row.status === selectedStatus
+  );
   const totalEvaluated = liveSummary.aprobados + liveSummary.noAprobados;
   const approvalRate =
     totalEvaluated > 0 ? (liveSummary.aprobados / totalEvaluated) * 100 : 0;
@@ -163,6 +169,12 @@ export default function PayJoyFortySixtyWorkspace() {
   const updateCedula = (id: string, value: string) => {
     setRows((currentRows) =>
       currentRows.map((row) => (row.id === id ? { ...row, cedula: value } : row))
+    );
+  };
+
+  const updateStatus = (id: string, value: FortySixtyStatus) => {
+    setRows((currentRows) =>
+      currentRows.map((row) => (row.id === id ? { ...row, status: value } : row))
     );
   };
 
@@ -242,6 +254,7 @@ export default function PayJoyFortySixtyWorkspace() {
     setActiveSavedRecordId(record.id);
     setWeek(record.week);
     setWeekOptions(record.week ? [record.week] : []);
+    setSelectedStatus("TODOS");
     setFile(null);
 
     if (fileInputRef.current) {
@@ -346,6 +359,7 @@ export default function PayJoyFortySixtyWorkspace() {
       setRows(payload.rows);
       setActiveSavedRecordId(null);
       setSaveName(buildDefaultSaveName(payload.week));
+      setSelectedStatus("TODOS");
       setMessage(
         payload.rows.length
           ? `Se procesaron ${payload.filteredRows} registro(s) para la WEEK ${payload.week}.`
@@ -1067,9 +1081,54 @@ export default function PayJoyFortySixtyWorkspace() {
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Archivo: <span className="font-semibold text-slate-950">{data.fileName}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    Archivo:{" "}
+                    <span className="font-semibold text-slate-950">{data.fileName}</span>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    Mostrando:{" "}
+                    <span className="font-semibold text-slate-950">
+                      {visibleRows.length}
+                    </span>{" "}
+                    de{" "}
+                    <span className="font-semibold text-slate-950">
+                      {rows.length}
+                    </span>
+                  </div>
                 </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-b border-slate-200 px-5 py-4">
+                {[
+                  { value: "TODOS" as const, label: "Todos" },
+                  {
+                    value: "40/60 APROBADO" as const,
+                    label: "Aprobados",
+                  },
+                  {
+                    value: "40/60 NO APROBADO" as const,
+                    label: "No aprobados",
+                  },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setSelectedStatus(option.value)}
+                    className={[
+                      "rounded-full px-4 py-2 text-sm font-semibold transition",
+                      selectedStatus === option.value
+                        ? option.value === "40/60 NO APROBADO"
+                          ? "border border-red-200 bg-red-100 text-red-700"
+                          : option.value === "40/60 APROBADO"
+                            ? "border border-emerald-200 bg-emerald-100 text-emerald-700"
+                            : "border border-slate-300 bg-slate-950 text-white"
+                        : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                    ].join(" ")}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
 
               <div className="overflow-x-auto">
@@ -1086,17 +1145,17 @@ export default function PayJoyFortySixtyWorkspace() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.length === 0 ? (
+                    {visibleRows.length === 0 ? (
                       <tr>
                         <td
                           colSpan={7}
                           className="px-4 py-10 text-center text-sm text-slate-500"
                         >
-                          No se encontraron registros para esta WEEK.
+                          No se encontraron registros para este filtro.
                         </td>
                       </tr>
                     ) : (
-                      rows.map((row) => (
+                      visibleRows.map((row) => (
                         <tr
                           key={row.id}
                           className={[
@@ -1130,16 +1189,28 @@ export default function PayJoyFortySixtyWorkspace() {
                             />
                           </td>
                           <td className="px-4 py-4">
-                            <span
+                            <select
+                              value={row.status}
+                              onChange={(event) =>
+                                updateStatus(
+                                  row.id,
+                                  event.target.value as FortySixtyStatus
+                                )
+                              }
                               className={[
-                                "inline-flex rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.14em]",
+                                "rounded-2xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] outline-none transition focus:ring-2",
                                 row.status === "40/60 APROBADO"
-                                  ? "border border-emerald-200 bg-emerald-100 text-emerald-700"
-                                  : "border border-red-200 bg-red-100 text-red-700",
+                                  ? "border-emerald-200 bg-emerald-100 text-emerald-700 focus:ring-emerald-200"
+                                  : "border-red-200 bg-red-100 text-red-700 focus:ring-red-200",
                               ].join(" ")}
                             >
-                              {row.status}
-                            </span>
+                              <option value="40/60 APROBADO">
+                                40/60 APROBADO
+                              </option>
+                              <option value="40/60 NO APROBADO">
+                                40/60 NO APROBADO
+                              </option>
+                            </select>
                           </td>
                         </tr>
                       ))
