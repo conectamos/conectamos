@@ -89,10 +89,10 @@ function SidebarLink({
     <Link
       href={href}
       className={[
-        "flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-medium transition",
+        "flex items-center justify-between rounded-2xl px-3.5 py-2.5 text-sm font-medium transition",
         active
-          ? "bg-[#17191d] text-white shadow-[0_14px_32px_rgba(15,23,42,0.18)]"
-          : "text-slate-600 hover:bg-white/70 hover:text-slate-950",
+          ? "bg-[#17191d] text-white shadow-[0_14px_32px_rgba(15,23,42,0.14)]"
+          : "text-slate-600 hover:bg-white hover:text-slate-950",
       ].join(" ")}
     >
       <span>{label}</span>
@@ -106,27 +106,51 @@ function SidebarLink({
   );
 }
 
-function SessionDetail({
+function SessionMiniStat({
   label,
   value,
   detail,
   dot,
 }: SessionItem) {
   return (
-    <div className="rounded-2xl border border-white/50 bg-white/60 px-4 py-4 backdrop-blur">
-      <div className="flex items-start justify-between gap-4">
+    <div className="rounded-2xl border border-[#e9e1d4] bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
             {label}
           </p>
-          <p className="mt-2 text-lg font-black leading-tight text-slate-950">
+          <p className="mt-1.5 text-base font-black leading-tight text-slate-950">
             {value}
           </p>
-          <p className="mt-1.5 text-xs leading-5 text-slate-500">{detail}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p>
         </div>
 
         <span className={["mt-1 h-2.5 w-2.5 rounded-full", dot].join(" ")} />
       </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+  valueClassName = "text-slate-950",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="rounded-[26px] border border-[#e9e1d4] bg-white px-5 py-5 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+        {label}
+      </p>
+      <p className={["mt-3 text-3xl font-black tracking-tight", valueClassName].join(" ")}>
+        {value}
+      </p>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
     </div>
   );
 }
@@ -153,7 +177,7 @@ function CommercialRankingPanel({
   };
 
   return (
-    <div className="rounded-[24px] border border-[#ebe2d4] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-4 shadow-sm">
+    <div className="rounded-[26px] border border-[#ebe2d4] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-black tracking-tight text-slate-950">
           {title}
@@ -205,7 +229,7 @@ function CommercialRankingPanel({
   );
 }
 
-function CommercialRankingSidebar({
+function CommercialRankingSection({
   periodLabel,
   coverageLabel,
   topJaladores,
@@ -219,8 +243,23 @@ function CommercialRankingSidebar({
   topFinancieras: CommercialRankingItem[];
 }) {
   return (
-    <aside className="rounded-[32px] border border-[#e7ddcd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-[0_20px_55px_rgba(15,23,42,0.08)]">
-      <div className="sticky top-6">
+    <section className="rounded-[32px] border border-[#e7ddcd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-6 shadow-[0_20px_55px_rgba(15,23,42,0.08)]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="inline-flex rounded-full border border-[#e7dccb] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+            Corte comercial
+          </div>
+
+          <h3 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+            Ranking del periodo
+          </h3>
+
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+            Vista compacta del comportamiento comercial del mes para que no tengas
+            una columna larga ocupando media pantalla.
+          </p>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           <div className="rounded-full border border-[#e7dccb] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
             Periodo: {periodLabel}
@@ -229,40 +268,32 @@ function CommercialRankingSidebar({
             Cobertura: {coverageLabel}
           </div>
         </div>
-
-        <h3 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-          Corte comercial
-        </h3>
-
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          Ranking mensual de los participantes y financieras con mayor traccion comercial.
-        </p>
-
-        <div className="mt-5 space-y-3">
-          <CommercialRankingPanel
-            title="Top 5 jalador"
-            accent="bg-sky-500"
-            items={topJaladores}
-            countLabel="venta"
-          />
-
-          <CommercialRankingPanel
-            title="Top 5 cerrador"
-            accent="bg-rose-500"
-            items={topCerradores}
-            countLabel="venta"
-          />
-
-          <CommercialRankingPanel
-            title="Top 5 financieras mas usadas"
-            accent="bg-amber-500"
-            items={topFinancieras}
-            countLabel="uso"
-            showAmount
-          />
-        </div>
       </div>
-    </aside>
+
+      <div className="mt-6 grid gap-4 xl:grid-cols-3">
+        <CommercialRankingPanel
+          title="Top 5 jalador"
+          accent="bg-sky-500"
+          items={topJaladores}
+          countLabel="venta"
+        />
+
+        <CommercialRankingPanel
+          title="Top 5 cerrador"
+          accent="bg-rose-500"
+          items={topCerradores}
+          countLabel="venta"
+        />
+
+        <CommercialRankingPanel
+          title="Top 5 financieras mas usadas"
+          accent="bg-amber-500"
+          items={topFinancieras}
+          countLabel="uso"
+          showAmount
+        />
+      </div>
+    </section>
   );
 }
 
@@ -302,10 +333,10 @@ function ModulePanel({
   actions,
 }: ModuleCard) {
   return (
-    <section className="group relative overflow-hidden rounded-[30px] border border-[#e8e0d1] bg-[linear-gradient(180deg,#ffffff_0%,#fbf9f4_100%)] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.07)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(15,23,42,0.10)]">
+    <section className="group relative overflow-hidden rounded-[28px] border border-[#e8e0d1] bg-[linear-gradient(180deg,#ffffff_0%,#fbf9f4_100%)] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.07)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(15,23,42,0.10)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(199,154,87,0.10),transparent_32%)]" />
 
-      <div className="relative flex items-start justify-between gap-4">
+      <div className="relative flex items-center justify-between gap-4">
         <div>
           <div
             className={[
@@ -316,7 +347,7 @@ function ModulePanel({
             {eyebrow}
           </div>
 
-          <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+          <h2 className="mt-4 text-[28px] font-black tracking-tight text-slate-950">
             {title}
           </h2>
 
@@ -372,6 +403,7 @@ export default async function DashboardPage() {
   const resumenComercialMensual = await getMonthlyCommercialSummary({
     sedeId: esAdmin ? null : session.sedeId ?? null,
   });
+  const financieraDestacada = resumenComercialMensual.topFinancieras[0] ?? null;
 
   const navItems: NavItem[] = [
     { href: "/dashboard", label: "Panel de control" },
@@ -593,33 +625,41 @@ export default async function DashboardPage() {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#f2f5f9_100%)] text-slate-950">
       <div className="flex min-h-screen w-full">
-        <aside className="hidden w-[320px] shrink-0 border-r border-[#e4dccd] bg-[linear-gradient(180deg,#f7f3ea_0%,#efe9dc_100%)] xl:flex xl:flex-col">
-          <div className="px-6 py-7">
-            <div className="rounded-[30px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.85)_0%,rgba(255,255,255,0.62)_100%)] p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur">
+        <aside className="hidden w-[280px] shrink-0 border-r border-[#e4dccd] bg-[linear-gradient(180deg,#f7f3ea_0%,#efe9dc_100%)] xl:flex xl:flex-col">
+          <div className="sticky top-0 flex h-screen flex-col gap-5 px-5 py-6">
+            <div className="rounded-[30px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(255,255,255,0.68)_100%)] p-5 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur">
               <DashboardLogoBadge />
 
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#8f5b24]">
+              <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.3em] text-[#8f5b24]">
                 Conectamos
               </p>
-              <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+              <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
                 Dashboard
               </h1>
-              <div className="mt-4 h-[3px] w-14 rounded-full bg-[#c79a57]" />
-              <p className="mt-4 text-sm leading-6 text-slate-600">
-                Navegacion principal del sistema con una vista clara del estado
-                actual.
+              <div className="mt-3 h-[3px] w-12 rounded-full bg-[#c79a57]" />
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                Navegacion limpia y acceso rapido a los modulos principales.
               </p>
             </div>
-          </div>
 
-          <div className="px-6">
-            <div className="overflow-hidden rounded-[30px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.78)_0%,rgba(255,255,255,0.54)_100%)] p-5 shadow-[0_20px_50px_rgba(15,23,42,0.08)] backdrop-blur">
+            <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
+              {navItems.map((item) => (
+                <SidebarLink
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  active={item.href === "/dashboard"}
+                />
+              ))}
+            </nav>
+
+            <div className="rounded-[28px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.84)_0%,rgba(255,255,255,0.60)_100%)] p-4 shadow-[0_20px_50px_rgba(15,23,42,0.08)] backdrop-blur">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
                     Sesion actual
                   </p>
-                  <p className="mt-2 text-lg font-black text-slate-950">
+                  <p className="mt-1 text-base font-black text-slate-950">
                     {nombreUsuario}
                   </p>
                 </div>
@@ -629,42 +669,31 @@ export default async function DashboardPage() {
                 </span>
               </div>
 
-              <div className="mt-5 grid gap-3">
+              <div className="mt-4 grid gap-3">
                 {sessionItems.map((item) => (
-                  <SessionDetail key={item.label} {...item} />
+                  <SessionMiniStat key={item.label} {...item} />
                 ))}
               </div>
             </div>
           </div>
-
-          <nav className="flex-1 space-y-1 px-4 py-6">
-            {navItems.map((item) => (
-              <SidebarLink
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                active={item.href === "/dashboard"}
-              />
-            ))}
-          </nav>
         </aside>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="flex-1 px-4 py-5 sm:px-6 lg:px-8">
           <div className="xl:hidden">
-            <div className="rounded-[30px] border border-[#e6dece] bg-[linear-gradient(180deg,#ffffff_0%,#fbf7f1_100%)] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <div className="rounded-[30px] border border-[#e6dece] bg-[linear-gradient(180deg,#ffffff_0%,#fbf7f1_100%)] p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <DashboardLogoBadge compact />
 
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8f5b24]">
+              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.24em] text-[#8f5b24]">
                 Conectamos
               </p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
+              <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
                 Dashboard
               </h1>
               <p className="mt-3 text-sm leading-6 text-slate-600">{saludo}</p>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 {sessionItems.map((item) => (
-                  <SessionDetail key={item.label} {...item} />
+                  <SessionMiniStat key={item.label} {...item} />
                 ))}
               </div>
             </div>
@@ -687,102 +716,84 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          <section className="relative overflow-hidden rounded-[36px] border border-[#2a2d33] bg-[linear-gradient(135deg,#0d0f13_0%,#171a21_55%,#202631_100%)] px-6 py-8 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] sm:px-8">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(199,154,87,0.28),transparent_24%),radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.08),transparent_20%)]" />
-            <div className="pointer-events-none absolute right-8 top-1/2 hidden h-44 w-44 -translate-y-1/2 lg:block">
-              <div className="absolute inset-0 rounded-full border border-[#d8b47a]/15" />
-              <div className="absolute inset-[18px] rounded-full border-[4px] border-[#d8b47a]/18" />
-              <div className="absolute inset-0 flex items-center justify-center text-[8rem] font-black tracking-tight text-[#d8b47a]/10">
-                C
+          <section className="relative overflow-hidden rounded-[34px] border border-[#e4dccd] bg-[linear-gradient(135deg,#fffdf8_0%,#f8f1e5_48%,#f3f6fb_100%)] px-6 py-6 shadow-[0_30px_80px_rgba(15,23,42,0.10)] sm:px-8">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(199,154,87,0.14),transparent_22%),radial-gradient(circle_at_left_center,rgba(59,130,246,0.08),transparent_20%)]" />
+
+            <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+              <div className="max-w-4xl">
+                <div className="inline-flex rounded-full border border-[#dfcfb3] bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
+                  Panel de control
+                </div>
+
+                <h2 className="mt-4 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
+                  Dashboard
+                </h2>
+
+                <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
+                  {saludo}
+                </p>
+
+                <div className="mt-5 flex flex-wrap gap-2.5">
+                  <div className="rounded-full border border-[#e7dccb] bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                    Usuario: {nombreUsuario}
+                  </div>
+                  <div className="rounded-full border border-[#e7dccb] bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                    Rol: {rolUsuario}
+                  </div>
+                  <div className="rounded-full border border-[#e7dccb] bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                    Cobertura: {sedeLabel}
+                  </div>
+                </div>
               </div>
-              <div className="absolute right-6 top-10 flex flex-col gap-2 opacity-60">
-                <span className="h-2 w-12 rounded-full bg-[#d8b47a]/30" />
-                <span className="h-2 w-9 rounded-full bg-[#d8b47a]/22" />
-                <span className="h-2 w-6 rounded-full bg-[#d8b47a]/16" />
+
+              <div className="relative flex shrink-0 items-start justify-start xl:justify-end">
+                <LogoutButton className="min-w-[150px]" />
               </div>
-            </div>
-
-            <div className="relative flex justify-end">
-              <LogoutButton className="min-w-[150px]" />
-            </div>
-
-            <div className="relative max-w-3xl">
-              <div className="inline-flex rounded-full border border-white/12 bg-white/6 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-[#f1d19c]">
-                Panel de control
-              </div>
-
-              <h2 className="mt-5 text-4xl font-black tracking-tight sm:text-5xl">
-                CONECTAMOS
-              </h2>
-
-              <div className="mt-4 h-[3px] w-16 rounded-full bg-[#c79a57]" />
-
-              <p className="mt-5 text-sm leading-7 text-slate-300 sm:text-base">
-                {saludo}
-              </p>
             </div>
           </section>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div>
-              {esAdmin ? (
-                <section className="overflow-hidden rounded-[32px] border border-[#e7ddcd] bg-[linear-gradient(135deg,#fffdf8_0%,#f8f2e8_42%,#f3f6fb_100%)] shadow-[0_20px_55px_rgba(15,23,42,0.08)]">
-                  <div className="px-6 py-6 sm:px-8">
-                    <div className="inline-flex rounded-full border border-[#dfcfb3] bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
-                      Resumen mensual
-                    </div>
-
-                    <h3 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-                      Utilidad del mes
-                    </h3>
-
-                    <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-                      Acumulado de {mesActual.label} para todas las sedes. Este
-                      valor se reinicia automaticamente al comenzar un nuevo mes.
-                    </p>
-
-                    <div className="mt-6 flex flex-wrap gap-3">
-                      <div className="rounded-2xl border border-[#dfcfb3] bg-white/90 px-5 py-4 shadow-sm">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          UTILIDAD DEL MES
-                        </p>
-                        <p className="mt-2 text-3xl font-black text-emerald-600">
-                          {formatoPesos(Number(resumenComercialMensual.utilidad || 0))}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl border border-[#e6dece] bg-white/75 px-5 py-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          VENTAS DEL MES
-                        </p>
-                        <p className="mt-2 text-2xl font-black text-slate-950">
-                          {resumenComercialMensual.ventas || 0}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl border border-[#e6dece] bg-white/75 px-5 py-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          CAJA DEL MES
-                        </p>
-                        <p className="mt-2 text-2xl font-black text-slate-950">
-                          {formatoPesos(Number(resumenComercialMensual.caja || 0))}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              ) : (
-                <DashboardUtilityGate coverageLabel={sedeLabel} />
-              )}
-
-              <section className="mt-8 grid gap-6 xl:grid-cols-2">
-                {modules.map((module) => (
-                  <ModulePanel key={module.title} {...module} />
-                ))}
-              </section>
+          {esAdmin ? (
+            <section className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+              <MetricCard
+                label="Utilidad del mes"
+                value={formatoPesos(Number(resumenComercialMensual.utilidad || 0))}
+                detail={`Acumulado de ${mesActual.label}.`}
+                valueClassName="text-emerald-600"
+              />
+              <MetricCard
+                label="Ventas del mes"
+                value={String(resumenComercialMensual.ventas || 0)}
+                detail="Registros comerciales del periodo."
+              />
+              <MetricCard
+                label="Caja del mes"
+                value={formatoPesos(Number(resumenComercialMensual.caja || 0))}
+                detail="Movimiento consolidado del periodo."
+              />
+              <MetricCard
+                label="Financiera lider"
+                value={financieraDestacada?.nombre ?? "Sin datos"}
+                detail={
+                  financieraDestacada
+                    ? `${financieraDestacada.total} usos | ${formatoPesos(financieraDestacada.monto)}`
+                    : "Sin movimientos registrados."
+                }
+              />
+            </section>
+          ) : (
+            <div className="mt-6">
+              <DashboardUtilityGate coverageLabel={sedeLabel} />
             </div>
+          )}
 
-            <CommercialRankingSidebar
+          <section className="mt-6 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+            {modules.map((module) => (
+              <ModulePanel key={module.title} {...module} />
+            ))}
+          </section>
+
+          <div className="mt-6">
+            <CommercialRankingSection
               periodLabel={mesActual.label}
               coverageLabel={esAdmin ? "Todas las sedes" : sedeLabel}
               topJaladores={resumenComercialMensual.topJaladores}
