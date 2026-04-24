@@ -3,7 +3,12 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { esPerfilFacturador } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
-import { normalizarTextoCorto } from "@/lib/vendor-sale-records";
+import {
+  normalizarImei,
+  normalizarMoneda,
+  normalizarPlataformaCredito,
+  normalizarTextoCorto,
+} from "@/lib/vendor-sale-records";
 
 async function requireFacturador() {
   const session = await getSessionUser();
@@ -28,6 +33,70 @@ async function requireFacturador() {
   return { ok: true as const, session };
 }
 
+function serializarRegistro(
+  registro: {
+    creditoAutorizado: unknown;
+    cuotaInicial: unknown;
+  } & Record<string, unknown>
+) {
+  return {
+    ...registro,
+    creditoAutorizado: registro.creditoAutorizado
+      ? Number(registro.creditoAutorizado)
+      : null,
+    cuotaInicial: registro.cuotaInicial ? Number(registro.cuotaInicial) : null,
+  };
+}
+
+function normalizarFinancierasEdicion(valor: unknown) {
+  if (!Array.isArray(valor) || valor.length === 0) {
+    return { error: "Debes conservar al menos una financiera" as const };
+  }
+
+  const financieras: Array<{
+    plataformaCredito: string;
+    creditoAutorizado: string;
+    cuotaInicial: string;
+  }> = [];
+
+  for (const item of valor) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const row = item as Record<string, unknown>;
+    const plataformaCredito = normalizarPlataformaCredito(row.plataformaCredito);
+    const creditoAutorizado = normalizarMoneda(row.creditoAutorizado);
+    const cuotaInicial = normalizarMoneda(row.cuotaInicial);
+
+    if (!plataformaCredito) {
+      return { error: "Selecciona una financiera valida" as const };
+    }
+
+    if (!creditoAutorizado) {
+      return { error: "Debes registrar el credito autorizado" as const };
+    }
+
+    if (cuotaInicial === null) {
+      return { error: "Debes registrar la inicial" as const };
+    }
+
+    financieras.push({
+      plataformaCredito,
+      creditoAutorizado,
+      cuotaInicial,
+    });
+  }
+
+  if (financieras.length === 0) {
+    return { error: "Debes conservar al menos una financiera" as const };
+  }
+
+  return {
+    data: financieras,
+  };
+}
+
 export async function GET() {
   try {
     const access = await requireFacturador();
@@ -46,7 +115,11 @@ export async function GET() {
         clienteNombre: true,
         tipoDocumento: true,
         documentoNumero: true,
+        correo: true,
+        whatsapp: true,
         plataformaCredito: true,
+        creditoAutorizado: true,
+        cuotaInicial: true,
         referenciaEquipo: true,
         serialImei: true,
         tipoEquipo: true,
@@ -61,7 +134,7 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
-      registros,
+      registros: registros.map(serializarRegistro),
     });
   } catch (error) {
     console.error("ERROR GET REGISTROS FACTURADOR:", error);
@@ -84,13 +157,17 @@ export async function PATCH(req: Request) {
 
     const body = (await req.json()) as Record<string, unknown>;
     const id = Number(body.id);
-    const numeroFactura = normalizarTextoCorto(body.numeroFactura);
+    const modo = String(body.modo ?? "").trim().toUpperCase();
+    const numeroFactura =
+      Object.prototype.hasOwnProperty.call(body, "numeroFactura")
+        ? normalizarTextoCorto(body.numeroFactura)
+        : undefined;
 
     if (!Number.isInteger(id) || id <= 0) {
       return NextResponse.json({ error: "Registro invalido" }, { status: 400 });
     }
 
-    if (!numeroFactura) {
+    if (modo !== "EDITAR" && !numeroFactura) {
       return NextResponse.json(
         { error: "Debes ingresar el numero de factura" },
         { status: 400 }
@@ -103,6 +180,7 @@ export async function PATCH(req: Request) {
       },
       select: {
         id: true,
+        financierasDetalle: true,
       },
     });
 
@@ -113,19 +191,158 @@ export async function PATCH(req: Request) {
       );
     }
 
+    if (modo === "EDITAR") {
+      const documentoNumero = normalizarTextoCorto(body.documentoNumero);
+      const clienteNombre = normalizarTextoCorto(body.clienteNombre);
+      const correo = normalizarTextoCorto(body.correo);
+      const whatsapp = normalizarTextoCorto(body.whatsapp);
+      const referenciaEquipo = normalizarTextoCorto(body.referenciaEquipo);
+      const serialImei = normalizarImei(body.serialImei);
+      const financierasDetalle = normalizarFinancierasEdicion(body.financierasDetalle);
+
+      if (!documentoNumero) {
+        return NextResponse.json(
+          { error: "Debes ingresar el numero de cedula" },
+          { status: 400 }
+        );
+      }
+
+      if (!clienteNombre) {
+        return NextResponse.json(
+          { error: "Debes ingresar el nombre completo" },
+          { status: 400 }
+        );
+      }
+
+      if (!correo) {
+        return NextResponse.json(
+          { error: "Debes ingresar el correo electronico" },
+          { status: 400 }
+        );
+      }
+
+      if (!whatsapp) {
+        return NextResponse.json(
+          { error: "Debes ingresar el WhatsApp" },
+          { status: 400 }
+        );
+      }
+
+      if (!referenciaEquipo) {
+        return NextResponse.json(
+          { error: "Debes ingresar la referencia" },
+          { status: 400 }
+        );
+      }
+
+      if (!serialImei) {
+        return NextResponse.json(
+          { error: "El IMEI debe tener 15 digitos" },
+          { status: 400 }
+        );
+      }
+
+      if ("error" in financierasDetalle) {
+        return NextResponse.json(
+          { error: financierasDetalle.error },
+          { status: 400 }
+        );
+      }
+
+      const financierasPrevias = Array.isArray(existente.financierasDetalle)
+        ? existente.financierasDetalle
+        : [];
+      const financierasActualizadas = financierasDetalle.data.map((item, index) => {
+        const previa =
+          typeof financierasPrevias[index] === "object" && financierasPrevias[index]
+            ? (financierasPrevias[index] as Record<string, unknown>)
+            : {};
+
+        return {
+          ...previa,
+          plataformaCredito: item.plataformaCredito,
+          creditoAutorizado: item.creditoAutorizado,
+          cuotaInicial: item.cuotaInicial,
+        };
+      });
+      const primeraFinanciera = financierasActualizadas[0];
+      const segundaFinanciera = financierasActualizadas[1] ?? null;
+
+      const actualizado = await prisma.registroVendedorVenta.update({
+        where: { id },
+        data: {
+          documentoNumero,
+          clienteNombre,
+          correo,
+          whatsapp,
+          referenciaEquipo,
+          serialImei,
+          numeroFactura: numeroFactura ?? null,
+          financierasDetalle: financierasActualizadas,
+          plataformaCredito: String(primeraFinanciera?.plataformaCredito ?? ""),
+          creditoAutorizado: String(primeraFinanciera?.creditoAutorizado ?? "0"),
+          cuotaInicial: String(primeraFinanciera?.cuotaInicial ?? "0"),
+          medioPago1Valor: String(primeraFinanciera?.cuotaInicial ?? "0"),
+          medioPago2Valor: segundaFinanciera?.cuotaInicial
+            ? String(segundaFinanciera.cuotaInicial)
+            : null,
+        },
+        select: {
+          id: true,
+          createdAt: true,
+          puntoVenta: true,
+          clienteNombre: true,
+          tipoDocumento: true,
+          documentoNumero: true,
+          correo: true,
+          whatsapp: true,
+          plataformaCredito: true,
+          creditoAutorizado: true,
+          cuotaInicial: true,
+          referenciaEquipo: true,
+          serialImei: true,
+          tipoEquipo: true,
+          jaladorNombre: true,
+          numeroFactura: true,
+          financierasDetalle: true,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Registro actualizado correctamente",
+        registro: serializarRegistro(actualizado),
+      });
+    }
+
     const actualizado = await prisma.registroVendedorVenta.update({
       where: { id },
       data: { numeroFactura },
       select: {
         id: true,
+        createdAt: true,
+        puntoVenta: true,
+        clienteNombre: true,
+        tipoDocumento: true,
+        documentoNumero: true,
+        correo: true,
+        whatsapp: true,
+        plataformaCredito: true,
+        creditoAutorizado: true,
+        cuotaInicial: true,
+        referenciaEquipo: true,
+        serialImei: true,
+        tipoEquipo: true,
+        jaladorNombre: true,
         numeroFactura: true,
+        financierasDetalle: true,
       },
     });
 
     return NextResponse.json({
       ok: true,
       mensaje: "Numero de factura actualizado",
-      registro: actualizado,
+      registro: serializarRegistro(actualizado),
     });
   } catch (error) {
     console.error("ERROR PATCH REGISTROS FACTURADOR:", error);
