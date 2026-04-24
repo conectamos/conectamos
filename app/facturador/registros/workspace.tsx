@@ -170,8 +170,8 @@ export default function FacturadorRegistrosWorkspace({
               </h1>
 
               <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                Revisa los registros capturados en {session.sedeNombre}, agrega el
-                numero de factura y deja marcada la fila como facturada.
+                Revisa los registros capturados por los asesores en todas las sedes,
+                agrega el numero de factura y deja marcada la fila como facturada.
               </p>
             </div>
 
@@ -217,7 +217,7 @@ export default function FacturadorRegistrosWorkspace({
               {pendientes}
             </p>
             <p className="mt-2 text-sm text-slate-500">
-              Registros sin numero de factura.
+              Registros globales sin numero de factura.
             </p>
           </div>
 
@@ -229,7 +229,7 @@ export default function FacturadorRegistrosWorkspace({
               {facturados}
             </p>
             <p className="mt-2 text-sm text-slate-500">
-              Filas en verde con numero de factura.
+              Filas globales en verde con numero de factura.
             </p>
           </div>
         </section>
@@ -254,7 +254,7 @@ export default function FacturadorRegistrosWorkspace({
               <thead>
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   <th className="px-4 py-2">Fecha</th>
-                  <th className="px-4 py-2">Punto</th>
+                  <th className="px-4 py-2">Punto / sede</th>
                   <th className="px-4 py-2">Cliente</th>
                   <th className="px-4 py-2">Documento</th>
                   <th className="px-4 py-2">Financieras</th>
@@ -278,7 +278,7 @@ export default function FacturadorRegistrosWorkspace({
                 ) : registros.length === 0 ? (
                   <tr>
                     <td colSpan={12} className="px-4 py-8 text-sm text-slate-500">
-                      No hay registros guardados en esta sede.
+                      No hay registros guardados para facturar.
                     </td>
                   </tr>
                 ) : (
