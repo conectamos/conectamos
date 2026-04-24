@@ -168,6 +168,7 @@ model RegistroVendedorVenta {
   tipoDocumento                   String
   documentoNumero                 String
   plataformaCredito               String
+  financierasDetalle              Json?
   aceptaDeclaracionIntermediacion Boolean         @default(false)
   aceptaPoliticaGarantia          Boolean         @default(false)
   aceptaCondicionesCredito        Boolean         @default(false)
@@ -190,6 +191,10 @@ model RegistroVendedorVenta {
   direccion                       String?
   barrio                          String?
   referenciaContacto              String?
+  referenciaFamiliar1Nombre       String?
+  referenciaFamiliar1Telefono     String?
+  referenciaFamiliar2Nombre       String?
+  referenciaFamiliar2Telefono     String?
   telefono                        String?
   simCardRegistro1                String?
   simCardRegistro2                String?
@@ -198,7 +203,10 @@ model RegistroVendedorVenta {
   medioPago2Tipo                  String?
   medioPago2Valor                 Decimal?        @db.Decimal(12, 2)
   asesorNombre                    String?
+  jaladorNombre                   String?
   cerradorNombre                  String?
+  firmaClienteDataUrl             String?
+  fotoEntregaDataUrl              String?
   confirmacionCliente             Boolean         @default(false)
   createdAt                       DateTime        @default(now())
   updatedAt                       DateTime        @updatedAt

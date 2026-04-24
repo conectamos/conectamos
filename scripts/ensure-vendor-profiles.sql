@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS "RegistroVendedorVenta" (
   "tipoDocumento" TEXT NOT NULL,
   "documentoNumero" TEXT NOT NULL,
   "plataformaCredito" TEXT NOT NULL,
+  "financierasDetalle" JSONB,
   "aceptaDeclaracionIntermediacion" BOOLEAN NOT NULL DEFAULT false,
   "aceptaPoliticaGarantia" BOOLEAN NOT NULL DEFAULT false,
   "aceptaCondicionesCredito" BOOLEAN NOT NULL DEFAULT false,
@@ -70,6 +71,10 @@ CREATE TABLE IF NOT EXISTS "RegistroVendedorVenta" (
   "direccion" TEXT,
   "barrio" TEXT,
   "referenciaContacto" TEXT,
+  "referenciaFamiliar1Nombre" TEXT,
+  "referenciaFamiliar1Telefono" TEXT,
+  "referenciaFamiliar2Nombre" TEXT,
+  "referenciaFamiliar2Telefono" TEXT,
   "telefono" TEXT,
   "simCardRegistro1" TEXT,
   "simCardRegistro2" TEXT,
@@ -78,13 +83,26 @@ CREATE TABLE IF NOT EXISTS "RegistroVendedorVenta" (
   "medioPago2Tipo" TEXT,
   "medioPago2Valor" DECIMAL(12,2),
   "asesorNombre" TEXT,
+  "jaladorNombre" TEXT,
   "cerradorNombre" TEXT,
+  "firmaClienteDataUrl" TEXT,
+  "fotoEntregaDataUrl" TEXT,
   "confirmacionCliente" BOOLEAN NOT NULL DEFAULT false,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   CONSTRAINT "RegistroVendedorVenta_pkey" PRIMARY KEY ("id")
 );
+
+ALTER TABLE "RegistroVendedorVenta"
+  ADD COLUMN IF NOT EXISTS "financierasDetalle" JSONB,
+  ADD COLUMN IF NOT EXISTS "referenciaFamiliar1Nombre" TEXT,
+  ADD COLUMN IF NOT EXISTS "referenciaFamiliar1Telefono" TEXT,
+  ADD COLUMN IF NOT EXISTS "referenciaFamiliar2Nombre" TEXT,
+  ADD COLUMN IF NOT EXISTS "referenciaFamiliar2Telefono" TEXT,
+  ADD COLUMN IF NOT EXISTS "jaladorNombre" TEXT,
+  ADD COLUMN IF NOT EXISTS "firmaClienteDataUrl" TEXT,
+  ADD COLUMN IF NOT EXISTS "fotoEntregaDataUrl" TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "PerfilVendedor_documento_key"
   ON "PerfilVendedor"("documento");

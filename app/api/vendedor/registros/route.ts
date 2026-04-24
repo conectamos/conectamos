@@ -3,13 +3,11 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { esPerfilVendedor } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import {
   normalizarFechaIso,
-  normalizarFrecuenciaCuota,
-  normalizarMedioPago,
-  normalizarMoneda,
-  normalizarNumeroEntero,
-  normalizarPlataformaCredito,
+  normalizarFinancierasDetalle,
+  normalizarImei,
   normalizarTextoCorto,
   normalizarTextoLargo,
   normalizarTipoDocumentoCliente,
@@ -44,24 +42,20 @@ function validarPayload(body: Record<string, unknown>) {
   const clienteNombre = normalizarTextoCorto(body.clienteNombre);
   const tipoDocumento = normalizarTipoDocumentoCliente(body.tipoDocumento);
   const documentoNumero = normalizarTextoCorto(body.documentoNumero);
-  const plataformaCredito = normalizarPlataformaCredito(body.plataformaCredito);
+  const financierasDetalleResult = normalizarFinancierasDetalle(
+    body.financierasDetalle
+  );
   const aceptaDeclaracionIntermediacion = Boolean(
     body.aceptaDeclaracionIntermediacion
   );
   const aceptaPoliticaGarantia = Boolean(body.aceptaPoliticaGarantia);
   const aceptaCondicionesCredito = Boolean(body.aceptaCondicionesCredito);
-  const dobleCredito = Boolean(body.dobleCredito);
   const observacion = normalizarTextoLargo(body.observacion);
   const referenciaEquipo = normalizarTextoCorto(body.referenciaEquipo);
   const almacenamiento = normalizarTextoCorto(body.almacenamiento);
   const color = normalizarTextoCorto(body.color);
-  const serialImei = normalizarTextoCorto(body.serialImei);
+  const serialImei = normalizarImei(body.serialImei);
   const tipoEquipo = normalizarTextoCorto(body.tipoEquipo);
-  const creditoAutorizado = normalizarMoneda(body.creditoAutorizado);
-  const cuotaInicial = normalizarMoneda(body.cuotaInicial);
-  const valorCuota = normalizarMoneda(body.valorCuota);
-  const numeroCuotas = normalizarNumeroEntero(body.numeroCuotas);
-  const frecuenciaCuota = normalizarFrecuenciaCuota(body.frecuenciaCuota);
   const correo = normalizarTextoCorto(body.correo);
   const whatsapp = normalizarTextoCorto(body.whatsapp);
   const fechaNacimiento = normalizarFechaIso(body.fechaNacimiento);
@@ -69,42 +63,62 @@ function validarPayload(body: Record<string, unknown>) {
   const direccion = normalizarTextoLargo(body.direccion);
   const barrio = normalizarTextoCorto(body.barrio);
   const referenciaContacto = normalizarTextoLargo(body.referenciaContacto);
+  const referenciaFamiliar1Nombre = normalizarTextoCorto(
+    body.referenciaFamiliar1Nombre
+  );
+  const referenciaFamiliar1Telefono = normalizarTextoCorto(
+    body.referenciaFamiliar1Telefono
+  );
+  const referenciaFamiliar2Nombre = normalizarTextoCorto(
+    body.referenciaFamiliar2Nombre
+  );
+  const referenciaFamiliar2Telefono = normalizarTextoCorto(
+    body.referenciaFamiliar2Telefono
+  );
   const telefono = normalizarTextoCorto(body.telefono);
   const simCardRegistro1 = normalizarTextoCorto(body.simCardRegistro1);
   const simCardRegistro2 = normalizarTextoCorto(body.simCardRegistro2);
-  const medioPago1Tipo = normalizarMedioPago(body.medioPago1Tipo);
-  const medioPago1Valor = normalizarMoneda(body.medioPago1Valor);
-  const medioPago2Tipo = normalizarMedioPago(body.medioPago2Tipo);
-  const medioPago2Valor = normalizarMoneda(body.medioPago2Valor);
   const asesorNombre = normalizarTextoCorto(body.asesorNombre);
-  const cerradorNombre = normalizarTextoCorto(body.cerradorNombre);
-  const confirmacionCliente = Boolean(body.confirmacionCliente);
+  const jaladorNombre = normalizarTextoCorto(body.jaladorNombre);
+  const firmaClienteDataUrl = normalizarTextoLargo(body.firmaClienteDataUrl);
+  const fotoEntregaDataUrl = normalizarTextoLargo(body.fotoEntregaDataUrl);
 
   if (!ciudad) return { error: "La ciudad es obligatoria" };
+  if (!puntoVenta) return { error: "Debes seleccionar el punto de venta" };
   if (!clienteNombre) return { error: "El nombre del cliente es obligatorio" };
   if (!tipoDocumento) return { error: "Debes seleccionar el tipo de documento" };
   if (!documentoNumero) return { error: "El documento del cliente es obligatorio" };
-  if (!plataformaCredito)
-    return { error: "Debes seleccionar la plataforma de credito" };
-  if (!referenciaEquipo) return { error: "La referencia del equipo es obligatoria" };
-  if (!serialImei) return { error: "El serial o IMEI es obligatorio" };
-  if (!creditoAutorizado) return { error: "El credito autorizado es obligatorio" };
-  if (!valorCuota) return { error: "El valor de la cuota es obligatorio" };
-  if (!numeroCuotas) return { error: "El numero de cuotas es obligatorio" };
-  if (!frecuenciaCuota) return { error: "Debes indicar la frecuencia de cuota" };
+  if ("error" in financierasDetalleResult) {
+    return { error: financierasDetalleResult.error };
+  }
+  if (!serialImei) return { error: "El IMEI debe tener 15 digitos" };
   if (!direccion) return { error: "La direccion es obligatoria" };
   if (!telefono) return { error: "El telefono es obligatorio" };
-  if (!medioPago1Tipo || !medioPago1Valor)
-    return { error: "Debes registrar el primer medio de pago" };
-  if ((medioPago2Tipo && !medioPago2Valor) || (!medioPago2Tipo && medioPago2Valor))
+  if (!referenciaFamiliar1Nombre || !referenciaFamiliar1Telefono) {
     return {
       error:
-        "Si registras un segundo pago debes completar el tipo y el valor",
+        "Debes registrar la primera referencia familiar con nombre y telefono",
     };
-  if (!aceptaDeclaracionIntermediacion || !aceptaPoliticaGarantia || !aceptaCondicionesCredito)
-    return { error: "Debes confirmar las politicas y condiciones del formato" };
-  if (!confirmacionCliente)
-    return { error: "Debes confirmar la validacion digital del cliente" };
+  }
+  if (!referenciaFamiliar2Nombre || !referenciaFamiliar2Telefono) {
+    return {
+      error:
+        "Debes registrar la segunda referencia familiar con nombre y telefono",
+    };
+  }
+  if (!jaladorNombre) return { error: "Debes seleccionar el jalador" };
+  if (!aceptaDeclaracionIntermediacion || !aceptaPoliticaGarantia || !aceptaCondicionesCredito) {
+    return { error: "Debes confirmar los textos visibles del formato" };
+  }
+  if (!firmaClienteDataUrl) {
+    return { error: "Debes capturar la firma digital del cliente" };
+  }
+  if (!fotoEntregaDataUrl) {
+    return { error: "Debes adjuntar la foto de entrega del producto" };
+  }
+
+  const primeraFinanciera = financierasDetalleResult.data[0];
+  const segundaFinanciera = financierasDetalleResult.data[1] ?? null;
 
   return {
     data: {
@@ -113,22 +127,23 @@ function validarPayload(body: Record<string, unknown>) {
       clienteNombre,
       tipoDocumento,
       documentoNumero,
-      plataformaCredito,
+      plataformaCredito: primeraFinanciera.plataformaCredito,
+      financierasDetalle: financierasDetalleResult.data,
       aceptaDeclaracionIntermediacion,
       aceptaPoliticaGarantia,
       aceptaCondicionesCredito,
-      dobleCredito,
+      dobleCredito: financierasDetalleResult.data.length > 1,
       observacion,
       referenciaEquipo,
       almacenamiento,
       color,
       serialImei,
       tipoEquipo,
-      creditoAutorizado,
-      cuotaInicial,
-      valorCuota,
-      numeroCuotas,
-      frecuenciaCuota,
+      creditoAutorizado: primeraFinanciera.creditoAutorizado,
+      cuotaInicial: primeraFinanciera.cuotaInicial,
+      valorCuota: primeraFinanciera.valorCuota,
+      numeroCuotas: primeraFinanciera.numeroCuotas,
+      frecuenciaCuota: primeraFinanciera.frecuenciaCuota,
       correo,
       whatsapp,
       fechaNacimiento,
@@ -136,16 +151,22 @@ function validarPayload(body: Record<string, unknown>) {
       direccion,
       barrio,
       referenciaContacto,
+      referenciaFamiliar1Nombre,
+      referenciaFamiliar1Telefono,
+      referenciaFamiliar2Nombre,
+      referenciaFamiliar2Telefono,
       telefono,
       simCardRegistro1,
       simCardRegistro2,
-      medioPago1Tipo,
-      medioPago1Valor,
-      medioPago2Tipo,
-      medioPago2Valor,
+      medioPago1Tipo: primeraFinanciera.tipoPagoInicial,
+      medioPago1Valor: primeraFinanciera.cuotaInicial,
+      medioPago2Tipo: segundaFinanciera?.tipoPagoInicial ?? null,
+      medioPago2Valor: segundaFinanciera?.cuotaInicial ?? null,
       asesorNombre,
-      cerradorNombre,
-      confirmacionCliente,
+      jaladorNombre,
+      firmaClienteDataUrl,
+      fotoEntregaDataUrl,
+      confirmacionCliente: true,
     },
   };
 }
@@ -168,13 +189,16 @@ export async function GET() {
       select: {
         id: true,
         clienteNombre: true,
+        puntoVenta: true,
         plataformaCredito: true,
+        financierasDetalle: true,
         referenciaEquipo: true,
         serialImei: true,
         creditoAutorizado: true,
         cuotaInicial: true,
         valorCuota: true,
         numeroCuotas: true,
+        jaladorNombre: true,
         createdAt: true,
       },
       orderBy: {
@@ -192,6 +216,9 @@ export async function GET() {
           : null,
         cuotaInicial: registro.cuotaInicial ? Number(registro.cuotaInicial) : null,
         valorCuota: registro.valorCuota ? Number(registro.valorCuota) : null,
+        totalFinancieras: Array.isArray(registro.financierasDetalle)
+          ? registro.financierasDetalle.length
+          : 0,
       })),
     });
   } catch (error) {
@@ -220,12 +247,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: payload.error }, { status: 400 });
     }
 
+    const equipo = await buscarEquipoRegistroVentaPorImei(
+      payload.data.serialImei,
+      access.session.sedeId
+    );
+
+    if (!equipo) {
+      return NextResponse.json(
+        { error: "El IMEI debe existir en una sede o en bodega principal" },
+        { status: 400 }
+      );
+    }
+
     await prisma.registroVendedorVenta.create({
       data: {
         perfilVendedorId: access.session.perfilId!,
         sedeId: access.session.sedeId,
         ...payload.data,
-        puntoVenta: payload.data.puntoVenta ?? access.session.sedeNombre ?? null,
+        puntoVenta: payload.data.puntoVenta,
+        referenciaEquipo: equipo.referencia,
+        color: equipo.color ?? payload.data.color ?? null,
         asesorNombre:
           payload.data.asesorNombre ??
           access.session.perfilNombre ??

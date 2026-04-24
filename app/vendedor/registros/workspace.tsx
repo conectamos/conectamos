@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type PointerEvent,
+} from "react";
 import Link from "next/link";
 import {
   FRECUENCIAS_CUOTA,
-  MEDIOS_PAGO,
+  MAX_FINANCIERAS_REGISTRO,
+  MAX_PLAZO_CUOTAS,
+  MEDIOS_PAGO_REGISTRO_VENTA,
   PLATAFORMAS_CREDITO,
+  TEXTOS_VISIBLES_CLIENTE,
   TIPOS_DOCUMENTO_CLIENTE,
 } from "@/lib/vendor-sale-records";
 
@@ -19,6 +28,7 @@ type SessionProps = {
 type RegistroResumen = {
   id: number;
   clienteNombre: string;
+  puntoVenta: string | null;
   plataformaCredito: string;
   referenciaEquipo: string | null;
   serialImei: string | null;
@@ -26,7 +36,34 @@ type RegistroResumen = {
   cuotaInicial: number | null;
   valorCuota: number | null;
   numeroCuotas: number | null;
+  jaladorNombre: string | null;
+  totalFinancieras: number;
   createdAt: string;
+};
+
+type JaladorOption = {
+  id: number;
+  nombre: string;
+};
+
+type SedeOption = {
+  id: number;
+  nombre: string;
+};
+
+type ConsentField =
+  | "aceptaDeclaracionIntermediacion"
+  | "aceptaPoliticaGarantia"
+  | "aceptaCondicionesCredito";
+
+type FinancialFormState = {
+  plataformaCredito: string;
+  creditoAutorizado: string;
+  cuotaInicial: string;
+  tipoPagoInicial: string;
+  valorCuota: string;
+  numeroCuotas: string;
+  frecuenciaCuota: string;
 };
 
 type FormState = {
@@ -35,22 +72,15 @@ type FormState = {
   clienteNombre: string;
   tipoDocumento: string;
   documentoNumero: string;
-  plataformaCredito: string;
   aceptaDeclaracionIntermediacion: boolean;
   aceptaPoliticaGarantia: boolean;
   aceptaCondicionesCredito: boolean;
-  dobleCredito: boolean;
   observacion: string;
   referenciaEquipo: string;
   almacenamiento: string;
   color: string;
   serialImei: string;
   tipoEquipo: string;
-  creditoAutorizado: string;
-  cuotaInicial: string;
-  valorCuota: string;
-  numeroCuotas: string;
-  frecuenciaCuota: string;
   correo: string;
   whatsapp: string;
   fechaNacimiento: string;
@@ -58,17 +88,49 @@ type FormState = {
   direccion: string;
   barrio: string;
   referenciaContacto: string;
+  referenciaFamiliar1Nombre: string;
+  referenciaFamiliar1Telefono: string;
+  referenciaFamiliar2Nombre: string;
+  referenciaFamiliar2Telefono: string;
   telefono: string;
   simCardRegistro1: string;
   simCardRegistro2: string;
-  medioPago1Tipo: string;
-  medioPago1Valor: string;
-  medioPago2Tipo: string;
-  medioPago2Valor: string;
   asesorNombre: string;
-  cerradorNombre: string;
+  jaladorNombre: string;
+  firmaClienteDataUrl: string;
+  fotoEntregaDataUrl: string;
   confirmacionCliente: boolean;
+  financierasDetalle: FinancialFormState[];
 };
+
+type ImeiLookupResponse = {
+  equipo: {
+    imei: string;
+    referencia: string;
+    color: string | null;
+    costo: number | null;
+    origen: "SEDE" | "BODEGA_PRINCIPAL";
+    sedeId: number | null;
+    sedeNombre: string | null;
+    estadoActual: string | null;
+  };
+};
+
+const PLAZO_OPTIONS = Array.from({ length: MAX_PLAZO_CUOTAS }, (_, index) =>
+  String(index + 1)
+);
+
+function createEmptyFinanciera(): FinancialFormState {
+  return {
+    plataformaCredito: "",
+    creditoAutorizado: "",
+    cuotaInicial: "",
+    tipoPagoInicial: "",
+    valorCuota: "",
+    numeroCuotas: "",
+    frecuenciaCuota: "",
+  };
+}
 
 function createInitialState(session: SessionProps): FormState {
   return {
@@ -77,22 +139,15 @@ function createInitialState(session: SessionProps): FormState {
     clienteNombre: "",
     tipoDocumento: "CC",
     documentoNumero: "",
-    plataformaCredito: "",
     aceptaDeclaracionIntermediacion: false,
     aceptaPoliticaGarantia: false,
     aceptaCondicionesCredito: false,
-    dobleCredito: false,
     observacion: "",
     referenciaEquipo: "",
     almacenamiento: "",
     color: "",
     serialImei: "",
     tipoEquipo: "",
-    creditoAutorizado: "",
-    cuotaInicial: "",
-    valorCuota: "",
-    numeroCuotas: "",
-    frecuenciaCuota: "",
     correo: "",
     whatsapp: "",
     fechaNacimiento: "",
@@ -100,16 +155,22 @@ function createInitialState(session: SessionProps): FormState {
     direccion: "",
     barrio: "",
     referenciaContacto: "",
+    referenciaFamiliar1Nombre: "",
+    referenciaFamiliar1Telefono: "",
+    referenciaFamiliar2Nombre: "",
+    referenciaFamiliar2Telefono: "",
     telefono: "",
     simCardRegistro1: "",
     simCardRegistro2: "",
-    medioPago1Tipo: "",
-    medioPago1Valor: "",
-    medioPago2Tipo: "",
-    medioPago2Valor: "",
     asesorNombre: session.perfilNombre,
-    cerradorNombre: "",
+    jaladorNombre: "",
+    firmaClienteDataUrl: "",
+    fotoEntregaDataUrl: "",
     confirmacionCliente: false,
+    financierasDetalle: Array.from(
+      { length: MAX_FINANCIERAS_REGISTRO },
+      createEmptyFinanciera
+    ),
   };
 }
 
@@ -119,6 +180,11 @@ function inputClass(readOnly = false) {
       ? "border-slate-200 bg-slate-50 text-slate-600"
       : "border-slate-300 bg-white text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
   }`;
+}
+
+function onlyDigits(value: string, maxLength?: number) {
+  const digits = value.replace(/\D/g, "");
+  return typeof maxLength === "number" ? digits.slice(0, maxLength) : digits;
 }
 
 function moneyLabel(value: string) {
@@ -131,8 +197,12 @@ function moneyLabel(value: string) {
   return `$ ${Number(digits).toLocaleString("es-CO")}`;
 }
 
-function onlyDigits(value: string) {
-  return value.replace(/\D/g, "");
+function formatMoney(value: number | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "Sin valor";
+  }
+
+  return `$ ${value.toLocaleString("es-CO")}`;
 }
 
 function formatDate(value: string) {
@@ -146,6 +216,218 @@ function formatDate(value: string) {
   }
 }
 
+function hasFinancialData(item: FinancialFormState) {
+  return Boolean(
+    item.plataformaCredito ||
+      item.creditoAutorizado ||
+      item.cuotaInicial ||
+      item.tipoPagoInicial ||
+      item.valorCuota ||
+      item.numeroCuotas ||
+      item.frecuenciaCuota
+  );
+}
+
+async function fileToDataUrl(file: File) {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function loadImage(src: string) {
+  return await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("No se pudo procesar la imagen"));
+    image.src = src;
+  });
+}
+
+async function compressImageToDataUrl(file: File) {
+  const originalDataUrl = await fileToDataUrl(file);
+  const image = await loadImage(originalDataUrl);
+  const maxSide = 1280;
+  const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+  const canvas = document.createElement("canvas");
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    return originalDataUrl;
+  }
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
+
+function SignaturePad({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (dataUrl: string) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
+  const dirtyRef = useRef(false);
+
+  const prepareCanvas = () => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+
+    if (!canvas || !context) {
+      return null;
+    }
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.lineWidth = 3;
+    context.strokeStyle = "#0f172a";
+    return context;
+  };
+
+  useEffect(() => {
+    prepareCanvas();
+  }, []);
+
+  const getPoint = (event: PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return { x: 0, y: 0 };
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    return {
+      x: (event.clientX - rect.left) * scaleX,
+      y: (event.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const beginSignature = (event: PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+
+    if (!canvas || !context) {
+      return;
+    }
+
+    const point = getPoint(event);
+
+    drawingRef.current = true;
+    dirtyRef.current = true;
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const drawSignature = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current) {
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+
+    if (!canvas || !context) {
+      return;
+    }
+
+    const point = getPoint(event);
+
+    context.lineTo(point.x, point.y);
+    context.stroke();
+  };
+
+  const endSignature = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current) {
+      return;
+    }
+
+    drawingRef.current = false;
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {}
+
+    const canvas = canvasRef.current;
+
+    if (dirtyRef.current && canvas) {
+      onChange(canvas.toDataURL("image/png"));
+    }
+  };
+
+  const clearSignature = () => {
+    dirtyRef.current = false;
+    onChange("");
+    prepareCanvas();
+  };
+
+  return (
+    <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-700">Firma del cliente</p>
+        <button
+          type="button"
+          onClick={clearSignature}
+          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+        >
+          Limpiar
+        </button>
+      </div>
+
+      <div className="mt-3 overflow-hidden rounded-3xl border border-dashed border-slate-300 bg-white">
+        <canvas
+          ref={canvasRef}
+          width={960}
+          height={240}
+          onPointerDown={beginSignature}
+          onPointerMove={drawSignature}
+          onPointerUp={endSignature}
+          onPointerLeave={endSignature}
+          className="h-56 w-full touch-none bg-white"
+        />
+      </div>
+
+      <p className="mt-3 text-xs text-slate-500">
+        El cliente debe firmar aqui antes de guardar el registro.
+      </p>
+
+      {value && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Vista previa
+          </p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={value}
+            alt="Firma del cliente"
+            className="mt-3 h-24 rounded-2xl border border-slate-200 object-contain"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function VendedorRegistroWorkspace({
   session,
 }: {
@@ -153,31 +435,82 @@ export default function VendedorRegistroWorkspace({
 }) {
   const [form, setForm] = useState<FormState>(() => createInitialState(session));
   const [registros, setRegistros] = useState<RegistroResumen[]>([]);
+  const [sedes, setSedes] = useState<SedeOption[]>([]);
+  const [jaladores, setJaladores] = useState<JaladorOption[]>([]);
   const [mensaje, setMensaje] = useState("");
+  const [mensajeTipo, setMensajeTipo] = useState<"success" | "error">("success");
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const [buscandoImei, setBuscandoImei] = useState(false);
+  const [cargandoFoto, setCargandoFoto] = useState(false);
+  const [imeiDetalle, setImeiDetalle] = useState("");
+  const [signaturePadKey, setSignaturePadKey] = useState(0);
 
-  const cargarRegistros = async () => {
-    try {
-      const res = await fetch("/api/vendedor/registros", { cache: "no-store" });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMensaje(data.error || "No se pudieron cargar los registros");
-        return;
-      }
-
-      setRegistros(Array.isArray(data.registros) ? data.registros : []);
-    } catch {
-      setMensaje("Error cargando registros");
-    } finally {
-      setCargando(false);
-    }
+  const setFormMessage = (texto: string, tipo: "success" | "error") => {
+    setMensaje(texto);
+    setMensajeTipo(tipo);
   };
 
   useEffect(() => {
-    void cargarRegistros();
-  }, []);
+    let cancelled = false;
+
+    const cargarTodo = async () => {
+      try {
+        const [registrosRes, sedesRes, catalogoRes] = await Promise.all([
+          fetch("/api/vendedor/registros", { cache: "no-store" }),
+          fetch("/api/sedes", { cache: "no-store" }),
+          fetch("/api/ventas/catalogo-personal", { cache: "no-store" }),
+        ]);
+
+        const [registrosData, sedesData, catalogoData] = await Promise.all([
+          registrosRes.json(),
+          sedesRes.json(),
+          catalogoRes.json(),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (registrosRes.ok) {
+          setRegistros(Array.isArray(registrosData.registros) ? registrosData.registros : []);
+        } else {
+          setMensaje(registrosData.error || "No se pudieron cargar los registros");
+          setMensajeTipo("error");
+        }
+
+        if (sedesRes.ok && Array.isArray(sedesData)) {
+          setSedes(sedesData);
+
+          setForm((current) => ({
+            ...current,
+            puntoVenta: current.puntoVenta || sedesData[0]?.nombre || session.sedeNombre,
+          }));
+        }
+
+        if (catalogoRes.ok && catalogoData?.jaladores) {
+          setJaladores(
+            Array.isArray(catalogoData.jaladores) ? catalogoData.jaladores : []
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setMensaje("Error cargando el modulo");
+          setMensajeTipo("error");
+        }
+      } finally {
+        if (!cancelled) {
+          setCargando(false);
+        }
+      }
+    };
+
+    void cargarTodo();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session.sedeNombre]);
 
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((current) => ({
@@ -186,40 +519,166 @@ export default function VendedorRegistroWorkspace({
     }));
   };
 
+  const setFinancieraField = <K extends keyof FinancialFormState>(
+    index: number,
+    field: K,
+    value: FinancialFormState[K]
+  ) => {
+    setForm((current) => ({
+      ...current,
+      financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              [field]: value,
+            }
+          : item
+      ),
+    }));
+  };
+
+  const resetFinanciera = (index: number) => {
+    setForm((current) => ({
+      ...current,
+      financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
+        itemIndex === index ? createEmptyFinanciera() : item
+      ),
+    }));
+  };
+
+  const buscarImei = async () => {
+    if (form.serialImei.length !== 15) {
+      setFormMessage("El IMEI debe tener 15 digitos", "error");
+      return;
+    }
+
+    try {
+      setBuscandoImei(true);
+      setFormMessage("", "success");
+
+      const response = await fetch(
+        `/api/vendedor/registros/imei?imei=${form.serialImei}`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as
+        | ({ error?: string } & Partial<ImeiLookupResponse>)
+        | undefined;
+
+      if (!response.ok || !data?.equipo) {
+        setImeiDetalle("");
+        setFormMessage(
+          data?.error || "No se pudo consultar el IMEI",
+          "error"
+        );
+        return;
+      }
+
+      const equipo = data.equipo;
+
+      setForm((current) => ({
+        ...current,
+        serialImei: equipo.imei,
+        referenciaEquipo: equipo.referencia,
+        color: equipo.color ?? current.color,
+      }));
+      setImeiDetalle(
+        `${equipo.referencia} | ${equipo.sedeNombre ?? "Sin ubicacion"} | ${equipo.estadoActual ?? "Sin estado"}`
+      );
+    } catch {
+      setImeiDetalle("");
+      setFormMessage("Error consultando el IMEI", "error");
+    } finally {
+      setBuscandoImei(false);
+    }
+  };
+
+  const cargarFotoEntrega = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setCargandoFoto(true);
+      const dataUrl = await compressImageToDataUrl(file);
+      setField("fotoEntregaDataUrl", dataUrl);
+    } catch {
+      setFormMessage("No se pudo procesar la foto de entrega", "error");
+    } finally {
+      setCargandoFoto(false);
+      event.target.value = "";
+    }
+  };
+
   const guardarRegistro = async () => {
+    if (!form.firmaClienteDataUrl) {
+      setFormMessage("Debes capturar la firma digital del cliente", "error");
+      return;
+    }
+
+    if (!form.fotoEntregaDataUrl) {
+      setFormMessage("Debes adjuntar la foto de entrega del producto", "error");
+      return;
+    }
+
     try {
       setGuardando(true);
-      setMensaje("");
+      setFormMessage("", "success");
+
+      const payload = {
+        ...form,
+        confirmacionCliente: true,
+      };
 
       const res = await fetch("/api/vendedor/registros", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setMensaje(data.error || "No se pudo guardar el registro");
+        setFormMessage(data.error || "No se pudo guardar el registro", "error");
         return;
       }
 
-      setMensaje(data.mensaje || "Registro guardado correctamente");
+      setFormMessage(data.mensaje || "Registro guardado correctamente", "success");
+      setImeiDetalle("");
+      setSignaturePadKey((current) => current + 1);
       setForm((current) => ({
         ...createInitialState(session),
         ciudad: current.ciudad,
         puntoVenta: current.puntoVenta,
         asesorNombre: current.asesorNombre,
       }));
-      await cargarRegistros();
+
+      const registrosRes = await fetch("/api/vendedor/registros", {
+        cache: "no-store",
+      });
+      const registrosData = await registrosRes.json();
+
+      if (registrosRes.ok) {
+        setRegistros(Array.isArray(registrosData.registros) ? registrosData.registros : []);
+      }
     } catch {
-      setMensaje("Error guardando el registro");
+      setFormMessage("Error guardando el registro", "error");
     } finally {
       setGuardando(false);
     }
   };
+
+  const puntosVenta = Array.from(
+    new Map(
+      [session.sedeNombre, ...sedes.map((item) => item.nombre)].map((nombre) => [
+        nombre,
+        nombre,
+      ])
+    ).values()
+  );
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
@@ -228,7 +687,7 @@ export default function VendedorRegistroWorkspace({
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Formato digital
+                Hoja digital
               </div>
 
               <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
@@ -236,8 +695,8 @@ export default function VendedorRegistroWorkspace({
               </h1>
 
               <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                Version digital de la hoja de plataforma para capturar el tramite
-                completo desde la sede.
+                Captura digital del tramite, las financieras, la validacion del
+                cliente y la entrega del equipo en un solo registro.
               </p>
             </div>
 
@@ -253,7 +712,13 @@ export default function VendedorRegistroWorkspace({
         </section>
 
         {mensaje && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
+          <div
+            className={`mt-6 rounded-2xl border px-4 py-4 text-sm font-medium shadow-sm ${
+              mensajeTipo === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-rose-200 bg-rose-50 text-rose-900"
+            }`}
+          >
             {mensaje}
           </div>
         )}
@@ -262,7 +727,7 @@ export default function VendedorRegistroWorkspace({
           <div className="space-y-5">
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Cliente y tramite
+                Cliente y equipo
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -278,11 +743,17 @@ export default function VendedorRegistroWorkspace({
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Punto de venta
-                  <input
+                  <select
                     value={form.puntoVenta}
-                    readOnly
-                    className={inputClass(true)}
-                  />
+                    onChange={(event) => setField("puntoVenta", event.target.value)}
+                    className={inputClass()}
+                  >
+                    {puntosVenta.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
@@ -296,7 +767,7 @@ export default function VendedorRegistroWorkspace({
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Tipo documento
+                  Tipo de documento
                   <select
                     value={form.tipoDocumento}
                     onChange={(event) => setField("tipoDocumento", event.target.value)}
@@ -322,100 +793,44 @@ export default function VendedorRegistroWorkspace({
                   />
                 </label>
 
-                <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Plataforma de credito utilizada
-                  <select
-                    value={form.plataformaCredito}
-                    onChange={(event) =>
-                      setField("plataformaCredito", event.target.value)
-                    }
-                    className={inputClass()}
-                  >
-                    <option value="">Selecciona una plataforma</option>
-                    {PLATAFORMAS_CREDITO.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+                <div className="md:col-span-2 grid gap-3 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-end">
+                    <label className="flex-1 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      IMEI
+                      <input
+                        value={form.serialImei}
+                        onChange={(event) => {
+                          setField(
+                            "serialImei",
+                            onlyDigits(event.target.value, 15)
+                          );
+                          setImeiDetalle("");
+                        }}
+                        onBlur={() => {
+                          if (form.serialImei.length === 15) {
+                            void buscarImei();
+                          }
+                        }}
+                        className={inputClass()}
+                        placeholder="15 digitos"
+                      />
+                    </label>
 
-              <div className="mt-5 grid gap-3">
-                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.aceptaDeclaracionIntermediacion}
-                    onChange={(event) =>
-                      setField(
-                        "aceptaDeclaracionIntermediacion",
-                        event.target.checked
-                      )
-                    }
-                    className="mt-1 h-4 w-4"
-                  />
-                  <span>
-                    Confirmo que el cliente fue informado sobre la intermediacion
-                    independiente del operador.
-                  </span>
-                </label>
+                    <button
+                      type="button"
+                      onClick={() => void buscarImei()}
+                      disabled={buscandoImei || form.serialImei.length !== 15}
+                      className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {buscandoImei ? "Consultando..." : "Buscar IMEI"}
+                    </button>
+                  </div>
 
-                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.aceptaPoliticaGarantia}
-                    onChange={(event) =>
-                      setField("aceptaPoliticaGarantia", event.target.checked)
-                    }
-                    className="mt-1 h-4 w-4"
-                  />
-                  <span>
-                    Confirmo que se socializo la politica de garantia y devoluciones.
-                  </span>
-                </label>
-
-                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.aceptaCondicionesCredito}
-                    onChange={(event) =>
-                      setField("aceptaCondicionesCredito", event.target.checked)
-                    }
-                    className="mt-1 h-4 w-4"
-                  />
-                  <span>
-                    Confirmo que se explicaron las condiciones del credito y la
-                    responsabilidad de la entidad financiera.
-                  </span>
-                </label>
-              </div>
-            </section>
-
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Detalle del credito
-              </div>
-
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.dobleCredito}
-                    onChange={(event) => setField("dobleCredito", event.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Doble credito
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Observacion
-                  <input
-                    value={form.observacion}
-                    onChange={(event) => setField("observacion", event.target.value)}
-                    className={inputClass()}
-                    placeholder="Observacion"
-                  />
-                </label>
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600">
+                    {imeiDetalle ||
+                      "Cuando el IMEI exista en cualquier sede o en bodega principal, se completara la informacion disponible del equipo."}
+                  </div>
+                </div>
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Referencia
@@ -425,7 +840,7 @@ export default function VendedorRegistroWorkspace({
                       setField("referenciaEquipo", event.target.value)
                     }
                     className={inputClass()}
-                    placeholder="Referencia del equipo"
+                    placeholder="Se completa desde el IMEI"
                   />
                 </label>
 
@@ -450,16 +865,6 @@ export default function VendedorRegistroWorkspace({
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Serial / IMEI
-                  <input
-                    value={form.serialImei}
-                    onChange={(event) => setField("serialImei", event.target.value)}
-                    className={inputClass()}
-                    placeholder="Serial o IMEI"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Tipo de equipo
                   <input
                     value={form.tipoEquipo}
@@ -468,87 +873,209 @@ export default function VendedorRegistroWorkspace({
                     placeholder="Celular, tablet..."
                   />
                 </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Credito autorizado
-                  <input
-                    value={form.creditoAutorizado}
-                    onChange={(event) =>
-                      setField("creditoAutorizado", onlyDigits(event.target.value))
-                    }
-                    className={inputClass()}
-                    placeholder="Valor"
-                  />
-                  <span className="text-xs text-slate-500">
-                    {moneyLabel(form.creditoAutorizado)}
-                  </span>
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Inicial
-                  <input
-                    value={form.cuotaInicial}
-                    onChange={(event) =>
-                      setField("cuotaInicial", onlyDigits(event.target.value))
-                    }
-                    className={inputClass()}
-                    placeholder="Valor"
-                  />
-                  <span className="text-xs text-slate-500">
-                    {moneyLabel(form.cuotaInicial)}
-                  </span>
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Valor de cuota
-                  <input
-                    value={form.valorCuota}
-                    onChange={(event) =>
-                      setField("valorCuota", onlyDigits(event.target.value))
-                    }
-                    className={inputClass()}
-                    placeholder="Valor"
-                  />
-                  <span className="text-xs text-slate-500">
-                    {moneyLabel(form.valorCuota)}
-                  </span>
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Numero de cuotas
-                  <input
-                    value={form.numeroCuotas}
-                    onChange={(event) =>
-                      setField("numeroCuotas", onlyDigits(event.target.value))
-                    }
-                    className={inputClass()}
-                    placeholder="Cuotas"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Frecuencia
-                  <select
-                    value={form.frecuenciaCuota}
-                    onChange={(event) =>
-                      setField("frecuenciaCuota", event.target.value)
-                    }
-                    className={inputClass()}
-                  >
-                    <option value="">Selecciona frecuencia</option>
-                    {FRECUENCIAS_CUOTA.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
               </div>
             </section>
 
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Contacto del cliente
+                Financieras del tramite
+              </div>
+
+              <div className="mt-6 space-y-4">
+                {form.financierasDetalle.map((item, index) => {
+                  const shouldShow =
+                    index === 0 || hasFinancialData(form.financierasDetalle[index - 1]);
+
+                  if (!shouldShow) {
+                    return null;
+                  }
+
+                  return (
+                    <div
+                      key={`financiera-${index}`}
+                      className="rounded-[28px] border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">
+                            Financiera {index + 1}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Registra plataforma, valores, plazo y forma de pago de
+                            la inicial.
+                          </p>
+                        </div>
+
+                        {index > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => resetFinanciera(index)}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                          >
+                            Limpiar
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <label className="md:col-span-2 xl:col-span-3 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                          Plataforma de credito utilizada
+                          <select
+                            value={item.plataformaCredito}
+                            onChange={(event) =>
+                              setFinancieraField(
+                                index,
+                                "plataformaCredito",
+                                event.target.value
+                              )
+                            }
+                            className={inputClass()}
+                          >
+                            <option value="">Selecciona una plataforma</option>
+                            {PLATAFORMAS_CREDITO.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        {item.plataformaCredito && (
+                          <>
+                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                              Credito autorizado
+                              <input
+                                value={item.creditoAutorizado}
+                                onChange={(event) =>
+                                  setFinancieraField(
+                                    index,
+                                    "creditoAutorizado",
+                                    onlyDigits(event.target.value)
+                                  )
+                                }
+                                className={inputClass()}
+                                placeholder="Valor"
+                              />
+                              <span className="text-xs text-slate-500">
+                                {moneyLabel(item.creditoAutorizado)}
+                              </span>
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                              Inicial
+                              <input
+                                value={item.cuotaInicial}
+                                onChange={(event) =>
+                                  setFinancieraField(
+                                    index,
+                                    "cuotaInicial",
+                                    onlyDigits(event.target.value)
+                                  )
+                                }
+                                className={inputClass()}
+                                placeholder="Valor"
+                              />
+                              <span className="text-xs text-slate-500">
+                                {moneyLabel(item.cuotaInicial)}
+                              </span>
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                              Tipo de pago de la inicial
+                              <select
+                                value={item.tipoPagoInicial}
+                                onChange={(event) =>
+                                  setFinancieraField(
+                                    index,
+                                    "tipoPagoInicial",
+                                    event.target.value
+                                  )
+                                }
+                                className={inputClass()}
+                              >
+                                <option value="">Selecciona una opcion</option>
+                                {MEDIOS_PAGO_REGISTRO_VENTA.map((option) => (
+                                  <option key={option} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                              Valor cuota
+                              <input
+                                value={item.valorCuota}
+                                onChange={(event) =>
+                                  setFinancieraField(
+                                    index,
+                                    "valorCuota",
+                                    onlyDigits(event.target.value)
+                                  )
+                                }
+                                className={inputClass()}
+                                placeholder="Valor"
+                              />
+                              <span className="text-xs text-slate-500">
+                                {moneyLabel(item.valorCuota)}
+                              </span>
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                              Plazo
+                              <select
+                                value={item.numeroCuotas}
+                                onChange={(event) =>
+                                  setFinancieraField(
+                                    index,
+                                    "numeroCuotas",
+                                    event.target.value
+                                  )
+                                }
+                                className={inputClass()}
+                              >
+                                <option value="">1 a 48 cuotas</option>
+                                {PLAZO_OPTIONS.map((option) => (
+                                  <option key={option} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                              Frecuencia de pago
+                              <select
+                                value={item.frecuenciaCuota}
+                                onChange={(event) =>
+                                  setFinancieraField(
+                                    index,
+                                    "frecuenciaCuota",
+                                    event.target.value
+                                  )
+                                }
+                                className={inputClass()}
+                              >
+                                <option value="">Selecciona una frecuencia</option>
+                                {FRECUENCIAS_CUOTA.map((option) => (
+                                  <option key={option} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                Contacto y referencias
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -563,14 +1090,36 @@ export default function VendedorRegistroWorkspace({
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Whatsapp
+                  WhatsApp
                   <input
                     value={form.whatsapp}
                     onChange={(event) =>
                       setField("whatsapp", onlyDigits(event.target.value))
                     }
                     className={inputClass()}
-                    placeholder="Whatsapp"
+                    placeholder="Numero"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Telefono
+                  <input
+                    value={form.telefono}
+                    onChange={(event) =>
+                      setField("telefono", onlyDigits(event.target.value))
+                    }
+                    className={inputClass()}
+                    placeholder="Telefono principal"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Barrio
+                  <input
+                    value={form.barrio}
+                    onChange={(event) => setField("barrio", event.target.value)}
+                    className={inputClass()}
+                    placeholder="Barrio"
                   />
                 </label>
 
@@ -604,65 +1153,104 @@ export default function VendedorRegistroWorkspace({
                     value={form.direccion}
                     onChange={(event) => setField("direccion", event.target.value)}
                     className={inputClass()}
-                    placeholder="Direccion"
+                    placeholder="Direccion completa"
                   />
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Barrio
-                  <input
-                    value={form.barrio}
-                    onChange={(event) => setField("barrio", event.target.value)}
-                    className={inputClass()}
-                    placeholder="Barrio"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Referencia
+                <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Punto de referencia de la direccion
                   <input
                     value={form.referenciaContacto}
                     onChange={(event) =>
                       setField("referenciaContacto", event.target.value)
                     }
                     className={inputClass()}
-                    placeholder="Referencia adicional"
+                    placeholder="Casa esquinera, frente a..."
                   />
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Telefono
-                  <input
-                    value={form.telefono}
-                    onChange={(event) =>
-                      setField("telefono", onlyDigits(event.target.value))
-                    }
-                    className={inputClass()}
-                    placeholder="Telefono"
-                  />
-                </label>
+                <div className="md:col-span-2 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-bold text-slate-900">
+                    Referencias familiares
+                  </p>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Referencia familiar 1
+                      <input
+                        value={form.referenciaFamiliar1Nombre}
+                        onChange={(event) =>
+                          setField("referenciaFamiliar1Nombre", event.target.value)
+                        }
+                        className={inputClass()}
+                        placeholder="Nombre completo"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Telefono referencia 1
+                      <input
+                        value={form.referenciaFamiliar1Telefono}
+                        onChange={(event) =>
+                          setField(
+                            "referenciaFamiliar1Telefono",
+                            onlyDigits(event.target.value)
+                          )
+                        }
+                        className={inputClass()}
+                        placeholder="Telefono"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Referencia familiar 2
+                      <input
+                        value={form.referenciaFamiliar2Nombre}
+                        onChange={(event) =>
+                          setField("referenciaFamiliar2Nombre", event.target.value)
+                        }
+                        className={inputClass()}
+                        placeholder="Nombre completo"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Telefono referencia 2
+                      <input
+                        value={form.referenciaFamiliar2Telefono}
+                        onChange={(event) =>
+                          setField(
+                            "referenciaFamiliar2Telefono",
+                            onlyDigits(event.target.value)
+                          )
+                        }
+                        className={inputClass()}
+                        placeholder="Telefono"
+                      />
+                    </label>
+                  </div>
+                </div>
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Simcard registro 1
+                  Registro SIM 1
                   <input
                     value={form.simCardRegistro1}
                     onChange={(event) =>
                       setField("simCardRegistro1", event.target.value)
                     }
                     className={inputClass()}
-                    placeholder="Simcard"
+                    placeholder="Opcional"
                   />
                 </label>
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Simcard registro 2
+                  Registro SIM 2
                   <input
                     value={form.simCardRegistro2}
                     onChange={(event) =>
                       setField("simCardRegistro2", event.target.value)
                     }
                     className={inputClass()}
-                    placeholder="Simcard"
+                    placeholder="Opcional"
                   />
                 </label>
               </div>
@@ -670,214 +1258,254 @@ export default function VendedorRegistroWorkspace({
 
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Pagos y responsables
+                Texto visible al cliente
+              </div>
+
+              <div className="mt-6 space-y-4">
+                {TEXTOS_VISIBLES_CLIENTE.map((texto, index) => {
+                  const field: ConsentField =
+                    index === 0
+                      ? "aceptaDeclaracionIntermediacion"
+                      : index === 1
+                        ? "aceptaPoliticaGarantia"
+                        : "aceptaCondicionesCredito";
+
+                  return (
+                    <label
+                      key={field}
+                      className="flex items-start gap-4 rounded-[26px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form[field]}
+                        onChange={(event) =>
+                          setField(field, event.target.checked)
+                        }
+                        className="mt-1 h-4 w-4"
+                      />
+                      <span className="leading-6">{texto}</span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.92fr)]">
+                <SignaturePad
+                  key={signaturePadKey}
+                  value={form.firmaClienteDataUrl}
+                  onChange={(dataUrl) => setField("firmaClienteDataUrl", dataUrl)}
+                />
+
+                <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-700">
+                    Foto con entrega del producto
+                  </p>
+
+                  <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-600 transition hover:border-emerald-300 hover:text-slate-900">
+                    <span className="font-semibold">
+                      {cargandoFoto
+                        ? "Procesando imagen..."
+                        : "Seleccionar foto de entrega"}
+                    </span>
+                    <span className="mt-2 text-xs text-slate-500">
+                      Se guarda junto al registro para soporte de entrega.
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => void cargarFotoEntrega(event)}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {form.fotoEntregaDataUrl && (
+                    <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={form.fotoEntregaDataUrl}
+                        alt="Foto de entrega"
+                        className="h-64 w-full rounded-2xl object-cover"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                Equipo comercial y observaciones
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Medio de pago 1
-                  <select
-                    value={form.medioPago1Tipo}
-                    onChange={(event) =>
-                      setField("medioPago1Tipo", event.target.value)
-                    }
-                    className={inputClass()}
-                  >
-                    <option value="">Selecciona medio</option>
-                    {MEDIOS_PAGO.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Valor pago 1
-                  <input
-                    value={form.medioPago1Valor}
-                    onChange={(event) =>
-                      setField("medioPago1Valor", onlyDigits(event.target.value))
-                    }
-                    className={inputClass()}
-                    placeholder="Valor"
-                  />
-                  <span className="text-xs text-slate-500">
-                    {moneyLabel(form.medioPago1Valor)}
-                  </span>
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Medio de pago 2
-                  <select
-                    value={form.medioPago2Tipo}
-                    onChange={(event) =>
-                      setField("medioPago2Tipo", event.target.value)
-                    }
-                    className={inputClass()}
-                  >
-                    <option value="">Sin segundo pago</option>
-                    {MEDIOS_PAGO.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Valor pago 2
-                  <input
-                    value={form.medioPago2Valor}
-                    onChange={(event) =>
-                      setField("medioPago2Valor", onlyDigits(event.target.value))
-                    }
-                    className={inputClass()}
-                    placeholder="Valor"
-                  />
-                  <span className="text-xs text-slate-500">
-                    {moneyLabel(form.medioPago2Valor)}
-                  </span>
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Asesor
-                  <input
-                    value={form.asesorNombre}
-                    readOnly
-                    className={inputClass(true)}
-                  />
+                  <input value={form.asesorNombre} readOnly className={inputClass(true)} />
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Cerrador
-                  <input
-                    value={form.cerradorNombre}
-                    onChange={(event) => setField("cerradorNombre", event.target.value)}
-                    className={inputClass()}
-                    placeholder="Cerrador"
+                {jaladores.length > 0 ? (
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    Jalador
+                    <select
+                      value={form.jaladorNombre}
+                      onChange={(event) => setField("jaladorNombre", event.target.value)}
+                      className={inputClass()}
+                    >
+                      <option value="">Selecciona un jalador</option>
+                      {jaladores.map((item) => (
+                        <option key={item.id} value={item.nombre}>
+                          {item.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    Jalador
+                    <input
+                      value={form.jaladorNombre}
+                      onChange={(event) => setField("jaladorNombre", event.target.value)}
+                      className={inputClass()}
+                      placeholder="Nombre del jalador"
+                    />
+                  </label>
+                )}
+
+                <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Observacion
+                  <textarea
+                    value={form.observacion}
+                    onChange={(event) => setField("observacion", event.target.value)}
+                    className={`${inputClass()} min-h-28 resize-y`}
+                    placeholder="Comentarios adicionales del tramite"
                   />
                 </label>
-              </div>
-
-              <label className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                <input
-                  type="checkbox"
-                  checked={form.confirmacionCliente}
-                  onChange={(event) =>
-                    setField("confirmacionCliente", event.target.checked)
-                  }
-                  className="mt-1 h-4 w-4"
-                />
-                <span>
-                  Confirmo que el cliente valida digitalmente la informacion del
-                  formato y acepta su registro.
-                </span>
-              </label>
-
-              <div className="mt-6 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => void guardarRegistro()}
-                  disabled={guardando}
-                  className="rounded-2xl bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
-                >
-                  {guardando ? "Guardando..." : "Guardar registro"}
-                </button>
               </div>
             </section>
           </div>
 
-          <aside className="space-y-5">
+          <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Sesion
+                Resumen del registro
               </div>
-              <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-                {session.nombre}
-              </h2>
-              <div className="mt-5 space-y-3">
+
+              <div className="mt-5 space-y-3 text-sm text-slate-700">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    Perfil
-                  </p>
-                  <p className="mt-2 text-sm font-bold text-slate-900">
-                    {session.perfilTipoLabel}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
                     Punto de venta
-                  </p>
-                  <p className="mt-2 text-sm font-bold text-slate-900">
-                    {session.sedeNombre}
-                  </p>
+                  </span>
+                  <span className="mt-1 block font-semibold text-slate-900">
+                    {form.puntoVenta || "Sin seleccionar"}
+                  </span>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Cliente
+                  </span>
+                  <span className="mt-1 block font-semibold text-slate-900">
+                    {form.clienteNombre || "Pendiente"}
+                  </span>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
+                    IMEI
+                  </span>
+                  <span className="mt-1 block font-semibold text-slate-900">
+                    {form.serialImei || "Pendiente"}
+                  </span>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Jalador
+                  </span>
+                  <span className="mt-1 block font-semibold text-slate-900">
+                    {form.jaladorNombre || "Pendiente"}
+                  </span>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Financieras cargadas
+                  </span>
+                  <span className="mt-1 block font-semibold text-slate-900">
+                    {
+                      form.financierasDetalle.filter((item) => hasFinancialData(item))
+                        .length
+                    }{" "}
+                    / {MAX_FINANCIERAS_REGISTRO}
+                  </span>
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => void guardarRegistro()}
+                disabled={guardando || cargando}
+                className="mt-6 w-full rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {guardando ? "Guardando..." : "Guardar registro digital"}
+              </button>
             </section>
 
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-              <div className="flex items-center justify-between gap-3">
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Registros recientes
-                </div>
-                <span className="text-sm font-semibold text-slate-500">
-                  {cargando ? "..." : registros.length}
-                </span>
+              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                Registros recientes
               </div>
 
               <div className="mt-5 space-y-3">
-                {cargando ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                {cargando && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                     Cargando registros...
                   </div>
-                ) : registros.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                    Aun no hay registros guardados en este modulo.
+                )}
+
+                {!cargando && registros.length === 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                    Aun no hay registros guardados.
                   </div>
-                ) : (
-                  registros.map((registro) => (
-                    <article
-                      key={registro.id}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-bold text-slate-950">
-                            {registro.clienteNombre}
-                          </p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.14em] text-emerald-700">
-                            {registro.plataformaCredito}
-                          </p>
-                        </div>
-                        <span className="text-xs text-slate-400">
-                          #{registro.id}
-                        </span>
+                )}
+
+                {registros.map((registro) => (
+                  <article
+                    key={registro.id}
+                    className="rounded-[26px] border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">
+                          {registro.clienteNombre}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {registro.puntoVenta || "Sin punto"} | {registro.plataformaCredito}
+                        </p>
                       </div>
 
-                      <div className="mt-3 grid gap-2 text-sm text-slate-600">
-                        <p>
-                          Equipo: {registro.referenciaEquipo || "Sin referencia"}
-                        </p>
-                        <p>IMEI: {registro.serialImei || "Sin dato"}</p>
-                        <p>
-                          Credito:{" "}
-                          {registro.creditoAutorizado != null
-                            ? `$ ${Number(registro.creditoAutorizado).toLocaleString("es-CO")}`
-                            : "Sin valor"}
-                        </p>
-                        <p>
-                          Cuota:{" "}
-                          {registro.valorCuota != null
-                            ? `$ ${Number(registro.valorCuota).toLocaleString("es-CO")}`
-                            : "Sin valor"}{" "}
-                          / {registro.numeroCuotas ?? 0} cuotas
-                        </p>
-                        <p>Creado: {formatDate(registro.createdAt)}</p>
-                      </div>
-                    </article>
-                  ))
-                )}
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        #{registro.id}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-2 text-xs text-slate-600">
+                      <span>IMEI: {registro.serialImei || "Sin IMEI"}</span>
+                      <span>Referencia: {registro.referenciaEquipo || "Sin referencia"}</span>
+                      <span>Jalador: {registro.jaladorNombre || "Sin jalador"}</span>
+                      <span>
+                        Credito: {formatMoney(registro.creditoAutorizado)} | Inicial:{" "}
+                        {formatMoney(registro.cuotaInicial)}
+                      </span>
+                      <span>
+                        Cuota: {formatMoney(registro.valorCuota)} | Plazo:{" "}
+                        {registro.numeroCuotas || 0}
+                      </span>
+                      <span>Financieras: {registro.totalFinancieras || 1}</span>
+                      <span>{formatDate(registro.createdAt)}</span>
+                    </div>
+                  </article>
+                ))}
               </div>
             </section>
           </aside>
