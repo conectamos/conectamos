@@ -16,7 +16,7 @@ export default async function VendedorRegistrosPage() {
               </div>
 
               <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Registros tipo venta
+                REGISTRAR VENTA
               </h1>
 
               <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
@@ -55,7 +55,7 @@ export default async function VendedorRegistrosPage() {
                 Proximo bloque
               </p>
               <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Nuevo registro tipo venta
+                REGISTRAR VENTA
               </h3>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 Deje este modulo listo para conectarle el formulario cuando

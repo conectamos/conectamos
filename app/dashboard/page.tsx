@@ -503,13 +503,13 @@ export default async function DashboardPage() {
             accent: "bg-emerald-500",
             badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
             eyebrow: "Vendedor / Registros",
-            title: "Registros tipo venta",
+            title: "REGISTRAR VENTA",
             description:
               "Modulo exclusivo del vendedor para cargar sus registros sin acceso a inventario, caja, prestamos ni reportes existentes.",
             actions: [
               {
                 href: "/vendedor/registros",
-                label: "Abrir modulo vendedor",
+                label: "REGISTRAR VENTA",
                 tone: "primary",
               },
             ],
@@ -672,7 +672,7 @@ export default async function DashboardPage() {
                 Conectamos
               </p>
               <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
-                Dashboard
+                {esVendedor ? "CONECTAMOS" : "Dashboard"}
               </h1>
               <div className="mt-3 h-[3px] w-12 rounded-full bg-[#c79a57]" />
               <p className="mt-3 text-sm leading-6 text-slate-600">
@@ -725,7 +725,7 @@ export default async function DashboardPage() {
                 Conectamos
               </p>
               <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
-                Dashboard
+                {esVendedor ? "CONECTAMOS" : "Dashboard"}
               </h1>
               <p className="mt-3 text-sm leading-6 text-slate-600">{saludo}</p>
 
@@ -764,7 +764,7 @@ export default async function DashboardPage() {
                 </div>
 
                 <h2 className="mt-4 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
-                  Dashboard
+                  {esVendedor ? "CONECTAMOS" : "Dashboard"}
                 </h2>
 
                 <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
@@ -818,21 +818,7 @@ export default async function DashboardPage() {
                 }
               />
             </section>
-          ) : esVendedor ? (
-            <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf7f0_100%)] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-              <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                Acceso aislado
-              </div>
-              <h3 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-                Perfil vendedor con modulo exclusivo
-              </h3>
-              <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-                Este perfil no ve inventario, caja, prestamos, reportes ni los
-                demas modulos que ya existen. Su trabajo queda concentrado solo en
-                la tarjeta de registros tipo venta.
-              </p>
-            </section>
-          ) : (
+          ) : esVendedor ? null : (
             <div className="mt-6">
               <DashboardUtilityGate coverageLabel={sedeLabel} />
             </div>
