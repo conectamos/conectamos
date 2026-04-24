@@ -12,6 +12,7 @@ type FortySixtyRow = {
   deviceTag: string;
   loanAgeDays: number | null;
   numberOfPayments: number | null;
+  loanRepaymentBiweek: number | null;
   cedula: string;
   status: FortySixtyStatus;
   pay40At60: 0 | 1 | null;
@@ -619,7 +620,8 @@ export default function PayJoyFortySixtyWorkspace() {
               <span className="font-semibold">MERCHANTNAME</span>,{" "}
               <span className="font-semibold">DEVICE_TAG</span>,{" "}
               <span className="font-semibold">LOAN_AGE_DAYS</span>,{" "}
-              <span className="font-semibold">NUMBER_OF_PAYMENTS</span> y{" "}
+              <span className="font-semibold">NUMBER_OF_PAYMENTS</span>,{" "}
+              <span className="font-semibold">LOAN_REPAYMENT_BIWEEK</span> y{" "}
               <span className="font-semibold">PAY_40_AT_60</span>.
             </p>
 
@@ -1132,7 +1134,7 @@ export default function PayJoyFortySixtyWorkspace() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="min-w-[1220px] w-full border-collapse">
+                <table className="min-w-[1380px] w-full border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       <th className="px-4 py-4">Week</th>
@@ -1140,6 +1142,7 @@ export default function PayJoyFortySixtyWorkspace() {
                       <th className="px-4 py-4">Device tag</th>
                       <th className="px-4 py-4">Loan age days</th>
                       <th className="px-4 py-4">Number of payments</th>
+                      <th className="px-4 py-4">LOAN_REPAYMENT_BIWEEK</th>
                       <th className="px-4 py-4">Cedula</th>
                       <th className="px-4 py-4">40/60</th>
                     </tr>
@@ -1148,7 +1151,7 @@ export default function PayJoyFortySixtyWorkspace() {
                     {visibleRows.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={8}
                           className="px-4 py-10 text-center text-sm text-slate-500"
                         >
                           No se encontraron registros para este filtro.
@@ -1177,6 +1180,9 @@ export default function PayJoyFortySixtyWorkspace() {
                           </td>
                           <td className="px-4 py-4 text-sm font-medium text-slate-700">
                             {formatNumber(row.numberOfPayments)}
+                          </td>
+                          <td className="px-4 py-4 text-sm font-medium text-slate-700">
+                            {formatNumber(row.loanRepaymentBiweek)}
                           </td>
                           <td className="px-4 py-4">
                             <input

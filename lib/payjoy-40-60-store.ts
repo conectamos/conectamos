@@ -9,6 +9,7 @@ export type FortySixtyStoredRow = {
   deviceTag: string;
   loanAgeDays: number | null;
   numberOfPayments: number | null;
+  loanRepaymentBiweek: number | null;
   cedula: string;
   status: FortySixtyStoredStatus;
   pay40At60: 0 | 1 | null;
@@ -155,6 +156,12 @@ function normalizeStoredRow(row: unknown): FortySixtyStoredRow | null {
       candidate.numberOfPayments === ""
         ? null
         : toNumber(candidate.numberOfPayments, Number.NaN),
+    loanRepaymentBiweek:
+      candidate.loanRepaymentBiweek === null ||
+      candidate.loanRepaymentBiweek === undefined ||
+      candidate.loanRepaymentBiweek === ""
+        ? null
+        : toNumber(candidate.loanRepaymentBiweek, Number.NaN),
     cedula: normalizeText(candidate.cedula),
     status: status as FortySixtyStoredStatus,
     pay40At60:

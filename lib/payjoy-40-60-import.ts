@@ -29,6 +29,14 @@ const HEADER_ALIASES = {
     "numberofpayments",
     "payments",
   ],
+  loanRepaymentBiweek: [
+    "loan_repayment_biweek",
+    "loan repayment biweek",
+    "loanrepaymentbiweek",
+    "loan_repayment_biweekly",
+    "loan repayment biweekly",
+    "loanrepaymentbiweekly",
+  ],
   pay40At60: [
     "pay_40_at_60",
     "pay 40 at 60",
@@ -47,6 +55,7 @@ export type PayJoyFortySixtyImportRow = {
   deviceTag: string;
   loanAgeDays: number | null;
   numberOfPayments: number | null;
+  loanRepaymentBiweek: number | null;
   pay40At60: 0 | 1 | null;
 };
 
@@ -225,6 +234,9 @@ export function parsePayJoyFortySixtyWorkbook(
       deviceTag: normalizeText(row[columnIndexes.deviceTag]).toUpperCase(),
       loanAgeDays: parseNumber(row[columnIndexes.loanAgeDays]),
       numberOfPayments: parseNumber(row[columnIndexes.numberOfPayments]),
+      loanRepaymentBiweek: parseNumber(
+        row[columnIndexes.loanRepaymentBiweek]
+      ),
       pay40At60: parseBinaryFlag(row[columnIndexes.pay40At60]),
     });
   }

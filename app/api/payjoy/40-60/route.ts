@@ -220,6 +220,7 @@ export async function POST(req: Request) {
         deviceTag,
         loanAgeDays: row.loanAgeDays,
         numberOfPayments: row.numberOfPayments,
+        loanRepaymentBiweek: row.loanRepaymentBiweek,
         cedula: nationalIdsByDevice.get(deviceTag) || "",
         status,
         pay40At60: row.pay40At60,

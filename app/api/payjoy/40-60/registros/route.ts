@@ -73,6 +73,12 @@ function normalizeStoredRow(value: unknown): FortySixtyStoredRow | null {
       candidate.numberOfPayments === ""
         ? null
         : Number(candidate.numberOfPayments),
+    loanRepaymentBiweek:
+      candidate.loanRepaymentBiweek === null ||
+      candidate.loanRepaymentBiweek === undefined ||
+      candidate.loanRepaymentBiweek === ""
+        ? null
+        : Number(candidate.loanRepaymentBiweek),
     cedula: normalizeText(candidate.cedula),
     status: status as FortySixtyStoredRow["status"],
     pay40At60: pay40At60 === 1 ? 1 : pay40At60 === 0 ? 0 : null,
