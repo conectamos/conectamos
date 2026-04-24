@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EqualityQuerySnapshot } from "@/lib/equality";
 
 type EqualityActionStep = {
@@ -42,6 +42,29 @@ function validationClass(tone: EqualityQuerySnapshot["validation"]["tone"]) {
     default:
       return "border-slate-200 bg-slate-50 text-slate-800";
   }
+}
+
+function feedbackClass(message: string) {
+  const marker = message.toLowerCase();
+
+  if (
+    marker.includes("error") ||
+    marker.includes("no fue posible") ||
+    marker.includes("no se recibio") ||
+    marker.includes("no encontrado")
+  ) {
+    return "border-red-200 bg-red-50 text-red-800";
+  }
+
+  if (
+    marker.includes("correctamente") ||
+    marker.includes("completada") ||
+    marker.includes("apto")
+  ) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
 function stepClass(ok: boolean) {
@@ -139,7 +162,6 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
             : "Consulta realizada correctamente."
         );
         setMensajeOperacion("");
-
         moveToResult();
       } catch {
         setMensaje("Error consultando Equality Zero Touch.");
@@ -193,8 +215,8 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
         if (!res.ok || data.ok === false) {
           const nextMessage =
             data.error ||
-              data.message ||
-              "Equality devolvio una respuesta para revisar.";
+            data.message ||
+            "Equality devolvio una respuesta para revisar.";
           setMensaje(nextMessage);
           setMensajeOperacion(nextMessage);
           moveToResult();
@@ -212,7 +234,7 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
         setCargando(null);
       }
     },
-    [moveToResult, search, syncUrl]
+    [moveToResult, resultado?.deviceUid, search, syncUrl]
   );
 
   useEffect(() => {
@@ -254,43 +276,77 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
     label: string;
     detail: string;
     tone: string;
+    buttonTone: string;
+    adminOnly?: boolean;
   }> = [
     {
       action: "enroll",
       label: "Inscribir",
-      detail: "Hace carga y activacion del equipo con los valores base del hub.",
-      tone: "border-amber-200 bg-amber-50 text-amber-800",
+      detail: "Carga y activa el equipo en el hub.",
+      tone: "border-amber-200 bg-amber-50/80 text-amber-900",
+      buttonTone: "border-amber-300 bg-white text-amber-900 hover:bg-amber-100",
     },
     {
       action: "lock",
       label: "Bloquear",
-      detail: "Envia bloqueo remoto con el mensaje base configurado.",
-      tone: "border-red-200 bg-red-50 text-red-800",
+      detail: "Aplica bloqueo remoto sobre el equipo.",
+      tone: "border-red-200 bg-red-50/80 text-red-900",
+      buttonTone: "border-red-300 bg-white text-red-900 hover:bg-red-100",
     },
     {
       action: "unlock",
       label: "Desbloquear",
-      detail: "Retira el bloqueo operativo del equipo.",
-      tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      detail: "Retira el bloqueo operativo.",
+      tone: "border-emerald-200 bg-emerald-50/80 text-emerald-900",
+      buttonTone:
+        "border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100",
     },
     ...(esAdmin
       ? [
           {
             action: "release" as MutationIntent,
             label: "Liberar",
-            detail: "Operacion exclusiva de administrador para liberar el equipo.",
-            tone: "border-violet-200 bg-violet-50 text-violet-800",
+            detail: "Libera el equipo de forma definitiva.",
+            tone: "border-violet-200 bg-violet-50/80 text-violet-900",
+            buttonTone:
+              "border-violet-300 bg-white text-violet-900 hover:bg-violet-100",
+            adminOnly: true,
           },
         ]
       : []),
   ];
 
+  const activeDeviceUid = normalizeDeviceUid(resultado?.deviceUid || search);
+  const feedback = mensajeOperacion || mensaje;
+
+  const statusCards = useMemo(
+    () => [
+      {
+        label: "DeviceUid",
+        value: resultado?.deviceUid || "-",
+      },
+      {
+        label: "Status code",
+        value: formatStatusCode(resultado?.statusCode ?? null),
+      },
+      {
+        label: "Result code",
+        value: formatResultCode(resultado?.resultCode ?? null),
+      },
+      {
+        label: "Bloqueo",
+        value: resultado?.locked ? "Si" : "No",
+      },
+    ],
+    [resultado]
+  );
+
   return (
-    <div className="min-h-screen bg-[#f5f6fa] px-4 py-8">
-      <div className="mx-auto max-w-6xl">
-        <section className="overflow-hidden rounded-[32px] border border-[#20242d] bg-[linear-gradient(135deg,#13161c_0%,#1a1f28_100%)] px-6 py-7 text-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:px-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-2xl">
+    <div className="min-h-screen bg-[#f5f6fa] px-4 py-6 sm:px-5">
+      <div className="mx-auto max-w-[1480px] space-y-6">
+        <section className="overflow-hidden rounded-[30px] border border-[#20242d] bg-[linear-gradient(135deg,#13161c_0%,#181d26_55%,#202734_100%)] px-6 py-6 text-white shadow-[0_22px_60px_rgba(15,23,42,0.16)] sm:px-8">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="max-w-3xl">
               <div className="flex flex-wrap gap-2">
                 <span className="rounded-full border border-[#b98746]/40 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#f3d7a8]">
                   Equality Zero Touch
@@ -300,15 +356,13 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
                 </span>
               </div>
 
-              <h1 className="mt-5 text-4xl font-black tracking-tight sm:text-[3.35rem]">
+              <h1 className="mt-4 text-4xl font-black tracking-tight sm:text-[3.1rem]">
                 HBM Equality
               </h1>
 
-              <div className="mt-4 h-[3px] w-16 rounded-full bg-[#c79a57]" />
-
-              <p className="mt-5 text-sm leading-7 text-slate-300 sm:text-base">
-                Consulta el equipo por IMEI o deviceUid, valida si se puede
-                entregar y ejecuta acciones del hub desde el mismo panel.
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
+                Panel operativo para consultar, validar y ejecutar acciones
+                directas del hub sobre un equipo.
               </p>
             </div>
 
@@ -323,32 +377,23 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
           </div>
         </section>
 
-        {mensaje ? (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
-            {mensaje}
-          </div>
-        ) : null}
+        <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="grid items-start gap-5 2xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+            <div>
+              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                Control
+              </div>
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Consulta
-            </div>
+              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+                Consultar equipo
+              </h2>
 
-            <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-              Consultar equipo
-            </h2>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                Escribe el IMEI o deviceUid del equipo y luego consulta o valida
+                el estado.
+              </p>
 
-            <p className="mt-3 text-sm leading-7 text-slate-600">
-              Usa el IMEI o el deviceUid del equipo para revisar el estado real
-              en Equality y validar si se puede entregar.
-            </p>
-
-            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_auto]">
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  IMEI / deviceUid
-                </label>
+              <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-center">
                 <input
                   ref={inputRef}
                   id="equality-deviceuid"
@@ -356,267 +401,271 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Ejemplo: 351389360876777"
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                  className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
                 />
-              </div>
 
-              <div className="flex flex-wrap items-end gap-3">
-                <button
-                  onClick={() => void consultar("consult")}
-                  disabled={cargando !== null}
-                  className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {cargando === "consult" ? "Consultando..." : "Consultar"}
-                </button>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => void consultar("consult")}
+                    disabled={cargando !== null}
+                    className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {cargando === "consult" ? "Consultando..." : "Consultar"}
+                  </button>
 
-                <button
-                  onClick={() => void consultar("validate")}
-                  disabled={cargando !== null}
-                  className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {cargando === "validate"
-                    ? "Validando..."
-                    : "Validar estado"}
-                </button>
+                  <button
+                    onClick={() => void consultar("validate")}
+                    disabled={cargando !== null}
+                    className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {cargando === "validate"
+                      ? "Validando..."
+                      : "Validar estado"}
+                  </button>
+                </div>
               </div>
             </div>
 
-            {configured === false ? (
-              <div className="mt-5 rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-800">
-                No fue posible cargar credenciales para Equality Zero Touch.
-              </div>
-            ) : (
-              <div className="mt-5 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
-                El panel ya usa la credencial del hub y puede operar directamente
-                sobre Equality.
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Operaciones
-            </div>
-
-            <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-              Acciones disponibles
-            </h2>
-
-            <div className="mt-5 space-y-3">
-              {actionButtons.map((item) => (
-                <div
-                  key={item.action}
-                  className={[
-                    "rounded-2xl border px-4 py-4",
-                    item.tone,
-                  ].join(" ")}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-black tracking-tight">
-                      {item.label}
-                    </p>
-                    <button
-                      onClick={() => void ejecutarAccion(item.action)}
-                      disabled={cargando !== null}
-                      className="rounded-full border border-current/20 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {cargando === item.action ? "Procesando..." : item.label}
-                    </button>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 opacity-90">
-                    {item.detail}
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50/90 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Operaciones
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {activeDeviceUid
+                      ? `Equipo activo: ${activeDeviceUid}`
+                      : "Las acciones usan el IMEI o deviceUid escrito en el campo superior."}
                   </p>
                 </div>
-              ))}
-            </div>
 
-            {mensajeOperacion ? (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                {mensajeOperacion}
+                {configured === false ? (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-800">
+                    Revisar credencial
+                  </span>
+                ) : null}
               </div>
-            ) : (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                Estas acciones usan el IMEI o deviceUid escrito en el campo de
-                consulta.
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {actionButtons.map((item) => (
+                  <button
+                    key={item.action}
+                    onClick={() => void ejecutarAccion(item.action)}
+                    disabled={cargando !== null}
+                    className={[
+                      "rounded-[20px] border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
+                      item.tone,
+                    ].join(" ")}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-black tracking-tight">
+                        {item.label}
+                      </span>
+                      {item.adminOnly ? (
+                        <span className="rounded-full border border-current/20 bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
+                          Admin
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 text-sm leading-6 opacity-90">
+                      {item.detail}
+                    </p>
+                    <span
+                      className={[
+                        "mt-4 inline-flex rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition",
+                        item.buttonTone,
+                      ].join(" ")}
+                    >
+                      {cargando === item.action ? "Procesando..." : item.label}
+                    </span>
+                  </button>
+                ))}
               </div>
-            )}
+            </div>
+          </div>
+
+          <div
+            className={[
+              "mt-5 rounded-2xl border px-4 py-3 text-sm shadow-sm",
+              feedback
+                ? feedbackClass(feedback)
+                : "border-dashed border-slate-300 bg-slate-50 text-slate-500",
+            ].join(" ")}
+          >
+            {feedback ||
+              "Consulta un equipo para ver su estado y ejecutar acciones sobre el deviceUid actual."}
           </div>
         </section>
 
-        {resultado ? (
+        {!resultado ? (
+          <section className="rounded-[30px] border border-dashed border-slate-300 bg-white px-6 py-10 text-center shadow-sm">
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Sin resultado
+            </p>
+            <p className="mt-3 text-lg font-bold text-slate-900">
+              Consulta un equipo para ver el estado de entrega y la respuesta del
+              hub.
+            </p>
+          </section>
+        ) : (
           <section
             ref={resultadoRef}
-            className="mt-6 rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7"
+            className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_360px] xl:items-start"
           >
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Resultado
-                </div>
+            <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="max-w-2xl">
+                  <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                    Resultado
+                  </div>
 
-                <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-                  Validacion del equipo
-                </h2>
-              </div>
+                  <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+                    Equipo {resultado.deviceUid}
+                  </h2>
 
-              <div
-                className={[
-                  "rounded-[24px] border px-4 py-4 text-sm shadow-sm lg:max-w-md",
-                  validationClass(resultado.validation.tone),
-                ].join(" ")}
-              >
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                  Estado de entrega
-                </p>
-                <p className="mt-2 text-2xl font-black tracking-tight">
-                  {resultado.validation.label}
-                </p>
-                <p className="mt-2 leading-6">{resultado.validation.detail}</p>
-              </div>
-            </div>
-
-            <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  DeviceUid consultado
-                </p>
-                <p className="mt-2 text-base font-black text-slate-950">
-                  {resultado.deviceUid}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Status code
-                </p>
-                <p className="mt-2 text-base font-black text-slate-950">
-                  {formatStatusCode(resultado.statusCode)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Result code
-                </p>
-                <p className="mt-2 text-base font-black text-slate-950">
-                  {formatResultCode(resultado.resultCode)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Bloqueo detectado
-                </p>
-                <p className="mt-2 text-base font-black text-slate-950">
-                  {resultado.locked ? "Si" : "No"}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 md:col-span-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Mensaje del hub
-                </p>
-                <p className="mt-2 text-base font-bold text-slate-950">
-                  {resultado.resultMessage || "-"}
-                </p>
-              </div>
-            </div>
-
-            {ultimaAccion && pasos.length ? (
-              <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Ultima accion
+                  <p className="mt-2 text-sm leading-7 text-slate-600">
+                    {resultado.resultMessage ||
+                      "Respuesta recibida correctamente desde HBM Equality."}
                   </p>
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-700">
-                    {ultimaAccion}
-                  </span>
                 </div>
 
-                <div className="mt-4 grid gap-3 xl:grid-cols-2">
-                  {pasos.map((step) => (
-                    <div
-                      key={`${ultimaAccion}-${step.serviceCode}`}
-                      className={[
-                        "rounded-2xl border px-4 py-4",
-                        stepClass(step.ok),
-                      ].join(" ")}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-black tracking-tight">
-                          {step.serviceCode}
-                        </p>
-                        <span className="rounded-full border border-current/20 bg-white/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
-                          {step.ok ? "OK" : "Revisar"}
+                <div
+                  className={[
+                    "rounded-[24px] border px-4 py-4 text-sm shadow-sm lg:max-w-sm",
+                    validationClass(resultado.validation.tone),
+                  ].join(" ")}
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
+                    Estado de entrega
+                  </p>
+                  <p className="mt-2 text-2xl font-black tracking-tight">
+                    {resultado.validation.label}
+                  </p>
+                  <p className="mt-2 leading-6">
+                    {resultado.validation.detail}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {statusCards.map((card) => (
+                  <div
+                    key={card.label}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      {card.label}
+                    </p>
+                    <p className="mt-2 text-lg font-black text-slate-950">
+                      {card.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Estados detectados
+                  </p>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {resultado.statuses.length ? (
+                      resultado.statuses.map((status) => (
+                        <span
+                          key={status}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                        >
+                          {status}
                         </span>
-                      </div>
-                      <p className="mt-2 text-sm leading-6">
-                        {step.resultMessage || "-"}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="mt-5 grid gap-5 xl:grid-cols-2">
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Estados detectados
-                </p>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {resultado.statuses.length ? (
-                    resultado.statuses.map((status) => (
-                      <span
-                        key={status}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
-                      >
-                        {status}
+                      ))
+                    ) : (
+                      <span className="text-sm text-slate-500">
+                        No se detectaron estados claros en la respuesta.
                       </span>
-                    ))
-                  ) : (
-                    <span className="text-sm text-slate-500">
-                      No se detectaron estados claros en la respuesta.
-                    </span>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Identificadores detectados
-                </p>
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Identificadores detectados
+                  </p>
 
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {resultado.identifiers.length ? (
-                    resultado.identifiers.map((identifier) => (
-                      <span
-                        key={identifier}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
-                      >
-                        {identifier}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {resultado.identifiers.length ? (
+                      resultado.identifiers.map((identifier) => (
+                        <span
+                          key={identifier}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                        >
+                          {identifier}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-sm text-slate-500">
+                        No llegaron identificadores adicionales en la respuesta.
                       </span>
-                    ))
-                  ) : (
-                    <span className="text-sm text-slate-500">
-                      No llegaron identificadores adicionales en la respuesta.
-                    </span>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <details className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-              <summary className="cursor-pointer text-sm font-semibold text-slate-700">
-                Ver respuesta tecnica
-              </summary>
-              <pre className="mt-4 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">
-                {JSON.stringify(resultado.raw, null, 2)}
-              </pre>
-            </details>
+            <div className="space-y-4">
+              {ultimaAccion && pasos.length ? (
+                <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Ultima accion
+                      </p>
+                      <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
+                        {ultimaAccion}
+                      </h3>
+                    </div>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-700">
+                      {pasos.length} paso{pasos.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {pasos.map((step) => (
+                      <div
+                        key={`${ultimaAccion}-${step.serviceCode}`}
+                        className={[
+                          "rounded-2xl border px-4 py-4",
+                          stepClass(step.ok),
+                        ].join(" ")}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-black tracking-tight">
+                            {step.serviceCode}
+                          </p>
+                          <span className="rounded-full border border-current/20 bg-white/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
+                            {step.ok ? "OK" : "Revisar"}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm leading-6">
+                          {step.resultMessage || "-"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <details className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+                  Ver respuesta tecnica
+                </summary>
+                <pre className="mt-4 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">
+                  {JSON.stringify(resultado.raw, null, 2)}
+                </pre>
+              </details>
+            </div>
           </section>
-        ) : null}
+        )}
       </div>
     </div>
   );
