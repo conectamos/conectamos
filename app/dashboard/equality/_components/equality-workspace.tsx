@@ -63,11 +63,13 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [resultado, setResultado] = useState<EqualityQuerySnapshot | null>(null);
   const [mensaje, setMensaje] = useState("");
+  const [mensajeOperacion, setMensajeOperacion] = useState("");
   const [cargando, setCargando] = useState<ActionIntent | null>(null);
   const [ultimaAccion, setUltimaAccion] = useState<MutationIntent | null>(null);
   const [pasos, setPasos] = useState<EqualityActionStep[]>([]);
   const resultadoRef = useRef<HTMLDivElement | null>(null);
   const bootstrappedRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const syncUrl = useCallback((deviceUid: string) => {
     const normalized = normalizeDeviceUid(deviceUid);
@@ -93,12 +95,15 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
 
       if (!deviceUid) {
         setMensaje("Debes ingresar el IMEI o deviceUid del equipo.");
+        setMensajeOperacion("Primero escribe o consulta un IMEI / deviceUid.");
+        inputRef.current?.focus();
         return;
       }
 
       try {
         setCargando(intent);
         setMensaje("");
+        setMensajeOperacion("");
         setUltimaAccion(null);
         setPasos([]);
 
@@ -133,10 +138,12 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
             ? `Validacion completada: ${data.result.validation.label}.`
             : "Consulta realizada correctamente."
         );
+        setMensajeOperacion("");
 
         moveToResult();
       } catch {
         setMensaje("Error consultando Equality Zero Touch.");
+        setMensajeOperacion("No fue posible consultar el equipo.");
       } finally {
         setCargando(null);
       }
@@ -146,16 +153,19 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
 
   const ejecutarAccion = useCallback(
     async (intent: MutationIntent) => {
-      const deviceUid = normalizeDeviceUid(search);
+      const deviceUid = normalizeDeviceUid(resultado?.deviceUid || search);
 
       if (!deviceUid) {
         setMensaje("Debes ingresar el IMEI o deviceUid del equipo.");
+        setMensajeOperacion("Primero escribe o consulta un IMEI / deviceUid.");
+        inputRef.current?.focus();
         return;
       }
 
       try {
         setCargando(intent);
         setMensaje("");
+        setMensajeOperacion("");
 
         const res = await fetch("/api/equality", {
           method: "POST",
@@ -181,19 +191,23 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
         }
 
         if (!res.ok || data.ok === false) {
-          setMensaje(
+          const nextMessage =
             data.error ||
               data.message ||
-              "Equality devolvio una respuesta para revisar."
-          );
+              "Equality devolvio una respuesta para revisar.";
+          setMensaje(nextMessage);
+          setMensajeOperacion(nextMessage);
           moveToResult();
           return;
         }
 
-        setMensaje(data.message || "Accion ejecutada correctamente.");
+        const nextMessage = data.message || "Accion ejecutada correctamente.";
+        setMensaje(nextMessage);
+        setMensajeOperacion(nextMessage);
         moveToResult();
       } catch {
         setMensaje("Error ejecutando accion en Equality Zero Touch.");
+        setMensajeOperacion("No fue posible ejecutar la accion.");
       } finally {
         setCargando(null);
       }
@@ -336,6 +350,8 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
                   IMEI / deviceUid
                 </label>
                 <input
+                  ref={inputRef}
+                  id="equality-deviceuid"
                   type="text"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
@@ -401,7 +417,7 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
                     </p>
                     <button
                       onClick={() => void ejecutarAccion(item.action)}
-                      disabled={cargando !== null || !normalizeDeviceUid(search)}
+                      disabled={cargando !== null}
                       className="rounded-full border border-current/20 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {cargando === item.action ? "Procesando..." : item.label}
@@ -413,6 +429,17 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
                 </div>
               ))}
             </div>
+
+            {mensajeOperacion ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                {mensajeOperacion}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                Estas acciones usan el IMEI o deviceUid escrito en el campo de
+                consulta.
+              </div>
+            )}
           </div>
         </section>
 
