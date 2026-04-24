@@ -276,13 +276,13 @@ function buildValidationSummary(input: {
   const statusMarkers = input.statuses.map((status) => normalizeMarker(status));
 
   const hasDeliverableStatus = statusMarkers.some((marker) =>
-    ["readyforuse", "configured", "provisioned", "applied"].some(
+    ["readyforuse", "configured", "provisioned", "applied", "active"].some(
       (candidate) => marker.includes(candidate)
     )
   );
 
   const hasPendingSetupStatus = statusMarkers.some((marker) =>
-    ["idle", "enrolled", "active", "unlock", "unlocked"].some((candidate) =>
+    ["idle", "enrolled", "unlock", "unlocked"].some((candidate) =>
       marker.includes(candidate)
     )
   );
