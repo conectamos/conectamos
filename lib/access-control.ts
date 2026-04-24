@@ -18,6 +18,10 @@ export function esPerfilSupervisor(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "SUPERVISOR_TIENDA";
 }
 
+export function esPerfilFacturador(perfilTipo: unknown) {
+  return normalizarPerfilTipo(perfilTipo) === "FACTURADOR";
+}
+
 export function esPerfilVendedor(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "VENDEDOR";
 }

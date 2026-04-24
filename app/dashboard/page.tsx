@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
 import {
+  esPerfilFacturador,
   esPerfilSupervisor,
   esPerfilVendedor,
   esRolAdmin,
@@ -391,11 +392,12 @@ export default async function DashboardPage() {
   }
 
   const esAdmin = esRolAdmin(session.rolNombre);
+  const esFacturador = esPerfilFacturador(session.perfilTipo);
   const esVendedor = esPerfilVendedor(session.perfilTipo);
   const esSupervisor =
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
-  const puedeVerEquality = !esVendedor && (esAdmin || esSupervisor);
+  const puedeVerEquality = !esVendedor && !esFacturador && (esAdmin || esSupervisor);
   const nombreUsuario = session.nombre ?? "Usuario";
   const rolUsuario = session.perfilTipoLabel ?? session.rolNombre ?? "USUARIO";
   const sedeLabel = esAdmin
@@ -403,12 +405,14 @@ export default async function DashboardPage() {
     : session.sedeNombre ?? "SIN SEDE";
   const saludo = esVendedor
     ? `Bienvenido, ${nombreUsuario}. Solo tienes acceso al modulo exclusivo de registros tipo venta.`
-    : esAdmin
+    : esFacturador
+      ? `Bienvenido, ${nombreUsuario}. Aqui puedes revisar los registros guardados y completar el numero de factura.`
+      : esAdmin
       ? `Bienvenido, ${nombreUsuario}. Vista general del sistema.`
       : `Bienvenido, ${nombreUsuario}. Vista operativa de ${sedeLabel}.`;
   const mesActual = getCurrentBogotaMonthRange();
 
-  const resumenComercialMensual = esVendedor
+  const resumenComercialMensual = esVendedor || esFacturador
     ? null
     : await getMonthlyCommercialSummary({
         sedeId: esAdmin ? null : session.sedeId ?? null,
@@ -422,6 +426,11 @@ export default async function DashboardPage() {
           { href: "/dashboard", label: "Panel vendedor" },
           { href: "/vendedor/registros", label: "Registros tipo venta" },
         ] as NavItem[])
+      : esFacturador
+        ? ([
+            { href: "/dashboard", label: "Panel facturador" },
+            { href: "/facturador/registros", label: "Registros guardados" },
+          ] as NavItem[])
       : ([
           { href: "/dashboard", label: "Panel de control" },
           ...(esAdmin
@@ -515,6 +524,24 @@ export default async function DashboardPage() {
             ],
           },
         ] as ModuleCard[])
+      : esFacturador
+        ? ([
+            {
+              accent: "bg-emerald-500",
+              badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+              eyebrow: "Facturador / Registros",
+              title: "REGISTROS FACTURACION",
+              description:
+                "Consulta los registros guardados de la sede, agrega el numero de factura y marca cada fila como facturada.",
+              actions: [
+                {
+                  href: "/facturador/registros",
+                  label: "Ver registros guardados",
+                  tone: "primary",
+                },
+              ],
+            },
+          ] as ModuleCard[])
       : ([
           {
             accent: "bg-sky-500",
@@ -725,7 +752,7 @@ export default async function DashboardPage() {
                 Conectamos
               </p>
               <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
-                {esVendedor ? "CONECTAMOS" : "Dashboard"}
+                {esVendedor || esFacturador ? "CONECTAMOS" : "Dashboard"}
               </h1>
               <p className="mt-3 text-sm leading-6 text-slate-600">{saludo}</p>
 
@@ -764,7 +791,7 @@ export default async function DashboardPage() {
                 </div>
 
                 <h2 className="mt-4 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
-                  {esVendedor ? "CONECTAMOS" : "Dashboard"}
+                  {esVendedor || esFacturador ? "CONECTAMOS" : "Dashboard"}
                 </h2>
 
                 <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
@@ -818,7 +845,7 @@ export default async function DashboardPage() {
                 }
               />
             </section>
-          ) : esVendedor ? null : (
+          ) : esVendedor || esFacturador ? null : (
             <div className="mt-6">
               <DashboardUtilityGate coverageLabel={sedeLabel} />
             </div>
@@ -830,7 +857,7 @@ export default async function DashboardPage() {
             ))}
           </section>
 
-          {!esVendedor && resumenComercialMensual && (
+          {!esVendedor && !esFacturador && resumenComercialMensual && (
             <div className="mt-6">
               <CommercialRankingSection
                 periodLabel={mesActual.label}
