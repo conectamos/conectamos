@@ -275,25 +275,29 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
     action: MutationIntent;
     label: string;
     detail: string;
-    tone: string;
+    accent: string;
+    border: string;
   }> = [
     {
       action: "enroll",
       label: "Inscribir",
       detail: "Carga y activa el equipo en el hub.",
-      tone: "border-amber-200 bg-amber-50/80 text-amber-900",
+      accent: "bg-amber-500",
+      border: "hover:border-amber-200",
     },
     {
       action: "lock",
       label: "Bloquear",
       detail: "Aplica bloqueo remoto sobre el equipo.",
-      tone: "border-red-200 bg-red-50/80 text-red-900",
+      accent: "bg-red-500",
+      border: "hover:border-red-200",
     },
     {
       action: "unlock",
       label: "Desbloquear",
       detail: "Retira el bloqueo operativo.",
-      tone: "border-emerald-200 bg-emerald-50/80 text-emerald-900",
+      accent: "bg-emerald-500",
+      border: "hover:border-emerald-200",
     },
     ...(esAdmin
       ? [
@@ -301,7 +305,8 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
             action: "release" as MutationIntent,
             label: "Liberar",
             detail: "Libera el equipo de forma definitiva.",
-            tone: "border-violet-200 bg-violet-50/80 text-violet-900",
+            accent: "bg-violet-500",
+            border: "hover:border-violet-200",
           },
         ]
       : []),
@@ -442,23 +447,30 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
                   <div
                     key={item.action}
                     className={[
-                      "flex min-h-[168px] flex-col rounded-[20px] border p-4 text-left",
-                      item.tone,
+                      "flex min-h-[138px] flex-col rounded-[18px] border border-slate-200 bg-white p-4 text-left shadow-sm transition",
+                      item.border,
                     ].join(" ")}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="text-sm font-black tracking-tight">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={[
+                          "h-2.5 w-2.5 rounded-full",
+                          item.accent,
+                        ].join(" ")}
+                      />
+                      <span className="text-base font-black tracking-tight text-slate-950">
                         {item.label}
                       </span>
                     </div>
-                    <p className="mt-3 text-sm leading-6 opacity-90">
+
+                    <p className="mt-3 text-sm leading-6 text-slate-600">
                       {item.detail}
                     </p>
 
                     <button
                       onClick={() => void ejecutarAccion(item.action)}
                       disabled={cargando !== null}
-                      className="mt-auto w-full rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-black/5 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="mt-auto inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {cargando === item.action ? "Procesando..." : item.label}
                     </button>
