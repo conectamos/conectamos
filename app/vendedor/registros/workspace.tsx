@@ -9,6 +9,7 @@ import {
 } from "react";
 import Link from "next/link";
 import {
+  detalleFinancieraTieneDatos,
   FRECUENCIAS_CUOTA,
   MAX_FINANCIERAS_REGISTRO,
   MAX_PLAZO_CUOTAS,
@@ -736,7 +737,13 @@ export default function VendedorRegistroWorkspace({
     const financierasActivas = form.financierasDetalle.slice(0, financierasVisibles);
 
     for (let index = 0; index < financierasActivas.length; index += 1) {
-      if (!isFinancieraCompleta(financierasActivas[index])) {
+      const item = financierasActivas[index];
+
+      if (index > 0 && !detalleFinancieraTieneDatos(item)) {
+        continue;
+      }
+
+      if (!isFinancieraCompleta(item)) {
         return `Todos los campos de la financiera ${index + 1} son obligatorios`;
       }
     }
@@ -805,7 +812,9 @@ export default function VendedorRegistroWorkspace({
       const payload = {
         ...form,
         confirmacionCliente: true,
-        financierasDetalle: form.financierasDetalle.slice(0, financierasVisibles),
+        financierasDetalle: form.financierasDetalle
+          .slice(0, financierasVisibles)
+          .filter((item, index) => index === 0 || detalleFinancieraTieneDatos(item)),
       };
 
       const res = await fetch("/api/vendedor/registros", {

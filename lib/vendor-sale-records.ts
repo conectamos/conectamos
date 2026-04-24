@@ -177,6 +177,24 @@ export function normalizarImei(valor: unknown) {
   return imei.length === IMEI_LENGTH ? imei : null;
 }
 
+export function detalleFinancieraTieneDatos(valor: unknown) {
+  if (!valor || typeof valor !== "object") {
+    return false;
+  }
+
+  const row = valor as Record<string, unknown>;
+
+  return [
+    row.plataformaCredito,
+    row.creditoAutorizado,
+    row.cuotaInicial,
+    row.tipoPagoInicial,
+    row.valorCuota,
+    row.numeroCuotas,
+    row.frecuenciaCuota,
+  ].some((item) => textoLimpio(item).length > 0);
+}
+
 export function normalizarFinancierasDetalle(valor: unknown):
   | { data: DetalleFinancieraRegistro[] }
   | { error: string } {
@@ -194,6 +212,11 @@ export function normalizarFinancierasDetalle(valor: unknown):
 
   for (let index = 0; index < valor.length; index += 1) {
     const item = valor[index];
+
+    if (!detalleFinancieraTieneDatos(item)) {
+      continue;
+    }
+
     if (!item || typeof item !== "object") {
       return {
         error: `La financiera ${index + 1} no tiene informacion valida`,
