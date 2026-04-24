@@ -501,6 +501,57 @@ export default async function DashboardPage() {
       ],
     },
     {
+      accent: "bg-indigo-500",
+      badge: "border-indigo-200 bg-indigo-50 text-indigo-700",
+      eyebrow: "Ventas / Gestion",
+      title: "Ventas",
+      description:
+        "Consulta ventas registradas y agrega nuevas operaciones desde una vista mas directa.",
+      actions: [
+        { href: "/ventas", label: "Ver ventas", tone: "primary" },
+        { href: "/ventas/nuevo", label: "Nueva venta" },
+        ...(esAdmin
+          ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores" }] as ModuleAction[])
+          : []),
+        ...(esAdmin
+          ? ([{ href: "/ventas/equipo-comercial", label: "Catalogos de ventas" }] as ModuleAction[])
+          : []),
+      ],
+    },
+    {
+      accent: "bg-rose-500",
+      badge: "border-rose-200 bg-rose-50 text-rose-700",
+      eyebrow: "Caja / Gestion",
+      title: "Caja",
+      description:
+        "Revisa ingresos, egresos, resumen financiero y cartera sin salir del bloque operativo.",
+      actions: [
+        { href: "/caja", label: "Ver caja", tone: "primary" },
+        { href: "/caja/gestion", label: "Ingresos / Gastos" },
+        { href: "/caja/arqueo", label: "Arqueo" },
+        { href: "/dashboard/financiero", label: "Panel financiero" },
+        {
+          href: esAdmin ? "/dashboard/financiero/cartera" : "/caja/cartera",
+          label: "Cartera",
+          tone: "danger",
+        },
+      ],
+    },
+    {
+      accent: "bg-emerald-500",
+      badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      eyebrow: "Prestamos / Gestion",
+      title: "Prestamos",
+      description:
+        "Da seguimiento a traslados, pagos pendientes y alertas entre sedes desde una sola vista.",
+      actions: [
+        { href: "/prestamos", label: "Ver prestamos", tone: "primary" },
+        { href: "/prestamos/nuevo", label: "Nuevo prestamo" },
+        { href: "/dashboard/deuda-sedes", label: "Deuda entre sedes" },
+        { href: "/alertas/prestamos", label: "Alertas" },
+      ],
+    },
+    {
       accent: "bg-amber-500",
       badge: "border-amber-200 bg-amber-50 text-amber-700",
       eyebrow: "Nuovo / Gestion",
@@ -546,24 +597,6 @@ export default async function DashboardPage() {
           },
         ] as ModuleCard[])
       : []),
-    {
-      accent: "bg-indigo-500",
-      badge: "border-indigo-200 bg-indigo-50 text-indigo-700",
-      eyebrow: "Ventas / Gestion",
-      title: "Ventas",
-      description:
-        "Consulta ventas registradas y agrega nuevas operaciones desde una vista mas directa.",
-      actions: [
-        { href: "/ventas", label: "Ver ventas", tone: "primary" },
-        { href: "/ventas/nuevo", label: "Nueva venta" },
-        ...(esAdmin
-          ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores" }] as ModuleAction[])
-          : []),
-        ...(esAdmin
-          ? ([{ href: "/ventas/equipo-comercial", label: "Catalogos de ventas" }] as ModuleAction[])
-          : []),
-      ],
-    },
     ...(esAdmin
       ? ([
           {
@@ -587,39 +620,6 @@ export default async function DashboardPage() {
           },
         ] as ModuleCard[])
       : []),
-    {
-      accent: "bg-rose-500",
-      badge: "border-rose-200 bg-rose-50 text-rose-700",
-      eyebrow: "Caja / Gestion",
-      title: "Caja",
-      description:
-        "Revisa ingresos, egresos, resumen financiero y cartera sin salir del bloque operativo.",
-      actions: [
-        { href: "/caja", label: "Ver caja", tone: "primary" },
-        { href: "/caja/gestion", label: "Ingresos / Gastos" },
-        { href: "/caja/arqueo", label: "Arqueo" },
-        { href: "/dashboard/financiero", label: "Panel financiero" },
-        {
-          href: esAdmin ? "/dashboard/financiero/cartera" : "/caja/cartera",
-          label: "Cartera",
-          tone: "danger",
-        },
-      ],
-    },
-    {
-      accent: "bg-emerald-500",
-      badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
-      eyebrow: "Prestamos / Gestion",
-      title: "Prestamos",
-      description:
-        "Da seguimiento a traslados, pagos pendientes y alertas entre sedes desde una sola vista.",
-      actions: [
-        { href: "/prestamos", label: "Ver prestamos", tone: "primary" },
-        { href: "/prestamos/nuevo", label: "Nuevo prestamo" },
-        { href: "/dashboard/deuda-sedes", label: "Deuda entre sedes" },
-        { href: "/alertas/prestamos", label: "Alertas" },
-      ],
-    },
   ];
 
   return (
@@ -747,7 +747,7 @@ export default async function DashboardPage() {
               </div>
 
               <div className="relative flex shrink-0 items-start justify-start xl:justify-end">
-                <LogoutButton className="min-w-[150px]" />
+                <LogoutButton className="min-w-[170px] border-[#111318] bg-[#111318] text-white shadow-[0_16px_36px_rgba(15,23,42,0.18)] hover:border-[#1b1f27] hover:bg-[#1b1f27]" />
               </div>
             </div>
           </section>
