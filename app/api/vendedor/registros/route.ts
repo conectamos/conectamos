@@ -203,7 +203,6 @@ export async function GET() {
     const registros = await prisma.registroVendedorVenta.findMany({
       where: {
         perfilVendedorId: access.session.perfilId!,
-        sedeId: access.session.sedeId,
       },
       select: {
         id: true,
@@ -278,12 +277,32 @@ export async function POST(req: Request) {
       );
     }
 
+    const sedeRegistro = await prisma.sede.findFirst({
+      where: {
+        nombre: {
+          equals: payload.data.puntoVenta,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+        nombre: true,
+      },
+    });
+
+    if (!sedeRegistro) {
+      return NextResponse.json(
+        { error: "Debes seleccionar un punto de venta valido" },
+        { status: 400 }
+      );
+    }
+
     await prisma.registroVendedorVenta.create({
       data: {
         perfilVendedorId: access.session.perfilId!,
-        sedeId: access.session.sedeId,
+        sedeId: sedeRegistro.id,
         ...payload.data,
-        puntoVenta: payload.data.puntoVenta,
+        puntoVenta: sedeRegistro.nombre,
         referenciaEquipo: equipo.referencia,
         color: equipo.color ?? payload.data.color ?? null,
         asesorNombre:

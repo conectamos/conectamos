@@ -28,6 +28,23 @@ async function requireFacturador() {
   return { ok: true as const, session };
 }
 
+function buildFacturadorRegistroScope(session: {
+  sedeId: number;
+  sedeNombre: string;
+}) {
+  return {
+    OR: [
+      { sedeId: session.sedeId },
+      {
+        puntoVenta: {
+          equals: session.sedeNombre,
+          mode: "insensitive" as const,
+        },
+      },
+    ],
+  };
+}
+
 export async function GET() {
   try {
     const access = await requireFacturador();
@@ -39,9 +56,7 @@ export async function GET() {
     await ensureVendorProfilesSchema();
 
     const registros = await prisma.registroVendedorVenta.findMany({
-      where: {
-        sedeId: access.session.sedeId,
-      },
+      where: buildFacturadorRegistroScope(access.session),
       select: {
         id: true,
         createdAt: true,
@@ -103,7 +118,7 @@ export async function PATCH(req: Request) {
     const existente = await prisma.registroVendedorVenta.findFirst({
       where: {
         id,
-        sedeId: access.session.sedeId,
+        ...buildFacturadorRegistroScope(access.session),
       },
       select: {
         id: true,
