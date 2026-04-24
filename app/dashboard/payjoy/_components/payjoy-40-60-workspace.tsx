@@ -129,6 +129,15 @@ function buildDefaultSaveName(week: string) {
   return `40/60 - ${String(week || "").trim() || "Semana"}`;
 }
 
+function buildProcessingSourceKey(selectedFile: File, selectedWeek: string) {
+  return [
+    selectedFile.name,
+    selectedFile.size,
+    selectedFile.lastModified,
+    String(selectedWeek || "").trim().toUpperCase(),
+  ].join("::");
+}
+
 export default function PayJoyFortySixtyWorkspace() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -154,6 +163,9 @@ export default function PayJoyFortySixtyWorkspace() {
   );
   const [deletingRecordId, setDeletingRecordId] = useState<number | null>(null);
   const [activeSavedRecordId, setActiveSavedRecordId] = useState<number | null>(
+    null
+  );
+  const [processedSourceKey, setProcessedSourceKey] = useState<string | null>(
     null
   );
 
@@ -194,6 +206,32 @@ export default function PayJoyFortySixtyWorkspace() {
       summary: liveSummary,
       rows,
     };
+  };
+
+  const fetchProcessedWeek = async (
+    selectedFile: File,
+    selectedWeek: string
+  ) => {
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    formData.append("week", selectedWeek);
+
+    const response = await fetch("/api/payjoy/40-60", {
+      method: "POST",
+      body: formData,
+    });
+
+    const payload = (await response.json()) as FortySixtyResponse & {
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(
+        payload.error || "No fue posible procesar el archivo 40/60."
+      );
+    }
+
+    return payload;
   };
 
   const loadSavedRecords = async () => {
@@ -256,6 +294,7 @@ export default function PayJoyFortySixtyWorkspace() {
     setWeek(record.week);
     setWeekOptions(record.week ? [record.week] : []);
     setSelectedStatus("TODOS");
+    setProcessedSourceKey(null);
     setFile(null);
 
     if (fileInputRef.current) {
@@ -267,12 +306,15 @@ export default function PayJoyFortySixtyWorkspace() {
     try {
       setLoadingWeeks(true);
       setMessage("");
-      setWeek("");
-      setWeekOptions([]);
-      setData(null);
-      setRows([]);
-      setSaveName("");
-      setActiveSavedRecordId(null);
+      setProcessedSourceKey(null);
+
+      if (!activeSavedRecordId) {
+        setWeek("");
+        setWeekOptions([]);
+        setData(null);
+        setRows([]);
+        setSaveName("");
+      }
 
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -294,10 +336,19 @@ export default function PayJoyFortySixtyWorkspace() {
       }
 
       setWeekOptions(payload.weeks);
-      setWeek(payload.weeks.length === 1 ? payload.weeks[0] : "");
+      const currentWeek = String(week || "").trim();
+      const matchingWeek = payload.weeks.find(
+        (option) => option.trim() === currentWeek
+      );
+
+      setWeek(
+        matchingWeek || (payload.weeks.length === 1 ? payload.weeks[0] : "")
+      );
       setMessage(
         payload.weeks.length
-          ? `Se detectaron ${payload.weeks.length} week(s) en el archivo. Selecciona la que quieres consultar.`
+          ? activeSavedRecordId
+            ? `Se detectaron ${payload.weeks.length} week(s) en el archivo. Selecciona la week y usa Actualizar guardado para recargar este registro con el archivo nuevo.`
+            : `Se detectaron ${payload.weeks.length} week(s) en el archivo. Selecciona la que quieres consultar.`
           : "El archivo no trae weeks disponibles para consultar."
       );
     } catch {
@@ -311,12 +362,19 @@ export default function PayJoyFortySixtyWorkspace() {
     setFile(nextFile);
 
     if (!nextFile) {
-      setWeek("");
-      setWeekOptions([]);
-      setData(null);
-      setRows([]);
-      setSaveName("");
-      setActiveSavedRecordId(null);
+      setProcessedSourceKey(null);
+
+      if (activeSavedRecordId && data) {
+        setWeek(data.week);
+        setWeekOptions(data.week ? [data.week] : []);
+      } else {
+        setWeek("");
+        setWeekOptions([]);
+        setData(null);
+        setRows([]);
+        setSaveName("");
+        setActiveSavedRecordId(null);
+      }
       return;
     }
 
@@ -337,37 +395,37 @@ export default function PayJoyFortySixtyWorkspace() {
     try {
       setLoading(true);
       setMessage("");
-
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("week", week);
-
-      const response = await fetch("/api/payjoy/40-60", {
-        method: "POST",
-        body: formData,
-      });
-
-      const payload = (await response.json()) as FortySixtyResponse & {
-        error?: string;
-      };
-
-      if (!response.ok) {
-        setMessage(payload.error || "No fue posible procesar el archivo 40/60.");
-        return;
-      }
+      const payload = await fetchProcessedWeek(file, week);
+      const nextSourceKey = buildProcessingSourceKey(file, week);
+      const shouldKeepActiveRecord = Boolean(activeSavedRecordId);
 
       setData(payload);
       setRows(payload.rows);
-      setActiveSavedRecordId(null);
-      setSaveName(buildDefaultSaveName(payload.week));
+      setProcessedSourceKey(nextSourceKey);
       setSelectedStatus("TODOS");
+
+      if (shouldKeepActiveRecord) {
+        setMessage(
+          payload.rows.length
+            ? `Se recargaron ${payload.filteredRows} registro(s) para la WEEK ${payload.week} desde el archivo nuevo. Ahora puedes usar Actualizar guardado.`
+            : `No se encontraron registros para la WEEK ${payload.week} en el archivo nuevo.`
+        );
+      } else {
+        setActiveSavedRecordId(null);
+        setSaveName(buildDefaultSaveName(payload.week));
+        setMessage(
+          payload.rows.length
+            ? `Se procesaron ${payload.filteredRows} registro(s) para la WEEK ${payload.week}.`
+            : `No se encontraron registros para la WEEK ${payload.week}.`
+        );
+      }
+
+    } catch (error) {
       setMessage(
-        payload.rows.length
-          ? `Se procesaron ${payload.filteredRows} registro(s) para la WEEK ${payload.week}.`
-          : `No se encontraron registros para la WEEK ${payload.week}.`
+        error instanceof Error
+          ? error.message
+          : "No fue posible procesar el archivo 40/60."
       );
-    } catch {
-      setMessage("No fue posible procesar el archivo 40/60.");
     } finally {
       setLoading(false);
     }
@@ -421,16 +479,52 @@ export default function PayJoyFortySixtyWorkspace() {
   };
 
   const updateCurrentStoredRecord = async (recordId: number) => {
-    const currentPayload = buildCurrentRecordPayload();
-
-    if (!currentPayload) {
-      setMessage("Primero debes procesar o consultar una semana antes de actualizarla.");
-      return;
-    }
-
     try {
       setUpdatingRecord(true);
       setMessage("");
+
+      let nextData = data;
+      let nextRows = rows;
+
+      if (file && !String(week || "").trim()) {
+        setMessage(
+          "Debes seleccionar la WEEK del archivo nuevo antes de actualizar este guardado."
+        );
+        return;
+      }
+
+      if (file && String(week || "").trim()) {
+        const nextSourceKey = buildProcessingSourceKey(file, week);
+
+        if (processedSourceKey !== nextSourceKey) {
+          const refreshedPayload = await fetchProcessedWeek(file, week);
+          nextData = refreshedPayload;
+          nextRows = refreshedPayload.rows;
+
+          setData(refreshedPayload);
+          setRows(refreshedPayload.rows);
+          setSelectedStatus("TODOS");
+          setProcessedSourceKey(nextSourceKey);
+        }
+      }
+
+      if (!nextData || !nextRows.length) {
+        setMessage(
+          "Primero debes procesar o consultar una semana antes de actualizarla."
+        );
+        return;
+      }
+
+      const currentPayload = {
+        recordName: saveName.trim() || buildDefaultSaveName(nextData.week),
+        week: nextData.week,
+        fileName: nextData.fileName,
+        sheetName: nextData.sheetName,
+        totalRows: nextData.totalRows,
+        filteredRows: nextRows.length,
+        summary: summarizeRows(nextRows),
+        rows: nextRows,
+      };
 
       const response = await fetch("/api/payjoy/40-60/registros", {
         method: "PATCH",
@@ -461,8 +555,10 @@ export default function PayJoyFortySixtyWorkspace() {
       setActiveSavedRecordId(payload.registro.id);
       setSavedRecordsExpanded(true);
       setMessage(
-        payload.mensaje ||
-          `Semana actualizada correctamente como "${payload.registro.recordName}".`
+        file && String(week || "").trim()
+          ? `Semana actualizada correctamente como "${payload.registro.recordName}" usando el archivo nuevo.`
+          : payload.mensaje ||
+            `Semana actualizada correctamente como "${payload.registro.recordName}".`
       );
       await loadSavedRecords();
     } catch {
@@ -783,6 +879,13 @@ export default function PayJoyFortySixtyWorkspace() {
                   Guarda la semana procesada y las cedulas editadas para volver a
                   consultarla despues desde este mismo modulo.
                 </p>
+                {activeSavedRecordId && file && String(week || "").trim() && (
+                  <div className="mt-4 rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-4 py-3 text-sm font-medium text-[#8f5b24]">
+                    Al usar <span className="font-semibold">Actualizar guardado</span>,
+                    primero recargaremos la informacion con el archivo nuevo y
+                    luego sobrescribiremos la semana guardada.
+                  </div>
+                )}
 
                 {canSaveRecord ? (
                   <>
