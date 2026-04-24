@@ -505,7 +505,7 @@ export default async function DashboardPage() {
             eyebrow: "Vendedor / Registros",
             title: "REGISTRAR VENTA",
             description:
-              "Modulo exclusivo del vendedor para cargar sus registros sin acceso a inventario, caja, prestamos ni reportes existentes.",
+              "Digitaliza la hoja de plataforma de la sede y registra el tramite completo desde este modulo.",
             actions: [
               {
                 href: "/vendedor/registros",
