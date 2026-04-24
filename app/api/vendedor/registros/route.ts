@@ -10,6 +10,7 @@ import {
   normalizarImei,
   normalizarTextoCorto,
   normalizarTextoLargo,
+  normalizarTipoEquipoRegistro,
   normalizarTipoDocumentoCliente,
 } from "@/lib/vendor-sale-records";
 
@@ -55,7 +56,7 @@ function validarPayload(body: Record<string, unknown>) {
   const almacenamiento = normalizarTextoCorto(body.almacenamiento);
   const color = normalizarTextoCorto(body.color);
   const serialImei = normalizarImei(body.serialImei);
-  const tipoEquipo = normalizarTextoCorto(body.tipoEquipo);
+  const tipoEquipo = normalizarTipoEquipoRegistro(body.tipoEquipo);
   const correo = normalizarTextoCorto(body.correo);
   const whatsapp = normalizarTextoCorto(body.whatsapp);
   const fechaNacimiento = normalizarFechaIso(body.fechaNacimiento);
@@ -92,6 +93,9 @@ function validarPayload(body: Record<string, unknown>) {
     return { error: financierasDetalleResult.error };
   }
   if (!serialImei) return { error: "El IMEI debe tener 15 digitos" };
+  if (!tipoEquipo) {
+    return { error: "Debes seleccionar un tipo de equipo valido" };
+  }
   if (!direccion) return { error: "La direccion es obligatoria" };
   if (!telefono) return { error: "El telefono es obligatorio" };
   if (!referenciaFamiliar1Nombre || !referenciaFamiliar1Telefono) {

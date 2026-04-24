@@ -25,6 +25,11 @@ export const MEDIOS_PAGO_REGISTRO_VENTA = [
   "TRANSFERENCIA",
   "VOUCHER",
 ] as const;
+export const TIPOS_EQUIPO_REGISTRO = [
+  "NUEVO",
+  "CPO",
+  "EXHIBICION",
+] as const;
 
 export const MAX_FINANCIERAS_REGISTRO = 4;
 export const MIN_PLAZO_CUOTAS = 1;
@@ -46,6 +51,9 @@ export type DetalleFinancieraRegistro = {
   numeroCuotas: number;
   frecuenciaCuota: string;
 };
+
+export type TipoEquipoRegistro =
+  (typeof TIPOS_EQUIPO_REGISTRO)[number];
 
 function textoLimpio(valor: unknown) {
   return String(valor || "").replace(/\s+/g, " ").trim();
@@ -95,6 +103,17 @@ export function normalizarMedioPago(valor: unknown) {
   return MEDIOS_PAGO.includes(tipo as (typeof MEDIOS_PAGO)[number]) ? tipo : null;
 }
 
+export function normalizarTipoEquipoRegistro(valor: unknown) {
+  const tipo = textoLimpio(valor)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+
+  return TIPOS_EQUIPO_REGISTRO.includes(tipo as TipoEquipoRegistro)
+    ? (tipo as TipoEquipoRegistro)
+    : null;
+}
+
 export function normalizarTipoPagoRegistroVenta(valor: unknown) {
   const tipo = textoLimpio(valor).toUpperCase();
 
@@ -117,11 +136,7 @@ export function normalizarNumeroEntero(valor: unknown) {
 }
 
 export function normalizarMoneda(valor: unknown) {
-  const limpio = String(valor || "")
-    .replace(/[^\d,.-]/g, "")
-    .replace(/\.(?=.*\.)/g, "")
-    .replace(",", ".")
-    .trim();
+  const limpio = String(valor || "").replace(/\D/g, "").trim();
 
   if (!limpio) {
     return null;
@@ -134,6 +149,16 @@ export function normalizarMoneda(valor: unknown) {
   }
 
   return numero.toFixed(2);
+}
+
+export function formatearPesoInput(valor: unknown) {
+  const digits = String(valor || "").replace(/\D/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  return `$ ${Number(digits).toLocaleString("es-CO")}`;
 }
 
 export function normalizarFechaIso(valor: unknown) {

@@ -16,6 +16,7 @@ import {
   PLATAFORMAS_CREDITO,
   TEXTOS_VISIBLES_CLIENTE,
   TIPOS_DOCUMENTO_CLIENTE,
+  formatearPesoInput,
 } from "@/lib/vendor-sale-records";
 
 type SessionProps = {
@@ -119,6 +120,11 @@ type ImeiLookupResponse = {
 const PLAZO_OPTIONS = Array.from({ length: MAX_PLAZO_CUOTAS }, (_, index) =>
   String(index + 1)
 );
+const TIPO_EQUIPO_OPTIONS = [
+  { value: "NUEVO", label: "NUEVO" },
+  { value: "CPO", label: "CPO" },
+  { value: "EXHIBICION", label: "EXHIBICION" },
+] as const;
 
 function createEmptyFinanciera(): FinancialFormState {
   return {
@@ -185,16 +191,6 @@ function inputClass(readOnly = false) {
 function onlyDigits(value: string, maxLength?: number) {
   const digits = value.replace(/\D/g, "");
   return typeof maxLength === "number" ? digits.slice(0, maxLength) : digits;
-}
-
-function moneyLabel(value: string) {
-  const digits = value.replace(/\D/g, "");
-
-  if (!digits) {
-    return "";
-  }
-
-  return `$ ${Number(digits).toLocaleString("es-CO")}`;
 }
 
 function formatMoney(value: number | null) {
@@ -445,6 +441,11 @@ export default function VendedorRegistroWorkspace({
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const [imeiDetalle, setImeiDetalle] = useState("");
   const [signaturePadKey, setSignaturePadKey] = useState(0);
+  const [camaraAbierta, setCamaraAbierta] = useState(false);
+  const [errorCamara, setErrorCamara] = useState("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const fotoInputRef = useRef<HTMLInputElement | null>(null);
 
   const setFormMessage = (texto: string, tipo: "success" | "error") => {
     setMensaje(texto);
@@ -537,6 +538,14 @@ export default function VendedorRegistroWorkspace({
     }));
   };
 
+  const setFinancieraPesoField = (
+    index: number,
+    field: "creditoAutorizado" | "cuotaInicial" | "valorCuota",
+    value: string
+  ) => {
+    setFinancieraField(index, field, formatearPesoInput(value));
+  };
+
   const resetFinanciera = (index: number) => {
     setForm((current) => ({
       ...current,
@@ -610,6 +619,88 @@ export default function VendedorRegistroWorkspace({
       event.target.value = "";
     }
   };
+
+  const detenerCamara = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setCamaraAbierta(false);
+  };
+
+  const abrirCamara = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setErrorCamara(
+        "Este dispositivo no permite abrir la camara desde el navegador."
+      );
+      return;
+    }
+
+    try {
+      setErrorCamara("");
+      detenerCamara();
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+        },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+      setCamaraAbierta(true);
+    } catch {
+      setErrorCamara(
+        "No se pudo abrir la camara. Puedes usar la opcion de subir imagen."
+      );
+    }
+  };
+
+  const capturarFotoDesdeCamara = () => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return;
+    }
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    const canvas = document.createElement("canvas");
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      setFormMessage("No se pudo capturar la foto desde la camara", "error");
+      return;
+    }
+
+    context.drawImage(video, 0, 0, width, height);
+    setField("fotoEntregaDataUrl", canvas.toDataURL("image/jpeg", 0.85));
+    detenerCamara();
+  };
+
+  useEffect(() => {
+    if (!camaraAbierta || !videoRef.current || !streamRef.current) {
+      return;
+    }
+
+    videoRef.current.srcObject = streamRef.current;
+    void videoRef.current.play().catch(() => {
+      setErrorCamara("La camara se abrio, pero no se pudo iniciar la vista previa.");
+    });
+  }, [camaraAbierta]);
+
+  useEffect(() => {
+    return () => {
+      detenerCamara();
+    };
+  }, []);
 
   const guardarRegistro = async () => {
     if (!form.firmaClienteDataUrl) {
@@ -866,12 +957,21 @@ export default function VendedorRegistroWorkspace({
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Tipo de equipo
-                  <input
+                  <select
                     value={form.tipoEquipo}
                     onChange={(event) => setField("tipoEquipo", event.target.value)}
                     className={inputClass()}
-                    placeholder="Celular, tablet..."
-                  />
+                  >
+                    <option value="">Selecciona una opcion</option>
+                    {TIPO_EQUIPO_OPTIONS.map((item) => (
+                      <option
+                        key={item.value}
+                        value={item.value}
+                      >
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
             </section>
@@ -947,18 +1047,16 @@ export default function VendedorRegistroWorkspace({
                               <input
                                 value={item.creditoAutorizado}
                                 onChange={(event) =>
-                                  setFinancieraField(
+                                  setFinancieraPesoField(
                                     index,
                                     "creditoAutorizado",
-                                    onlyDigits(event.target.value)
+                                    event.target.value
                                   )
                                 }
                                 className={inputClass()}
-                                placeholder="Valor"
+                                inputMode="numeric"
+                                placeholder="$ 0"
                               />
-                              <span className="text-xs text-slate-500">
-                                {moneyLabel(item.creditoAutorizado)}
-                              </span>
                             </label>
 
                             <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
@@ -966,18 +1064,16 @@ export default function VendedorRegistroWorkspace({
                               <input
                                 value={item.cuotaInicial}
                                 onChange={(event) =>
-                                  setFinancieraField(
+                                  setFinancieraPesoField(
                                     index,
                                     "cuotaInicial",
-                                    onlyDigits(event.target.value)
+                                    event.target.value
                                   )
                                 }
                                 className={inputClass()}
-                                placeholder="Valor"
+                                inputMode="numeric"
+                                placeholder="$ 0"
                               />
-                              <span className="text-xs text-slate-500">
-                                {moneyLabel(item.cuotaInicial)}
-                              </span>
                             </label>
 
                             <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
@@ -1007,18 +1103,16 @@ export default function VendedorRegistroWorkspace({
                               <input
                                 value={item.valorCuota}
                                 onChange={(event) =>
-                                  setFinancieraField(
+                                  setFinancieraPesoField(
                                     index,
                                     "valorCuota",
-                                    onlyDigits(event.target.value)
+                                    event.target.value
                                   )
                                 }
                                 className={inputClass()}
-                                placeholder="Valor"
+                                inputMode="numeric"
+                                placeholder="$ 0"
                               />
-                              <span className="text-xs text-slate-500">
-                                {moneyLabel(item.valorCuota)}
-                              </span>
                             </label>
 
                             <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
@@ -1301,22 +1395,73 @@ export default function VendedorRegistroWorkspace({
                     Foto con entrega del producto
                   </p>
 
-                  <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-600 transition hover:border-emerald-300 hover:text-slate-900">
-                    <span className="font-semibold">
-                      {cargandoFoto
-                        ? "Procesando imagen..."
-                        : "Seleccionar foto de entrega"}
-                    </span>
-                    <span className="mt-2 text-xs text-slate-500">
-                      Se guarda junto al registro para soporte de entrega.
-                    </span>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void abrirCamara()}
+                      className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                      Abrir camara
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => fotoInputRef.current?.click()}
+                      className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                    >
+                      {cargandoFoto ? "Procesando..." : "Subir imagen"}
+                    </button>
+
                     <input
+                      ref={fotoInputRef}
                       type="file"
                       accept="image/*"
+                      capture="environment"
                       onChange={(event) => void cargarFotoEntrega(event)}
                       className="hidden"
                     />
-                  </label>
+                  </div>
+
+                  <p className="mt-3 text-xs text-slate-500">
+                    En celular intentara abrir la camara trasera. En computador,
+                    abrira la camara del navegador si esta disponible.
+                  </p>
+
+                  {errorCamara && (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      {errorCamara}
+                    </div>
+                  )}
+
+                  {camaraAbierta && (
+                    <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-3">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="h-72 w-full rounded-2xl bg-slate-950 object-cover"
+                      />
+
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={capturarFotoDesdeCamara}
+                          className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500"
+                        >
+                          Capturar foto
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={detenerCamara}
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                        >
+                          Cerrar camara
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {form.fotoEntregaDataUrl && (
                     <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-3">
