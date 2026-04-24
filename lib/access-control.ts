@@ -1,0 +1,23 @@
+export function normalizarRolNombre(valor: unknown) {
+  return String(valor || "").trim().toUpperCase();
+}
+
+export function normalizarPerfilTipo(valor: unknown) {
+  return String(valor || "").trim().toUpperCase();
+}
+
+export function esRolAdmin(rolNombre: unknown) {
+  return normalizarRolNombre(rolNombre) === "ADMIN";
+}
+
+export function esPerfilAdministrador(perfilTipo: unknown) {
+  return normalizarPerfilTipo(perfilTipo) === "ADMINISTRADOR";
+}
+
+export function esPerfilSupervisor(perfilTipo: unknown) {
+  return normalizarPerfilTipo(perfilTipo) === "SUPERVISOR_TIENDA";
+}
+
+export function esPerfilVendedor(perfilTipo: unknown) {
+  return normalizarPerfilTipo(perfilTipo) === "VENDEDOR";
+}

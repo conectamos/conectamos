@@ -3,12 +3,15 @@ BEGIN
   CREATE TYPE "TipoPerfilVendedor" AS ENUM (
     'ADMINISTRADOR',
     'FACTURADOR',
-    'SUPERVISOR_TIENDA'
+    'SUPERVISOR_TIENDA',
+    'VENDEDOR'
   );
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END
 $$;
+
+ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'VENDEDOR';
 
 CREATE TABLE IF NOT EXISTS "PerfilVendedor" (
   "id" SERIAL NOT NULL,

@@ -1,5 +1,10 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
+import {
+  esPerfilSupervisor,
+  esPerfilVendedor,
+  esRolAdmin,
+} from "@/lib/access-control";
 import DashboardUtilityGate from "./_components/dashboard-utility-gate";
 import LogoutButton from "./_components/logout-button";
 import { getCurrentBogotaMonthRange } from "@/lib/ventas-utils";
@@ -385,56 +390,69 @@ export default async function DashboardPage() {
     return <div className="p-10">No autenticado</div>;
   }
 
-  const esAdmin = String(session.rolNombre || "").toUpperCase() === "ADMIN";
+  const esAdmin = esRolAdmin(session.rolNombre);
+  const esVendedor = esPerfilVendedor(session.perfilTipo);
   const esSupervisor =
-    String(session.perfilTipo || "").toUpperCase() === "SUPERVISOR_TIENDA" ||
+    esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
-  const puedeVerEquality = esAdmin || esSupervisor;
+  const puedeVerEquality = !esVendedor && (esAdmin || esSupervisor);
   const nombreUsuario = session.nombre ?? "Usuario";
   const rolUsuario = session.perfilTipoLabel ?? session.rolNombre ?? "USUARIO";
   const sedeLabel = esAdmin
     ? "TODAS LAS SEDES"
     : session.sedeNombre ?? "SIN SEDE";
-  const saludo = esAdmin
-    ? `Bienvenido, ${nombreUsuario}. Vista general del sistema.`
-    : `Bienvenido, ${nombreUsuario}. Vista operativa de ${sedeLabel}.`;
+  const saludo = esVendedor
+    ? `Bienvenido, ${nombreUsuario}. Solo tienes acceso al modulo exclusivo de registros tipo venta.`
+    : esAdmin
+      ? `Bienvenido, ${nombreUsuario}. Vista general del sistema.`
+      : `Bienvenido, ${nombreUsuario}. Vista operativa de ${sedeLabel}.`;
   const mesActual = getCurrentBogotaMonthRange();
 
-  const resumenComercialMensual = await getMonthlyCommercialSummary({
-    sedeId: esAdmin ? null : session.sedeId ?? null,
-  });
-  const financieraDestacada = resumenComercialMensual.topFinancieras[0] ?? null;
+  const resumenComercialMensual = esVendedor
+    ? null
+    : await getMonthlyCommercialSummary({
+        sedeId: esAdmin ? null : session.sedeId ?? null,
+      });
+  const financieraDestacada =
+    resumenComercialMensual?.topFinancieras[0] ?? null;
 
   const navItems: NavItem[] = [
-    { href: "/dashboard", label: "Panel de control" },
-    ...(esAdmin
-      ? ([{ href: "/dashboard/sedes", label: "Gestion sedes" }] as NavItem[])
-      : []),
-    { href: "/inventario", label: "Inventario" },
-    ...(esAdmin
-      ? ([{ href: "/inventario-principal", label: "Bodega principal" }] as NavItem[])
-      : []),
-    { href: "/dashboard/nuovopay", label: "Nuovo dispositivos" },
-    { href: "/dashboard/nuovopay/cartera", label: "Nuovo cartera" },
-    ...(puedeVerEquality
-      ? ([{ href: "/dashboard/equality", label: "Equality Zero Touch" }] as NavItem[])
-      : []),
-    ...(esAdmin
+    ...(esVendedor
       ? ([
-          { href: "/dashboard/payjoy", label: "PayJoy cartera" },
-          { href: "/dashboard/payjoy/40-60", label: "PayJoy 40/60" },
+          { href: "/dashboard", label: "Panel vendedor" },
+          { href: "/vendedor/registros", label: "Registros tipo venta" },
         ] as NavItem[])
-      : []),
-    { href: "/ventas", label: "Ventas" },
-    ...(esAdmin
-      ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores" }] as NavItem[])
-      : []),
-    { href: "/caja", label: "Caja" },
-    { href: "/prestamos", label: "Prestamos" },
-    { href: "/dashboard/financiero", label: "Panel financiero" },
-    { href: "/dashboard/deuda-sedes", label: "Deuda entre sedes" },
-    { href: "/alertas/prestamos", label: "Alertas" },
-    { href: "/inventario/historial", label: "IMEI historico" },
+      : ([
+          { href: "/dashboard", label: "Panel de control" },
+          ...(esAdmin
+            ? ([{ href: "/dashboard/sedes", label: "Gestion sedes" }] as NavItem[])
+            : []),
+          { href: "/inventario", label: "Inventario" },
+          ...(esAdmin
+            ? ([{ href: "/inventario-principal", label: "Bodega principal" }] as NavItem[])
+            : []),
+          { href: "/dashboard/nuovopay", label: "Nuovo dispositivos" },
+          { href: "/dashboard/nuovopay/cartera", label: "Nuovo cartera" },
+          ...(puedeVerEquality
+            ? ([{ href: "/dashboard/equality", label: "Equality Zero Touch" }] as NavItem[])
+            : []),
+          ...(esAdmin
+            ? ([
+                { href: "/dashboard/payjoy", label: "PayJoy cartera" },
+                { href: "/dashboard/payjoy/40-60", label: "PayJoy 40/60" },
+              ] as NavItem[])
+            : []),
+          { href: "/ventas", label: "Ventas" },
+          ...(esAdmin
+            ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores" }] as NavItem[])
+            : []),
+          { href: "/caja", label: "Caja" },
+          { href: "/prestamos", label: "Prestamos" },
+          { href: "/dashboard/financiero", label: "Panel financiero" },
+          { href: "/dashboard/deuda-sedes", label: "Deuda entre sedes" },
+          { href: "/alertas/prestamos", label: "Alertas" },
+          { href: "/inventario/historial", label: "IMEI historico" },
+        ] as NavItem[])),
   ];
 
   const sessionItems: SessionItem[] = [
@@ -479,147 +497,167 @@ export default async function DashboardPage() {
   ];
 
   const modules: ModuleCard[] = [
-    {
-      accent: "bg-sky-500",
-      badge: "border-sky-200 bg-sky-50 text-sky-700",
-      eyebrow: "Inventario / Gestion",
-      title: "Inventario",
-      description:
-        esAdmin
-          ? "Controla equipos, movimientos y trazabilidad desde inventario, bodega principal e historial de IMEI."
-          : "Controla equipos, movimientos y trazabilidad desde inventario e historial de IMEI.",
-      actions: [
-        { href: "/inventario", label: "Ver inventario", tone: "primary" },
-        { href: "/inventario/nuevo", label: "Nuevo inventario" },
-        ...(esAdmin
-          ? ([{ href: "/dashboard/sedes", label: "Gestion sedes" }] as ModuleAction[])
-          : []),
-        ...(esAdmin
-          ? ([{ href: "/inventario-principal", label: "Bodega principal" }] as ModuleAction[])
-          : []),
-        { href: "/inventario/historial", label: "IMEI historico" },
-      ],
-    },
-    {
-      accent: "bg-indigo-500",
-      badge: "border-indigo-200 bg-indigo-50 text-indigo-700",
-      eyebrow: "Ventas / Gestion",
-      title: "Ventas",
-      description:
-        "Consulta ventas registradas y agrega nuevas operaciones desde una vista mas directa.",
-      actions: [
-        { href: "/ventas", label: "Ver ventas", tone: "primary" },
-        { href: "/ventas/nuevo", label: "Nueva venta" },
-        ...(esAdmin
-          ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores" }] as ModuleAction[])
-          : []),
-        ...(esAdmin
-          ? ([{ href: "/ventas/equipo-comercial", label: "Catalogos de ventas" }] as ModuleAction[])
-          : []),
-      ],
-    },
-    {
-      accent: "bg-rose-500",
-      badge: "border-rose-200 bg-rose-50 text-rose-700",
-      eyebrow: "Caja / Gestion",
-      title: "Caja",
-      description:
-        "Revisa ingresos, egresos, resumen financiero y cartera sin salir del bloque operativo.",
-      actions: [
-        { href: "/caja", label: "Ver caja", tone: "primary" },
-        { href: "/caja/gestion", label: "Ingresos / Gastos" },
-        { href: "/caja/arqueo", label: "Arqueo" },
-        { href: "/dashboard/financiero", label: "Panel financiero" },
-        {
-          href: esAdmin ? "/dashboard/financiero/cartera" : "/caja/cartera",
-          label: "Cartera",
-          tone: "danger",
-        },
-      ],
-    },
-    {
-      accent: "bg-emerald-500",
-      badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
-      eyebrow: "Prestamos / Gestion",
-      title: "Prestamos",
-      description:
-        "Da seguimiento a traslados, pagos pendientes y alertas entre sedes desde una sola vista.",
-      actions: [
-        { href: "/prestamos", label: "Ver prestamos", tone: "primary" },
-        { href: "/prestamos/nuevo", label: "Nuevo prestamo" },
-        { href: "/dashboard/deuda-sedes", label: "Deuda entre sedes" },
-        { href: "/alertas/prestamos", label: "Alertas" },
-      ],
-    },
-    {
-      accent: "bg-amber-500",
-      badge: "border-amber-200 bg-amber-50 text-amber-700",
-      eyebrow: "Nuovo / Gestion",
-      title: "Nuovo Pay",
-      description:
-        esAdmin
-          ? "Administra Nuovo desde un mismo panel y entra por botones separados a Dispositivos o Cartera segun la operacion que necesites."
-          : "Consulta Nuovo / Dispositivos desde este panel. Nuovo / Cartera queda reservado solo para el admin.",
-      actions: [
-        {
-          href: "/dashboard/nuovopay",
-          label: "Nuovo / Dispositivos",
-          tone: "primary",
-        },
-        ...(esAdmin
-          ? ([
-              {
-                href: "/dashboard/nuovopay/cartera",
-                label: "Nuovo / Cartera",
-              },
-            ] as ModuleAction[])
-          : []),
-      ],
-    },
-    ...(puedeVerEquality
-      ? ([
-          {
-            accent: "bg-violet-500",
-            badge: "border-violet-200 bg-violet-50 text-violet-700",
-            eyebrow: "Equality / Zero Touch",
-            title: "Equality Zero Touch",
-            description:
-              esAdmin
-                ? "Modulo independiente de Nuovo para consultar, inscribir, validar estado, bloquear, desbloquear y liberar dispositivos desde HBM Equality."
-                : "Modulo independiente de Nuovo para consultar, inscribir, validar estado, bloquear y desbloquear dispositivos desde HBM Equality.",
-            actions: [
-              {
-                href: "/dashboard/equality",
-                label: "Equality / Zero Touch",
-                tone: "primary",
-              },
-            ],
-          },
-        ] as ModuleCard[])
-      : []),
-    ...(esAdmin
+    ...(esVendedor
       ? ([
           {
             accent: "bg-emerald-500",
             badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
-            eyebrow: "PayJoy / Gestion",
-            title: "PayJoy",
+            eyebrow: "Vendedor / Registros",
+            title: "Registros tipo venta",
             description:
-              "Consolida cargas de transacciones, agrega la columna CORTE y revisa cartera PayJoy desde un panel reservado para administracion.",
+              "Modulo exclusivo del vendedor para cargar sus registros sin acceso a inventario, caja, prestamos ni reportes existentes.",
             actions: [
               {
-                href: "/dashboard/payjoy",
-                label: "Cartera PayJoy",
+                href: "/vendedor/registros",
+                label: "Abrir modulo vendedor",
                 tone: "primary",
-              },
-              {
-                href: "/dashboard/payjoy/40-60",
-                label: "40/60",
               },
             ],
           },
         ] as ModuleCard[])
-      : []),
+      : ([
+          {
+            accent: "bg-sky-500",
+            badge: "border-sky-200 bg-sky-50 text-sky-700",
+            eyebrow: "Inventario / Gestion",
+            title: "Inventario",
+            description:
+              esAdmin
+                ? "Controla equipos, movimientos y trazabilidad desde inventario, bodega principal e historial de IMEI."
+                : "Controla equipos, movimientos y trazabilidad desde inventario e historial de IMEI.",
+            actions: [
+              { href: "/inventario", label: "Ver inventario", tone: "primary" },
+              { href: "/inventario/nuevo", label: "Nuevo inventario" },
+              ...(esAdmin
+                ? ([{ href: "/dashboard/sedes", label: "Gestion sedes" }] as ModuleAction[])
+                : []),
+              ...(esAdmin
+                ? ([{ href: "/inventario-principal", label: "Bodega principal" }] as ModuleAction[])
+                : []),
+              { href: "/inventario/historial", label: "IMEI historico" },
+            ],
+          },
+          {
+            accent: "bg-indigo-500",
+            badge: "border-indigo-200 bg-indigo-50 text-indigo-700",
+            eyebrow: "Ventas / Gestion",
+            title: "Ventas",
+            description:
+              "Consulta ventas registradas y agrega nuevas operaciones desde una vista mas directa.",
+            actions: [
+              { href: "/ventas", label: "Ver ventas", tone: "primary" },
+              { href: "/ventas/nuevo", label: "Nueva venta" },
+              ...(esAdmin
+                ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores" }] as ModuleAction[])
+                : []),
+              ...(esAdmin
+                ? ([{ href: "/ventas/equipo-comercial", label: "Catalogos de ventas" }] as ModuleAction[])
+                : []),
+            ],
+          },
+          {
+            accent: "bg-rose-500",
+            badge: "border-rose-200 bg-rose-50 text-rose-700",
+            eyebrow: "Caja / Gestion",
+            title: "Caja",
+            description:
+              "Revisa ingresos, egresos, resumen financiero y cartera sin salir del bloque operativo.",
+            actions: [
+              { href: "/caja", label: "Ver caja", tone: "primary" },
+              { href: "/caja/gestion", label: "Ingresos / Gastos" },
+              { href: "/caja/arqueo", label: "Arqueo" },
+              { href: "/dashboard/financiero", label: "Panel financiero" },
+              {
+                href: esAdmin ? "/dashboard/financiero/cartera" : "/caja/cartera",
+                label: "Cartera",
+                tone: "danger",
+              },
+            ],
+          },
+          {
+            accent: "bg-emerald-500",
+            badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+            eyebrow: "Prestamos / Gestion",
+            title: "Prestamos",
+            description:
+              "Da seguimiento a traslados, pagos pendientes y alertas entre sedes desde una sola vista.",
+            actions: [
+              { href: "/prestamos", label: "Ver prestamos", tone: "primary" },
+              { href: "/prestamos/nuevo", label: "Nuevo prestamo" },
+              { href: "/dashboard/deuda-sedes", label: "Deuda entre sedes" },
+              { href: "/alertas/prestamos", label: "Alertas" },
+            ],
+          },
+          {
+            accent: "bg-amber-500",
+            badge: "border-amber-200 bg-amber-50 text-amber-700",
+            eyebrow: "Nuovo / Gestion",
+            title: "Nuovo Pay",
+            description:
+              esAdmin
+                ? "Administra Nuovo desde un mismo panel y entra por botones separados a Dispositivos o Cartera segun la operacion que necesites."
+                : "Consulta Nuovo / Dispositivos desde este panel. Nuovo / Cartera queda reservado solo para el admin.",
+            actions: [
+              {
+                href: "/dashboard/nuovopay",
+                label: "Nuovo / Dispositivos",
+                tone: "primary",
+              },
+              ...(esAdmin
+                ? ([
+                    {
+                      href: "/dashboard/nuovopay/cartera",
+                      label: "Nuovo / Cartera",
+                    },
+                  ] as ModuleAction[])
+                : []),
+            ],
+          },
+          ...(puedeVerEquality
+            ? ([
+                {
+                  accent: "bg-violet-500",
+                  badge: "border-violet-200 bg-violet-50 text-violet-700",
+                  eyebrow: "Equality / Zero Touch",
+                  title: "Equality Zero Touch",
+                  description:
+                    esAdmin
+                      ? "Modulo independiente de Nuovo para consultar, inscribir, validar estado, bloquear, desbloquear y liberar dispositivos desde HBM Equality."
+                      : "Modulo independiente de Nuovo para consultar, inscribir, validar estado, bloquear y desbloquear dispositivos desde HBM Equality.",
+                  actions: [
+                    {
+                      href: "/dashboard/equality",
+                      label: "Equality / Zero Touch",
+                      tone: "primary",
+                    },
+                  ],
+                },
+              ] as ModuleCard[])
+            : []),
+          ...(esAdmin
+            ? ([
+                {
+                  accent: "bg-emerald-500",
+                  badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+                  eyebrow: "PayJoy / Gestion",
+                  title: "PayJoy",
+                  description:
+                    "Consolida cargas de transacciones, agrega la columna CORTE y revisa cartera PayJoy desde un panel reservado para administracion.",
+                  actions: [
+                    {
+                      href: "/dashboard/payjoy",
+                      label: "Cartera PayJoy",
+                      tone: "primary",
+                    },
+                    {
+                      href: "/dashboard/payjoy/40-60",
+                      label: "40/60",
+                    },
+                  ],
+                },
+              ] as ModuleCard[])
+            : []),
+        ] as ModuleCard[])),
   ];
 
   return (
@@ -752,7 +790,7 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          {esAdmin ? (
+          {esAdmin && resumenComercialMensual ? (
             <section className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
               <MetricCard
                 label="Utilidad del mes"
@@ -780,6 +818,20 @@ export default async function DashboardPage() {
                 }
               />
             </section>
+          ) : esVendedor ? (
+            <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf7f0_100%)] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+              <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                Acceso aislado
+              </div>
+              <h3 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+                Perfil vendedor con modulo exclusivo
+              </h3>
+              <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
+                Este perfil no ve inventario, caja, prestamos, reportes ni los
+                demas modulos que ya existen. Su trabajo queda concentrado solo en
+                la tarjeta de registros tipo venta.
+              </p>
+            </section>
           ) : (
             <div className="mt-6">
               <DashboardUtilityGate coverageLabel={sedeLabel} />
@@ -792,15 +844,17 @@ export default async function DashboardPage() {
             ))}
           </section>
 
-          <div className="mt-6">
-            <CommercialRankingSection
-              periodLabel={mesActual.label}
-              coverageLabel={esAdmin ? "Todas las sedes" : sedeLabel}
-              topJaladores={resumenComercialMensual.topJaladores}
-              topCerradores={resumenComercialMensual.topCerradores}
-              topFinancieras={resumenComercialMensual.topFinancieras}
-            />
-          </div>
+          {!esVendedor && resumenComercialMensual && (
+            <div className="mt-6">
+              <CommercialRankingSection
+                periodLabel={mesActual.label}
+                coverageLabel={esAdmin ? "Todas las sedes" : sedeLabel}
+                topJaladores={resumenComercialMensual.topJaladores}
+                topCerradores={resumenComercialMensual.topCerradores}
+                topFinancieras={resumenComercialMensual.topFinancieras}
+              />
+            </div>
+          )}
         </main>
       </div>
     </div>

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 type PerfilAcceso = {
   id: number;
   nombre: string;
-  tipo: "ADMINISTRADOR" | "FACTURADOR" | "SUPERVISOR_TIENDA";
+  tipo: "ADMINISTRADOR" | "FACTURADOR" | "SUPERVISOR_TIENDA" | "VENDEDOR";
   tipoLabel: string;
   debeCambiarPin: boolean;
 };
@@ -28,6 +28,10 @@ function obtenerDescripcionPerfil(tipo: PerfilAcceso["tipo"]) {
 
   if (tipo === "SUPERVISOR_TIENDA") {
     return "Supervisa esta sede";
+  }
+
+  if (tipo === "VENDEDOR") {
+    return "Registra operaciones de venta";
   }
 
   return "Perfil operativo";
@@ -165,6 +169,65 @@ function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
           <path
             d="M55 74H67"
             stroke="#94A3B8"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+        </svg>
+      </div>
+    );
+  }
+
+  if (tipo === "VENDEDOR") {
+    return (
+      <div className="relative flex h-24 w-24 items-center justify-center rounded-[1.75rem] border border-white/80 bg-[linear-gradient(180deg,#fefefe_0%,#eefbf7_100%)] shadow-[inset_0_12px_30px_rgba(255,255,255,0.78),0_14px_30px_rgba(148,163,184,0.22)]">
+        <svg
+          viewBox="0 0 96 96"
+          className="h-16 w-16"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <circle cx="33" cy="25" r="10" fill="#F7C8A0" />
+          <path
+            d="M18 56C18 47.1634 25.1634 40 34 40C42.8366 40 50 47.1634 50 56V63H18V56Z"
+            fill="#1F2937"
+          />
+          <path
+            d="M25 51L34 57L43 51"
+            stroke="#E2E8F0"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <rect x="54" y="19" width="23" height="31" rx="5" fill="#DCFCE7" />
+          <path
+            d="M59 28H72"
+            stroke="#16A34A"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <path
+            d="M59 36H68"
+            stroke="#16A34A"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <path
+            d="M59 44H69"
+            stroke="#16A34A"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <circle cx="70" cy="59" r="10" fill="#DBEAFE" />
+          <path
+            d="M70 54V64"
+            stroke="#2563EB"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <path
+            d="M65 59H75"
+            stroke="#2563EB"
             strokeWidth="3"
             strokeLinecap="round"
           />

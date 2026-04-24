@@ -11,6 +11,7 @@ enum TipoPerfilVendedor {
   ADMINISTRADOR
   FACTURADOR
   SUPERVISOR_TIENDA
+  VENDEDOR
 }
 
 model Rol {

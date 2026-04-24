@@ -1,11 +1,14 @@
 import FinancialAccessGate from "./_components/financial-access-gate";
 import { getFinancialAccessState } from "@/lib/financial-access";
+import { requireNonVendorPage } from "@/lib/page-access";
 
 export default async function FinancieroLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  await requireNonVendorPage();
+
   const access = await getFinancialAccessState();
 
   if (!access.user) {

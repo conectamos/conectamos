@@ -9,12 +9,17 @@ async function runEnsureVendorProfilesSchema() {
       CREATE TYPE "TipoPerfilVendedor" AS ENUM (
         'ADMINISTRADOR',
         'FACTURADOR',
-        'SUPERVISOR_TIENDA'
+        'SUPERVISOR_TIENDA',
+        'VENDEDOR'
       );
     EXCEPTION
       WHEN duplicate_object THEN NULL;
     END
     $$;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'VENDEDOR';
   `);
 
   await prisma.$executeRawUnsafe(`

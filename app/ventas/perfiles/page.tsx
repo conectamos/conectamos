@@ -25,7 +25,7 @@ type PerfilItem = {
   telefono: string | null;
   correo: string | null;
   activo: boolean;
-  tipo: "ADMINISTRADOR" | "FACTURADOR" | "SUPERVISOR_TIENDA";
+  tipo: "ADMINISTRADOR" | "FACTURADOR" | "SUPERVISOR_TIENDA" | "VENDEDOR";
   tipoLabel: string;
   debeCambiarPin: boolean;
   sedeIds: number[];
@@ -62,6 +62,11 @@ const TIPOS_PERFIL: Array<{
     value: "SUPERVISOR_TIENDA",
     label: "Supervisor de tienda",
     detail: "Ve solo las sedes que tenga asignadas.",
+  },
+  {
+    value: "VENDEDOR",
+    label: "Vendedor",
+    detail: "Solo ve su modulo de registros tipo venta.",
   },
 ];
 
@@ -318,12 +323,12 @@ export default function PerfilesVendedorPage() {
               </div>
 
               <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Perfiles de vendedor
+                Perfiles operativos
               </h1>
 
               <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                Crea vendedores con PIN, define su perfil operativo y asigna las sedes
-                que podran consultar cuando activemos el flujo de acceso por perfil.
+                Crea perfiles con PIN, define su alcance operativo y asigna las sedes
+                que podran usar en el acceso por perfil.
               </p>
             </div>
 
@@ -374,7 +379,7 @@ export default function PerfilesVendedorPage() {
         <section className="mt-6 rounded-[30px] bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div>
             <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Nuevo vendedor
+              Nuevo perfil
             </div>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
               Crear perfil con PIN
@@ -476,7 +481,7 @@ export default function PerfilesVendedorPage() {
                 Asignacion de sedes
               </h3>
               <p className="text-sm text-slate-500">
-                Para administradores puedes dejarlo sin sedes. Supervisores y facturadores deben tener al menos una.
+                Para administradores puedes dejarlo sin sedes. Supervisores, facturadores y vendedores deben tener al menos una.
               </p>
             </div>
 
@@ -523,7 +528,7 @@ export default function PerfilesVendedorPage() {
               Perfiles existentes
             </div>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-              Vendedores registrados
+              Perfiles registrados
             </h2>
             <p className="mt-2 text-sm text-slate-500">
               Puedes actualizar datos, reasignar sedes o resetear el PIN dejando un nuevo valor.

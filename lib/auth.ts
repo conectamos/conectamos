@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
+import { esPerfilAdministrador } from "@/lib/access-control";
 import { etiquetaTipoPerfilVendedor } from "@/lib/vendor-profiles";
 
 export async function getSessionUser() {
@@ -74,8 +75,9 @@ export async function getSessionUser() {
     }
   }
 
-  const rolNombre =
-    perfil?.tipo === "ADMINISTRADOR" ? "ADMIN" : user.rol?.nombre ?? "";
+  const rolNombre = esPerfilAdministrador(perfil?.tipo)
+    ? "ADMIN"
+    : user.rol?.nombre ?? "";
 
   return {
     id: user.id,
