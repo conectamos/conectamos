@@ -275,15 +275,16 @@ function buildValidationSummary(input: {
   const messageMarker = normalizeMarker(input.resultMessage);
   const statusMarkers = input.statuses.map((status) => normalizeMarker(status));
 
-  const hasPositiveStatus = statusMarkers.some((marker) =>
-    [
-      "readyforuse",
-      "idle",
-      "enrolled",
-      "active",
-      "unlock",
-      "unlocked",
-    ].some((candidate) => marker.includes(candidate))
+  const hasDeliverableStatus = statusMarkers.some((marker) =>
+    ["readyforuse", "configured", "provisioned", "applied"].some(
+      (candidate) => marker.includes(candidate)
+    )
+  );
+
+  const hasPendingSetupStatus = statusMarkers.some((marker) =>
+    ["idle", "enrolled", "active", "unlock", "unlocked"].some((candidate) =>
+      marker.includes(candidate)
+    )
   );
 
   const hasReleasedStatus = statusMarkers.some((marker) =>
@@ -316,14 +317,25 @@ function buildValidationSummary(input: {
     };
   }
 
-  if (hasPositiveStatus) {
+  if (hasDeliverableStatus) {
     return {
       verdict: "deliverable",
       label: "Apto para entrega",
       detail:
-        "El estado consultado sugiere que el equipo esta activo o listo para uso.",
+        "Equality reporta una senal concluyente de configuracion y el equipo parece listo para entrega.",
       tone: "emerald",
       canDeliver: true,
+    };
+  }
+
+  if (hasPendingSetupStatus) {
+    return {
+      verdict: "review",
+      label: "Pendiente de configurar",
+      detail:
+        "El equipo aparece inscrito o activo en Equality, pero aun no hay una senal concluyente de configuracion final para entregarlo.",
+      tone: "amber",
+      canDeliver: false,
     };
   }
 
