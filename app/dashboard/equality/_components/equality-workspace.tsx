@@ -4,14 +4,28 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EqualityQuerySnapshot } from "@/lib/equality";
 
+type EqualityActionStep = {
+  serviceCode: string;
+  statusCode: number | null;
+  resultCode: string | null;
+  resultMessage: string | null;
+  ok: boolean;
+};
+
 type EqualityApiResponse = {
   configured: boolean;
   search: string;
   result: EqualityQuerySnapshot | null;
+  ok?: boolean;
+  action?: string;
+  message?: string;
+  steps?: EqualityActionStep[];
   error?: string;
 };
 
 type QueryIntent = "consult" | "validate";
+type MutationIntent = "enroll" | "lock" | "unlock" | "release";
+type ActionIntent = QueryIntent | MutationIntent;
 
 function normalizeDeviceUid(value: string) {
   return String(value || "").trim().replace(/\s+/g, "");
@@ -30,6 +44,12 @@ function validationClass(tone: EqualityQuerySnapshot["validation"]["tone"]) {
   }
 }
 
+function stepClass(ok: boolean) {
+  return ok
+    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    : "border-red-200 bg-red-50 text-red-800";
+}
+
 function formatResultCode(value: string | null) {
   return value || "-";
 }
@@ -43,7 +63,9 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [resultado, setResultado] = useState<EqualityQuerySnapshot | null>(null);
   const [mensaje, setMensaje] = useState("");
-  const [cargando, setCargando] = useState<QueryIntent | null>(null);
+  const [cargando, setCargando] = useState<ActionIntent | null>(null);
+  const [ultimaAccion, setUltimaAccion] = useState<MutationIntent | null>(null);
+  const [pasos, setPasos] = useState<EqualityActionStep[]>([]);
   const resultadoRef = useRef<HTMLDivElement | null>(null);
   const bootstrappedRef = useRef(false);
 
@@ -54,6 +76,15 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
       : "/dashboard/equality";
 
     window.history.replaceState(null, "", nextUrl);
+  }, []);
+
+  const moveToResult = useCallback(() => {
+    setTimeout(() => {
+      resultadoRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 80);
   }, []);
 
   const consultar = useCallback(
@@ -68,6 +99,8 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
       try {
         setCargando(intent);
         setMensaje("");
+        setUltimaAccion(null);
+        setPasos([]);
 
         const res = await fetch(
           `/api/equality?deviceUid=${encodeURIComponent(deviceUid)}`,
@@ -79,6 +112,8 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
         const data = (await res.json()) as EqualityApiResponse;
 
         if (!res.ok) {
+          setConfigured(Boolean(data.configured));
+          setResultado(data.result);
           setMensaje(data.error || "Error consultando Equality Zero Touch.");
           return;
         }
@@ -87,13 +122,6 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
         setResultado(data.result);
         setSearch(deviceUid);
         syncUrl(deviceUid);
-
-        if (!data.configured) {
-          setMensaje(
-            "Configura las credenciales de Equality Zero Touch para usar este panel."
-          );
-          return;
-        }
 
         if (!data.result) {
           setMensaje("No se recibio respuesta del equipo consultado.");
@@ -106,19 +134,71 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
             : "Consulta realizada correctamente."
         );
 
-        setTimeout(() => {
-          resultadoRef.current?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          });
-        }, 80);
+        moveToResult();
       } catch {
         setMensaje("Error consultando Equality Zero Touch.");
       } finally {
         setCargando(null);
       }
     },
-    [search, syncUrl]
+    [moveToResult, search, syncUrl]
+  );
+
+  const ejecutarAccion = useCallback(
+    async (intent: MutationIntent) => {
+      const deviceUid = normalizeDeviceUid(search);
+
+      if (!deviceUid) {
+        setMensaje("Debes ingresar el IMEI o deviceUid del equipo.");
+        return;
+      }
+
+      try {
+        setCargando(intent);
+        setMensaje("");
+
+        const res = await fetch("/api/equality", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: intent,
+            deviceUid,
+          }),
+        });
+
+        const data = (await res.json()) as EqualityApiResponse;
+
+        setConfigured(Boolean(data.configured));
+        setSearch(deviceUid);
+        syncUrl(deviceUid);
+        setUltimaAccion(intent);
+        setPasos(data.steps || []);
+
+        if (data.result) {
+          setResultado(data.result);
+        }
+
+        if (!res.ok || data.ok === false) {
+          setMensaje(
+            data.error ||
+              data.message ||
+              "Equality devolvio una respuesta para revisar."
+          );
+          moveToResult();
+          return;
+        }
+
+        setMensaje(data.message || "Accion ejecutada correctamente.");
+        moveToResult();
+      } catch {
+        setMensaje("Error ejecutando accion en Equality Zero Touch.");
+      } finally {
+        setCargando(null);
+      }
+    },
+    [moveToResult, search, syncUrl]
   );
 
   useEffect(() => {
@@ -155,24 +235,37 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
     }
   }, [consultar]);
 
-  const nextActions = [
+  const actionButtons: Array<{
+    action: MutationIntent;
+    label: string;
+    detail: string;
+    tone: string;
+  }> = [
     {
+      action: "enroll",
       label: "Inscribir",
-      detail: "Enrolamiento del equipo en Equality.",
+      detail: "Hace carga y activacion del equipo con los valores base del hub.",
+      tone: "border-amber-200 bg-amber-50 text-amber-800",
     },
     {
+      action: "lock",
       label: "Bloquear",
-      detail: "Bloqueo remoto del dispositivo.",
+      detail: "Envia bloqueo remoto con el mensaje base configurado.",
+      tone: "border-red-200 bg-red-50 text-red-800",
     },
     {
+      action: "unlock",
       label: "Desbloquear",
-      detail: "Retiro del bloqueo operativo.",
+      detail: "Retira el bloqueo operativo del equipo.",
+      tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
     },
     ...(esAdmin
       ? [
           {
+            action: "release" as MutationIntent,
             label: "Liberar",
-            detail: "Operacion exclusiva de administrador.",
+            detail: "Operacion exclusiva de administrador para liberar el equipo.",
+            tone: "border-violet-200 bg-violet-50 text-violet-800",
           },
         ]
       : []),
@@ -200,8 +293,8 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
               <div className="mt-4 h-[3px] w-16 rounded-full bg-[#c79a57]" />
 
               <p className="mt-5 text-sm leading-7 text-slate-300 sm:text-base">
-                Consulta el equipo por IMEI o deviceUid y valida si el estado
-                permite entregarlo.
+                Consulta el equipo por IMEI o deviceUid, valida si se puede
+                entregar y ejecuta acciones del hub desde el mismo panel.
               </p>
             </div>
 
@@ -222,7 +315,7 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
           </div>
         ) : null}
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+        <section className="mt-6 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
             <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
               Consulta
@@ -246,7 +339,7 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
                   type="text"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Ejemplo: 350182150759191"
+                  placeholder="Ejemplo: 351389360876777"
                   className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
                 />
               </div>
@@ -274,37 +367,48 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
 
             {configured === false ? (
               <div className="mt-5 rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-800">
-                Falta configurar el token de Equality en el servidor. Este
-                panel espera la variable <span className="font-semibold">EQUALITY_HBM_TOKEN</span>.
+                No fue posible cargar credenciales para Equality Zero Touch.
               </div>
-            ) : null}
+            ) : (
+              <div className="mt-5 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
+                El panel ya usa la credencial del hub y puede operar directamente
+                sobre Equality.
+              </div>
+            )}
           </div>
 
           <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
             <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Siguiente
+              Operaciones
             </div>
 
             <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-              Acciones pendientes
+              Acciones disponibles
             </h2>
 
             <div className="mt-5 space-y-3">
-              {nextActions.map((action) => (
+              {actionButtons.map((item) => (
                 <div
-                  key={action.label}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                  key={item.action}
+                  className={[
+                    "rounded-2xl border px-4 py-4",
+                    item.tone,
+                  ].join(" ")}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-black tracking-tight text-slate-950">
-                      {action.label}
+                    <p className="text-sm font-black tracking-tight">
+                      {item.label}
                     </p>
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Proximo
-                    </span>
+                    <button
+                      onClick={() => void ejecutarAccion(item.action)}
+                      disabled={cargando !== null || !normalizeDeviceUid(search)}
+                      className="rounded-full border border-current/20 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {cargando === item.action ? "Procesando..." : item.label}
+                    </button>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    {action.detail}
+                  <p className="mt-2 text-sm leading-6 opacity-90">
+                    {item.detail}
                   </p>
                 </div>
               ))}
@@ -390,6 +494,43 @@ export function EqualityWorkspace({ esAdmin }: { esAdmin: boolean }) {
                 </p>
               </div>
             </div>
+
+            {ultimaAccion && pasos.length ? (
+              <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Ultima accion
+                  </p>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-700">
+                    {ultimaAccion}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                  {pasos.map((step) => (
+                    <div
+                      key={`${ultimaAccion}-${step.serviceCode}`}
+                      className={[
+                        "rounded-2xl border px-4 py-4",
+                        stepClass(step.ok),
+                      ].join(" ")}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-black tracking-tight">
+                          {step.serviceCode}
+                        </p>
+                        <span className="rounded-full border border-current/20 bg-white/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
+                          {step.ok ? "OK" : "Revisar"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm leading-6">
+                        {step.resultMessage || "-"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-5 grid gap-5 xl:grid-cols-2">
               <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">

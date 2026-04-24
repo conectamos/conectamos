@@ -1,6 +1,15 @@
 const DEFAULT_EQUALITY_BASE_URL = "https://hbm-api.solucionfaas.com";
 const DEFAULT_EQUALITY_PATH = "/v1/hbm";
 const DEFAULT_EQUALITY_VARIANT = "A";
+const FALLBACK_EQUALITY_TOKEN =
+  "GUrlajXkLIIIzWGUGrN+/NnyGWrPYAf69nW1QeUWCUmsOk95LyQrkgQCLnvMbMfqLQjdxyJiRxEoBRP61cKQ+VH3tNSY+F/XoJWEg1dR37MyJlGR9G8pMaDtVNUFSHJcjjZU+Li1GXoSJJsBEAvxCkCs8D3EEJoDVeGAuY46r9k=";
+const DEFAULT_LOCK_TITLE = "Telefono bloqueado";
+const DEFAULT_LOCK_CONTENT = "Equipo bloqueado por falta de pago.";
+const DEFAULT_RELEASE_REASON = "End of contract";
+const DEFAULT_DEVICE_TYPE = "smartphone";
+const DEFAULT_ID_TYPE = "imei";
+const DEFAULT_SERVICE_NAME = "deviceFinancing";
+const DEFAULT_PAYMENT_METHOD = "postpaid";
 
 type EqualityEnvelope = {
   service?: {
@@ -41,15 +50,39 @@ export type EqualityQuerySnapshot = {
   raw: EqualityEnvelope;
 };
 
-function getConfiguredToken() {
-  const token = [
+export type EqualityServiceResult = {
+  serviceCode: string;
+  variant: string;
+  statusCode: number | null;
+  resultCode: string | null;
+  resultMessage: string | null;
+  ok: boolean;
+  raw: EqualityEnvelope;
+};
+
+export type EqualityActionResult = {
+  action: "enroll" | "lock" | "unlock" | "release";
+  deviceUid: string;
+  ok: boolean;
+  message: string;
+  steps: EqualityServiceResult[];
+  result: EqualityQuerySnapshot | null;
+};
+
+function getTokenCandidate() {
+  return [
     process.env.EQUALITY_HBM_TOKEN,
     process.env.EQUALITY_ZERO_TOUCH_TOKEN,
     process.env.HBM_EQUALITY_TOKEN,
     process.env.ZERO_TOUCH_TOKEN,
+    FALLBACK_EQUALITY_TOKEN,
   ]
     .map((value) => String(value || "").trim())
     .find(Boolean);
+}
+
+function getConfiguredToken() {
+  const token = getTokenCandidate();
 
   if (!token) {
     throw new Error("EQUALITY_HBM_TOKEN no esta configurado");
@@ -86,16 +119,7 @@ function getEndpointUrl() {
 }
 
 export function isEqualityConfigured() {
-  return Boolean(
-    [
-      process.env.EQUALITY_HBM_TOKEN,
-      process.env.EQUALITY_ZERO_TOUCH_TOKEN,
-      process.env.HBM_EQUALITY_TOKEN,
-      process.env.ZERO_TOUCH_TOKEN,
-    ]
-      .map((value) => String(value || "").trim())
-      .find(Boolean)
-  );
+  return Boolean(getTokenCandidate());
 }
 
 function normalizeSpace(value: string | null | undefined) {
@@ -104,6 +128,10 @@ function normalizeSpace(value: string | null | undefined) {
 
 function normalizeMarker(value: string | null | undefined) {
   return normalizeSpace(value).toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizeDeviceUid(deviceUid: string) {
+  return normalizeSpace(deviceUid).replace(/\s+/g, "");
 }
 
 function toNumber(value: unknown) {
@@ -142,6 +170,39 @@ function walkUnknown(
     visitor(key, child);
     walkUnknown(child, visitor, key);
   }
+}
+
+function getResultCode(payload: EqualityEnvelope) {
+  const dataResponse = isRecord(payload.dataResponse) ? payload.dataResponse : {};
+  return normalizeSpace(String(dataResponse.resultCode || "")) || null;
+}
+
+function getResultMessage(payload: EqualityEnvelope) {
+  const dataResponse = isRecord(payload.dataResponse) ? payload.dataResponse : {};
+  return normalizeSpace(String(dataResponse.resultMessage || "")) || null;
+}
+
+function buildServiceResult(
+  payload: EqualityEnvelope,
+  serviceCode: string
+): EqualityServiceResult {
+  const statusCode = toNumber(payload.statusCode);
+  const resultCode = getResultCode(payload);
+  const resultMessage = getResultMessage(payload);
+  const resultCodeMarker = normalizeMarker(resultCode);
+
+  return {
+    serviceCode,
+    variant: normalizeSpace(payload.service?.variant) || getConfiguredVariant(),
+    statusCode,
+    resultCode,
+    resultMessage,
+    ok:
+      (statusCode === null || statusCode < 400) &&
+      resultCodeMarker !== "error" &&
+      resultCodeMarker !== "failed",
+    raw: payload,
+  };
 }
 
 function collectEqualitySignals(payload: EqualityEnvelope) {
@@ -339,55 +400,215 @@ async function equalityRequest<T>(payload: Record<string, unknown>): Promise<T> 
   return (isRecord(data) ? data : {}) as T;
 }
 
+async function executeEqualityService(
+  serviceCode: string,
+  data: Record<string, unknown>
+) {
+  const variant = getConfiguredVariant();
+  const payload = await equalityRequest<EqualityEnvelope>({
+    service: {
+      code: serviceCode,
+      variant,
+    },
+    data,
+  });
+
+  return buildServiceResult(payload, serviceCode);
+}
+
 export async function queryEqualityDevice(
   deviceUid: string
 ): Promise<EqualityQuerySnapshot> {
-  const normalizedDeviceUid = normalizeSpace(deviceUid).replace(/\s+/g, "");
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
 
   if (!normalizedDeviceUid) {
     throw new Error("El deviceUid o IMEI es obligatorio");
   }
 
-  const variant = getConfiguredVariant();
-  const payload = await equalityRequest<EqualityEnvelope>({
-    service: {
-      code: "QUERY_DEVICES",
-      variant,
-    },
-    data: {
-      deviceList: [
-        {
-          deviceUid: normalizedDeviceUid,
-        },
-      ],
-    },
+  const serviceResult = await executeEqualityService("QUERY_DEVICES", {
+    deviceList: [
+      {
+        deviceUid: normalizedDeviceUid,
+      },
+    ],
   });
 
-  const statusCode = toNumber(payload.statusCode);
-  const dataResponse = isRecord(payload.dataResponse) ? payload.dataResponse : {};
-  const resultCode =
-    normalizeSpace(String(dataResponse.resultCode || "")) || null;
-  const resultMessage =
-    normalizeSpace(String(dataResponse.resultMessage || "")) || null;
-  const signals = collectEqualitySignals(payload);
+  const signals = collectEqualitySignals(serviceResult.raw);
 
   return {
     deviceUid: normalizedDeviceUid,
-    serviceCode: "QUERY_DEVICES",
-    variant,
-    statusCode,
-    resultCode,
-    resultMessage,
+    serviceCode: serviceResult.serviceCode,
+    variant: serviceResult.variant,
+    statusCode: serviceResult.statusCode,
+    resultCode: serviceResult.resultCode,
+    resultMessage: serviceResult.resultMessage,
     statuses: signals.statuses,
     identifiers: signals.identifiers,
     locked: signals.locked,
     validation: buildValidationSummary({
-      statusCode,
-      resultCode,
-      resultMessage,
+      statusCode: serviceResult.statusCode,
+      resultCode: serviceResult.resultCode,
+      resultMessage: serviceResult.resultMessage,
       statuses: signals.statuses,
       locked: signals.locked,
     }),
-    raw: payload,
+    raw: serviceResult.raw,
   };
+}
+
+async function queryAfterAction(deviceUid: string) {
+  try {
+    return await queryEqualityDevice(deviceUid);
+  } catch {
+    return null;
+  }
+}
+
+export async function enrollEqualityDevice(deviceUid: string) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+
+  if (!normalizedDeviceUid) {
+    throw new Error("El deviceUid o IMEI es obligatorio");
+  }
+
+  const upload = await executeEqualityService("INVENTORY_UPLOAD", {
+    deviceList: [
+      {
+        deviceType: DEFAULT_DEVICE_TYPE,
+        idType: DEFAULT_ID_TYPE,
+        deviceUid: normalizedDeviceUid,
+      },
+    ],
+  });
+
+  const activate = await executeEqualityService("SERVICE_ACTIVATE", {
+    deviceList: [
+      {
+        deviceUid: normalizedDeviceUid,
+        serviceList: [
+          {
+            serviceName: DEFAULT_SERVICE_NAME,
+            paymentMethod: DEFAULT_PAYMENT_METHOD,
+          },
+        ],
+      },
+    ],
+  });
+
+  const result = await queryAfterAction(normalizedDeviceUid);
+  const ok = upload.ok && activate.ok;
+  const message =
+    activate.resultMessage ||
+    upload.resultMessage ||
+    (ok
+      ? "Equipo inscrito correctamente en Equality."
+      : "Equality devolvio una respuesta para revisar durante la inscripcion.");
+
+  return {
+    action: "enroll",
+    deviceUid: normalizedDeviceUid,
+    ok,
+    message,
+    steps: [upload, activate],
+    result,
+  } satisfies EqualityActionResult;
+}
+
+export async function lockEqualityDevice(
+  deviceUid: string,
+  options?: {
+    title?: string;
+    content?: string;
+  }
+) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+
+  if (!normalizedDeviceUid) {
+    throw new Error("El deviceUid o IMEI es obligatorio");
+  }
+
+  const step = await executeEqualityService("DEVICE_LOCK", {
+    lockList: [
+      {
+        lockMsgTitle: normalizeSpace(options?.title) || DEFAULT_LOCK_TITLE,
+        deviceUid: normalizedDeviceUid,
+        lockType: "lock",
+        lockMsgContent:
+          normalizeSpace(options?.content) || DEFAULT_LOCK_CONTENT,
+      },
+    ],
+  });
+
+  const result = await queryAfterAction(normalizedDeviceUid);
+
+  return {
+    action: "lock",
+    deviceUid: normalizedDeviceUid,
+    ok: step.ok,
+    message:
+      step.resultMessage || "Solicitud de bloqueo enviada correctamente.",
+    steps: [step],
+    result,
+  } satisfies EqualityActionResult;
+}
+
+export async function unlockEqualityDevice(deviceUid: string) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+
+  if (!normalizedDeviceUid) {
+    throw new Error("El deviceUid o IMEI es obligatorio");
+  }
+
+  const step = await executeEqualityService("DEVICE_UNLOCK", {
+    unLockList: [
+      {
+        deviceUid: normalizedDeviceUid,
+      },
+    ],
+  });
+
+  const result = await queryAfterAction(normalizedDeviceUid);
+
+  return {
+    action: "unlock",
+    deviceUid: normalizedDeviceUid,
+    ok: step.ok,
+    message:
+      step.resultMessage || "Solicitud de desbloqueo enviada correctamente.",
+    steps: [step],
+    result,
+  } satisfies EqualityActionResult;
+}
+
+export async function releaseEqualityDevice(
+  deviceUid: string,
+  options?: {
+    reason?: string;
+  }
+) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+
+  if (!normalizedDeviceUid) {
+    throw new Error("El deviceUid o IMEI es obligatorio");
+  }
+
+  const step = await executeEqualityService("DEVICE_RELEASE", {
+    deviceReleaseList: [
+      {
+        reason: normalizeSpace(options?.reason) || DEFAULT_RELEASE_REASON,
+        deviceUid: normalizedDeviceUid,
+      },
+    ],
+  });
+
+  const result = await queryAfterAction(normalizedDeviceUid);
+
+  return {
+    action: "release",
+    deviceUid: normalizedDeviceUid,
+    ok: step.ok,
+    message: step.resultMessage || "Solicitud de liberacion enviada correctamente.",
+    steps: [step],
+    result,
+  } satisfies EqualityActionResult;
 }
