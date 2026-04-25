@@ -9,6 +9,7 @@ export default async function FacturadorRegistrosPage() {
       session={{
         nombre: session.nombre,
         sedeNombre: session.sedeNombre ?? "Tu sede",
+        rolNombre: session.rolNombre ?? "USUARIO",
         perfilNombre: session.perfilNombre ?? session.nombre,
         perfilTipoLabel: session.perfilTipoLabel ?? session.rolNombre ?? "Facturador",
       }}

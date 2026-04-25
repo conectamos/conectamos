@@ -572,13 +572,13 @@ export default async function DashboardPage() {
                   accent: "bg-emerald-500",
                   badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
                   eyebrow: "Facturador / Registros",
-                  title: "REGISTROS FACTURACION",
+                  title: "CONSULTAR REGISTROS",
                   description:
-                    "Consulta, modifica o elimina los registros guardados y completa el numero de factura por cédula o IMEI.",
+                    "Busca por cédula o IMEI, consulta la información completa y edita o elimina registros guardados por los vendedores.",
                   actions: [
                     {
                       href: "/facturador/registros",
-                      label: "Ver registros guardados",
+                      label: "CONSULTAR REGISTROS",
                       tone: "primary",
                     },
                   ],

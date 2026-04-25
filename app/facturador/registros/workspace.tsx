@@ -13,6 +13,7 @@ import {
 type SessionProps = {
   nombre: string;
   sedeNombre: string;
+  rolNombre: string;
   perfilNombre: string;
   perfilTipoLabel: string;
 };
@@ -235,6 +236,9 @@ export default function FacturadorRegistrosWorkspace({
 }: {
   session: SessionProps;
 }) {
+  const esAdmin =
+    String(session.rolNombre || "").trim().toUpperCase() === "ADMIN" ||
+    String(session.perfilTipoLabel || "").trim().toUpperCase() === "ADMINISTRADOR";
   const [registros, setRegistros] = useState<RegistroFacturacion[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [mensaje, setMensaje] = useState("");
@@ -577,16 +581,17 @@ export default function FacturadorRegistrosWorkspace({
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Facturacion
+                {esAdmin ? "Consulta de registros" : "Facturacion"}
               </div>
 
               <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                REGISTROS GUARDADOS
+                {esAdmin ? "CONSULTAR REGISTROS" : "REGISTROS GUARDADOS"}
               </h1>
 
               <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                Revisa los registros capturados por los asesores en todas las sedes,
-                agrega el numero de factura y deja marcada la fila como facturada.
+                {esAdmin
+                  ? "Busca por cédula o IMEI, consulta la información del trámite, edita el registro o elimínalo cuando el cliente solicite copia o ajuste."
+                  : "Revisa los registros capturados por los asesores en todas las sedes, agrega el numero de factura y deja marcada la fila como facturada."}
               </p>
             </div>
 
@@ -621,7 +626,9 @@ export default function FacturadorRegistrosWorkspace({
             <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">
               {session.perfilNombre}
             </p>
-            <p className="mt-2 text-sm text-slate-500">{session.perfilTipoLabel}</p>
+            <p className="mt-2 text-sm text-slate-500">
+              {esAdmin ? "Administrador" : session.perfilTipoLabel}
+            </p>
           </div>
 
           <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
@@ -656,11 +663,12 @@ export default function FacturadorRegistrosWorkspace({
                 Tabla horizontal
               </div>
               <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-                Registros para facturar
+                {esAdmin ? "Registros para consultar" : "Registros para facturar"}
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Puedes revisar los datos, guardar la factura y modificar el registro
-                si necesitas hacer una nota credito.
+                {esAdmin
+                  ? "Puedes buscar por cédula o IMEI, consultar la información completa, editar el registro o eliminarlo cuando corresponda."
+                  : "Puedes revisar los datos, guardar la factura y modificar el registro si necesitas hacer una nota credito."}
               </p>
             </div>
 
