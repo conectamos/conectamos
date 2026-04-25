@@ -585,6 +585,8 @@ export default function VendedorRegistroWorkspace({
 }: {
   session: SessionProps;
 }) {
+  const puedeBuscarRegistros =
+    String(session.perfilTipoLabel || "").trim().toUpperCase() !== "VENDEDOR";
   const router = useRouter();
   const searchParams = useSearchParams();
   const [form, setForm] = useState<FormState>(() => createInitialState(session));
@@ -1192,12 +1194,14 @@ export default function VendedorRegistroWorkspace({
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/vendedor/registros/buscar"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                Buscar registro
-              </Link>
+              {puedeBuscarRegistros && (
+                <Link
+                  href="/vendedor/registros/buscar"
+                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                >
+                  Buscar registro
+                </Link>
+              )}
               {registroEditando && (
                 <button
                   type="button"
@@ -1231,7 +1235,7 @@ export default function VendedorRegistroWorkspace({
                 </p>
               </div>
 
-              {registroEditando && (
+              {registroEditando && puedeBuscarRegistros && (
                 <Link
                   href="/vendedor/registros/buscar"
                   className="rounded-2xl border border-emerald-300 bg-white px-4 py-3 text-center text-sm font-semibold text-emerald-800 transition hover:border-emerald-400"

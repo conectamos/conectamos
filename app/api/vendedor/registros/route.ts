@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { esRolAdmin, puedeAccederPanelVendedor } from "@/lib/access-control";
+import {
+  esPerfilVendedor,
+  esRolAdmin,
+  puedeAccederPanelVendedor,
+} from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
@@ -125,6 +129,13 @@ async function requireVendor() {
   }
 
   return { ok: true as const, session };
+}
+
+function puedeGestionarRegistrosConsultados(session: {
+  perfilTipo?: unknown;
+  rolNombre?: unknown;
+}) {
+  return !esPerfilVendedor(session.perfilTipo) || esRolAdmin(session.rolNombre);
 }
 
 function construirScopeRegistros(session: {
@@ -435,6 +446,15 @@ export async function GET(req: NextRequest) {
     const buscar = normalizarTextoCorto(url.searchParams.get("buscar"));
     const scope = construirScopeRegistros(access.session);
 
+    if ((Number.isInteger(id) && id > 0) || buscar) {
+      if (!puedeGestionarRegistrosConsultados(access.session)) {
+        return NextResponse.json(
+          { error: "Solo supervisor o administrador pueden consultar registros guardados" },
+          { status: 403 }
+        );
+      }
+    }
+
     if (Number.isInteger(id) && id > 0) {
       const registro = await prisma.registroVendedorVenta.findFirst({
         where: {
@@ -627,6 +647,13 @@ export async function PATCH(req: Request) {
     const body = (await req.json()) as Record<string, unknown>;
     const id = Number(body.id);
     const modo = String(body.modo || "").trim().toUpperCase();
+
+    if (!puedeGestionarRegistrosConsultados(access.session)) {
+      return NextResponse.json(
+        { error: "Solo supervisor o administrador pueden modificar o eliminar registros" },
+        { status: 403 }
+      );
+    }
 
     if (!Number.isInteger(id) || id <= 0) {
       return NextResponse.json({ error: "Registro invalido" }, { status: 400 });

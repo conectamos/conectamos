@@ -32,6 +32,7 @@ export function puedeAccederPanelVendedor(
 ) {
   return (
     esPerfilVendedor(perfilTipo) ||
+    esPerfilSupervisor(perfilTipo) ||
     esPerfilAdministrador(perfilTipo) ||
     esRolAdmin(rolNombre)
   );
