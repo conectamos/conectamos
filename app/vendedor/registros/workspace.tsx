@@ -253,6 +253,22 @@ function isFinancieraCompleta(item: FinancialFormState, index: number) {
   );
 }
 
+function financieraMuestraInicial(index: number) {
+  return index === 0 || index === 1;
+}
+
+function getDescripcionFinanciera(index: number) {
+  if (index === 0) {
+    return "Registra plataforma, valores, plazo y forma de pago de la inicial.";
+  }
+
+  if (index === 1) {
+    return "Registra plataforma, crédito autorizado, valor cuota, plazo y frecuencia de pago. La inicial es opcional.";
+  }
+
+  return "Registra plataforma, credito autorizado, valor cuota, plazo y frecuencia de pago.";
+}
+
 async function fileToDataUrl(file: File) {
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -1147,15 +1163,13 @@ export default function VendedorRegistroWorkspace({
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-sm font-bold text-slate-900">
-                            Financiera {index + 1}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {financieraRequiereInicial(index)
-                              ? "Registra plataforma, valores, plazo y forma de pago de la inicial."
-                              : "Registra plataforma, credito autorizado, valor cuota, plazo y frecuencia de pago."}
-                          </p>
-                        </div>
+                            <p className="text-sm font-bold text-slate-900">
+                              Financiera {index + 1}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {getDescripcionFinanciera(index)}
+                            </p>
+                          </div>
 
                         {index > 0 && (
                           <button
@@ -1216,10 +1230,10 @@ export default function VendedorRegistroWorkspace({
                               />
                             </label>
 
-                            {financieraRequiereInicial(index) && (
-                              <>
-                                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                                  Inicial
+                            {financieraMuestraInicial(index) && (
+                                <>
+                                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                    Inicial
                                   <input
                                     value={item.cuotaInicial}
                                     onChange={(event) =>
