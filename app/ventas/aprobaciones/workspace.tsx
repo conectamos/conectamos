@@ -154,7 +154,7 @@ export default function VentasAprobacionesWorkspace({
             <div className="flex flex-col gap-3 sm:flex-row">
               {esAdmin && (
                 <Link
-                  href="/facturador/registros"
+                  href="/dashboard/registros"
                   className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
                 >
                   Gestionar registros

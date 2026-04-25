@@ -442,7 +442,12 @@ export default async function DashboardPage() {
             ? ([{ href: "/vendedor/registros", label: "Panel vendedor" }] as NavItem[])
             : []),
           ...(puedeAbrirPanelFacturador
-            ? ([{ href: "/facturador/registros", label: "Panel facturador" }] as NavItem[])
+            ? ([
+                {
+                  href: esAdmin ? "/dashboard/registros" : "/facturador/registros",
+                  label: esAdmin ? "Consultar registros" : "Panel facturador",
+                },
+              ] as NavItem[])
             : []),
           { href: "/inventario", label: "Inventario" },
           ...(esAdmin
@@ -577,7 +582,7 @@ export default async function DashboardPage() {
                     "Busca por cédula o IMEI, consulta la información completa y edita o elimina registros guardados por los vendedores.",
                   actions: [
                     {
-                      href: "/facturador/registros",
+                      href: "/dashboard/registros",
                       label: "CONSULTAR REGISTROS",
                       tone: "primary",
                     },
