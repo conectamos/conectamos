@@ -111,7 +111,6 @@ function validarPayload(body: Record<string, unknown>) {
   }
   if (!telefono) return { error: "El telefono es obligatorio" };
   if (!simCardRegistro1) return { error: "El registro SIM 1 es obligatorio" };
-  if (!simCardRegistro2) return { error: "El registro SIM 2 es obligatorio" };
   if (!asesorNombre) return { error: "El asesor es obligatorio" };
   if (!referenciaFamiliar1Nombre || !referenciaFamiliar1Telefono) {
     return {

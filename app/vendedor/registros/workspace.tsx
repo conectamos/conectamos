@@ -781,7 +781,6 @@ export default function VendedorRegistroWorkspace({
       return "El telefono de la referencia familiar 2 es obligatorio";
     }
     if (!isTextFilled(form.simCardRegistro1)) return "El registro SIM 1 es obligatorio";
-    if (!isTextFilled(form.simCardRegistro2)) return "El registro SIM 2 es obligatorio";
     if (!form.aceptaDeclaracionIntermediacion) {
       return "Debes confirmar el primer texto visible del formato";
     }
