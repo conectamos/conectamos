@@ -25,3 +25,25 @@ export function esPerfilFacturador(perfilTipo: unknown) {
 export function esPerfilVendedor(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "VENDEDOR";
 }
+
+export function puedeAccederPanelVendedor(
+  perfilTipo: unknown,
+  rolNombre: unknown
+) {
+  return (
+    esPerfilVendedor(perfilTipo) ||
+    esPerfilAdministrador(perfilTipo) ||
+    esRolAdmin(rolNombre)
+  );
+}
+
+export function puedeAccederPanelFacturador(
+  perfilTipo: unknown,
+  rolNombre: unknown
+) {
+  return (
+    esPerfilFacturador(perfilTipo) ||
+    esPerfilAdministrador(perfilTipo) ||
+    esRolAdmin(rolNombre)
+  );
+}

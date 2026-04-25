@@ -207,6 +207,8 @@ model RegistroVendedorVenta {
   cerradorNombre                  String?
   numeroFactura                   String?
   estadoFacturacion               String          @default("PENDIENTE")
+  eliminadoEn                     DateTime?
+  eliminadoPor                    String?
   firmaClienteDataUrl             String?
   fotoEntregaDataUrl              String?
   confirmacionCliente             Boolean         @default(false)

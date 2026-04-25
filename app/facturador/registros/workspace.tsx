@@ -233,10 +233,12 @@ export default function FacturadorRegistrosWorkspace({
   session: SessionProps;
 }) {
   const [registros, setRegistros] = useState<RegistroFacturacion[]>([]);
+  const [busqueda, setBusqueda] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [mensajeTipo, setMensajeTipo] = useState<"success" | "error">("success");
   const [cargando, setCargando] = useState(true);
   const [guardandoId, setGuardandoId] = useState<number | null>(null);
+  const [eliminandoId, setEliminandoId] = useState<number | null>(null);
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
   const [editando, setEditando] = useState<EditDraft | null>(null);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
@@ -295,6 +297,36 @@ export default function FacturadorRegistrosWorkspace({
       ).length,
     [registros]
   );
+
+  const registrosFiltrados = useMemo(() => {
+    const criterio = busqueda.trim().toLowerCase();
+
+    if (!criterio) {
+      return registros;
+    }
+
+    const digits = criterio.replace(/\D/g, "");
+
+    return registros.filter((registro) => {
+      const documento = String(registro.documentoNumero || "").replace(/\D/g, "");
+      const imei = String(registro.serialImei || "").replace(/\D/g, "");
+      const textoBase = [
+        registro.clienteNombre,
+        registro.puntoVenta,
+        registro.referenciaEquipo,
+        registro.numeroFactura,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return (
+        textoBase.includes(criterio) ||
+        (digits.length > 0 &&
+          (documento.includes(digits) || imei.includes(digits)))
+      );
+    });
+  }, [busqueda, registros]);
 
   const guardarFactura = async (registroId: number) => {
     const numeroFactura = String(facturasDraft[registroId] || "").trim();
@@ -470,6 +502,54 @@ export default function FacturadorRegistrosWorkspace({
     }
   };
 
+  const eliminarRegistro = async (registroId: number) => {
+    const confirmar = window.confirm(
+      "Este registro se eliminara del panel operativo, pero quedara trazabilidad interna. Deseas continuar?"
+    );
+
+    if (!confirmar) {
+      return;
+    }
+
+    try {
+      setEliminandoId(registroId);
+      setMensaje("");
+
+      const res = await fetch("/api/facturador/registros", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          modo: "ELIMINAR",
+          id: registroId,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudo eliminar el registro");
+        return;
+      }
+
+      setRegistros((current) => current.filter((item) => item.id !== registroId));
+      setFacturasDraft((current) => {
+        const next = { ...current };
+        delete next[registroId];
+        return next;
+      });
+      setMensajeTipo("success");
+      setMensaje(data.mensaje || "Registro eliminado correctamente");
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error eliminando el registro");
+    } finally {
+      setEliminandoId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
       <div className="mx-auto w-full max-w-none">
@@ -563,7 +643,25 @@ export default function FacturadorRegistrosWorkspace({
                 si necesitas hacer una nota credito.
               </p>
             </div>
+
+            <div className="w-full max-w-md">
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Buscar por IMEI o cedula
+                <input
+                  value={busqueda}
+                  onChange={(event) => setBusqueda(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  placeholder="Ej: 3551... o 1110..."
+                />
+              </label>
+            </div>
           </div>
+
+          <p className="mt-4 text-sm text-slate-500">
+            {busqueda.trim()
+              ? `${registrosFiltrados.length} registro(s) encontrados para la busqueda actual.`
+              : `${registros.length} registro(s) activos disponibles para gestion.`}
+          </p>
 
           <div className="mt-6 overflow-x-auto">
             <table className="min-w-[2360px] border-separate border-spacing-y-3">
@@ -596,14 +694,16 @@ export default function FacturadorRegistrosWorkspace({
                       Cargando registros...
                     </td>
                   </tr>
-                ) : registros.length === 0 ? (
+                ) : registrosFiltrados.length === 0 ? (
                   <tr>
                     <td colSpan={15} className="px-4 py-8 text-sm text-slate-500">
-                      No hay registros guardados para facturar.
+                      {busqueda.trim()
+                        ? "No hay registros que coincidan con la cedula o IMEI consultado."
+                        : "No hay registros guardados para facturar."}
                     </td>
                   </tr>
                 ) : (
-                  registros.map((registro) => {
+                  registrosFiltrados.map((registro) => {
                     const estado = resolveEstadoBadge(
                       registro.estadoFacturacion,
                       registro.numeroFactura
@@ -725,6 +825,15 @@ export default function FacturadorRegistrosWorkspace({
                               className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950"
                             >
                               Modificar
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => void eliminarRegistro(registro.id)}
+                              disabled={eliminandoId === registro.id}
+                              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                            >
+                              {eliminandoId === registro.id ? "Eliminando..." : "Eliminar"}
                             </button>
                           </div>
                         </td>

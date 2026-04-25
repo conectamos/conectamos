@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { esPerfilVendedor } from "@/lib/access-control";
+import { puedeAccederPanelVendedor } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import {
@@ -27,11 +27,14 @@ async function requireVendor() {
     };
   }
 
-  if (!esPerfilVendedor(session.perfilTipo) || !session.perfilId) {
+  if (
+    !puedeAccederPanelVendedor(session.perfilTipo, session.rolNombre) ||
+    !session.perfilId
+  ) {
     return {
       ok: false as const,
       response: NextResponse.json(
-        { error: "Solo el perfil vendedor puede usar este modulo" },
+        { error: "Solo un perfil vendedor o administrador puede usar este modulo" },
         { status: 403 }
       ),
     };
@@ -213,6 +216,7 @@ export async function GET() {
     const registros = await prisma.registroVendedorVenta.findMany({
       where: {
         perfilVendedorId: access.session.perfilId!,
+        eliminadoEn: null,
       },
       select: {
         id: true,

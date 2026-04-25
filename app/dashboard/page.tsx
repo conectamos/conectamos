@@ -394,6 +394,9 @@ export default async function DashboardPage() {
   const esAdmin = esRolAdmin(session.rolNombre);
   const esFacturador = esPerfilFacturador(session.perfilTipo);
   const esVendedor = esPerfilVendedor(session.perfilTipo);
+  const puedeAbrirPanelVendedor =
+    esVendedor || (esAdmin && Boolean(session.perfilId));
+  const puedeAbrirPanelFacturador = esFacturador || esAdmin;
   const esSupervisor =
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
@@ -435,6 +438,12 @@ export default async function DashboardPage() {
           { href: "/dashboard", label: "Panel de control" },
           ...(esAdmin
             ? ([{ href: "/dashboard/sedes", label: "Gestion sedes" }] as NavItem[])
+            : []),
+          ...(puedeAbrirPanelVendedor
+            ? ([{ href: "/vendedor/registros", label: "Panel vendedor" }] as NavItem[])
+            : []),
+          ...(puedeAbrirPanelFacturador
+            ? ([{ href: "/facturador/registros", label: "Panel facturador" }] as NavItem[])
             : []),
           { href: "/inventario", label: "Inventario" },
           ...(esAdmin
@@ -543,6 +552,37 @@ export default async function DashboardPage() {
             },
           ] as ModuleCard[])
       : ([
+          ...(esAdmin
+            ? ([
+                {
+                  accent: "bg-emerald-500",
+                  badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+                  eyebrow: "Registros / Gestion",
+                  title: "Paneles de registros",
+                  description:
+                    "Accede al panel vendedor para capturar tramites y al panel facturador para buscar, modificar o eliminar registros por cedula o IMEI.",
+                  actions: [
+                    ...(puedeAbrirPanelVendedor
+                      ? ([
+                          {
+                            href: "/vendedor/registros",
+                            label: "Panel vendedor",
+                            tone: "primary",
+                          },
+                        ] as ModuleAction[])
+                      : []),
+                    ...(puedeAbrirPanelFacturador
+                      ? ([
+                          {
+                            href: "/facturador/registros",
+                            label: "Panel facturador",
+                          },
+                        ] as ModuleAction[])
+                      : []),
+                  ],
+                },
+              ] as ModuleCard[])
+            : []),
           {
             accent: "bg-sky-500",
             badge: "border-sky-200 bg-sky-50 text-sky-700",

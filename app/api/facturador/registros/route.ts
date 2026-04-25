@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { esPerfilFacturador } from "@/lib/access-control";
+import { puedeAccederPanelFacturador } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
   DOMINIOS_CORREO_REGISTRO_TEXTO,
@@ -31,11 +31,11 @@ async function requireFacturador() {
     };
   }
 
-  if (!esPerfilFacturador(session.perfilTipo)) {
+  if (!puedeAccederPanelFacturador(session.perfilTipo, session.rolNombre)) {
     return {
       ok: false as const,
       response: NextResponse.json(
-        { error: "Solo el perfil facturador puede usar este modulo" },
+        { error: "Solo el perfil facturador o administrador puede usar este modulo" },
         { status: 403 }
       ),
     };
@@ -134,6 +134,9 @@ export async function GET() {
     await ensureVendorProfilesSchema();
 
     const registros = await prisma.registroVendedorVenta.findMany({
+      where: {
+        eliminadoEn: null,
+      },
       select: {
         id: true,
         createdAt: true,
@@ -196,7 +199,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Registro invalido" }, { status: 400 });
     }
 
-    if (modo !== "EDITAR" && !numeroFactura) {
+    if (modo !== "EDITAR" && modo !== "ELIMINAR" && !numeroFactura) {
       return NextResponse.json(
         { error: "Debes ingresar el numero de factura" },
         { status: 400 }
@@ -206,6 +209,7 @@ export async function PATCH(req: Request) {
     const existente = await prisma.registroVendedorVenta.findFirst({
       where: {
         id,
+        eliminadoEn: null,
       },
       select: {
         id: true,
@@ -218,6 +222,21 @@ export async function PATCH(req: Request) {
         { error: "Registro no encontrado" },
         { status: 404 }
       );
+    }
+
+    if (modo === "ELIMINAR") {
+      await prisma.registroVendedorVenta.update({
+        where: { id },
+        data: {
+          eliminadoEn: new Date(),
+          eliminadoPor: access.session.perfilNombre ?? access.session.nombre,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Registro eliminado correctamente",
+      });
     }
 
     if (modo === "EDITAR") {

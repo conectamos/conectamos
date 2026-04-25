@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { esPerfilVendedor } from "@/lib/access-control";
+import { puedeAccederPanelVendedor } from "@/lib/access-control";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import { normalizarImei } from "@/lib/vendor-sale-records";
 
@@ -14,11 +14,11 @@ async function requireVendor() {
     };
   }
 
-  if (!esPerfilVendedor(session.perfilTipo)) {
+  if (!puedeAccederPanelVendedor(session.perfilTipo, session.rolNombre)) {
     return {
       ok: false as const,
       response: NextResponse.json(
-        { error: "Solo el perfil vendedor puede usar este modulo" },
+        { error: "Solo un perfil vendedor o administrador puede usar este modulo" },
         { status: 403 }
       ),
     };

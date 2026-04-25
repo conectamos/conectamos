@@ -99,6 +99,8 @@ async function runEnsureVendorProfilesSchema() {
       "cerradorNombre" TEXT,
       "numeroFactura" TEXT,
       "estadoFacturacion" TEXT NOT NULL DEFAULT 'PENDIENTE',
+      "eliminadoEn" TIMESTAMP(3),
+      "eliminadoPor" TEXT,
       "firmaClienteDataUrl" TEXT,
       "fotoEntregaDataUrl" TEXT,
       "confirmacionCliente" BOOLEAN NOT NULL DEFAULT false,
@@ -118,6 +120,8 @@ async function runEnsureVendorProfilesSchema() {
       ADD COLUMN IF NOT EXISTS "jaladorNombre" TEXT,
       ADD COLUMN IF NOT EXISTS "numeroFactura" TEXT,
       ADD COLUMN IF NOT EXISTS "estadoFacturacion" TEXT NOT NULL DEFAULT 'PENDIENTE',
+      ADD COLUMN IF NOT EXISTS "eliminadoEn" TIMESTAMP(3),
+      ADD COLUMN IF NOT EXISTS "eliminadoPor" TEXT,
       ADD COLUMN IF NOT EXISTS "firmaClienteDataUrl" TEXT,
       ADD COLUMN IF NOT EXISTS "fotoEntregaDataUrl" TEXT;
   `);
