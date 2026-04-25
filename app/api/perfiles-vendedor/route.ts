@@ -6,6 +6,7 @@ import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
   actualizarPerfilVendedor,
   crearPerfilVendedor,
+  normalizarAvatarPerfilVendedor,
   normalizarCorreoPerfilVendedor,
   normalizarDocumentoPerfilVendedor,
   normalizarNombrePerfilVendedor,
@@ -120,6 +121,7 @@ export async function POST(req: Request) {
     const telefono = normalizarTelefonoPerfilVendedor(body.telefono);
     const correo = normalizarCorreoPerfilVendedor(body.correo);
     const tipo = normalizarTipoPerfilVendedor(body.tipo);
+    const avatarKey = normalizarAvatarPerfilVendedor(body.avatarKey, tipo);
     const sedeIds = normalizarSedeIdsPerfilVendedor(body.sedeIds);
     const activo = Boolean(body.activo ?? true);
     const pin = String(body.pin || "").trim();
@@ -152,6 +154,7 @@ export async function POST(req: Request) {
       documento,
       telefono,
       correo,
+      avatarKey,
       pinHash: hashPassword(pin),
       activo,
       tipo,
@@ -189,6 +192,7 @@ export async function PATCH(req: Request) {
     const telefono = normalizarTelefonoPerfilVendedor(body.telefono);
     const correo = normalizarCorreoPerfilVendedor(body.correo);
     const tipo = normalizarTipoPerfilVendedor(body.tipo);
+    const avatarKey = normalizarAvatarPerfilVendedor(body.avatarKey, tipo);
     const sedeIds = normalizarSedeIdsPerfilVendedor(body.sedeIds);
     const activo = Boolean(body.activo ?? true);
     const pin = String(body.pin || "").trim();
@@ -228,6 +232,7 @@ export async function PATCH(req: Request) {
       documento,
       telefono,
       correo,
+      avatarKey,
       activo,
       tipo,
       sedeIds,

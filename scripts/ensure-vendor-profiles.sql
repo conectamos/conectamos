@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS "PerfilVendedor" (
   "documento" TEXT,
   "telefono" TEXT,
   "correo" TEXT,
+  "avatarKey" TEXT,
   "pinHash" TEXT NOT NULL,
   "activo" BOOLEAN NOT NULL DEFAULT true,
   "tipo" "TipoPerfilVendedor" NOT NULL DEFAULT 'SUPERVISOR_TIENDA',
@@ -28,6 +29,9 @@ CREATE TABLE IF NOT EXISTS "PerfilVendedor" (
 
   CONSTRAINT "PerfilVendedor_pkey" PRIMARY KEY ("id")
 );
+
+ALTER TABLE "PerfilVendedor"
+  ADD COLUMN IF NOT EXISTS "avatarKey" TEXT;
 
 CREATE TABLE IF NOT EXISTS "PerfilVendedorSede" (
   "id" SERIAL NOT NULL,

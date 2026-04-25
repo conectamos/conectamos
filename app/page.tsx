@@ -3,11 +3,16 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  type AvatarPerfilKey,
+  normalizarAvatarPerfil,
+} from "@/lib/profile-avatars";
 
 type PerfilAcceso = {
   id: number;
   nombre: string;
   tipo: "ADMINISTRADOR" | "FACTURADOR" | "SUPERVISOR_TIENDA" | "VENDEDOR";
+  avatarKey: AvatarPerfilKey;
   tipoLabel: string;
   debeCambiarPin: boolean;
 };
@@ -52,154 +57,78 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
-  if (tipo === "SUPERVISOR_TIENDA") {
-    return (
-      <div className="relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden rounded-[42%_58%_54%_46%/40%_38%_62%_60%] border border-white/80 bg-[linear-gradient(180deg,#f9fcff_0%,#ebf3ff_54%,#f5f9ff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)] transition duration-500 group-hover:-translate-y-1 group-hover:rotate-[1.5deg] group-hover:scale-[1.03]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.24),transparent_48%)]" />
-        <Image
-          src="/profile-avatars/supervisor-3d.png"
-          alt="Avatar de supervisor"
-          fill
-          sizes="248px"
-          className="object-cover object-center"
-          priority
-        />
-      </div>
-    );
-  }
+type AvatarPresentation = {
+  alt: string;
+  src: string;
+  shapeClass: string;
+  toneClass: string;
+};
 
-  if (tipo === "FACTURADOR") {
-    return (
-      <div className="relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden rounded-[48%_52%_44%_56%/38%_42%_58%_62%] border border-white/80 bg-[linear-gradient(180deg,#fffdf8_0%,#eef5ff_58%,#f7fbff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)] transition duration-500 group-hover:-translate-y-1 group-hover:-rotate-[1.5deg] group-hover:scale-[1.03]">
-        <div className="absolute left-2 top-6 h-24 w-24 rounded-full bg-amber-100/75 blur-2xl" />
-        <div className="absolute right-4 top-8 h-24 w-24 rounded-full bg-sky-100/70 blur-2xl" />
-        <svg
-          viewBox="0 0 180 150"
-          className="relative h-full w-full px-4 pb-3 pt-3"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          <ellipse cx="92" cy="135" rx="58" ry="10" fill="#E2E8F0" />
-          <rect x="44" y="100" width="92" height="18" rx="9" fill="#CBD5E1" />
-          <rect x="53" y="72" width="78" height="30" rx="14" fill="#E5EEF9" />
-          <circle cx="82" cy="48" r="15" fill="#F4C59A" />
-          <path
-            d="M61 112V86C61 71.0883 70.1782 59 82 59C93.8218 59 103 71.0883 103 86V112H61Z"
-            fill="#334155"
-          />
-          <path
-            d="M71 79L81.5 87L93 79"
-            stroke="#E2E8F0"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <rect x="101" y="57" width="30" height="22" rx="6" fill="#DBEAFE" />
-          <path d="M107 66H124" stroke="#2563EB" strokeWidth="4" strokeLinecap="round" />
-          <path d="M107 73H119" stroke="#93C5FD" strokeWidth="4" strokeLinecap="round" />
-          <rect x="118" y="40" width="26" height="38" rx="8" fill="#F8FAFC" />
-          <path d="M124 50H138" stroke="#64748B" strokeWidth="4" strokeLinecap="round" />
-          <path d="M124 58H138" stroke="#94A3B8" strokeWidth="4" strokeLinecap="round" />
-          <path d="M124 66H134" stroke="#94A3B8" strokeWidth="4" strokeLinecap="round" />
-        </svg>
-      </div>
-    );
-  }
+const AVATAR_PRESENTATIONS: Record<AvatarPerfilKey, AvatarPresentation> = {
+  SUPERVISOR: {
+    src: "/profile-avatars/supervisor-3d.png",
+    alt: "Avatar de supervisor",
+    shapeClass: "rounded-[42%_58%_54%_46%/40%_38%_62%_60%]",
+    toneClass:
+      "border-white/80 bg-[linear-gradient(180deg,#f9fcff_0%,#ebf3ff_54%,#f5f9ff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)]",
+  },
+  FACTURADOR: {
+    src: "/profile-avatars/facturador-3d.png",
+    alt: "Avatar de facturador",
+    shapeClass: "rounded-[48%_52%_44%_56%/38%_42%_58%_62%]",
+    toneClass:
+      "border-white/80 bg-[linear-gradient(180deg,#fffdf8_0%,#eef5ff_58%,#f7fbff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)]",
+  },
+  VENDEDOR_HOMBRE: {
+    src: "/profile-avatars/vendedor-hombre-3d.png",
+    alt: "Avatar de vendedor hombre",
+    shapeClass: "rounded-[46%_54%_58%_42%/44%_38%_62%_56%]",
+    toneClass:
+      "border-white/80 bg-[linear-gradient(180deg,#fbfffd_0%,#ecfaf3_56%,#f8fcfb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)]",
+  },
+  VENDEDOR_MUJER: {
+    src: "/profile-avatars/vendedor-mujer-3d.png",
+    alt: "Avatar de vendedora",
+    shapeClass: "rounded-[52%_48%_46%_54%/38%_44%_56%_62%]",
+    toneClass:
+      "border-white/80 bg-[linear-gradient(180deg,#f9fdff_0%,#eef7ff_54%,#f7fbff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)]",
+  },
+  ADMINISTRADOR_HOMBRE: {
+    src: "/profile-avatars/administrador-hombre-3d.png",
+    alt: "Avatar de administrador hombre",
+    shapeClass: "rounded-[44%_56%_52%_48%/36%_40%_60%_64%]",
+    toneClass:
+      "border-[#f1e0b0] bg-[linear-gradient(180deg,#fff9e7_0%,#fff2c9_50%,#fff8e6_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_24px_56px_rgba(180,138,40,0.22)]",
+  },
+  ADMINISTRADOR_MUJER: {
+    src: "/profile-avatars/administrador-mujer-3d.png",
+    alt: "Avatar de administradora",
+    shapeClass: "rounded-[50%_50%_44%_56%/38%_40%_60%_62%]",
+    toneClass:
+      "border-[#f1e0b0] bg-[linear-gradient(180deg,#fff9e7_0%,#fff1d6_52%,#fff8ed_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_24px_56px_rgba(180,138,40,0.2)]",
+  },
+};
 
-  if (tipo === "VENDEDOR") {
-    return (
-      <div className="relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden rounded-[46%_54%_58%_42%/44%_38%_62%_56%] border border-white/80 bg-[linear-gradient(180deg,#fbfffd_0%,#ecfaf3_56%,#f8fcfb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)] transition duration-500 group-hover:-translate-y-1 group-hover:rotate-[1.5deg] group-hover:scale-[1.03]">
-        <div className="absolute left-2 top-6 h-20 w-20 rounded-full bg-emerald-100/80 blur-2xl" />
-        <div className="absolute right-4 top-7 h-24 w-24 rounded-full bg-cyan-100/65 blur-2xl" />
-        <svg
-          viewBox="0 0 180 150"
-          className="relative h-full w-full px-4 pb-3 pt-3"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          <ellipse cx="92" cy="135" rx="60" ry="10" fill="#DAF0E7" />
-          <circle cx="60" cy="50" r="14" fill="#F4C59A" />
-          <circle cx="119" cy="54" r="13" fill="#F4C59A" />
-          <path
-            d="M41 113C41 92.5655 49.2827 76 60 76C70.7173 76 79 92.5655 79 113H41Z"
-            fill="#1F2937"
-          />
-          <path
-            d="M102 115C102 96.3269 109.163 81 119 81C128.837 81 136 96.3269 136 115H102Z"
-            fill="#0F766E"
-          />
-          <path
-            d="M49 95L59.5 103L70 95"
-            stroke="#E2E8F0"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M111 98L119 104L128 98"
-            stroke="#ECFEFF"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <rect x="74" y="56" width="31" height="45" rx="9" fill="#DBEAFE" />
-          <path d="M82 70H97" stroke="#2563EB" strokeWidth="4" strokeLinecap="round" />
-          <path d="M82 79H97" stroke="#60A5FA" strokeWidth="4" strokeLinecap="round" />
-          <circle cx="94" cy="93" r="3" fill="#2563EB" />
-          <circle cx="75" cy="100" r="6" fill="#F4C59A" />
-          <circle cx="105" cy="104" r="6" fill="#F4C59A" />
-          <path
-            d="M80 103L89 98"
-            stroke="#F4C59A"
-            strokeWidth="4"
-            strokeLinecap="round"
-          />
-          <path
-            d="M100 104L92 99"
-            stroke="#F4C59A"
-            strokeWidth="4"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
-    );
-  }
+function ProfileAvatar({ perfil }: { perfil: PerfilAcceso }) {
+  const avatarKey = normalizarAvatarPerfil(perfil.avatarKey, perfil.tipo);
+  const avatar = AVATAR_PRESENTATIONS[avatarKey];
 
   return (
-    <div className="relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden rounded-[44%_56%_52%_48%/36%_40%_60%_64%] border border-[#f6e7b8] bg-[linear-gradient(180deg,#fff9e7_0%,#fff2c9_50%,#fff8e6_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_24px_56px_rgba(180,138,40,0.22)] transition duration-500 group-hover:-translate-y-1 group-hover:-rotate-[1.5deg] group-hover:scale-[1.03]">
-      <div className="absolute left-0 top-4 h-24 w-24 rounded-full bg-yellow-200/75 blur-2xl" />
-      <div className="absolute right-6 top-5 h-20 w-20 rounded-full bg-amber-100/80 blur-2xl" />
-      <svg
-        viewBox="0 0 180 150"
-        className="relative h-full w-full px-4 pb-3 pt-3"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-      >
-        <ellipse cx="92" cy="135" rx="58" ry="10" fill="#F4E1A5" />
-        <circle cx="91" cy="34" r="22" fill="#FDE68A" opacity="0.75" />
-        <circle cx="90" cy="50" r="15" fill="#F4C59A" />
-        <path
-          d="M61 117C61 93.2518 74.4315 74 91 74C107.569 74 121 93.2518 121 117H61Z"
-          fill="#0F172A"
-        />
-        <path
-          d="M74 95L90.5 106L107 95"
-          stroke="#E2E8F0"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M90 16L95 24H104L97 30L100 39L90 33L80 39L83 30L76 24H85L90 16Z"
-          fill="#D4A414"
-        />
-        <path d="M60 44H74" stroke="#D4A414" strokeWidth="4" strokeLinecap="round" />
-        <path d="M107 44H121" stroke="#D4A414" strokeWidth="4" strokeLinecap="round" />
-      </svg>
+    <div
+      className={[
+        "relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden border transition duration-500 group-hover:-translate-y-1 group-hover:scale-[1.03]",
+        avatar.shapeClass,
+        avatar.toneClass,
+      ].join(" ")}
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.24),transparent_48%)]" />
+      <Image
+        src={avatar.src}
+        alt={avatar.alt}
+        fill
+        sizes="248px"
+        className="object-cover object-center"
+      />
     </div>
   );
 }
@@ -270,8 +199,17 @@ export default function Home() {
     return texto.includes(busqueda.trim().toLowerCase());
   });
 
-  const perfilSeleccionado =
+  const perfilSeleccionadoActual =
     perfiles.find((perfil) => String(perfil.id) === perfilId) ?? null;
+  const hayPerfilSeleccionado = perfilSeleccionadoActual !== null;
+  const perfilSeleccionado: PerfilAcceso = perfilSeleccionadoActual ?? {
+    id: 0,
+    nombre: "",
+    tipo: "SUPERVISOR_TIENDA",
+    avatarKey: "SUPERVISOR",
+    tipoLabel: "",
+    debeCambiarPin: false,
+  };
   const nombreSedeActual =
     usuarioPendiente?.sedeNombre || `SEDE ${usuarioPendiente?.sedeId || ""}`;
 
@@ -301,7 +239,7 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (!perfilSeleccionado || modalModo !== "pin") {
+    if (!hayPerfilSeleccionado || modalModo !== "pin") {
       return;
     }
 
@@ -315,7 +253,7 @@ export default function Home() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [perfilSeleccionado, cargando, modalModo]);
+  }, [hayPerfilSeleccionado, cargando, modalModo]);
 
   const login = async () => {
     try {
@@ -584,7 +522,7 @@ export default function Home() {
                           : "group-hover:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_70%)]",
                       ].join(" ")}
                     >
-                      <ProfileAvatar tipo={perfil.tipo} />
+                      <ProfileAvatar perfil={perfil} />
                     </div>
 
                     <div className="mt-5">
@@ -632,7 +570,7 @@ export default function Home() {
           </section>
         </main>
 
-        {perfilSeleccionado && modalModo && (
+        {hayPerfilSeleccionado && modalModo && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.26)] px-4 backdrop-blur-[3px]">
             {modalModo === "pin" && (
               <button
@@ -645,6 +583,16 @@ export default function Home() {
 
             <div className="relative z-10 w-full max-w-md rounded-[2rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(245,249,255,0.96)_100%)] p-6 shadow-[0_28px_80px_rgba(15,23,42,0.24)] sm:p-7">
               {modalModo === "pin" && (
+                <button
+                  type="button"
+                  onClick={cerrarModalPerfil}
+                  disabled={cargando}
+                  className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-60"
+                >
+                  <span className="text-xl leading-none">x</span>
+                </button>
+              )}
+              {false && modalModo === "pin" && (
                 <button
                 type="button"
                 onClick={cerrarModalPerfil}
@@ -662,8 +610,13 @@ export default function Home() {
                 {modalModo === "pin" ? "Ingresa tu PIN" : "Cambia tu PIN"}
               </h2>
               <p className="mt-2 text-sm font-medium text-slate-500">
+                {perfilSeleccionado.nombre} - {perfilSeleccionado.tipoLabel}
+              </p>
+              {perfilSeleccionado && false && (
+                <p className="mt-2 text-sm font-medium text-slate-500">
                 {perfilSeleccionado.nombre} · {perfilSeleccionado.tipoLabel}
               </p>
+              )}
               <p className="mt-2 text-sm text-slate-500">
                 {modalModo === "pin"
                   ? `Sucursal activa: ${nombreSedeActual}`

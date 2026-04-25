@@ -29,6 +29,7 @@ async function runEnsureVendorProfilesSchema() {
       "documento" TEXT,
       "telefono" TEXT,
       "correo" TEXT,
+      "avatarKey" TEXT,
       "pinHash" TEXT NOT NULL,
       "activo" BOOLEAN NOT NULL DEFAULT true,
       "tipo" "TipoPerfilVendedor" NOT NULL DEFAULT 'SUPERVISOR_TIENDA',
@@ -37,6 +38,11 @@ async function runEnsureVendorProfilesSchema() {
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "PerfilVendedor_pkey" PRIMARY KEY ("id")
     );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "PerfilVendedor"
+      ADD COLUMN IF NOT EXISTS "avatarKey" TEXT;
   `);
 
   await prisma.$executeRawUnsafe(`

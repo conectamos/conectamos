@@ -1,6 +1,10 @@
 import prisma from "@/lib/prisma";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { verifyPassword } from "@/lib/password";
+import {
+  type AvatarPerfilKey,
+  normalizarAvatarPerfil,
+} from "@/lib/profile-avatars";
 
 export const TIPOS_PERFIL_VENDEDOR = [
   "ADMINISTRADOR",
@@ -16,6 +20,7 @@ type PerfilVendedorPayload = {
   documento: string | null;
   telefono: string | null;
   correo: string | null;
+  avatarKey: AvatarPerfilKey;
   pinHash?: string;
   activo: boolean;
   tipo: TipoPerfilVendedor;
@@ -61,6 +66,13 @@ export function normalizarTipoPerfilVendedor(
   return TIPOS_PERFIL_VENDEDOR.includes(tipo as TipoPerfilVendedor)
     ? (tipo as TipoPerfilVendedor)
     : null;
+}
+
+export function normalizarAvatarPerfilVendedor(
+  valor: unknown,
+  tipo: TipoPerfilVendedor | null
+) {
+  return normalizarAvatarPerfil(valor, tipo ?? "SUPERVISOR_TIENDA");
 }
 
 export function etiquetaTipoPerfilVendedor(tipo: TipoPerfilVendedor) {
@@ -154,6 +166,7 @@ export async function obtenerPerfilesVendedor(options?: {
       documento: true,
       telefono: true,
       correo: true,
+      avatarKey: true,
       activo: true,
       tipo: true,
       debeCambiarPin: true,
@@ -184,6 +197,10 @@ export async function obtenerPerfilesVendedor(options?: {
     documento: perfil.documento,
     telefono: perfil.telefono,
     correo: perfil.correo,
+    avatarKey: normalizarAvatarPerfilVendedor(
+      perfil.avatarKey,
+      perfil.tipo as TipoPerfilVendedor
+    ),
     activo: perfil.activo,
     tipo: perfil.tipo,
     tipoLabel: etiquetaTipoPerfilVendedor(perfil.tipo as TipoPerfilVendedor),
@@ -219,6 +236,7 @@ export async function obtenerPerfilesAccesoPorSede(sedeId: number) {
       id: true,
       nombre: true,
       tipo: true,
+      avatarKey: true,
       debeCambiarPin: true,
     },
     orderBy: [{ tipo: "asc" }, { nombre: "asc" }],
@@ -228,6 +246,10 @@ export async function obtenerPerfilesAccesoPorSede(sedeId: number) {
     id: perfil.id,
     nombre: perfil.nombre,
     tipo: perfil.tipo,
+    avatarKey: normalizarAvatarPerfilVendedor(
+      perfil.avatarKey,
+      perfil.tipo as TipoPerfilVendedor
+    ),
     tipoLabel: etiquetaTipoPerfilVendedor(perfil.tipo as TipoPerfilVendedor),
     debeCambiarPin: perfil.debeCambiarPin,
   }));
@@ -259,6 +281,7 @@ export async function validarPerfilAccesoPorSede(params: {
       id: true,
       nombre: true,
       tipo: true,
+      avatarKey: true,
       debeCambiarPin: true,
       pinHash: true,
     },
@@ -276,6 +299,10 @@ export async function validarPerfilAccesoPorSede(params: {
     id: perfil.id,
     nombre: perfil.nombre,
     tipo: perfil.tipo,
+    avatarKey: normalizarAvatarPerfilVendedor(
+      perfil.avatarKey,
+      perfil.tipo as TipoPerfilVendedor
+    ),
     tipoLabel: etiquetaTipoPerfilVendedor(perfil.tipo as TipoPerfilVendedor),
     debeCambiarPin: perfil.debeCambiarPin,
   };
@@ -292,6 +319,7 @@ export async function crearPerfilVendedor(payload: PerfilVendedorPayload) {
       documento: payload.documento,
       telefono: payload.telefono,
       correo: payload.correo,
+      avatarKey: payload.avatarKey,
       pinHash: String(payload.pinHash || ""),
       activo: payload.activo,
       tipo: payload.tipo,
@@ -322,6 +350,7 @@ export async function actualizarPerfilVendedor(
       documento: payload.documento,
       telefono: payload.telefono,
       correo: payload.correo,
+      avatarKey: payload.avatarKey,
       activo: payload.activo,
       tipo: payload.tipo,
       ...(payload.pinHash ? { pinHash: payload.pinHash } : {}),

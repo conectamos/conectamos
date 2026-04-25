@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import {
+  type AvatarPerfilKey,
+  obtenerAvatarDefaultPorTipo,
+  obtenerOpcionesAvatarPorTipo,
+} from "@/lib/profile-avatars";
 
 type SessionUser = {
   id: number;
@@ -24,6 +29,7 @@ type PerfilItem = {
   documento: string | null;
   telefono: string | null;
   correo: string | null;
+  avatarKey: AvatarPerfilKey;
   activo: boolean;
   tipo: "ADMINISTRADOR" | "FACTURADOR" | "SUPERVISOR_TIENDA" | "VENDEDOR";
   tipoLabel: string;
@@ -37,6 +43,7 @@ type PerfilEdicion = {
   documento: string;
   telefono: string;
   correo: string;
+  avatarKey: AvatarPerfilKey;
   tipo: PerfilItem["tipo"];
   activo: boolean;
   sedeIds: number[];
@@ -95,6 +102,8 @@ export default function PerfilesVendedorPage() {
   const [nuevoActivo, setNuevoActivo] = useState(true);
   const [nuevoTipo, setNuevoTipo] =
     useState<PerfilItem["tipo"]>("SUPERVISOR_TIENDA");
+  const [nuevoAvatarKey, setNuevoAvatarKey] =
+    useState<AvatarPerfilKey>(obtenerAvatarDefaultPorTipo("SUPERVISOR_TIENDA"));
   const [nuevaSedeIds, setNuevaSedeIds] = useState<number[]>([]);
 
   const [ediciones, setEdiciones] = useState<Record<number, PerfilEdicion>>({});
@@ -117,6 +126,7 @@ export default function PerfilesVendedorPage() {
           documento: perfil.documento || "",
           telefono: perfil.telefono || "",
           correo: perfil.correo || "",
+          avatarKey: perfil.avatarKey,
           tipo: perfil.tipo,
           activo: perfil.activo,
           sedeIds: perfil.sedeIds,
@@ -158,7 +168,7 @@ export default function PerfilesVendedorPage() {
   const actualizarEdicion = (
     perfilId: number,
     campo: keyof PerfilEdicion,
-    valor: string | boolean | number[]
+    valor: string | boolean | number[] | AvatarPerfilKey
   ) => {
     setEdiciones((actual) => ({
       ...actual,
@@ -167,6 +177,28 @@ export default function PerfilesVendedorPage() {
         [campo]: valor,
       },
     }));
+  };
+
+  const actualizarTipoEdicion = (
+    perfilId: number,
+    tipo: PerfilItem["tipo"]
+  ) => {
+    setEdiciones((actual) => {
+      const previo = actual[perfilId];
+
+      if (!previo) {
+        return actual;
+      }
+
+      return {
+        ...actual,
+        [perfilId]: {
+          ...previo,
+          tipo,
+          avatarKey: obtenerAvatarDefaultPorTipo(tipo),
+        },
+      };
+    });
   };
 
   const alternarSede = (
@@ -197,6 +229,7 @@ export default function PerfilesVendedorPage() {
           documento: nuevoDocumento,
           telefono: nuevoTelefono,
           correo: nuevoCorreo,
+          avatarKey: nuevoAvatarKey,
           pin: nuevoPin,
           activo: nuevoActivo,
           tipo: nuevoTipo,
@@ -220,6 +253,7 @@ export default function PerfilesVendedorPage() {
       setNuevoPin("");
       setNuevoActivo(true);
       setNuevoTipo("SUPERVISOR_TIENDA");
+      setNuevoAvatarKey(obtenerAvatarDefaultPorTipo("SUPERVISOR_TIENDA"));
       setNuevaSedeIds([]);
     } catch {
       setMensaje("Error creando perfil");
@@ -246,6 +280,7 @@ export default function PerfilesVendedorPage() {
           documento: payload?.documento,
           telefono: payload?.telefono,
           correo: payload?.correo,
+          avatarKey: payload?.avatarKey,
           tipo: payload?.tipo,
           activo: payload?.activo,
           sedeIds: payload?.sedeIds,
@@ -435,7 +470,11 @@ export default function PerfilesVendedorPage() {
               <select
                 value={nuevoTipo}
                 onChange={(event) =>
-                  setNuevoTipo(event.target.value as PerfilItem["tipo"])
+                  (() => {
+                    const tipo = event.target.value as PerfilItem["tipo"];
+                    setNuevoTipo(tipo);
+                    setNuevoAvatarKey(obtenerAvatarDefaultPorTipo(tipo));
+                  })()
                 }
                 className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
               >
@@ -448,6 +487,23 @@ export default function PerfilesVendedorPage() {
               <span className="text-xs font-medium text-slate-500">
                 {tipoDescripcion(nuevoTipo)}
               </span>
+            </label>
+
+            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+              Avatar visual
+              <select
+                value={nuevoAvatarKey}
+                onChange={(event) =>
+                  setNuevoAvatarKey(event.target.value as AvatarPerfilKey)
+                }
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+              >
+                {obtenerOpcionesAvatarPorTipo(nuevoTipo).map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
@@ -628,9 +684,8 @@ export default function PerfilesVendedorPage() {
                       <select
                         value={edicion.tipo}
                         onChange={(event) =>
-                          actualizarEdicion(
+                          actualizarTipoEdicion(
                             perfil.id,
-                            "tipo",
                             event.target.value as PerfilItem["tipo"]
                           )
                         }
@@ -645,6 +700,27 @@ export default function PerfilesVendedorPage() {
                       <span className="text-xs font-medium text-slate-500">
                         {tipoDescripcion(edicion.tipo)}
                       </span>
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Avatar visual
+                      <select
+                        value={edicion.avatarKey}
+                        onChange={(event) =>
+                          actualizarEdicion(
+                            perfil.id,
+                            "avatarKey",
+                            event.target.value as AvatarPerfilKey
+                          )
+                        }
+                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                      >
+                        {obtenerOpcionesAvatarPorTipo(edicion.tipo).map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
                     </label>
 
                     <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">

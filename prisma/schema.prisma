@@ -135,6 +135,7 @@ model PerfilVendedor {
   documento      String?              @unique
   telefono       String?
   correo         String?              @unique
+  avatarKey      String?
   pinHash        String
   activo         Boolean              @default(true)
   tipo           TipoPerfilVendedor   @default(SUPERVISOR_TIENDA)
