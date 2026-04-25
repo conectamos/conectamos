@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { esRolAdmin, puedeAccederPanelVendedor } from "@/lib/access-control";
@@ -19,6 +19,87 @@ import {
 } from "@/lib/vendor-sale-records";
 
 const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
+
+const REGISTRO_RESUMEN_SELECT = {
+  id: true,
+  clienteNombre: true,
+  puntoVenta: true,
+  plataformaCredito: true,
+  financierasDetalle: true,
+  referenciaEquipo: true,
+  serialImei: true,
+  creditoAutorizado: true,
+  cuotaInicial: true,
+  valorCuota: true,
+  numeroCuotas: true,
+  jaladorNombre: true,
+  createdAt: true,
+} as const;
+
+const REGISTRO_DETALLE_SELECT = {
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  ciudad: true,
+  puntoVenta: true,
+  clienteNombre: true,
+  tipoDocumento: true,
+  documentoNumero: true,
+  plataformaCredito: true,
+  financierasDetalle: true,
+  aceptaDeclaracionIntermediacion: true,
+  aceptaPoliticaGarantia: true,
+  aceptaCondicionesCredito: true,
+  dobleCredito: true,
+  observacion: true,
+  referenciaEquipo: true,
+  almacenamiento: true,
+  color: true,
+  serialImei: true,
+  tipoEquipo: true,
+  creditoAutorizado: true,
+  cuotaInicial: true,
+  valorCuota: true,
+  numeroCuotas: true,
+  frecuenciaCuota: true,
+  correo: true,
+  whatsapp: true,
+  fechaNacimiento: true,
+  fechaExpedicion: true,
+  direccion: true,
+  barrio: true,
+  referenciaFamiliar1Nombre: true,
+  referenciaFamiliar1Telefono: true,
+  referenciaFamiliar2Nombre: true,
+  referenciaFamiliar2Telefono: true,
+  telefono: true,
+  simCardRegistro1: true,
+  simCardRegistro2: true,
+  medioPago1Tipo: true,
+  medioPago1Valor: true,
+  medioPago2Tipo: true,
+  medioPago2Valor: true,
+  asesorNombre: true,
+  jaladorNombre: true,
+  cerradorNombre: true,
+  numeroFactura: true,
+  estadoFacturacion: true,
+  estadoVentaRegistro: true,
+  firmaClienteDataUrl: true,
+  fotoEntregaDataUrl: true,
+  confirmacionCliente: true,
+  perfilVendedor: {
+    select: {
+      nombre: true,
+      tipo: true,
+    },
+  },
+  sede: {
+    select: {
+      nombre: true,
+    },
+  },
+} as const;
 
 async function requireVendor() {
   const session = await getSessionUser();
@@ -44,6 +125,125 @@ async function requireVendor() {
   }
 
   return { ok: true as const, session };
+}
+
+function construirScopeRegistros(session: {
+  perfilId?: number | null;
+  rolNombre?: string | null;
+}) {
+  if (session.perfilId) {
+    return {
+      perfilVendedorId: session.perfilId,
+    };
+  }
+
+  if (esRolAdmin(session.rolNombre)) {
+    return {};
+  }
+
+  return {
+    perfilVendedorId: -1,
+  };
+}
+
+function decimalToNumber(value: unknown) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function serializarFinancierasDetalle(valor: unknown) {
+  if (!Array.isArray(valor)) {
+    return null;
+  }
+
+  return valor
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const row = item as Record<string, unknown>;
+
+      return {
+        plataformaCredito: String(row.plataformaCredito || "").trim(),
+        creditoAutorizado: decimalToNumber(row.creditoAutorizado),
+        cuotaInicial: decimalToNumber(row.cuotaInicial),
+        tipoPagoInicial: normalizarTextoCorto(row.tipoPagoInicial),
+        valorCuota: decimalToNumber(row.valorCuota),
+        numeroCuotas: decimalToNumber(row.numeroCuotas),
+        frecuenciaCuota: normalizarTextoCorto(row.frecuenciaCuota),
+      };
+    })
+    .filter(
+      (
+        item
+      ): item is {
+        plataformaCredito: string;
+        creditoAutorizado: number | null;
+        cuotaInicial: number | null;
+        tipoPagoInicial: string | null;
+        valorCuota: number | null;
+        numeroCuotas: number | null;
+        frecuenciaCuota: string | null;
+      } => Boolean(item)
+    );
+}
+
+function serializarRegistroResumen(
+  registro: {
+    creditoAutorizado: unknown;
+    cuotaInicial: unknown;
+    valorCuota: unknown;
+    financierasDetalle: unknown;
+  } & Record<string, unknown>
+) {
+  return {
+    ...registro,
+    creditoAutorizado: decimalToNumber(registro.creditoAutorizado),
+    cuotaInicial: decimalToNumber(registro.cuotaInicial),
+    valorCuota: decimalToNumber(registro.valorCuota),
+    totalFinancieras: Array.isArray(registro.financierasDetalle)
+      ? registro.financierasDetalle.length
+      : 0,
+  };
+}
+
+function serializarRegistroDetalle(
+  registro: {
+    creditoAutorizado: unknown;
+    cuotaInicial: unknown;
+    valorCuota: unknown;
+    medioPago1Valor: unknown;
+    medioPago2Valor: unknown;
+    financierasDetalle: unknown;
+    perfilVendedor?: { nombre: string; tipo: string } | null;
+    sede?: { nombre: string } | null;
+    fechaNacimiento?: Date | null;
+    fechaExpedicion?: Date | null;
+  } & Record<string, unknown>
+) {
+  return {
+    ...registro,
+    creditoAutorizado: decimalToNumber(registro.creditoAutorizado),
+    cuotaInicial: decimalToNumber(registro.cuotaInicial),
+    valorCuota: decimalToNumber(registro.valorCuota),
+    medioPago1Valor: decimalToNumber(registro.medioPago1Valor),
+    medioPago2Valor: decimalToNumber(registro.medioPago2Valor),
+    financierasDetalle: serializarFinancierasDetalle(registro.financierasDetalle),
+    fechaNacimiento: registro.fechaNacimiento
+      ? registro.fechaNacimiento.toISOString()
+      : null,
+    fechaExpedicion: registro.fechaExpedicion
+      ? registro.fechaExpedicion.toISOString()
+      : null,
+    perfilVendedorNombre: registro.perfilVendedor?.nombre ?? null,
+    perfilVendedorTipo: registro.perfilVendedor?.tipo ?? null,
+    sedeNombre: registro.sede?.nombre ?? null,
+  };
 }
 
 function validarPayload(
@@ -153,7 +353,11 @@ function validarPayload(
     };
   }
   if (!jaladorNombre) return { error: "Debes seleccionar el jalador" };
-  if (!aceptaDeclaracionIntermediacion || !aceptaPoliticaGarantia || !aceptaCondicionesCredito) {
+  if (
+    !aceptaDeclaracionIntermediacion ||
+    !aceptaPoliticaGarantia ||
+    !aceptaCondicionesCredito
+  ) {
     return { error: "Debes confirmar los textos visibles del formato" };
   }
   if (!firmaClienteDataUrl) {
@@ -216,7 +420,7 @@ function validarPayload(
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const access = await requireVendor();
 
@@ -226,38 +430,80 @@ export async function GET() {
 
     await ensureVendorProfilesSchema();
 
-    const where =
-      access.session.perfilId
-        ? {
-            perfilVendedorId: access.session.perfilId,
-            eliminadoEn: null as null,
-          }
-        : esRolAdmin(access.session.rolNombre)
-          ? {
-              eliminadoEn: null as null,
-            }
-          : {
-              perfilVendedorId: -1,
-              eliminadoEn: null as null,
-            };
+    const url = new URL(req.url);
+    const id = Number(url.searchParams.get("id"));
+    const buscar = normalizarTextoCorto(url.searchParams.get("buscar"));
+    const scope = construirScopeRegistros(access.session);
+
+    if (Number.isInteger(id) && id > 0) {
+      const registro = await prisma.registroVendedorVenta.findFirst({
+        where: {
+          ...scope,
+          id,
+          eliminadoEn: null,
+        },
+        select: REGISTRO_DETALLE_SELECT,
+      });
+
+      if (!registro) {
+        return NextResponse.json(
+          { error: "Registro no encontrado" },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        registro: serializarRegistroDetalle(registro),
+      });
+    }
+
+    if (buscar) {
+      const digits = buscar.replace(/\D/g, "");
+
+      if (!digits) {
+        return NextResponse.json(
+          { error: "Debes buscar por IMEI o cedula" },
+          { status: 400 }
+        );
+      }
+
+      const resultados = await prisma.registroVendedorVenta.findMany({
+        where: {
+          ...scope,
+          eliminadoEn: null,
+          OR: [
+            {
+              documentoNumero: {
+                contains: digits,
+              },
+            },
+            {
+              serialImei: {
+                contains: digits,
+              },
+            },
+          ],
+        },
+        select: REGISTRO_DETALLE_SELECT,
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 12,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        resultados: resultados.map(serializarRegistroDetalle),
+      });
+    }
 
     const registros = await prisma.registroVendedorVenta.findMany({
-      where,
-      select: {
-        id: true,
-        clienteNombre: true,
-        puntoVenta: true,
-        plataformaCredito: true,
-        financierasDetalle: true,
-        referenciaEquipo: true,
-        serialImei: true,
-        creditoAutorizado: true,
-        cuotaInicial: true,
-        valorCuota: true,
-        numeroCuotas: true,
-        jaladorNombre: true,
-        createdAt: true,
+      where: {
+        ...scope,
+        eliminadoEn: null,
       },
+      select: REGISTRO_RESUMEN_SELECT,
       orderBy: {
         createdAt: "desc",
       },
@@ -266,17 +512,7 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
-      registros: registros.map((registro) => ({
-        ...registro,
-        creditoAutorizado: registro.creditoAutorizado
-          ? Number(registro.creditoAutorizado)
-          : null,
-        cuotaInicial: registro.cuotaInicial ? Number(registro.cuotaInicial) : null,
-        valorCuota: registro.valorCuota ? Number(registro.valorCuota) : null,
-        totalFinancieras: Array.isArray(registro.financierasDetalle)
-          ? registro.financierasDetalle.length
-          : 0,
-      })),
+      registros: registros.map(serializarRegistroResumen),
     });
   } catch (error) {
     console.error("ERROR GET REGISTROS VENDEDOR:", error);
@@ -352,7 +588,7 @@ export async function POST(req: Request) {
 
     await prisma.registroVendedorVenta.create({
       data: {
-        perfilVendedorId: access.session.perfilId!,
+        perfilVendedorId: access.session.perfilId,
         sedeId: sedeRegistro.id,
         ...payload.data,
         puntoVenta: sedeRegistro.nombre,
@@ -373,6 +609,141 @@ export async function POST(req: Request) {
     console.error("ERROR POST REGISTROS VENDEDOR:", error);
     return NextResponse.json(
       { error: "Error guardando el registro del vendedor" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const access = await requireVendor();
+
+    if (!access.ok) {
+      return access.response;
+    }
+
+    await ensureVendorProfilesSchema();
+
+    const body = (await req.json()) as Record<string, unknown>;
+    const id = Number(body.id);
+    const modo = String(body.modo || "").trim().toUpperCase();
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return NextResponse.json({ error: "Registro invalido" }, { status: 400 });
+    }
+
+    if (modo !== "EDITAR" && modo !== "ELIMINAR") {
+      return NextResponse.json(
+        { error: "Accion no soportada en este modulo" },
+        { status: 400 }
+      );
+    }
+
+    const existente = await prisma.registroVendedorVenta.findFirst({
+      where: {
+        ...construirScopeRegistros(access.session),
+        id,
+        eliminadoEn: null,
+      },
+      select: {
+        id: true,
+        asesorNombre: true,
+      },
+    });
+
+    if (!existente) {
+      return NextResponse.json(
+        { error: "Registro no encontrado" },
+        { status: 404 }
+      );
+    }
+
+    if (modo === "ELIMINAR") {
+      await prisma.registroVendedorVenta.update({
+        where: { id },
+        data: {
+          eliminadoEn: new Date(),
+          eliminadoPor:
+            access.session.perfilNombre ??
+            access.session.nombre ??
+            "Usuario desconocido",
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Registro eliminado correctamente",
+      });
+    }
+
+    const catalogo = await obtenerCatalogoPersonalVenta();
+    const payload = validarPayload(
+      body,
+      catalogo.financieras.map((item) => item.nombre)
+    );
+
+    if ("error" in payload) {
+      return NextResponse.json({ error: payload.error }, { status: 400 });
+    }
+
+    const equipo = await buscarEquipoRegistroVentaPorImei(
+      payload.data.serialImei,
+      access.session.sedeId
+    );
+
+    if (!equipo) {
+      return NextResponse.json(
+        { error: "El IMEI debe existir en una sede o en bodega principal" },
+        { status: 400 }
+      );
+    }
+
+    const sedeRegistro = await prisma.sede.findFirst({
+      where: {
+        nombre: {
+          equals: payload.data.puntoVenta,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+        nombre: true,
+      },
+    });
+
+    if (!sedeRegistro) {
+      return NextResponse.json(
+        { error: "Debes seleccionar un punto de venta valido" },
+        { status: 400 }
+      );
+    }
+
+    const actualizado = await prisma.registroVendedorVenta.update({
+      where: { id },
+      data: {
+        sedeId: sedeRegistro.id,
+        ...payload.data,
+        puntoVenta: sedeRegistro.nombre,
+        referenciaEquipo: equipo.referencia,
+        color: equipo.color ?? payload.data.color ?? null,
+        asesorNombre:
+          payload.data.asesorNombre ??
+          existente.asesorNombre ??
+          access.session.perfilNombre ??
+          access.session.nombre,
+      },
+      select: REGISTRO_DETALLE_SELECT,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      mensaje: "Registro actualizado correctamente",
+      registro: serializarRegistroDetalle(actualizado),
+    });
+  } catch (error) {
+    console.error("ERROR PATCH REGISTROS VENDEDOR:", error);
+    return NextResponse.json(
+      { error: "Error actualizando el registro del vendedor" },
       { status: 500 }
     );
   }

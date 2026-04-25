@@ -8,6 +8,7 @@ import {
   type PointerEvent,
 } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   detalleFinancieraTieneDatos,
   DOMINIOS_CORREO_REGISTRO_TEXTO,
@@ -22,6 +23,7 @@ import {
   TIPOS_DOCUMENTO_CLIENTE,
   formatearPesoInput,
 } from "@/lib/vendor-sale-records";
+import type { RegistroVendedorDetalle } from "./types";
 
 type SessionProps = {
   nombre: string;
@@ -219,6 +221,28 @@ function formatMoney(value: number | null) {
   return `$ ${value.toLocaleString("es-CO")}`;
 }
 
+function formatMoneyInputFromStored(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  if (typeof value === "number") {
+    return formatearPesoInput(value);
+  }
+
+  const normalized = String(value).trim();
+
+  if (/^\d+(\.\d{1,2})?$/.test(normalized)) {
+    const parsed = Number(normalized);
+
+    if (Number.isFinite(parsed)) {
+      return formatearPesoInput(parsed);
+    }
+  }
+
+  return formatearPesoInput(normalized);
+}
+
 function formatDate(value: string) {
   try {
     return new Date(value).toLocaleString("es-CO", {
@@ -232,6 +256,14 @@ function formatDate(value: string) {
 
 function isTextFilled(value: string) {
   return value.trim().length > 0;
+}
+
+function toDateInputValue(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  return String(value).slice(0, 10);
 }
 
 function isFinancieraCompleta(item: FinancialFormState, index: number) {
@@ -265,6 +297,87 @@ function getDescripcionFinanciera(index: number) {
   }
 
   return "Registra plataforma, credito autorizado, valor cuota, plazo y frecuencia de pago.";
+}
+
+function mapRegistroToForm(
+  registro: RegistroVendedorDetalle,
+  session: SessionProps
+) {
+  const nextForm = createInitialState(session);
+  const detalleFinancieras =
+    Array.isArray(registro.financierasDetalle) && registro.financierasDetalle.length > 0
+      ? registro.financierasDetalle
+      : [
+          {
+            plataformaCredito: registro.plataformaCredito,
+            creditoAutorizado: registro.creditoAutorizado,
+            cuotaInicial: registro.cuotaInicial,
+            tipoPagoInicial: registro.medioPago1Tipo,
+            valorCuota: registro.valorCuota,
+            numeroCuotas: registro.numeroCuotas,
+            frecuenciaCuota: registro.frecuenciaCuota,
+          },
+        ];
+
+  const financierasDetalle = Array.from(
+    { length: MAX_FINANCIERAS_REGISTRO },
+    createEmptyFinanciera
+  );
+
+  detalleFinancieras.slice(0, MAX_FINANCIERAS_REGISTRO).forEach((item, index) => {
+    financierasDetalle[index] = {
+      plataformaCredito: String(item?.plataformaCredito || ""),
+      creditoAutorizado: formatMoneyInputFromStored(item?.creditoAutorizado),
+      cuotaInicial: formatMoneyInputFromStored(item?.cuotaInicial),
+      tipoPagoInicial: String(item?.tipoPagoInicial || ""),
+      valorCuota: formatMoneyInputFromStored(item?.valorCuota),
+      numeroCuotas:
+        item?.numeroCuotas === null || item?.numeroCuotas === undefined
+          ? ""
+          : String(item.numeroCuotas),
+      frecuenciaCuota: String(item?.frecuenciaCuota || ""),
+    };
+  });
+
+  return {
+    form: {
+      ...nextForm,
+      ciudad: registro.ciudad ?? "",
+      puntoVenta: registro.puntoVenta ?? nextForm.puntoVenta,
+      clienteNombre: registro.clienteNombre,
+      tipoDocumento: registro.tipoDocumento,
+      documentoNumero: registro.documentoNumero,
+      aceptaDeclaracionIntermediacion: registro.aceptaDeclaracionIntermediacion,
+      aceptaPoliticaGarantia: registro.aceptaPoliticaGarantia,
+      aceptaCondicionesCredito: registro.aceptaCondicionesCredito,
+      observacion: registro.observacion ?? "",
+      referenciaEquipo: registro.referenciaEquipo ?? "",
+      almacenamiento: registro.almacenamiento ?? "",
+      color: registro.color ?? "",
+      serialImei: registro.serialImei ?? "",
+      tipoEquipo: registro.tipoEquipo ?? "",
+      correo: registro.correo ?? "",
+      whatsapp: registro.whatsapp ?? "",
+      fechaNacimiento: toDateInputValue(registro.fechaNacimiento),
+      fechaExpedicion: toDateInputValue(registro.fechaExpedicion),
+      direccion: registro.direccion ?? "",
+      barrio: registro.barrio ?? "",
+      referenciaFamiliar1Nombre: registro.referenciaFamiliar1Nombre ?? "",
+      referenciaFamiliar1Telefono: registro.referenciaFamiliar1Telefono ?? "",
+      referenciaFamiliar2Nombre: registro.referenciaFamiliar2Nombre ?? "",
+      referenciaFamiliar2Telefono: registro.referenciaFamiliar2Telefono ?? "",
+      telefono: registro.telefono ?? "",
+      simCardRegistro1: registro.simCardRegistro1 ?? "",
+      simCardRegistro2: registro.simCardRegistro2 ?? "",
+      asesorNombre: registro.asesorNombre ?? nextForm.asesorNombre,
+      jaladorNombre: registro.jaladorNombre ?? "",
+      firmaClienteDataUrl: registro.firmaClienteDataUrl ?? "",
+      fotoEntregaDataUrl: registro.fotoEntregaDataUrl ?? "",
+      confirmacionCliente: registro.confirmacionCliente,
+      financierasDetalle,
+    },
+    financierasVisibles: Math.max(1, Math.min(detalleFinancieras.length, MAX_FINANCIERAS_REGISTRO)),
+  };
 }
 
 async function fileToDataUrl(file: File) {
@@ -472,6 +585,8 @@ export default function VendedorRegistroWorkspace({
 }: {
   session: SessionProps;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState<FormState>(() => createInitialState(session));
   const [registros, setRegistros] = useState<RegistroResumen[]>([]);
   const [sedes, setSedes] = useState<SedeOption[]>([]);
@@ -490,6 +605,9 @@ export default function VendedorRegistroWorkspace({
   const [financierasVisibles, setFinancierasVisibles] = useState(1);
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const [errorCamara, setErrorCamara] = useState("");
+  const [registroEditando, setRegistroEditando] =
+    useState<RegistroVendedorDetalle | null>(null);
+  const [cargandoEdicion, setCargandoEdicion] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -497,6 +615,40 @@ export default function VendedorRegistroWorkspace({
   const setFormMessage = (texto: string, tipo: "success" | "error") => {
     setMensaje(texto);
     setMensajeTipo(tipo);
+  };
+
+  const cargarRegistrosRecientes = async () => {
+    const registrosRes = await fetch("/api/vendedor/registros", {
+      cache: "no-store",
+    });
+    const registrosData = await registrosRes.json();
+
+    if (registrosRes.ok) {
+      setRegistros(Array.isArray(registrosData.registros) ? registrosData.registros : []);
+      return;
+    }
+
+    throw new Error(registrosData.error || "No se pudieron cargar los registros");
+  };
+
+  const limpiarFormulario = (preservarContexto = false) => {
+    setImeiDetalle("");
+    setSignaturePadKey((current) => current + 1);
+    setFinancierasVisibles(1);
+    setRegistroEditando(null);
+    setForm((current) => {
+      if (preservarContexto) {
+        return {
+          ...createInitialState(session),
+          ciudad: current.ciudad,
+          puntoVenta: current.puntoVenta,
+          asesorNombre: current.asesorNombre,
+        };
+      }
+
+      return createInitialState(session);
+    });
+    router.replace("/vendedor/registros", { scroll: false });
   };
 
   useEffect(() => {
@@ -775,6 +927,77 @@ export default function VendedorRegistroWorkspace({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const editar = Number(searchParams.get("editar"));
+
+    if (!Number.isInteger(editar) || editar <= 0) {
+      if (!cancelled) {
+        setRegistroEditando(null);
+      }
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const cargarRegistroEditando = async () => {
+      try {
+        setCargandoEdicion(true);
+        setFormMessage("", "success");
+
+        const res = await fetch(`/api/vendedor/registros?id=${editar}`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data?.registro) {
+          if (!cancelled) {
+            setFormMessage(
+              data?.error || "No se pudo cargar el registro para editar",
+              "error"
+            );
+          }
+          return;
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const registro = data.registro as RegistroVendedorDetalle;
+        const mapped = mapRegistroToForm(registro, session);
+
+        setRegistroEditando(registro);
+        setForm(mapped.form);
+        setFinancierasVisibles(mapped.financierasVisibles);
+        setImeiDetalle(
+          [
+            registro.referenciaEquipo,
+            registro.puntoVenta ?? registro.sedeNombre,
+            registro.serialImei,
+          ]
+            .filter(Boolean)
+            .join(" | ")
+        );
+        setSignaturePadKey((current) => current + 1);
+      } catch {
+        if (!cancelled) {
+          setFormMessage("Error cargando el registro para editar", "error");
+        }
+      } finally {
+        if (!cancelled) {
+          setCargandoEdicion(false);
+        }
+      }
+    };
+
+    void cargarRegistroEditando();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, session]);
+
   const validarFormularioVisible = () => {
     if (!isTextFilled(form.ciudad)) return "La ciudad es obligatoria";
     if (!isTextFilled(form.puntoVenta)) return "Debes seleccionar el punto de venta";
@@ -880,11 +1103,19 @@ export default function VendedorRegistroWorkspace({
       };
 
       const res = await fetch("/api/vendedor/registros", {
-        method: "POST",
+        method: registroEditando ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(
+          registroEditando
+            ? {
+                ...payload,
+                id: registroEditando.id,
+                modo: "EDITAR",
+              }
+            : payload
+        ),
       });
 
       const data = await res.json();
@@ -894,27 +1125,33 @@ export default function VendedorRegistroWorkspace({
         return;
       }
 
-      setFormMessage(data.mensaje || "Registro guardado correctamente", "success");
-      setImeiDetalle("");
-      setSignaturePadKey((current) => current + 1);
-      setFinancierasVisibles(1);
-      setForm((current) => ({
-        ...createInitialState(session),
-        ciudad: current.ciudad,
-        puntoVenta: current.puntoVenta,
-        asesorNombre: current.asesorNombre,
-      }));
+      setFormMessage(
+        data.mensaje ||
+          (registroEditando
+            ? "Registro actualizado correctamente"
+            : "Registro guardado correctamente"),
+        "success"
+      );
 
-      const registrosRes = await fetch("/api/vendedor/registros", {
-        cache: "no-store",
-      });
-      const registrosData = await registrosRes.json();
+      if (registroEditando && data?.registro) {
+        const registro = data.registro as RegistroVendedorDetalle;
+        const mapped = mapRegistroToForm(registro, session);
 
-      if (registrosRes.ok) {
-        setRegistros(Array.isArray(registrosData.registros) ? registrosData.registros : []);
+        setRegistroEditando(registro);
+        setForm(mapped.form);
+        setFinancierasVisibles(mapped.financierasVisibles);
+      } else {
+        limpiarFormulario(true);
       }
+
+      await cargarRegistrosRecientes();
     } catch {
-      setFormMessage("Error guardando el registro", "error");
+      setFormMessage(
+        registroEditando
+          ? "Error actualizando el registro"
+          : "Error guardando el registro",
+        "error"
+      );
     } finally {
       setGuardando(false);
     }
@@ -944,16 +1181,32 @@ export default function VendedorRegistroWorkspace({
               </div>
 
               <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                REGISTRAR VENTA
+                {registroEditando ? "MODIFICAR REGISTRO" : "REGISTRAR VENTA"}
               </h1>
 
               <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                Captura digital del tramite, las financieras, la validacion del
-                cliente y la entrega del equipo en un solo registro.
+                {registroEditando
+                  ? "Actualiza la informacion del tramite, las financieras, la validacion del cliente y la entrega del equipo."
+                  : "Captura digital del tramite, las financieras, la validacion del cliente y la entrega del equipo en un solo registro."}
               </p>
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/vendedor/registros/buscar"
+                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+              >
+                Buscar registro
+              </Link>
+              {registroEditando && (
+                <button
+                  type="button"
+                  onClick={() => limpiarFormulario(false)}
+                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                >
+                  Cancelar edicion
+                </button>
+              )}
               <Link
                 href="/dashboard"
                 className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
@@ -963,6 +1216,32 @@ export default function VendedorRegistroWorkspace({
             </div>
           </div>
         </section>
+
+        {(registroEditando || cargandoEdicion) && (
+          <section className="mt-6 rounded-[30px] border border-emerald-200 bg-emerald-50 px-5 py-4 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Edicion activa
+                </p>
+                <p className="mt-1 text-sm font-semibold text-emerald-950">
+                  {cargandoEdicion
+                    ? "Cargando datos del registro..."
+                    : `Estas editando el registro #${registroEditando?.id ?? ""} de ${registroEditando?.clienteNombre ?? "cliente"}.`}
+                </p>
+              </div>
+
+              {registroEditando && (
+                <Link
+                  href="/vendedor/registros/buscar"
+                  className="rounded-2xl border border-emerald-300 bg-white px-4 py-3 text-center text-sm font-semibold text-emerald-800 transition hover:border-emerald-400"
+                >
+                  Volver a buscar
+                </Link>
+              )}
+            </div>
+          </section>
+        )}
 
         {mensaje && (
           <div
@@ -1775,10 +2054,16 @@ export default function VendedorRegistroWorkspace({
               <button
                 type="button"
                 onClick={() => void guardarRegistro()}
-                disabled={guardando || cargando}
+                disabled={guardando || cargando || cargandoEdicion}
                 className="mt-6 w-full rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                {guardando ? "Guardando..." : "Guardar registro digital"}
+                {guardando
+                  ? registroEditando
+                    ? "Guardando cambios..."
+                    : "Guardando..."
+                  : registroEditando
+                    ? "Guardar cambios del registro"
+                    : "Guardar registro digital"}
               </button>
             </section>
 
