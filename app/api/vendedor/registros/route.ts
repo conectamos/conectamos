@@ -18,6 +18,8 @@ import {
   normalizarWhatsappRegistro,
 } from "@/lib/vendor-sale-records";
 
+const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
+
 async function requireVendor() {
   const session = await getSessionUser();
 
@@ -105,6 +107,11 @@ function validarPayload(
 
   if (!ciudad) return { error: "La ciudad es obligatoria" };
   if (!puntoVenta) return { error: "Debes seleccionar el punto de venta" };
+  if (PUNTOS_VENTA_EXCLUIDOS.has(puntoVenta.toUpperCase())) {
+    return {
+      error: "Ese punto de venta no esta disponible para registrar ventas",
+    };
+  }
   if (!clienteNombre) return { error: "El nombre del cliente es obligatorio" };
   if (!tipoDocumento) return { error: "Debes seleccionar el tipo de documento" };
   if (!documentoNumero) return { error: "El documento del cliente es obligatorio" };

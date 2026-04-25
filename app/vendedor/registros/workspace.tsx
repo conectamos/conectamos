@@ -131,6 +131,8 @@ type ImeiLookupResponse = {
   };
 };
 
+const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
+
 const PLAZO_OPTIONS = Array.from({ length: MAX_PLAZO_CUOTAS }, (_, index) =>
   String(index + 1)
 );
@@ -155,7 +157,11 @@ function createEmptyFinanciera(): FinancialFormState {
 function createInitialState(session: SessionProps): FormState {
   return {
     ciudad: "",
-    puntoVenta: session.sedeNombre,
+    puntoVenta: PUNTOS_VENTA_EXCLUIDOS.has(
+      String(session.sedeNombre || "").trim().toUpperCase()
+    )
+      ? ""
+      : session.sedeNombre,
     clienteNombre: "",
     tipoDocumento: "CC",
     documentoNumero: "",
@@ -509,10 +515,21 @@ export default function VendedorRegistroWorkspace({
 
         if (sedesRes.ok && Array.isArray(sedesData)) {
           setSedes(sedesData);
+          const puntosVentaPermitidos = sedesData
+            .map((item) => String(item?.nombre || "").trim())
+            .filter(
+              (nombre) =>
+                nombre.length > 0 &&
+                !PUNTOS_VENTA_EXCLUIDOS.has(nombre.toUpperCase())
+            );
 
           setForm((current) => ({
             ...current,
-            puntoVenta: current.puntoVenta || sedesData[0]?.nombre || session.sedeNombre,
+            puntoVenta:
+              current.puntoVenta &&
+              !PUNTOS_VENTA_EXCLUIDOS.has(current.puntoVenta.toUpperCase())
+                ? current.puntoVenta
+                : puntosVentaPermitidos[0] || "",
           }));
         }
 
@@ -894,10 +911,14 @@ export default function VendedorRegistroWorkspace({
 
   const puntosVenta = Array.from(
     new Map(
-      [session.sedeNombre, ...sedes.map((item) => item.nombre)].map((nombre) => [
-        nombre,
-        nombre,
-      ])
+      [session.sedeNombre, ...sedes.map((item) => item.nombre)]
+        .map((nombre) => String(nombre || "").trim())
+        .filter(
+          (nombre) =>
+            nombre.length > 0 &&
+            !PUNTOS_VENTA_EXCLUIDOS.has(nombre.toUpperCase())
+        )
+        .map((nombre) => [nombre, nombre])
     ).values()
   );
 
