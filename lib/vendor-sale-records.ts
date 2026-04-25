@@ -36,6 +36,10 @@ export const MIN_PLAZO_CUOTAS = 1;
 export const MAX_PLAZO_CUOTAS = 48;
 export const IMEI_LENGTH = 15;
 
+export function financieraRequiereInicial(index: number) {
+  return index < 2;
+}
+
 export const TEXTOS_VISIBLES_CLIENTE = [
   "He sido informado de que CONECTAMOS realiza el acompanamiento comercial del tramite y que la aprobacion del credito depende exclusivamente de la plataforma financiera seleccionada.",
   "Antes de la entrega del producto se me socializo la politica de garantias, cambios y devoluciones aplicable a esta compra.",
@@ -45,8 +49,8 @@ export const TEXTOS_VISIBLES_CLIENTE = [
 export type DetalleFinancieraRegistro = {
   plataformaCredito: string;
   creditoAutorizado: string;
-  cuotaInicial: string;
-  tipoPagoInicial: string;
+  cuotaInicial: string | null;
+  tipoPagoInicial: string | null;
   valorCuota: string;
   numeroCuotas: number;
   frecuenciaCuota: string;
@@ -244,13 +248,18 @@ export function normalizarFinancierasDetalle(valor: unknown):
       };
     }
 
-    if (cuotaInicial === null) {
+    const requiereInicial =
+      financieraRequiereInicial(index) ||
+      cuotaInicial !== null ||
+      Boolean(tipoPagoInicial);
+
+    if (requiereInicial && cuotaInicial === null) {
       return {
         error: `Debes registrar la inicial de la financiera ${index + 1}`,
       };
     }
 
-    if (!tipoPagoInicial) {
+    if (requiereInicial && !tipoPagoInicial) {
       return {
         error: `Selecciona el tipo de pago de la inicial en la financiera ${index + 1}`,
       };

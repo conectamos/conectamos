@@ -206,6 +206,7 @@ model RegistroVendedorVenta {
   jaladorNombre                   String?
   cerradorNombre                  String?
   numeroFactura                   String?
+  estadoFacturacion               String          @default("PENDIENTE")
   firmaClienteDataUrl             String?
   fotoEntregaDataUrl              String?
   confirmacionCliente             Boolean         @default(false)

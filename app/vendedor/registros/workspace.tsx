@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import {
   detalleFinancieraTieneDatos,
+  financieraRequiereInicial,
   FRECUENCIAS_CUOTA,
   MAX_FINANCIERAS_REGISTRO,
   MAX_PLAZO_CUOTAS,
@@ -217,12 +218,17 @@ function isTextFilled(value: string) {
   return value.trim().length > 0;
 }
 
-function isFinancieraCompleta(item: FinancialFormState) {
+function isFinancieraCompleta(item: FinancialFormState, index: number) {
+  const requiereInicial =
+    financieraRequiereInicial(index) ||
+    isTextFilled(item.cuotaInicial) ||
+    isTextFilled(item.tipoPagoInicial);
+
   return (
     isTextFilled(item.plataformaCredito) &&
     isTextFilled(item.creditoAutorizado) &&
-    isTextFilled(item.cuotaInicial) &&
-    isTextFilled(item.tipoPagoInicial) &&
+    (!requiereInicial ||
+      (isTextFilled(item.cuotaInicial) && isTextFilled(item.tipoPagoInicial))) &&
     isTextFilled(item.valorCuota) &&
     isTextFilled(item.numeroCuotas) &&
     isTextFilled(item.frecuenciaCuota)
@@ -743,7 +749,7 @@ export default function VendedorRegistroWorkspace({
         continue;
       }
 
-      if (!isFinancieraCompleta(item)) {
+      if (!isFinancieraCompleta(item, index)) {
         return `Todos los campos de la financiera ${index + 1} son obligatorios`;
       }
     }
@@ -1154,44 +1160,48 @@ export default function VendedorRegistroWorkspace({
                               />
                             </label>
 
-                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                              Inicial
-                              <input
-                                value={item.cuotaInicial}
-                                onChange={(event) =>
-                                  setFinancieraPesoField(
-                                    index,
-                                    "cuotaInicial",
-                                    event.target.value
-                                  )
-                                }
-                                className={inputClass()}
-                                inputMode="numeric"
-                                placeholder="$ 0"
-                              />
-                            </label>
+                            {financieraRequiereInicial(index) && (
+                              <>
+                                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                  Inicial
+                                  <input
+                                    value={item.cuotaInicial}
+                                    onChange={(event) =>
+                                      setFinancieraPesoField(
+                                        index,
+                                        "cuotaInicial",
+                                        event.target.value
+                                      )
+                                    }
+                                    className={inputClass()}
+                                    inputMode="numeric"
+                                    placeholder="$ 0"
+                                  />
+                                </label>
 
-                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                              Tipo de pago de la inicial
-                              <select
-                                value={item.tipoPagoInicial}
-                                onChange={(event) =>
-                                  setFinancieraField(
-                                    index,
-                                    "tipoPagoInicial",
-                                    event.target.value
-                                  )
-                                }
-                                className={inputClass()}
-                              >
-                                <option value="">Selecciona una opcion</option>
-                                {MEDIOS_PAGO_REGISTRO_VENTA.map((option) => (
-                                  <option key={option} value={option}>
-                                    {option}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                  Tipo de pago de la inicial
+                                  <select
+                                    value={item.tipoPagoInicial}
+                                    onChange={(event) =>
+                                      setFinancieraField(
+                                        index,
+                                        "tipoPagoInicial",
+                                        event.target.value
+                                      )
+                                    }
+                                    className={inputClass()}
+                                  >
+                                    <option value="">Selecciona una opcion</option>
+                                    {MEDIOS_PAGO_REGISTRO_VENTA.map((option) => (
+                                      <option key={option} value={option}>
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </>
+                            )}
 
                             <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                               Valor cuota
@@ -1271,7 +1281,8 @@ export default function VendedorRegistroWorkspace({
                       }
                       disabled={
                         !isFinancieraCompleta(
-                          form.financierasDetalle[financierasVisibles - 1]
+                          form.financierasDetalle[financierasVisibles - 1],
+                          financierasVisibles - 1
                         )
                       }
                       className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"

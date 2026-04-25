@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  financieraRequiereInicial,
   PLATAFORMAS_CREDITO,
   formatearPesoInput,
 } from "@/lib/vendor-sale-records";
@@ -29,6 +30,8 @@ type RegistroFacturacion = {
   documentoNumero: string;
   correo: string | null;
   whatsapp: string | null;
+  direccion: string | null;
+  barrio: string | null;
   plataformaCredito: string;
   creditoAutorizado: number | null;
   cuotaInicial: number | null;
@@ -37,6 +40,7 @@ type RegistroFacturacion = {
   tipoEquipo: string | null;
   jaladorNombre: string | null;
   numeroFactura: string | null;
+  estadoFacturacion: string | null;
   financierasDetalle: FinancieraRegistro[] | null;
 };
 
@@ -52,11 +56,20 @@ type EditDraft = {
   clienteNombre: string;
   correo: string;
   whatsapp: string;
+  direccion: string;
+  barrio: string;
   referenciaEquipo: string;
   serialImei: string;
   numeroFactura: string;
+  estadoFacturacion: string;
   financierasDetalle: EditFinancieraState[];
 };
+
+const ESTADO_OPTIONS = [
+  { value: "PENDIENTE", label: "Pendiente" },
+  { value: "FACTURADO", label: "Facturado" },
+  { value: "NOTA_CREDITO", label: "Nota credito" },
+] as const;
 
 function formatDate(value: string) {
   try {
@@ -120,11 +133,49 @@ function resolveFinancieras(registro: RegistroFacturacion) {
   ].filter((item) => item.plataformaCredito || item.creditoAutorizado !== null);
 }
 
+function resolveEstadoBadge(estadoFacturacion: string | null, numeroFactura: string | null) {
+  const estado = String(estadoFacturacion || "").trim().toUpperCase();
+
+  if (estado === "NOTA_CREDITO") {
+    return {
+      label: "Nota credito",
+      rowClass: "bg-amber-50 text-amber-950",
+      pillClass: "border-amber-200 bg-amber-100 text-amber-700",
+      inputClass:
+        "border-amber-300 bg-white text-amber-950 focus:border-amber-500 focus:ring-2 focus:ring-amber-100",
+      buttonClass: "bg-amber-600 text-white hover:bg-amber-500",
+    };
+  }
+
+  if (estado === "FACTURADO" || numeroFactura) {
+    return {
+      label: "Facturado",
+      rowClass: "bg-emerald-50 text-emerald-950",
+      pillClass: "border-emerald-200 bg-emerald-100 text-emerald-700",
+      inputClass:
+        "border-emerald-300 bg-white text-emerald-950 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100",
+      buttonClass: "bg-emerald-600 text-white hover:bg-emerald-500",
+    };
+  }
+
+  return {
+    label: "Pendiente",
+    rowClass: "bg-slate-50 text-slate-900",
+    pillClass: "border-amber-200 bg-amber-50 text-amber-700",
+    inputClass:
+      "border-slate-300 bg-white text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100",
+    buttonClass: "bg-slate-900 text-white hover:bg-slate-800",
+  };
+}
+
 function createEditDraft(registro: RegistroFacturacion): EditDraft {
   const financieras = resolveFinancieras(registro).map((item) => ({
     plataformaCredito: item.plataformaCredito,
     creditoAutorizado: formatearPesoInput(item.creditoAutorizado ?? ""),
-    cuotaInicial: formatearPesoInput(item.cuotaInicial ?? ""),
+    cuotaInicial:
+      item.cuotaInicial === null || item.cuotaInicial === undefined
+        ? ""
+        : formatearPesoInput(item.cuotaInicial),
   }));
 
   return {
@@ -133,9 +184,12 @@ function createEditDraft(registro: RegistroFacturacion): EditDraft {
     clienteNombre: registro.clienteNombre,
     correo: registro.correo ?? "",
     whatsapp: registro.whatsapp ?? "",
+    direccion: registro.direccion ?? "",
+    barrio: registro.barrio ?? "",
     referenciaEquipo: registro.referenciaEquipo ?? "",
     serialImei: registro.serialImei ?? "",
     numeroFactura: registro.numeroFactura ?? "",
+    estadoFacturacion: registro.estadoFacturacion ?? (registro.numeroFactura ? "FACTURADO" : "PENDIENTE"),
     financierasDetalle: financieras.length > 0
       ? financieras
       : [
@@ -198,11 +252,24 @@ export default function FacturadorRegistrosWorkspace({
   }, []);
 
   const pendientes = useMemo(
-    () => registros.filter((item) => !item.numeroFactura).length,
+    () =>
+      registros.filter(
+        (item) =>
+          resolveEstadoBadge(item.estadoFacturacion, item.numeroFactura).label ===
+          "Pendiente"
+      ).length,
     [registros]
   );
 
-  const facturados = registros.length - pendientes;
+  const facturados = useMemo(
+    () =>
+      registros.filter(
+        (item) =>
+          resolveEstadoBadge(item.estadoFacturacion, item.numeroFactura).label ===
+          "Facturado"
+      ).length,
+    [registros]
+  );
 
   const guardarFactura = async (registroId: number) => {
     const numeroFactura = String(facturasDraft[registroId] || "").trim();
@@ -274,6 +341,28 @@ export default function FacturadorRegistrosWorkspace({
       return;
     }
 
+    if (!editando.direccion.trim()) {
+      setMensajeTipo("error");
+      setMensaje("Debes ingresar la direccion");
+      return;
+    }
+
+    if (!editando.barrio.trim()) {
+      setMensajeTipo("error");
+      setMensaje("Debes ingresar el barrio");
+      return;
+    }
+
+    if (
+      (editando.estadoFacturacion === "FACTURADO" ||
+        editando.estadoFacturacion === "NOTA_CREDITO") &&
+      !editando.numeroFactura.trim()
+    ) {
+      setMensajeTipo("error");
+      setMensaje("Debes conservar el numero de factura para ese estado");
+      return;
+    }
+
     try {
       setGuardandoEdicion(true);
       setMensaje("");
@@ -290,9 +379,12 @@ export default function FacturadorRegistrosWorkspace({
           clienteNombre: editando.clienteNombre,
           correo: editando.correo,
           whatsapp: editando.whatsapp,
+          direccion: editando.direccion,
+          barrio: editando.barrio,
           referenciaEquipo: editando.referenciaEquipo,
           serialImei: editando.serialImei,
           numeroFactura: editando.numeroFactura,
+          estadoFacturacion: editando.estadoFacturacion,
           financierasDetalle: editando.financierasDetalle,
         }),
       });
@@ -329,7 +421,7 @@ export default function FacturadorRegistrosWorkspace({
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-none">
         <section className="overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#1f2937_52%,#0f766e_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
@@ -423,7 +515,7 @@ export default function FacturadorRegistrosWorkspace({
           </div>
 
           <div className="mt-6 overflow-x-auto">
-            <table className="min-w-[1980px] border-separate border-spacing-y-3">
+            <table className="min-w-[2360px] border-separate border-spacing-y-3">
               <thead>
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   <th className="px-4 py-2">Fecha</th>
@@ -432,6 +524,8 @@ export default function FacturadorRegistrosWorkspace({
                   <th className="px-4 py-2">Nombre completo</th>
                   <th className="px-4 py-2">Correo electronico</th>
                   <th className="px-4 py-2">WhatsApp</th>
+                  <th className="px-4 py-2">Direccion</th>
+                  <th className="px-4 py-2">Barrio</th>
                   <th className="px-4 py-2">Referencia</th>
                   <th className="px-4 py-2">IMEI</th>
                   <th className="px-4 py-2">Inicial</th>
@@ -447,30 +541,36 @@ export default function FacturadorRegistrosWorkspace({
               <tbody>
                 {cargando ? (
                   <tr>
-                    <td colSpan={13} className="px-4 py-8 text-sm text-slate-500">
+                    <td colSpan={15} className="px-4 py-8 text-sm text-slate-500">
                       Cargando registros...
                     </td>
                   </tr>
                 ) : registros.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="px-4 py-8 text-sm text-slate-500">
+                    <td colSpan={15} className="px-4 py-8 text-sm text-slate-500">
                       No hay registros guardados para facturar.
                     </td>
                   </tr>
                 ) : (
                   registros.map((registro) => {
-                    const facturado = Boolean(registro.numeroFactura);
+                    const estado = resolveEstadoBadge(
+                      registro.estadoFacturacion,
+                      registro.numeroFactura
+                    );
                     const draft = facturasDraft[registro.id] ?? registro.numeroFactura ?? "";
                     const financieras = resolveFinancieras(registro);
+                    const financierasConInicial = financieras.filter(
+                      (item, index) =>
+                        financieraRequiereInicial(index) &&
+                        item.cuotaInicial !== null &&
+                        item.cuotaInicial !== undefined &&
+                        item.cuotaInicial !== ""
+                    );
 
                     return (
                       <tr
                         key={registro.id}
-                        className={`rounded-[24px] ${
-                          facturado
-                            ? "bg-emerald-50 text-emerald-950"
-                            : "bg-slate-50 text-slate-900"
-                        }`}
+                        className={`rounded-[24px] ${estado.rowClass}`}
                       >
                         <td className="rounded-l-[24px] border-y border-l border-slate-200 px-4 py-4 text-sm">
                           {formatDate(registro.createdAt)}
@@ -491,24 +591,37 @@ export default function FacturadorRegistrosWorkspace({
                           {registro.whatsapp || "Sin WhatsApp"}
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4 text-sm">
+                          {registro.direccion || "Sin direccion"}
+                        </td>
+                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
+                          {registro.barrio || "Sin barrio"}
+                        </td>
+                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
                           {registro.referenciaEquipo || "Sin referencia"}
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4 text-sm">
                           {registro.serialImei || "Sin IMEI"}
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          <div className="space-y-2">
-                            {financieras.map((item, index) => (
-                              <div key={`${registro.id}-inicial-${index}`} className="min-w-40">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                  {item.plataformaCredito || `Financiera ${index + 1}`}
+                          {financierasConInicial.length > 0 ? (
+                            <div className="space-y-2">
+                              {financierasConInicial.map((item, index) => (
+                                <div
+                                  key={`${registro.id}-inicial-${index}`}
+                                  className="min-w-40"
+                                >
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                    {item.plataformaCredito || `Financiera ${index + 1}`}
+                                  </div>
+                                  <div className="mt-1 font-semibold text-slate-900">
+                                    {formatMoney(item.cuotaInicial)}
+                                  </div>
                                 </div>
-                                <div className="mt-1 font-semibold text-slate-900">
-                                  {formatMoney(item.cuotaInicial)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-slate-500">No aplica</span>
+                          )}
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4 text-sm">
                           <div className="space-y-2">
@@ -533,23 +646,15 @@ export default function FacturadorRegistrosWorkspace({
                                 [registro.id]: event.target.value,
                               }))
                             }
-                            className={`w-48 rounded-2xl border px-4 py-3 text-sm outline-none transition ${
-                              facturado
-                                ? "border-emerald-300 bg-white text-emerald-950 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                                : "border-slate-300 bg-white text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                            }`}
+                            className={`w-48 rounded-2xl border px-4 py-3 text-sm outline-none transition ${estado.inputClass}`}
                             placeholder="Factura"
                           />
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4">
                           <span
-                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
-                              facturado
-                                ? "border-emerald-200 bg-emerald-100 text-emerald-700"
-                                : "border-amber-200 bg-amber-50 text-amber-700"
-                            }`}
+                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${estado.pillClass}`}
                           >
-                            {facturado ? "Facturado" : "Pendiente"}
+                            {estado.label}
                           </span>
                         </td>
                         <td className="rounded-r-[24px] border-y border-r border-slate-200 px-4 py-4">
@@ -558,11 +663,7 @@ export default function FacturadorRegistrosWorkspace({
                               type="button"
                               onClick={() => void guardarFactura(registro.id)}
                               disabled={guardandoId === registro.id || !String(draft).trim()}
-                              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                                facturado
-                                  ? "bg-emerald-600 text-white hover:bg-emerald-500"
-                                  : "bg-slate-900 text-white hover:bg-slate-800"
-                              } disabled:cursor-not-allowed disabled:bg-slate-300`}
+                              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${estado.buttonClass} disabled:cursor-not-allowed disabled:bg-slate-300`}
                             >
                               {guardandoId === registro.id ? "Guardando..." : "Guardar"}
                             </button>
@@ -686,6 +787,42 @@ export default function FacturadorRegistrosWorkspace({
               </label>
 
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Direccion
+                <input
+                  value={editando.direccion}
+                  onChange={(event) =>
+                    setEditando((current) =>
+                      current
+                        ? {
+                            ...current,
+                            direccion: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Barrio
+                <input
+                  value={editando.barrio}
+                  onChange={(event) =>
+                    setEditando((current) =>
+                      current
+                        ? {
+                            ...current,
+                            barrio: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                 Referencia
                 <input
                   value={editando.referenciaEquipo}
@@ -739,6 +876,30 @@ export default function FacturadorRegistrosWorkspace({
                   placeholder="Puedes cambiarlo o dejarlo vacio"
                 />
               </label>
+
+              <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Estado
+                <select
+                  value={editando.estadoFacturacion}
+                  onChange={(event) =>
+                    setEditando((current) =>
+                      current
+                        ? {
+                            ...current,
+                            estadoFacturacion: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                >
+                  {ESTADO_OPTIONS.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <div className="mt-6 rounded-[28px] border border-slate-200 bg-slate-50 p-5">
@@ -756,7 +917,13 @@ export default function FacturadorRegistrosWorkspace({
                       Financiera {index + 1}
                     </p>
 
-                    <div className="mt-4 grid gap-4 md:grid-cols-3">
+                    <div
+                      className={`mt-4 grid gap-4 ${
+                        financieraRequiereInicial(index)
+                          ? "md:grid-cols-3"
+                          : "md:grid-cols-2"
+                      }`}
+                    >
                       <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                         Financiera
                         <select
@@ -818,33 +985,35 @@ export default function FacturadorRegistrosWorkspace({
                         />
                       </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Inicial
-                        <input
-                          value={financiera.cuotaInicial}
-                          onChange={(event) =>
-                            setEditando((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    financierasDetalle: current.financierasDetalle.map(
-                                      (item, itemIndex) =>
-                                        itemIndex === index
-                                          ? {
-                                              ...item,
-                                              cuotaInicial: formatearPesoInput(
-                                                event.target.value
-                                              ),
-                                            }
-                                          : item
-                                    ),
-                                  }
-                                : current
-                            )
-                          }
-                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                        />
-                      </label>
+                      {financieraRequiereInicial(index) && (
+                        <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                          Inicial
+                          <input
+                            value={financiera.cuotaInicial}
+                            onChange={(event) =>
+                              setEditando((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      financierasDetalle: current.financierasDetalle.map(
+                                        (item, itemIndex) =>
+                                          itemIndex === index
+                                            ? {
+                                                ...item,
+                                                cuotaInicial: formatearPesoInput(
+                                                  event.target.value
+                                                ),
+                                              }
+                                            : item
+                                      ),
+                                    }
+                                  : current
+                              )
+                            }
+                            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                          />
+                        </label>
+                      )}
                     </div>
                   </div>
                 ))}

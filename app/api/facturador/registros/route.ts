@@ -4,11 +4,19 @@ import prisma from "@/lib/prisma";
 import { esPerfilFacturador } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
+  financieraRequiereInicial,
   normalizarImei,
   normalizarMoneda,
   normalizarPlataformaCredito,
   normalizarTextoCorto,
+  normalizarTextoLargo,
 } from "@/lib/vendor-sale-records";
+
+const ESTADOS_FACTURACION = [
+  "PENDIENTE",
+  "FACTURADO",
+  "NOTA_CREDITO",
+] as const;
 
 async function requireFacturador() {
   const session = await getSessionUser();
@@ -48,6 +56,16 @@ function serializarRegistro(
   };
 }
 
+function normalizarEstadoFacturacion(valor: unknown) {
+  const estado = String(valor || "").trim().toUpperCase();
+
+  return ESTADOS_FACTURACION.includes(
+    estado as (typeof ESTADOS_FACTURACION)[number]
+  )
+    ? estado
+    : null;
+}
+
 function normalizarFinancierasEdicion(valor: unknown) {
   if (!Array.isArray(valor) || valor.length === 0) {
     return { error: "Debes conservar al menos una financiera" as const };
@@ -56,10 +74,12 @@ function normalizarFinancierasEdicion(valor: unknown) {
   const financieras: Array<{
     plataformaCredito: string;
     creditoAutorizado: string;
-    cuotaInicial: string;
+    cuotaInicial: string | null;
   }> = [];
 
-  for (const item of valor) {
+  for (let index = 0; index < valor.length; index += 1) {
+    const item = valor[index];
+
     if (!item || typeof item !== "object") {
       continue;
     }
@@ -77,7 +97,10 @@ function normalizarFinancierasEdicion(valor: unknown) {
       return { error: "Debes registrar el credito autorizado" as const };
     }
 
-    if (cuotaInicial === null) {
+    const requiereInicial =
+      financieraRequiereInicial(index) || cuotaInicial !== null;
+
+    if (requiereInicial && cuotaInicial === null) {
       return { error: "Debes registrar la inicial" as const };
     }
 
@@ -117,6 +140,8 @@ export async function GET() {
         documentoNumero: true,
         correo: true,
         whatsapp: true,
+        direccion: true,
+        barrio: true,
         plataformaCredito: true,
         creditoAutorizado: true,
         cuotaInicial: true,
@@ -125,6 +150,7 @@ export async function GET() {
         tipoEquipo: true,
         jaladorNombre: true,
         numeroFactura: true,
+        estadoFacturacion: true,
         financierasDetalle: true,
       },
       orderBy: {
@@ -196,8 +222,11 @@ export async function PATCH(req: Request) {
       const clienteNombre = normalizarTextoCorto(body.clienteNombre);
       const correo = normalizarTextoCorto(body.correo);
       const whatsapp = normalizarTextoCorto(body.whatsapp);
+      const direccion = normalizarTextoLargo(body.direccion);
+      const barrio = normalizarTextoCorto(body.barrio);
       const referenciaEquipo = normalizarTextoCorto(body.referenciaEquipo);
       const serialImei = normalizarImei(body.serialImei);
+      const estadoFacturacion = normalizarEstadoFacturacion(body.estadoFacturacion);
       const financierasDetalle = normalizarFinancierasEdicion(body.financierasDetalle);
 
       if (!documentoNumero) {
@@ -228,9 +257,41 @@ export async function PATCH(req: Request) {
         );
       }
 
+      if (!direccion) {
+        return NextResponse.json(
+          { error: "Debes ingresar la direccion" },
+          { status: 400 }
+        );
+      }
+
+      if (!barrio) {
+        return NextResponse.json(
+          { error: "Debes ingresar el barrio" },
+          { status: 400 }
+        );
+      }
+
       if (!referenciaEquipo) {
         return NextResponse.json(
           { error: "Debes ingresar la referencia" },
+          { status: 400 }
+        );
+      }
+
+      if (!estadoFacturacion) {
+        return NextResponse.json(
+          { error: "Debes seleccionar un estado valido" },
+          { status: 400 }
+        );
+      }
+
+      if (
+        (estadoFacturacion === "FACTURADO" ||
+          estadoFacturacion === "NOTA_CREDITO") &&
+        !numeroFactura
+      ) {
+        return NextResponse.json(
+          { error: "Debes conservar el numero de factura para ese estado" },
           { status: 400 }
         );
       }
@@ -275,9 +336,12 @@ export async function PATCH(req: Request) {
           clienteNombre,
           correo,
           whatsapp,
+          direccion,
+          barrio,
           referenciaEquipo,
           serialImei,
           numeroFactura: numeroFactura ?? null,
+          estadoFacturacion,
           financierasDetalle: financierasActualizadas,
           plataformaCredito: String(primeraFinanciera?.plataformaCredito ?? ""),
           creditoAutorizado: String(primeraFinanciera?.creditoAutorizado ?? "0"),
@@ -296,6 +360,8 @@ export async function PATCH(req: Request) {
           documentoNumero: true,
           correo: true,
           whatsapp: true,
+          direccion: true,
+          barrio: true,
           plataformaCredito: true,
           creditoAutorizado: true,
           cuotaInicial: true,
@@ -304,6 +370,7 @@ export async function PATCH(req: Request) {
           tipoEquipo: true,
           jaladorNombre: true,
           numeroFactura: true,
+          estadoFacturacion: true,
           financierasDetalle: true,
         },
       });
@@ -317,7 +384,10 @@ export async function PATCH(req: Request) {
 
     const actualizado = await prisma.registroVendedorVenta.update({
       where: { id },
-      data: { numeroFactura },
+      data: {
+        numeroFactura,
+        estadoFacturacion: "FACTURADO",
+      },
       select: {
         id: true,
         createdAt: true,
@@ -327,6 +397,8 @@ export async function PATCH(req: Request) {
         documentoNumero: true,
         correo: true,
         whatsapp: true,
+        direccion: true,
+        barrio: true,
         plataformaCredito: true,
         creditoAutorizado: true,
         cuotaInicial: true,
@@ -335,6 +407,7 @@ export async function PATCH(req: Request) {
         tipoEquipo: true,
         jaladorNombre: true,
         numeroFactura: true,
+        estadoFacturacion: true,
         financierasDetalle: true,
       },
     });

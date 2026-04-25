@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS "RegistroVendedorVenta" (
   "jaladorNombre" TEXT,
   "cerradorNombre" TEXT,
   "numeroFactura" TEXT,
+  "estadoFacturacion" TEXT NOT NULL DEFAULT 'PENDIENTE',
   "firmaClienteDataUrl" TEXT,
   "fotoEntregaDataUrl" TEXT,
   "confirmacionCliente" BOOLEAN NOT NULL DEFAULT false,
@@ -103,6 +104,7 @@ ALTER TABLE "RegistroVendedorVenta"
   ADD COLUMN IF NOT EXISTS "referenciaFamiliar2Telefono" TEXT,
   ADD COLUMN IF NOT EXISTS "jaladorNombre" TEXT,
   ADD COLUMN IF NOT EXISTS "numeroFactura" TEXT,
+  ADD COLUMN IF NOT EXISTS "estadoFacturacion" TEXT NOT NULL DEFAULT 'PENDIENTE',
   ADD COLUMN IF NOT EXISTS "firmaClienteDataUrl" TEXT,
   ADD COLUMN IF NOT EXISTS "fotoEntregaDataUrl" TEXT;
 
