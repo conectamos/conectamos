@@ -54,12 +54,12 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
 function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
   if (tipo === "SUPERVISOR_TIENDA") {
     return (
-      <div className="relative flex h-48 w-full items-end justify-center overflow-hidden rounded-[2.8rem] border border-white/75 bg-[linear-gradient(180deg,#f9fcff_0%,#ebf3ff_54%,#f5f9ff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_20px_48px_rgba(148,163,184,0.18)] transition-transform duration-500 group-hover:scale-[1.02]">
+      <div className="relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden rounded-[42%_58%_54%_46%/40%_38%_62%_60%] border border-white/80 bg-[linear-gradient(180deg,#f9fcff_0%,#ebf3ff_54%,#f5f9ff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)] transition duration-500 group-hover:-translate-y-1 group-hover:rotate-[1.5deg] group-hover:scale-[1.03]">
         <div className="absolute -left-6 top-5 h-28 w-28 rounded-full bg-sky-100/80 blur-2xl" />
         <div className="absolute right-3 top-6 h-20 w-20 rounded-full bg-emerald-100/70 blur-2xl" />
         <svg
           viewBox="0 0 180 150"
-          className="relative h-full w-full px-4 pb-3 pt-2"
+          className="relative h-full w-full px-4 pb-3 pt-3"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
@@ -108,12 +108,12 @@ function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
 
   if (tipo === "FACTURADOR") {
     return (
-      <div className="relative flex h-48 w-full items-end justify-center overflow-hidden rounded-[2.8rem] border border-white/75 bg-[linear-gradient(180deg,#fffdf8_0%,#eef5ff_58%,#f7fbff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_20px_48px_rgba(148,163,184,0.18)] transition-transform duration-500 group-hover:scale-[1.02]">
+      <div className="relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden rounded-[48%_52%_44%_56%/38%_42%_58%_62%] border border-white/80 bg-[linear-gradient(180deg,#fffdf8_0%,#eef5ff_58%,#f7fbff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)] transition duration-500 group-hover:-translate-y-1 group-hover:-rotate-[1.5deg] group-hover:scale-[1.03]">
         <div className="absolute left-2 top-6 h-24 w-24 rounded-full bg-amber-100/75 blur-2xl" />
         <div className="absolute right-4 top-8 h-24 w-24 rounded-full bg-sky-100/70 blur-2xl" />
         <svg
           viewBox="0 0 180 150"
-          className="relative h-full w-full px-4 pb-3 pt-2"
+          className="relative h-full w-full px-4 pb-3 pt-3"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
@@ -147,12 +147,12 @@ function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
 
   if (tipo === "VENDEDOR") {
     return (
-      <div className="relative flex h-48 w-full items-end justify-center overflow-hidden rounded-[2.8rem] border border-white/75 bg-[linear-gradient(180deg,#fbfffd_0%,#ecfaf3_56%,#f8fcfb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_20px_48px_rgba(148,163,184,0.18)] transition-transform duration-500 group-hover:scale-[1.02]">
+      <div className="relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden rounded-[46%_54%_58%_42%/44%_38%_62%_56%] border border-white/80 bg-[linear-gradient(180deg,#fbfffd_0%,#ecfaf3_56%,#f8fcfb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)] transition duration-500 group-hover:-translate-y-1 group-hover:rotate-[1.5deg] group-hover:scale-[1.03]">
         <div className="absolute left-2 top-6 h-20 w-20 rounded-full bg-emerald-100/80 blur-2xl" />
         <div className="absolute right-4 top-7 h-24 w-24 rounded-full bg-cyan-100/65 blur-2xl" />
         <svg
           viewBox="0 0 180 150"
-          className="relative h-full w-full px-4 pb-3 pt-2"
+          className="relative h-full w-full px-4 pb-3 pt-3"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
@@ -206,12 +206,12 @@ function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
   }
 
   return (
-    <div className="relative flex h-48 w-full items-end justify-center overflow-hidden rounded-[2.8rem] border border-[#f6e7b8] bg-[linear-gradient(180deg,#fff9e7_0%,#fff2c9_50%,#fff8e6_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_22px_52px_rgba(180,138,40,0.18)] transition-transform duration-500 group-hover:scale-[1.02]">
+    <div className="relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden rounded-[44%_56%_52%_48%/36%_40%_60%_64%] border border-[#f6e7b8] bg-[linear-gradient(180deg,#fff9e7_0%,#fff2c9_50%,#fff8e6_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_24px_56px_rgba(180,138,40,0.22)] transition duration-500 group-hover:-translate-y-1 group-hover:-rotate-[1.5deg] group-hover:scale-[1.03]">
       <div className="absolute left-0 top-4 h-24 w-24 rounded-full bg-yellow-200/75 blur-2xl" />
       <div className="absolute right-6 top-5 h-20 w-20 rounded-full bg-amber-100/80 blur-2xl" />
       <svg
         viewBox="0 0 180 150"
-        className="relative h-full w-full px-4 pb-3 pt-2"
+        className="relative h-full w-full px-4 pb-3 pt-3"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
@@ -597,9 +597,9 @@ export default function Home() {
           <section>
             <div
               className={[
-                "grid gap-6",
+                "grid gap-x-8 gap-y-10 justify-items-center",
                 perfilesFiltrados.length === 1
-                  ? "mx-auto max-w-[22rem]"
+                  ? "mx-auto max-w-[18rem]"
                   : "sm:grid-cols-2 xl:grid-cols-3",
               ].join(" ")}
             >
@@ -611,51 +611,50 @@ export default function Home() {
                     key={perfil.id}
                     type="button"
                     onClick={() => abrirModalPin(String(perfil.id))}
-                    className={`group relative overflow-hidden rounded-[2.4rem] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(243,247,253,0.93)_100%)] p-5 text-left shadow-[0_24px_60px_rgba(71,85,105,0.12)] transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_34px_80px_rgba(51,65,85,0.18)] ${
-                      seleccionado
-                        ? "border-slate-900 ring-4 ring-slate-200"
-                        : "border-white/75"
-                    }`}
+                    className="group flex w-full max-w-[18rem] flex-col items-center bg-transparent text-center transition"
                   >
-                    <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.78),transparent_70%)]" />
-                    <ProfileAvatar tipo={perfil.tipo} />
+                    <div
+                      className={[
+                        "rounded-[3rem] p-2 transition duration-300",
+                        seleccionado
+                          ? "bg-[radial-gradient(circle_at_top,rgba(15,23,42,0.1),transparent_70%)] ring-4 ring-slate-200"
+                          : "group-hover:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_70%)]",
+                      ].join(" ")}
+                    >
+                      <ProfileAvatar tipo={perfil.tipo} />
+                    </div>
 
                     <div className="mt-5">
-                      <div className="inline-flex rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[0.68rem] font-bold uppercase tracking-[0.28em] text-slate-500">
-                        {perfil.tipoLabel}
-                      </div>
-                      <h2 className="mt-4 text-[1.85rem] font-black tracking-[-0.04em] text-slate-950">
+                      <h2 className="text-[1.85rem] font-black tracking-[-0.04em] text-slate-950">
                         {perfil.nombre}
                       </h2>
-                      <div className="mt-4 flex items-center justify-between gap-3">
-                        <span className="text-sm font-semibold text-slate-500">
-                          Abrir con PIN
+                      <p className="mt-2 text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">
+                        {perfil.tipoLabel}
+                      </p>
+                      {perfil.debeCambiarPin ? (
+                        <span className="mt-4 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                          Cambiar PIN
                         </span>
-                        {perfil.debeCambiarPin ? (
-                          <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                            Cambiar PIN
-                          </span>
-                        ) : (
-                          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition group-hover:border-slate-300 group-hover:text-slate-700">
-                            <svg
-                              width="20"
-                              height="20"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                              aria-hidden="true"
-                            >
-                              <path
-                                d="M9 6L15 12L9 18"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          </span>
-                        )}
-                      </div>
+                      ) : (
+                        <span className="mt-4 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition group-hover:border-slate-300 group-hover:text-slate-700">
+                          <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M9 6L15 12L9 18"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </span>
+                      )}
                     </div>
                   </button>
                 );
