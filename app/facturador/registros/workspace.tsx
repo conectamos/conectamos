@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  DOMINIOS_CORREO_REGISTRO_TEXTO,
+  esCorreoRegistroValido,
+  esWhatsappRegistroValido,
   financieraRequiereInicial,
   PLATAFORMAS_CREDITO,
   formatearPesoInput,
@@ -360,6 +363,32 @@ export default function FacturadorRegistrosWorkspace({
     if (!editando.clienteNombre.trim()) {
       setMensajeTipo("error");
       setMensaje("Debes ingresar el nombre completo");
+      return;
+    }
+
+    if (!editando.correo.trim()) {
+      setMensajeTipo("error");
+      setMensaje("Debes ingresar el correo electronico");
+      return;
+    }
+
+    if (!esCorreoRegistroValido(editando.correo)) {
+      setMensajeTipo("error");
+      setMensaje(
+        `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`
+      );
+      return;
+    }
+
+    if (!editando.whatsapp.trim()) {
+      setMensajeTipo("error");
+      setMensaje("Debes ingresar el WhatsApp");
+      return;
+    }
+
+    if (!esWhatsappRegistroValido(editando.whatsapp)) {
+      setMensajeTipo("error");
+      setMensaje("El WhatsApp debe tener 10 digitos");
       return;
     }
 
@@ -772,12 +801,15 @@ export default function FacturadorRegistrosWorkspace({
                 />
               </label>
 
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Correo electronico
-                <input
-                  value={editando.correo}
-                  onChange={(event) =>
-                    setEditando((current) =>
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Correo electronico
+                  <input
+                    type="email"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    value={editando.correo}
+                    onChange={(event) =>
+                      setEditando((current) =>
                       current
                         ? {
                             ...current,
@@ -790,19 +822,21 @@ export default function FacturadorRegistrosWorkspace({
                 />
               </label>
 
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                WhatsApp
-                <input
-                  value={editando.whatsapp}
-                  onChange={(event) =>
-                    setEditando((current) =>
-                      current
-                        ? {
-                            ...current,
-                            whatsapp: onlyDigits(event.target.value),
-                          }
-                        : current
-                    )
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  WhatsApp
+                  <input
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={editando.whatsapp}
+                    onChange={(event) =>
+                      setEditando((current) =>
+                        current
+                          ? {
+                              ...current,
+                              whatsapp: onlyDigits(event.target.value, 10),
+                            }
+                          : current
+                      )
                   }
                   className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 />

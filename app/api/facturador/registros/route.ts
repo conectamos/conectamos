@@ -4,12 +4,15 @@ import prisma from "@/lib/prisma";
 import { esPerfilFacturador } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
+  DOMINIOS_CORREO_REGISTRO_TEXTO,
   financieraRequiereInicial,
+  normalizarCorreoRegistro,
   normalizarImei,
   normalizarMoneda,
   normalizarPlataformaCredito,
   normalizarTextoCorto,
   normalizarTextoLargo,
+  normalizarWhatsappRegistro,
 } from "@/lib/vendor-sale-records";
 
 const ESTADOS_FACTURACION = [
@@ -220,8 +223,10 @@ export async function PATCH(req: Request) {
     if (modo === "EDITAR") {
       const documentoNumero = normalizarTextoCorto(body.documentoNumero);
       const clienteNombre = normalizarTextoCorto(body.clienteNombre);
-      const correo = normalizarTextoCorto(body.correo);
-      const whatsapp = normalizarTextoCorto(body.whatsapp);
+      const correoTexto = normalizarTextoCorto(body.correo);
+      const correo = normalizarCorreoRegistro(body.correo);
+      const whatsappTexto = String(body.whatsapp || "").replace(/\D/g, "").trim();
+      const whatsapp = normalizarWhatsappRegistro(body.whatsapp);
       const direccion = normalizarTextoLargo(body.direccion);
       const barrio = normalizarTextoCorto(body.barrio);
       const referenciaEquipo = normalizarTextoCorto(body.referenciaEquipo);
@@ -243,16 +248,32 @@ export async function PATCH(req: Request) {
         );
       }
 
-      if (!correo) {
+      if (!correoTexto) {
         return NextResponse.json(
           { error: "Debes ingresar el correo electronico" },
           { status: 400 }
         );
       }
 
-      if (!whatsapp) {
+      if (!correo) {
+        return NextResponse.json(
+          {
+            error: `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`,
+          },
+          { status: 400 }
+        );
+      }
+
+      if (!whatsappTexto) {
         return NextResponse.json(
           { error: "Debes ingresar el WhatsApp" },
+          { status: 400 }
+        );
+      }
+
+      if (!whatsapp) {
+        return NextResponse.json(
+          { error: "El WhatsApp debe tener 10 digitos" },
           { status: 400 }
         );
       }

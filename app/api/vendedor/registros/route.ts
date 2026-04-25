@@ -5,6 +5,8 @@ import { esPerfilVendedor } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import {
+  DOMINIOS_CORREO_REGISTRO_TEXTO,
+  normalizarCorreoRegistro,
   normalizarFechaIso,
   normalizarFinancierasDetalle,
   normalizarImei,
@@ -12,6 +14,7 @@ import {
   normalizarTextoLargo,
   normalizarTipoEquipoRegistro,
   normalizarTipoDocumentoCliente,
+  normalizarWhatsappRegistro,
 } from "@/lib/vendor-sale-records";
 
 async function requireVendor() {
@@ -57,8 +60,10 @@ function validarPayload(body: Record<string, unknown>) {
   const color = normalizarTextoCorto(body.color);
   const serialImei = normalizarImei(body.serialImei);
   const tipoEquipo = normalizarTipoEquipoRegistro(body.tipoEquipo);
-  const correo = normalizarTextoCorto(body.correo);
-  const whatsapp = normalizarTextoCorto(body.whatsapp);
+  const correoTexto = normalizarTextoCorto(body.correo);
+  const correo = normalizarCorreoRegistro(body.correo);
+  const whatsappTexto = String(body.whatsapp || "").replace(/\D/g, "").trim();
+  const whatsapp = normalizarWhatsappRegistro(body.whatsapp);
   const fechaNacimiento = normalizarFechaIso(body.fechaNacimiento);
   const fechaExpedicion = normalizarFechaIso(body.fechaExpedicion);
   const direccion = normalizarTextoLargo(body.direccion);
@@ -100,8 +105,14 @@ function validarPayload(body: Record<string, unknown>) {
   if (!referenciaEquipo) return { error: "La referencia del equipo es obligatoria" };
   if (!almacenamiento) return { error: "El almacenamiento es obligatorio" };
   if (!color) return { error: "El color es obligatorio" };
-  if (!correo) return { error: "El correo es obligatorio" };
-  if (!whatsapp) return { error: "El WhatsApp es obligatorio" };
+  if (!correoTexto) return { error: "El correo es obligatorio" };
+  if (!correo) {
+    return {
+      error: `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`,
+    };
+  }
+  if (!whatsappTexto) return { error: "El WhatsApp es obligatorio" };
+  if (!whatsapp) return { error: "El WhatsApp debe tener 10 digitos" };
   if (!fechaNacimiento) return { error: "La fecha de nacimiento es obligatoria" };
   if (!fechaExpedicion) return { error: "La fecha de expedicion es obligatoria" };
   if (!direccion) return { error: "La direccion es obligatoria" };

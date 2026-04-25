@@ -14,6 +14,14 @@ export const PLATAFORMAS_CREDITO = [
 
 export const TIPOS_DOCUMENTO_CLIENTE = ["CC", "CE", "PPT"] as const;
 export const FRECUENCIAS_CUOTA = ["SEMANAL", "CATORCENAL", "MENSUAL"] as const;
+export const DOMINIOS_CORREO_REGISTRO = [
+  "outlook.com",
+  "outlook.es",
+  "gmail.com",
+  "icloud.com",
+] as const;
+export const DOMINIOS_CORREO_REGISTRO_TEXTO =
+  "@outlook.com, @outlook.es, @gmail.com o @icloud.com";
 export const MEDIOS_PAGO = [
   "EFECTIVO",
   "TRANSFERENCIA",
@@ -59,6 +67,8 @@ export type DetalleFinancieraRegistro = {
 export type TipoEquipoRegistro =
   (typeof TIPOS_EQUIPO_REGISTRO)[number];
 
+const CORREO_REGISTRO_REGEX = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/i;
+
 function textoLimpio(valor: unknown) {
   return String(valor || "").replace(/\s+/g, " ").trim();
 }
@@ -69,6 +79,41 @@ export function normalizarTextoCorto(valor: unknown) {
 
 export function normalizarTextoLargo(valor: unknown) {
   return textoLimpio(valor) || null;
+}
+
+export function normalizarCorreoRegistro(valor: unknown) {
+  const correo = textoLimpio(valor).toLowerCase();
+
+  if (!correo) {
+    return null;
+  }
+
+  const match = correo.match(CORREO_REGISTRO_REGEX);
+
+  if (!match) {
+    return null;
+  }
+
+  const dominio = match[1].toLowerCase();
+
+  return DOMINIOS_CORREO_REGISTRO.includes(
+    dominio as (typeof DOMINIOS_CORREO_REGISTRO)[number]
+  )
+    ? correo
+    : null;
+}
+
+export function esCorreoRegistroValido(valor: unknown) {
+  return normalizarCorreoRegistro(valor) !== null;
+}
+
+export function normalizarWhatsappRegistro(valor: unknown) {
+  const whatsapp = String(valor || "").replace(/\D/g, "").slice(0, 10);
+  return whatsapp.length === 10 ? whatsapp : null;
+}
+
+export function esWhatsappRegistroValido(valor: unknown) {
+  return normalizarWhatsappRegistro(valor) !== null;
 }
 
 export function normalizarPlataformaCredito(valor: unknown) {

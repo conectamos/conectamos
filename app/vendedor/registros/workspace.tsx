@@ -10,6 +10,9 @@ import {
 import Link from "next/link";
 import {
   detalleFinancieraTieneDatos,
+  DOMINIOS_CORREO_REGISTRO_TEXTO,
+  esCorreoRegistroValido,
+  esWhatsappRegistroValido,
   financieraRequiereInicial,
   FRECUENCIAS_CUOTA,
   MAX_FINANCIERAS_REGISTRO,
@@ -755,7 +758,13 @@ export default function VendedorRegistroWorkspace({
     }
 
     if (!isTextFilled(form.correo)) return "El correo es obligatorio";
+    if (!esCorreoRegistroValido(form.correo)) {
+      return `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`;
+    }
     if (!isTextFilled(form.whatsapp)) return "El WhatsApp es obligatorio";
+    if (!esWhatsappRegistroValido(form.whatsapp)) {
+      return "El WhatsApp debe tener 10 digitos";
+    }
     if (!isTextFilled(form.telefono)) return "El telefono es obligatorio";
     if (!isTextFilled(form.barrio)) return "El barrio es obligatorio";
     if (!isTextFilled(form.fechaNacimiento)) {
@@ -1303,27 +1312,32 @@ export default function VendedorRegistroWorkspace({
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Correo
-                  <input
-                    value={form.correo}
-                    onChange={(event) => setField("correo", event.target.value)}
-                    className={inputClass()}
-                    placeholder="correo@cliente.com"
-                  />
-                </label>
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    Correo
+                    <input
+                      type="email"
+                      inputMode="email"
+                      autoCapitalize="none"
+                      value={form.correo}
+                      onChange={(event) => setField("correo", event.target.value)}
+                      className={inputClass()}
+                      placeholder="cliente@gmail.com"
+                    />
+                  </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  WhatsApp
-                  <input
-                    value={form.whatsapp}
-                    onChange={(event) =>
-                      setField("whatsapp", onlyDigits(event.target.value))
-                    }
-                    className={inputClass()}
-                    placeholder="Numero"
-                  />
-                </label>
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    WhatsApp
+                    <input
+                      inputMode="numeric"
+                      maxLength={10}
+                      value={form.whatsapp}
+                      onChange={(event) =>
+                        setField("whatsapp", onlyDigits(event.target.value, 10))
+                      }
+                      className={inputClass()}
+                      placeholder="3001234567"
+                    />
+                  </label>
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Telefono
