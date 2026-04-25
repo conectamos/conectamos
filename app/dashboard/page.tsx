@@ -256,56 +256,56 @@ function ModulePanel({
     { badge: string; topLine: string; primary: string; secondary: string; danger: string }
   > = {
     slate: {
-      badge: "border-slate-200 bg-slate-50 text-slate-700",
-      topLine: "bg-slate-900",
+      badge: "border-[#e8e2d7] bg-[#f8f6f1] text-slate-600",
+      topLine: "bg-slate-700",
       primary: "bg-slate-900 text-white hover:bg-slate-800",
       secondary:
-        "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-950",
+        "border border-[#e4ddd2] bg-[#fcfbf8] text-slate-700 hover:border-[#d8cfbf] hover:bg-white hover:text-slate-950",
       danger:
         "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     emerald: {
-      badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
-      topLine: "bg-emerald-500",
-      primary: "bg-emerald-600 text-white hover:bg-emerald-500",
+      badge: "border-[#e8e2d7] bg-[#f8f6f1] text-slate-600",
+      topLine: "bg-emerald-600/75",
+      primary: "bg-slate-900 text-white hover:bg-slate-800",
       secondary:
-        "border border-emerald-200 bg-white text-emerald-700 hover:border-emerald-300 hover:text-emerald-800",
+        "border border-[#e4ddd2] bg-[#fcfbf8] text-slate-700 hover:border-[#d8cfbf] hover:bg-white hover:text-slate-950",
       danger:
         "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     sky: {
-      badge: "border-sky-200 bg-sky-50 text-sky-700",
-      topLine: "bg-sky-500",
-      primary: "bg-sky-600 text-white hover:bg-sky-500",
+      badge: "border-[#e8e2d7] bg-[#f8f6f1] text-slate-600",
+      topLine: "bg-sky-600/75",
+      primary: "bg-slate-900 text-white hover:bg-slate-800",
       secondary:
-        "border border-sky-200 bg-white text-sky-700 hover:border-sky-300 hover:text-sky-800",
+        "border border-[#e4ddd2] bg-[#fcfbf8] text-slate-700 hover:border-[#d8cfbf] hover:bg-white hover:text-slate-950",
       danger:
         "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     amber: {
-      badge: "border-amber-200 bg-amber-50 text-amber-700",
-      topLine: "bg-amber-500",
-      primary: "bg-amber-500 text-white hover:bg-amber-400",
+      badge: "border-[#e8e2d7] bg-[#f8f6f1] text-slate-600",
+      topLine: "bg-amber-600/75",
+      primary: "bg-slate-900 text-white hover:bg-slate-800",
       secondary:
-        "border border-amber-200 bg-white text-amber-700 hover:border-amber-300 hover:text-amber-800",
+        "border border-[#e4ddd2] bg-[#fcfbf8] text-slate-700 hover:border-[#d8cfbf] hover:bg-white hover:text-slate-950",
       danger:
         "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     violet: {
-      badge: "border-violet-200 bg-violet-50 text-violet-700",
-      topLine: "bg-violet-500",
-      primary: "bg-violet-600 text-white hover:bg-violet-500",
+      badge: "border-[#e8e2d7] bg-[#f8f6f1] text-slate-600",
+      topLine: "bg-violet-600/75",
+      primary: "bg-slate-900 text-white hover:bg-slate-800",
       secondary:
-        "border border-violet-200 bg-white text-violet-700 hover:border-violet-300 hover:text-violet-800",
+        "border border-[#e4ddd2] bg-[#fcfbf8] text-slate-700 hover:border-[#d8cfbf] hover:bg-white hover:text-slate-950",
       danger:
         "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     rose: {
-      badge: "border-rose-200 bg-rose-50 text-rose-700",
-      topLine: "bg-rose-500",
-      primary: "bg-rose-600 text-white hover:bg-rose-500",
+      badge: "border-[#e8e2d7] bg-[#f8f6f1] text-slate-600",
+      topLine: "bg-rose-600/75",
+      primary: "bg-slate-900 text-white hover:bg-slate-800",
       secondary:
-        "border border-rose-200 bg-white text-rose-700 hover:border-rose-300 hover:text-rose-800",
+        "border border-[#e4ddd2] bg-[#fcfbf8] text-slate-700 hover:border-[#d8cfbf] hover:bg-white hover:text-slate-950",
       danger:
         "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
@@ -322,7 +322,9 @@ function ModulePanel({
           {eyebrow}
         </div>
 
-        <div className={`h-11 w-11 rounded-[16px] ${toneStyle.badge}`} />
+        <div className="flex h-11 w-11 items-center justify-center rounded-[16px] border border-[#ece5d9] bg-[#faf8f3]">
+          <span className={`h-2.5 w-2.5 rounded-full ${toneStyle.topLine}`} />
+        </div>
       </div>
 
       <h2 className="mt-6 text-[28px] font-black tracking-tight text-slate-950">
@@ -333,7 +335,12 @@ function ModulePanel({
         {description}
       </p>
 
-      <div className="mt-6 flex flex-wrap gap-2.5">
+      <div
+        className={[
+          "mt-6 grid gap-2.5",
+          actions.length > 1 ? "sm:grid-cols-2" : "sm:grid-cols-1",
+        ].join(" ")}
+      >
         {actions.map((action) => {
           const toneClass =
             action.tone === "secondary"
@@ -346,7 +353,7 @@ function ModulePanel({
             <Link
               key={`${title}-${action.href}-${action.label}`}
               href={action.href}
-              className={`inline-flex items-center rounded-2xl px-4 py-3 text-sm font-semibold transition ${toneClass}`}
+              className={`inline-flex min-h-[48px] items-center justify-center rounded-2xl px-4 py-3 text-center text-sm font-semibold transition ${toneClass}`}
             >
               {action.label}
             </Link>
@@ -529,7 +536,7 @@ export default async function DashboardPage() {
     },
     registrarFacturacion: {
       key: "registrarFacturacion",
-      title: "REGISTRAR FACTURACION",
+      title: "FACTURACIÓN",
       eyebrow: "Facturador / Registros",
       description:
         "Consulta los registros pendientes y completa el proceso de facturacion.",
