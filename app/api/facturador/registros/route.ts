@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { puedeAccederPanelFacturador } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
   DOMINIOS_CORREO_REGISTRO_TEXTO,
   financieraRequiereInicial,
@@ -69,9 +70,18 @@ function normalizarEstadoFacturacion(valor: unknown) {
     : null;
 }
 
-function normalizarFinancierasEdicion(valor: unknown) {
+function normalizarFinancierasEdicion(
+  valor: unknown,
+  plataformasPermitidas: string[]
+) {
   if (!Array.isArray(valor) || valor.length === 0) {
     return { error: "Debes conservar al menos una financiera" as const };
+  }
+
+  if (plataformasPermitidas.length === 0) {
+    return {
+      error: "No hay financieras creadas en el catalogo comercial" as const,
+    };
   }
 
   const financieras: Array<{
@@ -88,7 +98,10 @@ function normalizarFinancierasEdicion(valor: unknown) {
     }
 
     const row = item as Record<string, unknown>;
-    const plataformaCredito = normalizarPlataformaCredito(row.plataformaCredito);
+    const plataformaCredito = normalizarPlataformaCredito(
+      row.plataformaCredito,
+      plataformasPermitidas
+    );
     const creditoAutorizado = normalizarMoneda(row.creditoAutorizado);
     const cuotaInicial = normalizarMoneda(row.cuotaInicial);
 
@@ -240,6 +253,7 @@ export async function PATCH(req: Request) {
     }
 
     if (modo === "EDITAR") {
+      const catalogo = await obtenerCatalogoPersonalVenta();
       const documentoNumero = normalizarTextoCorto(body.documentoNumero);
       const clienteNombre = normalizarTextoCorto(body.clienteNombre);
       const correoTexto = normalizarTextoCorto(body.correo);
@@ -251,7 +265,10 @@ export async function PATCH(req: Request) {
       const referenciaEquipo = normalizarTextoCorto(body.referenciaEquipo);
       const serialImei = normalizarImei(body.serialImei);
       const estadoFacturacion = normalizarEstadoFacturacion(body.estadoFacturacion);
-      const financierasDetalle = normalizarFinancierasEdicion(body.financierasDetalle);
+      const financierasDetalle = normalizarFinancierasEdicion(
+        body.financierasDetalle,
+        catalogo.financieras.map((item) => item.nombre)
+      );
 
       if (!documentoNumero) {
         return NextResponse.json(

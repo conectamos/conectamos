@@ -1,3 +1,8 @@
+import {
+  claveFinanciera,
+  normalizarNombreFinanciera,
+} from "@/lib/ventas-financieras";
+
 export const PLATAFORMAS_CREDITO = [
   "ADDI",
   "CELYA",
@@ -116,14 +121,55 @@ export function esWhatsappRegistroValido(valor: unknown) {
   return normalizarWhatsappRegistro(valor) !== null;
 }
 
-export function normalizarPlataformaCredito(valor: unknown) {
-  const plataforma = textoLimpio(valor).toUpperCase();
+function resolverPlataformaPermitida(
+  valor: unknown,
+  plataformasPermitidas?: string[]
+) {
+  const plataforma = normalizarNombreFinanciera(valor);
+  const clave = claveFinanciera(plataforma);
+
+  if (!clave) {
+    return null;
+  }
+
+  if (Array.isArray(plataformasPermitidas) && plataformasPermitidas.length > 0) {
+    const catalogoMap = new Map(
+      plataformasPermitidas
+        .map((item) => {
+          const nombre = normalizarNombreFinanciera(item);
+          const key = claveFinanciera(nombre);
+          return key ? ([key, nombre] as const) : null;
+        })
+        .filter(
+          (item): item is readonly [string, string] => Boolean(item)
+        )
+    );
+
+    return catalogoMap.get(clave) ?? null;
+  }
 
   return PLATAFORMAS_CREDITO.includes(
-    plataforma as (typeof PLATAFORMAS_CREDITO)[number]
+    clave as (typeof PLATAFORMAS_CREDITO)[number]
   )
-    ? plataforma
+    ? clave
     : null;
+}
+
+export function normalizarPlataformaCredito(
+  valor: unknown,
+  plataformasPermitidas?: string[]
+) {
+  return resolverPlataformaPermitida(valor, plataformasPermitidas);
+}
+
+export function normalizarListaPlataformasPermitidas(valor: unknown) {
+  if (!Array.isArray(valor)) {
+    return [];
+  }
+
+  return valor
+    .map((item) => normalizarNombreFinanciera(item))
+    .filter((item) => item.length > 0);
 }
 
 export function normalizarTipoDocumentoCliente(valor: unknown) {
@@ -244,7 +290,10 @@ export function detalleFinancieraTieneDatos(valor: unknown) {
   ].some((item) => textoLimpio(item).length > 0);
 }
 
-export function normalizarFinancierasDetalle(valor: unknown):
+export function normalizarFinancierasDetalle(
+  valor: unknown,
+  plataformasPermitidas?: string[]
+):
   | { data: DetalleFinancieraRegistro[] }
   | { error: string } {
   if (!Array.isArray(valor)) {
@@ -273,7 +322,10 @@ export function normalizarFinancierasDetalle(valor: unknown):
     }
 
     const row = (item || {}) as Record<string, unknown>;
-    const plataformaCredito = normalizarPlataformaCredito(row.plataformaCredito);
+    const plataformaCredito = normalizarPlataformaCredito(
+      row.plataformaCredito,
+      plataformasPermitidas
+    );
     const creditoAutorizado = normalizarMoneda(row.creditoAutorizado);
     const cuotaInicial = normalizarMoneda(row.cuotaInicial);
     const tipoPagoInicial = normalizarTipoPagoRegistroVenta(row.tipoPagoInicial);

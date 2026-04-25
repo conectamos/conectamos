@@ -21,11 +21,41 @@ type EquipoInfo = {
   mensaje?: string;
   origen?: string;
   sedeNombre?: string | null;
+  registroVenta?: RegistroVentaRelacionado | null;
 };
 
 type FilaFin = {
   nombre: string;
   valor: string;
+};
+
+type RegistroVentaFinanciera = {
+  plataformaCredito: string;
+  creditoAutorizado: string | number | null;
+  cuotaInicial?: string | number | null;
+  valorCuota?: string | number | null;
+  numeroCuotas?: string | number | null;
+  frecuenciaCuota?: string | null;
+};
+
+type RegistroVentaRelacionado = {
+  id: number;
+  puntoVenta: string | null;
+  clienteNombre: string;
+  tipoDocumento: string;
+  documentoNumero: string;
+  correo: string | null;
+  whatsapp: string | null;
+  direccion: string | null;
+  barrio: string | null;
+  referenciaContacto: string | null;
+  referenciaEquipo: string | null;
+  asesorNombre: string | null;
+  jaladorNombre: string | null;
+  numeroFactura: string | null;
+  estadoFacturacion: string;
+  financierasDetalle: RegistroVentaFinanciera[];
+  createdAt: string;
 };
 
 type CatalogoPersonalResponse = {
@@ -43,6 +73,103 @@ function formatoPesos(v: string | number) {
   const num = Number(v);
   if (!Number.isFinite(num)) return "";
   return `$ ${num.toLocaleString("es-CO")}`;
+}
+
+function monedaGuardadaAInput(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    const texto = value.trim();
+
+    if (/^\d+(\.\d+)?$/.test(texto)) {
+      return String(Math.round(Number(texto)));
+    }
+  }
+
+  const numero = Number(value);
+
+  if (Number.isFinite(numero) && numero > 0) {
+    return String(Math.round(numero));
+  }
+
+  const digits = limpiarNumero(String(value));
+  return digits ? String(Number(digits)) : "";
+}
+
+function normalizarRegistroVenta(value: unknown): RegistroVentaRelacionado | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const row = value as Record<string, unknown>;
+  const id = Number(row.id);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return null;
+  }
+
+  const financierasDetalle = Array.isArray(row.financierasDetalle)
+    ? row.financierasDetalle
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const financiera = item as Record<string, unknown>;
+          const plataformaCredito = String(financiera.plataformaCredito || "").trim();
+
+          if (!plataformaCredito) {
+            return null;
+          }
+
+          return {
+            plataformaCredito,
+            creditoAutorizado:
+              (financiera.creditoAutorizado as string | number | null | undefined) ??
+              null,
+            cuotaInicial:
+              (financiera.cuotaInicial as string | number | null | undefined) ??
+              null,
+            valorCuota:
+              (financiera.valorCuota as string | number | null | undefined) ??
+              null,
+            numeroCuotas:
+              (financiera.numeroCuotas as string | number | null | undefined) ??
+              null,
+            frecuenciaCuota:
+              typeof financiera.frecuenciaCuota === "string"
+                ? financiera.frecuenciaCuota
+                : null,
+          } satisfies RegistroVentaFinanciera;
+        })
+        .filter(Boolean) as RegistroVentaFinanciera[]
+    : [];
+
+  return {
+    id,
+    puntoVenta: typeof row.puntoVenta === "string" ? row.puntoVenta : null,
+    clienteNombre: String(row.clienteNombre || ""),
+    tipoDocumento: String(row.tipoDocumento || ""),
+    documentoNumero: String(row.documentoNumero || ""),
+    correo: typeof row.correo === "string" ? row.correo : null,
+    whatsapp: typeof row.whatsapp === "string" ? row.whatsapp : null,
+    direccion: typeof row.direccion === "string" ? row.direccion : null,
+    barrio: typeof row.barrio === "string" ? row.barrio : null,
+    referenciaContacto:
+      typeof row.referenciaContacto === "string" ? row.referenciaContacto : null,
+    referenciaEquipo:
+      typeof row.referenciaEquipo === "string" ? row.referenciaEquipo : null,
+    asesorNombre: typeof row.asesorNombre === "string" ? row.asesorNombre : null,
+    jaladorNombre:
+      typeof row.jaladorNombre === "string" ? row.jaladorNombre : null,
+    numeroFactura:
+      typeof row.numeroFactura === "string" ? row.numeroFactura : null,
+    estadoFacturacion: String(row.estadoFacturacion || "PENDIENTE"),
+    financierasDetalle,
+    createdAt: String(row.createdAt || ""),
+  };
 }
 
 function netoIngreso(valor: number, tipo: string) {
@@ -106,6 +233,8 @@ export default function NuevaVentaPage() {
     { nombre: "", valor: "" },
     { nombre: "", valor: "" },
   ]);
+  const [registroVendedor, setRegistroVendedor] =
+    useState<RegistroVentaRelacionado | null>(null);
 
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -244,6 +373,7 @@ export default function NuevaVentaPage() {
       const data = await res.json();
 
       if (!res.ok) {
+        setRegistroVendedor(null);
         setReferencia(data.referencia || "");
         setColor(data.color || "");
         setCostoEquipo(Number(data.costo || 0));
@@ -253,10 +383,61 @@ export default function NuevaVentaPage() {
       }
 
       const item = data as EquipoInfo & { mensaje?: string };
+      const registro = normalizarRegistroVenta(item.registroVenta);
       setReferencia(item.referencia || "");
       setColor(item.color || "");
       setCostoEquipo(Number(item.costo || 0));
-      setDescripcion(item.referencia || "");
+      setDescripcion(registro?.referenciaEquipo || item.referencia || "");
+      setRegistroVendedor(registro);
+
+      if (registro?.jaladorNombre) {
+        setJalador(registro.jaladorNombre);
+      }
+
+      if (registro?.financierasDetalle.length) {
+        setServicio("FINANCIERA");
+        setFinanzas([
+          registro.financierasDetalle[0]
+            ? {
+                nombre: registro.financierasDetalle[0].plataformaCredito,
+                valor: monedaGuardadaAInput(
+                  registro.financierasDetalle[0].creditoAutorizado
+                ),
+              }
+            : { nombre: "", valor: "" },
+          registro.financierasDetalle[1]
+            ? {
+                nombre: registro.financierasDetalle[1].plataformaCredito,
+                valor: monedaGuardadaAInput(
+                  registro.financierasDetalle[1].creditoAutorizado
+                ),
+              }
+            : { nombre: "", valor: "" },
+          registro.financierasDetalle[2]
+            ? {
+                nombre: registro.financierasDetalle[2].plataformaCredito,
+                valor: monedaGuardadaAInput(
+                  registro.financierasDetalle[2].creditoAutorizado
+                ),
+              }
+            : { nombre: "", valor: "" },
+          registro.financierasDetalle[3]
+            ? {
+                nombre: registro.financierasDetalle[3].plataformaCredito,
+                valor: monedaGuardadaAInput(
+                  registro.financierasDetalle[3].creditoAutorizado
+                ),
+              }
+            : { nombre: "", valor: "" },
+        ]);
+      } else {
+        setFinanzas([
+          { nombre: "", valor: "" },
+          { nombre: "", valor: "" },
+          { nombre: "", valor: "" },
+          { nombre: "", valor: "" },
+        ]);
+      }
 
       if (item.mensaje) {
         setMensaje(item.mensaje);
@@ -264,6 +445,7 @@ export default function NuevaVentaPage() {
         setMensaje("");
       }
     } catch {
+      setRegistroVendedor(null);
       setReferencia("");
       setColor("");
       setCostoEquipo(0);
@@ -297,6 +479,7 @@ export default function NuevaVentaPage() {
     setReferencia("");
     setColor("");
     setCostoEquipo(0);
+    setRegistroVendedor(null);
     setIngreso1Base("");
     setIngreso2Base("");
     setTipoIngreso2("");
@@ -370,6 +553,7 @@ export default function NuevaVentaPage() {
           fin3Valor: Number(finanzas[2].valor || 0),
           fin4Nombre: finanzas[3].nombre,
           fin4Valor: Number(finanzas[3].valor || 0),
+          registroVendedorId: registroVendedor?.id ?? null,
         }),
       });
 
@@ -447,6 +631,7 @@ export default function NuevaVentaPage() {
                           setSerial(v);
                           if (v.length === 15) void buscarIMEI(v);
                           if (v.length < 15) {
+                            setRegistroVendedor(null);
                             setReferencia("");
                             setColor("");
                             setCostoEquipo(0);
@@ -512,6 +697,92 @@ export default function NuevaVentaPage() {
                     </div>
                   </div>
                 </div>
+
+                {registroVendedor && (
+                  <div className={sectionCardClass()}>
+                    <h3 className={sectionTitleClass()}>Registro del vendedor</h3>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Cliente
+                        </p>
+                        <p className="mt-2 text-lg font-bold text-slate-900">
+                          {registroVendedor.clienteNombre}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {registroVendedor.tipoDocumento} {registroVendedor.documentoNumero}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Contacto
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">
+                          {registroVendedor.whatsapp || "Sin WhatsApp"}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {registroVendedor.correo || "Sin correo"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Asesor y sede
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">
+                          {registroVendedor.asesorNombre || "Sin asesor"}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {registroVendedor.puntoVenta || "Sin punto de venta"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Facturacion
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">
+                          {registroVendedor.estadoFacturacion}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Factura: {registroVendedor.numeroFactura || "Pendiente"}
+                        </p>
+                      </div>
+
+                      <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Financieras registradas
+                        </p>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          {registroVendedor.financierasDetalle.map((item, index) => (
+                            <div
+                              key={`${registroVendedor.id}-${item.plataformaCredito}-${index}`}
+                              className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                            >
+                              <p className="text-sm font-bold text-slate-900">
+                                {item.plataformaCredito}
+                              </p>
+                              <p className="mt-2 text-sm text-slate-600">
+                                Credito autorizado:{" "}
+                                <span className="font-semibold text-slate-900">
+                                  {formatoPesos(Number(item.creditoAutorizado || 0))}
+                                </span>
+                              </p>
+                              <p className="mt-1 text-sm text-slate-600">
+                                Cuota:{" "}
+                                <span className="font-semibold text-slate-900">
+                                  {formatoPesos(Number(item.valorCuota || 0))}
+                                </span>
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className={sectionCardClass()}>
                   <h3 className={sectionTitleClass()}>Equipo comercial</h3>

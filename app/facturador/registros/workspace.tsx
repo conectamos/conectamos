@@ -7,7 +7,6 @@ import {
   esCorreoRegistroValido,
   esWhatsappRegistroValido,
   financieraRequiereInicial,
-  PLATAFORMAS_CREDITO,
   formatearPesoInput,
 } from "@/lib/vendor-sale-records";
 
@@ -16,6 +15,10 @@ type SessionProps = {
   sedeNombre: string;
   perfilNombre: string;
   perfilTipoLabel: string;
+};
+
+type CatalogoPersonalResponse = {
+  financieras: Array<{ id: number; nombre: string }>;
 };
 
 type FinancieraRegistro = {
@@ -242,11 +245,20 @@ export default function FacturadorRegistrosWorkspace({
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
   const [editando, setEditando] = useState<EditDraft | null>(null);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [financierasCatalogo, setFinancierasCatalogo] = useState<
+    Array<{ id: number; nombre: string }>
+  >([]);
 
   const cargarRegistros = async () => {
     try {
-      const res = await fetch("/api/facturador/registros", { cache: "no-store" });
-      const data = await res.json();
+      const [res, catalogoRes] = await Promise.all([
+        fetch("/api/facturador/registros", { cache: "no-store" }),
+        fetch("/api/ventas/catalogo-personal", { cache: "no-store" }),
+      ]);
+      const [data, catalogoData] = await Promise.all([
+        res.json(),
+        catalogoRes.json(),
+      ]);
 
       if (!res.ok) {
         setMensajeTipo("error");
@@ -266,6 +278,14 @@ export default function FacturadorRegistrosWorkspace({
 
         return next;
       });
+
+      if (catalogoRes.ok) {
+        const catalogo = catalogoData as Partial<CatalogoPersonalResponse>;
+
+        setFinancierasCatalogo(
+          Array.isArray(catalogo.financieras) ? catalogo.financieras : []
+        );
+      }
     } catch {
       setMensajeTipo("error");
       setMensaje("Error cargando registros");
@@ -1114,9 +1134,9 @@ export default function FacturadorRegistrosWorkspace({
                           className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                         >
                           <option value="">Selecciona una financiera</option>
-                          {PLATAFORMAS_CREDITO.map((item) => (
-                            <option key={item} value={item}>
-                              {item}
+                          {financierasCatalogo.map((item) => (
+                            <option key={item.id} value={item.nombre}>
+                              {item.nombre}
                             </option>
                           ))}
                         </select>

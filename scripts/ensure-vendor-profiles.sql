@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS "RegistroVendedorVenta" (
   "cerradorNombre" TEXT,
   "numeroFactura" TEXT,
   "estadoFacturacion" TEXT NOT NULL DEFAULT 'PENDIENTE',
+  "estadoVentaRegistro" TEXT NOT NULL DEFAULT 'PENDIENTE',
+  "ventaIdRelacionada" INTEGER,
+  "convertidoEn" TIMESTAMP(3),
+  "convertidoPor" TEXT,
   "eliminadoEn" TIMESTAMP(3),
   "eliminadoPor" TEXT,
   "firmaClienteDataUrl" TEXT,
@@ -107,6 +111,10 @@ ALTER TABLE "RegistroVendedorVenta"
   ADD COLUMN IF NOT EXISTS "jaladorNombre" TEXT,
   ADD COLUMN IF NOT EXISTS "numeroFactura" TEXT,
   ADD COLUMN IF NOT EXISTS "estadoFacturacion" TEXT NOT NULL DEFAULT 'PENDIENTE',
+  ADD COLUMN IF NOT EXISTS "estadoVentaRegistro" TEXT NOT NULL DEFAULT 'PENDIENTE',
+  ADD COLUMN IF NOT EXISTS "ventaIdRelacionada" INTEGER,
+  ADD COLUMN IF NOT EXISTS "convertidoEn" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "convertidoPor" TEXT,
   ADD COLUMN IF NOT EXISTS "eliminadoEn" TIMESTAMP(3),
   ADD COLUMN IF NOT EXISTS "eliminadoPor" TEXT,
   ADD COLUMN IF NOT EXISTS "firmaClienteDataUrl" TEXT,
@@ -129,6 +137,12 @@ CREATE INDEX IF NOT EXISTS "RegistroVendedorVenta_perfilVendedorId_createdAt_idx
 
 CREATE INDEX IF NOT EXISTS "RegistroVendedorVenta_sedeId_createdAt_idx"
   ON "RegistroVendedorVenta"("sedeId", "createdAt");
+
+CREATE INDEX IF NOT EXISTS "RegistroVendedorVenta_serialImei_estadoVentaRegistro_createdAt_idx"
+  ON "RegistroVendedorVenta"("serialImei", "estadoVentaRegistro", "createdAt");
+
+CREATE INDEX IF NOT EXISTS "RegistroVendedorVenta_ventaIdRelacionada_idx"
+  ON "RegistroVendedorVenta"("ventaIdRelacionada");
 
 DO $$
 BEGIN

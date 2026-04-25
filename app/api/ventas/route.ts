@@ -9,6 +9,7 @@ import {
   type CatalogoFinanciera,
 } from "@/lib/ventas-financieras";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
 type VentaInput = {
   descripcion: string;
@@ -21,6 +22,7 @@ type VentaInput = {
   ingreso1Base: number;
   ingreso2Base: number;
   jalador: string;
+  registroVendedorId: number | null;
   salida: number;
   serial: string;
   servicio: string;
@@ -32,6 +34,11 @@ function toNumber(value: unknown): number {
   if (value === null || value === undefined || value === "") return 0;
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
+}
+
+function toPositiveInt(value: unknown): number | null {
+  const num = Number(value);
+  return Number.isInteger(num) && num > 0 ? num : null;
 }
 
 function normalizeServiceValue(servicio: string) {
@@ -70,6 +77,7 @@ function parseVentaInput(data: Record<string, unknown>): VentaInput {
     descripcion: String(data.descripcion ?? "").trim(),
     jalador: String(data.jalador ?? "").trim(),
     cerrador: String(data.cerrador ?? "").trim(),
+    registroVendedorId: toPositiveInt(data.registroVendedorId),
     tipoIngreso1: "EFECTIVO",
     tipoIngreso2: String(data.tipoIngreso2 ?? "").trim(),
     ingreso1Base: toNumber(data.ingreso1Base),
@@ -373,6 +381,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
+    await ensureVendorProfilesSchema();
+
     const inventario = await prisma.inventarioSede.findFirst({
       where: {
         imei: input.serial,
@@ -417,6 +427,31 @@ export async function POST(req: Request) {
     if (yaVendido) {
       return NextResponse.json(
         { error: "Ese IMEI ya tiene una venta registrada" },
+        { status: 400 }
+      );
+    }
+
+    const registroVendedor = input.registroVendedorId
+      ? await prisma.registroVendedorVenta.findFirst({
+          where: {
+            id: input.registroVendedorId,
+            sedeId: user.sedeId,
+            serialImei: input.serial,
+            eliminadoEn: null,
+            estadoVentaRegistro: "PENDIENTE",
+          },
+          select: {
+            id: true,
+          },
+        })
+      : null;
+
+    if (input.registroVendedorId && !registroVendedor) {
+      return NextResponse.json(
+        {
+          error:
+            "El registro del vendedor ya no esta disponible para convertir esta venta",
+        },
         { status: 400 }
       );
     }
@@ -482,6 +517,19 @@ export async function POST(req: Request) {
           origen: "VENTA",
         },
       });
+
+      if (registroVendedor) {
+        await tx.registroVendedorVenta.update({
+          where: { id: registroVendedor.id },
+          data: {
+            estadoVentaRegistro: "CONVERTIDO_EN_VENTA",
+            ventaIdRelacionada: creada.id,
+            convertidoEn: now,
+            convertidoPor: user.nombre,
+            cerradorNombre: input.cerrador || null,
+          },
+        });
+      }
 
       return creada;
     });
@@ -632,6 +680,8 @@ export async function DELETE(req: Request) {
 
     const now = new Date();
 
+    await ensureVendorProfilesSchema();
+
     await prisma.$transaction(async (tx) => {
       await tx.venta.delete({
         where: { id: ventaId },
@@ -662,6 +712,18 @@ export async function DELETE(req: Request) {
           estadoFinanciero: ventaActual.inventarioSede?.estadoFinanciero || null,
           origen: ventaActual.inventarioSede?.origen || "VENTA",
           observacion: `Venta ${ventaActual.idVenta} eliminada por ${user.nombre}`,
+        },
+      });
+
+      await tx.registroVendedorVenta.updateMany({
+        where: {
+          ventaIdRelacionada: ventaId,
+        },
+        data: {
+          estadoVentaRegistro: "PENDIENTE",
+          ventaIdRelacionada: null,
+          convertidoEn: null,
+          convertidoPor: null,
         },
       });
     });

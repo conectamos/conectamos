@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { puedeAccederPanelVendedor } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
+import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
   DOMINIOS_CORREO_REGISTRO_TEXTO,
   normalizarCorreoRegistro,
@@ -43,14 +44,24 @@ async function requireVendor() {
   return { ok: true as const, session };
 }
 
-function validarPayload(body: Record<string, unknown>) {
+function validarPayload(
+  body: Record<string, unknown>,
+  plataformasPermitidas: string[]
+) {
+  if (plataformasPermitidas.length === 0) {
+    return {
+      error: "No hay financieras creadas en el catalogo comercial",
+    };
+  }
+
   const ciudad = normalizarTextoCorto(body.ciudad);
   const puntoVenta = normalizarTextoCorto(body.puntoVenta);
   const clienteNombre = normalizarTextoCorto(body.clienteNombre);
   const tipoDocumento = normalizarTipoDocumentoCliente(body.tipoDocumento);
   const documentoNumero = normalizarTextoCorto(body.documentoNumero);
   const financierasDetalleResult = normalizarFinancierasDetalle(
-    body.financierasDetalle
+    body.financierasDetalle,
+    plataformasPermitidas
   );
   const aceptaDeclaracionIntermediacion = Boolean(
     body.aceptaDeclaracionIntermediacion
@@ -273,7 +284,11 @@ export async function POST(req: Request) {
     await ensureVendorProfilesSchema();
 
     const body = (await req.json()) as Record<string, unknown>;
-    const payload = validarPayload(body);
+    const catalogo = await obtenerCatalogoPersonalVenta();
+    const payload = validarPayload(
+      body,
+      catalogo.financieras.map((item) => item.nombre)
+    );
 
     if ("error" in payload) {
       return NextResponse.json({ error: payload.error }, { status: 400 });

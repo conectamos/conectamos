@@ -18,7 +18,6 @@ import {
   MAX_FINANCIERAS_REGISTRO,
   MAX_PLAZO_CUOTAS,
   MEDIOS_PAGO_REGISTRO_VENTA,
-  PLATAFORMAS_CREDITO,
   TEXTOS_VISIBLES_CLIENTE,
   TIPOS_DOCUMENTO_CLIENTE,
   formatearPesoInput,
@@ -52,9 +51,19 @@ type JaladorOption = {
   nombre: string;
 };
 
+type FinancieraCatalogoOption = {
+  id: number;
+  nombre: string;
+};
+
 type SedeOption = {
   id: number;
   nombre: string;
+};
+
+type CatalogoPersonalResponse = {
+  jaladores: JaladorOption[];
+  financieras: FinancieraCatalogoOption[];
 };
 
 type ConsentField =
@@ -447,6 +456,9 @@ export default function VendedorRegistroWorkspace({
   const [registros, setRegistros] = useState<RegistroResumen[]>([]);
   const [sedes, setSedes] = useState<SedeOption[]>([]);
   const [jaladores, setJaladores] = useState<JaladorOption[]>([]);
+  const [financierasCatalogo, setFinancierasCatalogo] = useState<
+    FinancieraCatalogoOption[]
+  >([]);
   const [mensaje, setMensaje] = useState("");
   const [mensajeTipo, setMensajeTipo] = useState<"success" | "error">("success");
   const [cargando, setCargando] = useState(true);
@@ -504,9 +516,14 @@ export default function VendedorRegistroWorkspace({
           }));
         }
 
-        if (catalogoRes.ok && catalogoData?.jaladores) {
+        if (catalogoRes.ok) {
+          const catalogo = catalogoData as Partial<CatalogoPersonalResponse>;
+
           setJaladores(
-            Array.isArray(catalogoData.jaladores) ? catalogoData.jaladores : []
+            Array.isArray(catalogo.jaladores) ? catalogo.jaladores : []
+          );
+          setFinancierasCatalogo(
+            Array.isArray(catalogo.financieras) ? catalogo.financieras : []
           );
         }
       } catch {
@@ -742,6 +759,9 @@ export default function VendedorRegistroWorkspace({
     if (!isTextFilled(form.almacenamiento)) return "El almacenamiento es obligatorio";
     if (!isTextFilled(form.color)) return "El color es obligatorio";
     if (!isTextFilled(form.tipoEquipo)) return "Debes seleccionar el tipo de equipo";
+    if (financierasCatalogo.length === 0) {
+      return "No hay financieras creadas en el catalogo comercial";
+    }
 
     const financierasActivas = form.financierasDetalle.slice(0, financierasVisibles);
 
@@ -1142,13 +1162,19 @@ export default function VendedorRegistroWorkspace({
                             className={inputClass()}
                           >
                             <option value="">Selecciona una plataforma</option>
-                            {PLATAFORMAS_CREDITO.map((option) => (
-                              <option key={option} value={option}>
-                                {option}
+                            {financierasCatalogo.map((option) => (
+                              <option key={option.id} value={option.nombre}>
+                                {option.nombre}
                               </option>
                             ))}
                           </select>
                         </label>
+
+                        {financierasCatalogo.length === 0 && (
+                          <div className="md:col-span-2 xl:col-span-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                            No hay financieras creadas en el catalogo comercial.
+                          </div>
+                        )}
 
                         {item.plataformaCredito && (
                           <>

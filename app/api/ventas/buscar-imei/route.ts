@@ -1,6 +1,51 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+
+async function buscarRegistroVentaAbierto(serial: string, sedeId: number) {
+  await ensureVendorProfilesSchema();
+
+  const registro = await prisma.registroVendedorVenta.findFirst({
+    where: {
+      serialImei: serial,
+      sedeId,
+      eliminadoEn: null,
+      estadoVentaRegistro: "PENDIENTE",
+    },
+    select: {
+      id: true,
+      puntoVenta: true,
+      clienteNombre: true,
+      tipoDocumento: true,
+      documentoNumero: true,
+      correo: true,
+      whatsapp: true,
+      direccion: true,
+      barrio: true,
+      referenciaContacto: true,
+      referenciaEquipo: true,
+      asesorNombre: true,
+      jaladorNombre: true,
+      numeroFactura: true,
+      estadoFacturacion: true,
+      financierasDetalle: true,
+      createdAt: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return registro
+    ? {
+        ...registro,
+        financierasDetalle: Array.isArray(registro.financierasDetalle)
+          ? registro.financierasDetalle
+          : [],
+      }
+    : null;
+}
 
 export async function POST(req: Request) {
   try {
@@ -22,6 +67,8 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const registroVenta = await buscarRegistroVentaAbierto(serial, user.sedeId);
 
     // 1) Buscar primero en inventario de sedes
     const inventarioSedes = await prisma.inventarioSede.findMany({
@@ -74,6 +121,7 @@ export async function POST(req: Request) {
         estadoActual: itemActual.estadoActual,
         estadoFinanciero: itemActual.estadoFinanciero,
         origen: esMiSede ? "SEDE_ACTUAL" : "OTRA_SEDE",
+        registroVenta,
         mensaje: esMiSede
           ? "Equipo encontrado en tu sede"
           : `Equipo encontrado en otra sede (SEDE ${itemActual.sedeId})`,
@@ -121,6 +169,7 @@ export async function POST(req: Request) {
         estadoActual: "BODEGA",
         estadoFinanciero: principal.estadoCobro || "PAGO",
         origen: "BODEGA_PRINCIPAL",
+        registroVenta,
         mensaje: "Equipo encontrado en bodega principal",
       });
     }

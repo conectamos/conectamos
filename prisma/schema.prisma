@@ -207,6 +207,10 @@ model RegistroVendedorVenta {
   cerradorNombre                  String?
   numeroFactura                   String?
   estadoFacturacion               String          @default("PENDIENTE")
+  estadoVentaRegistro             String          @default("PENDIENTE")
+  ventaIdRelacionada              Int?
+  convertidoEn                    DateTime?
+  convertidoPor                   String?
   eliminadoEn                     DateTime?
   eliminadoPor                    String?
   firmaClienteDataUrl             String?
@@ -220,6 +224,8 @@ model RegistroVendedorVenta {
 
   @@index([perfilVendedorId, createdAt])
   @@index([sedeId, createdAt])
+  @@index([serialImei, estadoVentaRegistro, createdAt])
+  @@index([ventaIdRelacionada])
 }
 
 model CatalogoPersonalVenta {
