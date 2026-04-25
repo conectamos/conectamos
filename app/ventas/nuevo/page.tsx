@@ -256,6 +256,18 @@ export default function NuevaVentaPage() {
   const registroIdParam = searchParams.get("registroId");
 
   const mostrarFinancieras = !ocultaFinancieras(servicio);
+  const jaladoresDisponibles = useMemo(() => {
+    const values = new Set(
+      [...jaladores, jalador].map((item) => String(item || "").trim()).filter(Boolean)
+    );
+    return Array.from(values);
+  }, [jalador, jaladores]);
+  const cerradoresDisponibles = useMemo(() => {
+    const values = new Set(
+      [...cerradores, cerrador].map((item) => String(item || "").trim()).filter(Boolean)
+    );
+    return Array.from(values);
+  }, [cerrador, cerradores]);
 
   const aplicarRegistroVendedor = (registro: RegistroVentaRelacionado | null) => {
     setRegistroVendedor(registro);
@@ -280,6 +292,10 @@ export default function NuevaVentaPage() {
 
     if (registro.jaladorNombre) {
       setJalador(registro.jaladorNombre);
+    }
+
+    if (registro.asesorNombre) {
+      setCerrador(registro.asesorNombre);
     }
 
     const primeraFinanciera = registro.financierasDetalle[0] ?? null;
@@ -914,7 +930,7 @@ export default function NuevaVentaPage() {
                         className={inputBaseClass()}
                       >
                         <option value="">Seleccionar</option>
-                        {jaladores.map((j) => (
+                        {jaladoresDisponibles.map((j) => (
                           <option key={j} value={j}>
                             {j}
                           </option>
@@ -932,7 +948,7 @@ export default function NuevaVentaPage() {
                         className={inputBaseClass()}
                       >
                         <option value="">Seleccionar</option>
-                        {cerradores.map((c) => (
+                        {cerradoresDisponibles.map((c) => (
                           <option key={c} value={c}>
                             {c}
                           </option>

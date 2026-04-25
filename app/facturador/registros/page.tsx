@@ -10,7 +10,7 @@ export default async function FacturadorRegistrosPage() {
         nombre: session.nombre,
         sedeNombre: session.sedeNombre ?? "Tu sede",
         perfilNombre: session.perfilNombre ?? session.nombre,
-        perfilTipoLabel: session.perfilTipoLabel ?? "Facturador",
+        perfilTipoLabel: session.perfilTipoLabel ?? session.rolNombre ?? "Facturador",
       }}
     />
   );

@@ -152,6 +152,14 @@ export default function VentasAprobacionesWorkspace({
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
+              {esAdmin && (
+                <Link
+                  href="/facturador/registros"
+                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                >
+                  Gestionar registros
+                </Link>
+              )}
               <Link
                 href="/ventas/nuevo"
                 className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
@@ -214,6 +222,11 @@ export default function VentasAprobacionesWorkspace({
             <p className="mt-2 text-sm text-slate-500">
               {registrosFiltrados.length} registro{registrosFiltrados.length === 1 ? "" : "s"} visible{registrosFiltrados.length === 1 ? "" : "s"}.
             </p>
+            {esAdmin && (
+              <p className="mt-2 text-sm text-slate-500">
+                Como administrador puedes gestionar todos los registros desde el panel de facturacion.
+              </p>
+            )}
           </div>
 
           <div className="overflow-x-auto">
