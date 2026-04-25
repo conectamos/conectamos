@@ -104,6 +104,28 @@ function formatMoney(value: string | number | null | undefined) {
   return `$ ${parsed.toLocaleString("es-CO")}`;
 }
 
+function formatMoneyInputFromStored(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  if (typeof value === "number") {
+    return formatearPesoInput(value);
+  }
+
+  const normalized = String(value).trim();
+
+  if (/^\d+(\.\d{1,2})?$/.test(normalized)) {
+    const parsed = Number(normalized);
+
+    if (Number.isFinite(parsed)) {
+      return formatearPesoInput(parsed);
+    }
+  }
+
+  return formatearPesoInput(normalized);
+}
+
 function resolveFinancieras(registro: RegistroFacturacion) {
   const detalle = Array.isArray(registro.financierasDetalle)
     ? registro.financierasDetalle
@@ -171,11 +193,11 @@ function resolveEstadoBadge(estadoFacturacion: string | null, numeroFactura: str
 function createEditDraft(registro: RegistroFacturacion): EditDraft {
   const financieras = resolveFinancieras(registro).map((item) => ({
     plataformaCredito: item.plataformaCredito,
-    creditoAutorizado: formatearPesoInput(item.creditoAutorizado ?? ""),
+    creditoAutorizado: formatMoneyInputFromStored(item.creditoAutorizado),
     cuotaInicial:
       item.cuotaInicial === null || item.cuotaInicial === undefined
         ? ""
-        : formatearPesoInput(item.cuotaInicial),
+        : formatMoneyInputFromStored(item.cuotaInicial),
   }));
 
   return {
