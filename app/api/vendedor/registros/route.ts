@@ -84,7 +84,6 @@ function validarPayload(
   const fechaExpedicion = normalizarFechaIso(body.fechaExpedicion);
   const direccion = normalizarTextoLargo(body.direccion);
   const barrio = normalizarTextoCorto(body.barrio);
-  const referenciaContacto = normalizarTextoLargo(body.referenciaContacto);
   const referenciaFamiliar1Nombre = normalizarTextoCorto(
     body.referenciaFamiliar1Nombre
   );
@@ -138,9 +137,6 @@ function validarPayload(
   if (!fechaExpedicion) return { error: "La fecha de expedicion es obligatoria" };
   if (!direccion) return { error: "La direccion es obligatoria" };
   if (!barrio) return { error: "El barrio es obligatorio" };
-  if (!referenciaContacto) {
-    return { error: "El punto de referencia de la direccion es obligatorio" };
-  }
   if (!telefono) return { error: "El telefono es obligatorio" };
   if (!simCardRegistro1) return { error: "El registro SIM 1 es obligatorio" };
   if (!asesorNombre) return { error: "El asesor es obligatorio" };
@@ -200,7 +196,6 @@ function validarPayload(
       fechaExpedicion,
       direccion,
       barrio,
-      referenciaContacto,
       referenciaFamiliar1Nombre,
       referenciaFamiliar1Telefono,
       referenciaFamiliar2Nombre,

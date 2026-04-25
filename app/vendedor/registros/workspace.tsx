@@ -102,7 +102,6 @@ type FormState = {
   fechaExpedicion: string;
   direccion: string;
   barrio: string;
-  referenciaContacto: string;
   referenciaFamiliar1Nombre: string;
   referenciaFamiliar1Telefono: string;
   referenciaFamiliar2Nombre: string;
@@ -180,7 +179,6 @@ function createInitialState(session: SessionProps): FormState {
     fechaExpedicion: "",
     direccion: "",
     barrio: "",
-    referenciaContacto: "",
     referenciaFamiliar1Nombre: "",
     referenciaFamiliar1Telefono: "",
     referenciaFamiliar2Nombre: "",
@@ -827,9 +825,6 @@ export default function VendedorRegistroWorkspace({
       return "La fecha de expedicion es obligatoria";
     }
     if (!isTextFilled(form.direccion)) return "La direccion es obligatoria";
-    if (!isTextFilled(form.referenciaContacto)) {
-      return "El punto de referencia de la direccion es obligatorio";
-    }
     if (!isTextFilled(form.referenciaFamiliar1Nombre)) {
       return "La referencia familiar 1 es obligatoria";
     }
@@ -1454,18 +1449,6 @@ export default function VendedorRegistroWorkspace({
                     onChange={(event) => setField("direccion", event.target.value)}
                     className={inputClass()}
                     placeholder="Direccion completa"
-                  />
-                </label>
-
-                <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Punto de referencia de la direccion
-                  <input
-                    value={form.referenciaContacto}
-                    onChange={(event) =>
-                      setField("referenciaContacto", event.target.value)
-                    }
-                    className={inputClass()}
-                    placeholder="Casa esquinera, frente a..."
                   />
                 </label>
 
