@@ -21,22 +21,6 @@ type UsuarioPendiente = {
 
 type ModalModo = "pin" | "cambiar-pin";
 
-function obtenerDescripcionPerfil(tipo: PerfilAcceso["tipo"]) {
-  if (tipo === "ADMINISTRADOR") {
-    return "Acceso total";
-  }
-
-  if (tipo === "SUPERVISOR_TIENDA") {
-    return "Supervisa esta sede";
-  }
-
-  if (tipo === "VENDEDOR") {
-    return "Registra operaciones de venta";
-  }
-
-  return "Perfil operativo";
-}
-
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <div
@@ -70,45 +54,51 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
 function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
   if (tipo === "SUPERVISOR_TIENDA") {
     return (
-      <div className="relative flex h-24 w-24 items-center justify-center rounded-[1.75rem] border border-white/80 bg-[linear-gradient(180deg,#fefefe_0%,#e7f0ff_100%)] shadow-[inset_0_12px_30px_rgba(255,255,255,0.78),0_14px_30px_rgba(148,163,184,0.22)]">
+      <div className="relative flex h-48 w-full items-end justify-center overflow-hidden rounded-[2.8rem] border border-white/75 bg-[linear-gradient(180deg,#f9fcff_0%,#ebf3ff_54%,#f5f9ff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_20px_48px_rgba(148,163,184,0.18)] transition-transform duration-500 group-hover:scale-[1.02]">
+        <div className="absolute -left-6 top-5 h-28 w-28 rounded-full bg-sky-100/80 blur-2xl" />
+        <div className="absolute right-3 top-6 h-20 w-20 rounded-full bg-emerald-100/70 blur-2xl" />
         <svg
-          viewBox="0 0 96 96"
-          className="h-16 w-16"
+          viewBox="0 0 180 150"
+          className="relative h-full w-full px-4 pb-3 pt-2"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
         >
-          <circle cx="39" cy="26" r="11" fill="#F7C8A0" />
+          <ellipse cx="92" cy="134" rx="52" ry="10" fill="#D8E5F5" />
+          <rect x="112" y="24" width="44" height="54" rx="14" fill="#E0ECFF" />
+          <rect x="122" y="37" width="24" height="5" rx="2.5" fill="#2563EB" />
+          <rect x="122" y="48" width="18" height="5" rx="2.5" fill="#93C5FD" />
+          <rect x="122" y="59" width="28" height="5" rx="2.5" fill="#93C5FD" />
+          <circle cx="68" cy="50" r="16" fill="#F4C59A" />
           <path
-            d="M24 55C24 46.7157 30.7157 40 39 40C47.2843 40 54 46.7157 54 55V63H24V55Z"
-            fill="#1E293B"
+            d="M46 118C46 94.804 56.2975 76 69 76C81.7025 76 92 94.804 92 118H46Z"
+            fill="#172554"
           />
           <path
-            d="M30 52L38.7 58.5L48 52"
+            d="M55 94L68.5 103L83 94"
             stroke="#E2E8F0"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <rect x="57" y="28" width="22" height="15" rx="5" fill="#DBEAFE" />
-          <path
-            d="M61 35H72"
-            stroke="#2563EB"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <circle cx="68" cy="59" r="11" fill="#D1FAE5" />
-          <path
-            d="M68 53V59L72 62"
-            stroke="#0F766E"
-            strokeWidth="3"
+            strokeWidth="4"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
           <path
-            d="M65 73H83"
+            d="M91 86L106 72"
             stroke="#94A3B8"
-            strokeWidth="3"
+            strokeWidth="4"
+            strokeLinecap="round"
+          />
+          <circle cx="116" cy="71" r="12" fill="#D1FAE5" />
+          <path
+            d="M116 64V71L121 75"
+            stroke="#0F766E"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M50 42C55 34 63 30 73 30C82 30 88 33 92 39"
+            stroke="#334155"
+            strokeWidth="5"
             strokeLinecap="round"
           />
         </svg>
@@ -118,60 +108,38 @@ function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
 
   if (tipo === "FACTURADOR") {
     return (
-      <div className="relative flex h-24 w-24 items-center justify-center rounded-[1.75rem] border border-white/80 bg-[linear-gradient(180deg,#fffdf7_0%,#eef7ff_100%)] shadow-[inset_0_12px_30px_rgba(255,255,255,0.78),0_14px_30px_rgba(148,163,184,0.22)]">
+      <div className="relative flex h-48 w-full items-end justify-center overflow-hidden rounded-[2.8rem] border border-white/75 bg-[linear-gradient(180deg,#fffdf8_0%,#eef5ff_58%,#f7fbff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_20px_48px_rgba(148,163,184,0.18)] transition-transform duration-500 group-hover:scale-[1.02]">
+        <div className="absolute left-2 top-6 h-24 w-24 rounded-full bg-amber-100/75 blur-2xl" />
+        <div className="absolute right-4 top-8 h-24 w-24 rounded-full bg-sky-100/70 blur-2xl" />
         <svg
-          viewBox="0 0 96 96"
-          className="h-16 w-16"
+          viewBox="0 0 180 150"
+          className="relative h-full w-full px-4 pb-3 pt-2"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
         >
-          <circle cx="33" cy="25" r="10" fill="#F7C8A0" />
+          <ellipse cx="92" cy="135" rx="58" ry="10" fill="#E2E8F0" />
+          <rect x="44" y="100" width="92" height="18" rx="9" fill="#CBD5E1" />
+          <rect x="53" y="72" width="78" height="30" rx="14" fill="#E5EEF9" />
+          <circle cx="82" cy="48" r="15" fill="#F4C59A" />
           <path
-            d="M18 56C18 47.1634 25.1634 40 34 40C42.8366 40 50 47.1634 50 56V63H18V56Z"
+            d="M61 112V86C61 71.0883 70.1782 59 82 59C93.8218 59 103 71.0883 103 86V112H61Z"
             fill="#334155"
           />
           <path
-            d="M25 51L34 57L43 51"
+            d="M71 79L81.5 87L93 79"
             stroke="#E2E8F0"
-            strokeWidth="3"
+            strokeWidth="4"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <path
-            d="M54 18H74C76.7614 18 79 20.2386 79 23V58C79 60.7614 76.7614 63 74 63H54C51.2386 63 49 60.7614 49 58V23C49 20.2386 51.2386 18 54 18Z"
-            fill="#E0F2FE"
-          />
-          <path
-            d="M55 30H73"
-            stroke="#0284C7"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <path
-            d="M55 39H73"
-            stroke="#0284C7"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <path
-            d="M55 48H66"
-            stroke="#0284C7"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <path
-            d="M61 63V74"
-            stroke="#94A3B8"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <path
-            d="M55 74H67"
-            stroke="#94A3B8"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
+          <rect x="101" y="57" width="30" height="22" rx="6" fill="#DBEAFE" />
+          <path d="M107 66H124" stroke="#2563EB" strokeWidth="4" strokeLinecap="round" />
+          <path d="M107 73H119" stroke="#93C5FD" strokeWidth="4" strokeLinecap="round" />
+          <rect x="118" y="40" width="26" height="38" rx="8" fill="#F8FAFC" />
+          <path d="M124 50H138" stroke="#64748B" strokeWidth="4" strokeLinecap="round" />
+          <path d="M124 58H138" stroke="#94A3B8" strokeWidth="4" strokeLinecap="round" />
+          <path d="M124 66H134" stroke="#94A3B8" strokeWidth="4" strokeLinecap="round" />
         </svg>
       </div>
     );
@@ -179,56 +147,57 @@ function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
 
   if (tipo === "VENDEDOR") {
     return (
-      <div className="relative flex h-24 w-24 items-center justify-center rounded-[1.75rem] border border-white/80 bg-[linear-gradient(180deg,#fefefe_0%,#eefbf7_100%)] shadow-[inset_0_12px_30px_rgba(255,255,255,0.78),0_14px_30px_rgba(148,163,184,0.22)]">
+      <div className="relative flex h-48 w-full items-end justify-center overflow-hidden rounded-[2.8rem] border border-white/75 bg-[linear-gradient(180deg,#fbfffd_0%,#ecfaf3_56%,#f8fcfb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_20px_48px_rgba(148,163,184,0.18)] transition-transform duration-500 group-hover:scale-[1.02]">
+        <div className="absolute left-2 top-6 h-20 w-20 rounded-full bg-emerald-100/80 blur-2xl" />
+        <div className="absolute right-4 top-7 h-24 w-24 rounded-full bg-cyan-100/65 blur-2xl" />
         <svg
-          viewBox="0 0 96 96"
-          className="h-16 w-16"
+          viewBox="0 0 180 150"
+          className="relative h-full w-full px-4 pb-3 pt-2"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
         >
-          <circle cx="33" cy="25" r="10" fill="#F7C8A0" />
+          <ellipse cx="92" cy="135" rx="60" ry="10" fill="#DAF0E7" />
+          <circle cx="60" cy="50" r="14" fill="#F4C59A" />
+          <circle cx="119" cy="54" r="13" fill="#F4C59A" />
           <path
-            d="M18 56C18 47.1634 25.1634 40 34 40C42.8366 40 50 47.1634 50 56V63H18V56Z"
+            d="M41 113C41 92.5655 49.2827 76 60 76C70.7173 76 79 92.5655 79 113H41Z"
             fill="#1F2937"
           />
           <path
-            d="M25 51L34 57L43 51"
+            d="M102 115C102 96.3269 109.163 81 119 81C128.837 81 136 96.3269 136 115H102Z"
+            fill="#0F766E"
+          />
+          <path
+            d="M49 95L59.5 103L70 95"
             stroke="#E2E8F0"
-            strokeWidth="3"
+            strokeWidth="4"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <rect x="54" y="19" width="23" height="31" rx="5" fill="#DCFCE7" />
           <path
-            d="M59 28H72"
-            stroke="#16A34A"
-            strokeWidth="3"
+            d="M111 98L119 104L128 98"
+            stroke="#ECFEFF"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <rect x="74" y="56" width="31" height="45" rx="9" fill="#DBEAFE" />
+          <path d="M82 70H97" stroke="#2563EB" strokeWidth="4" strokeLinecap="round" />
+          <path d="M82 79H97" stroke="#60A5FA" strokeWidth="4" strokeLinecap="round" />
+          <circle cx="94" cy="93" r="3" fill="#2563EB" />
+          <circle cx="75" cy="100" r="6" fill="#F4C59A" />
+          <circle cx="105" cy="104" r="6" fill="#F4C59A" />
+          <path
+            d="M80 103L89 98"
+            stroke="#F4C59A"
+            strokeWidth="4"
             strokeLinecap="round"
           />
           <path
-            d="M59 36H68"
-            stroke="#16A34A"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <path
-            d="M59 44H69"
-            stroke="#16A34A"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <circle cx="70" cy="59" r="10" fill="#DBEAFE" />
-          <path
-            d="M70 54V64"
-            stroke="#2563EB"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <path
-            d="M65 59H75"
-            stroke="#2563EB"
-            strokeWidth="3"
+            d="M100 104L92 99"
+            stroke="#F4C59A"
+            strokeWidth="4"
             strokeLinecap="round"
           />
         </svg>
@@ -237,36 +206,36 @@ function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
   }
 
   return (
-    <div className="relative flex h-24 w-24 items-center justify-center rounded-[1.75rem] border border-white/80 bg-[linear-gradient(180deg,#f7fbff_0%,#ebf4ff_100%)] shadow-[inset_0_12px_30px_rgba(255,255,255,0.78),0_14px_30px_rgba(148,163,184,0.22)]">
+    <div className="relative flex h-48 w-full items-end justify-center overflow-hidden rounded-[2.8rem] border border-[#f6e7b8] bg-[linear-gradient(180deg,#fff9e7_0%,#fff2c9_50%,#fff8e6_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_22px_52px_rgba(180,138,40,0.18)] transition-transform duration-500 group-hover:scale-[1.02]">
+      <div className="absolute left-0 top-4 h-24 w-24 rounded-full bg-yellow-200/75 blur-2xl" />
+      <div className="absolute right-6 top-5 h-20 w-20 rounded-full bg-amber-100/80 blur-2xl" />
       <svg
-        viewBox="0 0 96 96"
-        className="h-16 w-16"
+        viewBox="0 0 180 150"
+        className="relative h-full w-full px-4 pb-3 pt-2"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
       >
-        <circle cx="48" cy="25" r="10" fill="#F7C8A0" />
+        <ellipse cx="92" cy="135" rx="58" ry="10" fill="#F4E1A5" />
+        <circle cx="91" cy="34" r="22" fill="#FDE68A" opacity="0.75" />
+        <circle cx="90" cy="50" r="15" fill="#F4C59A" />
         <path
-          d="M31 56C31 46.6112 38.6112 39 48 39C57.3888 39 65 46.6112 65 56V64H31V56Z"
+          d="M61 117C61 93.2518 74.4315 74 91 74C107.569 74 121 93.2518 121 117H61Z"
           fill="#0F172A"
         />
         <path
-          d="M39 51L48 57L57 51"
+          d="M74 95L90.5 106L107 95"
           stroke="#E2E8F0"
-          strokeWidth="3"
+          strokeWidth="4"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         <path
-          d="M48 13L52 18H58L53.5 22L55 28L48 24L41 28L42.5 22L38 18H44L48 13Z"
-          fill="#FBBF24"
+          d="M90 16L95 24H104L97 30L100 39L90 33L80 39L83 30L76 24H85L90 16Z"
+          fill="#D4A414"
         />
-        <path
-          d="M26 73H70"
-          stroke="#94A3B8"
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
+        <path d="M60 44H74" stroke="#D4A414" strokeWidth="4" strokeLinecap="round" />
+        <path d="M107 44H121" stroke="#D4A414" strokeWidth="4" strokeLinecap="round" />
       </svg>
     </div>
   );
@@ -605,46 +574,35 @@ export default function Home() {
         </header>
 
         <main className="mx-auto flex max-w-7xl flex-col gap-7 px-4 py-8 sm:px-6 lg:px-8">
-          <section className="rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(244,248,254,0.96)_100%)] p-6 shadow-[0_24px_70px_rgba(71,85,105,0.15)] sm:p-8">
-            <p className="text-[0.68rem] font-bold uppercase tracking-[0.38em] text-slate-500">
-              Perfil del asesor
-            </p>
-            <h1 className="mt-4 max-w-3xl text-3xl font-black tracking-[-0.03em] text-slate-950 sm:text-5xl">
-              Selecciona el perfil de esta sede
-            </h1>
-            <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-600 sm:text-base">
-              Primero entra la sede con usuario y clave. Luego cada vendedor o
-              supervisor abre su perfil con PIN propio para que el sistema sepa
-              quien gestiona la operacion de esta sede.
-            </p>
+          <section className="rounded-[2.2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(244,248,254,0.95)_100%)] p-6 shadow-[0_24px_70px_rgba(71,85,105,0.15)] sm:p-8">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h1 className="text-3xl font-black tracking-[-0.05em] text-slate-950 sm:text-5xl">
+                  SELECCIONA EL PERFIL
+                </h1>
+              </div>
 
-            <div className="mt-7 max-w-2xl">
-              <label className="block text-sm font-semibold text-slate-500">
-                Nombre del asesor
-              </label>
-              <input
-                type="text"
-                value={busqueda}
-                onChange={(event) => setBusqueda(event.target.value)}
-                placeholder="Buscar asesor o supervisor..."
-                className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-              />
+              <div className="w-full max-w-xl">
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={(event) => setBusqueda(event.target.value)}
+                  placeholder="Buscar perfil"
+                  className="w-full rounded-[1.6rem] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
+                />
+              </div>
             </div>
           </section>
 
           <section>
-            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-medium text-slate-600">
-                Selecciona una tarjeta para abrir el acceso con PIN del perfil.
-              </p>
-              <div className="inline-flex self-start rounded-full border border-slate-200 bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.26em] text-slate-500 shadow-[0_12px_28px_rgba(148,163,184,0.12)]">
-                {perfilesFiltrados.length} perfil
-                {perfilesFiltrados.length === 1 ? "" : "es"} disponible
-                {perfilesFiltrados.length === 1 ? "" : "s"}
-              </div>
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            <div
+              className={[
+                "grid gap-6",
+                perfilesFiltrados.length === 1
+                  ? "mx-auto max-w-[22rem]"
+                  : "sm:grid-cols-2 xl:grid-cols-3",
+              ].join(" ")}
+            >
               {perfilesFiltrados.map((perfil) => {
                 const seleccionado = String(perfil.id) === perfilId;
 
@@ -653,32 +611,51 @@ export default function Home() {
                     key={perfil.id}
                     type="button"
                     onClick={() => abrirModalPin(String(perfil.id))}
-                    className={`group rounded-[2rem] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(239,244,252,0.92)_100%)] p-6 text-left shadow-[0_22px_55px_rgba(71,85,105,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_70px_rgba(51,65,85,0.18)] ${
+                    className={`group relative overflow-hidden rounded-[2.4rem] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(243,247,253,0.93)_100%)] p-5 text-left shadow-[0_24px_60px_rgba(71,85,105,0.12)] transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_34px_80px_rgba(51,65,85,0.18)] ${
                       seleccionado
                         ? "border-slate-900 ring-4 ring-slate-200"
                         : "border-white/75"
                     }`}
                   >
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.78),transparent_70%)]" />
                     <ProfileAvatar tipo={perfil.tipo} />
 
-                    <div className="mt-6">
-                      <h2 className="text-2xl font-black tracking-[-0.03em] text-slate-950">
+                    <div className="mt-5">
+                      <div className="inline-flex rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[0.68rem] font-bold uppercase tracking-[0.28em] text-slate-500">
+                        {perfil.tipoLabel}
+                      </div>
+                      <h2 className="mt-4 text-[1.85rem] font-black tracking-[-0.04em] text-slate-950">
                         {perfil.nombre}
                       </h2>
-                      <p className="mt-2 text-base font-semibold text-slate-600">
-                        {perfil.tipoLabel}
-                      </p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        {obtenerDescripcionPerfil(perfil.tipo)}
-                      </p>
-                      <p className="mt-3 text-sm font-semibold text-slate-700">
-                        Perfil activo
-                      </p>
-                      {perfil.debeCambiarPin && (
-                        <p className="mt-2 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                          Debe cambiar PIN
-                        </p>
-                      )}
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-slate-500">
+                          Abrir con PIN
+                        </span>
+                        {perfil.debeCambiarPin ? (
+                          <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                            Cambiar PIN
+                          </span>
+                        ) : (
+                          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition group-hover:border-slate-300 group-hover:text-slate-700">
+                            <svg
+                              width="20"
+                              height="20"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                              aria-hidden="true"
+                            >
+                              <path
+                                d="M9 6L15 12L9 18"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </button>
                 );
@@ -686,8 +663,7 @@ export default function Home() {
 
               {perfilesFiltrados.length === 0 && (
                 <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white/70 p-8 text-sm text-slate-600 shadow-[0_20px_55px_rgba(71,85,105,0.08)]">
-                  No encontramos perfiles con ese texto. Prueba con otro nombre o
-                  cambia la busqueda.
+                  No encontramos perfiles con ese texto.
                 </div>
               )}
             </div>
