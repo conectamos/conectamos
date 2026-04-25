@@ -1278,13 +1278,7 @@ export default function VendedorRegistroWorkspace({
                           Math.min(MAX_FINANCIERAS_REGISTRO, current + 1)
                         )
                       }
-                      disabled={
-                        !isFinancieraCompleta(
-                          form.financierasDetalle[financierasVisibles - 1],
-                          financierasVisibles - 1
-                        )
-                      }
-                      className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
                     >
                       Agregar financiera
                     </button>
