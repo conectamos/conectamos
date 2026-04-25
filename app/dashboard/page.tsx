@@ -449,6 +449,9 @@ export default async function DashboardPage() {
         { href: "/inventario", label: "Ver inventario", tone: "primary" },
         { href: "/inventario/nuevo", label: "Nuevo inventario", tone: "secondary" },
         ...(esAdmin
+          ? ([{ href: "/dashboard/sedes", label: "Gestion sedes", tone: "secondary" }] as ModuleAction[])
+          : []),
+        ...(esAdmin
           ? ([{ href: "/inventario-principal", label: "Bodega principal", tone: "secondary" }] as ModuleAction[])
           : []),
         { href: "/inventario/historial", label: "IMEI historico", tone: "secondary" },
@@ -470,6 +473,9 @@ export default async function DashboardPage() {
         ...(esAdmin
           ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores", tone: "secondary" }] as ModuleAction[])
           : []),
+        ...(esAdmin
+          ? ([{ href: "/ventas/equipo-comercial", label: "Catalogos de ventas", tone: "secondary" }] as ModuleAction[])
+          : []),
       ],
       tone: "violet",
     },
@@ -483,6 +489,12 @@ export default async function DashboardPage() {
         { href: "/caja", label: "Ver caja", tone: "primary" },
         { href: "/caja/gestion", label: "Ingresos / Gastos", tone: "secondary" },
         { href: "/caja/arqueo", label: "Arqueo", tone: "secondary" },
+        { href: "/dashboard/financiero", label: "Panel financiero", tone: "secondary" },
+        {
+          href: esAdmin ? "/dashboard/financiero/cartera" : "/caja/cartera",
+          label: "Cartera",
+          tone: "secondary",
+        },
       ],
       tone: "rose",
     },
@@ -495,6 +507,7 @@ export default async function DashboardPage() {
       actions: [
         { href: "/prestamos", label: "Ver prestamos", tone: "primary" },
         { href: "/prestamos/nuevo", label: "Nuevo prestamo", tone: "secondary" },
+        { href: "/dashboard/deuda-sedes", label: "Deuda entre sedes", tone: "secondary" },
         { href: "/alertas/prestamos", label: "Alertas", tone: "secondary" },
       ],
       tone: "amber",
