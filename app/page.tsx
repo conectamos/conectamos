@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -55,53 +56,15 @@ function ProfileAvatar({ tipo }: { tipo: PerfilAcceso["tipo"] }) {
   if (tipo === "SUPERVISOR_TIENDA") {
     return (
       <div className="relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden rounded-[42%_58%_54%_46%/40%_38%_62%_60%] border border-white/80 bg-[linear-gradient(180deg,#f9fcff_0%,#ebf3ff_54%,#f5f9ff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)] transition duration-500 group-hover:-translate-y-1 group-hover:rotate-[1.5deg] group-hover:scale-[1.03]">
-        <div className="absolute -left-6 top-5 h-28 w-28 rounded-full bg-sky-100/80 blur-2xl" />
-        <div className="absolute right-3 top-6 h-20 w-20 rounded-full bg-emerald-100/70 blur-2xl" />
-        <svg
-          viewBox="0 0 180 150"
-          className="relative h-full w-full px-4 pb-3 pt-3"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          <ellipse cx="92" cy="134" rx="52" ry="10" fill="#D8E5F5" />
-          <rect x="112" y="24" width="44" height="54" rx="14" fill="#E0ECFF" />
-          <rect x="122" y="37" width="24" height="5" rx="2.5" fill="#2563EB" />
-          <rect x="122" y="48" width="18" height="5" rx="2.5" fill="#93C5FD" />
-          <rect x="122" y="59" width="28" height="5" rx="2.5" fill="#93C5FD" />
-          <circle cx="68" cy="50" r="16" fill="#F4C59A" />
-          <path
-            d="M46 118C46 94.804 56.2975 76 69 76C81.7025 76 92 94.804 92 118H46Z"
-            fill="#172554"
-          />
-          <path
-            d="M55 94L68.5 103L83 94"
-            stroke="#E2E8F0"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M91 86L106 72"
-            stroke="#94A3B8"
-            strokeWidth="4"
-            strokeLinecap="round"
-          />
-          <circle cx="116" cy="71" r="12" fill="#D1FAE5" />
-          <path
-            d="M116 64V71L121 75"
-            stroke="#0F766E"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M50 42C55 34 63 30 73 30C82 30 88 33 92 39"
-            stroke="#334155"
-            strokeWidth="5"
-            strokeLinecap="round"
-          />
-        </svg>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.24),transparent_48%)]" />
+        <Image
+          src="/profile-avatars/supervisor-3d.png"
+          alt="Avatar de supervisor"
+          fill
+          sizes="248px"
+          className="object-cover object-center"
+          priority
+        />
       </div>
     );
   }
