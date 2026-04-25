@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
   calcularValorNetoFinanciera,
   type CatalogoFinanciera,
 } from "@/lib/ventas-financieras";
-
 const SERVICIOS = [
   "CONTADO CLARO",
   "CONTADO LIBRES",
@@ -44,6 +45,7 @@ type RegistroVentaRelacionado = {
   clienteNombre: string;
   tipoDocumento: string;
   documentoNumero: string;
+  serialImei: string | null;
   correo: string | null;
   whatsapp: string | null;
   direccion: string | null;
@@ -153,6 +155,7 @@ function normalizarRegistroVenta(value: unknown): RegistroVentaRelacionado | nul
     clienteNombre: String(row.clienteNombre || ""),
     tipoDocumento: String(row.tipoDocumento || ""),
     documentoNumero: String(row.documentoNumero || ""),
+    serialImei: typeof row.serialImei === "string" ? row.serialImei : null,
     correo: typeof row.correo === "string" ? row.correo : null,
     whatsapp: typeof row.whatsapp === "string" ? row.whatsapp : null,
     direccion: typeof row.direccion === "string" ? row.direccion : null,
@@ -205,6 +208,7 @@ function sectionCardClass() {
 }
 
 export default function NuevaVentaPage() {
+  const searchParams = useSearchParams();
   const [jaladores, setJaladores] = useState<string[]>([]);
   const [cerradores, setCerradores] = useState<string[]>([]);
   const [financierasCatalogo, setFinancierasCatalogo] = useState<CatalogoFinanciera[]>([]);
@@ -235,11 +239,80 @@ export default function NuevaVentaPage() {
   ]);
   const [registroVendedor, setRegistroVendedor] =
     useState<RegistroVentaRelacionado | null>(null);
+  const [cargandoRegistroInicial, setCargandoRegistroInicial] = useState(false);
 
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const registroIdParam = searchParams.get("registroId");
 
   const mostrarFinancieras = !ocultaFinancieras(servicio);
+
+  const aplicarRegistroVendedor = (registro: RegistroVentaRelacionado | null) => {
+    setRegistroVendedor(registro);
+
+    if (!registro) {
+      setFinanzas([
+        { nombre: "", valor: "" },
+        { nombre: "", valor: "" },
+        { nombre: "", valor: "" },
+        { nombre: "", valor: "" },
+      ]);
+      return;
+    }
+
+    if (registro.referenciaEquipo) {
+      setDescripcion(registro.referenciaEquipo);
+    }
+
+    if (registro.jaladorNombre) {
+      setJalador(registro.jaladorNombre);
+    }
+
+    if (registro.financierasDetalle.length) {
+      setServicio("FINANCIERA");
+      setFinanzas([
+        registro.financierasDetalle[0]
+          ? {
+              nombre: registro.financierasDetalle[0].plataformaCredito,
+              valor: monedaGuardadaAInput(
+                registro.financierasDetalle[0].creditoAutorizado
+              ),
+            }
+          : { nombre: "", valor: "" },
+        registro.financierasDetalle[1]
+          ? {
+              nombre: registro.financierasDetalle[1].plataformaCredito,
+              valor: monedaGuardadaAInput(
+                registro.financierasDetalle[1].creditoAutorizado
+              ),
+            }
+          : { nombre: "", valor: "" },
+        registro.financierasDetalle[2]
+          ? {
+              nombre: registro.financierasDetalle[2].plataformaCredito,
+              valor: monedaGuardadaAInput(
+                registro.financierasDetalle[2].creditoAutorizado
+              ),
+            }
+          : { nombre: "", valor: "" },
+        registro.financierasDetalle[3]
+          ? {
+              nombre: registro.financierasDetalle[3].plataformaCredito,
+              valor: monedaGuardadaAInput(
+                registro.financierasDetalle[3].creditoAutorizado
+              ),
+            }
+          : { nombre: "", valor: "" },
+      ]);
+    } else {
+      setFinanzas([
+        { nombre: "", valor: "" },
+        { nombre: "", valor: "" },
+        { nombre: "", valor: "" },
+        { nombre: "", valor: "" },
+      ]);
+    }
+  };
 
   useEffect(() => {
     const cargarCatalogoPersonal = async () => {
@@ -360,7 +433,10 @@ export default function NuevaVentaPage() {
     return totalIngresosCaja - Number(comision || 0) - Number(salida || 0);
   }, [totalIngresosCaja, comision, salida]);
 
-  const buscarIMEI = async (imei: string) => {
+  const buscarIMEI = async (
+    imei: string,
+    fallbackRegistro?: RegistroVentaRelacionado | null
+  ) => {
     try {
       const res = await fetch("/api/ventas/buscar-imei", {
         method: "POST",
@@ -373,7 +449,7 @@ export default function NuevaVentaPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setRegistroVendedor(null);
+        aplicarRegistroVendedor(null);
         setReferencia(data.referencia || "");
         setColor(data.color || "");
         setCostoEquipo(Number(data.costo || 0));
@@ -383,61 +459,12 @@ export default function NuevaVentaPage() {
       }
 
       const item = data as EquipoInfo & { mensaje?: string };
-      const registro = normalizarRegistroVenta(item.registroVenta);
+      const registro = normalizarRegistroVenta(item.registroVenta) ?? fallbackRegistro ?? null;
       setReferencia(item.referencia || "");
       setColor(item.color || "");
       setCostoEquipo(Number(item.costo || 0));
       setDescripcion(registro?.referenciaEquipo || item.referencia || "");
-      setRegistroVendedor(registro);
-
-      if (registro?.jaladorNombre) {
-        setJalador(registro.jaladorNombre);
-      }
-
-      if (registro?.financierasDetalle.length) {
-        setServicio("FINANCIERA");
-        setFinanzas([
-          registro.financierasDetalle[0]
-            ? {
-                nombre: registro.financierasDetalle[0].plataformaCredito,
-                valor: monedaGuardadaAInput(
-                  registro.financierasDetalle[0].creditoAutorizado
-                ),
-              }
-            : { nombre: "", valor: "" },
-          registro.financierasDetalle[1]
-            ? {
-                nombre: registro.financierasDetalle[1].plataformaCredito,
-                valor: monedaGuardadaAInput(
-                  registro.financierasDetalle[1].creditoAutorizado
-                ),
-              }
-            : { nombre: "", valor: "" },
-          registro.financierasDetalle[2]
-            ? {
-                nombre: registro.financierasDetalle[2].plataformaCredito,
-                valor: monedaGuardadaAInput(
-                  registro.financierasDetalle[2].creditoAutorizado
-                ),
-              }
-            : { nombre: "", valor: "" },
-          registro.financierasDetalle[3]
-            ? {
-                nombre: registro.financierasDetalle[3].plataformaCredito,
-                valor: monedaGuardadaAInput(
-                  registro.financierasDetalle[3].creditoAutorizado
-                ),
-              }
-            : { nombre: "", valor: "" },
-        ]);
-      } else {
-        setFinanzas([
-          { nombre: "", valor: "" },
-          { nombre: "", valor: "" },
-          { nombre: "", valor: "" },
-          { nombre: "", valor: "" },
-        ]);
-      }
+      aplicarRegistroVendedor(registro);
 
       if (item.mensaje) {
         setMensaje(item.mensaje);
@@ -445,7 +472,7 @@ export default function NuevaVentaPage() {
         setMensaje("");
       }
     } catch {
-      setRegistroVendedor(null);
+      aplicarRegistroVendedor(null);
       setReferencia("");
       setColor("");
       setCostoEquipo(0);
@@ -453,6 +480,48 @@ export default function NuevaVentaPage() {
       setMensaje("Error consultando el IMEI");
     }
   };
+
+  const cargarAprobacionSeleccionada = useEffectEvent(
+    async (registroIdParamActual: string | null) => {
+      const registroId = Number(registroIdParamActual);
+
+      if (!Number.isInteger(registroId) || registroId <= 0) {
+        return;
+      }
+
+      try {
+        setCargandoRegistroInicial(true);
+        const res = await fetch(`/api/ventas/aprobaciones?id=${registroId}`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setMensaje(data.error || "No se pudo cargar la aprobacion seleccionada");
+          return;
+        }
+
+        const registro = normalizarRegistroVenta(data.registro);
+
+        if (!registro || !registro.serialImei) {
+          setMensaje("La aprobacion seleccionada no tiene IMEI valido");
+          return;
+        }
+
+        setSerial(registro.serialImei);
+        aplicarRegistroVendedor(registro);
+        await buscarIMEI(registro.serialImei, registro);
+      } catch {
+        setMensaje("Error cargando la aprobacion seleccionada");
+      } finally {
+        setCargandoRegistroInicial(false);
+      }
+    }
+  );
+
+  useEffect(() => {
+    void cargarAprobacionSeleccionada(registroIdParam);
+  }, [registroIdParam]);
 
   const actualizarFin = (
     index: number,
@@ -608,6 +677,12 @@ export default function NuevaVentaPage() {
           </div>
 
           <div className="p-6 md:p-8 xl:p-10">
+            {cargandoRegistroInicial && (
+              <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm font-medium text-blue-800">
+                Cargando aprobacion seleccionada...
+              </div>
+            )}
+
             {mensaje && (
               <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-700">
                 {mensaje}
@@ -1039,6 +1114,13 @@ export default function NuevaVentaPage() {
                   <h3 className={sectionTitleClass()}>Acciones</h3>
 
                   <div className="flex flex-col gap-3">
+                    <Link
+                      href="/ventas/aprobaciones"
+                      className="rounded-2xl border border-slate-300 bg-white px-6 py-4 text-center text-base font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Aprobacion de ventas
+                    </Link>
+
                     <button
                       onClick={guardar}
                       disabled={guardando}

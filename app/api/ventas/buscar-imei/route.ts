@@ -3,15 +3,27 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
-async function buscarRegistroVentaAbierto(serial: string, sedeId: number) {
+async function buscarRegistroVentaAbierto(
+  serial: string,
+  sedeId: number,
+  sedeNombre: string
+) {
   await ensureVendorProfilesSchema();
 
-  const registro = await prisma.registroVendedorVenta.findFirst({
+  const registros = await prisma.registroVendedorVenta.findMany({
     where: {
       serialImei: serial,
-      sedeId,
       eliminadoEn: null,
-      estadoVentaRegistro: "PENDIENTE",
+      ventaIdRelacionada: null,
+      OR: [
+        { sedeId },
+        {
+          puntoVenta: {
+            equals: sedeNombre,
+            mode: "insensitive",
+          },
+        },
+      ],
     },
     select: {
       id: true,
@@ -29,12 +41,19 @@ async function buscarRegistroVentaAbierto(serial: string, sedeId: number) {
       jaladorNombre: true,
       numeroFactura: true,
       estadoFacturacion: true,
+      estadoVentaRegistro: true,
       financierasDetalle: true,
       createdAt: true,
     },
     orderBy: {
       createdAt: "desc",
     },
+    take: 5,
+  });
+
+  const registro = registros.find((item) => {
+    const estadoVentaRegistro = String(item.estadoVentaRegistro || "").trim().toUpperCase();
+    return estadoVentaRegistro !== "CANCELADO" && estadoVentaRegistro !== "CONVERTIDO_EN_VENTA";
   });
 
   return registro
@@ -68,7 +87,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const registroVenta = await buscarRegistroVentaAbierto(serial, user.sedeId);
+    const registroVenta = await buscarRegistroVentaAbierto(
+      serial,
+      user.sedeId,
+      user.sedeNombre
+    );
 
     // 1) Buscar primero en inventario de sedes
     const inventarioSedes = await prisma.inventarioSede.findMany({

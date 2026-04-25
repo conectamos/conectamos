@@ -435,18 +435,33 @@ export async function POST(req: Request) {
       ? await prisma.registroVendedorVenta.findFirst({
           where: {
             id: input.registroVendedorId,
-            sedeId: user.sedeId,
             serialImei: input.serial,
             eliminadoEn: null,
-            estadoVentaRegistro: "PENDIENTE",
+            ventaIdRelacionada: null,
+            OR: [
+              { sedeId: user.sedeId },
+              {
+                puntoVenta: {
+                  equals: user.sedeNombre,
+                  mode: "insensitive",
+                },
+              },
+            ],
           },
           select: {
             id: true,
+            estadoVentaRegistro: true,
           },
         })
       : null;
 
-    if (input.registroVendedorId && !registroVendedor) {
+    if (
+      input.registroVendedorId &&
+      (!registroVendedor ||
+        ["CANCELADO", "CONVERTIDO_EN_VENTA"].includes(
+          String(registroVendedor.estadoVentaRegistro || "").trim().toUpperCase()
+        ))
+    ) {
       return NextResponse.json(
         {
           error:
