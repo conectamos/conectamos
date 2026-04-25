@@ -45,7 +45,7 @@ export const MAX_PLAZO_CUOTAS = 48;
 export const IMEI_LENGTH = 15;
 
 export function financieraRequiereInicial(index: number) {
-  return index < 2;
+  return index === 0;
 }
 
 export const TEXTOS_VISIBLES_CLIENTE = [

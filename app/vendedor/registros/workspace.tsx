@@ -1110,8 +1110,9 @@ export default function VendedorRegistroWorkspace({
                             Financiera {index + 1}
                           </p>
                           <p className="text-xs text-slate-500">
-                            Registra plataforma, valores, plazo y forma de pago de
-                            la inicial.
+                            {financieraRequiereInicial(index)
+                              ? "Registra plataforma, valores, plazo y forma de pago de la inicial."
+                              : "Registra plataforma, credito autorizado, valor cuota, plazo y frecuencia de pago."}
                           </p>
                         </div>
 
