@@ -10,7 +10,7 @@ export default async function VendedorRegistrosPage() {
         nombre: session.nombre,
         sedeNombre: session.sedeNombre ?? "Tu sede",
         perfilNombre: session.perfilNombre ?? session.nombre,
-        perfilTipoLabel: session.perfilTipoLabel ?? "Vendedor",
+        perfilTipoLabel: session.perfilTipoLabel ?? session.rolNombre ?? "Vendedor",
       }}
     />
   );

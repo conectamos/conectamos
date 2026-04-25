@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { puedeAccederPanelVendedor } from "@/lib/access-control";
+import { esRolAdmin, puedeAccederPanelVendedor } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
@@ -30,7 +30,7 @@ async function requireVendor() {
 
   if (
     !puedeAccederPanelVendedor(session.perfilTipo, session.rolNombre) ||
-    !session.perfilId
+    (!session.perfilId && !esRolAdmin(session.rolNombre))
   ) {
     return {
       ok: false as const,

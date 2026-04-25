@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import {
   esPerfilFacturador,
   esPerfilVendedor,
+  esRolAdmin,
   puedeAccederPanelFacturador,
   puedeAccederPanelVendedor,
 } from "@/lib/access-control";
@@ -32,7 +33,7 @@ export async function requireVendorPage() {
 
   if (
     !puedeAccederPanelVendedor(session.perfilTipo, session.rolNombre) ||
-    !session.perfilId
+    (!session.perfilId && !esRolAdmin(session.rolNombre))
   ) {
     redirect("/dashboard");
   }

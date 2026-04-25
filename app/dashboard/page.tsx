@@ -394,8 +394,7 @@ export default async function DashboardPage() {
   const esAdmin = esRolAdmin(session.rolNombre);
   const esFacturador = esPerfilFacturador(session.perfilTipo);
   const esVendedor = esPerfilVendedor(session.perfilTipo);
-  const puedeAbrirPanelVendedor =
-    esVendedor || (esAdmin && Boolean(session.perfilId));
+  const puedeAbrirPanelVendedor = esVendedor || esAdmin;
   const puedeAbrirPanelFacturador = esFacturador || esAdmin;
   const esSupervisor =
     esPerfilSupervisor(session.perfilTipo) ||
@@ -557,28 +556,31 @@ export default async function DashboardPage() {
                 {
                   accent: "bg-emerald-500",
                   badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
-                  eyebrow: "Registros / Gestion",
-                  title: "Paneles de registros",
+                  eyebrow: "Vendedor / Registros",
+                  title: "REGISTRAR VENTA",
                   description:
-                    "Accede al panel vendedor para capturar tramites y al panel facturador para buscar, modificar o eliminar registros por cedula o IMEI.",
+                    "Digitaliza la hoja de plataforma de la sede y registra el tramite completo desde este modulo.",
                   actions: [
-                    ...(puedeAbrirPanelVendedor
-                      ? ([
-                          {
-                            href: "/vendedor/registros",
-                            label: "Panel vendedor",
-                            tone: "primary",
-                          },
-                        ] as ModuleAction[])
-                      : []),
-                    ...(puedeAbrirPanelFacturador
-                      ? ([
-                          {
-                            href: "/facturador/registros",
-                            label: "Panel facturador",
-                          },
-                        ] as ModuleAction[])
-                      : []),
+                    {
+                      href: "/vendedor/registros",
+                      label: "REGISTRAR VENTA",
+                      tone: "primary",
+                    },
+                  ],
+                },
+                {
+                  accent: "bg-emerald-500",
+                  badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+                  eyebrow: "Facturador / Registros",
+                  title: "REGISTROS FACTURACION",
+                  description:
+                    "Consulta, modifica o elimina los registros guardados y completa el numero de factura por cédula o IMEI.",
+                  actions: [
+                    {
+                      href: "/facturador/registros",
+                      label: "Ver registros guardados",
+                      tone: "primary",
+                    },
                   ],
                 },
               ] as ModuleCard[])
