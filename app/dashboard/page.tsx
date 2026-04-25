@@ -15,6 +15,13 @@ import {
 } from "@/lib/dashboard-commercial-summary";
 
 type ModuleTone = "slate" | "emerald" | "sky" | "amber" | "violet" | "rose";
+type ActionTone = "primary" | "secondary" | "danger";
+
+type ModuleAction = {
+  href: string;
+  label: string;
+  tone?: ActionTone;
+};
 
 type ModuleKey =
   | "inventario"
@@ -32,8 +39,7 @@ type ModuleCard = {
   title: string;
   eyebrow: string;
   description: string;
-  href: string;
-  actionLabel: string;
+  actions: ModuleAction[];
   tone: ModuleTone;
 };
 
@@ -242,40 +248,66 @@ function ModulePanel({
   title,
   eyebrow,
   description,
-  href,
-  actionLabel,
+  actions,
   tone,
 }: ModuleCard) {
-  const toneClasses: Record<ModuleTone, { badge: string; topLine: string; button: string }> = {
+  const toneClasses: Record<
+    ModuleTone,
+    { badge: string; topLine: string; primary: string; secondary: string; danger: string }
+  > = {
     slate: {
       badge: "border-slate-200 bg-slate-50 text-slate-700",
       topLine: "bg-slate-900",
-      button: "bg-slate-900 text-white hover:bg-slate-800",
+      primary: "bg-slate-900 text-white hover:bg-slate-800",
+      secondary:
+        "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-950",
+      danger:
+        "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     emerald: {
       badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
       topLine: "bg-emerald-500",
-      button: "bg-emerald-600 text-white hover:bg-emerald-500",
+      primary: "bg-emerald-600 text-white hover:bg-emerald-500",
+      secondary:
+        "border border-emerald-200 bg-white text-emerald-700 hover:border-emerald-300 hover:text-emerald-800",
+      danger:
+        "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     sky: {
       badge: "border-sky-200 bg-sky-50 text-sky-700",
       topLine: "bg-sky-500",
-      button: "bg-sky-600 text-white hover:bg-sky-500",
+      primary: "bg-sky-600 text-white hover:bg-sky-500",
+      secondary:
+        "border border-sky-200 bg-white text-sky-700 hover:border-sky-300 hover:text-sky-800",
+      danger:
+        "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     amber: {
       badge: "border-amber-200 bg-amber-50 text-amber-700",
       topLine: "bg-amber-500",
-      button: "bg-amber-500 text-white hover:bg-amber-400",
+      primary: "bg-amber-500 text-white hover:bg-amber-400",
+      secondary:
+        "border border-amber-200 bg-white text-amber-700 hover:border-amber-300 hover:text-amber-800",
+      danger:
+        "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     violet: {
       badge: "border-violet-200 bg-violet-50 text-violet-700",
       topLine: "bg-violet-500",
-      button: "bg-violet-600 text-white hover:bg-violet-500",
+      primary: "bg-violet-600 text-white hover:bg-violet-500",
+      secondary:
+        "border border-violet-200 bg-white text-violet-700 hover:border-violet-300 hover:text-violet-800",
+      danger:
+        "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
     rose: {
       badge: "border-rose-200 bg-rose-50 text-rose-700",
       topLine: "bg-rose-500",
-      button: "bg-rose-600 text-white hover:bg-rose-500",
+      primary: "bg-rose-600 text-white hover:bg-rose-500",
+      secondary:
+        "border border-rose-200 bg-white text-rose-700 hover:border-rose-300 hover:text-rose-800",
+      danger:
+        "border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100",
     },
   };
 
@@ -301,13 +333,25 @@ function ModulePanel({
         {description}
       </p>
 
-      <div className="mt-6">
-        <Link
-          href={href}
-          className={`inline-flex items-center rounded-2xl px-4 py-3 text-sm font-semibold transition ${toneStyle.button}`}
-        >
-          {actionLabel}
-        </Link>
+      <div className="mt-6 flex flex-wrap gap-2.5">
+        {actions.map((action) => {
+          const toneClass =
+            action.tone === "secondary"
+              ? toneStyle.secondary
+              : action.tone === "danger"
+                ? toneStyle.danger
+                : toneStyle.primary;
+
+          return (
+            <Link
+              key={`${title}-${action.href}-${action.label}`}
+              href={action.href}
+              className={`inline-flex items-center rounded-2xl px-4 py-3 text-sm font-semibold transition ${toneClass}`}
+            >
+              {action.label}
+            </Link>
+          );
+        })}
       </div>
     </section>
   );
@@ -401,8 +445,14 @@ export default async function DashboardPage() {
       eyebrow: "Control",
       description:
         "Consulta inventario, movimientos y trazabilidad del equipo disponible.",
-      href: "/inventario",
-      actionLabel: "Abrir inventario",
+      actions: [
+        { href: "/inventario", label: "Ver inventario", tone: "primary" },
+        { href: "/inventario/nuevo", label: "Nuevo inventario", tone: "secondary" },
+        ...(esAdmin
+          ? ([{ href: "/inventario-principal", label: "Bodega principal", tone: "secondary" }] as ModuleAction[])
+          : []),
+        { href: "/inventario/historial", label: "IMEI historico", tone: "secondary" },
+      ],
       tone: "sky",
     },
     ventas: {
@@ -411,8 +461,16 @@ export default async function DashboardPage() {
       eyebrow: "Operacion",
       description:
         "Consulta ventas registradas y completa nuevas operaciones desde el modulo comercial.",
-      href: "/ventas",
-      actionLabel: "Abrir ventas",
+      actions: [
+        { href: "/ventas", label: "Ver ventas", tone: "primary" },
+        { href: "/ventas/nuevo", label: "Nueva venta", tone: "secondary" },
+        ...(esAdmin || esSupervisor
+          ? ([{ href: "/ventas/aprobaciones", label: "Aprobacion de ventas", tone: "secondary" }] as ModuleAction[])
+          : []),
+        ...(esAdmin
+          ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores", tone: "secondary" }] as ModuleAction[])
+          : []),
+      ],
       tone: "violet",
     },
     caja: {
@@ -421,8 +479,11 @@ export default async function DashboardPage() {
       eyebrow: "Finanzas",
       description:
         "Revisa ingresos, egresos y control diario de caja desde una vista directa.",
-      href: "/caja",
-      actionLabel: "Abrir caja",
+      actions: [
+        { href: "/caja", label: "Ver caja", tone: "primary" },
+        { href: "/caja/gestion", label: "Ingresos / Gastos", tone: "secondary" },
+        { href: "/caja/arqueo", label: "Arqueo", tone: "secondary" },
+      ],
       tone: "rose",
     },
     prestamos: {
@@ -431,8 +492,11 @@ export default async function DashboardPage() {
       eyebrow: "Seguimiento",
       description:
         "Administra prestamos, devoluciones y estados pendientes entre sedes.",
-      href: "/prestamos",
-      actionLabel: "Abrir prestamos",
+      actions: [
+        { href: "/prestamos", label: "Ver prestamos", tone: "primary" },
+        { href: "/prestamos/nuevo", label: "Nuevo prestamo", tone: "secondary" },
+        { href: "/alertas/prestamos", label: "Alertas", tone: "secondary" },
+      ],
       tone: "amber",
     },
     registrarVenta: {
@@ -442,8 +506,12 @@ export default async function DashboardPage() {
       description: esVendedor
         ? "Digitaliza el tramite completo de la venta desde un unico modulo."
         : "Digitaliza la hoja de plataforma y registra el tramite completo desde este modulo.",
-      href: "/vendedor/registros",
-      actionLabel: "Abrir registro",
+      actions: [
+        { href: "/vendedor/registros", label: "Registrar venta", tone: "primary" },
+        ...(!esVendedor
+          ? ([{ href: "/vendedor/registros/buscar", label: "Buscar registro", tone: "secondary" }] as ModuleAction[])
+          : []),
+      ],
       tone: "emerald",
     },
     registrarFacturacion: {
@@ -452,8 +520,13 @@ export default async function DashboardPage() {
       eyebrow: "Facturador / Registros",
       description:
         "Consulta los registros pendientes y completa el proceso de facturacion.",
-      href: esAdmin ? "/dashboard/registros" : "/facturador/registros",
-      actionLabel: "Abrir facturacion",
+      actions: [
+        {
+          href: esAdmin ? "/dashboard/registros" : "/facturador/registros",
+          label: "Abrir facturacion",
+          tone: "primary",
+        },
+      ],
       tone: "emerald",
     },
     payjoy: {
@@ -462,8 +535,10 @@ export default async function DashboardPage() {
       eyebrow: "Cartera",
       description:
         "Gestiona cartera y seguimiento operativo de PayJoy desde el panel administrativo.",
-      href: "/dashboard/payjoy",
-      actionLabel: "Abrir PayJoy",
+      actions: [
+        { href: "/dashboard/payjoy", label: "Cartera PayJoy", tone: "primary" },
+        { href: "/dashboard/payjoy/40-60", label: "40/60", tone: "secondary" },
+      ],
       tone: "slate",
     },
     nuovo: {
@@ -472,8 +547,12 @@ export default async function DashboardPage() {
       eyebrow: "Dispositivos",
       description:
         "Consulta dispositivos y gestiona el flujo operativo de Nuovo desde su panel.",
-      href: "/dashboard/nuovopay",
-      actionLabel: "Abrir Nuovo",
+      actions: [
+        { href: "/dashboard/nuovopay", label: "Nuovo / Dispositivos", tone: "primary" },
+        ...(esAdmin
+          ? ([{ href: "/dashboard/nuovopay/cartera", label: "Nuovo / Cartera", tone: "secondary" }] as ModuleAction[])
+          : []),
+      ],
       tone: "amber",
     },
     equality: {
@@ -482,8 +561,9 @@ export default async function DashboardPage() {
       eyebrow: "Zero Touch",
       description:
         "Administra consulta y control de dispositivos desde HBM Equality.",
-      href: "/dashboard/equality",
-      actionLabel: "Abrir Equality",
+      actions: [
+        { href: "/dashboard/equality", label: "Abrir Equality", tone: "primary" },
+      ],
       tone: "violet",
     },
   };
