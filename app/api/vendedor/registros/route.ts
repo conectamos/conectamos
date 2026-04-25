@@ -224,11 +224,23 @@ export async function GET() {
 
     await ensureVendorProfilesSchema();
 
+    const where =
+      access.session.perfilId
+        ? {
+            perfilVendedorId: access.session.perfilId,
+            eliminadoEn: null as null,
+          }
+        : esRolAdmin(access.session.rolNombre)
+          ? {
+              eliminadoEn: null as null,
+            }
+          : {
+              perfilVendedorId: -1,
+              eliminadoEn: null as null,
+            };
+
     const registros = await prisma.registroVendedorVenta.findMany({
-      where: {
-        perfilVendedorId: access.session.perfilId!,
-        eliminadoEn: null,
-      },
+      where,
       select: {
         id: true,
         clienteNombre: true,
@@ -282,6 +294,16 @@ export async function POST(req: Request) {
     }
 
     await ensureVendorProfilesSchema();
+
+    if (!access.session.perfilId) {
+      return NextResponse.json(
+        {
+          error:
+            "Como administrador puedes consultar registros aqui, pero para crear uno nuevo debes entrar con un perfil vendedor o supervisor activo.",
+        },
+        { status: 400 }
+      );
+    }
 
     const body = (await req.json()) as Record<string, unknown>;
     const catalogo = await obtenerCatalogoPersonalVenta();
