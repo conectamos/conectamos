@@ -525,13 +525,13 @@ export default async function DashboardPage() {
             accent: "bg-emerald-500",
             badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
             eyebrow: "Vendedor / Registros",
-            title: "REGISTRAR VENTA",
+            title: "Registrar venta",
             description:
               "Digitaliza la hoja de plataforma de la sede y registra el tramite completo desde este modulo.",
             actions: [
               {
                 href: "/vendedor/registros",
-                label: "REGISTRAR VENTA",
+                label: "Registrar venta",
                 tone: "primary",
               },
             ],
@@ -562,13 +562,13 @@ export default async function DashboardPage() {
                   accent: "bg-emerald-500",
                   badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
                   eyebrow: "Vendedor / Registros",
-                  title: "REGISTRAR VENTA",
+                  title: "Registrar venta",
                   description:
                     "Digitaliza la hoja de plataforma de la sede y registra el tramite completo desde este modulo.",
                   actions: [
                     {
                       href: "/vendedor/registros",
-                      label: "REGISTRAR VENTA",
+                      label: "Registrar venta",
                       tone: "primary",
                     },
                   ],
@@ -577,13 +577,13 @@ export default async function DashboardPage() {
                   accent: "bg-emerald-500",
                   badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
                   eyebrow: "Facturador / Registros",
-                  title: "CONSULTAR REGISTROS",
+                  title: "Buscar registros",
                   description:
                     "Busca por cédula o IMEI, consulta la información completa y edita o elimina registros guardados por los vendedores.",
                   actions: [
                     {
                       href: "/dashboard/registros",
-                      label: "CONSULTAR REGISTROS",
+                      label: "Buscar registros",
                       tone: "primary",
                     },
                   ],
@@ -734,6 +734,48 @@ export default async function DashboardPage() {
         ] as ModuleCard[])),
   ];
 
+  const adminQuickAccess: ModuleCard[] = esAdmin
+    ? [
+        {
+          accent: "bg-emerald-500",
+          badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+          eyebrow: "Vendedor / Registros",
+          title: "Registrar venta",
+          description:
+            "Digitaliza la hoja de plataforma de la sede y registra el tramite completo desde este modulo.",
+          actions: [
+            {
+              href: "/vendedor/registros",
+              label: "Registrar venta",
+              tone: "primary",
+            },
+          ],
+        },
+        {
+          accent: "bg-emerald-500",
+          badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+          eyebrow: "Registros / Consulta",
+          title: "Buscar registros",
+          description:
+            "Busca por cédula o IMEI, consulta la información completa y edita o elimina registros guardados por los vendedores.",
+          actions: [
+            {
+              href: "/dashboard/registros",
+              label: "Buscar registros",
+              tone: "primary",
+            },
+          ],
+        },
+      ]
+    : [];
+
+  const visibleModules = esAdmin
+    ? modules.filter(
+        (module) =>
+          module.title !== "Registrar venta" && module.title !== "Buscar registros"
+      )
+    : modules;
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#f2f5f9_100%)] text-slate-950">
       <div className="flex min-h-screen w-full">
@@ -864,6 +906,14 @@ export default async function DashboardPage() {
             </div>
           </section>
 
+          {esAdmin && adminQuickAccess.length > 0 && (
+            <section className="mt-6 grid gap-5 md:grid-cols-2">
+              {adminQuickAccess.map((module) => (
+                <ModulePanel key={`quick-${module.title}`} {...module} />
+              ))}
+            </section>
+          )}
+
           {esAdmin && resumenComercialMensual ? (
             <section className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
               <MetricCard
@@ -899,7 +949,7 @@ export default async function DashboardPage() {
           )}
 
           <section className="mt-6 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-            {modules.map((module) => (
+            {visibleModules.map((module) => (
               <ModulePanel key={module.title} {...module} />
             ))}
           </section>
