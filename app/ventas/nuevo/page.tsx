@@ -34,6 +34,7 @@ type RegistroVentaFinanciera = {
   plataformaCredito: string;
   creditoAutorizado: string | number | null;
   cuotaInicial?: string | number | null;
+  tipoPagoInicial?: string | null;
   valorCuota?: string | number | null;
   numeroCuotas?: string | number | null;
   frecuenciaCuota?: string | null;
@@ -134,6 +135,10 @@ function normalizarRegistroVenta(value: unknown): RegistroVentaRelacionado | nul
             cuotaInicial:
               (financiera.cuotaInicial as string | number | null | undefined) ??
               null,
+            tipoPagoInicial:
+              typeof financiera.tipoPagoInicial === "string"
+                ? financiera.tipoPagoInicial
+                : null,
             valorCuota:
               (financiera.valorCuota as string | number | null | undefined) ??
               null,
@@ -189,6 +194,11 @@ function cajaIngreso(valor: number, tipo: string) {
 function ocultaFinancieras(servicio: string) {
   const s = servicio.toUpperCase();
   return s === "CONTADO CLARO" || s === "CONTADO LIBRES";
+}
+
+function normalizarTipoIngresoDesdeRegistro(value: string | null | undefined) {
+  const tipo = String(value || "").trim().toUpperCase();
+  return tipo === "TRANSFERENCIA" || tipo === "VOUCHER" ? tipo : "EFECTIVO";
 }
 
 function inputBaseClass(readOnly = false) {
@@ -251,6 +261,10 @@ export default function NuevaVentaPage() {
     setRegistroVendedor(registro);
 
     if (!registro) {
+      setIngreso1Base("");
+      setIngreso2Base("");
+      setTipoIngreso2("");
+      setUsarIngreso2(false);
       setFinanzas([
         { nombre: "", valor: "" },
         { nombre: "", valor: "" },
@@ -266,6 +280,33 @@ export default function NuevaVentaPage() {
 
     if (registro.jaladorNombre) {
       setJalador(registro.jaladorNombre);
+    }
+
+    const primeraFinanciera = registro.financierasDetalle[0] ?? null;
+    const segundaFinanciera = registro.financierasDetalle[1] ?? null;
+    const primeraInicial = Number(
+      monedaGuardadaAInput(primeraFinanciera?.cuotaInicial ?? null) || 0
+    );
+    const segundaInicial = Number(
+      monedaGuardadaAInput(segundaFinanciera?.cuotaInicial ?? null) || 0
+    );
+    const tipoSegundaInicial = normalizarTipoIngresoDesdeRegistro(
+      segundaFinanciera?.tipoPagoInicial
+    );
+
+    if (segundaInicial > 0 && tipoSegundaInicial !== "EFECTIVO") {
+      setIngreso1Base(primeraInicial > 0 ? String(primeraInicial) : "");
+      setIngreso2Base(String(segundaInicial));
+      setTipoIngreso2(tipoSegundaInicial);
+      setUsarIngreso2(true);
+    } else {
+      const ingreso1DesdeRegistro = primeraInicial + segundaInicial;
+      setIngreso1Base(
+        ingreso1DesdeRegistro > 0 ? String(ingreso1DesdeRegistro) : ""
+      );
+      setIngreso2Base("");
+      setTipoIngreso2("");
+      setUsarIngreso2(false);
     }
 
     if (registro.financierasDetalle.length) {
