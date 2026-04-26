@@ -135,11 +135,14 @@ export default function InventarioPage() {
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
 
   const [mostrarModalPrestamo, setMostrarModalPrestamo] = useState(false);
+  const [mostrarModalPrestamoMasivo, setMostrarModalPrestamoMasivo] = useState(false);
   const [itemPrestamo, setItemPrestamo] = useState<InventarioItem | null>(null);
   const [sedeDestinoId, setSedeDestinoId] = useState("");
 
   const [mostrarModalPago, setMostrarModalPago] = useState(false);
+  const [mostrarModalPagoMasivo, setMostrarModalPagoMasivo] = useState(false);
   const [itemPago, setItemPago] = useState<InventarioItem | null>(null);
+  const [idsSeleccionados, setIdsSeleccionados] = useState<number[]>([]);
 
   const [modalEliminar, setModalEliminar] = useState(false);
   const [idEliminar, setIdEliminar] = useState<number | null>(null);
@@ -256,6 +259,12 @@ export default function InventarioPage() {
 
     void cargarInventario();
   }, [cargarInventario, user]);
+
+  useEffect(() => {
+    setIdsSeleccionados((actuales) =>
+      actuales.filter((id) => items.some((item) => item.id === id))
+    );
+  }, [items]);
 
   useLiveRefresh(
     async () => {
@@ -550,6 +559,191 @@ export default function InventarioPage() {
     return true;
   };
 
+  const itemsSeleccionados = useMemo(
+    () => items.filter((item) => idsSeleccionados.includes(item.id)),
+    [idsSeleccionados, items]
+  );
+
+  const idsVisibles = useMemo(
+    () => itemsFiltrados.map((item) => item.id),
+    [itemsFiltrados]
+  );
+
+  const todosVisiblesSeleccionados = useMemo(
+    () =>
+      idsVisibles.length > 0 &&
+      idsVisibles.every((id) => idsSeleccionados.includes(id)),
+    [idsSeleccionados, idsVisibles]
+  );
+
+  const itemsSeleccionadosParaPrestamo = useMemo(
+    () => itemsSeleccionados.filter((item) => puedeEnviarPrestamo(item)),
+    [itemsSeleccionados]
+  );
+
+  const itemsSeleccionadosParaPago = useMemo(
+    () => itemsSeleccionados.filter((item) => puedePagarDeuda(item)),
+    [itemsSeleccionados]
+  );
+
+  const totalPagoMasivo = useMemo(
+    () =>
+      itemsSeleccionadosParaPago.reduce(
+        (acc, item) => acc + Number(item.costo || 0),
+        0
+      ),
+    [itemsSeleccionadosParaPago]
+  );
+
+  const sedesDestinoMasivo = useMemo(() => {
+    return sedes.filter(
+      (sede) =>
+        esSedeOperativaInventario(sede.nombre) &&
+        itemsSeleccionadosParaPrestamo.every((item) => item.sedeId !== sede.id)
+    );
+  }, [itemsSeleccionadosParaPrestamo, sedes]);
+
+  const alternarSeleccion = (id: number) => {
+    setIdsSeleccionados((actuales) =>
+      actuales.includes(id)
+        ? actuales.filter((itemId) => itemId !== id)
+        : [...actuales, id]
+    );
+  };
+
+  const alternarSeleccionVisibles = () => {
+    setIdsSeleccionados((actuales) => {
+      if (todosVisiblesSeleccionados) {
+        return actuales.filter((id) => !idsVisibles.includes(id));
+      }
+
+      return Array.from(new Set([...actuales, ...idsVisibles]));
+    });
+  };
+
+  const limpiarSeleccionMasiva = () => {
+    setIdsSeleccionados([]);
+    setSedeDestinoId("");
+    setMostrarModalPrestamoMasivo(false);
+    setMostrarModalPagoMasivo(false);
+  };
+
+  const ejecutarEnvioMasivo = async () => {
+    if (!sedeDestinoId) {
+      setMensaje("Debes seleccionar una sede destino");
+      return;
+    }
+
+    if (itemsSeleccionadosParaPrestamo.length === 0) {
+      setMensaje("No hay equipos seleccionados disponibles para enviar");
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      let enviados = 0;
+      const errores: string[] = [];
+
+      for (const item of itemsSeleccionadosParaPrestamo) {
+        const res = await fetch("/api/prestamos/crear-desde-inventario", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inventarioId: item.id,
+            sedeDestinoId: Number(sedeDestinoId),
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          enviados += 1;
+        } else {
+          errores.push(`${item.imei}: ${data.error || "Error creando prestamo"}`);
+        }
+      }
+
+      setMensaje(
+        [
+          `Envio masivo finalizado: ${enviados} equipo${
+            enviados === 1 ? "" : "s"
+          } enviado${enviados === 1 ? "" : "s"}.`,
+          errores.length
+            ? `${errores.length} no se procesaron. ${errores.slice(0, 3).join(" | ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      limpiarSeleccionMasiva();
+      await cargarInventario();
+    } catch {
+      setMensaje("Error ejecutando envio masivo");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const ejecutarPagoMasivo = async () => {
+    if (itemsSeleccionadosParaPago.length === 0) {
+      setMensaje("No hay equipos seleccionados con deuda pagable");
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      let pagados = 0;
+      const errores: string[] = [];
+
+      for (const item of itemsSeleccionadosParaPago) {
+        const res = await fetch("/api/inventario/pagar-deuda", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: item.id,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          pagados += 1;
+        } else {
+          errores.push(`${item.imei}: ${data.error || "Error pagando deuda"}`);
+        }
+      }
+
+      setMensaje(
+        [
+          `Pago masivo finalizado: ${pagados} deuda${
+            pagados === 1 ? "" : "s"
+          } pagada${pagados === 1 ? "" : "s"}.`,
+          errores.length
+            ? `${errores.length} no se procesaron. ${errores.slice(0, 3).join(" | ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      limpiarSeleccionMasiva();
+      await cargarInventario();
+    } catch {
+      setMensaje("Error ejecutando pago masivo");
+    } finally {
+      setCargando(false);
+    }
+  };
+
   const confirmarEliminacion = () => {
     if (false) {
       setErrorClave("Clave incorrecta");
@@ -789,10 +983,71 @@ export default function InventarioPage() {
             </div>
           </div>
 
+          {idsSeleccionados.length > 0 && (
+            <div className="border-b border-slate-200 bg-[#fbf8f2] px-6 py-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-slate-950">
+                    {idsSeleccionados.length} equipo
+                    {idsSeleccionados.length === 1 ? "" : "s"} seleccionado
+                    {idsSeleccionados.length === 1 ? "" : "s"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {itemsSeleccionadosParaPrestamo.length} disponible
+                    {itemsSeleccionadosParaPrestamo.length === 1 ? "" : "s"} para envio
+                    {" "}a sede · {itemsSeleccionadosParaPago.length} deuda
+                    {itemsSeleccionadosParaPago.length === 1 ? "" : "s"} pagable
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSedeDestinoId("");
+                      setMostrarModalPrestamoMasivo(true);
+                    }}
+                    disabled={cargando || itemsSeleccionadosParaPrestamo.length === 0}
+                    className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Enviar a sede
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMostrarModalPagoMasivo(true)}
+                    disabled={cargando || itemsSeleccionadosParaPago.length === 0}
+                    className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Pagar deudas
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={limpiarSeleccionMasiva}
+                    disabled={cargando}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Limpiar seleccion
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
-            <table className="min-w-[1400px] text-sm">
+            <table className="min-w-[1460px] text-sm">
               <thead className="sticky top-0 z-10 bg-[#f8f5ef]">
                 <tr className="text-left text-slate-600">
+                  <th className="px-4 py-4">
+                    <input
+                      type="checkbox"
+                      checked={todosVisiblesSeleccionados}
+                      onChange={alternarSeleccionVisibles}
+                      aria-label="Seleccionar equipos visibles"
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                    />
+                  </th>
                   <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">ID</th>
                   <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">IMEI</th>
                   <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Referencia</th>
@@ -814,7 +1069,7 @@ export default function InventarioPage() {
                 {itemsFiltrados.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={esAdmin ? 12 : 11}
+                      colSpan={esAdmin ? 13 : 12}
                       className="px-6 py-16 text-center"
                     >
                       <div className="mx-auto max-w-md">
@@ -833,6 +1088,15 @@ export default function InventarioPage() {
                       key={item.id}
                       className="border-t border-slate-200 text-slate-700 transition hover:bg-[#fcfaf6]"
                     >
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          checked={idsSeleccionados.includes(item.id)}
+                          onChange={() => alternarSeleccion(item.id)}
+                          aria-label={`Seleccionar equipo ${item.imei}`}
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                        />
+                      </td>
                       <td className="px-4 py-4 font-semibold text-slate-950">{item.id}</td>
                       <td className="px-4 py-4 font-semibold text-slate-950">{item.imei}</td>
                       <td className="px-4 py-4 font-semibold text-slate-950">{item.referencia}</td>
@@ -1021,6 +1285,110 @@ export default function InventarioPage() {
           </div>
         </section>
       </div>
+
+      {mostrarModalPrestamoMasivo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900">
+              Envio masivo a sede
+            </h3>
+
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Se enviaran {itemsSeleccionadosParaPrestamo.length} equipo
+              {itemsSeleccionadosParaPrestamo.length === 1 ? "" : "s"} disponible
+              {itemsSeleccionadosParaPrestamo.length === 1 ? "" : "s"} en BODEGA.
+              {idsSeleccionados.length > itemsSeleccionadosParaPrestamo.length
+                ? ` ${idsSeleccionados.length - itemsSeleccionadosParaPrestamo.length} seleccionado${
+                    idsSeleccionados.length - itemsSeleccionadosParaPrestamo.length === 1
+                      ? ""
+                      : "s"
+                  } no aplica por estado o reglas actuales.`
+                : ""}
+            </p>
+
+            <div className="mt-5">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Sede destino
+              </label>
+              <select
+                value={sedeDestinoId}
+                onChange={(e) => setSedeDestinoId(e.target.value)}
+                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+              >
+                <option value="">Seleccionar sede</option>
+                {sedesDestinoMasivo.map((sede) => (
+                  <option key={sede.id} value={sede.id}>
+                    {sede.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={ejecutarEnvioMasivo}
+                disabled={cargando || itemsSeleccionadosParaPrestamo.length === 0}
+                className="flex-1 rounded-2xl bg-[#cf2e2e] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b92525] disabled:opacity-70"
+              >
+                Confirmar envio
+              </button>
+
+              <button
+                onClick={() => {
+                  setMostrarModalPrestamoMasivo(false);
+                  setSedeDestinoId("");
+                }}
+                className="flex-1 rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mostrarModalPagoMasivo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900">
+              Pagar deudas seleccionadas
+            </h3>
+
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Se pagaran {itemsSeleccionadosParaPago.length} deuda
+              {itemsSeleccionadosParaPago.length === 1 ? "" : "s"} por un total de{" "}
+              <span className="font-semibold text-slate-950">
+                {formatoPesos(totalPagoMasivo)}
+              </span>
+              .
+              {idsSeleccionados.length > itemsSeleccionadosParaPago.length
+                ? ` ${idsSeleccionados.length - itemsSeleccionadosParaPago.length} seleccionado${
+                    idsSeleccionados.length - itemsSeleccionadosParaPago.length === 1
+                      ? ""
+                      : "s"
+                  } no aplica por estado, tipo de deuda o reglas actuales.`
+                : ""}
+            </p>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={ejecutarPagoMasivo}
+                disabled={cargando || itemsSeleccionadosParaPago.length === 0}
+                className="flex-1 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-70"
+              >
+                Confirmar pago
+              </button>
+
+              <button
+                onClick={() => setMostrarModalPagoMasivo(false)}
+                className="flex-1 rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {mostrarModalPrestamo && itemPrestamo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
