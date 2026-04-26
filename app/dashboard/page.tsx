@@ -563,26 +563,26 @@ export default async function DashboardPage() {
     },
     nuovo: {
       key: "nuovo",
-      title: "NUOVO",
+      title: "Dispositivos",
       eyebrow: "Dispositivos",
       description:
         "Consulta dispositivos y gestiona el flujo operativo de Nuovo desde su panel.",
       actions: [
-        { href: "/dashboard/nuovopay", label: "Nuovo / Dispositivos", tone: "primary" },
+        { href: "/dashboard/nuovopay", label: "Dispositivos", tone: "primary" },
         ...(esAdmin
-          ? ([{ href: "/dashboard/nuovopay/cartera", label: "Nuovo / Cartera", tone: "secondary" }] as ModuleAction[])
+          ? ([{ href: "/dashboard/nuovopay/cartera", label: "Cartera", tone: "secondary" }] as ModuleAction[])
           : []),
       ],
       tone: "amber",
     },
     equality: {
       key: "equality",
-      title: "EQUALITY",
+      title: "TRUSTONIC",
       eyebrow: "Zero Touch",
       description:
         "Administra consulta y control de dispositivos desde HBM Equality.",
       actions: [
-        { href: "/dashboard/equality", label: "Abrir Equality", tone: "primary" },
+        { href: "/dashboard/equality", label: "Dispositivos", tone: "primary" },
       ],
       tone: "violet",
     },
