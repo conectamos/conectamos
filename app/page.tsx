@@ -72,6 +72,13 @@ const AVATAR_PRESENTATIONS: Record<AvatarPerfilKey, AvatarPresentation> = {
     toneClass:
       "border-white/80 bg-[linear-gradient(180deg,#f9fcff_0%,#ebf3ff_54%,#f5f9ff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)]",
   },
+  SUPERVISORA_MUJER: {
+    src: "/profile-avatars/supervisora-mujer-3d.png",
+    alt: "Avatar de supervisora",
+    shapeClass: "rounded-[50%_50%_46%_54%/40%_42%_58%_60%]",
+    toneClass:
+      "border-white/80 bg-[linear-gradient(180deg,#fffdf8_0%,#eef4ff_52%,#f7fbff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_22px_52px_rgba(148,163,184,0.2)]",
+  },
   FACTURADOR: {
     src: "/profile-avatars/facturador-3d.png",
     alt: "Avatar de facturador",

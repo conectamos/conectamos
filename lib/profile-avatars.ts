@@ -9,6 +9,7 @@ export type TipoPerfilVisual = (typeof TIPOS_PERFIL_VISUAL)[number];
 
 export const AVATAR_PERFIL_KEYS = [
   "SUPERVISOR",
+  "SUPERVISORA_MUJER",
   "FACTURADOR",
   "VENDEDOR_HOMBRE",
   "VENDEDOR_MUJER",
@@ -29,7 +30,10 @@ const AVATAR_OPTIONS_BY_TIPO: Record<TipoPerfilVisual, AvatarOption[]> = {
     { value: "ADMINISTRADOR_MUJER", label: "Administrador mujer" },
   ],
   FACTURADOR: [{ value: "FACTURADOR", label: "Facturador" }],
-  SUPERVISOR_TIENDA: [{ value: "SUPERVISOR", label: "Supervisor" }],
+  SUPERVISOR_TIENDA: [
+    { value: "SUPERVISOR", label: "Supervisor" },
+    { value: "SUPERVISORA_MUJER", label: "Supervisora mujer" },
+  ],
   VENDEDOR: [
     { value: "VENDEDOR_HOMBRE", label: "Vendedor hombre" },
     { value: "VENDEDOR_MUJER", label: "Vendedor mujer" },
