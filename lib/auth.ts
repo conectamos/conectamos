@@ -3,11 +3,9 @@ import prisma from "@/lib/prisma";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
 import { esPerfilAdministrador } from "@/lib/access-control";
 import { etiquetaTipoPerfilVendedor } from "@/lib/vendor-profiles";
-import { ensureSessionStateSchema, isSessionIdle } from "@/lib/session-state";
+import { isSessionIdle } from "@/lib/session-state";
 
 export async function getSessionUser() {
-  await ensureSessionStateSchema();
-
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
