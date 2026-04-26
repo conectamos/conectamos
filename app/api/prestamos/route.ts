@@ -280,6 +280,15 @@ export async function POST(req: Request) {
       );
     }
 
+    const esAdminPost = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+
+    if (!esAdminPost && user.sedeId !== sedeOrigenId) {
+      return NextResponse.json(
+        { error: "No puedes crear prestamos desde otra sede origen" },
+        { status: 403 }
+      );
+    }
+
     const sedesPrestamo = await prisma.sede.findMany({
       where: {
         id: {
@@ -312,6 +321,57 @@ export async function POST(req: Request) {
       );
     }
 
+    const inventarioOrigen = await prisma.inventarioSede.findFirst({
+      where: {
+        imei,
+        sedeId: sedeOrigenId,
+      },
+      select: {
+        id: true,
+        imei: true,
+        referencia: true,
+        color: true,
+        costo: true,
+        sedeId: true,
+        estadoActual: true,
+        estadoFinanciero: true,
+        deboA: true,
+        origen: true,
+        inventarioPrincipalId: true,
+      },
+    });
+
+    if (!inventarioOrigen) {
+      return NextResponse.json(
+        { error: "El IMEI no pertenece a la sede origen seleccionada" },
+        { status: 404 }
+      );
+    }
+
+    if (String(inventarioOrigen.estadoActual || "").toUpperCase() !== "BODEGA") {
+      return NextResponse.json(
+        {
+          error: `Solo se pueden prestar equipos en BODEGA. Estado actual: ${inventarioOrigen.estadoActual}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const existeEnDestino = await prisma.inventarioSede.findFirst({
+      where: {
+        imei,
+        sedeId: sedeDestinoId,
+      },
+      select: { id: true },
+    });
+
+    if (existeEnDestino) {
+      return NextResponse.json(
+        { error: "Ese IMEI ya existe en la sede destino" },
+        { status: 400 }
+      );
+    }
+
     const existe = await prisma.prestamoSede.findFirst({
       where: {
         imei,
@@ -330,16 +390,54 @@ export async function POST(req: Request) {
       );
     }
 
-    const nuevo = await prisma.prestamoSede.create({
-      data: {
-        imei,
-        referencia,
-        color: color || null,
-        costo,
-        sedeOrigenId,
-        sedeDestinoId,
-        estado: "PENDIENTE",
-      },
+    const trasladaDeudaDePrincipal =
+      String(inventarioOrigen.origen || "").toUpperCase() === "PRINCIPAL" &&
+      esEstadoDeuda(inventarioOrigen.estadoFinanciero) &&
+      esDeudaProveedor(inventarioOrigen.deboA);
+
+    const nuevo = await prisma.$transaction(async (tx) => {
+      const prestamo = await tx.prestamoSede.create({
+        data: {
+          imei: inventarioOrigen.imei,
+          referencia: inventarioOrigen.referencia || referencia,
+          color: inventarioOrigen.color || color || null,
+          costo: inventarioOrigen.costo || costo,
+          sedeOrigenId,
+          sedeDestinoId,
+          estado: "PENDIENTE",
+        },
+      });
+
+      await tx.inventarioSede.update({
+        where: { id: inventarioOrigen.id },
+        data: {
+          estadoAnterior: inventarioOrigen.estadoActual || null,
+          estadoActual: "PRESTAMO",
+          fechaMovimiento: new Date(),
+          observacion: trasladaDeudaDePrincipal
+            ? `Solicitud enviada a ${sedeDestino.nombre}. La deuda de principal solo se trasladara cuando la sede destino apruebe el prestamo.`
+            : `Solicitud enviada a ${sedeDestino.nombre}. Pendiente por aprobacion en sede destino.`,
+        },
+      });
+
+      await tx.movimientoInventario.create({
+        data: {
+          imei: inventarioOrigen.imei,
+          tipoMovimiento: "PRESTAMO_ENTRE_SEDES",
+          referencia: inventarioOrigen.referencia,
+          color: inventarioOrigen.color || null,
+          costo: inventarioOrigen.costo,
+          sedeId: sedeOrigenId,
+          deboA: inventarioOrigen.deboA,
+          estadoFinanciero: inventarioOrigen.estadoFinanciero,
+          origen: "PRESTAMO",
+          observacion: trasladaDeudaDePrincipal
+            ? `Solicitud de prestamo enviada desde ${sedeOrigen.nombre} hacia ${sedeDestino.nombre}. La deuda del proveedor se trasladara cuando el destino apruebe.`
+            : `Solicitud de prestamo enviada desde ${sedeOrigen.nombre} hacia ${sedeDestino.nombre}. Pendiente por aprobacion.`,
+        },
+      });
+
+      return prestamo;
     });
 
     return NextResponse.json({

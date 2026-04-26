@@ -148,7 +148,7 @@ export default function NuevoPrestamoPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ imei: imeiLimpio }),
+        body: JSON.stringify({ imei: imeiLimpio, sedeOrigenId }),
       });
 
       const data: ImeiResponse = await res.json();
@@ -370,6 +370,8 @@ export default function NuevoPrestamoPage() {
                       onChange={(e) => {
                         setSedeOrigenId(e.target.value);
                         setSedeDestinoId("");
+                        setImei("");
+                        limpiarDatosEquipo();
                       }}
                       className={inputClass}
                     >
