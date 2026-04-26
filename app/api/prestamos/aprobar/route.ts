@@ -7,6 +7,7 @@ import {
   esEstadoDeuda,
   resolverFinanzasDestinoPrestamo,
 } from "@/lib/prestamos";
+import { esSedeVentas } from "@/lib/sedes";
 
 export async function POST(req: Request) {
   try {
@@ -60,6 +61,28 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "No autorizado para aprobar este prestamo" },
         { status: 403 }
+      );
+    }
+
+    const sedeDestino = await prisma.sede.findUnique({
+      where: { id: Number(prestamo.sedeDestinoId) },
+      select: { nombre: true },
+    });
+
+    if (!sedeDestino) {
+      return NextResponse.json(
+        { error: "La sede destino no existe" },
+        { status: 404 }
+      );
+    }
+
+    if (esSedeVentas(sedeDestino.nombre)) {
+      return NextResponse.json(
+        {
+          error:
+            "La sede VENTAS es informativa y no puede recibir equipos de inventario",
+        },
+        { status: 400 }
       );
     }
 

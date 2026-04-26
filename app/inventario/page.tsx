@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
+import { esSedeOperativaInventario } from "@/lib/sedes";
 
 type InventarioItem = {
   id: number;
@@ -513,7 +514,10 @@ export default function InventarioPage() {
 
   const puedeDevolverABodega = (item: InventarioItem) => {
     const estado = (item.estadoActual || "").toUpperCase();
-    return estado === "PENDIENTE" || estado === "GARANTIA";
+    const vieneDeBodegaPrincipal =
+      String(item.origen || "").trim().toUpperCase() === "PRINCIPAL";
+
+    return !vieneDeBodegaPrincipal && (estado === "PENDIENTE" || estado === "GARANTIA");
   };
 
   const puedePasarAPendiente = (item: InventarioItem) => {
@@ -1043,7 +1047,11 @@ export default function InventarioPage() {
               >
                 <option value="">Seleccionar sede</option>
                 {sedes
-                  .filter((sede) => sede.id !== itemPrestamo.sedeId)
+                  .filter(
+                    (sede) =>
+                      sede.id !== itemPrestamo.sedeId &&
+                      esSedeOperativaInventario(sede.nombre)
+                  )
                   .map((sede) => (
                     <option key={sede.id} value={sede.id}>
                       {sede.nombre}

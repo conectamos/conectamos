@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { esSedeVentas } from "@/lib/sedes";
 
 function parseSedeId(value: string | null) {
   const sedeId = Number(value);
@@ -137,6 +138,28 @@ export async function POST(req: Request) {
     if (!sedeId || sedeId <= 0) {
       return NextResponse.json(
         { error: "Sede inválida" },
+        { status: 400 }
+      );
+    }
+
+    const sede = await prisma.sede.findUnique({
+      where: { id: sedeId },
+      select: { nombre: true },
+    });
+
+    if (!sede) {
+      return NextResponse.json(
+        { error: "Sede inválida" },
+        { status: 400 }
+      );
+    }
+
+    if (esSedeVentas(sede.nombre)) {
+      return NextResponse.json(
+        {
+          error:
+            "La sede VENTAS es informativa y no puede recibir equipos de inventario",
+        },
         { status: 400 }
       );
     }

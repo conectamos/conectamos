@@ -5,6 +5,7 @@ import {
   esEstadoDeuda,
   esDeudaProveedor,
 } from "@/lib/prestamos";
+import { esSedeVentas } from "@/lib/sedes";
 
 export async function POST(req: Request) {
   try {
@@ -44,6 +45,11 @@ export async function POST(req: Request) {
         distribuidor: true,
         origen: true,
         inventarioPrincipalId: true,
+        sede: {
+          select: {
+            nombre: true,
+          },
+        },
       },
     });
 
@@ -58,6 +64,16 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "No puedes prestar un equipo que no pertenece a tu sede" },
         { status: 403 }
+      );
+    }
+
+    if (esSedeVentas(inventario.sede?.nombre)) {
+      return NextResponse.json(
+        {
+          error:
+            "La sede VENTAS es informativa y no puede enviar equipos de inventario",
+        },
+        { status: 400 }
       );
     }
 
@@ -84,6 +100,16 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "La sede destino no existe" },
         { status: 404 }
+      );
+    }
+
+    if (esSedeVentas(sedeDestino.nombre)) {
+      return NextResponse.json(
+        {
+          error:
+            "La sede VENTAS es informativa y no puede recibir equipos de inventario",
+        },
+        { status: 400 }
       );
     }
 

@@ -7,6 +7,7 @@ import {
   esEstadoDeuda,
   NOMBRE_SEDE_BODEGA,
 } from "@/lib/prestamos";
+import { esSedeVentas } from "@/lib/sedes";
 
 function parseSedeId(value: string | null) {
   const sedeId = Number(value);
@@ -275,6 +276,38 @@ export async function POST(req: Request) {
     if (sedeOrigenId === sedeDestinoId) {
       return NextResponse.json(
         { error: "La sede origen no puede ser igual a la sede destino" },
+        { status: 400 }
+      );
+    }
+
+    const sedesPrestamo = await prisma.sede.findMany({
+      where: {
+        id: {
+          in: [sedeOrigenId, sedeDestinoId],
+        },
+      },
+      select: {
+        id: true,
+        nombre: true,
+      },
+    });
+
+    const sedeOrigen = sedesPrestamo.find((sede) => sede.id === sedeOrigenId);
+    const sedeDestino = sedesPrestamo.find((sede) => sede.id === sedeDestinoId);
+
+    if (!sedeOrigen || !sedeDestino) {
+      return NextResponse.json(
+        { error: "Hay una sede invalida en el prestamo" },
+        { status: 400 }
+      );
+    }
+
+    if (esSedeVentas(sedeOrigen.nombre) || esSedeVentas(sedeDestino.nombre)) {
+      return NextResponse.json(
+        {
+          error:
+            "La sede VENTAS es informativa y no puede enviar ni recibir equipos de inventario",
+        },
         { status: 400 }
       );
     }

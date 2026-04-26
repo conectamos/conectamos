@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { NOMBRE_SEDE_BODEGA, PROVEEDOR_FINSER } from "@/lib/prestamos";
+import { esSedeVentas } from "@/lib/sedes";
 
 export async function POST(req: Request) {
   try {
@@ -83,6 +84,16 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "La sede destino no existe" },
         { status: 404 }
+      );
+    }
+
+    if (esSedeVentas(sedeDestino.nombre)) {
+      return NextResponse.json(
+        {
+          error:
+            "La sede VENTAS es informativa y no puede recibir equipos de inventario",
+        },
+        { status: 400 }
       );
     }
 

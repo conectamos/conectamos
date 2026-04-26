@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { esSedeOperativaInventario } from "@/lib/sedes";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
 type ItemPrincipal = {
@@ -523,11 +524,13 @@ export default function InventarioPrincipalPage() {
                 className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
               >
                 <option value="">Seleccionar sede</option>
-                {sedes.map((sede) => (
-                  <option key={sede.id} value={sede.id}>
-                    {sede.nombre}
-                  </option>
-                ))}
+                {sedes
+                  .filter((sede) => esSedeOperativaInventario(sede.nombre))
+                  .map((sede) => (
+                    <option key={sede.id} value={sede.id}>
+                      {sede.nombre}
+                    </option>
+                  ))}
               </select>
             </div>
 
