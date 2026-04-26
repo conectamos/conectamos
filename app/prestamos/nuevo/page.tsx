@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { esSedeOperativaInventario } from "@/lib/sedes";
 
 type SessionUser = {
   id: number;
@@ -169,9 +170,15 @@ export default function NuevoPrestamoPage() {
     }
   };
 
+  const sedesOperativasInventario = useMemo(() => {
+    return sedes.filter((sede) => esSedeOperativaInventario(sede.nombre));
+  }, [sedes]);
+
   const sedesDestinoDisponibles = useMemo(() => {
-    return sedes.filter((sede) => String(sede.id) !== String(sedeOrigenId));
-  }, [sedes, sedeOrigenId]);
+    return sedesOperativasInventario.filter(
+      (sede) => String(sede.id) !== String(sedeOrigenId)
+    );
+  }, [sedesOperativasInventario, sedeOrigenId]);
 
   const guardar = async () => {
     try {
@@ -367,7 +374,7 @@ export default function NuevoPrestamoPage() {
                       className={inputClass}
                     >
                       <option value="">Seleccionar sede origen</option>
-                      {sedes.map((sede) => (
+                      {sedesOperativasInventario.map((sede) => (
                         <option key={sede.id} value={sede.id}>
                           {sede.nombre}
                         </option>
