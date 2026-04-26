@@ -11,12 +11,15 @@ import {
   verifyPendingPinChangeToken,
   verifyPendingProfileToken,
 } from "@/lib/session";
+import { createProfileSession, ensureSessionStateSchema } from "@/lib/session-state";
 import {
   obtenerPerfilesAccesoPorSede,
   validarPerfilAccesoPorSede,
 } from "@/lib/vendor-profiles";
 
 async function getPendingUser() {
+  await ensureSessionStateSchema();
+
   const cookieStore = await cookies();
   const pendingToken = cookieStore.get(PENDING_PROFILE_COOKIE_NAME)?.value;
   const pending = verifyPendingProfileToken(pendingToken);
@@ -87,6 +90,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    await ensureSessionStateSchema();
+
     const user = await getPendingUser();
 
     if (!user) {
@@ -158,7 +163,11 @@ export async function POST(req: Request) {
 
     response.cookies.set(
       SESSION_COOKIE_NAME,
-      createSessionToken(user.id, perfil.id),
+      createSessionToken(
+        user.id,
+        perfil.id,
+        await createProfileSession(perfil.id)
+      ),
       getSessionCookieOptions()
     );
     response.cookies.set(PENDING_PROFILE_COOKIE_NAME, "", {

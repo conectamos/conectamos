@@ -11,12 +11,15 @@ import {
   verifyPendingPinChangeToken,
   verifyPendingProfileToken,
 } from "@/lib/session";
+import { createProfileSession, ensureSessionStateSchema } from "@/lib/session-state";
 import {
   etiquetaTipoPerfilVendedor,
   obtenerPerfilesAccesoPorSede,
 } from "@/lib/vendor-profiles";
 
 async function getPendingPinChangeContext() {
+  await ensureSessionStateSchema();
+
   const cookieStore = await cookies();
   const pendingProfile = verifyPendingProfileToken(
     cookieStore.get(PENDING_PROFILE_COOKIE_NAME)?.value
@@ -131,6 +134,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    await ensureSessionStateSchema();
+
     const context = await getPendingPinChangeContext();
 
     if (!context) {
@@ -180,7 +185,11 @@ export async function POST(req: Request) {
 
     response.cookies.set(
       SESSION_COOKIE_NAME,
-      createSessionToken(context.user.id, context.perfil.id),
+      createSessionToken(
+        context.user.id,
+        context.perfil.id,
+        await createProfileSession(context.perfil.id)
+      ),
       getSessionCookieOptions()
     );
     response.cookies.set(PENDING_PROFILE_COOKIE_NAME, "", {

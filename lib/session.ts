@@ -1,13 +1,15 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 export const SESSION_COOKIE_NAME = "session";
 export const PENDING_PROFILE_COOKIE_NAME = "pending_profile_session";
 export const PENDING_PIN_CHANGE_COOKIE_NAME = "pending_profile_pin_change";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+export const SESSION_IDLE_TIMEOUT_SECONDS = 60 * 20;
 
 type SessionPayload = {
   exp: number;
   profileId?: number;
+  sessionKey?: string;
   userId: number;
 };
 
@@ -57,11 +59,20 @@ function createSignedToken(
   return `${encodedPayload}.${sign(encodedPayload)}`;
 }
 
-export function createSessionToken(userId: number, profileId?: number | null) {
+export function createOpaqueSessionKey() {
+  return randomUUID();
+}
+
+export function createSessionToken(
+  userId: number,
+  profileId?: number | null,
+  sessionKey?: string | null
+) {
   const payload: SessionPayload = {
     userId,
     exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS,
     ...(profileId ? { profileId } : {}),
+    ...(sessionKey ? { sessionKey } : {}),
   };
 
   return createSignedToken(payload);

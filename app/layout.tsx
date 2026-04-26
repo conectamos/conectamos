@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import FinancialAccessReset from "./_components/financial-access-reset";
+import SessionActivityGuard from "./_components/session-activity-guard";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="es" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         <FinancialAccessReset />
+        <SessionActivityGuard />
         {children}
       </body>
     </html>

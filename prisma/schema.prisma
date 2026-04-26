@@ -45,20 +45,22 @@ model Sede {
 }
 
 model Usuario {
-  id        Int      @id @default(autoincrement())
-  nombre    String
-  usuario   String   @unique
-  claveHash String
-  activo    Boolean  @default(true)
-  rolId     Int
-  sedeId    Int
-  rol       Rol      @relation(fields: [rolId], references: [id])
-  sede      Sede     @relation(fields: [sedeId], references: [id])
-  ventas    Venta[]
-  arqueosDiarios ArqueoDiario[]
+  id                  Int      @id @default(autoincrement())
+  nombre              String
+  usuario             String   @unique
+  claveHash           String
+  activo              Boolean  @default(true)
+  rolId               Int
+  sedeId              Int
+  activeSessionKey    String?
+  activeSessionLastSeenAt DateTime?
+  rol                 Rol      @relation(fields: [rolId], references: [id])
+  sede                Sede     @relation(fields: [sedeId], references: [id])
+  ventas              Venta[]
+  arqueosDiarios      ArqueoDiario[]
   importacionesCartera CargaCarteraNuovo[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 model Inventario {
@@ -130,20 +132,22 @@ model Venta {
 }
 
 model PerfilVendedor {
-  id             Int                  @id @default(autoincrement())
-  nombre         String
-  documento      String?              @unique
-  telefono       String?
-  correo         String?              @unique
-  avatarKey      String?
-  pinHash        String
-  activo         Boolean              @default(true)
-  tipo           TipoPerfilVendedor   @default(SUPERVISOR_TIENDA)
-  debeCambiarPin Boolean              @default(true)
-  sedes          PerfilVendedorSede[]
-  registrosVenta RegistroVendedorVenta[]
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  id                      Int                  @id @default(autoincrement())
+  nombre                  String
+  documento               String?              @unique
+  telefono                String?
+  correo                  String?              @unique
+  avatarKey               String?
+  pinHash                 String
+  activo                  Boolean              @default(true)
+  tipo                    TipoPerfilVendedor   @default(SUPERVISOR_TIENDA)
+  debeCambiarPin          Boolean              @default(true)
+  activeSessionKey        String?
+  activeSessionLastSeenAt DateTime?
+  sedes                   PerfilVendedorSede[]
+  registrosVenta          RegistroVendedorVenta[]
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 }
 
 model PerfilVendedorSede {

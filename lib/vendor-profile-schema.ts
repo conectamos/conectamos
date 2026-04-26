@@ -34,6 +34,8 @@ async function runEnsureVendorProfilesSchema() {
       "activo" BOOLEAN NOT NULL DEFAULT true,
       "tipo" "TipoPerfilVendedor" NOT NULL DEFAULT 'SUPERVISOR_TIENDA',
       "debeCambiarPin" BOOLEAN NOT NULL DEFAULT true,
+      "activeSessionKey" TEXT,
+      "activeSessionLastSeenAt" TIMESTAMP(3),
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "PerfilVendedor_pkey" PRIMARY KEY ("id")
@@ -42,7 +44,9 @@ async function runEnsureVendorProfilesSchema() {
 
   await prisma.$executeRawUnsafe(`
     ALTER TABLE "PerfilVendedor"
-      ADD COLUMN IF NOT EXISTS "avatarKey" TEXT;
+      ADD COLUMN IF NOT EXISTS "avatarKey" TEXT,
+      ADD COLUMN IF NOT EXISTS "activeSessionKey" TEXT,
+      ADD COLUMN IF NOT EXISTS "activeSessionLastSeenAt" TIMESTAMP(3);
   `);
 
   await prisma.$executeRawUnsafe(`
@@ -141,43 +145,99 @@ async function runEnsureVendorProfilesSchema() {
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE UNIQUE INDEX IF NOT EXISTS "PerfilVendedor_documento_key"
-    ON "PerfilVendedor"("documento");
+    DO $$
+    BEGIN
+      CREATE UNIQUE INDEX "PerfilVendedor_documento_key"
+      ON "PerfilVendedor"("documento");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE UNIQUE INDEX IF NOT EXISTS "PerfilVendedor_correo_key"
-    ON "PerfilVendedor"("correo");
+    DO $$
+    BEGIN
+      CREATE UNIQUE INDEX "PerfilVendedor_correo_key"
+      ON "PerfilVendedor"("correo");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE UNIQUE INDEX IF NOT EXISTS "PerfilVendedorSede_perfilVendedorId_sedeId_key"
-    ON "PerfilVendedorSede"("perfilVendedorId", "sedeId");
+    DO $$
+    BEGIN
+      CREATE UNIQUE INDEX "PerfilVendedorSede_perfilVendedorId_sedeId_key"
+      ON "PerfilVendedorSede"("perfilVendedorId", "sedeId");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "PerfilVendedorSede_sedeId_idx"
-    ON "PerfilVendedorSede"("sedeId");
+    DO $$
+    BEGIN
+      CREATE INDEX "PerfilVendedorSede_sedeId_idx"
+      ON "PerfilVendedorSede"("sedeId");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "RegistroVendedorVenta_perfilVendedorId_createdAt_idx"
-    ON "RegistroVendedorVenta"("perfilVendedorId", "createdAt");
+    DO $$
+    BEGIN
+      CREATE INDEX "RegistroVendedorVenta_perfilVendedorId_createdAt_idx"
+      ON "RegistroVendedorVenta"("perfilVendedorId", "createdAt");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "RegistroVendedorVenta_sedeId_createdAt_idx"
-    ON "RegistroVendedorVenta"("sedeId", "createdAt");
+    DO $$
+    BEGIN
+      CREATE INDEX "RegistroVendedorVenta_sedeId_createdAt_idx"
+      ON "RegistroVendedorVenta"("sedeId", "createdAt");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "RegistroVendedorVenta_serialImei_estadoVentaRegistro_createdAt_idx"
-    ON "RegistroVendedorVenta"("serialImei", "estadoVentaRegistro", "createdAt");
+    DO $$
+    BEGIN
+      CREATE INDEX "RegistroVendedorVenta_serialImei_estadoVentaRegistro_createdAt_idx"
+      ON "RegistroVendedorVenta"("serialImei", "estadoVentaRegistro", "createdAt");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
   `);
 
   await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "RegistroVendedorVenta_ventaIdRelacionada_idx"
-    ON "RegistroVendedorVenta"("ventaIdRelacionada");
+    DO $$
+    BEGIN
+      CREATE INDEX "RegistroVendedorVenta_ventaIdRelacionada_idx"
+      ON "RegistroVendedorVenta"("ventaIdRelacionada");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
   `);
 
   await prisma.$executeRawUnsafe(`

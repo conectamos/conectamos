@@ -8,6 +8,7 @@ import {
   PENDING_PROFILE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
 } from "@/lib/session";
+import { createUserSession, ensureSessionStateSchema } from "@/lib/session-state";
 import { obtenerPerfilesAccesoPorSede } from "@/lib/vendor-profiles";
 
 function esAdmin(rolNombre: string | null | undefined) {
@@ -16,6 +17,8 @@ function esAdmin(rolNombre: string | null | undefined) {
 
 export async function POST(req: Request) {
   try {
+    await ensureSessionStateSchema();
+
     const body = await req.json();
     const usuario = String(body.usuario ?? "").trim();
     const clave = String(body.clave ?? "");
@@ -123,7 +126,7 @@ export async function POST(req: Request) {
 
     response.cookies.set(
       SESSION_COOKIE_NAME,
-      createSessionToken(user.id),
+      createSessionToken(user.id, null, await createUserSession(user.id)),
       getSessionCookieOptions()
     );
     response.cookies.set(PENDING_PROFILE_COOKIE_NAME, "", {
