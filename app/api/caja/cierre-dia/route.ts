@@ -52,7 +52,10 @@ type CashMovementRow = {
 };
 
 type SaleDetailRow = {
-  venta: string;
+  codigo: string;
+  cliente: string;
+  equipo: string;
+  sede: string;
   ingresos: string;
   financieras: string;
   credito: string;
@@ -190,7 +193,7 @@ function buildIngresosVenta(
 }
 
 function buildCreditoVenta(registro?: Record<string, unknown>) {
-  if (!registro) return "Sin registro vendedor";
+  if (!registro) return "Sin credito autorizado vinculado";
 
   const detalleFinancieras = financierasRegistroTexto(
     registro.financierasDetalle
@@ -206,19 +209,16 @@ function buildCreditoVenta(registro?: Record<string, unknown>) {
   ], "Sin credito registrado");
 }
 
-function buildVentaLabel(
+function buildEquipoVenta(
   venta: Record<string, unknown>,
   registro?: Record<string, unknown>
 ) {
   return joinParts([
-    textoLimpio(venta.idVenta),
-    textoLimpio(registro?.clienteNombre),
     textoLimpio(venta.servicio),
     textoLimpio(registro?.referenciaEquipo) || textoLimpio(venta.descripcion),
     textoLimpio(venta.serial || registro?.serialImei)
       ? `IMEI ${textoLimpio(venta.serial || registro?.serialImei)}`
       : null,
-    textoLimpio((venta.sede as { nombre?: string } | null)?.nombre),
   ]);
 }
 
@@ -331,49 +331,119 @@ function drawCashRow(
   return y + 20;
 }
 
-function drawSaleDetailTableHeader(
+function drawSaleField(
   doc: PDFKit.PDFDocument,
+  label: string,
+  value: string,
+  x: number,
   y: number,
+  width: number,
   fonts: PdfFonts
 ) {
   doc
     .fillColor("#475569")
     .font(fonts.bold)
-    .fontSize(8)
-    .text("VENTA", 42, y)
-    .text("INICIALES / INGRESOS", 138, y)
-    .text("FINANCIERAS", 258, y)
-    .text("CREDITO", 398, y)
-    .text("EGRESOS", 500, y);
-
-  return y + 16;
-}
-
-function drawSaleDetailRow(
-  doc: PDFKit.PDFDocument,
-  row: SaleDetailRow,
-  y: number,
-  fonts: PdfFonts
-) {
-  const rowHeight = 58;
-
-  doc
-    .moveTo(36, y - 5)
-    .lineTo(576, y - 5)
-    .strokeColor("#e2e8f0")
-    .stroke();
+    .fontSize(7.5)
+    .text(label.toUpperCase(), x, y, {
+      width,
+      characterSpacing: 0.4,
+    });
 
   doc
     .fillColor("#0f172a")
     .font(fonts.regular)
-    .fontSize(7.6)
-    .text(row.venta, 42, y, { width: 86, height: 44, ellipsis: true })
-    .text(row.ingresos, 138, y, { width: 108, height: 44, ellipsis: true })
-    .text(row.financieras, 258, y, { width: 128, height: 44, ellipsis: true })
-    .text(row.credito, 398, y, { width: 90, height: 44, ellipsis: true })
-    .text(row.egresos, 500, y, { width: 68, height: 44, ellipsis: true });
+    .fontSize(8.4)
+    .text(value, x, y + 12, {
+      width,
+      height: 28,
+      ellipsis: true,
+      lineGap: 1.2,
+    });
+}
 
-  return y + rowHeight;
+function drawSaleDetailCard(
+  doc: PDFKit.PDFDocument,
+  row: SaleDetailRow,
+  y: number,
+  contentWidth: number,
+  fonts: PdfFonts
+) {
+  const cardHeight = 150;
+  const leftX = 50;
+  const rightX = 318;
+  const columnWidth = 236;
+
+  doc
+    .roundedRect(36, y, contentWidth, cardHeight, 10)
+    .fillAndStroke("#f8fafc", "#dbe3ef");
+
+  doc
+    .fillColor("#0f172a")
+    .font(fonts.bold)
+    .fontSize(10.5)
+    .text(row.codigo, leftX, y + 13, {
+      width: 260,
+      ellipsis: true,
+    });
+
+  doc
+    .fillColor("#64748b")
+    .font(fonts.bold)
+    .fontSize(8)
+    .text(row.sede, rightX, y + 14, {
+      width: columnWidth,
+      align: "right",
+      ellipsis: true,
+    });
+
+  doc
+    .fillColor("#334155")
+    .font(fonts.regular)
+    .fontSize(9)
+    .text(row.cliente, leftX, y + 31, {
+      width: contentWidth - 28,
+      ellipsis: true,
+    });
+
+  doc
+    .moveTo(leftX, y + 50)
+    .lineTo(36 + contentWidth - 14, y + 50)
+    .strokeColor("#e2e8f0")
+    .stroke();
+
+  drawSaleField(doc, "Equipo", row.equipo, leftX, y + 62, columnWidth, fonts);
+  drawSaleField(
+    doc,
+    "Financieras",
+    row.financieras,
+    rightX,
+    y + 62,
+    columnWidth,
+    fonts
+  );
+  drawSaleField(
+    doc,
+    "Iniciales / ingresos",
+    row.ingresos,
+    leftX,
+    y + 103,
+    columnWidth,
+    fonts
+  );
+  drawSaleField(
+    doc,
+    "Credito autorizado / egresos",
+    joinParts([
+      row.credito,
+      row.egresos === "-" ? null : `Egresos: ${row.egresos}`,
+    ]),
+    rightX,
+    y + 103,
+    columnWidth,
+    fonts
+  );
+
+  return y + cardHeight + 12;
 }
 
 function parseSedeId(value: string | null) {
@@ -632,7 +702,10 @@ export async function GET(req: Request) {
       );
 
       return {
-        venta: buildVentaLabel(ventaRecord, registro),
+        codigo: textoLimpio(venta.idVenta),
+        cliente: textoLimpio(registro?.clienteNombre) || "Venta sin registro vendedor vinculado",
+        equipo: buildEquipoVenta(ventaRecord, registro),
+        sede: venta.sede?.nombre || "-",
         ingresos: buildIngresosVenta(ventaRecord, registro),
         financieras:
           financierasVenta === "-" ? financierasRegistro || "-" : financierasVenta,
@@ -738,7 +811,13 @@ export async function GET(req: Request) {
       }
     }
 
-    y = ensureSpace(doc, y + 18, 98, fonts, "Detalle de ventas del dia");
+    y += 18;
+
+    if (y + 98 > 716) {
+      doc.addPage();
+      y = 44;
+    }
+
     y = drawSectionTitle(doc, "Detalle de ventas del dia", y, fonts);
 
     if (detallesVentasCierre.length === 0) {
@@ -752,15 +831,9 @@ export async function GET(req: Request) {
         .text("No hay ventas registradas para este dia.", 50, y + 15);
       y += 60;
     } else {
-      y = drawSaleDetailTableHeader(doc, y, fonts);
-
       for (const venta of detallesVentasCierre) {
-        y = ensureSpace(doc, y, 64, fonts, "Detalle de ventas del dia");
-        if (y === 66) {
-          y = drawSaleDetailTableHeader(doc, y, fonts);
-        }
-
-        y = drawSaleDetailRow(doc, venta, y, fonts);
+        y = ensureSpace(doc, y, 162, fonts, "Detalle de ventas del dia");
+        y = drawSaleDetailCard(doc, venta, y, contentWidth, fonts);
       }
     }
 
