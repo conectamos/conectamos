@@ -25,7 +25,6 @@ type ModuleAction = {
 
 type ModuleKey =
   | "inventario"
-  | "analitico"
   | "ventas"
   | "caja"
   | "prestamos"
@@ -466,17 +465,6 @@ export default async function DashboardPage() {
       ],
       tone: "sky",
     },
-    analitico: {
-      key: "analitico",
-      title: "PANEL ANALITICO",
-      eyebrow: "Analisis",
-      description:
-        "Compara ventas y utilidad por mes contra el periodo anterior con lectura porcentual en vivo.",
-      actions: [
-        { href: "/dashboard/analitico", label: "Abrir panel", tone: "primary" },
-      ],
-      tone: "emerald",
-    },
     ventas: {
       key: "ventas",
       title: "VENTAS",
@@ -603,7 +591,6 @@ export default async function DashboardPage() {
   const moduleOrder: ModuleKey[] = esAdmin
     ? [
         "inventario",
-        "analitico",
         "ventas",
         "caja",
         "prestamos",
@@ -616,7 +603,6 @@ export default async function DashboardPage() {
     : esSupervisor
       ? [
           "inventario",
-          "analitico",
           "ventas",
           "caja",
           "prestamos",
