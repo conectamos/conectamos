@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
 import PDFDocument from "pdfkit";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
@@ -10,36 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
-const windowsFontDir = path.join(process.env.WINDIR || "C:\\Windows", "Fonts");
-const SYSTEM_FONT_REGULAR = path.join(windowsFontDir, "arial.ttf");
-const SYSTEM_FONT_BOLD = path.join(windowsFontDir, "arialbd.ttf");
-const BUNDLED_FONT_REGULAR = path.join(
-  process.cwd(),
-  "public",
-  "pdf-fonts",
-  "Geist-Regular.ttf"
-);
-
-function getPdfFonts() {
-  if (existsSync(SYSTEM_FONT_REGULAR) && existsSync(SYSTEM_FONT_BOLD)) {
-    return {
-      regular: SYSTEM_FONT_REGULAR,
-      bold: SYSTEM_FONT_BOLD,
-    };
-  }
-
-  if (existsSync(BUNDLED_FONT_REGULAR)) {
-    return {
-      regular: BUNDLED_FONT_REGULAR,
-      bold: BUNDLED_FONT_REGULAR,
-    };
-  }
-
-  return {
-    regular: "Helvetica",
-    bold: "Helvetica-Bold",
-  };
-}
+const PDF_FONT_REGULAR = "Helvetica";
+const PDF_FONT_BOLD = "Helvetica-Bold";
 
 function toBuffer(doc: PDFKit.PDFDocument) {
   return new Promise<Buffer>((resolve, reject) => {
@@ -86,7 +56,7 @@ function drawMetric(
 
   doc
     .fillColor("#64748b")
-    .font("Bold")
+    .font(PDF_FONT_BOLD)
     .fontSize(8)
     .text(label.toUpperCase(), x + 14, y + 13, {
       width: width - 28,
@@ -95,7 +65,7 @@ function drawMetric(
 
   doc
     .fillColor(options?.accent || "#0f172a")
-    .font("Bold")
+    .font(PDF_FONT_BOLD)
     .fontSize(16)
     .text(value, x + 14, y + 36, {
       width: width - 28,
@@ -217,10 +187,6 @@ export async function GET() {
         Author: "CONECTAMOS.APP",
       },
     });
-    const fonts = getPdfFonts();
-    doc.registerFont("Regular", fonts.regular);
-    doc.registerFont("Bold", fonts.bold);
-
     const bufferPromise = toBuffer(doc);
     const pageWidth = doc.page.width;
     const contentWidth = pageWidth - 72;
@@ -232,13 +198,13 @@ export async function GET() {
 
     doc
       .fillColor("#ffffff")
-      .font("Bold")
+      .font(PDF_FONT_BOLD)
       .fontSize(23)
       .text("CIERRE DEL DIA", 36, 34);
 
     doc
       .fillColor("#cbd5e1")
-      .font("Regular")
+      .font(PDF_FONT_REGULAR)
       .fontSize(10)
       .text(`CONECTAMOS.APP | ${today.label} | ${cobertura}`, 36, 66);
 
@@ -278,7 +244,7 @@ export async function GET() {
 
     doc
       .fillColor("#0f172a")
-      .font("Bold")
+      .font(PDF_FONT_BOLD)
       .fontSize(13)
       .text("Movimientos de caja del dia", 36, y);
 
@@ -290,13 +256,13 @@ export async function GET() {
         .fillAndStroke("#f8fafc", "#dbe3ef");
       doc
         .fillColor("#64748b")
-        .font("Regular")
+        .font(PDF_FONT_REGULAR)
         .fontSize(10)
         .text("No hay ingresos o egresos registrados en caja para este dia.", 50, y + 15);
     } else {
       doc
         .fillColor("#475569")
-        .font("Bold")
+        .font(PDF_FONT_BOLD)
         .fontSize(8)
         .text("TIPO", 42, y)
         .text("CONCEPTO", 106, y)
@@ -315,7 +281,7 @@ export async function GET() {
 
         doc
           .fillColor("#0f172a")
-          .font("Regular")
+          .font(PDF_FONT_REGULAR)
           .fontSize(8.5)
           .text(String(movimiento.tipo || "-"), 42, y, { width: 58 })
           .text(String(movimiento.concepto || "-"), 106, y, {
@@ -336,7 +302,7 @@ export async function GET() {
     }
 
     doc
-      .font("Regular")
+      .font(PDF_FONT_REGULAR)
       .fontSize(8)
       .fillColor("#94a3b8")
       .text("Este cierre usa las ventas del dia y los movimientos de caja registrados hasta el momento de generacion.", 36, 742, {
