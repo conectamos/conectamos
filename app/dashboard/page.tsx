@@ -25,6 +25,7 @@ type ModuleAction = {
 
 type ModuleKey =
   | "inventario"
+  | "analitico"
   | "ventas"
   | "caja"
   | "prestamos"
@@ -465,6 +466,17 @@ export default async function DashboardPage() {
       ],
       tone: "sky",
     },
+    analitico: {
+      key: "analitico",
+      title: "PANEL ANALITICO",
+      eyebrow: "Analisis",
+      description:
+        "Compara ventas y utilidad por mes contra el periodo anterior con lectura porcentual en vivo.",
+      actions: [
+        { href: "/dashboard/analitico", label: "Abrir panel", tone: "primary" },
+      ],
+      tone: "emerald",
+    },
     ventas: {
       key: "ventas",
       title: "VENTAS",
@@ -591,6 +603,7 @@ export default async function DashboardPage() {
   const moduleOrder: ModuleKey[] = esAdmin
     ? [
         "inventario",
+        "analitico",
         "ventas",
         "caja",
         "prestamos",
@@ -603,6 +616,7 @@ export default async function DashboardPage() {
     : esSupervisor
       ? [
           "inventario",
+          "analitico",
           "ventas",
           "caja",
           "prestamos",
@@ -641,7 +655,15 @@ export default async function DashboardPage() {
               </div>
             </div>
 
-            <div className="flex shrink-0 items-start">
+            <div className="flex shrink-0 flex-col gap-3 sm:flex-row lg:items-start">
+              {!esVendedor && !esFacturador && (
+                <Link
+                  href="/dashboard/analitico"
+                  className="inline-flex min-w-[170px] items-center justify-center rounded-2xl border border-white/12 bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-950 shadow-[0_16px_38px_rgba(15,23,42,0.18)] transition hover:bg-slate-100"
+                >
+                  Panel analitico
+                </Link>
+              )}
               <LogoutButton className="min-w-[170px] border-white/12 bg-white/10 text-white shadow-[0_16px_38px_rgba(15,23,42,0.18)] hover:border-white/20 hover:bg-white/16" />
             </div>
           </div>
