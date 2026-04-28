@@ -235,16 +235,17 @@ export async function GET() {
       n(ingresosCajaAcumulados._sum.valor) -
       n(egresosCajaAcumulados._sum.valor);
 
+    const fonts = getPdfFonts();
     const doc = new PDFDocument({
       size: "LETTER",
       margin: 36,
+      font: fonts.regular,
       info: {
         Title: "Cierre del dia",
         Author: "CONECTAMOS.APP",
       },
     });
     const bufferPromise = toBuffer(doc);
-    const fonts = getPdfFonts();
     const pageWidth = doc.page.width;
     const contentWidth = pageWidth - 72;
     const columnWidth = (contentWidth - 18) / 2;
