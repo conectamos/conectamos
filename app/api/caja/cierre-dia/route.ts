@@ -4,7 +4,11 @@ import PDFDocument from "pdfkit";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { getTodayBogotaRange } from "@/lib/ventas-utils";
+import {
+  getBogotaDayRangeFromInput,
+  getTodayBogotaDateKey,
+  getTodayBogotaRange,
+} from "@/lib/ventas-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -263,7 +267,12 @@ function drawSaleExitRow(
   return y + 20;
 }
 
-export async function GET() {
+function parseSedeId(value: string | null) {
+  const sedeId = Number(value);
+  return Number.isInteger(sedeId) && sedeId > 0 ? sedeId : null;
+}
+
+export async function GET(req: Request) {
   try {
     const user = await getSessionUser();
 
@@ -272,9 +281,25 @@ export async function GET() {
     }
 
     const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
-    const today = getTodayBogotaRange();
-    const scope = esAdmin ? {} : { sedeId: user.sedeId };
-    const cobertura = esAdmin ? "Todas las sedes" : user.sedeNombre;
+    const url = new URL(req.url);
+    const fechaParam = url.searchParams.get("fecha") || getTodayBogotaDateKey();
+    const periodo = getBogotaDayRangeFromInput(fechaParam) || getTodayBogotaRange();
+    const sedeIdFiltro = parseSedeId(url.searchParams.get("sedeId"));
+    const sedeSeleccionada =
+      esAdmin && sedeIdFiltro
+        ? await prisma.sede.findUnique({
+            where: { id: sedeIdFiltro },
+            select: { nombre: true },
+          })
+        : null;
+    const scope = esAdmin
+      ? sedeIdFiltro
+        ? { sedeId: sedeIdFiltro }
+        : {}
+      : { sedeId: user.sedeId };
+    const cobertura = esAdmin
+      ? sedeSeleccionada?.nombre || "Todas las sedes"
+      : user.sedeNombre;
 
     const [
       ventasDia,
@@ -288,8 +313,8 @@ export async function GET() {
       prisma.venta.aggregate({
         where: {
           fecha: {
-            gte: today.start,
-            lt: today.end,
+            gte: periodo.start,
+            lt: periodo.end,
           },
           ...scope,
         },
@@ -305,8 +330,8 @@ export async function GET() {
       prisma.cajaMovimiento.findMany({
         where: {
           createdAt: {
-            gte: today.start,
-            lt: today.end,
+            gte: periodo.start,
+            lt: periodo.end,
           },
           ...scope,
         },
@@ -328,8 +353,8 @@ export async function GET() {
       prisma.gastoCartera.findMany({
         where: {
           createdAt: {
-            gte: today.start,
-            lt: today.end,
+            gte: periodo.start,
+            lt: periodo.end,
           },
           ...scope,
         },
@@ -349,8 +374,8 @@ export async function GET() {
       prisma.venta.findMany({
         where: {
           fecha: {
-            gte: today.start,
-            lt: today.end,
+            gte: periodo.start,
+            lt: periodo.end,
           },
           salida: {
             gt: 0,
@@ -471,7 +496,7 @@ export async function GET() {
       .fillColor("#cbd5e1")
       .font(fonts.regular)
       .fontSize(10)
-      .text(`CONECTAMOS.APP | ${today.label} | ${cobertura}`, 36, 66);
+      .text(`CONECTAMOS.APP | ${periodo.label} | ${cobertura}`, 36, 66);
 
     doc
       .fillColor("#cbd5e1")
@@ -569,7 +594,9 @@ export async function GET() {
 
     doc.end();
     const buffer = await bufferPromise;
-    const fileName = `cierre-del-dia-${today.key}.pdf`;
+    const fileName = `cierre-del-dia-${periodo.key}${
+      sedeIdFiltro ? `-sede-${sedeIdFiltro}` : ""
+    }.pdf`;
 
     return new Response(Uint8Array.from(buffer), {
       status: 200,
