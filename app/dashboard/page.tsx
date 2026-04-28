@@ -494,6 +494,7 @@ export default async function DashboardPage() {
         "Revisa ingresos, egresos y control diario de caja desde una vista directa.",
       actions: [
         { href: "/caja", label: "Ver caja", tone: "primary" },
+        { href: "/api/caja/cierre-dia", label: "CIERRE DEL DIA", tone: "secondary" },
         { href: "/caja/gestion", label: "Ingresos / Gastos", tone: "secondary" },
         { href: "/caja/arqueo", label: "Arqueo", tone: "secondary" },
         { href: "/dashboard/financiero", label: "Panel financiero", tone: "secondary" },
