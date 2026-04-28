@@ -19,6 +19,20 @@ const BUNDLED_FONT_REGULAR = path.join(
   "pdf-fonts",
   "Geist-Regular.ttf"
 );
+const STANDALONE_FONT_REGULAR = path.join(
+  process.cwd(),
+  ".next",
+  "standalone",
+  "public",
+  "pdf-fonts",
+  "Geist-Regular.ttf"
+);
+const SERVER_DIR_FONT_REGULAR = path.join(
+  path.dirname(process.argv[1] || process.cwd()),
+  "public",
+  "pdf-fonts",
+  "Geist-Regular.ttf"
+);
 
 type PdfFonts = {
   regular: string;
@@ -33,16 +47,22 @@ function getPdfFonts(): PdfFonts {
     };
   }
 
-  if (existsSync(BUNDLED_FONT_REGULAR)) {
+  const bundledFont = [
+    BUNDLED_FONT_REGULAR,
+    STANDALONE_FONT_REGULAR,
+    SERVER_DIR_FONT_REGULAR,
+  ].find((fontPath) => existsSync(fontPath));
+
+  if (bundledFont) {
     return {
-      regular: BUNDLED_FONT_REGULAR,
-      bold: BUNDLED_FONT_REGULAR,
+      regular: bundledFont,
+      bold: bundledFont,
     };
   }
 
   return {
-    regular: "Helvetica",
-    bold: "Helvetica-Bold",
+    regular: BUNDLED_FONT_REGULAR,
+    bold: BUNDLED_FONT_REGULAR,
   };
 }
 
