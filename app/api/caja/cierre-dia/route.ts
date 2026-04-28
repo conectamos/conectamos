@@ -39,6 +39,20 @@ type PdfFonts = {
   bold: string;
 };
 
+type CashMovementRow = {
+  tipo: string;
+  concepto: string;
+  sedeNombre: string;
+  valor: number;
+};
+
+type SaleExitRow = {
+  venta: string;
+  detalle: string;
+  sedeNombre: string;
+  valor: number;
+};
+
 function getPdfFonts(): PdfFonts {
   if (existsSync(SYSTEM_FONT_REGULAR) && existsSync(SYSTEM_FONT_BOLD)) {
     return {
@@ -129,6 +143,126 @@ function drawMetric(
     });
 }
 
+function drawSectionTitle(
+  doc: PDFKit.PDFDocument,
+  title: string,
+  y: number,
+  fonts: PdfFonts
+) {
+  doc
+    .fillColor("#0f172a")
+    .font(fonts.bold)
+    .fontSize(13)
+    .text(title, 36, y);
+
+  return y + 22;
+}
+
+function ensureSpace(
+  doc: PDFKit.PDFDocument,
+  y: number,
+  requiredHeight: number,
+  fonts: PdfFonts,
+  title: string
+) {
+  if (y + requiredHeight <= 716) {
+    return y;
+  }
+
+  doc.addPage();
+  return drawSectionTitle(doc, title, 44, fonts);
+}
+
+function drawCashTableHeader(doc: PDFKit.PDFDocument, y: number, fonts: PdfFonts) {
+  doc
+    .fillColor("#475569")
+    .font(fonts.bold)
+    .fontSize(8)
+    .text("TIPO", 42, y)
+    .text("CONCEPTO", 106, y)
+    .text("SEDE", 300, y)
+    .text("VALOR", 464, y, { width: 104, align: "right" });
+
+  return y + 16;
+}
+
+function drawCashRow(
+  doc: PDFKit.PDFDocument,
+  row: CashMovementRow,
+  y: number,
+  fonts: PdfFonts
+) {
+  doc
+    .moveTo(36, y - 5)
+    .lineTo(576, y - 5)
+    .strokeColor("#e2e8f0")
+    .stroke();
+
+  doc
+    .fillColor("#0f172a")
+    .font(fonts.regular)
+    .fontSize(8.5)
+    .text(row.tipo, 42, y, { width: 58 })
+    .text(row.concepto, 106, y, {
+      width: 184,
+      ellipsis: true,
+    })
+    .text(row.sedeNombre, 300, y, {
+      width: 150,
+      ellipsis: true,
+    })
+    .text(formatoPesos(row.valor), 464, y, {
+      width: 104,
+      align: "right",
+    });
+
+  return y + 20;
+}
+
+function drawSaleExitTableHeader(
+  doc: PDFKit.PDFDocument,
+  y: number,
+  fonts: PdfFonts
+) {
+  doc
+    .fillColor("#475569")
+    .font(fonts.bold)
+    .fontSize(8)
+    .text("VENTA", 42, y)
+    .text("DETALLE", 142, y)
+    .text("SEDE", 350, y)
+    .text("SALIDA", 464, y, { width: 104, align: "right" });
+
+  return y + 16;
+}
+
+function drawSaleExitRow(
+  doc: PDFKit.PDFDocument,
+  row: SaleExitRow,
+  y: number,
+  fonts: PdfFonts
+) {
+  doc
+    .moveTo(36, y - 5)
+    .lineTo(576, y - 5)
+    .strokeColor("#e2e8f0")
+    .stroke();
+
+  doc
+    .fillColor("#0f172a")
+    .font(fonts.regular)
+    .fontSize(8.5)
+    .text(row.venta, 42, y, { width: 90, ellipsis: true })
+    .text(row.detalle, 142, y, { width: 198, ellipsis: true })
+    .text(row.sedeNombre, 350, y, { width: 104, ellipsis: true })
+    .text(formatoPesos(row.valor), 464, y, {
+      width: 104,
+      align: "right",
+    });
+
+  return y + 20;
+}
+
 export async function GET() {
   try {
     const user = await getSessionUser();
@@ -145,6 +279,8 @@ export async function GET() {
     const [
       ventasDia,
       movimientosDia,
+      gastosCarteraDia,
+      salidasVentasDia,
       ventasCajaAcumulada,
       ingresosCajaAcumulados,
       egresosCajaAcumulados,
@@ -172,9 +308,6 @@ export async function GET() {
             gte: today.start,
             lt: today.end,
           },
-          NOT: {
-            concepto: CONCEPTO_GASTO_CARTERA,
-          },
           ...scope,
         },
         select: {
@@ -182,6 +315,53 @@ export async function GET() {
           concepto: true,
           valor: true,
           descripcion: true,
+          sede: {
+            select: {
+              nombre: true,
+            },
+          },
+        },
+        orderBy: {
+          id: "desc",
+        },
+      }),
+      prisma.gastoCartera.findMany({
+        where: {
+          createdAt: {
+            gte: today.start,
+            lt: today.end,
+          },
+          ...scope,
+        },
+        select: {
+          valor: true,
+          observacion: true,
+          sede: {
+            select: {
+              nombre: true,
+            },
+          },
+        },
+        orderBy: {
+          id: "desc",
+        },
+      }),
+      prisma.venta.findMany({
+        where: {
+          fecha: {
+            gte: today.start,
+            lt: today.end,
+          },
+          salida: {
+            gt: 0,
+          },
+          ...scope,
+        },
+        select: {
+          idVenta: true,
+          descripcion: true,
+          serial: true,
+          salida: true,
           sede: {
             select: {
               nombre: true,
@@ -230,6 +410,33 @@ export async function GET() {
     const egresosDia = movimientosDia
       .filter((movimiento) => String(movimiento.tipo || "").toUpperCase() === "EGRESO")
       .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0);
+    const egresosCarteraDia = gastosCarteraDia.reduce(
+      (acc, gasto) => acc + Number(gasto.valor || 0),
+      0
+    );
+    const egresosTotalesDia = egresosDia + egresosCarteraDia;
+    const movimientosCierre: CashMovementRow[] = [
+      ...movimientosDia.map((movimiento) => ({
+        tipo: String(movimiento.tipo || "-"),
+        concepto: String(movimiento.concepto || "-"),
+        sedeNombre: movimiento.sede?.nombre || "-",
+        valor: Number(movimiento.valor || 0),
+      })),
+      ...gastosCarteraDia.map((gasto) => ({
+        tipo: "EGRESO",
+        concepto: `${CONCEPTO_GASTO_CARTERA}${
+          gasto.observacion ? ` - ${gasto.observacion}` : ""
+        }`,
+        sedeNombre: gasto.sede?.nombre || "-",
+        valor: Number(gasto.valor || 0),
+      })),
+    ];
+    const salidasCierre: SaleExitRow[] = salidasVentasDia.map((venta) => ({
+      venta: venta.idVenta,
+      detalle: `${venta.descripcion || "Venta"} | IMEI ${venta.serial}`,
+      sedeNombre: venta.sede?.nombre || "-",
+      valor: n(venta.salida),
+    }));
     const cajaAcumulada =
       n(ventasCajaAcumulada._sum.cajaOficina) +
       n(ingresosCajaAcumulados._sum.valor) -
@@ -282,7 +489,7 @@ export async function GET() {
     drawMetric(doc, 36, y, columnWidth, "Ingresos del dia", formatoPesos(ingresosDia), fonts, {
       accent: "#0369a1",
     });
-    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Egresos del dia", formatoPesos(egresosDia), fonts, {
+    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Egresos del dia", formatoPesos(egresosTotalesDia), fonts, {
       accent: "#be123c",
     });
     y += 92;
@@ -300,15 +507,9 @@ export async function GET() {
     });
     y += 105;
 
-    doc
-      .fillColor("#0f172a")
-      .font(fonts.bold)
-      .fontSize(13)
-      .text("Movimientos de caja del dia", 36, y);
+    y = drawSectionTitle(doc, "Ingresos y egresos del dia", y, fonts);
 
-    y += 22;
-
-    if (movimientosDia.length === 0) {
+    if (movimientosCierre.length === 0) {
       doc
         .roundedRect(36, y, contentWidth, 42, 10)
         .fillAndStroke("#f8fafc", "#dbe3ef");
@@ -316,46 +517,44 @@ export async function GET() {
         .fillColor("#64748b")
         .font(fonts.regular)
         .fontSize(10)
-        .text("No hay ingresos o egresos registrados en caja para este dia.", 50, y + 15);
+        .text("No hay ingresos o egresos registrados para este dia.", 50, y + 15);
+      y += 60;
     } else {
+      y = drawCashTableHeader(doc, y, fonts);
+
+      for (const movimiento of movimientosCierre) {
+        y = ensureSpace(doc, y, 24, fonts, "Ingresos y egresos del dia");
+        if (y === 66) {
+          y = drawCashTableHeader(doc, y, fonts);
+        }
+
+        y = drawCashRow(doc, movimiento, y, fonts);
+      }
+    }
+
+    y = ensureSpace(doc, y + 18, 78, fonts, "Salidas de ventas del dia");
+    y = drawSectionTitle(doc, "Salidas de ventas del dia", y, fonts);
+
+    if (salidasCierre.length === 0) {
       doc
-        .fillColor("#475569")
-        .font(fonts.bold)
-        .fontSize(8)
-        .text("TIPO", 42, y)
-        .text("CONCEPTO", 106, y)
-        .text("SEDE", 300, y)
-        .text("VALOR", 464, y, { width: 104, align: "right" });
-      y += 16;
+        .roundedRect(36, y, contentWidth, 42, 10)
+        .fillAndStroke("#f8fafc", "#dbe3ef");
+      doc
+        .fillColor("#64748b")
+        .font(fonts.regular)
+        .fontSize(10)
+        .text("No hay salidas de ventas registradas para este dia.", 50, y + 15);
+      y += 60;
+    } else {
+      y = drawSaleExitTableHeader(doc, y, fonts);
 
-      for (const movimiento of movimientosDia.slice(0, 14)) {
-        if (y > 700) break;
+      for (const salida of salidasCierre) {
+        y = ensureSpace(doc, y, 24, fonts, "Salidas de ventas del dia");
+        if (y === 66) {
+          y = drawSaleExitTableHeader(doc, y, fonts);
+        }
 
-        doc
-          .moveTo(36, y - 5)
-          .lineTo(576, y - 5)
-          .strokeColor("#e2e8f0")
-          .stroke();
-
-        doc
-          .fillColor("#0f172a")
-          .font(fonts.regular)
-          .fontSize(8.5)
-          .text(String(movimiento.tipo || "-"), 42, y, { width: 58 })
-          .text(String(movimiento.concepto || "-"), 106, y, {
-            width: 184,
-            ellipsis: true,
-          })
-          .text(movimiento.sede?.nombre || "-", 300, y, {
-            width: 150,
-            ellipsis: true,
-          })
-          .text(formatoPesos(Number(movimiento.valor || 0)), 464, y, {
-            width: 104,
-            align: "right",
-          });
-
-        y += 20;
+        y = drawSaleExitRow(doc, salida, y, fonts);
       }
     }
 
