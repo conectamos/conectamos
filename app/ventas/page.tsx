@@ -9,6 +9,7 @@ import {
   formatoFechaHoraVenta,
   formatoPesos,
   getCurrentBogotaMonthInput,
+  getBogotaDateKey,
   getTodayBogotaDateKey,
   isTodayBogota,
   dinero,
@@ -40,7 +41,7 @@ type Sede = {
   nombre: string;
 };
 
-type VistaFiltro = "HOY" | "TODAS";
+type VistaFiltro = "HOY" | "FECHA" | "TODAS";
 
 function metricToneClass(tone: "slate" | "emerald" | "amber" | "blue") {
   switch (tone) {
@@ -81,6 +82,7 @@ export default function VentasPage() {
   const [sedesReporte, setSedesReporte] = useState<Sede[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [vista, setVista] = useState<VistaFiltro>("HOY");
+  const [fechaFiltro, setFechaFiltro] = useState(() => getTodayBogotaDateKey());
   const [vistaSedeId, setVistaSedeId] = useState("TODAS");
   const [descargandoPdf, setDescargandoPdf] = useState(false);
   const [eliminandoVentaId, setEliminandoVentaId] = useState<number | null>(null);
@@ -255,7 +257,12 @@ export default function VentasPage() {
   );
 
   const ventasMostradas = useMemo(() => {
-    const base = vista === "HOY" ? ventasHoy : ventas;
+    const base =
+      vista === "HOY"
+        ? ventasHoy
+        : vista === "FECHA"
+          ? ventas.filter((venta) => getBogotaDateKey(venta.fecha) === fechaFiltro)
+          : ventas;
     const termino = busqueda.trim().toLowerCase();
 
     if (!termino) {
@@ -273,7 +280,7 @@ export default function VentasPage() {
         String(venta.sede?.nombre || "").toLowerCase().includes(termino)
       );
     });
-  }, [busqueda, ventas, ventasHoy, vista]);
+  }, [busqueda, fechaFiltro, ventas, ventasHoy, vista]);
 
   const descargarReportePdf = async () => {
     try {
@@ -744,13 +751,13 @@ export default function VentasPage() {
                 Seguimiento comercial
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                Revisa el corte del dia o explora todo el historico reciente sin perder legibilidad.
+                Revisa el corte del dia, una fecha especifica o todo el historico reciente sin perder legibilidad.
               </p>
             </div>
 
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="flex flex-wrap gap-2">
-                {(["HOY", "TODAS"] as VistaFiltro[]).map((opcion) => (
+                {(["HOY", "FECHA", "TODAS"] as VistaFiltro[]).map((opcion) => (
                   <button
                     key={opcion}
                     type="button"
@@ -762,10 +769,23 @@ export default function VentasPage() {
                         : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
                     ].join(" ")}
                   >
-                    {opcion === "HOY" ? "Solo hoy" : "Todas"}
+                    {opcion === "HOY"
+                      ? "Solo hoy"
+                      : opcion === "FECHA"
+                        ? "Fecha"
+                        : "Todas"}
                   </button>
                 ))}
               </div>
+
+              {vista === "FECHA" && (
+                <input
+                  type="date"
+                  value={fechaFiltro}
+                  onChange={(event) => setFechaFiltro(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 lg:w-[180px]"
+                />
+              )}
 
               {esAdmin && (
                 <select
@@ -810,7 +830,11 @@ export default function VentasPage() {
             <div className="text-sm text-slate-500">
               Vista actual:{" "}
               <span className="font-semibold text-slate-900">
-                {vista === "HOY" ? "Corte del dia" : "Historico"}
+                {vista === "HOY"
+                  ? "Corte del dia"
+                  : vista === "FECHA"
+                    ? `Fecha ${fechaFiltro}`
+                    : "Historico"}
               </span>
             </div>
           </div>
