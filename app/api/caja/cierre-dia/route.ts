@@ -4,6 +4,7 @@ import PDFDocument from "pdfkit";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { extraerFinancierasDetalle } from "@/lib/ventas-financieras";
 import {
   getBogotaDayRangeFromInput,
   getTodayBogotaDateKey,
@@ -50,11 +51,12 @@ type CashMovementRow = {
   valor: number;
 };
 
-type SaleExitRow = {
+type SaleDetailRow = {
   venta: string;
-  detalle: string;
-  sedeNombre: string;
-  valor: number;
+  ingresos: string;
+  financieras: string;
+  credito: string;
+  egresos: string;
 };
 
 function getPdfFonts(): PdfFonts {
@@ -112,6 +114,112 @@ function n(value: unknown) {
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
+}
+
+function textoLimpio(value: unknown) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function joinParts(parts: Array<string | null | undefined>, fallback = "-") {
+  const seen = new Set<string>();
+  const valid = parts
+    .map((part) => textoLimpio(part))
+    .filter((part) => {
+      if (!part || seen.has(part)) return false;
+      seen.add(part);
+      return true;
+    });
+
+  return valid.length ? valid.join(" | ") : fallback;
+}
+
+function moneyPart(label: string, value: unknown) {
+  const amount = n(value);
+  return amount > 0 ? `${label}: ${formatoPesos(amount)}` : null;
+}
+
+function financierasVentaTexto(source: Record<string, unknown>) {
+  const detalle = extraerFinancierasDetalle(source);
+
+  return joinParts(
+    detalle.map((item) => `${item.nombre}: ${formatoPesos(item.valorBruto)}`)
+  );
+}
+
+function financierasRegistroTexto(value: unknown) {
+  if (!Array.isArray(value)) return null;
+
+  return joinParts(
+    value.map((item) => {
+      if (!item || typeof item !== "object") return null;
+
+      const row = item as Record<string, unknown>;
+      const plataforma = textoLimpio(row.plataformaCredito);
+      const credito = moneyPart("Aut", row.creditoAutorizado);
+      const inicial = moneyPart("Inicial", row.cuotaInicial);
+
+      return joinParts([plataforma, credito, inicial], "");
+    })
+  );
+}
+
+function buildIngresosVenta(
+  venta: Record<string, unknown>,
+  registro?: Record<string, unknown>
+) {
+  const primerIngresoNombre =
+    textoLimpio(venta.ingreso1) || textoLimpio(venta.tipoIngreso) || "Ingreso";
+  const segundoIngresoNombre = textoLimpio(venta.ingreso2) || "Ingreso 2";
+
+  return joinParts([
+    moneyPart(primerIngresoNombre, venta.primerValor || venta.ingreso),
+    moneyPart(segundoIngresoNombre, venta.segundoValor),
+    registro
+      ? moneyPart(
+          textoLimpio(registro.medioPago1Tipo) || "Inicial 1",
+          registro.medioPago1Valor || registro.cuotaInicial
+        )
+      : null,
+    registro
+      ? moneyPart(
+          textoLimpio(registro.medioPago2Tipo) || "Inicial 2",
+          registro.medioPago2Valor
+        )
+      : null,
+  ]);
+}
+
+function buildCreditoVenta(registro?: Record<string, unknown>) {
+  if (!registro) return "Sin registro vendedor";
+
+  const detalleFinancieras = financierasRegistroTexto(
+    registro.financierasDetalle
+  );
+
+  return joinParts([
+    detalleFinancieras,
+    detalleFinancieras ? null : textoLimpio(registro.plataformaCredito),
+    detalleFinancieras
+      ? null
+      : moneyPart("Aut", registro.creditoAutorizado),
+    detalleFinancieras ? null : moneyPart("Inicial", registro.cuotaInicial),
+  ], "Sin credito registrado");
+}
+
+function buildVentaLabel(
+  venta: Record<string, unknown>,
+  registro?: Record<string, unknown>
+) {
+  return joinParts([
+    textoLimpio(venta.idVenta),
+    textoLimpio(registro?.clienteNombre),
+    textoLimpio(venta.servicio),
+    textoLimpio(registro?.referenciaEquipo) || textoLimpio(venta.descripcion),
+    textoLimpio(venta.serial || registro?.serialImei)
+      ? `IMEI ${textoLimpio(venta.serial || registro?.serialImei)}`
+      : null,
+    textoLimpio((venta.sede as { nombre?: string } | null)?.nombre),
+  ]);
 }
 
 function drawMetric(
@@ -223,7 +331,7 @@ function drawCashRow(
   return y + 20;
 }
 
-function drawSaleExitTableHeader(
+function drawSaleDetailTableHeader(
   doc: PDFKit.PDFDocument,
   y: number,
   fonts: PdfFonts
@@ -233,19 +341,22 @@ function drawSaleExitTableHeader(
     .font(fonts.bold)
     .fontSize(8)
     .text("VENTA", 42, y)
-    .text("DETALLE", 142, y)
-    .text("SEDE", 350, y)
-    .text("SALIDA", 464, y, { width: 104, align: "right" });
+    .text("INICIALES / INGRESOS", 138, y)
+    .text("FINANCIERAS", 258, y)
+    .text("CREDITO", 398, y)
+    .text("EGRESOS", 500, y);
 
   return y + 16;
 }
 
-function drawSaleExitRow(
+function drawSaleDetailRow(
   doc: PDFKit.PDFDocument,
-  row: SaleExitRow,
+  row: SaleDetailRow,
   y: number,
   fonts: PdfFonts
 ) {
+  const rowHeight = 58;
+
   doc
     .moveTo(36, y - 5)
     .lineTo(576, y - 5)
@@ -255,16 +366,14 @@ function drawSaleExitRow(
   doc
     .fillColor("#0f172a")
     .font(fonts.regular)
-    .fontSize(8.5)
-    .text(row.venta, 42, y, { width: 90, ellipsis: true })
-    .text(row.detalle, 142, y, { width: 198, ellipsis: true })
-    .text(row.sedeNombre, 350, y, { width: 104, ellipsis: true })
-    .text(formatoPesos(row.valor), 464, y, {
-      width: 104,
-      align: "right",
-    });
+    .fontSize(7.6)
+    .text(row.venta, 42, y, { width: 86, height: 44, ellipsis: true })
+    .text(row.ingresos, 138, y, { width: 108, height: 44, ellipsis: true })
+    .text(row.financieras, 258, y, { width: 128, height: 44, ellipsis: true })
+    .text(row.credito, 398, y, { width: 90, height: 44, ellipsis: true })
+    .text(row.egresos, 500, y, { width: 68, height: 44, ellipsis: true });
 
-  return y + 20;
+  return y + rowHeight;
 }
 
 function parseSedeId(value: string | null) {
@@ -305,7 +414,7 @@ export async function GET(req: Request) {
       ventasDia,
       movimientosDia,
       gastosCarteraDia,
-      salidasVentasDia,
+      ventasDetalleDia,
       ventasCajaAcumulada,
       ingresosCajaAcumulados,
       egresosCajaAcumulados,
@@ -377,15 +486,34 @@ export async function GET(req: Request) {
             gte: periodo.start,
             lt: periodo.end,
           },
-          salida: {
-            gt: 0,
-          },
           ...scope,
         },
         select: {
+          id: true,
           idVenta: true,
+          servicio: true,
           descripcion: true,
           serial: true,
+          ingreso: true,
+          tipoIngreso: true,
+          ingreso1: true,
+          ingreso2: true,
+          primerValor: true,
+          segundoValor: true,
+          alcanos: true,
+          payjoy: true,
+          sistecredito: true,
+          addi: true,
+          sumaspay: true,
+          celya: true,
+          bogota: true,
+          alocredit: true,
+          esmio: true,
+          kaiowa: true,
+          finser: true,
+          gora: true,
+          financierasDetalle: true,
+          comision: true,
           salida: true,
           sede: {
             select: {
@@ -429,6 +557,41 @@ export async function GET(req: Request) {
       }),
     ]);
 
+    const registrosVentas = ventasDetalleDia.length
+      ? await prisma.registroVendedorVenta.findMany({
+          where: {
+            ventaIdRelacionada: {
+              in: ventasDetalleDia.map((venta) => venta.id),
+            },
+            eliminadoEn: null,
+            ...scope,
+          },
+          select: {
+            ventaIdRelacionada: true,
+            clienteNombre: true,
+            plataformaCredito: true,
+            financierasDetalle: true,
+            creditoAutorizado: true,
+            cuotaInicial: true,
+            valorCuota: true,
+            numeroCuotas: true,
+            medioPago1Tipo: true,
+            medioPago1Valor: true,
+            medioPago2Tipo: true,
+            medioPago2Valor: true,
+            referenciaEquipo: true,
+            serialImei: true,
+          },
+          orderBy: {
+            id: "desc",
+          },
+        })
+      : [];
+    const registrosPorVenta = new Map(
+      registrosVentas
+        .filter((registro) => registro.ventaIdRelacionada)
+        .map((registro) => [registro.ventaIdRelacionada as number, registro])
+    );
     const ingresosDia = movimientosDia
       .filter((movimiento) => String(movimiento.tipo || "").toUpperCase() === "INGRESO")
       .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0);
@@ -439,7 +602,10 @@ export async function GET(req: Request) {
       (acc, gasto) => acc + Number(gasto.valor || 0),
       0
     );
-    const egresosTotalesDia = egresosDia + egresosCarteraDia;
+    const comisionesVentasDia = n(ventasDia._sum.comision);
+    const salidasVentasTotal = n(ventasDia._sum.salida);
+    const egresosTotalesDia =
+      egresosDia + egresosCarteraDia + comisionesVentasDia + salidasVentasTotal;
     const movimientosCierre: CashMovementRow[] = [
       ...movimientosDia.map((movimiento) => ({
         tipo: String(movimiento.tipo || "-"),
@@ -456,12 +622,27 @@ export async function GET(req: Request) {
         valor: Number(gasto.valor || 0),
       })),
     ];
-    const salidasCierre: SaleExitRow[] = salidasVentasDia.map((venta) => ({
-      venta: venta.idVenta,
-      detalle: `${venta.descripcion || "Venta"} | IMEI ${venta.serial}`,
-      sedeNombre: venta.sede?.nombre || "-",
-      valor: n(venta.salida),
-    }));
+    const detallesVentasCierre: SaleDetailRow[] = ventasDetalleDia.map((venta) => {
+      const ventaRecord = venta as unknown as Record<string, unknown>;
+      const registro = registrosPorVenta.get(venta.id) as
+        (Record<string, unknown> & { ventaIdRelacionada?: number | null }) | undefined;
+      const financierasVenta = financierasVentaTexto(ventaRecord);
+      const financierasRegistro = financierasRegistroTexto(
+        registro?.financierasDetalle
+      );
+
+      return {
+        venta: buildVentaLabel(ventaRecord, registro),
+        ingresos: buildIngresosVenta(ventaRecord, registro),
+        financieras:
+          financierasVenta === "-" ? financierasRegistro || "-" : financierasVenta,
+        credito: buildCreditoVenta(registro),
+        egresos: joinParts([
+          moneyPart("Com", venta.comision),
+          moneyPart("Salida", venta.salida),
+        ]),
+      };
+    });
     const cajaAcumulada =
       n(ventasCajaAcumulada._sum.cajaOficina) +
       n(ingresosCajaAcumulados._sum.valor) -
@@ -519,10 +700,10 @@ export async function GET(req: Request) {
     });
     y += 92;
 
-    drawMetric(doc, 36, y, columnWidth, "Comisiones pagadas", formatoPesos(n(ventasDia._sum.comision)), fonts, {
+    drawMetric(doc, 36, y, columnWidth, "Comisiones pagadas", formatoPesos(comisionesVentasDia), fonts, {
       accent: "#92400e",
     });
-    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Salida de ventas", formatoPesos(n(ventasDia._sum.salida)), fonts, {
+    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Salida de ventas", formatoPesos(salidasVentasTotal), fonts, {
       accent: "#7c2d12",
     });
     y += 92;
@@ -557,10 +738,10 @@ export async function GET(req: Request) {
       }
     }
 
-    y = ensureSpace(doc, y + 18, 78, fonts, "Salidas de ventas del dia");
-    y = drawSectionTitle(doc, "Salidas de ventas del dia", y, fonts);
+    y = ensureSpace(doc, y + 18, 98, fonts, "Detalle de ventas del dia");
+    y = drawSectionTitle(doc, "Detalle de ventas del dia", y, fonts);
 
-    if (salidasCierre.length === 0) {
+    if (detallesVentasCierre.length === 0) {
       doc
         .roundedRect(36, y, contentWidth, 42, 10)
         .fillAndStroke("#f8fafc", "#dbe3ef");
@@ -568,18 +749,18 @@ export async function GET(req: Request) {
         .fillColor("#64748b")
         .font(fonts.regular)
         .fontSize(10)
-        .text("No hay salidas de ventas registradas para este dia.", 50, y + 15);
+        .text("No hay ventas registradas para este dia.", 50, y + 15);
       y += 60;
     } else {
-      y = drawSaleExitTableHeader(doc, y, fonts);
+      y = drawSaleDetailTableHeader(doc, y, fonts);
 
-      for (const salida of salidasCierre) {
-        y = ensureSpace(doc, y, 24, fonts, "Salidas de ventas del dia");
+      for (const venta of detallesVentasCierre) {
+        y = ensureSpace(doc, y, 64, fonts, "Detalle de ventas del dia");
         if (y === 66) {
-          y = drawSaleExitTableHeader(doc, y, fonts);
+          y = drawSaleDetailTableHeader(doc, y, fonts);
         }
 
-        y = drawSaleExitRow(doc, salida, y, fonts);
+        y = drawSaleDetailRow(doc, venta, y, fonts);
       }
     }
 
@@ -587,7 +768,7 @@ export async function GET(req: Request) {
       .font(fonts.regular)
       .fontSize(8)
       .fillColor("#94a3b8")
-      .text("Este cierre usa las ventas del dia y los movimientos de caja registrados hasta el momento de generacion.", 36, 742, {
+      .text("Este cierre usa las ventas del dia, movimientos de caja, gastos de cartera, comisiones y salidas registrados hasta el momento de generacion.", 36, 742, {
         width: contentWidth,
         align: "center",
       });
