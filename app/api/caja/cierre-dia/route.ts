@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import PDFDocument from "pdfkit";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
@@ -8,8 +10,41 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
-const PDF_FONT_REGULAR = "Helvetica";
-const PDF_FONT_BOLD = "Helvetica-Bold";
+const windowsFontDir = path.join(process.env.WINDIR || "C:\\Windows", "Fonts");
+const SYSTEM_FONT_REGULAR = path.join(windowsFontDir, "arial.ttf");
+const SYSTEM_FONT_BOLD = path.join(windowsFontDir, "arialbd.ttf");
+const BUNDLED_FONT_REGULAR = path.join(
+  process.cwd(),
+  "public",
+  "pdf-fonts",
+  "Geist-Regular.ttf"
+);
+
+type PdfFonts = {
+  regular: string;
+  bold: string;
+};
+
+function getPdfFonts(): PdfFonts {
+  if (existsSync(SYSTEM_FONT_REGULAR) && existsSync(SYSTEM_FONT_BOLD)) {
+    return {
+      regular: SYSTEM_FONT_REGULAR,
+      bold: SYSTEM_FONT_BOLD,
+    };
+  }
+
+  if (existsSync(BUNDLED_FONT_REGULAR)) {
+    return {
+      regular: BUNDLED_FONT_REGULAR,
+      bold: BUNDLED_FONT_REGULAR,
+    };
+  }
+
+  return {
+    regular: "Helvetica",
+    bold: "Helvetica-Bold",
+  };
+}
 
 function toBuffer(doc: PDFKit.PDFDocument) {
   return new Promise<Buffer>((resolve, reject) => {
@@ -48,6 +83,7 @@ function drawMetric(
   width: number,
   label: string,
   value: string,
+  fonts: PdfFonts,
   options?: { accent?: string }
 ) {
   doc
@@ -56,7 +92,7 @@ function drawMetric(
 
   doc
     .fillColor("#64748b")
-    .font(PDF_FONT_BOLD)
+    .font(fonts.bold)
     .fontSize(8)
     .text(label.toUpperCase(), x + 14, y + 13, {
       width: width - 28,
@@ -65,7 +101,7 @@ function drawMetric(
 
   doc
     .fillColor(options?.accent || "#0f172a")
-    .font(PDF_FONT_BOLD)
+    .font(fonts.bold)
     .fontSize(16)
     .text(value, x + 14, y + 36, {
       width: width - 28,
@@ -188,6 +224,7 @@ export async function GET() {
       },
     });
     const bufferPromise = toBuffer(doc);
+    const fonts = getPdfFonts();
     const pageWidth = doc.page.width;
     const contentWidth = pageWidth - 72;
     const columnWidth = (contentWidth - 18) / 2;
@@ -198,13 +235,13 @@ export async function GET() {
 
     doc
       .fillColor("#ffffff")
-      .font(PDF_FONT_BOLD)
+      .font(fonts.bold)
       .fontSize(23)
       .text("CIERRE DEL DIA", 36, 34);
 
     doc
       .fillColor("#cbd5e1")
-      .font(PDF_FONT_REGULAR)
+      .font(fonts.regular)
       .fontSize(10)
       .text(`CONECTAMOS.APP | ${today.label} | ${cobertura}`, 36, 66);
 
@@ -215,36 +252,36 @@ export async function GET() {
 
     let y = 142;
 
-    drawMetric(doc, 36, y, columnWidth, "Ventas del dia", String(ventasDia._count.id || 0));
-    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Utilidad del dia", formatoPesos(n(ventasDia._sum.utilidad)), {
+    drawMetric(doc, 36, y, columnWidth, "Ventas del dia", String(ventasDia._count.id || 0), fonts);
+    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Utilidad del dia", formatoPesos(n(ventasDia._sum.utilidad)), fonts, {
       accent: "#047857",
     });
     y += 92;
 
-    drawMetric(doc, 36, y, columnWidth, "Ingresos del dia", formatoPesos(ingresosDia), {
+    drawMetric(doc, 36, y, columnWidth, "Ingresos del dia", formatoPesos(ingresosDia), fonts, {
       accent: "#0369a1",
     });
-    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Egresos del dia", formatoPesos(egresosDia), {
+    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Egresos del dia", formatoPesos(egresosDia), fonts, {
       accent: "#be123c",
     });
     y += 92;
 
-    drawMetric(doc, 36, y, columnWidth, "Comisiones pagadas", formatoPesos(n(ventasDia._sum.comision)), {
+    drawMetric(doc, 36, y, columnWidth, "Comisiones pagadas", formatoPesos(n(ventasDia._sum.comision)), fonts, {
       accent: "#92400e",
     });
-    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Salida de ventas", formatoPesos(n(ventasDia._sum.salida)), {
+    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Salida de ventas", formatoPesos(n(ventasDia._sum.salida)), fonts, {
       accent: "#7c2d12",
     });
     y += 92;
 
-    drawMetric(doc, 36, y, contentWidth, "Dinero en caja - caja acumulada", formatoPesos(cajaAcumulada), {
+    drawMetric(doc, 36, y, contentWidth, "Dinero en caja - caja acumulada", formatoPesos(cajaAcumulada), fonts, {
       accent: "#0f172a",
     });
     y += 105;
 
     doc
       .fillColor("#0f172a")
-      .font(PDF_FONT_BOLD)
+      .font(fonts.bold)
       .fontSize(13)
       .text("Movimientos de caja del dia", 36, y);
 
@@ -256,13 +293,13 @@ export async function GET() {
         .fillAndStroke("#f8fafc", "#dbe3ef");
       doc
         .fillColor("#64748b")
-        .font(PDF_FONT_REGULAR)
+        .font(fonts.regular)
         .fontSize(10)
         .text("No hay ingresos o egresos registrados en caja para este dia.", 50, y + 15);
     } else {
       doc
         .fillColor("#475569")
-        .font(PDF_FONT_BOLD)
+        .font(fonts.bold)
         .fontSize(8)
         .text("TIPO", 42, y)
         .text("CONCEPTO", 106, y)
@@ -281,7 +318,7 @@ export async function GET() {
 
         doc
           .fillColor("#0f172a")
-          .font(PDF_FONT_REGULAR)
+          .font(fonts.regular)
           .fontSize(8.5)
           .text(String(movimiento.tipo || "-"), 42, y, { width: 58 })
           .text(String(movimiento.concepto || "-"), 106, y, {
@@ -302,7 +339,7 @@ export async function GET() {
     }
 
     doc
-      .font(PDF_FONT_REGULAR)
+      .font(fonts.regular)
       .fontSize(8)
       .fillColor("#94a3b8")
       .text("Este cierre usa las ventas del dia y los movimientos de caja registrados hasta el momento de generacion.", 36, 742, {
@@ -314,7 +351,7 @@ export async function GET() {
     const buffer = await bufferPromise;
     const fileName = `cierre-del-dia-${today.key}.pdf`;
 
-    return new Response(new Uint8Array(buffer), {
+    return new Response(Uint8Array.from(buffer), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
@@ -325,7 +362,10 @@ export async function GET() {
   } catch (error) {
     console.error("ERROR CIERRE DEL DIA:", error);
     return NextResponse.json(
-      { error: "Error generando cierre del dia" },
+      {
+        error: "Error generando cierre del dia",
+        detail: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }
