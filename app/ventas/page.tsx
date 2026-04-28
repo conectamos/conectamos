@@ -757,7 +757,7 @@ export default function VentasPage() {
 
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="flex flex-wrap gap-2">
-                {(["HOY", "FECHA", "TODAS"] as VistaFiltro[]).map((opcion) => (
+                {(["HOY", "TODAS"] as VistaFiltro[]).map((opcion) => (
                   <button
                     key={opcion}
                     type="button"
@@ -769,23 +769,26 @@ export default function VentasPage() {
                         : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
                     ].join(" ")}
                   >
-                    {opcion === "HOY"
-                      ? "Solo hoy"
-                      : opcion === "FECHA"
-                        ? "Fecha"
-                        : "Todas"}
+                    {opcion === "HOY" ? "Solo hoy" : "Todas"}
                   </button>
                 ))}
               </div>
 
-              {vista === "FECHA" && (
-                <input
-                  type="date"
-                  value={fechaFiltro}
-                  onChange={(event) => setFechaFiltro(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 lg:w-[180px]"
-                />
-              )}
+              <input
+                type="date"
+                aria-label="Filtrar ventas por fecha"
+                value={fechaFiltro}
+                onChange={(event) => {
+                  setFechaFiltro(event.target.value || getTodayBogotaDateKey());
+                  setVista("FECHA");
+                }}
+                className={[
+                  "w-full rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 lg:w-[180px]",
+                  vista === "FECHA"
+                    ? "border-slate-950 ring-2 ring-slate-200"
+                    : "border-slate-300",
+                ].join(" ")}
+              />
 
               {esAdmin && (
                 <select
