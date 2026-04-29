@@ -461,6 +461,9 @@ export default async function DashboardPage() {
         ...(esAdmin
           ? ([{ href: "/inventario-principal", label: "Bodega principal", tone: "secondary" }] as ModuleAction[])
           : []),
+        ...(esAdmin
+          ? ([{ href: "/dashboard/auditoria", label: "Auditoria", tone: "secondary" }] as ModuleAction[])
+          : []),
         { href: "/inventario/historial", label: "IMEI historico", tone: "secondary" },
       ],
       tone: "sky",
