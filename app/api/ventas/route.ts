@@ -419,7 +419,6 @@ export async function POST(req: Request) {
     const yaVendido = await prisma.venta.findFirst({
       where: {
         serial: input.serial,
-        inventarioSedeId: inventario.id,
       },
       select: { id: true },
     });

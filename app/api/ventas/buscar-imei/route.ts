@@ -52,8 +52,14 @@ async function buscarRegistroVentaAbierto(
   });
 
   const registro = registros.find((item) => {
-    const estadoVentaRegistro = String(item.estadoVentaRegistro || "").trim().toUpperCase();
-    return estadoVentaRegistro !== "CANCELADO" && estadoVentaRegistro !== "CONVERTIDO_EN_VENTA";
+    const estadoVentaRegistro = String(item.estadoVentaRegistro || "")
+      .trim()
+      .toUpperCase();
+
+    return (
+      estadoVentaRegistro !== "CANCELADO" &&
+      estadoVentaRegistro !== "CONVERTIDO_EN_VENTA"
+    );
   });
 
   return registro
@@ -71,20 +77,14 @@ export async function POST(req: Request) {
     const user = await getSessionUser();
 
     if (!user) {
-      return NextResponse.json(
-        { error: "No autenticado" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
     const body = await req.json();
     const serial = String(body.serial ?? "").replace(/\D/g, "").slice(0, 15);
 
     if (!serial) {
-      return NextResponse.json(
-        { error: "IMEI inválido" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "IMEI invalido" }, { status: 400 });
     }
 
     const registroVenta = await buscarRegistroVentaAbierto(
@@ -93,7 +93,6 @@ export async function POST(req: Request) {
       user.sedeNombre
     );
 
-    // 1) Buscar primero en inventario de sedes
     const inventarioSedes = await prisma.inventarioSede.findMany({
       where: { imei: serial },
       select: {
@@ -110,13 +109,28 @@ export async function POST(req: Request) {
     });
 
     if (inventarioSedes.length > 0) {
-      const itemActual =
-        inventarioSedes.find((x) => x.sedeId === user.sedeId) || inventarioSedes[0];
+      const itemActual = inventarioSedes.find((item) => item.sedeId === user.sedeId);
 
-      const estado = String(itemActual.estadoActual ?? "").toUpperCase();
-      const esMiSede = itemActual.sedeId === user.sedeId;
+      if (!itemActual) {
+        const itemOtraSede = inventarioSedes[0];
 
-      // Bloqueo real por estado de inventario
+        return NextResponse.json(
+          {
+            bloqueado: true,
+            referencia: itemOtraSede.referencia,
+            color: itemOtraSede.color,
+            costo: itemOtraSede.costo,
+            sedeId: itemOtraSede.sedeId,
+            estadoActual: itemOtraSede.estadoActual,
+            mensaje:
+              "El equipo pertenece a otra sede. Solo la sede que tiene el equipo puede completar la venta.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const estado = String(itemActual.estadoActual ?? "").trim().toUpperCase();
+
       if (estado !== "BODEGA") {
         return NextResponse.json(
           {
@@ -126,9 +140,7 @@ export async function POST(req: Request) {
             costo: itemActual.costo,
             sedeId: itemActual.sedeId,
             estadoActual: itemActual.estadoActual,
-            mensaje: esMiSede
-              ? `El equipo está en estado ${estado} y no se puede vender`
-              : `El equipo pertenece a otra sede y está en estado ${estado}. No se puede vender`,
+            mensaje: `El equipo esta en estado ${estado} y no se puede vender`,
           },
           { status: 400 }
         );
@@ -143,15 +155,12 @@ export async function POST(req: Request) {
         sedeId: itemActual.sedeId,
         estadoActual: itemActual.estadoActual,
         estadoFinanciero: itemActual.estadoFinanciero,
-        origen: esMiSede ? "SEDE_ACTUAL" : "OTRA_SEDE",
+        origen: "SEDE_ACTUAL",
         registroVenta,
-        mensaje: esMiSede
-          ? "Equipo encontrado en tu sede"
-          : `Equipo encontrado en otra sede (SEDE ${itemActual.sedeId})`,
+        mensaje: "Equipo encontrado en tu sede",
       });
     }
 
-    // 2) Si no está en sedes, buscar en bodega principal
     const principal = await prisma.inventarioPrincipal.findUnique({
       where: { imei: serial },
       select: {
@@ -166,35 +175,25 @@ export async function POST(req: Request) {
     });
 
     if (principal) {
-      const estadoPrincipal = String(principal.estado ?? "BODEGA").toUpperCase();
+      const estadoPrincipal = String(principal.estado ?? "BODEGA")
+        .trim()
+        .toUpperCase();
 
-      // En principal también bloqueamos si no está disponible
-      if (estadoPrincipal !== "BODEGA") {
-        return NextResponse.json(
-          {
-            bloqueado: true,
-            referencia: principal.referencia,
-            color: principal.color,
-            costo: principal.costo,
-            estadoActual: estadoPrincipal,
-            mensaje: `El equipo está en bodega principal pero en estado ${estadoPrincipal}. No se puede vender`,
-          },
-          { status: 400 }
-        );
-      }
-
-      return NextResponse.json({
-        id: principal.id,
-        imei: principal.imei,
-        referencia: principal.referencia,
-        color: principal.color,
-        costo: principal.costo,
-        estadoActual: "BODEGA",
-        estadoFinanciero: principal.estadoCobro || "PAGO",
-        origen: "BODEGA_PRINCIPAL",
-        registroVenta,
-        mensaje: "Equipo encontrado en bodega principal",
-      });
+      return NextResponse.json(
+        {
+          bloqueado: true,
+          referencia: principal.referencia,
+          color: principal.color,
+          costo: principal.costo,
+          estadoActual: estadoPrincipal,
+          estadoFinanciero: principal.estadoCobro || "PAGO",
+          origen: "BODEGA_PRINCIPAL",
+          registroVenta,
+          mensaje:
+            "El equipo esta en Bodega Principal. Debe enviarse a la sede antes de registrar la venta.",
+        },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json(
