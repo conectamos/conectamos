@@ -356,7 +356,7 @@ function drawSaleDetailCard(
   contentWidth: number,
   fonts: PdfFonts
 ) {
-  const cardHeight = 124;
+  const cardHeight = 142;
   const leftX = 50;
   const rightX = 318;
   const columnWidth = 236;
@@ -674,26 +674,6 @@ export async function GET(req: Request) {
         sedeNombre: gasto.sede?.nombre || "-",
         valor: Number(gasto.valor || 0),
       })),
-      ...(ingresosVentasDia > 0
-        ? [
-            {
-              tipo: "INGRESO",
-              concepto: "INGRESOS POR VENTAS",
-              sedeNombre: cobertura,
-              valor: ingresosVentasDia,
-            },
-          ]
-        : []),
-      ...(salidasVentasTotal > 0
-        ? [
-            {
-              tipo: "EGRESO",
-              concepto: "SALIDA DE VENTAS",
-              sedeNombre: cobertura,
-              valor: salidasVentasTotal,
-            },
-          ]
-        : []),
     ];
     const detallesVentasCierre: SaleDetailRow[] = ventasDetalleDia.map((venta) => {
       const ventaRecord = venta as unknown as Record<string, unknown>;
@@ -766,57 +746,20 @@ export async function GET(req: Request) {
     drawMetric(doc, 36, y, columnWidth, "Ingresos del dia", formatoPesos(ingresosTotalesDia), fonts, {
       accent: "#0369a1",
     });
-    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Egresos del dia", formatoPesos(egresosTotalesDia), fonts, {
+    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Salidas del dia", formatoPesos(egresosTotalesDia), fonts, {
       accent: "#be123c",
     });
     y += 92;
 
-    drawMetric(doc, 36, y, columnWidth, "Comisiones pagadas", formatoPesos(comisionesVentasDia), fonts, {
+    drawMetric(doc, 36, y, columnWidth, "Comisiones del dia", formatoPesos(comisionesVentasDia), fonts, {
       accent: "#92400e",
     });
-    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Salida de ventas", formatoPesos(salidasVentasTotal), fonts, {
-      accent: "#7c2d12",
-    });
-    y += 92;
-
-    drawMetric(doc, 36, y, contentWidth, "Dinero en caja - caja acumulada", formatoPesos(cajaAcumulada), fonts, {
+    drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Dinero en caja - caja acumulada", formatoPesos(cajaAcumulada), fonts, {
       accent: "#0f172a",
     });
-    y += 105;
+    y += 104;
 
-    y = drawSectionTitle(doc, "Ingresos y egresos del dia", y, fonts);
-
-    if (movimientosCierre.length === 0) {
-      doc
-        .roundedRect(36, y, contentWidth, 42, 10)
-        .fillAndStroke("#f8fafc", "#dbe3ef");
-      doc
-        .fillColor("#64748b")
-        .font(fonts.regular)
-        .fontSize(10)
-        .text("No hay ingresos o egresos registrados para este dia.", 50, y + 15);
-      y += 60;
-    } else {
-      y = drawCashTableHeader(doc, y, fonts);
-
-      for (const movimiento of movimientosCierre) {
-        y = ensureSpace(doc, y, 24, fonts, "Ingresos y egresos del dia");
-        if (y === 66) {
-          y = drawCashTableHeader(doc, y, fonts);
-        }
-
-        y = drawCashRow(doc, movimiento, y, fonts);
-      }
-    }
-
-    y += 18;
-
-    if (y + 98 > 716) {
-      doc.addPage();
-      y = 44;
-    }
-
-    y = drawSectionTitle(doc, "Detalle de ventas del dia", y, fonts);
+    y = drawSectionTitle(doc, "Detalle de ventas", y, fonts);
 
     if (detallesVentasCierre.length === 0) {
       doc
@@ -830,8 +773,40 @@ export async function GET(req: Request) {
       y += 60;
     } else {
       for (const venta of detallesVentasCierre) {
-        y = ensureSpace(doc, y, 136, fonts, "Detalle de ventas del dia");
+        y = ensureSpace(doc, y, 154, fonts, "Detalle de ventas");
         y = drawSaleDetailCard(doc, venta, y, contentWidth, fonts);
+      }
+    }
+
+    y += 18;
+
+    if (y + 78 > 716) {
+      doc.addPage();
+      y = 44;
+    }
+
+    y = drawSectionTitle(doc, "Detalles de caja", y, fonts);
+
+    if (movimientosCierre.length === 0) {
+      doc
+        .roundedRect(36, y, contentWidth, 42, 10)
+        .fillAndStroke("#f8fafc", "#dbe3ef");
+      doc
+        .fillColor("#64748b")
+        .font(fonts.regular)
+        .fontSize(10)
+        .text("No hay ingresos o salidas de caja registrados para este dia.", 50, y + 15);
+      y += 60;
+    } else {
+      y = drawCashTableHeader(doc, y, fonts);
+
+      for (const movimiento of movimientosCierre) {
+        y = ensureSpace(doc, y, 24, fonts, "Detalles de caja");
+        if (y === 66) {
+          y = drawCashTableHeader(doc, y, fonts);
+        }
+
+        y = drawCashRow(doc, movimiento, y, fonts);
       }
     }
 
