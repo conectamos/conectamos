@@ -58,8 +58,6 @@ type SaleDetailRow = {
   sede: string;
   ingresos: string;
   financieras: string;
-  credito: string;
-  egresos: string;
 };
 
 function getPdfFonts(): PdfFonts {
@@ -149,6 +147,13 @@ function financierasVentaTexto(source: Record<string, unknown>) {
   );
 }
 
+function totalFinancierasVenta(source: Record<string, unknown>) {
+  return extraerFinancierasDetalle(source).reduce(
+    (acc, item) => acc + n(item.valorBruto),
+    0
+  );
+}
+
 function financierasRegistroTexto(value: unknown) {
   if (!Array.isArray(value)) return null;
 
@@ -190,23 +195,6 @@ function buildIngresosVenta(
         )
       : null,
   ]);
-}
-
-function buildCreditoVenta(registro?: Record<string, unknown>) {
-  if (!registro) return "Sin credito autorizado vinculado";
-
-  const detalleFinancieras = financierasRegistroTexto(
-    registro.financierasDetalle
-  );
-
-  return joinParts([
-    detalleFinancieras,
-    detalleFinancieras ? null : textoLimpio(registro.plataformaCredito),
-    detalleFinancieras
-      ? null
-      : moneyPart("Aut", registro.creditoAutorizado),
-    detalleFinancieras ? null : moneyPart("Inicial", registro.cuotaInicial),
-  ], "Sin credito registrado");
 }
 
 function buildEquipoVenta(
@@ -368,10 +356,11 @@ function drawSaleDetailCard(
   contentWidth: number,
   fonts: PdfFonts
 ) {
-  const cardHeight = 150;
+  const cardHeight = 124;
   const leftX = 50;
   const rightX = 318;
   const columnWidth = 236;
+  const fullWidth = contentWidth - 28;
 
   doc
     .roundedRect(36, y, contentWidth, cardHeight, 10)
@@ -427,19 +416,7 @@ function drawSaleDetailCard(
     row.ingresos,
     leftX,
     y + 103,
-    columnWidth,
-    fonts
-  );
-  drawSaleField(
-    doc,
-    "Credito autorizado / egresos",
-    joinParts([
-      row.credito,
-      row.egresos === "-" ? null : `Egresos: ${row.egresos}`,
-    ]),
-    rightX,
-    y + 103,
-    columnWidth,
+    fullWidth,
     fonts
   );
 
@@ -662,20 +639,26 @@ export async function GET(req: Request) {
         .filter((registro) => registro.ventaIdRelacionada)
         .map((registro) => [registro.ventaIdRelacionada as number, registro])
     );
-    const ingresosDia = movimientosDia
+    const ingresosCajaDia = movimientosDia
       .filter((movimiento) => String(movimiento.tipo || "").toUpperCase() === "INGRESO")
       .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0);
-    const egresosDia = movimientosDia
+    const egresosCajaDia = movimientosDia
       .filter((movimiento) => String(movimiento.tipo || "").toUpperCase() === "EGRESO")
       .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0);
     const egresosCarteraDia = gastosCarteraDia.reduce(
       (acc, gasto) => acc + Number(gasto.valor || 0),
       0
     );
+    const ingresosVentasDia = ventasDetalleDia.reduce((acc, venta) => {
+      const ventaRecord = venta as unknown as Record<string, unknown>;
+
+      return acc + n(venta.ingreso) + totalFinancierasVenta(ventaRecord);
+    }, 0);
     const comisionesVentasDia = n(ventasDia._sum.comision);
     const salidasVentasTotal = n(ventasDia._sum.salida);
+    const ingresosTotalesDia = ingresosCajaDia + ingresosVentasDia;
     const egresosTotalesDia =
-      egresosDia + egresosCarteraDia + comisionesVentasDia + salidasVentasTotal;
+      egresosCajaDia + egresosCarteraDia + salidasVentasTotal;
     const movimientosCierre: CashMovementRow[] = [
       ...movimientosDia.map((movimiento) => ({
         tipo: String(movimiento.tipo || "-"),
@@ -691,6 +674,26 @@ export async function GET(req: Request) {
         sedeNombre: gasto.sede?.nombre || "-",
         valor: Number(gasto.valor || 0),
       })),
+      ...(ingresosVentasDia > 0
+        ? [
+            {
+              tipo: "INGRESO",
+              concepto: "INGRESOS POR VENTAS",
+              sedeNombre: cobertura,
+              valor: ingresosVentasDia,
+            },
+          ]
+        : []),
+      ...(salidasVentasTotal > 0
+        ? [
+            {
+              tipo: "EGRESO",
+              concepto: "SALIDA DE VENTAS",
+              sedeNombre: cobertura,
+              valor: salidasVentasTotal,
+            },
+          ]
+        : []),
     ];
     const detallesVentasCierre: SaleDetailRow[] = ventasDetalleDia.map((venta) => {
       const ventaRecord = venta as unknown as Record<string, unknown>;
@@ -709,11 +712,6 @@ export async function GET(req: Request) {
         ingresos: buildIngresosVenta(ventaRecord, registro),
         financieras:
           financierasVenta === "-" ? financierasRegistro || "-" : financierasVenta,
-        credito: buildCreditoVenta(registro),
-        egresos: joinParts([
-          moneyPart("Com", venta.comision),
-          moneyPart("Salida", venta.salida),
-        ]),
       };
     });
     const cajaAcumulada =
@@ -765,7 +763,7 @@ export async function GET(req: Request) {
     });
     y += 92;
 
-    drawMetric(doc, 36, y, columnWidth, "Ingresos del dia", formatoPesos(ingresosDia), fonts, {
+    drawMetric(doc, 36, y, columnWidth, "Ingresos del dia", formatoPesos(ingresosTotalesDia), fonts, {
       accent: "#0369a1",
     });
     drawMetric(doc, 36 + columnWidth + 18, y, columnWidth, "Egresos del dia", formatoPesos(egresosTotalesDia), fonts, {
@@ -832,7 +830,7 @@ export async function GET(req: Request) {
       y += 60;
     } else {
       for (const venta of detallesVentasCierre) {
-        y = ensureSpace(doc, y, 162, fonts, "Detalle de ventas del dia");
+        y = ensureSpace(doc, y, 136, fonts, "Detalle de ventas del dia");
         y = drawSaleDetailCard(doc, venta, y, contentWidth, fonts);
       }
     }
@@ -841,7 +839,7 @@ export async function GET(req: Request) {
       .font(fonts.regular)
       .fontSize(8)
       .fillColor("#94a3b8")
-      .text("Este cierre usa las ventas del dia, movimientos de caja, gastos de cartera, comisiones y salidas registrados hasta el momento de generacion.", 36, 742, {
+      .text("Este cierre usa ingresos de caja, ingresos de ventas, egresos de caja, salidas de ventas y comisiones registrados hasta el momento de generacion.", 36, 742, {
         width: contentWidth,
         align: "center",
       });
