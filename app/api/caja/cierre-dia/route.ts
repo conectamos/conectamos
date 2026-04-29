@@ -147,13 +147,6 @@ function financierasVentaTexto(source: Record<string, unknown>) {
   );
 }
 
-function totalFinancierasVenta(source: Record<string, unknown>) {
-  return extraerFinancierasDetalle(source).reduce(
-    (acc, item) => acc + n(item.valorBruto),
-    0
-  );
-}
-
 function financierasRegistroTexto(value: unknown) {
   if (!Array.isArray(value)) return null;
 
@@ -649,11 +642,10 @@ export async function GET(req: Request) {
       (acc, gasto) => acc + Number(gasto.valor || 0),
       0
     );
-    const ingresosVentasDia = ventasDetalleDia.reduce((acc, venta) => {
-      const ventaRecord = venta as unknown as Record<string, unknown>;
-
-      return acc + n(venta.ingreso) + totalFinancierasVenta(ventaRecord);
-    }, 0);
+    const ingresosVentasDia = ventasDetalleDia.reduce(
+      (acc, venta) => acc + n(venta.ingreso),
+      0
+    );
     const comisionesVentasDia = n(ventasDia._sum.comision);
     const salidasVentasTotal = n(ventasDia._sum.salida);
     const ingresosTotalesDia = ingresosCajaDia + ingresosVentasDia;
