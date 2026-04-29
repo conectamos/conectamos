@@ -792,8 +792,12 @@ export default function VendedorRegistroWorkspace({
       setBuscandoImei(true);
       setFormMessage("", "success");
 
+      const params = new URLSearchParams({
+        imei: form.serialImei,
+        puntoVenta: form.puntoVenta,
+      });
       const response = await fetch(
-        `/api/vendedor/registros/imei?imei=${form.serialImei}`,
+        `/api/vendedor/registros/imei?${params.toString()}`,
         { cache: "no-store" }
       );
       const data = (await response.json()) as

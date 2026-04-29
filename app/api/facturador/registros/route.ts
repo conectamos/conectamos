@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { puedeAccederPanelFacturador } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
   DOMINIOS_CORREO_REGISTRO_TEXTO,
@@ -226,6 +227,9 @@ export async function PATCH(req: Request) {
       },
       select: {
         id: true,
+        sedeId: true,
+        estadoVentaRegistro: true,
+        ventaIdRelacionada: true,
         financierasDetalle: true,
       },
     });
@@ -253,6 +257,20 @@ export async function PATCH(req: Request) {
     }
 
     if (modo === "EDITAR") {
+      if (
+        existente.ventaIdRelacionada ||
+        String(existente.estadoVentaRegistro || "").trim().toUpperCase() ===
+          "CONVERTIDO_EN_VENTA"
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Este registro ya fue convertido en venta y no se puede editar desde facturacion",
+          },
+          { status: 400 }
+        );
+      }
+
       const catalogo = await obtenerCatalogoPersonalVenta();
       const documentoNumero = normalizarTextoCorto(body.documentoNumero);
       const clienteNombre = normalizarTextoCorto(body.clienteNombre);
@@ -363,6 +381,61 @@ export async function PATCH(req: Request) {
       if ("error" in financierasDetalle) {
         return NextResponse.json(
           { error: financierasDetalle.error },
+          { status: 400 }
+        );
+      }
+
+      const equipo = await buscarEquipoRegistroVentaPorImei(
+        serialImei,
+        existente.sedeId
+      );
+
+      if (!equipo) {
+        return NextResponse.json(
+          {
+            error:
+              "El IMEI debe estar en BODEGA en la sede del registro o disponible en Bodega Principal",
+          },
+          { status: 400 }
+        );
+      }
+
+      const ventaExistente = await prisma.venta.findFirst({
+        where: {
+          serial: serialImei,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (ventaExistente) {
+        return NextResponse.json(
+          { error: "Ese IMEI ya tiene una venta registrada" },
+          { status: 400 }
+        );
+      }
+
+      const registroDuplicado = await prisma.registroVendedorVenta.findFirst({
+        where: {
+          id: {
+            not: id,
+          },
+          serialImei,
+          eliminadoEn: null,
+          ventaIdRelacionada: null,
+          estadoVentaRegistro: {
+            notIn: ["CANCELADO", "CONVERTIDO_EN_VENTA"],
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (registroDuplicado) {
+        return NextResponse.json(
+          { error: "Ese IMEI ya tiene un registro de vendedor pendiente" },
           { status: 400 }
         );
       }

@@ -431,6 +431,68 @@ function validarPayload(
   };
 }
 
+async function validarEquipoDisponibleParaRegistro(params: {
+  serialImei: string;
+  sedeId: number;
+  registroIdIgnorado?: number;
+}) {
+  const equipo = await buscarEquipoRegistroVentaPorImei(
+    params.serialImei,
+    params.sedeId
+  );
+
+  if (!equipo) {
+    return {
+      error:
+        "El IMEI debe estar en BODEGA en la sede seleccionada o disponible en Bodega Principal",
+    };
+  }
+
+  const ventaExistente = await prisma.venta.findFirst({
+    where: {
+      serial: params.serialImei,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (ventaExistente) {
+    return {
+      error: "Ese IMEI ya tiene una venta registrada",
+    };
+  }
+
+  const registroDuplicado = await prisma.registroVendedorVenta.findFirst({
+    where: {
+      serialImei: params.serialImei,
+      eliminadoEn: null,
+      ventaIdRelacionada: null,
+      estadoVentaRegistro: {
+        notIn: ["CANCELADO", "CONVERTIDO_EN_VENTA"],
+      },
+      ...(params.registroIdIgnorado
+        ? {
+            id: {
+              not: params.registroIdIgnorado,
+            },
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (registroDuplicado) {
+    return {
+      error: "Ese IMEI ya tiene un registro de vendedor pendiente",
+    };
+  }
+
+  return { equipo };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const access = await requireVendor();
@@ -574,18 +636,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: payload.error }, { status: 400 });
     }
 
-    const equipo = await buscarEquipoRegistroVentaPorImei(
-      payload.data.serialImei,
-      access.session.sedeId
-    );
-
-    if (!equipo) {
-      return NextResponse.json(
-        { error: "El IMEI debe existir en una sede o en bodega principal" },
-        { status: 400 }
-      );
-    }
-
     const sedeRegistro = await prisma.sede.findFirst({
       where: {
         nombre: {
@@ -606,14 +656,23 @@ export async function POST(req: Request) {
       );
     }
 
+    const equipoValidado = await validarEquipoDisponibleParaRegistro({
+      serialImei: payload.data.serialImei,
+      sedeId: sedeRegistro.id,
+    });
+
+    if ("error" in equipoValidado) {
+      return NextResponse.json({ error: equipoValidado.error }, { status: 400 });
+    }
+
     await prisma.registroVendedorVenta.create({
       data: {
         perfilVendedorId: access.session.perfilId,
         sedeId: sedeRegistro.id,
         ...payload.data,
         puntoVenta: sedeRegistro.nombre,
-        referenciaEquipo: equipo.referencia,
-        color: equipo.color ?? payload.data.color ?? null,
+        referenciaEquipo: equipoValidado.equipo.referencia,
+        color: equipoValidado.equipo.color ?? payload.data.color ?? null,
         asesorNombre:
           payload.data.asesorNombre ??
           access.session.perfilNombre ??
@@ -675,6 +734,8 @@ export async function PATCH(req: Request) {
       select: {
         id: true,
         asesorNombre: true,
+        estadoVentaRegistro: true,
+        ventaIdRelacionada: true,
       },
     });
 
@@ -682,6 +743,17 @@ export async function PATCH(req: Request) {
       return NextResponse.json(
         { error: "Registro no encontrado" },
         { status: 404 }
+      );
+    }
+
+    if (
+      existente.ventaIdRelacionada ||
+      String(existente.estadoVentaRegistro || "").trim().toUpperCase() ===
+        "CONVERTIDO_EN_VENTA"
+    ) {
+      return NextResponse.json(
+        { error: "Este registro ya fue convertido en venta y no se puede modificar" },
+        { status: 400 }
       );
     }
 
@@ -713,18 +785,6 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: payload.error }, { status: 400 });
     }
 
-    const equipo = await buscarEquipoRegistroVentaPorImei(
-      payload.data.serialImei,
-      access.session.sedeId
-    );
-
-    if (!equipo) {
-      return NextResponse.json(
-        { error: "El IMEI debe existir en una sede o en bodega principal" },
-        { status: 400 }
-      );
-    }
-
     const sedeRegistro = await prisma.sede.findFirst({
       where: {
         nombre: {
@@ -745,14 +805,24 @@ export async function PATCH(req: Request) {
       );
     }
 
+    const equipoValidado = await validarEquipoDisponibleParaRegistro({
+      serialImei: payload.data.serialImei,
+      sedeId: sedeRegistro.id,
+      registroIdIgnorado: id,
+    });
+
+    if ("error" in equipoValidado) {
+      return NextResponse.json({ error: equipoValidado.error }, { status: 400 });
+    }
+
     const actualizado = await prisma.registroVendedorVenta.update({
       where: { id },
       data: {
         sedeId: sedeRegistro.id,
         ...payload.data,
         puntoVenta: sedeRegistro.nombre,
-        referenciaEquipo: equipo.referencia,
-        color: equipo.color ?? payload.data.color ?? null,
+        referenciaEquipo: equipoValidado.equipo.referencia,
+        color: equipoValidado.equipo.color ?? payload.data.color ?? null,
         asesorNombre:
           payload.data.asesorNombre ??
           existente.asesorNombre ??

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 import { puedeAccederPanelVendedor } from "@/lib/access-control";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import { normalizarImei } from "@/lib/vendor-sale-records";
@@ -39,6 +40,8 @@ export async function GET(req: Request) {
     const imei = normalizarImei(
       requestUrl.searchParams.get("imei") || requestUrl.searchParams.get("serial")
     );
+    const puntoVenta = String(requestUrl.searchParams.get("puntoVenta") || "")
+      .trim();
 
     if (!imei) {
       return NextResponse.json(
@@ -47,14 +50,31 @@ export async function GET(req: Request) {
       );
     }
 
+    const sedeConsulta = puntoVenta
+      ? await prisma.sede.findFirst({
+          where: {
+            nombre: {
+              equals: puntoVenta,
+              mode: "insensitive",
+            },
+          },
+          select: {
+            id: true,
+          },
+        })
+      : null;
+
     const equipo = await buscarEquipoRegistroVentaPorImei(
       imei,
-      access.session.sedeId
+      sedeConsulta?.id ?? access.session.sedeId
     );
 
     if (!equipo) {
       return NextResponse.json(
-        { error: "El IMEI no existe en sedes ni en bodega principal" },
+        {
+          error:
+            "El IMEI no esta disponible en la sede seleccionada ni en Bodega Principal",
+        },
         { status: 404 }
       );
     }

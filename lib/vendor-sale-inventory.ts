@@ -42,8 +42,15 @@ export async function buscarEquipoRegistroVentaPorImei(
   });
 
   if (inventarioSedes.length > 0) {
-    const item =
-      inventarioSedes.find((row) => row.sedeId === sedeActualId) ?? inventarioSedes[0];
+    const item = inventarioSedes.find((row) => row.sedeId === sedeActualId);
+
+    if (!item) {
+      return null;
+    }
+
+    if (String(item.estadoActual || "").trim().toUpperCase() !== "BODEGA") {
+      return null;
+    }
 
     return {
       imei: item.imei,
@@ -69,6 +76,13 @@ export async function buscarEquipoRegistroVentaPorImei(
   });
 
   if (!inventarioPrincipal) {
+    return null;
+  }
+
+  if (
+    String(inventarioPrincipal.estado || "BODEGA").trim().toUpperCase() !==
+    "BODEGA"
+  ) {
     return null;
   }
 
