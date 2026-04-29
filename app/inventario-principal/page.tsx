@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 import { esSedeOperativaInventario } from "@/lib/sedes";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
@@ -59,8 +60,10 @@ export default function InventarioPrincipalPage() {
   const [busqueda, setBusqueda] = useState("");
 
   const [mostrarModal, setMostrarModal] = useState(false);
+  const [mostrarModalMasivo, setMostrarModalMasivo] = useState(false);
   const [itemSeleccionado, setItemSeleccionado] = useState<ItemPrincipal | null>(null);
   const [sedeDestinoId, setSedeDestinoId] = useState("");
+  const [idsSeleccionados, setIdsSeleccionados] = useState<number[]>([]);
 
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
 
@@ -102,6 +105,12 @@ export default function InventarioPrincipalPage() {
   }, [cargarInventarioPrincipal, cargarSedes]);
 
   useLiveRefresh(cargarInventarioPrincipal, { intervalMs: 10000 });
+
+  useEffect(() => {
+    setIdsSeleccionados((actuales) =>
+      actuales.filter((id) => items.some((item) => item.id === id))
+    );
+  }, [items]);
 
   const totalValor = useMemo(
     () => items.reduce((acc, item) => acc + Number(item.costo || 0), 0),
@@ -155,6 +164,65 @@ export default function InventarioPrincipalPage() {
         .includes(termino);
     });
   }, [busqueda, items, sedes]);
+
+  const idsVisibles = useMemo(
+    () => itemsFiltrados.map((item) => item.id),
+    [itemsFiltrados]
+  );
+
+  const todosVisiblesSeleccionados = useMemo(
+    () =>
+      idsVisibles.length > 0 &&
+      idsVisibles.every((id) => idsSeleccionados.includes(id)),
+    [idsSeleccionados, idsVisibles]
+  );
+
+  const itemsSeleccionados = useMemo(
+    () => items.filter((item) => idsSeleccionados.includes(item.id)),
+    [idsSeleccionados, items]
+  );
+
+  const itemsSeleccionadosDisponibles = useMemo(
+    () =>
+      itemsSeleccionados.filter(
+        (item) => String(item.estado || "BODEGA").toUpperCase() === "BODEGA"
+      ),
+    [itemsSeleccionados]
+  );
+
+  const sedesDestinoOperativas = useMemo(
+    () =>
+      sedes.filter(
+        (sede) =>
+          esSedeOperativaInventario(sede.nombre) &&
+          String(sede.nombre || "").trim().toUpperCase() !== NOMBRE_SEDE_BODEGA
+      ),
+    [sedes]
+  );
+
+  const alternarSeleccion = (id: number) => {
+    setIdsSeleccionados((actuales) =>
+      actuales.includes(id)
+        ? actuales.filter((itemId) => itemId !== id)
+        : [...actuales, id]
+    );
+  };
+
+  const alternarSeleccionVisibles = () => {
+    setIdsSeleccionados((actuales) => {
+      if (todosVisiblesSeleccionados) {
+        return actuales.filter((id) => !idsVisibles.includes(id));
+      }
+
+      return Array.from(new Set([...actuales, ...idsVisibles]));
+    });
+  };
+
+  const limpiarSeleccionMasiva = () => {
+    setIdsSeleccionados([]);
+    setSedeDestinoId("");
+    setMostrarModalMasivo(false);
+  };
 
   const eliminar = async (id: number) => {
     const confirmado = window.confirm(
@@ -242,6 +310,67 @@ export default function InventarioPrincipalPage() {
       await cargarInventarioPrincipal();
     } catch {
       setMensaje("Error enviando equipo a sede");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const enviarMasivoASede = async () => {
+    if (!sedeDestinoId) {
+      setMensaje("Debes seleccionar una sede destino");
+      return;
+    }
+
+    if (itemsSeleccionadosDisponibles.length === 0) {
+      setMensaje("No hay equipos disponibles seleccionados para enviar");
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      let enviados = 0;
+      const errores: string[] = [];
+
+      for (const item of itemsSeleccionadosDisponibles) {
+        const res = await fetch("/api/inventario-principal/enviar-a-sede", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: item.id,
+            sedeDestinoId: Number(sedeDestinoId),
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          enviados += 1;
+        } else {
+          errores.push(`${item.imei}: ${data.error || "Error enviando a sede"}`);
+        }
+      }
+
+      setMensaje(
+        [
+          `Envio masivo finalizado: ${enviados} equipo${
+            enviados === 1 ? "" : "s"
+          } enviado${enviados === 1 ? "" : "s"}.`,
+          errores.length
+            ? `${errores.length} no se procesaron. ${errores.slice(0, 3).join(" | ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      limpiarSeleccionMasiva();
+      await cargarInventarioPrincipal();
+    } catch {
+      setMensaje("Error ejecutando envio masivo");
     } finally {
       setCargando(false);
     }
@@ -384,10 +513,61 @@ export default function InventarioPrincipalPage() {
             </div>
           </div>
 
+          {idsSeleccionados.length > 0 && (
+            <div className="border-b border-slate-200 bg-[#fbf8f2] px-6 py-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-slate-950">
+                    {idsSeleccionados.length} equipo
+                    {idsSeleccionados.length === 1 ? "" : "s"} seleccionado
+                    {idsSeleccionados.length === 1 ? "" : "s"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {itemsSeleccionadosDisponibles.length} disponible
+                    {itemsSeleccionadosDisponibles.length === 1 ? "" : "s"} para envio
+                    desde Bodega Principal.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSedeDestinoId("");
+                      setMostrarModalMasivo(true);
+                    }}
+                    disabled={cargando || itemsSeleccionadosDisponibles.length === 0}
+                    className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Enviar a sede
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={limpiarSeleccionMasiva}
+                    disabled={cargando}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Limpiar seleccion
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
-            <table className="min-w-[1180px] text-sm">
+            <table className="min-w-[1240px] text-sm">
               <thead className="sticky top-0 bg-[#f8fafc]">
                 <tr className="border-b border-slate-200 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                  <th className="px-4 py-4">
+                    <input
+                      type="checkbox"
+                      checked={todosVisiblesSeleccionados}
+                      onChange={alternarSeleccionVisibles}
+                      aria-label="Seleccionar equipos visibles"
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                    />
+                  </th>
                   <th className="px-4 py-4">ID</th>
                   <th className="px-4 py-4">IMEI</th>
                   <th className="px-4 py-4">Referencia</th>
@@ -405,7 +585,7 @@ export default function InventarioPrincipalPage() {
               <tbody>
                 {itemsFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-6 py-16 text-center text-slate-500">
+                    <td colSpan={12} className="px-6 py-16 text-center text-slate-500">
                       No hay equipos que coincidan en inventario principal.
                     </td>
                   </tr>
@@ -423,6 +603,15 @@ export default function InventarioPrincipalPage() {
                         key={item.id}
                         className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-[#faf7f1]"
                       >
+                        <td className="px-4 py-4">
+                          <input
+                            type="checkbox"
+                            checked={idsSeleccionados.includes(item.id)}
+                            onChange={() => alternarSeleccion(item.id)}
+                            aria-label={`Seleccionar ${item.imei}`}
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                          />
+                        </td>
                         <td className="px-4 py-4 font-bold text-slate-950">{item.id}</td>
                         <td className="px-4 py-4 font-semibold text-slate-950">{item.imei}</td>
                         <td className="px-4 py-4">{item.referencia}</td>
@@ -488,6 +677,76 @@ export default function InventarioPrincipalPage() {
         </section>
       </div>
 
+      {mostrarModalMasivo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-[30px] border border-[#e2d9ca] bg-white p-6 shadow-2xl">
+            <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              Envio masivo
+            </div>
+            <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              Enviar seleccion a sede
+            </h3>
+
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Se enviaran {itemsSeleccionadosDisponibles.length} equipo
+              {itemsSeleccionadosDisponibles.length === 1 ? "" : "s"} disponible
+              {itemsSeleccionadosDisponibles.length === 1 ? "" : "s"} en BODEGA.
+              {idsSeleccionados.length > itemsSeleccionadosDisponibles.length
+                ? ` ${idsSeleccionados.length - itemsSeleccionadosDisponibles.length} seleccionado${
+                    idsSeleccionados.length - itemsSeleccionadosDisponibles.length === 1
+                      ? ""
+                      : "s"
+                  } no aplica por estado actual.`
+                : ""}
+            </p>
+
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+              Cada equipo ingresara de inmediato en la sede destino con estado{" "}
+              <span className="font-semibold">BODEGA</span> y deuda activa a{" "}
+              <span className="font-semibold">Proveedor Finser</span>.
+            </div>
+
+            <div className="mt-5">
+              <label className="mb-2 block text-[12px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                Sede destino
+              </label>
+              <select
+                value={sedeDestinoId}
+                onChange={(event) => setSedeDestinoId(event.target.value)}
+                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+              >
+                <option value="">Seleccionar sede</option>
+                {sedesDestinoOperativas.map((sede) => (
+                  <option key={sede.id} value={sede.id}>
+                    {sede.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                onClick={enviarMasivoASede}
+                disabled={cargando || itemsSeleccionadosDisponibles.length === 0}
+                className="inline-flex h-[56px] w-full items-center justify-center rounded-2xl bg-[#111318] px-5 text-sm font-bold text-white transition hover:bg-[#1d2330] disabled:opacity-70"
+              >
+                Confirmar envio
+              </button>
+
+              <button
+                onClick={() => {
+                  setMostrarModalMasivo(false);
+                  setSedeDestinoId("");
+                }}
+                className="inline-flex h-[56px] w-full items-center justify-center rounded-2xl border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {mostrarModal && itemSeleccionado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-[30px] border border-[#e2d9ca] bg-white p-6 shadow-2xl">
@@ -524,13 +783,11 @@ export default function InventarioPrincipalPage() {
                 className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
               >
                 <option value="">Seleccionar sede</option>
-                {sedes
-                  .filter((sede) => esSedeOperativaInventario(sede.nombre))
-                  .map((sede) => (
-                    <option key={sede.id} value={sede.id}>
-                      {sede.nombre}
-                    </option>
-                  ))}
+                {sedesDestinoOperativas.map((sede) => (
+                  <option key={sede.id} value={sede.id}>
+                    {sede.nombre}
+                  </option>
+                ))}
               </select>
             </div>
 
