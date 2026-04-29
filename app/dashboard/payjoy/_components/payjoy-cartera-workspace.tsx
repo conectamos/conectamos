@@ -308,6 +308,15 @@ function buildDefaultSaveName(sourceNames: string[]) {
   }).format(new Date())}`;
 }
 
+function buildExportFileName(sourceNames: string[]) {
+  const sourceLabel =
+    sourceNames.length === 1
+      ? sourceNames[0]
+      : `cartera-payjoy-${sourceNames.length}-cortes`;
+
+  return `${sourceLabel.replace(/[\\/:*?"<>|]+/g, "-")}.xlsx`;
+}
+
 function formatCurrency(value: number | null, currency: string | null) {
   if (value === null || !Number.isFinite(value)) {
     return "-";
@@ -608,6 +617,7 @@ export default function PayJoyCarteraWorkspace() {
   const [saveName, setSaveName] = useState("");
   const [savingCut, setSavingCut] = useState(false);
   const [updatingCut, setUpdatingCut] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [savedCuts, setSavedCuts] = useState<PayJoyCutListItem[]>([]);
   const [savedCutsLoading, setSavedCutsLoading] = useState(true);
   const [savedCutsError, setSavedCutsError] = useState("");
@@ -652,6 +662,53 @@ export default function PayJoyCarteraWorkspace() {
   const totalSelectedFiles = files.length;
   const canSaveCut = Boolean(data && rows.length);
   const savedCutsCount = savedCuts.length;
+
+  const exportVisibleRowsToExcel = async () => {
+    if (!filteredRows.length) {
+      setMessage("No hay filas visibles para exportar.");
+      return;
+    }
+
+    try {
+      setExportingExcel(true);
+
+      const XLSX = await import("xlsx");
+      const exportRows = filteredRows.map((row) => ({
+        "FECHA CREDITO": formatDateTime(row.transactionTime),
+        IMEI: row.imei || "",
+        CEDULA: row.nationalId || "",
+        "FECHA DEVICE": formatDate(row.devicePaymentDate),
+        "FECHA DE PAGO": formatDate(row.paymentDueDate),
+        "PAGO MAXIMO": formatDate(row.maximumPaymentDate),
+        DEVICE: row.device || "",
+        REFERENCIA: row.deviceFamily || "",
+        CORTE: row.corteName || "",
+        TIENDA: row.merchantName || "",
+        CUOTA: formatCurrency(row.installmentAmount, row.currency),
+        ESTADO: row.status,
+        "PAGO COMPLETO": row.paidInFull ? "SI" : "NO",
+        "MENSAJE CONSULTA": row.lookupMessage || "",
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Cartera PayJoy");
+      XLSX.writeFile(
+        workbook,
+        buildExportFileName(
+          hasActiveFilter ? visibleSourceNames : data?.sourceNames || ["cartera-payjoy"]
+        )
+      );
+
+      setMessage(
+        `Exportacion completada: ${filteredRows.length} fila(s) visibles en Excel.`
+      );
+    } catch {
+      setMessage("No fue posible exportar la cartera a Excel.");
+    } finally {
+      setExportingExcel(false);
+    }
+  };
 
   const loadSavedCuts = async () => {
     try {
@@ -1776,6 +1833,16 @@ export default function PayJoyCarteraWorkspace() {
                     )
                   )}
                 </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap justify-end gap-3">
+                <button
+                  onClick={() => void exportVisibleRowsToExcel()}
+                  disabled={exportingExcel || !filteredRows.length}
+                  className="rounded-2xl border border-emerald-300 bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {exportingExcel ? "Exportando..." : "Exportar a Excel"}
+                </button>
               </div>
 
               <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
