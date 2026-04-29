@@ -23,13 +23,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Datos invalidos" }, { status: 400 });
     }
 
-    if (user.sedeId === sedeDestinoId) {
-      return NextResponse.json(
-        { error: "No puedes enviar un prestamo a la misma sede" },
-        { status: 400 }
-      );
-    }
-
     const inventario = await prisma.inventarioSede.findUnique({
       where: { id: inventarioId },
       select: {
@@ -60,10 +53,19 @@ export async function POST(req: Request) {
       );
     }
 
-    if (inventario.sedeId !== user.sedeId) {
+    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+
+    if (!esAdmin && inventario.sedeId !== user.sedeId) {
       return NextResponse.json(
         { error: "No puedes prestar un equipo que no pertenece a tu sede" },
         { status: 403 }
+      );
+    }
+
+    if (inventario.sedeId === sedeDestinoId) {
+      return NextResponse.json(
+        { error: "No puedes enviar un prestamo a la misma sede" },
+        { status: 400 }
       );
     }
 
