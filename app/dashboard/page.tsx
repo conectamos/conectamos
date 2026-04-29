@@ -567,10 +567,10 @@ export default async function DashboardPage() {
     },
     nuovo: {
       key: "nuovo",
-      title: "Dispositivos",
+      title: "NUOVO",
       eyebrow: "Dispositivos",
       description:
-        "Consulta dispositivos y gestiona el flujo operativo de Nuovo desde su panel.",
+        "Consulta dispositivos y gestiona el flujo operativo de NUOVO desde su panel.",
       actions: [
         { href: "/dashboard/nuovopay", label: "Dispositivos", tone: "primary" },
         ...(esAdmin
