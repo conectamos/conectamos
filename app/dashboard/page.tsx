@@ -486,6 +486,9 @@ export default async function DashboardPage() {
         ...(esAdmin
           ? ([{ href: "/ventas/equipo-comercial", label: "Catalogos de ventas", tone: "secondary" }] as ModuleAction[])
           : []),
+        ...(esAdmin
+          ? ([{ href: "/dashboard/lista-precios", label: "Lista de precios", tone: "secondary" }] as ModuleAction[])
+          : []),
       ],
       tone: "violet",
     },
@@ -532,6 +535,11 @@ export default async function DashboardPage() {
         : "Digitaliza la hoja de plataforma y registra el tramite completo desde este modulo.",
       actions: [
         { href: "/vendedor/registros", label: "Registrar venta", tone: "primary" },
+        {
+          href: esAdmin ? "/dashboard/lista-precios" : "/vendedor/lista-precios",
+          label: "LISTA DE PRECIOS",
+          tone: "secondary",
+        },
         ...(!esVendedor
           ? ([{ href: "/vendedor/registros/buscar", label: "Buscar registro", tone: "secondary" }] as ModuleAction[])
           : []),

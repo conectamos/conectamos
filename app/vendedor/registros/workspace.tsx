@@ -1198,6 +1198,12 @@ export default function VendedorRegistroWorkspace({
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/vendedor/lista-precios"
+                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-center text-sm font-black text-slate-900 transition hover:bg-slate-100"
+              >
+                LISTA DE PRECIOS
+              </Link>
               {puedeBuscarRegistros && (
                 <Link
                   href="/vendedor/registros/buscar"
