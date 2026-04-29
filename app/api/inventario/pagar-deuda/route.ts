@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { esDeudaEntreSedes, esEstadoDeuda } from "@/lib/prestamos";
+import {
+  NOMBRE_SEDE_BODEGA,
+  esDeudaEntreSedes,
+  esDeudaProveedor,
+  esEstadoDeuda,
+} from "@/lib/prestamos";
 
 export async function POST(req: Request) {
   try {
@@ -33,6 +38,7 @@ export async function POST(req: Request) {
         estadoFinanciero: true,
         deboA: true,
         origen: true,
+        inventarioPrincipalId: true,
       },
     });
 
@@ -76,6 +82,19 @@ export async function POST(req: Request) {
       );
     }
 
+    const sedeBodegaPrincipal = await prisma.sede.findFirst({
+      where: {
+        nombre: {
+          equals: NOMBRE_SEDE_BODEGA,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+    const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
+
     const prestamosActivos = await prisma.prestamoSede.findMany({
       where: {
         imei: item.imei,
@@ -87,8 +106,100 @@ export async function POST(req: Request) {
         id: true,
         sedeOrigenId: true,
         sedeDestinoId: true,
+        estado: true,
       },
     });
+
+    const deudaVieneDeBodegaPrincipal =
+      (String(item.origen || "").trim().toUpperCase() === "PRINCIPAL" ||
+        !!item.inventarioPrincipalId) &&
+      esDeudaProveedor(item.deboA);
+    const prestamoBodegaPrincipal = deudaVieneDeBodegaPrincipal
+      ? prestamosActivos.find(
+          (prestamo) =>
+            prestamo.sedeDestinoId === item.sedeId &&
+            (prestamo.sedeOrigenId === sedeBodegaId || sedeBodegaId <= 0)
+        )
+      : null;
+
+    if (prestamoBodegaPrincipal) {
+      if (prestamoBodegaPrincipal.sedeOrigenId === item.sedeId) {
+        return NextResponse.json(
+          { error: "No se puede solicitar pago hacia la misma sede" },
+          { status: 400 }
+        );
+      }
+
+      if (prestamoBodegaPrincipal.estado === "PAGO_PENDIENTE_APROBACION") {
+        return NextResponse.json(
+          { error: "Este pago ya esta pendiente de aprobacion" },
+          { status: 400 }
+        );
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.prestamoSede.update({
+          where: { id: prestamoBodegaPrincipal.id },
+          data: {
+            estado: "PAGO_PENDIENTE_APROBACION",
+            montoPago: item.costo,
+            fechaSolicitudPago: new Date(),
+          },
+        });
+
+        const movimientoPendiente = await tx.movimientoCajaSede.findFirst({
+          where: {
+            prestamoId: prestamoBodegaPrincipal.id,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (movimientoPendiente) {
+          await tx.movimientoCajaSede.update({
+            where: { id: movimientoPendiente.id },
+            data: {
+              sedeId: prestamoBodegaPrincipal.sedeOrigenId,
+              tipo: "PENDIENTE_APROBACION",
+              concepto: "PAGO PRESTAMO ENTRE SEDES",
+              valor: item.costo,
+            },
+          });
+        } else {
+          await tx.movimientoCajaSede.create({
+            data: {
+              sedeId: prestamoBodegaPrincipal.sedeOrigenId,
+              tipo: "PENDIENTE_APROBACION",
+              concepto: "PAGO PRESTAMO ENTRE SEDES",
+              valor: item.costo,
+              prestamoId: prestamoBodegaPrincipal.id,
+            },
+          });
+        }
+
+        await tx.movimientoInventario.create({
+          data: {
+            imei: item.imei,
+            tipoMovimiento: "PRESTAMO_SOLICITA_PAGO",
+            referencia: item.referencia,
+            color: item.color || null,
+            costo: item.costo,
+            sedeId: item.sedeId,
+            deboA: item.deboA,
+            estadoFinanciero: "DEUDA",
+            origen: item.origen || "PRINCIPAL",
+            observacion: `SEDE ${item.sedeId} solicita pagar deuda a bodega principal. Prestamo #${prestamoBodegaPrincipal.id}.`,
+          },
+        });
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje:
+          "Solicitud de pago enviada. Bodega principal debe aprobarla desde Prestamos.",
+      });
+    }
 
     const prestamosConPlaceholder = prestamosActivos.filter(
       (prestamo) => prestamo.sedeOrigenId !== item.sedeId

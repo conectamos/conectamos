@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { esDeudaEntreSedes } from "@/lib/prestamos";
+import {
+  NOMBRE_SEDE_BODEGA,
+  esDeudaEntreSedes,
+  esDeudaProveedor,
+  esEstadoDeuda,
+} from "@/lib/prestamos";
 
 export async function POST(req: Request) {
   try {
@@ -74,6 +79,19 @@ export async function POST(req: Request) {
       );
     }
 
+    const sedeBodegaPrincipal = await prisma.sede.findFirst({
+      where: {
+        nombre: {
+          equals: NOMBRE_SEDE_BODEGA,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+    const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
+
     const equipoDestino = await prisma.inventarioSede.findFirst({
       where: {
         imei: prestamo.imei,
@@ -83,6 +101,8 @@ export async function POST(req: Request) {
         id: true,
         estadoFinanciero: true,
         deboA: true,
+        origen: true,
+        inventarioPrincipalId: true,
       },
     });
 
@@ -97,14 +117,43 @@ export async function POST(req: Request) {
       },
     });
 
-    if (!equipoDestino || !equipoOrigen) {
+    if (!equipoDestino) {
       return NextResponse.json(
         { error: "No se encontraron los registros del prestamo" },
         { status: 404 }
       );
     }
 
-    if (!esDeudaEntreSedes(equipoDestino.deboA)) {
+    const prestamoDesdeBodegaPrincipal =
+      prestamo.sedeOrigenId === sedeBodegaId ||
+      ((String(equipoDestino.origen || "").trim().toUpperCase() ===
+        "PRINCIPAL" ||
+        !!equipoDestino.inventarioPrincipalId) &&
+        esEstadoDeuda(equipoDestino.estadoFinanciero) &&
+        esDeudaProveedor(equipoDestino.deboA));
+
+    if (!prestamoDesdeBodegaPrincipal && !equipoOrigen) {
+      return NextResponse.json(
+        { error: "No se encontraron los registros del prestamo" },
+        { status: 404 }
+      );
+    }
+
+    if (
+      prestamoDesdeBodegaPrincipal &&
+      (!esEstadoDeuda(equipoDestino.estadoFinanciero) ||
+        !esDeudaProveedor(equipoDestino.deboA))
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Este equipo no tiene una deuda de bodega principal pendiente de aprobacion.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!prestamoDesdeBodegaPrincipal && !esDeudaEntreSedes(equipoDestino.deboA)) {
       return NextResponse.json(
         {
           error:
@@ -128,7 +177,9 @@ export async function POST(req: Request) {
           tipo: "INGRESO",
           concepto: "PAGO PRESTAMO ENTRE SEDES",
           valor: montoSolicitado,
-          descripcion: `Ingreso por aprobacion de pago prestamo IMEI ${prestamo.imei} desde sede ${prestamo.sedeDestinoId}`,
+          descripcion: prestamoDesdeBodegaPrincipal
+            ? `Ingreso por aprobacion de pago a bodega principal IMEI ${prestamo.imei} desde sede ${prestamo.sedeDestinoId}`
+            : `Ingreso por aprobacion de pago prestamo IMEI ${prestamo.imei} desde sede ${prestamo.sedeDestinoId}`,
           sedeId: prestamo.sedeOrigenId,
         },
       });
@@ -138,7 +189,9 @@ export async function POST(req: Request) {
           tipo: "EGRESO",
           concepto: "PAGO PRESTAMO ENTRE SEDES",
           valor: montoSolicitado,
-          descripcion: `Egreso por pago aprobado de prestamo IMEI ${prestamo.imei} hacia sede ${prestamo.sedeOrigenId}`,
+          descripcion: prestamoDesdeBodegaPrincipal
+            ? `Egreso por pago aprobado a bodega principal IMEI ${prestamo.imei}`
+            : `Egreso por pago aprobado de prestamo IMEI ${prestamo.imei} hacia sede ${prestamo.sedeOrigenId}`,
           sedeId: prestamo.sedeDestinoId,
         },
       });
@@ -194,9 +247,32 @@ export async function POST(req: Request) {
         },
       });
 
-      await tx.inventarioSede.delete({
-        where: { id: equipoOrigen.id },
-      });
+      if (prestamoDesdeBodegaPrincipal) {
+        if (equipoDestino.inventarioPrincipalId) {
+          await tx.inventarioPrincipal.update({
+            where: { id: equipoDestino.inventarioPrincipalId },
+            data: {
+              estado: "PAGO",
+              estadoCobro: "PAGADO",
+            },
+          });
+        } else {
+          await tx.inventarioPrincipal.updateMany({
+            where: {
+              imei: prestamo.imei,
+              estado: "PRESTAMO",
+            },
+            data: {
+              estado: "PAGO",
+              estadoCobro: "PAGADO",
+            },
+          });
+        }
+      } else if (equipoOrigen) {
+        await tx.inventarioSede.delete({
+          where: { id: equipoOrigen.id },
+        });
+      }
 
       await tx.movimientoInventario.create({
         data: {
@@ -208,8 +284,12 @@ export async function POST(req: Request) {
           sedeId: prestamo.sedeDestinoId,
           deboA: null,
           estadoFinanciero: "PAGO",
-          origen: "PRESTAMO_SEDE",
-          observacion: `Pago total aprobado del prestamo. Sede origen: ${prestamo.sedeOrigenId}. Sede destino: ${prestamo.sedeDestinoId}.`,
+          origen: prestamoDesdeBodegaPrincipal
+            ? "PAGO_BODEGA_PRINCIPAL"
+            : "PRESTAMO_SEDE",
+          observacion: prestamoDesdeBodegaPrincipal
+            ? `Pago total aprobado a bodega principal. Sede destino: ${prestamo.sedeDestinoId}.`
+            : `Pago total aprobado del prestamo. Sede origen: ${prestamo.sedeOrigenId}. Sede destino: ${prestamo.sedeDestinoId}.`,
         },
       });
     });

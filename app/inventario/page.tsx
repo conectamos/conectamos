@@ -510,7 +510,7 @@ export default function InventarioPage() {
         return;
       }
 
-      setMensaje("Deuda pagada correctamente");
+      setMensaje(data.mensaje || "Deuda pagada correctamente");
       setMostrarModalPago(false);
       setItemPago(null);
       await cargarInventario();
@@ -699,7 +699,7 @@ export default function InventarioPage() {
       setCargando(true);
       setMensaje("");
 
-      let pagados = 0;
+      let procesados = 0;
       const errores: string[] = [];
 
       for (const item of itemsSeleccionadosParaPago) {
@@ -716,7 +716,7 @@ export default function InventarioPage() {
         const data = await res.json();
 
         if (res.ok) {
-          pagados += 1;
+          procesados += 1;
         } else {
           errores.push(`${item.imei}: ${data.error || "Error pagando deuda"}`);
         }
@@ -724,9 +724,9 @@ export default function InventarioPage() {
 
       setMensaje(
         [
-          `Pago masivo finalizado: ${pagados} deuda${
-            pagados === 1 ? "" : "s"
-          } pagada${pagados === 1 ? "" : "s"}.`,
+          `Pago masivo finalizado: ${procesados} solicitud${
+            procesados === 1 ? "" : "es"
+          } procesada${procesados === 1 ? "" : "s"}.`,
           errores.length
             ? `${errores.length} no se procesaron. ${errores.slice(0, 3).join(" | ")}`
             : "",
