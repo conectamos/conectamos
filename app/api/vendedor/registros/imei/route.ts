@@ -72,8 +72,7 @@ export async function GET(req: Request) {
     if (!equipo) {
       return NextResponse.json(
         {
-          error:
-            "El IMEI no esta disponible en la sede seleccionada ni en Bodega Principal",
+          error: "El IMEI no existe en sedes ni en Bodega Principal",
         },
         { status: 404 }
       );

@@ -431,10 +431,9 @@ function validarPayload(
   };
 }
 
-async function validarEquipoDisponibleParaRegistro(params: {
+async function validarEquipoExistenteParaRegistro(params: {
   serialImei: string;
   sedeId: number;
-  registroIdIgnorado?: number;
 }) {
   const equipo = await buscarEquipoRegistroVentaPorImei(
     params.serialImei,
@@ -443,50 +442,7 @@ async function validarEquipoDisponibleParaRegistro(params: {
 
   if (!equipo) {
     return {
-      error:
-        "El IMEI debe estar en BODEGA en la sede seleccionada o disponible en Bodega Principal",
-    };
-  }
-
-  const ventaExistente = await prisma.venta.findFirst({
-    where: {
-      serial: params.serialImei,
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  if (ventaExistente) {
-    return {
-      error: "Ese IMEI ya tiene una venta registrada",
-    };
-  }
-
-  const registroDuplicado = await prisma.registroVendedorVenta.findFirst({
-    where: {
-      serialImei: params.serialImei,
-      eliminadoEn: null,
-      ventaIdRelacionada: null,
-      estadoVentaRegistro: {
-        notIn: ["CANCELADO", "CONVERTIDO_EN_VENTA"],
-      },
-      ...(params.registroIdIgnorado
-        ? {
-            id: {
-              not: params.registroIdIgnorado,
-            },
-          }
-        : {}),
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  if (registroDuplicado) {
-    return {
-      error: "Ese IMEI ya tiene un registro de vendedor pendiente",
+      error: "El IMEI debe existir en una sede o en Bodega Principal",
     };
   }
 
@@ -656,7 +612,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const equipoValidado = await validarEquipoDisponibleParaRegistro({
+    const equipoValidado = await validarEquipoExistenteParaRegistro({
       serialImei: payload.data.serialImei,
       sedeId: sedeRegistro.id,
     });
@@ -805,10 +761,9 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const equipoValidado = await validarEquipoDisponibleParaRegistro({
+    const equipoValidado = await validarEquipoExistenteParaRegistro({
       serialImei: payload.data.serialImei,
       sedeId: sedeRegistro.id,
-      registroIdIgnorado: id,
     });
 
     if ("error" in equipoValidado) {

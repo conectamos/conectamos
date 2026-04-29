@@ -394,48 +394,8 @@ export async function PATCH(req: Request) {
         return NextResponse.json(
           {
             error:
-              "El IMEI debe estar en BODEGA en la sede del registro o disponible en Bodega Principal",
+              "El IMEI debe existir en una sede o en Bodega Principal",
           },
-          { status: 400 }
-        );
-      }
-
-      const ventaExistente = await prisma.venta.findFirst({
-        where: {
-          serial: serialImei,
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      if (ventaExistente) {
-        return NextResponse.json(
-          { error: "Ese IMEI ya tiene una venta registrada" },
-          { status: 400 }
-        );
-      }
-
-      const registroDuplicado = await prisma.registroVendedorVenta.findFirst({
-        where: {
-          id: {
-            not: id,
-          },
-          serialImei,
-          eliminadoEn: null,
-          ventaIdRelacionada: null,
-          estadoVentaRegistro: {
-            notIn: ["CANCELADO", "CONVERTIDO_EN_VENTA"],
-          },
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      if (registroDuplicado) {
-        return NextResponse.json(
-          { error: "Ese IMEI ya tiene un registro de vendedor pendiente" },
           { status: 400 }
         );
       }
