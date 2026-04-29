@@ -113,12 +113,15 @@ export async function GET(req: Request) {
         `${prestamo.imei}:${prestamo.sedeOrigenId}`
       );
 
+      const destinoMarcadoComoPrincipal =
+        String(equipoDestino?.origen || "").trim().toUpperCase() ===
+        "PRINCIPAL";
+      const destinoTieneDeudaDePrincipal =
+        !!equipoDestino?.inventarioPrincipalId &&
+        esEstadoDeuda(equipoDestino?.estadoFinanciero) &&
+        esDeudaProveedor(equipoDestino?.deboA);
       const destinoVieneDePrincipal =
-        ((String(equipoDestino?.origen || "").trim().toUpperCase() ===
-          "PRINCIPAL" ||
-          !!equipoDestino?.inventarioPrincipalId) &&
-          esDeudaProveedor(equipoDestino?.deboA)) ||
-        false;
+        destinoMarcadoComoPrincipal || destinoTieneDeudaDePrincipal;
       const origenTieneEquipoEnPrestamo =
         String(equipoOrigen?.estadoActual || "").trim().toUpperCase() ===
         "PRESTAMO";
