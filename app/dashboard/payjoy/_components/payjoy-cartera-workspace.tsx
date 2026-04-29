@@ -684,13 +684,31 @@ export default function PayJoyCarteraWorkspace() {
         REFERENCIA: row.deviceFamily || "",
         CORTE: row.corteName || "",
         TIENDA: row.merchantName || "",
-        CUOTA: formatCurrency(row.installmentAmount, row.currency),
+        CUOTA: row.installmentAmount ?? null,
         ESTADO: row.status,
         "PAGO COMPLETO": row.paidInFull ? "SI" : "NO",
         "MENSAJE CONSULTA": row.lookupMessage || "",
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      filteredRows.forEach((row, index) => {
+        const imeiCellRef = `B${index + 2}`;
+        const quotaCellRef = `K${index + 2}`;
+        const imeiCell = worksheet[imeiCellRef];
+        const quotaCell = worksheet[quotaCellRef];
+
+        if (imeiCell) {
+          imeiCell.t = "s";
+          imeiCell.z = "@";
+          imeiCell.v = row.imei || "";
+        }
+
+        if (quotaCell && row.installmentAmount !== null) {
+          quotaCell.t = "n";
+          quotaCell.v = row.installmentAmount;
+          quotaCell.z = '"$"#,##0';
+        }
+      });
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Cartera PayJoy");
       XLSX.writeFile(
