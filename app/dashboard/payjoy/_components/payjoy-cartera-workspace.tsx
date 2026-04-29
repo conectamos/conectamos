@@ -622,6 +622,8 @@ export default function PayJoyCarteraWorkspace() {
   const [savedCutsLoading, setSavedCutsLoading] = useState(true);
   const [savedCutsError, setSavedCutsError] = useState("");
   const [savedCutsExpanded, setSavedCutsExpanded] = useState(false);
+  const [rulesExpanded, setRulesExpanded] = useState(false);
+  const [merchantSummaryExpanded, setMerchantSummaryExpanded] = useState(false);
   const [consultingCutId, setConsultingCutId] = useState<number | null>(null);
   const [reloadingCutId, setReloadingCutId] = useState<number | null>(null);
   const [deletingCutId, setDeletingCutId] = useState<number | null>(null);
@@ -1122,60 +1124,51 @@ export default function PayJoyCarteraWorkspace() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb] px-4 py-6">
+    <div className="min-h-screen bg-[#f4f7fb] px-4 py-4">
       <div className="mx-auto w-full max-w-none">
-        <section className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-6 py-6 text-slate-950 shadow-[0_16px_50px_rgba(15,23,42,0.07)] sm:px-8">
-          <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+        <section className="rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-slate-950 shadow-sm sm:px-6">
+          <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="max-w-4xl">
               <div className="flex flex-wrap gap-2">
-                <div className="inline-flex rounded-full border border-[#dfcfb3] bg-[#fff8ec] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
+                <div className="inline-flex rounded-full border border-[#dfcfb3] bg-[#fff8ec] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8f5b24]">
                   PayJoy cartera
                 </div>
-                <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
+                <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
                   Solo admin
                 </div>
               </div>
 
-              <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 sm:text-[3.2rem]">
+              <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
                 Cartera PayJoy
               </h1>
-              <div className="mt-4 h-[3px] w-18 rounded-full bg-[#c79a57]" />
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
                 Consolida cortes, revisa cartera por tienda y administra el
                 historial desde un panel mas limpio para operacion.
               </p>
 
-              <div className="mt-6 flex flex-wrap gap-3">
-                <div className="min-w-[170px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <div className="mt-4 flex flex-wrap gap-2">
+                <div className="min-w-[145px] rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Archivos listos
                   </p>
-                  <p className="mt-2 text-2xl font-black text-slate-950">
+                  <p className="mt-1 text-xl font-black text-slate-950">
                     {totalSelectedFiles}
                   </p>
                 </div>
-                <div className="min-w-[170px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <div className="min-w-[145px] rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Cortes guardados
                   </p>
-                  <p className="mt-2 text-2xl font-black text-slate-950">
+                  <p className="mt-1 text-xl font-black text-slate-950">
                     {savedCutsCount}
                   </p>
                 </div>
-                <div className="min-w-[170px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <div className="min-w-[145px] rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Filas activas
                   </p>
-                  <p className="mt-2 text-2xl font-black text-slate-950">
+                  <p className="mt-1 text-xl font-black text-slate-950">
                     {rows.length}
-                  </p>
-                </div>
-                <div className="min-w-[200px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Formatos
-                  </p>
-                  <p className="mt-2 text-base font-black text-slate-950">
-                    XLSX, CSV, TXT
                   </p>
                 </div>
               </div>
@@ -1205,7 +1198,7 @@ export default function PayJoyCarteraWorkspace() {
         </section>
 
         {message && (
-          <div className="mb-5 mt-5 rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-700 shadow-sm">
+          <div className="mb-4 mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
             {message}
           </div>
         )}
@@ -1286,17 +1279,17 @@ export default function PayJoyCarteraWorkspace() {
           </section>
         )}
 
-        <section className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_12px_38px_rgba(15,23,42,0.06)]">
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-              <div className="inline-flex rounded-full border border-[#dfcfb3] bg-[#fff8ec] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
+        <section className="mt-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
+              <div className="inline-flex rounded-full border border-[#dfcfb3] bg-[#fff8ec] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8f5b24]">
                 Operacion actual
               </div>
 
-              <h2 className="mt-4 text-[2rem] font-black tracking-tight text-slate-950">
+              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
                 Cargar transacciones
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 Sube archivos exportados desde PayJoy, consolida sin duplicados
                 y deja listo el corte para guardar o analizar.
               </p>
@@ -1312,21 +1305,21 @@ export default function PayJoyCarteraWorkspace() {
                 }
               />
 
-              <div className="mt-6 flex flex-wrap gap-3">
+              <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="rounded-2xl bg-[#111318] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b1f27]"
+                  className="rounded-xl bg-[#111318] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b1f27]"
                 >
                   Seleccionar archivos
                 </button>
                 <button
                   onClick={() => void processSources()}
                   disabled={loading}
-                  className="rounded-2xl border border-[#d2c4ad] bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-[#fcfaf5] disabled:opacity-70"
+                  className="rounded-xl border border-[#d2c4ad] bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-[#fcfaf5] disabled:opacity-70"
                 >
                   {loading ? "Procesando..." : "Procesar cargas"}
                 </button>
-                <div className="rounded-2xl border border-[#e2d8c7] bg-white/90 px-4 py-3 text-sm font-semibold text-slate-700">
+                <div className="rounded-xl border border-[#e2d8c7] bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-700">
                   {files.length
                     ? `${files.length} archivo(s) listo(s)`
                     : "Aun no has seleccionado archivos"}
@@ -1334,7 +1327,7 @@ export default function PayJoyCarteraWorkspace() {
               </div>
 
               {files.length > 0 && (
-                <div className="mt-5 flex flex-wrap gap-2">
+                <div className="mt-4 flex flex-wrap gap-2">
                   {files.map((file) => (
                     <span
                       key={`${file.name}-${file.size}`}
@@ -1347,43 +1340,56 @@ export default function PayJoyCarteraWorkspace() {
               )}
             </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 shadow-sm">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Checklist rapido
+            <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                    Reglas
+                  </div>
+                  <p className="mt-3 text-sm font-semibold text-slate-950">
+                    XLSX, CSV o TXT
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setRulesExpanded((current) => !current)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  {rulesExpanded ? "Ocultar" : "Ver reglas"}
+                </button>
               </div>
 
-              <div className="mt-5 space-y-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Validacion
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">
-                    Hoja <span className="font-semibold">Transacciones</span> o
-                    tabla con columnas validas.
-                  </p>
-                </div>
+              {rulesExpanded && (
+                <div className="mt-4 space-y-2">
+                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Validacion
+                    </p>
+                    <p className="mt-1 text-sm leading-5 text-slate-700">
+                      Hoja <span className="font-semibold">Transacciones</span> o tabla con columnas validas.
+                    </p>
+                  </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Campos base
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">
-                    transaction time, merchant name, device, device family,
-                    imei y national id.
-                  </p>
-                </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Campos base
+                    </p>
+                    <p className="mt-1 text-sm leading-5 text-slate-700">
+                      transaction time, merchant name, device, device family, imei y national id.
+                    </p>
+                  </div>
 
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
-                    Calculo automatico
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-amber-800">
-                    Fecha de pago = +14 dias. Pago maximo = +18 dias. Si el
-                    equipo ya esta pagado, se marca como{" "}
-                    <span className="font-semibold">PAGO</span>.
-                  </p>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
+                      Calculo automatico
+                    </p>
+                    <p className="mt-1 text-sm leading-5 text-amber-800">
+                      Fecha de pago = +14 dias. Pago maximo = +18 dias. Si el equipo ya esta pagado, se marca como{" "}
+                      <span className="font-semibold">PAGO</span>.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </section>
@@ -1699,82 +1705,75 @@ export default function PayJoyCarteraWorkspace() {
 
         {data && (
           <>
-            <section className="mt-6 grid gap-4 md:grid-cols-5">
-              <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Cargas
-                </p>
-                <p className="mt-2 text-3xl font-black text-slate-950">
-                  {data.totalSources}
-                </p>
-              </div>
-
-              <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Filas brutas
-                </p>
-                <p className="mt-2 text-3xl font-black text-slate-950">
-                  {data.rawRows}
-                </p>
-              </div>
-
-              <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-sm">
+            <section className="mt-4 grid gap-3 md:grid-cols-4">
+              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Unicas
                 </p>
-                <p className="mt-2 text-3xl font-black text-slate-950">
+                <p className="mt-2 text-2xl font-black text-slate-950">
                   {hasActiveFilter ? filteredRows.length : rows.length}
                 </p>
-                <p className="mt-2 text-sm text-slate-500">
-                  {hasActiveFilter ? "Filtradas" : "Sin duplicados"}
+                <p className="mt-1 text-sm text-slate-500">
+                  {hasActiveFilter ? "Filtradas" : "Sin duplicados"} | Brutas: {data.rawRows}
                 </p>
               </div>
 
-              <div className="rounded-[24px] border border-red-200 bg-[linear-gradient(180deg,#fff5f5_0%,#fef2f2_100%)] p-4 shadow-sm">
+              <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Pago
+                </p>
+                <p className="mt-2 text-2xl font-black text-emerald-700">
+                  {summaryCards.pago}
+                </p>
+                <p className="mt-1 text-sm text-emerald-700/80">
+                  Pago X: {summaryCards.pagoX}
+                </p>
+              </div>
+
+              <div className="rounded-[18px] border border-red-200 bg-red-50 p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
                   Mora / gestionar
                 </p>
-                <p className="mt-2 text-3xl font-black text-red-700">
+                <p className="mt-2 text-2xl font-black text-red-700">
                   {summaryCards.mora}
                 </p>
               </div>
 
-              <div className="rounded-[24px] border border-emerald-200 bg-[linear-gradient(180deg,#f0fdf4_0%,#ecfdf5_100%)] p-4 shadow-sm">
+              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Pago
+                  % mora visible
                 </p>
-                <p className="mt-2 text-3xl font-black text-emerald-700">
-                  {summaryCards.pago}
-                </p>
-                <p className="mt-2 text-sm text-emerald-700/80">
-                  Pago X: {summaryCards.pagoX}
+                <p className="mt-2 text-2xl font-black text-slate-950">
+                  {formatPercent(
+                    visibleSummary.mora + visibleSummary.pago
+                      ? (visibleSummary.mora /
+                          (visibleSummary.mora + visibleSummary.pago)) *
+                          100
+                      : 0
+                  )}
                 </p>
               </div>
             </section>
 
-            <section className="mt-6 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <section className="mt-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                     Analitica
                   </div>
-                  <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+                  <h2 className="mt-3 text-xl font-black tracking-tight text-slate-950">
                     Filtros de cartera
                   </h2>
-                  <p className="mt-2 max-w-3xl text-sm text-slate-500">
-                    Filtra por tienda, estado y revisa el comportamiento de la
-                    cartera visible sin salir del panel.
-                  </p>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="flex flex-wrap gap-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
                     Comercios:{" "}
                     <span className="font-semibold text-slate-950">
                       {merchantSummaries.length}
                     </span>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
                     Filas visibles:{" "}
                     <span className="font-semibold text-slate-950">
                       {filteredRows.length}
@@ -1783,21 +1782,21 @@ export default function PayJoyCarteraWorkspace() {
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px_auto]">
+              <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px_auto]">
                 <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-slate-700">
+                  <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                     Buscar Merchant name
                   </span>
                   <input
                     value={merchantQuery}
                     onChange={(event) => setMerchantQuery(event.target.value)}
                     placeholder="Ej: CONECTAMOS CLARO 6"
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-slate-500"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-500"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-slate-700">
+                  <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                     Merchant filtrado
                   </span>
                   <select
@@ -1805,7 +1804,7 @@ export default function PayJoyCarteraWorkspace() {
                     onChange={(event) =>
                       handleMerchantSelection(event.target.value)
                     }
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-slate-500"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-500"
                   >
                     <option value="TODOS">Todos los merchant</option>
                     {merchantSummaries.map((summary) => (
@@ -1822,17 +1821,14 @@ export default function PayJoyCarteraWorkspace() {
                 <div className="flex items-end">
                   <button
                     onClick={clearFilters}
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                   >
                     Limpiar filtros
                   </button>
                 </div>
               </div>
 
-              <div className="mt-5">
-                <p className="mb-3 text-sm font-semibold text-slate-700">
-                  Filtrar por estado
-                </p>
+              <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex flex-wrap gap-2">
                   {(
                     ["TODOS", "PAGO", "MORA", "GESTIONAR", "PAGO X"] as const
@@ -1851,23 +1847,29 @@ export default function PayJoyCarteraWorkspace() {
                     )
                   )}
                 </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setMerchantSummaryExpanded((current) => !current)}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    {merchantSummaryExpanded ? "Ocultar tiendas" : "Ver tiendas"}
+                  </button>
+                  <button
+                    onClick={() => void exportVisibleRowsToExcel()}
+                    disabled={exportingExcel || !filteredRows.length}
+                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {exportingExcel ? "Exportando..." : "Exportar a Excel"}
+                  </button>
+                </div>
               </div>
 
-              <div className="mt-5 flex flex-wrap justify-end gap-3">
-                <button
-                  onClick={() => void exportVisibleRowsToExcel()}
-                  disabled={exportingExcel || !filteredRows.length}
-                  className="rounded-2xl border border-emerald-300 bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {exportingExcel ? "Exportando..." : "Exportar a Excel"}
-                </button>
-              </div>
-
-              <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Cortes detectados
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   {(hasActiveFilter ? visibleSourceNames : data.sourceNames).map(
                     (name) => (
                       <span
@@ -1883,56 +1885,10 @@ export default function PayJoyCarteraWorkspace() {
                   Duplicados removidos: {data.duplicatesRemoved}
                 </p>
               </div>
-
-              <div className="mt-6 grid gap-4 md:grid-cols-4">
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Registros visibles
-                  </p>
-                  <p className="mt-3 text-3xl font-black text-slate-950">
-                    {filteredRows.length}
-                  </p>
-                </div>
-
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Activos visibles
-                  </p>
-                  <p className="mt-3 text-3xl font-black text-slate-950">
-                    {visibleSummary.mora + visibleSummary.pago}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Pago X: {visibleSummary.pagoX}
-                  </p>
-                </div>
-
-                <div className="rounded-[24px] border border-red-200 bg-red-50 p-5">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
-                    Mora / gestionar
-                  </p>
-                  <p className="mt-3 text-3xl font-black text-red-700">
-                    {visibleSummary.mora}
-                  </p>
-                </div>
-
-                <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 p-5">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                    % mora visible
-                  </p>
-                  <p className="mt-3 text-3xl font-black text-emerald-700">
-                    {formatPercent(
-                      visibleSummary.mora + visibleSummary.pago
-                        ? (visibleSummary.mora /
-                            (visibleSummary.mora + visibleSummary.pago)) *
-                            100
-                        : 0
-                    )}
-                  </p>
-                </div>
-              </div>
             </section>
 
-            <section className="mt-6 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            {merchantSummaryExpanded && (
+            <section className="mt-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                 Resumen por tienda
               </div>
@@ -1994,13 +1950,14 @@ export default function PayJoyCarteraWorkspace() {
                 </table>
               </div>
             </section>
+            )}
 
-            <section className="mt-6 overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-5">
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+            <section className="mt-4 overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-5 py-4">
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                   Tabla operativa
                 </div>
-                <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
+                <h2 className="mt-3 text-xl font-black tracking-tight text-slate-950">
                   Tabla de cartera PayJoy
                 </h2>
                 <p className="mt-2 text-sm text-slate-500">
