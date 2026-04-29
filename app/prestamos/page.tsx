@@ -37,6 +37,10 @@ type Sede = {
   nombre: string;
 };
 
+function formatoPesos(valor: number) {
+  return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
+}
+
 function MetricCard({
   label,
   value,
@@ -461,8 +465,9 @@ export default function PrestamosPage() {
   }, [prestamos, filtroEstado, busqueda]);
 
   const totalPrestamos = prestamos.length;
+  const totalDesdePrincipal = prestamos.filter((p) => p.prestamoDesdePrincipal).length;
+  const totalEntreSedes = prestamos.filter((p) => !p.prestamoDesdePrincipal).length;
   const totalPendientes = prestamos.filter((p) => p.estado === "PENDIENTE").length;
-  const totalAprobados = prestamos.filter((p) => p.estado === "APROBADO").length;
   const totalPagoPendiente = prestamos.filter(
     (p) => p.estado === "PAGO_PENDIENTE_APROBACION"
   ).length;
@@ -511,6 +516,89 @@ export default function PrestamosPage() {
     if (normalizado === "CANCELADO") return "bg-slate-200 text-slate-700";
     if (normalizado === "DEVUELTO") return "bg-slate-200 text-slate-700";
     return "bg-slate-200 text-slate-700";
+  };
+
+  const claseTipoPrestamo = (prestamo: Prestamo) =>
+    prestamo.prestamoDesdePrincipal
+      ? "border-amber-200 bg-amber-50 text-amber-800"
+      : "border-sky-200 bg-sky-50 text-sky-800";
+
+  const claseFinanciera = (estado: string | null | undefined) => {
+    const normalizado = String(estado || "").toUpperCase();
+
+    if (normalizado === "PAGO") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    if (normalizado === "DEUDA") return "border-amber-200 bg-amber-50 text-amber-700";
+    if (normalizado === "CANCELADO") return "border-slate-200 bg-slate-100 text-slate-700";
+    return "border-slate-200 bg-slate-50 text-slate-500";
+  };
+
+  const resolverSiguientePaso = (prestamo: Prestamo) => {
+    const origen = prestamo.sedeOrigenNombre ?? `SEDE ${prestamo.sedeOrigenId}`;
+    const destino = prestamo.sedeDestinoNombre ?? `SEDE ${prestamo.sedeDestinoId}`;
+
+    if (prestamo.estado === "PENDIENTE") {
+      return {
+        detalle: `${destino} debe aprobar o rechazar la recepcion.`,
+        titulo: "Aprueba destino",
+        tono: "border-amber-200 bg-amber-50 text-amber-800",
+      };
+    }
+
+    if (prestamo.estado === "APROBADO") {
+      if (prestamo.prestamoDesdePrincipal) {
+        return {
+          detalle: `${destino} solicita el pago desde Inventario. No aplica devolucion.`,
+          titulo: "Cobro Bodega Principal",
+          tono: "border-amber-200 bg-amber-50 text-amber-800",
+        };
+      }
+
+      if (prestamo.requiereAprobacionEntreSedes) {
+        return {
+          detalle: `${destino} solicita pago y ${origen} lo aprueba.`,
+          titulo: "Pago entre sedes",
+          tono: "border-sky-200 bg-sky-50 text-sky-800",
+        };
+      }
+
+      return {
+        detalle: "Prestamo activo en seguimiento.",
+        titulo: "Seguimiento",
+        tono: "border-slate-200 bg-slate-50 text-slate-700",
+      };
+    }
+
+    if (prestamo.estado === "PAGO_PENDIENTE_APROBACION") {
+      return {
+        detalle: `Al aprobar, entra dinero a ${origen} y sale de ${destino}.`,
+        titulo: prestamo.prestamoDesdePrincipal
+          ? "Aprueba Bodega Principal"
+          : `Aprueba ${origen}`,
+        tono: "border-violet-200 bg-violet-50 text-violet-800",
+      };
+    }
+
+    if (prestamo.estado === "DEVOLUCION_PENDIENTE") {
+      return {
+        detalle: `${origen} debe aprobar o rechazar la devolucion.`,
+        titulo: "Aprueba origen",
+        tono: "border-violet-200 bg-violet-50 text-violet-800",
+      };
+    }
+
+    if (prestamo.estado === "PAGADO") {
+      return {
+        detalle: "Caja e inventario ya fueron actualizados.",
+        titulo: "Cerrado por pago",
+        tono: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      };
+    }
+
+    return {
+      detalle: "No hay accion pendiente en este estado.",
+      titulo: "Sin accion pendiente",
+      tono: "border-slate-200 bg-slate-50 text-slate-600",
+    };
   };
 
   return (
@@ -580,23 +668,29 @@ export default function PrestamosPage() {
           </div>
         )}
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <MetricCard
             label="Total prestamos"
             value={totalPrestamos}
             detail="Solicitudes visibles en esta cobertura."
           />
           <MetricCard
+            label="Bodega principal"
+            value={totalDesdePrincipal}
+            detail="Equipos enviados desde principal."
+            valueClass="text-amber-600"
+          />
+          <MetricCard
+            label="Entre sedes"
+            value={totalEntreSedes}
+            detail="Prestamos operativos sede a sede."
+            valueClass="text-sky-600"
+          />
+          <MetricCard
             label="Pendientes"
             value={totalPendientes}
             detail="Solicitudes a la espera de aprobacion."
             valueClass="text-amber-600"
-          />
-          <MetricCard
-            label="Aprobados"
-            value={totalAprobados}
-            detail="Prestamos activos listos para seguimiento."
-            valueClass="text-sky-600"
           />
           <MetricCard
             label="Pago pendiente"
@@ -706,17 +800,16 @@ export default function PrestamosPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1180px] text-sm">
+            <table className="min-w-[1540px] text-sm">
               <thead className="sticky top-0 bg-[#f8fafc]">
                 <tr className="border-b border-slate-200 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-slate-500">
                   <th className="px-4 py-4">ID</th>
-                  <th className="px-4 py-4">IMEI</th>
-                  <th className="px-4 py-4">Referencia</th>
-                  <th className="px-4 py-4">Color</th>
-                  <th className="px-4 py-4">Costo</th>
-                  <th className="px-4 py-4">Sede origen</th>
-                  <th className="px-4 py-4">Sede destino</th>
+                  <th className="px-4 py-4">Equipo</th>
+                  <th className="px-4 py-4">Tipo</th>
+                  <th className="px-4 py-4">Flujo</th>
                   <th className="px-4 py-4">Estado</th>
+                  <th className="px-4 py-4">Financiero</th>
+                  <th className="px-4 py-4">Siguiente paso</th>
                   <th className="px-4 py-4">Accion</th>
                 </tr>
               </thead>
@@ -724,39 +817,100 @@ export default function PrestamosPage() {
               <tbody>
                 {prestamosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
+                    <td colSpan={8} className="px-6 py-16 text-center text-slate-500">
                       No hay prestamos registrados en esta vista.
                     </td>
                   </tr>
                 ) : (
-                  prestamosFiltrados.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-[#faf7f1]"
-                    >
-                      <td className="px-4 py-4 font-bold text-slate-950">{item.id}</td>
-                      <td className="px-4 py-4 font-semibold text-slate-950">{item.imei}</td>
-                      <td className="px-4 py-4 font-medium text-slate-900">{item.referencia}</td>
-                      <td className="px-4 py-4">{item.color ?? "-"}</td>
-                      <td className="px-4 py-4 font-semibold text-slate-950">
-                        $ {Number(item.costo).toLocaleString("es-CO")}
-                      </td>
-                      <td className="px-4 py-4">
-                        {item.sedeOrigenNombre ?? `SEDE ${item.sedeOrigenId}`}
-                      </td>
-                      <td className="px-4 py-4">
-                        {item.sedeDestinoNombre ?? `SEDE ${item.sedeDestinoId}`}
-                      </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${claseEstado(
-                            item.estado
-                          )}`}
-                        >
-                          {item.estado}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
+                  prestamosFiltrados.map((item) => {
+                    const paso = resolverSiguientePaso(item);
+                    const origen = item.sedeOrigenNombre ?? `SEDE ${item.sedeOrigenId}`;
+                    const destino = item.sedeDestinoNombre ?? `SEDE ${item.sedeDestinoId}`;
+
+                    return (
+                      <tr
+                        key={item.id}
+                        className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-[#faf7f1]"
+                      >
+                        <td className="px-4 py-4 font-bold text-slate-950">{item.id}</td>
+                        <td className="px-4 py-4">
+                          <div className="font-semibold text-slate-950">{item.imei}</div>
+                          <div className="mt-1 text-xs font-medium text-slate-500">
+                            {item.referencia}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-400">
+                            {item.color ?? "-"} | {formatoPesos(item.costo)}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${claseTipoPrestamo(
+                              item
+                            )}`}
+                          >
+                            {item.prestamoDesdePrincipal ? "Bodega Principal" : "Entre sedes"}
+                          </span>
+                          <div className="mt-2 text-xs font-medium text-slate-500">
+                            {item.prestamoDesdePrincipal
+                              ? "Sin devolucion"
+                              : "Permite devolucion segun estado"}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                              Origen
+                            </p>
+                            <p className="mt-1 font-semibold text-slate-900">{origen}</p>
+                          </div>
+                          <div className="mt-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                              Destino
+                            </p>
+                            <p className="mt-1 font-semibold text-slate-900">{destino}</p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${claseEstado(
+                              item.estado
+                            )}`}
+                          >
+                            {item.estado}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${claseFinanciera(
+                              item.estadoFinancieroActual
+                            )}`}
+                          >
+                            {item.estadoFinancieroActual ?? "-"}
+                          </span>
+                          <div className="mt-2 space-y-1 text-xs text-slate-500">
+                            <p>
+                              Debe a:{" "}
+                              <span className="font-semibold text-slate-700">
+                                {item.deboAActual ?? "-"}
+                              </span>
+                            </p>
+                            <p>
+                              Equipo:{" "}
+                              <span className="font-semibold text-slate-700">
+                                {item.estadoActualActual ?? "-"}
+                              </span>
+                            </p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className={`rounded-2xl border px-4 py-3 ${paso.tono}`}>
+                            <p className="text-xs font-black uppercase tracking-[0.12em]">
+                              {paso.titulo}
+                            </p>
+                            <p className="mt-2 text-xs leading-5">{paso.detalle}</p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-2">
                           {puedeSolicitarDevolucion(item) && (
                             <button
@@ -869,9 +1023,10 @@ export default function PrestamosPage() {
                               </span>
                             )}
                         </div>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
