@@ -114,16 +114,32 @@ export async function POST(req: Request) {
       (String(item.origen || "").trim().toUpperCase() === "PRINCIPAL" ||
         !!item.inventarioPrincipalId) &&
       esDeudaProveedor(item.deboA);
+    const prestamosDestinoActual = prestamosActivos.filter(
+      (prestamo) => prestamo.sedeDestinoId === item.sedeId
+    );
     const prestamoBodegaPrincipal = deudaVieneDeBodegaPrincipal
-      ? prestamosActivos.find(
-          (prestamo) =>
-            prestamo.sedeDestinoId === item.sedeId &&
-            (prestamo.sedeOrigenId === sedeBodegaId || sedeBodegaId <= 0)
-        )
+      ? prestamosDestinoActual.find(
+          (prestamo) => prestamo.sedeOrigenId === sedeBodegaId
+        ) ||
+        prestamosDestinoActual[0] ||
+        null
       : null;
 
-    if (prestamoBodegaPrincipal) {
-      if (prestamoBodegaPrincipal.sedeOrigenId === item.sedeId) {
+    if (deudaVieneDeBodegaPrincipal) {
+      if (!prestamoBodegaPrincipal) {
+        return NextResponse.json(
+          {
+            error:
+              "No se encontro un prestamo activo de bodega principal para solicitar aprobacion del pago.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const sedeAcreedoraId =
+        sedeBodegaId > 0 ? sedeBodegaId : prestamoBodegaPrincipal.sedeOrigenId;
+
+      if (sedeAcreedoraId === item.sedeId) {
         return NextResponse.json(
           { error: "No se puede solicitar pago hacia la misma sede" },
           { status: 400 }
@@ -141,9 +157,11 @@ export async function POST(req: Request) {
         await tx.prestamoSede.update({
           where: { id: prestamoBodegaPrincipal.id },
           data: {
+            sedeOrigenId: sedeAcreedoraId,
             estado: "PAGO_PENDIENTE_APROBACION",
             montoPago: item.costo,
             fechaSolicitudPago: new Date(),
+            fechaAprobacionPago: null,
           },
         });
 
@@ -160,7 +178,7 @@ export async function POST(req: Request) {
           await tx.movimientoCajaSede.update({
             where: { id: movimientoPendiente.id },
             data: {
-              sedeId: prestamoBodegaPrincipal.sedeOrigenId,
+              sedeId: sedeAcreedoraId,
               tipo: "PENDIENTE_APROBACION",
               concepto: "PAGO PRESTAMO ENTRE SEDES",
               valor: item.costo,
@@ -169,7 +187,7 @@ export async function POST(req: Request) {
         } else {
           await tx.movimientoCajaSede.create({
             data: {
-              sedeId: prestamoBodegaPrincipal.sedeOrigenId,
+              sedeId: sedeAcreedoraId,
               tipo: "PENDIENTE_APROBACION",
               concepto: "PAGO PRESTAMO ENTRE SEDES",
               valor: item.costo,

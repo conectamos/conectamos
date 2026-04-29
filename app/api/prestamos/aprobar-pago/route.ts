@@ -49,10 +49,6 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!esAdmin && user.sedeId !== prestamo.sedeOrigenId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
     if (prestamo.estado !== "PAGO_PENDIENTE_APROBACION") {
       return NextResponse.json(
         { error: "Este prestamo no esta pendiente de aprobacion" },
@@ -124,13 +120,23 @@ export async function POST(req: Request) {
       );
     }
 
+    const destinoMarcadoComoPrincipal =
+      String(equipoDestino.origen || "").trim().toUpperCase() ===
+        "PRINCIPAL" || !!equipoDestino.inventarioPrincipalId;
+    const destinoTieneDeudaProveedor =
+      esEstadoDeuda(equipoDestino.estadoFinanciero) &&
+      esDeudaProveedor(equipoDestino.deboA);
     const prestamoDesdeBodegaPrincipal =
       prestamo.sedeOrigenId === sedeBodegaId ||
-      ((String(equipoDestino.origen || "").trim().toUpperCase() ===
-        "PRINCIPAL" ||
-        !!equipoDestino.inventarioPrincipalId) &&
-        esEstadoDeuda(equipoDestino.estadoFinanciero) &&
-        esDeudaProveedor(equipoDestino.deboA));
+      (destinoMarcadoComoPrincipal && destinoTieneDeudaProveedor);
+    const sedeAcreedoraId =
+      prestamoDesdeBodegaPrincipal && sedeBodegaId > 0
+        ? sedeBodegaId
+        : prestamo.sedeOrigenId;
+
+    if (!esAdmin && user.sedeId !== sedeAcreedoraId) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     if (!prestamoDesdeBodegaPrincipal && !equipoOrigen) {
       return NextResponse.json(
@@ -167,6 +173,7 @@ export async function POST(req: Request) {
       await tx.prestamoSede.update({
         where: { id: prestamo.id },
         data: {
+          sedeOrigenId: sedeAcreedoraId,
           estado: "PAGADO",
           fechaAprobacionPago: new Date(),
         },
@@ -180,7 +187,7 @@ export async function POST(req: Request) {
           descripcion: prestamoDesdeBodegaPrincipal
             ? `Ingreso por aprobacion de pago a bodega principal IMEI ${prestamo.imei} desde sede ${prestamo.sedeDestinoId}`
             : `Ingreso por aprobacion de pago prestamo IMEI ${prestamo.imei} desde sede ${prestamo.sedeDestinoId}`,
-          sedeId: prestamo.sedeOrigenId,
+          sedeId: sedeAcreedoraId,
         },
       });
 
@@ -191,7 +198,7 @@ export async function POST(req: Request) {
           valor: montoSolicitado,
           descripcion: prestamoDesdeBodegaPrincipal
             ? `Egreso por pago aprobado a bodega principal IMEI ${prestamo.imei}`
-            : `Egreso por pago aprobado de prestamo IMEI ${prestamo.imei} hacia sede ${prestamo.sedeOrigenId}`,
+            : `Egreso por pago aprobado de prestamo IMEI ${prestamo.imei} hacia sede ${sedeAcreedoraId}`,
           sedeId: prestamo.sedeDestinoId,
         },
       });
@@ -212,13 +219,13 @@ export async function POST(req: Request) {
             tipo: "INGRESO",
             concepto: "PAGO PRESTAMO ENTRE SEDES",
             valor: montoSolicitado,
-            sedeId: prestamo.sedeOrigenId,
+            sedeId: sedeAcreedoraId,
           },
         });
       } else {
         await tx.movimientoCajaSede.create({
           data: {
-            sedeId: prestamo.sedeOrigenId,
+            sedeId: sedeAcreedoraId,
             tipo: "INGRESO",
             concepto: "PAGO PRESTAMO ENTRE SEDES",
             valor: montoSolicitado,
@@ -243,7 +250,9 @@ export async function POST(req: Request) {
           estadoFinanciero: "PAGO",
           deboA: null,
           fechaMovimiento: new Date(),
-          observacion: `Pago aprobado a SEDE ${prestamo.sedeOrigenId}`,
+          observacion: prestamoDesdeBodegaPrincipal
+            ? "Pago aprobado a bodega principal"
+            : `Pago aprobado a SEDE ${sedeAcreedoraId}`,
         },
       });
 
@@ -289,7 +298,7 @@ export async function POST(req: Request) {
             : "PRESTAMO_SEDE",
           observacion: prestamoDesdeBodegaPrincipal
             ? `Pago total aprobado a bodega principal. Sede destino: ${prestamo.sedeDestinoId}.`
-            : `Pago total aprobado del prestamo. Sede origen: ${prestamo.sedeOrigenId}. Sede destino: ${prestamo.sedeDestinoId}.`,
+            : `Pago total aprobado del prestamo. Sede origen: ${sedeAcreedoraId}. Sede destino: ${prestamo.sedeDestinoId}.`,
         },
       });
     });
