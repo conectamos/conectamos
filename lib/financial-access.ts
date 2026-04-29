@@ -173,7 +173,9 @@ export async function updateFinancialSedePassword(
   return rows[0] ?? null;
 }
 
-export async function getFinancialAccessState() {
+export async function getFinancialAccessState(options?: {
+  allowAdminBypass?: boolean;
+}) {
   const user = await getSessionUser();
 
   if (!user) {
@@ -186,8 +188,9 @@ export async function getFinancialAccessState() {
   }
 
   const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+  const allowAdminBypass = options?.allowAdminBypass ?? true;
 
-  if (esAdmin) {
+  if (esAdmin && allowAdminBypass) {
     return {
       authorized: true,
       esAdmin: true,
@@ -201,7 +204,7 @@ export async function getFinancialAccessState() {
   if (!sede) {
     return {
       authorized: false,
-      esAdmin: false,
+      esAdmin,
       sede: null,
       user,
     };
@@ -221,7 +224,7 @@ export async function getFinancialAccessState() {
 
   return {
     authorized,
-    esAdmin: false,
+    esAdmin,
     sede: {
       id: sede.id,
       nombre: sede.nombre,

@@ -4,18 +4,45 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 type FinancialAccessGateProps = {
+  actionPath?: string;
+  badgeLabel?: string;
   claveAsignada: boolean;
+  claveLabel?: string;
+  missingMessage?: string;
+  panelNombre?: string;
   sedeNombre: string;
+  submitLabel?: string;
+  tone?: "red" | "teal";
 };
 
 export default function FinancialAccessGate({
+  actionPath = "/api/financiero/acceso",
+  badgeLabel = "Financiero",
   claveAsignada,
+  claveLabel = "Clave financiera",
+  missingMessage,
+  panelNombre = "panel financiero",
   sedeNombre,
+  submitLabel = "Ingresar al panel financiero",
+  tone = "red",
 }: FinancialAccessGateProps) {
   const router = useRouter();
   const [clave, setClave] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [validando, setValidando] = useState(false);
+  const styles =
+    tone === "teal"
+      ? {
+          badge: "border-teal-200 bg-teal-50 text-teal-700",
+          input:
+            "focus:border-teal-600 focus:ring-2 focus:ring-teal-200",
+          button: "bg-teal-700 hover:bg-teal-800",
+        }
+      : {
+          badge: "border-red-200 bg-red-50 text-red-700",
+          input: "focus:border-red-500 focus:ring-2 focus:ring-red-200",
+          button: "bg-red-600 hover:bg-red-700",
+        };
 
   const cancelar = () => {
     if (window.history.length > 1) {
@@ -33,7 +60,7 @@ export default function FinancialAccessGate({
       setValidando(true);
       setMensaje("");
 
-      const res = await fetch("/api/financiero/acceso", {
+      const res = await fetch(actionPath, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -60,8 +87,13 @@ export default function FinancialAccessGate({
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-10">
       <div className="mx-auto max-w-lg rounded-[28px] bg-white p-8 shadow-xl ring-1 ring-slate-200">
-        <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-red-700">
-          Financiero
+        <div
+          className={[
+            "inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide",
+            styles.badge,
+          ].join(" ")}
+        >
+          {badgeLabel}
         </div>
 
         <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-950">
@@ -70,21 +102,25 @@ export default function FinancialAccessGate({
 
         <p className="mt-3 text-sm text-slate-600">
           {claveAsignada
-            ? `Ingresa la clave del panel financiero para continuar en ${sedeNombre}.`
-            : `El administrador debe asignar la clave financiera de ${sedeNombre} para habilitar este panel.`}
+            ? `Ingresa la clave asignada a ${sedeNombre} para continuar en el ${panelNombre}.`
+            : missingMessage ||
+              `El administrador debe asignar la clave de ${sedeNombre} para habilitar este panel.`}
         </p>
 
         {claveAsignada ? (
           <form className="mt-6 space-y-4" onSubmit={ingresar}>
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Clave financiera
+                {claveLabel}
               </label>
               <input
                 type="password"
                 value={clave}
                 onChange={(event) => setClave(event.target.value)}
-                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                className={[
+                  "w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none",
+                  styles.input,
+                ].join(" ")}
                 placeholder="Ingresa la clave"
               />
             </div>
@@ -93,9 +129,12 @@ export default function FinancialAccessGate({
               <button
                 type="submit"
                 disabled={validando}
-                className="flex-1 rounded-2xl bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-70"
+                className={[
+                  "flex-1 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition disabled:opacity-70",
+                  styles.button,
+                ].join(" ")}
               >
-                {validando ? "Validando..." : "Ingresar al panel financiero"}
+                {validando ? "Validando..." : submitLabel}
               </button>
 
               <button

@@ -7,7 +7,10 @@ export default function FinancialAccessReset() {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (pathname.startsWith("/dashboard/financiero")) {
+    if (
+      pathname.startsWith("/dashboard/financiero") ||
+      pathname.startsWith("/dashboard/analitico")
+    ) {
       return;
     }
 
