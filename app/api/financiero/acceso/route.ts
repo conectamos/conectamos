@@ -33,7 +33,7 @@ export async function GET() {
         sedes: sedes.map((sede) => ({
           id: sede.id,
           nombre: sede.nombre,
-          usaClavePredeterminada: !sede.clavePanelFinancieroHash,
+          claveAsignada: Boolean(sede.clavePanelFinancieroHash),
         })),
       });
     }
@@ -89,6 +89,16 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "La sede no existe" },
         { status: 404 }
+      );
+    }
+
+    if (!resultado.claveAsignada) {
+      return NextResponse.json(
+        {
+          error:
+            "El administrador debe asignar la clave financiera de esta sede",
+        },
+        { status: 403 }
       );
     }
 

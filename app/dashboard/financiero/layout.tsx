@@ -32,6 +32,7 @@ export default async function FinancieroLayout({
 
   return (
     <FinancialAccessGate
+      claveAsignada={Boolean(access.sede?.claveAsignada)}
       sedeNombre={access.sede?.nombre ?? access.user.sedeNombre}
     />
   );

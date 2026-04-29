@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 
 type SedeConfig = {
   id: number;
+  claveAsignada: boolean;
   nombre: string;
-  usaClavePredeterminada: boolean;
 };
 
 async function obtenerConfiguracion() {
@@ -130,8 +130,8 @@ export default function FinancialPasswordSettings() {
                 </h2>
                 <p className="mt-2 text-sm text-slate-600">
                   Solo el administrador puede cambiar la clave del panel
-                  financiero. Las sedes sin personalizaci&oacute;n siguen usando
-                  la clave inicial `Adm1995`.
+                  financiero. Las sedes sin clave asignada no pueden ingresar
+                  hasta que el administrador les asigne una.
                 </p>
               </div>
 
@@ -167,9 +167,9 @@ export default function FinancialPasswordSettings() {
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
                   Estado actual:{" "}
                   <span className="font-semibold text-slate-900">
-                    {sedeSeleccionada.usaClavePredeterminada
-                      ? "Usando clave inicial"
-                      : "Clave personalizada"}
+                    {sedeSeleccionada.claveAsignada
+                      ? "Clave asignada"
+                      : "Sin clave asignada"}
                   </span>
                 </div>
               )}

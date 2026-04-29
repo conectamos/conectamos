@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { DEFAULT_FINANCIAL_PANEL_PASSWORD } from "@/lib/financial-access";
+import { verifyFinancialPasswordForSede } from "@/lib/financial-access";
 import { getMonthlyCommercialSummary } from "@/lib/dashboard-commercial-summary";
 
 export async function POST(req: Request) {
@@ -16,22 +16,43 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as Record<string, unknown>;
     const clave = String(body.clave ?? "").trim();
+    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
 
-    if (!clave) {
+    if (!esAdmin && !clave) {
       return NextResponse.json(
         { error: "Debes ingresar la clave de utilidad" },
         { status: 400 }
       );
     }
 
-    if (clave !== DEFAULT_FINANCIAL_PANEL_PASSWORD) {
-      return NextResponse.json(
-        { error: "Clave incorrecta" },
-        { status: 401 }
-      );
+    if (!esAdmin) {
+      const resultado = await verifyFinancialPasswordForSede(user.sedeId, clave);
+
+      if (!resultado) {
+        return NextResponse.json(
+          { error: "La sede no existe" },
+          { status: 404 }
+        );
+      }
+
+      if (!resultado.claveAsignada) {
+        return NextResponse.json(
+          {
+            error:
+              "El administrador debe asignar la clave financiera de esta sede",
+          },
+          { status: 403 }
+        );
+      }
+
+      if (!resultado.isValid) {
+        return NextResponse.json(
+          { error: "Clave incorrecta" },
+          { status: 401 }
+        );
+      }
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
     const resumenMensual = await getMonthlyCommercialSummary({
       sedeId: esAdmin ? null : user.sedeId,
     });

@@ -26,8 +26,10 @@ function formatoPesos(valor: number) {
 
 export default function DashboardUtilityGate({
   coverageLabel,
+  requiereClave,
 }: {
   coverageLabel: string;
+  requiereClave: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [clave, setClave] = useState("");
@@ -90,7 +92,7 @@ export default function DashboardUtilityGate({
                   Cobertura: {coverageLabel}
                 </div>
                 <div className="rounded-full border border-[#e7dccb] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Acceso: Protegido por clave
+                  Acceso: {requiereClave ? "Protegido por clave" : "Administrador"}
                 </div>
               </div>
 
@@ -99,11 +101,16 @@ export default function DashboardUtilityGate({
                   type="button"
                   onClick={() => {
                     setError("");
-                    setAbierto(true);
+                    if (requiereClave) {
+                      setAbierto(true);
+                      return;
+                    }
+
+                    void consultarUtilidad();
                   }}
                   className="inline-flex rounded-2xl bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
                 >
-                  UTILIDAD
+                  {cargando && !requiereClave ? "Consultando..." : "UTILIDAD"}
                 </button>
               </div>
             </>

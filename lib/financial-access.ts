@@ -6,7 +6,6 @@ import { hashPassword, verifyPassword } from "@/lib/password";
 import prisma from "@/lib/prisma";
 import { getSessionCookieOptions } from "@/lib/session";
 
-export const DEFAULT_FINANCIAL_PANEL_PASSWORD = "Adm1995";
 export const FINANCIAL_ACCESS_COOKIE_NAME = "financial_access";
 const FINANCIAL_ACCESS_MAX_AGE_SECONDS = 60 * 60 * 12;
 
@@ -227,7 +226,7 @@ export async function getFinancialAccessState() {
       id: sede.id,
       nombre: sede.nombre,
       updatedAt,
-      usaClavePredeterminada: !sede.clavePanelFinancieroHash,
+      claveAsignada: Boolean(sede.clavePanelFinancieroHash),
     },
     user,
   };
@@ -259,10 +258,16 @@ export async function requireFinancialAccess():
   }
 
   if (!state.authorized) {
+    const claveAsignada = Boolean(state.sede?.claveAsignada);
+
     return {
       ok: false,
       response: NextResponse.json(
-        { error: "Debes ingresar la clave del panel financiero" },
+        {
+          error: claveAsignada
+            ? "Debes ingresar la clave del panel financiero"
+            : "El administrador debe asignar la clave financiera de esta sede",
+        },
         { status: 403 }
       ),
     };
@@ -286,12 +291,13 @@ export async function verifyFinancialPasswordForSede(
     return null;
   }
 
-  const isValid = verifyPassword(
-    clave,
-    sede.clavePanelFinancieroHash || DEFAULT_FINANCIAL_PANEL_PASSWORD
-  );
+  const claveAsignada = Boolean(sede.clavePanelFinancieroHash);
+  const isValid = claveAsignada
+    ? verifyPassword(clave, sede.clavePanelFinancieroHash || "")
+    : false;
 
   return {
+    claveAsignada,
     isValid,
     sede,
   };

@@ -686,7 +686,7 @@ export default async function DashboardPage() {
           </section>
         ) : esVendedor || esFacturador ? null : (
           <div className="mt-6">
-            <DashboardUtilityGate coverageLabel={sedeLabel} />
+            <DashboardUtilityGate coverageLabel={sedeLabel} requiereClave={!esAdmin} />
           </div>
         )}
 
