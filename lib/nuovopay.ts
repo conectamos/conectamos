@@ -351,6 +351,25 @@ function buildDeviceIdsForm(deviceIds: number[]) {
   return form.toString();
 }
 
+function formatNuovoDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getNuovoUnlockNextLockDate() {
+  const current = new Date();
+  const targetYear = current.getFullYear();
+  const targetMonth = current.getMonth() + 3;
+  const originalDay = current.getDate();
+  const monthStart = new Date(targetYear, targetMonth, 1);
+  const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const next = new Date(monthStart);
+  next.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+  return formatNuovoDate(next);
+}
+
 export async function lockNuovoPayDevices(deviceIds: number[]) {
   if (!deviceIds.length) {
     throw new Error("No hay dispositivos para bloquear");
@@ -368,9 +387,12 @@ export async function unlockNuovoPayDevices(deviceIds: number[]) {
     throw new Error("No hay dispositivos para desbloquear");
   }
 
+  const form = new URLSearchParams(buildDeviceIdsForm(deviceIds));
+  form.set("next_lock_date", getNuovoUnlockNextLockDate());
+
   await nuovoPayRequest<unknown>("/dm/api/v1/devices/unlock.json", {
     method: "PATCH",
-    body: buildDeviceIdsForm(deviceIds),
+    body: form.toString(),
     contentType: "application/x-www-form-urlencoded",
   });
 }
