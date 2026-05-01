@@ -3,6 +3,10 @@ import { Prisma } from "@/app/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
+  esPerfilAdministrador,
+  esRolAdmin,
+} from "@/lib/access-control";
+import {
   buildLegacyFinancieraPayload,
   construirDetalleFinancieras,
   totalFinancierasNetas as sumarFinancierasNetas,
@@ -67,6 +71,36 @@ function normalizeTipoIngreso(value: unknown, fallback = "") {
   }
 
   return fallback;
+}
+
+function puedeConvertirRegistrosDeTodasLasSedes(
+  session: Awaited<ReturnType<typeof getSessionUser>>
+) {
+  if (!session) {
+    return false;
+  }
+
+  return esPerfilAdministrador(session.perfilTipo) || esRolAdmin(session.rolNombre);
+}
+
+function registroVentaScopeWhere(
+  session: Awaited<ReturnType<typeof getSessionUser>>
+) {
+  if (!session || puedeConvertirRegistrosDeTodasLasSedes(session)) {
+    return {};
+  }
+
+  return {
+    OR: [
+      { sedeId: session.sedeId },
+      {
+        puntoVenta: {
+          equals: session.sedeNombre,
+          mode: "insensitive" as const,
+        },
+      },
+    ],
+  };
 }
 
 function servicioOcultaFinancieras(servicio: string): boolean {
@@ -159,6 +193,157 @@ function buildJsonFinancierasDetalle(detalle: unknown[]) {
   return detalle.length
     ? (JSON.parse(JSON.stringify(detalle)) as Prisma.InputJsonValue)
     : Prisma.JsonNull;
+}
+
+function tieneMonedaRegistrada(value: unknown) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  return String(value).trim() !== "";
+}
+
+function extraerFinanzasRegistro(registro: {
+  plataformaCredito: unknown;
+  creditoAutorizado: unknown;
+  financierasDetalle: unknown;
+}) {
+  const desdeDetalle = Array.isArray(registro.financierasDetalle)
+    ? registro.financierasDetalle
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const row = item as Record<string, unknown>;
+          const nombre = String(row.plataformaCredito || "").trim();
+          const valor = toNumber(row.creditoAutorizado);
+
+          return nombre && valor > 0 ? { nombre, valor } : null;
+        })
+        .filter((item): item is { nombre: string; valor: number } => Boolean(item))
+    : [];
+
+  if (desdeDetalle.length) {
+    return desdeDetalle;
+  }
+
+  const nombre = String(registro.plataformaCredito || "").trim();
+  const valor = toNumber(registro.creditoAutorizado);
+
+  return nombre && valor > 0 ? [{ nombre, valor }] : [];
+}
+
+function extraerPagosRegistro(registro: {
+  cuotaInicial: unknown;
+  medioPago1Tipo: unknown;
+  medioPago1Valor: unknown;
+  medioPago2Tipo: unknown;
+  medioPago2Valor: unknown;
+  financierasDetalle: unknown;
+}) {
+  const pagosDirectos = [
+    tieneMonedaRegistrada(registro.medioPago1Valor)
+      ? {
+          valor: toNumber(registro.medioPago1Valor),
+          tipo: normalizeTipoIngreso(registro.medioPago1Tipo, "EFECTIVO"),
+        }
+      : null,
+    tieneMonedaRegistrada(registro.medioPago2Valor)
+      ? {
+          valor: toNumber(registro.medioPago2Valor),
+          tipo: normalizeTipoIngreso(registro.medioPago2Tipo, "EFECTIVO"),
+        }
+      : null,
+  ].filter((item): item is { valor: number; tipo: string } => Boolean(item));
+
+  if (pagosDirectos.length) {
+    return pagosDirectos;
+  }
+
+  const pagosDetalle = Array.isArray(registro.financierasDetalle)
+    ? registro.financierasDetalle
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const row = item as Record<string, unknown>;
+          const valor = toNumber(row.cuotaInicial);
+          const tipo = normalizeTipoIngreso(row.tipoPagoInicial, "EFECTIVO");
+
+          return tieneMonedaRegistrada(row.cuotaInicial) ? { valor, tipo } : null;
+        })
+        .filter((item): item is { valor: number; tipo: string } => Boolean(item))
+    : [];
+
+  if (pagosDetalle.length) {
+    return pagosDetalle;
+  }
+
+  const valorInicial = toNumber(registro.cuotaInicial);
+  return tieneMonedaRegistrada(registro.cuotaInicial)
+    ? [
+        {
+          valor: valorInicial,
+          tipo: normalizeTipoIngreso(registro.medioPago1Tipo, "EFECTIVO"),
+        },
+      ]
+    : [];
+}
+
+function aplicarRegistroVendedorInput<
+  T extends VentaInput,
+>(
+  input: T,
+  registro: {
+    plataformaCredito: unknown;
+    creditoAutorizado: unknown;
+    cuotaInicial: unknown;
+    medioPago1Tipo: unknown;
+    medioPago1Valor: unknown;
+    medioPago2Tipo: unknown;
+    medioPago2Valor: unknown;
+    financierasDetalle: unknown;
+  }
+): T {
+  const next: T = { ...input };
+  const finanzasRegistro = extraerFinanzasRegistro(registro);
+
+  if (finanzasRegistro.length) {
+    next.servicio = "FINANCIERA";
+    next.finanzas = Array.from({ length: 4 }, (_, index) => ({
+      nombre: finanzasRegistro[index]?.nombre || "",
+      valor: finanzasRegistro[index]?.valor || 0,
+    }));
+  }
+
+  const pagosRegistro = extraerPagosRegistro(registro);
+
+  if (pagosRegistro.length === 1) {
+    next.ingreso1Base = pagosRegistro[0].valor;
+    next.tipoIngreso1 = pagosRegistro[0].tipo;
+    next.ingreso2Base = 0;
+    next.tipoIngreso2 = "";
+  } else if (
+    pagosRegistro.length > 1 &&
+    pagosRegistro[0].tipo !== pagosRegistro[1].tipo
+  ) {
+    next.ingreso1Base = pagosRegistro[0].valor;
+    next.tipoIngreso1 = pagosRegistro[0].tipo;
+    next.ingreso2Base = pagosRegistro[1].valor;
+    next.tipoIngreso2 = pagosRegistro[1].tipo;
+  } else if (pagosRegistro.length > 1) {
+    next.ingreso1Base = pagosRegistro.reduce(
+      (total, item) => total + item.valor,
+      0
+    );
+    next.tipoIngreso1 = pagosRegistro[0].tipo;
+    next.ingreso2Base = 0;
+    next.tipoIngreso2 = "";
+  }
+
+  return next;
 }
 
 function buildVentaData(
@@ -384,19 +569,65 @@ export async function POST(req: Request) {
     const user = session.user;
     const data = (await req.json()) as Record<string, unknown>;
     const input = parseVentaInput(data);
-    const catalogo = await obtenerCatalogoPersonalVenta();
-    const validationError = validateVentaInput(input);
+
+    await ensureVendorProfilesSchema();
+
+    const registroVendedor = input.registroVendedorId
+      ? await prisma.registroVendedorVenta.findFirst({
+          where: {
+            id: input.registroVendedorId,
+            serialImei: input.serial,
+            eliminadoEn: null,
+            ventaIdRelacionada: null,
+            ...registroVentaScopeWhere(user),
+          },
+          select: {
+            id: true,
+            sedeId: true,
+            estadoVentaRegistro: true,
+            plataformaCredito: true,
+            creditoAutorizado: true,
+            cuotaInicial: true,
+            medioPago1Tipo: true,
+            medioPago1Valor: true,
+            medioPago2Tipo: true,
+            medioPago2Valor: true,
+            financierasDetalle: true,
+          },
+        })
+      : null;
+
+    if (
+      input.registroVendedorId &&
+      (!registroVendedor ||
+        ["CANCELADO", "CONVERTIDO_EN_VENTA"].includes(
+          String(registroVendedor.estadoVentaRegistro || "").trim().toUpperCase()
+        ))
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "El registro del vendedor ya no esta disponible para convertir esta venta",
+        },
+        { status: 400 }
+      );
+    }
+
+    const inputVenta = registroVendedor
+      ? aplicarRegistroVendedorInput(input, registroVendedor)
+      : input;
+    const validationError = validateVentaInput(inputVenta);
 
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    await ensureVendorProfilesSchema();
+    const sedeVentaId = registroVendedor?.sedeId ?? user.sedeId;
 
     const inventario = await prisma.inventarioSede.findFirst({
       where: {
-        imei: input.serial,
-        sedeId: user.sedeId,
+        imei: inputVenta.serial,
+        sedeId: sedeVentaId,
       },
       select: {
         id: true,
@@ -428,7 +659,7 @@ export async function POST(req: Request) {
 
     const yaVendido = await prisma.venta.findFirst({
       where: {
-        serial: input.serial,
+        serial: inputVenta.serial,
       },
       select: { id: true },
     });
@@ -440,49 +671,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const registroVendedor = input.registroVendedorId
-      ? await prisma.registroVendedorVenta.findFirst({
-          where: {
-            id: input.registroVendedorId,
-            serialImei: input.serial,
-            eliminadoEn: null,
-            ventaIdRelacionada: null,
-            OR: [
-              { sedeId: user.sedeId },
-              {
-                puntoVenta: {
-                  equals: user.sedeNombre,
-                  mode: "insensitive",
-                },
-              },
-            ],
-          },
-          select: {
-            id: true,
-            estadoVentaRegistro: true,
-          },
-        })
-      : null;
-
-    if (
-      input.registroVendedorId &&
-      (!registroVendedor ||
-        ["CANCELADO", "CONVERTIDO_EN_VENTA"].includes(
-          String(registroVendedor.estadoVentaRegistro || "").trim().toUpperCase()
-        ))
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "El registro del vendedor ya no esta disponible para convertir esta venta",
-        },
-        { status: 400 }
-      );
-    }
-
     const now = new Date();
     const idVenta = `VTA-${Date.now()}`;
-    const calculo = buildVentaData(input, inventario.costo, catalogo.financieras);
+    const catalogo = await obtenerCatalogoPersonalVenta();
+    const calculo = buildVentaData(
+      inputVenta,
+      inventario.costo,
+      catalogo.financieras
+    );
 
     const venta = await prisma.$transaction(async (tx) => {
       const creada = await tx.venta.create({
@@ -490,25 +686,28 @@ export async function POST(req: Request) {
           idVenta,
           fecha: now,
           hora: now.toLocaleTimeString("es-CO", { hour12: false }),
-          servicio: input.servicio,
-          descripcion: input.descripcion || inventario.referencia,
-          serial: input.serial,
-          jalador: input.jalador,
+          servicio: inputVenta.servicio,
+          descripcion: inputVenta.descripcion || inventario.referencia,
+          serial: inputVenta.serial,
+          jalador: inputVenta.jalador,
           ingreso: calculo.totalIngresosNetos,
           ...calculo.payloadFinancieras,
           financierasDetalle: buildJsonFinancierasDetalle(calculo.detalleFinancieras),
           utilidad: calculo.utilidad,
-          cerrador: input.cerrador,
-          comision: input.comision,
-          salida: input.salida,
+          cerrador: inputVenta.cerrador,
+          comision: inputVenta.comision,
+          salida: inputVenta.salida,
           cajaOficina: calculo.cajaOficina,
-          tipoIngreso: [input.tipoIngreso1, input.tipoIngreso2].filter(Boolean).join(" / ") || null,
-          ingreso1: input.tipoIngreso1 || null,
-          ingreso2: input.tipoIngreso2 || null,
+          tipoIngreso:
+            [inputVenta.tipoIngreso1, inputVenta.tipoIngreso2]
+              .filter(Boolean)
+              .join(" / ") || null,
+          ingreso1: inputVenta.tipoIngreso1 || null,
+          ingreso2: inputVenta.tipoIngreso2 || null,
           primerValor: calculo.ingreso1Neto,
           segundoValor: calculo.ingreso2Neto,
           usuarioId: user.id,
-          sedeId: user.sedeId,
+          sedeId: sedeVentaId,
           inventarioSedeId: inventario.id,
         },
         select: {
@@ -524,7 +723,7 @@ export async function POST(req: Request) {
           referencia: inventario.referencia,
           color: inventario.color || null,
           costo: inventario.costo,
-          sedeId: user.sedeId,
+          sedeId: sedeVentaId,
           estadoFinanciero: inventario.estadoFinanciero,
           origen: inventario.origen,
           observacion: `Venta registrada ${creada.idVenta} desde formulario web`,
@@ -550,7 +749,7 @@ export async function POST(req: Request) {
             ventaIdRelacionada: creada.id,
             convertidoEn: now,
             convertidoPor: user.nombre,
-            cerradorNombre: input.cerrador || null,
+            cerradorNombre: inputVenta.cerrador || null,
           },
         });
       }

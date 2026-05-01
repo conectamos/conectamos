@@ -1,51 +1,155 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import {
+  esPerfilAdministrador,
+  esRolAdmin,
+} from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+
+function puedeVerTodasLasSedes(session: Awaited<ReturnType<typeof getSessionUser>>) {
+  if (!session) {
+    return false;
+  }
+
+  return esPerfilAdministrador(session.perfilTipo) || esRolAdmin(session.rolNombre);
+}
+
+function registroScopeWhere(
+  session: Awaited<ReturnType<typeof getSessionUser>>
+) {
+  if (!session || puedeVerTodasLasSedes(session)) {
+    return {};
+  }
+
+  return {
+    OR: [
+      { sedeId: session.sedeId },
+      {
+        puntoVenta: {
+          equals: session.sedeNombre,
+          mode: "insensitive" as const,
+        },
+      },
+    ],
+  };
+}
+
+const REGISTRO_VENTA_SELECT = {
+  id: true,
+  sedeId: true,
+  puntoVenta: true,
+  clienteNombre: true,
+  tipoDocumento: true,
+  documentoNumero: true,
+  correo: true,
+  whatsapp: true,
+  direccion: true,
+  barrio: true,
+  referenciaContacto: true,
+  referenciaEquipo: true,
+  asesorNombre: true,
+  jaladorNombre: true,
+  numeroFactura: true,
+  estadoFacturacion: true,
+  estadoVentaRegistro: true,
+  observacion: true,
+  plataformaCredito: true,
+  creditoAutorizado: true,
+  cuotaInicial: true,
+  medioPago1Tipo: true,
+  medioPago1Valor: true,
+  medioPago2Tipo: true,
+  medioPago2Valor: true,
+  financierasDetalle: true,
+  createdAt: true,
+} as const;
+
+function normalizarFinancierasRegistro(registro: {
+  financierasDetalle: unknown;
+  plataformaCredito?: unknown;
+  creditoAutorizado?: unknown;
+  cuotaInicial?: unknown;
+  medioPago1Tipo?: unknown;
+}) {
+  if (Array.isArray(registro.financierasDetalle) && registro.financierasDetalle.length) {
+    return registro.financierasDetalle;
+  }
+
+  const plataformaCredito = String(registro.plataformaCredito || "").trim();
+
+  return plataformaCredito
+    ? [
+        {
+          plataformaCredito,
+          creditoAutorizado: registro.creditoAutorizado ?? null,
+          cuotaInicial: registro.cuotaInicial ?? null,
+          tipoPagoInicial:
+            typeof registro.medioPago1Tipo === "string"
+              ? registro.medioPago1Tipo
+              : null,
+          valorCuota: null,
+          numeroCuotas: null,
+          frecuenciaCuota: null,
+        },
+      ]
+    : [];
+}
+
+function serializarRegistroVenta<T extends { financierasDetalle: unknown }>(
+  registro: T
+) {
+  return {
+    ...registro,
+    financierasDetalle: normalizarFinancierasRegistro(registro),
+  };
+}
 
 async function buscarRegistroVentaAbierto(
   serial: string,
-  sedeId: number,
-  sedeNombre: string
+  session: Awaited<ReturnType<typeof getSessionUser>>,
+  registroId?: number | null
 ) {
   await ensureVendorProfilesSchema();
+
+  if (registroId) {
+    const registro = await prisma.registroVendedorVenta.findFirst({
+      where: {
+        id: registroId,
+        serialImei: serial,
+        eliminadoEn: null,
+        ventaIdRelacionada: null,
+        ...registroScopeWhere(session),
+      },
+      select: REGISTRO_VENTA_SELECT,
+    });
+
+    if (!registro) {
+      return null;
+    }
+
+    const estadoVentaRegistro = String(registro.estadoVentaRegistro || "")
+      .trim()
+      .toUpperCase();
+
+    return estadoVentaRegistro !== "CANCELADO" &&
+      estadoVentaRegistro !== "CONVERTIDO_EN_VENTA"
+      ? serializarRegistroVenta(registro)
+      : null;
+  }
+
+  if (!session) {
+    return null;
+  }
 
   const registros = await prisma.registroVendedorVenta.findMany({
     where: {
       serialImei: serial,
       eliminadoEn: null,
       ventaIdRelacionada: null,
-      OR: [
-        { sedeId },
-        {
-          puntoVenta: {
-            equals: sedeNombre,
-            mode: "insensitive",
-          },
-        },
-      ],
+      ...registroScopeWhere(session),
     },
-    select: {
-      id: true,
-      puntoVenta: true,
-      clienteNombre: true,
-      tipoDocumento: true,
-      documentoNumero: true,
-      correo: true,
-      whatsapp: true,
-      direccion: true,
-      barrio: true,
-      referenciaContacto: true,
-      referenciaEquipo: true,
-      asesorNombre: true,
-      jaladorNombre: true,
-      numeroFactura: true,
-      estadoFacturacion: true,
-      estadoVentaRegistro: true,
-      observacion: true,
-      financierasDetalle: true,
-      createdAt: true,
-    },
+    select: REGISTRO_VENTA_SELECT,
     orderBy: {
       createdAt: "desc",
     },
@@ -64,12 +168,7 @@ async function buscarRegistroVentaAbierto(
   });
 
   return registro
-    ? {
-        ...registro,
-        financierasDetalle: Array.isArray(registro.financierasDetalle)
-          ? registro.financierasDetalle
-          : [],
-      }
+    ? serializarRegistroVenta(registro)
     : null;
 }
 
@@ -83,6 +182,11 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const serial = String(body.serial ?? "").replace(/\D/g, "").slice(0, 15);
+    const registroVendedorId = Number(body.registroVendedorId);
+    const registroId =
+      Number.isInteger(registroVendedorId) && registroVendedorId > 0
+        ? registroVendedorId
+        : null;
 
     if (!serial) {
       return NextResponse.json({ error: "IMEI invalido" }, { status: 400 });
@@ -90,9 +194,10 @@ export async function POST(req: Request) {
 
     const registroVenta = await buscarRegistroVentaAbierto(
       serial,
-      user.sedeId,
-      user.sedeNombre
+      user,
+      registroId
     );
+    const sedeVentaId = registroVenta?.sedeId ?? user.sedeId;
 
     const inventarioSedes = await prisma.inventarioSede.findMany({
       where: { imei: serial },
@@ -110,7 +215,7 @@ export async function POST(req: Request) {
     });
 
     if (inventarioSedes.length > 0) {
-      const itemActual = inventarioSedes.find((item) => item.sedeId === user.sedeId);
+      const itemActual = inventarioSedes.find((item) => item.sedeId === sedeVentaId);
 
       if (!itemActual) {
         const itemOtraSede = inventarioSedes[0];

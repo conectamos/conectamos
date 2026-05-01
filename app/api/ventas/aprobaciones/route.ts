@@ -37,6 +37,46 @@ function estadoVentaAbierto(estadoVentaRegistro: unknown) {
   return estado !== "CONVERTIDO_EN_VENTA" && estado !== "CANCELADO";
 }
 
+function financierasRegistro(registro: {
+  financierasDetalle: unknown;
+  plataformaCredito?: unknown;
+  creditoAutorizado?: unknown;
+  cuotaInicial?: unknown;
+  medioPago1Tipo?: unknown;
+}) {
+  if (Array.isArray(registro.financierasDetalle) && registro.financierasDetalle.length) {
+    return registro.financierasDetalle;
+  }
+
+  const plataformaCredito = String(registro.plataformaCredito || "").trim();
+
+  return plataformaCredito
+    ? [
+        {
+          plataformaCredito,
+          creditoAutorizado: registro.creditoAutorizado ?? null,
+          cuotaInicial: registro.cuotaInicial ?? null,
+          tipoPagoInicial:
+            typeof registro.medioPago1Tipo === "string"
+              ? registro.medioPago1Tipo
+              : null,
+          valorCuota: null,
+          numeroCuotas: null,
+          frecuenciaCuota: null,
+        },
+      ]
+    : [];
+}
+
+function serializarRegistro<T extends { financierasDetalle: unknown }>(
+  registro: T
+) {
+  return {
+    ...registro,
+    financierasDetalle: financierasRegistro(registro),
+  };
+}
+
 function buildScopeWhere(session: Awaited<ReturnType<typeof getSessionUser>>) {
   if (!session) {
     return {};
@@ -88,6 +128,7 @@ export async function GET(req: Request) {
         select: {
           id: true,
           createdAt: true,
+          sedeId: true,
           puntoVenta: true,
           clienteNombre: true,
           tipoDocumento: true,
@@ -105,6 +146,13 @@ export async function GET(req: Request) {
           estadoFacturacion: true,
           estadoVentaRegistro: true,
           observacion: true,
+          plataformaCredito: true,
+          creditoAutorizado: true,
+          cuotaInicial: true,
+          medioPago1Tipo: true,
+          medioPago1Valor: true,
+          medioPago2Tipo: true,
+          medioPago2Valor: true,
           financierasDetalle: true,
         },
       });
@@ -118,12 +166,7 @@ export async function GET(req: Request) {
 
       return NextResponse.json({
         ok: true,
-        registro: {
-          ...registro,
-          financierasDetalle: Array.isArray(registro.financierasDetalle)
-            ? registro.financierasDetalle
-            : [],
-        },
+        registro: serializarRegistro(registro),
       });
     }
 
@@ -170,6 +213,7 @@ export async function GET(req: Request) {
       select: {
         id: true,
         createdAt: true,
+        sedeId: true,
         puntoVenta: true,
         clienteNombre: true,
         tipoDocumento: true,
@@ -182,6 +226,13 @@ export async function GET(req: Request) {
         estadoFacturacion: true,
         estadoVentaRegistro: true,
         observacion: true,
+        plataformaCredito: true,
+        creditoAutorizado: true,
+        cuotaInicial: true,
+        medioPago1Tipo: true,
+        medioPago1Valor: true,
+        medioPago2Tipo: true,
+        medioPago2Valor: true,
         financierasDetalle: true,
       },
       orderBy: {
@@ -192,12 +243,7 @@ export async function GET(req: Request) {
 
     const abiertos = registros
       .filter((registro) => estadoVentaAbierto(registro.estadoVentaRegistro))
-      .map((registro) => ({
-        ...registro,
-        financierasDetalle: Array.isArray(registro.financierasDetalle)
-          ? registro.financierasDetalle
-          : [],
-      }));
+      .map((registro) => serializarRegistro(registro));
 
     return NextResponse.json({
       ok: true,

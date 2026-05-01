@@ -42,6 +42,7 @@ type RegistroVentaFinanciera = {
 
 type RegistroVentaRelacionado = {
   id: number;
+  sedeId: number | null;
   puntoVenta: string | null;
   clienteNombre: string;
   tipoDocumento: string;
@@ -58,6 +59,13 @@ type RegistroVentaRelacionado = {
   numeroFactura: string | null;
   estadoFacturacion: string;
   observacion: string | null;
+  plataformaCredito: string | null;
+  creditoAutorizado: string | number | null;
+  cuotaInicial: string | number | null;
+  medioPago1Tipo: string | null;
+  medioPago1Valor: string | number | null;
+  medioPago2Tipo: string | null;
+  medioPago2Valor: string | number | null;
   financierasDetalle: RegistroVentaFinanciera[];
   createdAt: string;
 };
@@ -157,6 +165,7 @@ function normalizarRegistroVenta(value: unknown): RegistroVentaRelacionado | nul
 
   return {
     id,
+    sedeId: Number.isInteger(Number(row.sedeId)) ? Number(row.sedeId) : null,
     puntoVenta: typeof row.puntoVenta === "string" ? row.puntoVenta : null,
     clienteNombre: String(row.clienteNombre || ""),
     tipoDocumento: String(row.tipoDocumento || ""),
@@ -177,6 +186,20 @@ function normalizarRegistroVenta(value: unknown): RegistroVentaRelacionado | nul
       typeof row.numeroFactura === "string" ? row.numeroFactura : null,
     estadoFacturacion: String(row.estadoFacturacion || "PENDIENTE"),
     observacion: typeof row.observacion === "string" ? row.observacion : null,
+    plataformaCredito:
+      typeof row.plataformaCredito === "string" ? row.plataformaCredito : null,
+    creditoAutorizado:
+      (row.creditoAutorizado as string | number | null | undefined) ?? null,
+    cuotaInicial:
+      (row.cuotaInicial as string | number | null | undefined) ?? null,
+    medioPago1Tipo:
+      typeof row.medioPago1Tipo === "string" ? row.medioPago1Tipo : null,
+    medioPago1Valor:
+      (row.medioPago1Valor as string | number | null | undefined) ?? null,
+    medioPago2Tipo:
+      typeof row.medioPago2Tipo === "string" ? row.medioPago2Tipo : null,
+    medioPago2Valor:
+      (row.medioPago2Valor as string | number | null | undefined) ?? null,
     financierasDetalle,
     createdAt: String(row.createdAt || ""),
   };
@@ -201,6 +224,68 @@ function ocultaFinancieras(servicio: string) {
 function normalizarTipoIngresoDesdeRegistro(value: string | null | undefined) {
   const tipo = String(value || "").trim().toUpperCase();
   return tipo === "TRANSFERENCIA" || tipo === "VOUCHER" ? tipo : "EFECTIVO";
+}
+
+function tieneMonedaRegistrada(value: unknown) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  return String(value).trim() !== "";
+}
+
+function financierasDesdeRegistro(registro: RegistroVentaRelacionado) {
+  if (registro.financierasDetalle.length) {
+    return registro.financierasDetalle;
+  }
+
+  if (!registro.plataformaCredito) {
+    return [];
+  }
+
+  return [
+    {
+      plataformaCredito: registro.plataformaCredito,
+      creditoAutorizado: registro.creditoAutorizado,
+      cuotaInicial: registro.cuotaInicial,
+      tipoPagoInicial: registro.medioPago1Tipo,
+      valorCuota: null,
+      numeroCuotas: null,
+      frecuenciaCuota: null,
+    },
+  ] satisfies RegistroVentaFinanciera[];
+}
+
+function pagosDesdeRegistro(registro: RegistroVentaRelacionado) {
+  const pagosDirectos = [
+    tieneMonedaRegistrada(registro.medioPago1Valor)
+      ? {
+          valor: Number(monedaGuardadaAInput(registro.medioPago1Valor) || 0),
+          tipo: normalizarTipoIngresoDesdeRegistro(registro.medioPago1Tipo),
+        }
+      : null,
+    tieneMonedaRegistrada(registro.medioPago2Valor)
+      ? {
+          valor: Number(monedaGuardadaAInput(registro.medioPago2Valor) || 0),
+          tipo: normalizarTipoIngresoDesdeRegistro(registro.medioPago2Tipo),
+        }
+      : null,
+  ].filter((item): item is { valor: number; tipo: string } => Boolean(item));
+
+  if (pagosDirectos.length) {
+    return pagosDirectos;
+  }
+
+  return financierasDesdeRegistro(registro)
+    .map((item) =>
+      tieneMonedaRegistrada(item.cuotaInicial)
+        ? {
+            valor: Number(monedaGuardadaAInput(item.cuotaInicial ?? null) || 0),
+            tipo: normalizarTipoIngresoDesdeRegistro(item.tipoPagoInicial),
+          }
+        : null
+    )
+    .filter((item): item is { valor: number; tipo: string } => Boolean(item));
 }
 
 function inputBaseClass(readOnly = false) {
@@ -301,28 +386,8 @@ export default function NuevaVentaPage() {
       setCerrador(registro.asesorNombre);
     }
 
-    const primeraFinanciera = registro.financierasDetalle[0] ?? null;
-    const segundaFinanciera = registro.financierasDetalle[1] ?? null;
-    const primeraInicial = Number(
-      monedaGuardadaAInput(primeraFinanciera?.cuotaInicial ?? null) || 0
-    );
-    const segundaInicial = Number(
-      monedaGuardadaAInput(segundaFinanciera?.cuotaInicial ?? null) || 0
-    );
-    const tipoPrimeraInicial = normalizarTipoIngresoDesdeRegistro(
-      primeraFinanciera?.tipoPagoInicial
-    );
-    const tipoSegundaInicial = normalizarTipoIngresoDesdeRegistro(
-      segundaFinanciera?.tipoPagoInicial
-    );
-    const ingresosRegistrados = [
-      primeraInicial > 0
-        ? { valor: primeraInicial, tipo: tipoPrimeraInicial }
-        : null,
-      segundaInicial > 0
-        ? { valor: segundaInicial, tipo: tipoSegundaInicial }
-        : null,
-    ].filter(Boolean) as Array<{ valor: number; tipo: string }>;
+    const financierasRegistro = financierasDesdeRegistro(registro);
+    const ingresosRegistrados = pagosDesdeRegistro(registro);
 
     if (ingresosRegistrados.length === 0) {
       setIngreso1Base("");
@@ -351,38 +416,38 @@ export default function NuevaVentaPage() {
       setUsarIngreso2(false);
     }
 
-    if (registro.financierasDetalle.length) {
+    if (financierasRegistro.length) {
       setServicio("FINANCIERA");
       setFinanzas([
-        registro.financierasDetalle[0]
+        financierasRegistro[0]
           ? {
-              nombre: registro.financierasDetalle[0].plataformaCredito,
+              nombre: financierasRegistro[0].plataformaCredito,
               valor: monedaGuardadaAInput(
-                registro.financierasDetalle[0].creditoAutorizado
+                financierasRegistro[0].creditoAutorizado
               ),
             }
           : { nombre: "", valor: "" },
-        registro.financierasDetalle[1]
+        financierasRegistro[1]
           ? {
-              nombre: registro.financierasDetalle[1].plataformaCredito,
+              nombre: financierasRegistro[1].plataformaCredito,
               valor: monedaGuardadaAInput(
-                registro.financierasDetalle[1].creditoAutorizado
+                financierasRegistro[1].creditoAutorizado
               ),
             }
           : { nombre: "", valor: "" },
-        registro.financierasDetalle[2]
+        financierasRegistro[2]
           ? {
-              nombre: registro.financierasDetalle[2].plataformaCredito,
+              nombre: financierasRegistro[2].plataformaCredito,
               valor: monedaGuardadaAInput(
-                registro.financierasDetalle[2].creditoAutorizado
+                financierasRegistro[2].creditoAutorizado
               ),
             }
           : { nombre: "", valor: "" },
-        registro.financierasDetalle[3]
+        financierasRegistro[3]
           ? {
-              nombre: registro.financierasDetalle[3].plataformaCredito,
+              nombre: financierasRegistro[3].plataformaCredito,
               valor: monedaGuardadaAInput(
-                registro.financierasDetalle[3].creditoAutorizado
+                financierasRegistro[3].creditoAutorizado
               ),
             }
           : { nombre: "", valor: "" },
@@ -526,13 +591,20 @@ export default function NuevaVentaPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ serial: imei }),
+        body: JSON.stringify({
+          serial: imei,
+          registroVendedorId: fallbackRegistro?.id ?? registroVendedor?.id ?? null,
+        }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        aplicarRegistroVendedor(null);
+        if (fallbackRegistro) {
+          aplicarRegistroVendedor(fallbackRegistro);
+        } else {
+          aplicarRegistroVendedor(null);
+        }
         setReferencia(data.referencia || "");
         setColor(data.color || "");
         setCostoEquipo(Number(data.costo || 0));
@@ -555,7 +627,11 @@ export default function NuevaVentaPage() {
         setMensaje("");
       }
     } catch {
-      aplicarRegistroVendedor(null);
+      if (fallbackRegistro) {
+        aplicarRegistroVendedor(fallbackRegistro);
+      } else {
+        aplicarRegistroVendedor(null);
+      }
       setReferencia("");
       setColor("");
       setCostoEquipo(0);
@@ -670,7 +746,10 @@ export default function NuevaVentaPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ serial }),
+        body: JSON.stringify({
+          serial,
+          registroVendedorId: registroVendedor?.id ?? null,
+        }),
       });
 
       const dataValidacion = await resValidacion.json();
@@ -925,7 +1004,7 @@ export default function NuevaVentaPage() {
                           Financieras registradas
                         </p>
                         <div className="mt-3 grid gap-3 md:grid-cols-2">
-                          {registroVendedor.financierasDetalle.map((item, index) => (
+                          {financierasDesdeRegistro(registroVendedor).map((item, index) => (
                             <div
                               key={`${registroVendedor.id}-${item.plataformaCredito}-${index}`}
                               className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
