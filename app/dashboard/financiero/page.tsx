@@ -104,7 +104,7 @@ function MetricCard({
       </p>
       <p
         className={[
-          "mt-4 overflow-hidden text-[clamp(1.75rem,1.6vw,2.5rem)] font-black leading-[1.05] tracking-tight tabular-nums",
+          "mt-4 max-w-full overflow-hidden text-[clamp(1.2rem,1.25vw,2.1rem)] font-black leading-[1.02] tracking-tight tabular-nums [overflow-wrap:anywhere]",
           styles.value,
         ].join(" ")}
       >
