@@ -1836,7 +1836,7 @@ export function NuovoPayWorkspace({
                             {item.referencia}
                           </p>
                           <p className="mt-1 text-sm text-slate-500">
-                            {item.sede?.nombre ?? `SEDE ${item.sedeId}`} |{" "}
+                                  {item.sede?.nombre ?? "Sede sin configurar"} |{" "}
                             {formatoPesos(item.costo)}
                           </p>
                         </div>

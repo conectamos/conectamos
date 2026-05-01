@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { etiquetaSedeAcreedora } from "@/lib/prestamos";
 
 function parseSedeId(value: string | null) {
   const sedeId = Number(value);
@@ -82,12 +83,14 @@ export async function GET(req: Request) {
     return NextResponse.json(
       prestamos.map((prestamo) => ({
         ...prestamo,
-        sedeOrigenNombre:
-          nombresSede.get(prestamo.sedeOrigenId) ||
-          `SEDE ${prestamo.sedeOrigenId}`,
-        sedeDestinoNombre:
-          nombresSede.get(prestamo.sedeDestinoId) ||
-          `SEDE ${prestamo.sedeDestinoId}`,
+        sedeOrigenNombre: etiquetaSedeAcreedora(
+          prestamo.sedeOrigenId,
+          nombresSede.get(prestamo.sedeOrigenId)
+        ),
+        sedeDestinoNombre: etiquetaSedeAcreedora(
+          prestamo.sedeDestinoId,
+          nombresSede.get(prestamo.sedeDestinoId)
+        ),
       }))
     );
   } catch (error) {

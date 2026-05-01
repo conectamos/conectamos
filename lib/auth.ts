@@ -110,7 +110,7 @@ export async function getSessionUser() {
     usuario: user.usuario,
     activo: user.activo,
     sedeId: user.sedeId,
-    sedeNombre: user.sede?.nombre ?? `SEDE ${user.sedeId}`,
+    sedeNombre: user.sede?.nombre ?? "Sede sin configurar",
     rolId: user.rolId,
     rolNombre,
     perfilId: perfil?.id ?? null,

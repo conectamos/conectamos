@@ -432,7 +432,7 @@ export default function CajaPage() {
 
                       <td className="px-5 py-5">
                         <span className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {item.sede?.nombre ?? `SEDE ${item.sedeId}`}
+                          {item.sede?.nombre ?? "Sede sin configurar"}
                         </span>
                       </td>
 

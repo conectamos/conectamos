@@ -71,7 +71,7 @@ export async function GET() {
         nombre: user.nombre,
         usuario: user.usuario,
         sedeId: user.sedeId,
-        sedeNombre: user.sede?.nombre ?? `SEDE ${user.sedeId}`,
+        sedeNombre: user.sede?.nombre ?? "Sede sin configurar",
       },
       perfiles,
       pendingPinChange:

@@ -377,7 +377,7 @@ export default function DetalleAbonosPage() {
                       </td>
                       <td className="px-6 py-4">{item.observacion ?? "-"}</td>
                       <td className="px-6 py-4">
-                        {item.sede?.nombre ?? `SEDE ${item.sedeId}`}
+                    {item.sede?.nombre ?? "Sede sin configurar"}
                       </td>
                       {esAdmin && (
                         <td className="px-6 py-4">

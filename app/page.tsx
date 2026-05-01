@@ -218,7 +218,7 @@ export default function Home() {
     debeCambiarPin: false,
   };
   const nombreSedeActual =
-    usuarioPendiente?.sedeNombre || `SEDE ${usuarioPendiente?.sedeId || ""}`;
+    usuarioPendiente?.sedeNombre || "Sede sin configurar";
 
   const limpiarEstadoModal = () => {
     setPin("");

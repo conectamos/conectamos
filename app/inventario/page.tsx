@@ -1369,7 +1369,7 @@ export default function InventarioPage() {
                       <td className="px-4 py-4">{item.distribuidor ?? "-"}</td>
                       {esAdmin && (
                         <td className="px-4 py-4 font-semibold text-slate-900">
-                          {item.sede?.nombre ?? `SEDE ${item.sedeId}`}
+                        {item.sede?.nombre ?? "Sede sin configurar"}
                         </td>
                       )}
                       <td className="px-4 py-4">{item.deboA ?? "-"}</td>

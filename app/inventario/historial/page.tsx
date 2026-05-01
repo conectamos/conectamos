@@ -418,7 +418,7 @@ export default async function HistorialInventarioPage(props: {
 
   const sedesPorId = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
   const sedeNombre = (id: number | null | undefined) =>
-    id ? sedesPorId.get(id) || `SEDE ${id}` : "-";
+    id ? sedesPorId.get(id) || "Sede sin configurar" : "-";
 
   const registroSedeActual = inventariosSede[0] ?? null;
   const ubicacionActual =

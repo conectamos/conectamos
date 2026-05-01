@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { etiquetaSedeAcreedora } from "@/lib/prestamos";
 
 function parseSedeId(value: string | null) {
   const sedeId = Number(value);
@@ -113,13 +114,15 @@ export async function GET(req: Request) {
           referencia: prestamo.referencia,
           valor: Number(movimiento.valor || prestamo.costo || 0),
           sedeOrigenId: prestamo.sedeOrigenId,
-          sedeOrigenNombre:
-            nombresSede.get(prestamo.sedeOrigenId) ||
-            `SEDE ${prestamo.sedeOrigenId}`,
+          sedeOrigenNombre: etiquetaSedeAcreedora(
+            prestamo.sedeOrigenId,
+            nombresSede.get(prestamo.sedeOrigenId)
+          ),
           sedeDestinoId: prestamo.sedeDestinoId,
-          sedeDestinoNombre:
-            nombresSede.get(prestamo.sedeDestinoId) ||
-            `SEDE ${prestamo.sedeDestinoId}`,
+          sedeDestinoNombre: etiquetaSedeAcreedora(
+            prestamo.sedeDestinoId,
+            nombresSede.get(prestamo.sedeDestinoId)
+          ),
           fechaSolicitudPago:
             prestamo.fechaSolicitudPago?.toISOString() ||
             movimiento.createdAt.toISOString(),

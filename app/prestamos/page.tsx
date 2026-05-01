@@ -533,8 +533,8 @@ export default function PrestamosPage() {
   };
 
   const resolverSiguientePaso = (prestamo: Prestamo) => {
-    const origen = prestamo.sedeOrigenNombre ?? `SEDE ${prestamo.sedeOrigenId}`;
-    const destino = prestamo.sedeDestinoNombre ?? `SEDE ${prestamo.sedeDestinoId}`;
+                    const origen = prestamo.sedeOrigenNombre ?? "Sede sin configurar";
+                    const destino = prestamo.sedeDestinoNombre ?? "Sede sin configurar";
 
     if (prestamo.estado === "PENDIENTE") {
       return {
@@ -824,8 +824,8 @@ export default function PrestamosPage() {
                 ) : (
                   prestamosFiltrados.map((item) => {
                     const paso = resolverSiguientePaso(item);
-                    const origen = item.sedeOrigenNombre ?? `SEDE ${item.sedeOrigenId}`;
-                    const destino = item.sedeDestinoNombre ?? `SEDE ${item.sedeDestinoId}`;
+                    const origen = item.sedeOrigenNombre ?? "Sede sin configurar";
+                    const destino = item.sedeDestinoNombre ?? "Sede sin configurar";
 
                     return (
                       <tr

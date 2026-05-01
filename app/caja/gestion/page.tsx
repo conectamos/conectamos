@@ -543,7 +543,7 @@ export default function CajaGestionPage() {
                         </td>
 
                         <td className="px-5 py-5 text-slate-700">
-                          {movimiento.sede?.nombre || `SEDE ${movimiento.sedeId}`}
+                          {movimiento.sede?.nombre || "Sede sin configurar"}
                         </td>
 
                         <td className="px-5 py-5">

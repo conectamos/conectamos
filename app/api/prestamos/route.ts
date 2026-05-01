@@ -5,6 +5,7 @@ import {
   esDeudaEntreSedes,
   esDeudaProveedor,
   esEstadoDeuda,
+  etiquetaSedeAcreedora,
   NOMBRE_SEDE_BODEGA,
 } from "@/lib/prestamos";
 import { esSedeVentas } from "@/lib/sedes";
@@ -209,11 +210,14 @@ export async function GET(req: Request) {
         ...prestamoBase,
         sedeOrigenNombre: prestamoBase.prestamoDesdePrincipal
           ? sedeBodegaPrincipal?.nombre || NOMBRE_SEDE_BODEGA
-          : nombresSede.get(prestamoBase.sedeOrigenId) ||
-            `SEDE ${prestamoBase.sedeOrigenId}`,
-        sedeDestinoNombre:
-          nombresSede.get(prestamoBase.sedeDestinoId) ||
-          `SEDE ${prestamoBase.sedeDestinoId}`,
+          : etiquetaSedeAcreedora(
+              prestamoBase.sedeOrigenId,
+              nombresSede.get(prestamoBase.sedeOrigenId)
+            ),
+        sedeDestinoNombre: etiquetaSedeAcreedora(
+          prestamoBase.sedeDestinoId,
+          nombresSede.get(prestamoBase.sedeDestinoId)
+        ),
         deboAActual: equipoDestino?.deboA ?? null,
         estadoFinancieroActual: equipoDestino?.estadoFinanciero ?? null,
         estadoActualActual: equipoDestino?.estadoActual ?? null,

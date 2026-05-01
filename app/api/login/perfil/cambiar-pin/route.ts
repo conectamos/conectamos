@@ -110,7 +110,7 @@ export async function GET() {
         nombre: context.user.nombre,
         usuario: context.user.usuario,
         sedeId: context.user.sedeId,
-        sedeNombre: context.user.sede?.nombre ?? `SEDE ${context.user.sedeId}`,
+        sedeNombre: context.user.sede?.nombre ?? "Sede sin configurar",
       },
       perfil: {
         id: context.perfil.id,

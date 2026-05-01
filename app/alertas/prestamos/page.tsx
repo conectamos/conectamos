@@ -317,10 +317,10 @@ export default function AlertasPrestamosPage() {
                         {formatoPesos(item.costo)}
                       </td>
                       <td className="px-4 py-4">
-                        {item.sedeOrigenNombre ?? `SEDE ${item.sedeOrigenId}`}
+                            {item.sedeOrigenNombre ?? "Sede sin configurar"}
                       </td>
                       <td className="px-4 py-4">
-                        {item.sedeDestinoNombre ?? `SEDE ${item.sedeDestinoId}`}
+                            {item.sedeDestinoNombre ?? "Sede sin configurar"}
                       </td>
                       <td className="px-4 py-4">
                         <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">

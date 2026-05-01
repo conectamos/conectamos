@@ -36,7 +36,7 @@ export function etiquetaSedeAcreedora(
   sedeNombre?: string | null
 ) {
   const nombre = String(sedeNombre || "").trim();
-  return nombre || `SEDE ${sedeId}`;
+  return nombre || "Sede sin configurar";
 }
 
 export function esDeudaEntreSedes(deboA: string | null | undefined) {

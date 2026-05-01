@@ -91,7 +91,7 @@ export async function POST(req: Request) {
             usuario: user.usuario,
             rol: user.rol,
             sedeId: user.sedeId,
-            sedeNombre: user.sede?.nombre ?? `SEDE ${user.sedeId}`,
+            sedeNombre: user.sede?.nombre ?? "Sede sin configurar",
           },
           perfiles,
         });
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
         usuario: user.usuario,
         rol: user.rol,
         sedeId: user.sedeId,
-        sedeNombre: user.sede?.nombre ?? `SEDE ${user.sedeId}`,
+        sedeNombre: user.sede?.nombre ?? "Sede sin configurar",
       },
     });
 
