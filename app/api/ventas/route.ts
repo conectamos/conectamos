@@ -643,7 +643,10 @@ export async function POST(req: Request) {
 
     if (!inventario) {
       return NextResponse.json(
-        { error: "IMEI no registra en el inventario de tu sede" },
+        {
+          error:
+            "IMEI no registra en el inventario de la sede donde se esta guardando la venta",
+        },
         { status: 404 }
       );
     }

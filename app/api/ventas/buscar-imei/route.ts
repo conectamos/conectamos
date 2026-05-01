@@ -229,7 +229,7 @@ export async function POST(req: Request) {
             sedeId: itemOtraSede.sedeId,
             estadoActual: itemOtraSede.estadoActual,
             mensaje:
-              "El equipo pertenece a otra sede. Solo la sede que tiene el equipo puede completar la venta.",
+              "El equipo pertenece a otra sede. Solo se puede completar la venta si el IMEI existe en la sede donde se esta guardando la venta.",
           },
           { status: 400 }
         );
