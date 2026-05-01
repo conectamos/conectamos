@@ -75,7 +75,16 @@ export async function POST(req: Request) {
 
     const data = await req.json();
 
-    const imei = String(data.imei ?? "").replace(/\D/g, "").slice(0, 15);
+    const imeisRaw = Array.isArray(data.imeis)
+      ? data.imeis
+      : data.imei
+      ? [data.imei]
+      : [];
+
+    const imeis = (imeisRaw as unknown[])
+      .map((item) => String(item ?? "").replace(/\D/g, "").trim())
+      .filter((item) => item.length > 0);
+
     const referencia = String(data.referencia ?? "").trim();
     const color = String(data.color ?? "").trim();
     const costo = Number(data.costo ?? 0);
@@ -86,16 +95,17 @@ export async function POST(req: Request) {
     const esAdmin = user.rolNombre.toUpperCase() === "ADMIN";
     const sedeId = esAdmin ? Number(data.sedeId ?? user.sedeId) : user.sedeId;
 
-    if (!imei) {
+    if (imeis.length === 0) {
       return NextResponse.json(
-        { error: "El IMEI es obligatorio" },
+        { error: "Debes ingresar al menos un IMEI" },
         { status: 400 }
       );
     }
 
-    if (!/^\d{1,15}$/.test(imei)) {
+    const imeiInvalido = imeis.find((item) => !/^\d{1,15}$/.test(item));
+    if (imeiInvalido) {
       return NextResponse.json(
-        { error: "El IMEI debe tener solo números y máximo 15 dígitos" },
+        { error: "El IMEI debe tener solo numeros y maximo 15 digitos" },
         { status: 400 }
       );
     }
@@ -137,7 +147,7 @@ export async function POST(req: Request) {
 
     if (!sedeId || sedeId <= 0) {
       return NextResponse.json(
-        { error: "Sede inválida" },
+        { error: "Sede invalida" },
         { status: 400 }
       );
     }
@@ -149,7 +159,7 @@ export async function POST(req: Request) {
 
     if (!sede) {
       return NextResponse.json(
-        { error: "Sede inválida" },
+        { error: "Sede invalida" },
         { status: 400 }
       );
     }
@@ -164,69 +174,99 @@ export async function POST(req: Request) {
       );
     }
 
-    const existe = await prisma.inventarioSede.findFirst({
-      where: { imei, sedeId },
-      select: { id: true },
+    const imeisUnicos = [...new Set(imeis)];
+
+    const existentes = await prisma.inventarioSede.findMany({
+      where: {
+        sedeId,
+        imei: { in: imeisUnicos },
+      },
+      select: { imei: true },
     });
 
-    if (existe) {
+    const imeisExistentes = new Set(existentes.map((item) => item.imei));
+    const imeisParaInsertar = imeisUnicos.filter(
+      (item) => !imeisExistentes.has(item)
+    );
+
+    if (imeisParaInsertar.length === 0) {
       return NextResponse.json(
-        { error: "IMEI ya existe en esta sede" },
+        { error: "Todos los IMEIs ya existen en esta sede" },
         { status: 400 }
       );
     }
 
-    const principal = await prisma.inventarioPrincipal.findUnique({
-      where: { imei },
-      select: { id: true },
+    const principales = await prisma.inventarioPrincipal.findMany({
+      where: {
+        imei: { in: imeisParaInsertar },
+      },
+      select: { id: true, imei: true },
     });
 
-    const nuevo = await prisma.inventarioSede.create({
-      data: {
-        imei,
-        referencia,
-        color: color || null,
-        costo,
-        distribuidor,
-        sedeId,
-        estadoFinanciero,
-        deboA,
-        estadoActual: "BODEGA",
-        origen: principal ? "PRINCIPAL" : "MANUAL",
-        inventarioPrincipalId: principal ? principal.id : null,
-      },
-      select: {
-        id: true,
-        imei: true,
-        referencia: true,
-        sedeId: true,
-        estadoActual: true,
-        estadoFinanciero: true,
-      },
+    const principalPorImei = new Map(
+      principales.map((item) => [item.imei, item.id])
+    );
+
+    await prisma.$transaction(async (tx) => {
+      await tx.inventarioSede.createMany({
+        data: imeisParaInsertar.map((item) => ({
+          imei: item,
+          referencia,
+          color: color || null,
+          costo,
+          distribuidor,
+          sedeId,
+          estadoFinanciero,
+          deboA,
+          estadoActual: "BODEGA",
+          origen: principalPorImei.has(item) ? "PRINCIPAL" : "MANUAL",
+          inventarioPrincipalId: principalPorImei.get(item) ?? null,
+        })),
+      });
+
+      await tx.movimientoInventario.createMany({
+        data: imeisParaInsertar.map((item) => ({
+          imei: item,
+          tipoMovimiento: "INGRESO_SEDE",
+          referencia,
+          color: color || null,
+          costo,
+          sedeId,
+          deboA,
+          estadoFinanciero,
+          origen: principalPorImei.has(item) ? "PRINCIPAL" : "MANUAL",
+          observacion: `Ingreso manual desde ${distribuidor}`,
+        })),
+      });
     });
 
-    await prisma.movimientoInventario.create({
-      data: {
-        imei,
-        tipoMovimiento: "INGRESO_SEDE",
-        referencia,
-        color: color || null,
-        costo,
-        sedeId,
-        deboA,
-        estadoFinanciero,
-        origen: principal ? "PRINCIPAL" : "MANUAL",
-        observacion: `Ingreso manual desde ${distribuidor}`,
-      },
-      select: {
-        id: true,
-      },
-    });
+    const item =
+      imeisParaInsertar.length === 1
+        ? await prisma.inventarioSede.findFirst({
+            where: {
+              sedeId,
+              imei: imeisParaInsertar[0],
+            },
+            select: {
+              id: true,
+              imei: true,
+              referencia: true,
+              sedeId: true,
+              estadoActual: true,
+              estadoFinanciero: true,
+            },
+          })
+        : null;
 
     return NextResponse.json({
       ok: true,
       mensaje: "Guardado correctamente",
-      item: nuevo,
+      item,
+      insertados: imeisParaInsertar.length,
+      omitidos: imeisUnicos.length - imeisParaInsertar.length,
+      imeisOmitidos: imeisUnicos.filter((itemImei) =>
+        imeisExistentes.has(itemImei)
+      ),
     });
   } catch (error) {
     console.error("ERROR API INVENTARIO:", error);

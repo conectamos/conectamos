@@ -92,12 +92,6 @@ export default function NuevoInventarioPage() {
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
-  const opcionesDistribuidor = esAdmin
-    ? OPCIONES_PROVEEDOR_BODEGA
-    : OPCIONES_PROVEEDOR_SEDE;
-
-  const mensajeEsOk = useMemo(() => mensaje.startsWith("OK:"), [mensaje]);
   const cantidadImeisMasivos = useMemo(
     () =>
       imeisMasivos
@@ -106,6 +100,13 @@ export default function NuevoInventarioPage() {
         .filter(Boolean).length,
     [imeisMasivos]
   );
+  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
+  const esCargaMasiva = cantidadImeisMasivos > 0;
+  const opcionesDistribuidor = esAdmin
+    ? OPCIONES_PROVEEDOR_BODEGA
+    : OPCIONES_PROVEEDOR_SEDE;
+
+  const mensajeEsOk = useMemo(() => mensaje.startsWith("OK:"), [mensaje]);
 
   const cargarUsuario = async () => {
     try {
@@ -250,13 +251,16 @@ export default function NuevoInventarioPage() {
         return;
       }
 
-      if (!imei) {
-        setMensaje("Error: el IMEI es obligatorio.");
+      const imeis = obtenerImeisAdmin();
+
+      if (imeis.length === 0) {
+        setMensaje("Error: debes ingresar al menos un IMEI.");
         return;
       }
 
-      if (imei.length > 15) {
-        setMensaje("Error: el IMEI no puede tener mas de 15 digitos.");
+      const imeiInvalido = imeis.find((valor) => valor.length > 15);
+      if (imeiInvalido) {
+        setMensaje("Error: hay IMEIs con mas de 15 digitos.");
         return;
       }
 
@@ -276,7 +280,8 @@ export default function NuevoInventarioPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          imei,
+          imeis,
+          imei: imeis[0],
           referencia,
           color,
           costo: Number(costo),
@@ -293,7 +298,18 @@ export default function NuevoInventarioPage() {
         return;
       }
 
-      setMensaje("OK: equipo guardado correctamente.");
+      const insertados = Number(data.insertados ?? imeis.length);
+      const omitidos = Number(data.omitidos ?? 0);
+      const mensajeBase =
+        insertados === 1
+          ? "OK: 1 equipo guardado correctamente."
+          : `OK: ${insertados} equipos guardados correctamente.`;
+
+      setMensaje(
+        omitidos > 0
+          ? `${mensajeBase} ${omitidos} IMEI(s) se omitieron por existir ya en esta sede o repetirse en la carga.`
+          : mensajeBase
+      );
       limpiarFormulario();
     } catch (error) {
       console.error(error);
@@ -352,13 +368,13 @@ export default function NuevoInventarioPage() {
                     Modo de carga
                   </p>
                   <p className="mt-2 text-2xl font-black text-white">
-                    {esAdmin ? (cantidadImeisMasivos > 0 ? "Masivo" : "Individual") : "Sede"}
+                    {esCargaMasiva ? "Masivo" : "Individual"}
                   </p>
                   <p className="mt-2 text-sm text-slate-200">
-                    {esAdmin
-                      ? cantidadImeisMasivos > 0
-                        ? `${cantidadImeisMasivos} IMEI(s) listos para guardar`
-                        : "Carga por IMEI o lote"
+                    {esCargaMasiva
+                      ? `${cantidadImeisMasivos} IMEI(s) listos para guardar`
+                      : esAdmin
+                      ? "Carga por IMEI o lote"
                       : "Registro con validacion financiera"}
                   </p>
                 </div>
@@ -423,21 +439,21 @@ export default function NuevoInventarioPage() {
                   </p>
                 </div>
 
-                {esAdmin && (
-                  <div>
-                    <FieldLabel>IMEIs masivos (uno por linea)</FieldLabel>
-                    <textarea
-                      placeholder={`352041714273552\n352041714273553\n352041714273554`}
-                      value={imeisMasivos}
-                      onChange={(event) => setImeisMasivos(event.target.value)}
-                      rows={7}
-                      className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-base leading-8 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                    />
-                    <p className="mt-2 text-xs text-slate-500">
-                      Usa esta carga solo cuando referencia, costo, factura y distribuidor sean los mismos.
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <FieldLabel>IMEIs masivos (uno por linea)</FieldLabel>
+                  <textarea
+                    placeholder={`352041714273552\n352041714273553\n352041714273554`}
+                    value={imeisMasivos}
+                    onChange={(event) => setImeisMasivos(event.target.value)}
+                    rows={7}
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-base leading-8 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  />
+                  <p className="mt-2 text-xs text-slate-500">
+                    {esAdmin
+                      ? "Usa esta carga solo cuando referencia, costo, factura y distribuidor sean los mismos."
+                      : "Usa esta carga solo cuando referencia, costo, distribuidor y estado financiero sean los mismos."}
+                  </p>
+                </div>
               </div>
             </SectionCard>
 
@@ -590,14 +606,12 @@ export default function NuevoInventarioPage() {
                   <p className="mt-2 text-lg font-bold text-slate-950">
                     {guardando
                       ? "Guardando..."
-                      : esAdmin
-                      ? cantidadImeisMasivos > 0
-                        ? `${cantidadImeisMasivos} equipo(s) listos`
-                        : imei
-                        ? "1 equipo listo"
-                        : "Esperando IMEI"
+                      : esCargaMasiva
+                      ? `${cantidadImeisMasivos} equipo(s) listos`
                       : imei
-                      ? "Formulario listo para validar"
+                      ? esAdmin
+                        ? "1 equipo listo"
+                        : "Formulario listo para validar"
                       : "Pendiente por completar"}
                   </p>
                 </div>
@@ -615,6 +629,8 @@ export default function NuevoInventarioPage() {
                     ? "Guardando..."
                     : esAdmin
                     ? "Guardar en bodega principal"
+                    : esCargaMasiva
+                    ? "Guardar inventario masivo"
                     : "Guardar inventario"}
                 </button>
 
