@@ -8,6 +8,7 @@ const OPCIONES_PROVEEDOR_SEDE = [
   "Proveedor BUNQUER",
   "Proveedor TECNOSUPER",
   "Proveedor IPHONE ANGIE",
+  "Proveedor Felipe",
   "Proveedor SEDE 1",
   "Proveedor SEDE 2",
   "Proveedor SEDE 3",
@@ -27,6 +28,7 @@ const OPCIONES_PROVEEDOR_BODEGA = [
   "CONMOVIL",
   "CORBETA",
   "OPORTUNIDADES",
+  "Proveedor Felipe",
 ];
 
 type SessionUser = {
