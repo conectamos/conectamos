@@ -175,6 +175,25 @@ export async function GET(req: Request) {
         }),
       ]);
 
+    const sedesOrigenPrestamos =
+      prestamosActivosPorCobrar.length > 0
+        ? await prisma.sede.findMany({
+            where: {
+              id: {
+                in: Array.from(
+                  new Set(
+                    prestamosActivosPorCobrar.map((prestamo) => prestamo.sedeOrigenId)
+                  )
+                ),
+              },
+            },
+            select: {
+              id: true,
+              nombre: true,
+            },
+          })
+        : [];
+
     const inventarioDestinoPrestamos =
       prestamosActivosPorCobrar.length > 0
         ? await prisma.inventarioSede.findMany({
@@ -285,6 +304,9 @@ export async function GET(req: Request) {
         item,
       ])
     );
+    const sedesOrigenPorId = new Map(
+      sedesOrigenPrestamos.map((sede) => [sede.id, sede.nombre])
+    );
 
     const prestamosPorCobrar = prestamosActivosPorCobrar.reduce((acc, item) => {
       const inventarioDestino = inventarioPrestadoPorDestino.get(
@@ -311,7 +333,12 @@ export async function GET(req: Request) {
       if (
         esDeudaEntreSedes(inventarioDestino.deboA) &&
         String(inventarioDestino.deboA || "").trim().toUpperCase() ===
-          etiquetaSedeAcreedora(item.sedeOrigenId)
+          etiquetaSedeAcreedora(
+            item.sedeOrigenId,
+            sedesOrigenPorId.get(item.sedeOrigenId)
+          )
+            .trim()
+            .toUpperCase()
       ) {
         return acc + n(item.costo);
       }

@@ -15,8 +15,12 @@ export function esEstadoDeuda(estado: string | null | undefined) {
   return normalizarEstadoFinanciero(estado) === "DEUDA";
 }
 
-export function etiquetaSedeAcreedora(sedeId: number) {
-  return `SEDE ${sedeId}`;
+export function etiquetaSedeAcreedora(
+  sedeId: number,
+  sedeNombre?: string | null
+) {
+  const nombre = String(sedeNombre || "").trim();
+  return nombre || `SEDE ${sedeId}`;
 }
 
 export function esDeudaEntreSedes(deboA: string | null | undefined) {
@@ -41,6 +45,7 @@ export function resolverFinanzasDestinoPrestamo(params: {
   estadoFinanciero: string | null | undefined;
   deboA: string | null | undefined;
   sedeOrigenId: number;
+  sedeOrigenNombre?: string | null | undefined;
 }) {
   if (esEstadoDeuda(params.estadoFinanciero)) {
     const acreedorActual = String(params.deboA || "").trim();
@@ -48,13 +53,14 @@ export function resolverFinanzasDestinoPrestamo(params: {
     return {
       estadoFinanciero: "DEUDA",
       deboA: esDeudaEntreSedes(acreedorActual)
-        ? etiquetaSedeAcreedora(params.sedeOrigenId)
-        : acreedorActual || etiquetaSedeAcreedora(params.sedeOrigenId),
+        ? etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre)
+        : acreedorActual ||
+          etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre),
     };
   }
 
   return {
     estadoFinanciero: "DEUDA",
-    deboA: etiquetaSedeAcreedora(params.sedeOrigenId),
+    deboA: etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre),
   };
 }

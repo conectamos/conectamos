@@ -91,6 +91,25 @@ export async function POST(req: Request) {
         imei: prestamo.imei,
         sedeId: Number(prestamo.sedeOrigenId),
       },
+      select: {
+        id: true,
+        imei: true,
+        referencia: true,
+        color: true,
+        costo: true,
+        sedeId: true,
+        estadoActual: true,
+        estadoFinanciero: true,
+        deboA: true,
+        distribuidor: true,
+        origen: true,
+        inventarioPrincipalId: true,
+        sede: {
+          select: {
+            nombre: true,
+          },
+        },
+      },
     });
 
     if (!itemOrigen) {
@@ -130,6 +149,7 @@ export async function POST(req: Request) {
       estadoFinanciero: itemOrigen.estadoFinanciero,
       deboA: itemOrigen.deboA,
       sedeOrigenId: prestamo.sedeOrigenId,
+      sedeOrigenNombre: itemOrigen.sede?.nombre,
     });
 
     await prisma.$transaction(async (tx) => {
