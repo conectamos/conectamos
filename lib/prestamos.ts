@@ -43,9 +43,13 @@ export function resolverFinanzasDestinoPrestamo(params: {
   sedeOrigenId: number;
 }) {
   if (esEstadoDeuda(params.estadoFinanciero)) {
+    const acreedorActual = String(params.deboA || "").trim();
+
     return {
       estadoFinanciero: "DEUDA",
-      deboA: String(params.deboA || "").trim() || etiquetaSedeAcreedora(params.sedeOrigenId),
+      deboA: esDeudaEntreSedes(acreedorActual)
+        ? etiquetaSedeAcreedora(params.sedeOrigenId)
+        : acreedorActual || etiquetaSedeAcreedora(params.sedeOrigenId),
     };
   }
 
