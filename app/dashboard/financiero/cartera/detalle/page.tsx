@@ -423,7 +423,6 @@ export default function DetalleCarteraPage() {
                   </label>
                   <input
                     type="number"
-                    min="1"
                     value={valorEditando}
                     onChange={(e) => setValorEditando(e.target.value)}
                     className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"

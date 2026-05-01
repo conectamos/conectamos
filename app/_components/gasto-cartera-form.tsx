@@ -19,13 +19,19 @@ type SessionUser = {
 };
 
 function limpiarNumero(v: string) {
-  return v.replace(/\D/g, "");
+  const limpio = v.replace(/[^\d-]/g, "");
+  if (!limpio) return "";
+  return limpio.startsWith("-")
+    ? `-${limpio.slice(1).replace(/-/g, "")}`
+    : limpio.replace(/-/g, "");
 }
 
 function formatoPesos(v: string | number) {
   const num = Number(v || 0);
   if (!num) return "";
-  return `$ ${num.toLocaleString("es-CO")}`;
+  return num < 0
+    ? `-$ ${Math.abs(num).toLocaleString("es-CO")}`
+    : `$ ${num.toLocaleString("es-CO")}`;
 }
 
 type GastoCarteraFormProps = {
@@ -39,7 +45,7 @@ export default function GastoCarteraForm({
   backHref = "/dashboard",
   badgeLabel = "Financiero",
   detailHref = "/dashboard/financiero/cartera/detalle",
-  description = "Registra egresos de cartera que afectan el resumen general.",
+  description = "Registra movimientos de cartera que afectan el resumen general.",
 }: GastoCarteraFormProps) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);

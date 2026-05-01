@@ -211,9 +211,9 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!valor || valor <= 0) {
+    if (!valor) {
       return NextResponse.json(
-        { error: "El valor debe ser mayor a 0" },
+        { error: "El valor debe ser diferente de 0" },
         { status: 400 }
       );
     }
@@ -298,9 +298,9 @@ export async function PATCH(req: Request) {
       );
     }
 
-    if (!valor || valor <= 0) {
+    if (!valor) {
       return NextResponse.json(
-        { error: "El valor debe ser mayor a 0" },
+        { error: "El valor debe ser diferente de 0" },
         { status: 400 }
       );
     }
