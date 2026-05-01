@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import PDFDocument from "pdfkit";
+import * as XLSX from "xlsx";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
@@ -58,6 +59,21 @@ type SaleDetailRow = {
   sede: string;
   ingresos: string;
   financieras: string;
+};
+
+type SaleTableRow = {
+  venta: string;
+  servicio: string;
+  imei: string;
+  jalador: string;
+  ingresos: number;
+  detalleIngresos: string;
+  financieras: Record<string, number>;
+  utilidad: number;
+  vendedor: string;
+  comision: number;
+  salida: number;
+  caja: number;
 };
 
 function getPdfFonts(): PdfFonts {
@@ -164,6 +180,48 @@ function financierasRegistroTexto(value: unknown) {
   );
 }
 
+function financieraLabel(nombre: unknown) {
+  const value = textoLimpio(nombre).toUpperCase();
+
+  if (value === "SUMASPAY" || value === "SUMAS+") return "SU+PAY";
+  if (value === "BOGOTA" || value === "BANCO BOGOTA") return "BANCO BOGOTA";
+  if (value === "ALO-CREDIT" || value === "ALO CREDIT") return "ALO CREDIT";
+
+  return value;
+}
+
+function financierasRegistroDetalle(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+
+      const row = item as Record<string, unknown>;
+      const nombre = financieraLabel(row.plataformaCredito);
+      const valor = n(row.creditoAutorizado);
+
+      return nombre && valor > 0 ? { nombre, valor } : null;
+    })
+    .filter((item): item is { nombre: string; valor: number } => Boolean(item));
+}
+
+function financierasVentaDetalle(
+  venta: Record<string, unknown>,
+  registro?: Record<string, unknown>
+) {
+  const detalle = extraerFinancierasDetalle(venta)
+    .map((item) => ({
+      nombre: financieraLabel(item.nombre),
+      valor: n(item.valorBruto),
+    }))
+    .filter((item) => item.nombre && item.valor > 0);
+
+  return detalle.length
+    ? detalle
+    : financierasRegistroDetalle(registro?.financierasDetalle);
+}
+
 function buildIngresosVenta(
   venta: Record<string, unknown>,
   registro?: Record<string, unknown>
@@ -201,6 +259,375 @@ function buildEquipoVenta(
       ? `IMEI ${textoLimpio(venta.serial || registro?.serialImei)}`
       : null,
   ]);
+}
+
+function buildSaleTableRows(
+  ventas: Array<Record<string, unknown> & { id: number }>,
+  registrosPorVenta: Map<number, Record<string, unknown> | undefined>
+) {
+  const rows: SaleTableRow[] = ventas.map((venta) => {
+    const registro = registrosPorVenta.get(venta.id);
+    const financieras = financierasVentaDetalle(venta, registro).reduce(
+      (acc, item) => {
+        acc[item.nombre] = (acc[item.nombre] || 0) + item.valor;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
+
+    return {
+      venta: textoLimpio(venta.idVenta),
+      servicio: textoLimpio(venta.servicio),
+      imei: textoLimpio(venta.serial || registro?.serialImei),
+      jalador: textoLimpio(venta.jalador || registro?.jaladorNombre),
+      ingresos: n(venta.ingreso),
+      detalleIngresos: buildIngresosVenta(venta, registro),
+      financieras,
+      utilidad: n(venta.utilidad),
+      vendedor: textoLimpio(venta.cerrador || registro?.asesorNombre),
+      comision: n(venta.comision),
+      salida: n(venta.salida),
+      caja: n(venta.cajaOficina),
+    };
+  });
+
+  const preferredOrder = [
+    "ALCANOS",
+    "PAYJOY",
+    "SISTECREDITO",
+    "ADDI",
+    "SU+PAY",
+    "CELYA",
+    "BANCO BOGOTA",
+    "ALO CREDIT",
+    "ESMIO",
+    "KAIOWA",
+    "FINSER PAY",
+    "GORA",
+  ];
+  const used = new Set<string>();
+
+  for (const row of rows) {
+    Object.keys(row.financieras).forEach((nombre) => used.add(nombre));
+  }
+
+  const financieras = Array.from(used).sort((a, b) => {
+    const ia = preferredOrder.indexOf(a);
+    const ib = preferredOrder.indexOf(b);
+
+    if (ia === -1 && ib === -1) return a.localeCompare(b);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+
+  return { rows, financieras };
+}
+
+function moneyCell(value: number) {
+  return value ? value : null;
+}
+
+function buildExcelCierreTabla(params: {
+  periodoKey: string;
+  cobertura: string;
+  rows: SaleTableRow[];
+  financieras: string[];
+  movimientos: CashMovementRow[];
+}) {
+  const headers = [
+    "# VENTA",
+    "SERVICIO",
+    "IMEI",
+    "JALADOR",
+    "INGRESOS",
+    "DETALLES DE INGRESO",
+    ...params.financieras,
+    "UTILIDAD",
+    "VENDEDOR",
+    "COMISION",
+    "SALIDA",
+    "CAJA",
+  ];
+  const ventasRows = params.rows.map((row) => [
+    row.venta,
+    row.servicio,
+    row.imei,
+    row.jalador,
+    moneyCell(row.ingresos),
+    row.detalleIngresos,
+    ...params.financieras.map((nombre) => moneyCell(row.financieras[nombre] || 0)),
+    moneyCell(row.utilidad),
+    row.vendedor,
+    moneyCell(row.comision),
+    moneyCell(row.salida),
+    moneyCell(row.caja),
+  ]);
+  const cajaHeaders = ["TIPO", "CONCEPTO", "SEDE", "VALOR"];
+  const cajaRows = params.movimientos.map((movimiento) => [
+    movimiento.tipo,
+    movimiento.concepto,
+    movimiento.sedeNombre,
+    moneyCell(movimiento.valor),
+  ]);
+
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    [`CIERRE DEL DIA - ${params.periodoKey} - ${params.cobertura}`],
+    [],
+    headers,
+    ...ventasRows,
+    [],
+    ["INGRESOS Y EGRESOS DE CAJA"],
+    cajaHeaders,
+    ...cajaRows,
+  ]);
+
+  worksheet["!cols"] = headers.map((header) => ({
+    wch:
+      header === "DETALLES DE INGRESO"
+        ? 28
+        : header === "IMEI"
+          ? 18
+          : header.length < 9
+            ? 14
+            : 18,
+  }));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Cierre del dia");
+
+  return XLSX.write(workbook, {
+    type: "buffer",
+    bookType: "xlsx",
+  }) as Buffer;
+}
+
+function fitColumns(
+  columns: Array<{ key: string; title: string; width: number; align?: "left" | "right" }>,
+  availableWidth: number
+) {
+  const totalWidth = columns.reduce((acc, column) => acc + column.width, 0);
+  const scale = totalWidth > availableWidth ? availableWidth / totalWidth : 1;
+
+  return columns.map((column) => ({
+    ...column,
+    width: column.width * scale,
+  }));
+}
+
+function drawCompactTableHeader(
+  doc: PDFKit.PDFDocument,
+  columns: Array<{ key: string; title: string; width: number; align?: "left" | "right" }>,
+  y: number,
+  x: number,
+  fonts: PdfFonts
+) {
+  let cursorX = x;
+
+  doc.rect(x, y, columns.reduce((acc, column) => acc + column.width, 0), 24).fill("#111827");
+
+  for (const column of columns) {
+    doc
+      .fillColor("#ffffff")
+      .font(fonts.bold)
+      .fontSize(5.7)
+      .text(column.title, cursorX + 2, y + 8, {
+        width: Math.max(8, column.width - 4),
+        align: column.align ?? "left",
+        ellipsis: true,
+      });
+    cursorX += column.width;
+  }
+
+  return y + 24;
+}
+
+function drawCompactRow(
+  doc: PDFKit.PDFDocument,
+  columns: Array<{ key: string; title: string; width: number; align?: "left" | "right" }>,
+  values: Record<string, string>,
+  y: number,
+  x: number,
+  rowHeight: number,
+  fonts: PdfFonts
+) {
+  let cursorX = x;
+
+  doc
+    .rect(x, y, columns.reduce((acc, column) => acc + column.width, 0), rowHeight)
+    .fillAndStroke("#ffffff", "#e5e7eb");
+
+  for (const column of columns) {
+    doc
+      .fillColor("#0f172a")
+      .font(fonts.regular)
+      .fontSize(5.9)
+      .text(values[column.key] || "-", cursorX + 2, y + 5, {
+        width: Math.max(8, column.width - 4),
+        height: rowHeight - 8,
+        align: column.align ?? "left",
+        ellipsis: true,
+      });
+    cursorX += column.width;
+  }
+
+  return y + rowHeight;
+}
+
+async function buildPdfCierreTabla(params: {
+  periodoLabel: string;
+  cobertura: string;
+  rows: SaleTableRow[];
+  financieras: string[];
+  movimientos: CashMovementRow[];
+  fonts: PdfFonts;
+}) {
+  const doc = new PDFDocument({
+    size: "LEGAL",
+    layout: "landscape",
+    margin: 22,
+    font: params.fonts.regular,
+    info: {
+      Title: "Cierre del dia - vista prueba",
+      Author: "CONECTAMOS.APP",
+    },
+  });
+  const bufferPromise = toBuffer(doc);
+  const contentWidth = doc.page.width - 44;
+  const tableX = 22;
+
+  const columns = fitColumns(
+    [
+      { key: "venta", title: "# VENTA", width: 58 },
+      { key: "servicio", title: "SERVICIO", width: 72 },
+      { key: "imei", title: "IMEI", width: 84 },
+      { key: "jalador", title: "JALADOR", width: 68 },
+      { key: "ingresos", title: "INGRESOS", width: 62, align: "right" },
+      { key: "detalleIngresos", title: "DETALLES DE INGRESO", width: 118 },
+      ...params.financieras.map((nombre) => ({
+        key: `fin_${nombre}`,
+        title: nombre,
+        width: 58,
+        align: "right" as const,
+      })),
+      { key: "utilidad", title: "UTILIDAD", width: 62, align: "right" },
+      { key: "vendedor", title: "VENDEDOR", width: 68 },
+      { key: "comision", title: "COMISION", width: 58, align: "right" },
+      { key: "salida", title: "SALIDA", width: 58, align: "right" },
+      { key: "caja", title: "CAJA", width: 62, align: "right" },
+    ],
+    contentWidth
+  );
+
+  doc.rect(0, 0, doc.page.width, 76).fill("#0f172a");
+  doc
+    .fillColor("#ffffff")
+    .font(params.fonts.bold)
+    .fontSize(19)
+    .text("CIERRE DEL DIA - VISTA PRUEBA", tableX, 22);
+  doc
+    .fillColor("#cbd5e1")
+    .font(params.fonts.regular)
+    .fontSize(8)
+    .text(`${params.periodoLabel} | ${params.cobertura}`, tableX, 48);
+
+  let y = 96;
+  y = drawCompactTableHeader(doc, columns, y, tableX, params.fonts);
+
+  if (!params.rows.length) {
+    doc
+      .fillColor("#64748b")
+      .font(params.fonts.regular)
+      .fontSize(10)
+      .text("No hay ventas registradas para este dia.", tableX, y + 18);
+    y += 58;
+  } else {
+    for (const row of params.rows) {
+      if (y + 32 > doc.page.height - 44) {
+        doc.addPage();
+        y = drawCompactTableHeader(doc, columns, 34, tableX, params.fonts);
+      }
+
+      const values: Record<string, string> = {
+        venta: row.venta,
+        servicio: row.servicio,
+        imei: row.imei,
+        jalador: row.jalador,
+        ingresos: formatoPesos(row.ingresos),
+        detalleIngresos: row.detalleIngresos,
+        utilidad: formatoPesos(row.utilidad),
+        vendedor: row.vendedor,
+        comision: formatoPesos(row.comision),
+        salida: formatoPesos(row.salida),
+        caja: formatoPesos(row.caja),
+      };
+
+      params.financieras.forEach((nombre) => {
+        values[`fin_${nombre}`] = row.financieras[nombre]
+          ? formatoPesos(row.financieras[nombre])
+          : "-";
+      });
+
+      y = drawCompactRow(doc, columns, values, y, tableX, 30, params.fonts);
+    }
+  }
+
+  y += 22;
+  if (y + 78 > doc.page.height - 36) {
+    doc.addPage();
+    y = 34;
+  }
+
+  doc
+    .fillColor("#0f172a")
+    .font(params.fonts.bold)
+    .fontSize(12)
+    .text("INGRESOS Y EGRESOS DE CAJA", tableX, y);
+  y += 18;
+
+  const cashColumns = fitColumns(
+    [
+      { key: "tipo", title: "TIPO", width: 80 },
+      { key: "concepto", title: "CONCEPTO", width: 300 },
+      { key: "sede", title: "SEDE", width: 140 },
+      { key: "valor", title: "VALOR", width: 120, align: "right" },
+    ],
+    640
+  );
+  y = drawCompactTableHeader(doc, cashColumns, y, tableX, params.fonts);
+
+  if (!params.movimientos.length) {
+    doc
+      .fillColor("#64748b")
+      .font(params.fonts.regular)
+      .fontSize(9)
+      .text("No hay ingresos o egresos registrados para este dia.", tableX, y + 16);
+  } else {
+    for (const movimiento of params.movimientos) {
+      if (y + 26 > doc.page.height - 36) {
+        doc.addPage();
+        y = drawCompactTableHeader(doc, cashColumns, 34, tableX, params.fonts);
+      }
+
+      y = drawCompactRow(
+        doc,
+        cashColumns,
+        {
+          tipo: movimiento.tipo,
+          concepto: movimiento.concepto,
+          sede: movimiento.sedeNombre,
+          valor: formatoPesos(movimiento.valor),
+        },
+        y,
+        tableX,
+        26,
+        params.fonts
+      );
+    }
+  }
+
+  doc.end();
+  return bufferPromise;
 }
 
 function drawMetric(
@@ -432,6 +859,8 @@ export async function GET(req: Request) {
     const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
     const url = new URL(req.url);
     const fechaParam = url.searchParams.get("fecha") || getTodayBogotaDateKey();
+    const vista = String(url.searchParams.get("vista") || "").toLowerCase();
+    const formato = String(url.searchParams.get("formato") || "pdf").toLowerCase();
     const periodo = getBogotaDayRangeFromInput(fechaParam) || getTodayBogotaRange();
     const sedeIdFiltro = parseSedeId(url.searchParams.get("sedeId"));
     const sedeSeleccionada =
@@ -534,6 +963,8 @@ export async function GET(req: Request) {
           servicio: true,
           descripcion: true,
           serial: true,
+          jalador: true,
+          cerrador: true,
           ingreso: true,
           tipoIngreso: true,
           ingreso1: true,
@@ -553,8 +984,10 @@ export async function GET(req: Request) {
           finser: true,
           gora: true,
           financierasDetalle: true,
+          utilidad: true,
           comision: true,
           salida: true,
+          cajaOficina: true,
           sede: {
             select: {
               nombre: true,
@@ -619,6 +1052,8 @@ export async function GET(req: Request) {
             medioPago1Valor: true,
             medioPago2Tipo: true,
             medioPago2Valor: true,
+            asesorNombre: true,
+            jaladorNombre: true,
             referenciaEquipo: true,
             serialImei: true,
           },
@@ -686,12 +1121,61 @@ export async function GET(req: Request) {
           financierasVenta === "-" ? financierasRegistro || "-" : financierasVenta,
       };
     });
+    const tablaCierre = buildSaleTableRows(
+      ventasDetalleDia as unknown as Array<Record<string, unknown> & { id: number }>,
+      registrosPorVenta as Map<number, Record<string, unknown> | undefined>
+    );
     const cajaAcumulada =
       n(ventasCajaAcumulada._sum.cajaOficina) +
       n(ingresosCajaAcumulados._sum.valor) -
       n(egresosCajaAcumulados._sum.valor);
 
     const fonts = getPdfFonts();
+
+    if (vista === "tabla") {
+      const baseFileName = `cierre-del-dia-prueba-${periodo.key}${
+        sedeIdFiltro ? `-sede-${sedeIdFiltro}` : ""
+      }`;
+
+      if (formato === "excel" || formato === "xlsx") {
+        const excelBuffer = buildExcelCierreTabla({
+          periodoKey: periodo.key,
+          cobertura,
+          rows: tablaCierre.rows,
+          financieras: tablaCierre.financieras,
+          movimientos: movimientosCierre,
+        });
+
+        return new Response(Uint8Array.from(excelBuffer), {
+          status: 200,
+          headers: {
+            "Content-Type":
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition": `attachment; filename="${baseFileName}.xlsx"`,
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+
+      const pdfBuffer = await buildPdfCierreTabla({
+        periodoLabel: periodo.label,
+        cobertura,
+        rows: tablaCierre.rows,
+        financieras: tablaCierre.financieras,
+        movimientos: movimientosCierre,
+        fonts,
+      });
+
+      return new Response(Uint8Array.from(pdfBuffer), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${baseFileName}.pdf"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
     const doc = new PDFDocument({
       size: "LETTER",
       margin: 36,

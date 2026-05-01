@@ -86,6 +86,25 @@ export default function CierreDiaPage() {
     window.open(`/api/caja/cierre-dia?${params.toString()}`, "_blank", "noopener");
   };
 
+  const generarCierrePrueba = (formato: "pdf" | "excel") => {
+    if (!fecha) {
+      setMensaje("Selecciona una fecha para generar el cierre");
+      return;
+    }
+
+    const params = new URLSearchParams({
+      fecha,
+      vista: "tabla",
+      formato,
+    });
+
+    if (esAdmin && sedeId !== "TODAS") {
+      params.set("sedeId", sedeId);
+    }
+
+    window.open(`/api/caja/cierre-dia?${params.toString()}`, "_blank", "noopener");
+  };
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#eef2f7_100%)] px-4 py-8 text-slate-950">
       <main className="mx-auto max-w-5xl space-y-6">
@@ -177,6 +196,20 @@ export default function CierreDiaPage() {
               className="rounded-2xl bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
               Generar PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => generarCierrePrueba("pdf")}
+              className="rounded-2xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              PDF prueba
+            </button>
+            <button
+              type="button"
+              onClick={() => generarCierrePrueba("excel")}
+              className="rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            >
+              Excel prueba
             </button>
             <Link
               href="/caja"
