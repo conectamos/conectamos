@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
   NOMBRE_SEDE_BODEGA,
+  etiquetaSedeAcreedora,
   esDeudaProveedor,
   esEstadoDeuda,
   resolverFinanzasDestinoPrestamo,
@@ -151,6 +152,11 @@ export async function POST(req: Request) {
       sedeOrigenId: prestamo.sedeOrigenId,
       sedeOrigenNombre: itemOrigen.sede?.nombre,
     });
+    const sedeOrigenNombre = etiquetaSedeAcreedora(
+      prestamo.sedeOrigenId,
+      itemOrigen.sede?.nombre
+    );
+    const sedeDestinoNombre = sedeDestino.nombre;
 
     await prisma.$transaction(async (tx) => {
       const existenteDestino = await tx.inventarioSede.findFirst({
@@ -175,7 +181,7 @@ export async function POST(req: Request) {
             estadoActual: "BODEGA",
             fechaMovimiento: new Date(),
             inventarioPrincipalId: itemOrigen.inventarioPrincipalId || null,
-            observacion: `Recibido por prestamo desde sede ${prestamo.sedeOrigenId}`,
+            observacion: `Recibido por prestamo desde ${sedeOrigenNombre}`,
           },
         });
       } else {
@@ -194,7 +200,7 @@ export async function POST(req: Request) {
             estadoActual: "BODEGA",
             fechaMovimiento: new Date(),
             inventarioPrincipalId: itemOrigen.inventarioPrincipalId || null,
-            observacion: `Recibido por prestamo desde sede ${prestamo.sedeOrigenId}`,
+            observacion: `Recibido por prestamo desde ${sedeOrigenNombre}`,
           },
         });
       }
@@ -206,8 +212,8 @@ export async function POST(req: Request) {
           estadoActual: "PRESTAMO",
           fechaMovimiento: new Date(),
           observacion: trasladaDeudaDePrincipal
-            ? `Prestamo aprobado hacia sede ${prestamo.sedeDestinoId}. La deuda de principal queda trasladada a la sede destino.`
-            : `Prestamo aprobado hacia sede ${prestamo.sedeDestinoId}`,
+            ? `Prestamo aprobado hacia ${sedeDestinoNombre}. La deuda de principal queda trasladada a la sede destino.`
+            : `Prestamo aprobado hacia ${sedeDestinoNombre}`,
           estadoFinanciero: trasladaDeudaDePrincipal
             ? "PAGO"
             : itemOrigen.estadoFinanciero,
@@ -231,7 +237,7 @@ export async function POST(req: Request) {
               sedeDestinoId: prestamo.sedeDestinoId,
               estadoCobro: "PENDIENTE",
               fechaEnvio: new Date(),
-              observacion: `Deuda activa trasladada a SEDE ${prestamo.sedeDestinoId} despues de aprobacion desde SEDE ${prestamo.sedeOrigenId}.`,
+              observacion: `Deuda activa trasladada a ${sedeDestinoNombre} despues de aprobacion desde ${sedeOrigenNombre}.`,
             },
           });
         } else {
@@ -244,7 +250,7 @@ export async function POST(req: Request) {
               sedeDestinoId: prestamo.sedeDestinoId,
               estadoCobro: "PENDIENTE",
               fechaEnvio: new Date(),
-              observacion: `Deuda activa trasladada a SEDE ${prestamo.sedeDestinoId} despues de aprobacion desde SEDE ${prestamo.sedeOrigenId}.`,
+              observacion: `Deuda activa trasladada a ${sedeDestinoNombre} despues de aprobacion desde ${sedeOrigenNombre}.`,
             },
           });
         }
@@ -283,8 +289,8 @@ export async function POST(req: Request) {
           estadoFinanciero: finanzasDestino.estadoFinanciero,
           origen: "PRESTAMO",
           observacion: trasladaDeudaDePrincipal
-            ? `Prestamo aprobado desde SEDE ${prestamo.sedeOrigenId}. La deuda del proveedor queda ahora en la sede destino.`
-            : `Prestamo aprobado y recibido desde SEDE ${prestamo.sedeOrigenId}.`,
+            ? `Prestamo aprobado desde ${sedeOrigenNombre}. La deuda del proveedor queda ahora en la sede destino.`
+            : `Prestamo aprobado y recibido desde ${sedeOrigenNombre}.`,
         },
       });
     });

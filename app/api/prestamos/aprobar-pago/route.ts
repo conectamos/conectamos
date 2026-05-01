@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
   NOMBRE_SEDE_BODEGA,
+  etiquetaSedeAcreedora,
   esDeudaEntreSedes,
   esDeudaProveedor,
   esEstadoDeuda,
@@ -133,6 +134,33 @@ export async function POST(req: Request) {
       prestamoDesdeBodegaPrincipal && sedeBodegaId > 0
         ? sedeBodegaId
         : prestamo.sedeOrigenId;
+    const sedes = await prisma.sede.findMany({
+      where: {
+        id: {
+          in: Array.from(
+            new Set([
+              prestamo.sedeOrigenId,
+              prestamo.sedeDestinoId,
+              sedeAcreedoraId,
+            ])
+          ),
+        },
+      },
+      select: {
+        id: true,
+        nombre: true,
+      },
+    });
+    const nombresSede = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
+    const sedeDestinoNombre = etiquetaSedeAcreedora(
+      prestamo.sedeDestinoId,
+      nombresSede.get(prestamo.sedeDestinoId)
+    );
+    const sedeAcreedoraNombre = prestamoDesdeBodegaPrincipal
+      ? sedeBodegaPrincipal?.id === sedeAcreedoraId
+        ? NOMBRE_SEDE_BODEGA
+        : etiquetaSedeAcreedora(sedeAcreedoraId, nombresSede.get(sedeAcreedoraId))
+      : etiquetaSedeAcreedora(sedeAcreedoraId, nombresSede.get(sedeAcreedoraId));
 
     if (!esAdmin && user.sedeId !== sedeAcreedoraId) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -185,8 +213,8 @@ export async function POST(req: Request) {
           concepto: "PAGO PRESTAMO ENTRE SEDES",
           valor: montoSolicitado,
           descripcion: prestamoDesdeBodegaPrincipal
-            ? `Ingreso por aprobacion de pago a bodega principal IMEI ${prestamo.imei} desde sede ${prestamo.sedeDestinoId}`
-            : `Ingreso por aprobacion de pago prestamo IMEI ${prestamo.imei} desde sede ${prestamo.sedeDestinoId}`,
+            ? `Ingreso por aprobacion de pago a bodega principal IMEI ${prestamo.imei} desde ${sedeDestinoNombre}`
+            : `Ingreso por aprobacion de pago prestamo IMEI ${prestamo.imei} desde ${sedeDestinoNombre}`,
           sedeId: sedeAcreedoraId,
         },
       });
@@ -198,7 +226,7 @@ export async function POST(req: Request) {
           valor: montoSolicitado,
           descripcion: prestamoDesdeBodegaPrincipal
             ? `Egreso por pago aprobado a bodega principal IMEI ${prestamo.imei}`
-            : `Egreso por pago aprobado de prestamo IMEI ${prestamo.imei} hacia sede ${sedeAcreedoraId}`,
+            : `Egreso por pago aprobado de prestamo IMEI ${prestamo.imei} hacia ${sedeAcreedoraNombre}`,
           sedeId: prestamo.sedeDestinoId,
         },
       });
@@ -252,7 +280,7 @@ export async function POST(req: Request) {
           fechaMovimiento: new Date(),
           observacion: prestamoDesdeBodegaPrincipal
             ? "Pago aprobado a bodega principal"
-            : `Pago aprobado a SEDE ${sedeAcreedoraId}`,
+            : `Pago aprobado a ${sedeAcreedoraNombre}`,
         },
       });
 
@@ -297,8 +325,8 @@ export async function POST(req: Request) {
             ? "PAGO_BODEGA_PRINCIPAL"
             : "PRESTAMO_SEDE",
           observacion: prestamoDesdeBodegaPrincipal
-            ? `Pago total aprobado a bodega principal. Sede destino: ${prestamo.sedeDestinoId}.`
-            : `Pago total aprobado del prestamo. Sede origen: ${sedeAcreedoraId}. Sede destino: ${prestamo.sedeDestinoId}.`,
+            ? `Pago total aprobado a bodega principal. Sede destino: ${sedeDestinoNombre}.`
+            : `Pago total aprobado del prestamo. Sede origen: ${sedeAcreedoraNombre}. Sede destino: ${sedeDestinoNombre}.`,
         },
       });
     });

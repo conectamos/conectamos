@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
   NOMBRE_SEDE_BODEGA,
+  etiquetaSedeAcreedora,
   esDeudaEntreSedes,
   esDeudaProveedor,
   esEstadoDeuda,
@@ -39,6 +40,11 @@ export async function POST(req: Request) {
         deboA: true,
         origen: true,
         inventarioPrincipalId: true,
+        sede: {
+          select: {
+            nombre: true,
+          },
+        },
       },
     });
 
@@ -61,6 +67,7 @@ export async function POST(req: Request) {
     }
 
     const estadoActual = String(item.estadoActual || "").toUpperCase();
+    const sedeItemNombre = etiquetaSedeAcreedora(item.sedeId, item.sede?.nombre);
 
     if (estadoActual !== "BODEGA" && estadoActual !== "VENDIDO") {
       return NextResponse.json(
@@ -207,7 +214,7 @@ export async function POST(req: Request) {
             deboA: item.deboA,
             estadoFinanciero: "DEUDA",
             origen: item.origen || "PRINCIPAL",
-            observacion: `SEDE ${item.sedeId} solicita pagar deuda a bodega principal. Prestamo #${prestamoBodegaPrincipal.id}.`,
+            observacion: `${sedeItemNombre} solicita pagar deuda a bodega principal. Prestamo #${prestamoBodegaPrincipal.id}.`,
           },
         });
       });

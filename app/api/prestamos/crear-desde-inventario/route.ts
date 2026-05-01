@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
+  etiquetaSedeAcreedora,
   esEstadoDeuda,
   esDeudaProveedor,
 } from "@/lib/prestamos";
@@ -92,6 +93,10 @@ export async function POST(req: Request) {
       String(inventario.origen || "").toUpperCase() === "PRINCIPAL" &&
       esEstadoDeuda(inventario.estadoFinanciero) &&
       esDeudaProveedor(inventario.deboA);
+    const sedeOrigenNombre = etiquetaSedeAcreedora(
+      inventario.sedeId,
+      inventario.sede?.nombre
+    );
 
     const sedeDestino = await prisma.sede.findUnique({
       where: { id: sedeDestinoId },
@@ -185,8 +190,8 @@ export async function POST(req: Request) {
           estadoFinanciero: inventario.estadoFinanciero,
           origen: "PRESTAMO",
           observacion: trasladaDeudaDePrincipal
-            ? `Solicitud de prestamo enviada desde SEDE ${inventario.sedeId} hacia ${sedeDestino.nombre}. La deuda del proveedor se trasladara cuando el destino apruebe.`
-            : `Solicitud de prestamo enviada desde SEDE ${inventario.sedeId} hacia ${sedeDestino.nombre}. Pendiente por aprobacion.`,
+            ? `Solicitud de prestamo enviada desde ${sedeOrigenNombre} hacia ${sedeDestino.nombre}. La deuda del proveedor se trasladara cuando el destino apruebe.`
+            : `Solicitud de prestamo enviada desde ${sedeOrigenNombre} hacia ${sedeDestino.nombre}. Pendiente por aprobacion.`,
         },
       });
     });

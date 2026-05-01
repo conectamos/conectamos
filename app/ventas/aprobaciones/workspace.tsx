@@ -30,6 +30,7 @@ type RegistroAprobacion = {
   numeroFactura: string | null;
   estadoFacturacion: string | null;
   estadoVentaRegistro: string | null;
+  observacion: string | null;
   financierasDetalle: FinancieraRegistro[];
 };
 
@@ -230,7 +231,7 @@ export default function VentasAprobacionesWorkspace({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1460px] text-sm">
+            <table className="min-w-[1620px] text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-5 py-4 text-left font-semibold">Fecha</th>
@@ -238,6 +239,7 @@ export default function VentasAprobacionesWorkspace({
                   <th className="px-5 py-4 text-left font-semibold">Cliente</th>
                   <th className="px-5 py-4 text-left font-semibold">Equipo</th>
                   <th className="px-5 py-4 text-left font-semibold">Asesor</th>
+                  <th className="px-5 py-4 text-left font-semibold">Observacion</th>
                   <th className="px-5 py-4 text-left font-semibold">Financieras</th>
                   <th className="px-5 py-4 text-left font-semibold">Facturacion</th>
                   <th className="px-5 py-4 text-left font-semibold">Accion</th>
@@ -247,13 +249,13 @@ export default function VentasAprobacionesWorkspace({
               <tbody>
                 {cargando ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-16 text-center text-slate-500">
+                    <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
                       Cargando registros...
                     </td>
                   </tr>
                 ) : registrosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-16 text-center">
+                    <td colSpan={9} className="px-6 py-16 text-center">
                       <p className="text-base font-semibold text-slate-900">
                         No hay registros pendientes para esta vista
                       </p>
@@ -296,6 +298,11 @@ export default function VentasAprobacionesWorkspace({
                         </p>
                         <p className="mt-1 text-slate-500">
                           Jalador: {registro.jaladorNombre || "Sin jalador"}
+                        </p>
+                      </td>
+                      <td className="px-5 py-5 text-slate-700">
+                        <p className="max-w-[260px] leading-6">
+                          {registro.observacion || "Sin observacion"}
                         </p>
                       </td>
                       <td className="px-5 py-5">

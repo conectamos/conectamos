@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
   NOMBRE_SEDE_BODEGA,
+  etiquetaSedeAcreedora,
   esDeudaProveedor,
   esEstadoDeuda,
 } from "@/lib/prestamos";
@@ -76,6 +77,34 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    const sedesPrestamo = await prisma.sede.findMany({
+      where: {
+        id: {
+          in: Array.from(
+            new Set([
+              prestamo.sedeOrigenId,
+              prestamo.sedeDestinoId,
+              sedeBodegaId > 0 ? sedeBodegaId : prestamo.sedeOrigenId,
+            ])
+          ),
+        },
+      },
+      select: {
+        id: true,
+        nombre: true,
+      },
+    });
+    const nombresSede = new Map(
+      sedesPrestamo.map((sede) => [sede.id, sede.nombre])
+    );
+    const sedeOrigenNombre = etiquetaSedeAcreedora(
+      prestamo.sedeOrigenId,
+      nombresSede.get(prestamo.sedeOrigenId)
+    );
+    const sedeDestinoNombre = etiquetaSedeAcreedora(
+      prestamo.sedeDestinoId,
+      nombresSede.get(prestamo.sedeDestinoId)
+    );
 
     const equipoDestino = await prisma.inventarioSede.findFirst({
       where: {
@@ -204,7 +233,7 @@ export async function POST(req: Request) {
               sedeDestinoId: null,
               estadoCobro: null,
               fechaEnvio: null,
-              observacion: `Devuelto desde SEDE ${prestamo.sedeDestinoId}`,
+              observacion: `Devuelto desde ${sedeDestinoNombre}`,
             },
           });
         } else {
@@ -219,7 +248,7 @@ export async function POST(req: Request) {
               sedeDestinoId: null,
               estadoCobro: null,
               fechaEnvio: null,
-              observacion: `Devuelto desde SEDE ${prestamo.sedeDestinoId}`,
+              observacion: `Devuelto desde ${sedeDestinoNombre}`,
             },
           });
         }
@@ -230,7 +259,7 @@ export async function POST(req: Request) {
             estadoAnterior: "PRESTAMO",
             estadoActual: "BODEGA",
             fechaMovimiento: new Date(),
-            observacion: `Equipo devuelto desde SEDE ${prestamo.sedeDestinoId}`,
+            observacion: `Equipo devuelto desde ${sedeDestinoNombre}`,
             deboA: deudaPrincipalSeDevuelveAlOrigen
               ? equipoDestino.deboA
               : equipoOrigen.deboA,
@@ -250,7 +279,7 @@ export async function POST(req: Request) {
                 sedeDestinoId: prestamo.sedeOrigenId,
                 estadoCobro: "PENDIENTE",
                 fechaEnvio: new Date(),
-                observacion: `Deuda activa retorna a SEDE ${prestamo.sedeOrigenId} despues de devolucion desde SEDE ${prestamo.sedeDestinoId}.`,
+                observacion: `Deuda activa retorna a ${sedeOrigenNombre} despues de devolucion desde ${sedeDestinoNombre}.`,
               },
             });
           } else {
@@ -263,7 +292,7 @@ export async function POST(req: Request) {
                 sedeDestinoId: prestamo.sedeOrigenId,
                 estadoCobro: "PENDIENTE",
                 fechaEnvio: new Date(),
-                observacion: `Deuda activa retorna a SEDE ${prestamo.sedeOrigenId} despues de devolucion desde SEDE ${prestamo.sedeDestinoId}.`,
+                observacion: `Deuda activa retorna a ${sedeOrigenNombre} despues de devolucion desde ${sedeDestinoNombre}.`,
               },
             });
           }
@@ -303,10 +332,10 @@ export async function POST(req: Request) {
           color: prestamo.color || null,
           costo: prestamo.costo,
           sedeId: prestamo.sedeDestinoId,
-          deboA: equipoDestino.deboA ?? `SEDE ${prestamo.sedeOrigenId}`,
+          deboA: equipoDestino.deboA ?? sedeOrigenNombre,
           estadoFinanciero: equipoDestino.estadoFinanciero,
           origen: "PRESTAMO",
-          observacion: `Equipo devuelto a SEDE ${prestamo.sedeOrigenId}. Prestamo #${prestamo.id}`,
+          observacion: `Equipo devuelto a ${sedeOrigenNombre}. Prestamo #${prestamo.id}`,
         },
       });
 
@@ -336,8 +365,8 @@ export async function POST(req: Request) {
             ? "DEVOLUCION_PRINCIPAL"
             : "DEVOLUCION_PRESTAMO",
           observacion: retornoDirectoAPrincipal
-            ? `Equipo retornado a bodega principal desde SEDE ${prestamo.sedeDestinoId}. Prestamo #${prestamo.id}`
-            : `Equipo retornado desde SEDE ${prestamo.sedeDestinoId}. Prestamo #${prestamo.id}`,
+            ? `Equipo retornado a bodega principal desde ${sedeDestinoNombre}. Prestamo #${prestamo.id}`
+            : `Equipo retornado desde ${sedeDestinoNombre}. Prestamo #${prestamo.id}`,
         },
       });
     });

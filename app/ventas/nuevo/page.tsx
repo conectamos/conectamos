@@ -57,6 +57,7 @@ type RegistroVentaRelacionado = {
   jaladorNombre: string | null;
   numeroFactura: string | null;
   estadoFacturacion: string;
+  observacion: string | null;
   financierasDetalle: RegistroVentaFinanciera[];
   createdAt: string;
 };
@@ -175,6 +176,7 @@ function normalizarRegistroVenta(value: unknown): RegistroVentaRelacionado | nul
     numeroFactura:
       typeof row.numeroFactura === "string" ? row.numeroFactura : null,
     estadoFacturacion: String(row.estadoFacturacion || "PENDIENTE"),
+    observacion: typeof row.observacion === "string" ? row.observacion : null,
     financierasDetalle,
     createdAt: String(row.createdAt || ""),
   };
@@ -234,7 +236,7 @@ export default function NuevaVentaPage() {
 
   const [ingreso1Base, setIngreso1Base] = useState("");
   const [ingreso2Base, setIngreso2Base] = useState("");
-  const [tipoIngreso1] = useState("EFECTIVO");
+  const [tipoIngreso1, setTipoIngreso1] = useState("EFECTIVO");
   const [tipoIngreso2, setTipoIngreso2] = useState("");
   const [usarIngreso2, setUsarIngreso2] = useState(false);
 
@@ -275,6 +277,7 @@ export default function NuevaVentaPage() {
     if (!registro) {
       setIngreso1Base("");
       setIngreso2Base("");
+      setTipoIngreso1("EFECTIVO");
       setTipoIngreso2("");
       setUsarIngreso2(false);
       setFinanzas([
@@ -306,20 +309,43 @@ export default function NuevaVentaPage() {
     const segundaInicial = Number(
       monedaGuardadaAInput(segundaFinanciera?.cuotaInicial ?? null) || 0
     );
+    const tipoPrimeraInicial = normalizarTipoIngresoDesdeRegistro(
+      primeraFinanciera?.tipoPagoInicial
+    );
     const tipoSegundaInicial = normalizarTipoIngresoDesdeRegistro(
       segundaFinanciera?.tipoPagoInicial
     );
+    const ingresosRegistrados = [
+      primeraInicial > 0
+        ? { valor: primeraInicial, tipo: tipoPrimeraInicial }
+        : null,
+      segundaInicial > 0
+        ? { valor: segundaInicial, tipo: tipoSegundaInicial }
+        : null,
+    ].filter(Boolean) as Array<{ valor: number; tipo: string }>;
 
-    if (segundaInicial > 0 && tipoSegundaInicial !== "EFECTIVO") {
-      setIngreso1Base(primeraInicial > 0 ? String(primeraInicial) : "");
-      setIngreso2Base(String(segundaInicial));
-      setTipoIngreso2(tipoSegundaInicial);
+    if (ingresosRegistrados.length === 0) {
+      setIngreso1Base("");
+      setIngreso2Base("");
+      setTipoIngreso1("EFECTIVO");
+      setTipoIngreso2("");
+      setUsarIngreso2(false);
+    } else if (
+      ingresosRegistrados.length > 1 &&
+      ingresosRegistrados[0].tipo !== ingresosRegistrados[1].tipo
+    ) {
+      setIngreso1Base(String(ingresosRegistrados[0].valor));
+      setTipoIngreso1(ingresosRegistrados[0].tipo);
+      setIngreso2Base(String(ingresosRegistrados[1].valor));
+      setTipoIngreso2(ingresosRegistrados[1].tipo);
       setUsarIngreso2(true);
     } else {
-      const ingreso1DesdeRegistro = primeraInicial + segundaInicial;
-      setIngreso1Base(
-        ingreso1DesdeRegistro > 0 ? String(ingreso1DesdeRegistro) : ""
+      const ingreso1DesdeRegistro = ingresosRegistrados.reduce(
+        (total, item) => total + item.valor,
+        0
       );
+      setIngreso1Base(String(ingreso1DesdeRegistro));
+      setTipoIngreso1(ingresosRegistrados[0].tipo);
       setIngreso2Base("");
       setTipoIngreso2("");
       setUsarIngreso2(false);
@@ -608,6 +634,7 @@ export default function NuevaVentaPage() {
     setRegistroVendedor(null);
     setIngreso1Base("");
     setIngreso2Base("");
+    setTipoIngreso1("EFECTIVO");
     setTipoIngreso2("");
     setUsarIngreso2(false);
     setComision("");
@@ -668,6 +695,7 @@ export default function NuevaVentaPage() {
           cerrador,
           ingreso1Base: Number(ingreso1Base || 0),
           ingreso2Base: usarIngreso2 ? Number(ingreso2Base || 0) : 0,
+          tipoIngreso1,
           tipoIngreso2: usarIngreso2 ? tipoIngreso2 : "",
           comision: Number(comision || 0),
           salida: Number(salida || 0),
@@ -883,6 +911,15 @@ export default function NuevaVentaPage() {
                         </p>
                       </div>
 
+                      <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                          Observacion del asesor
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-800">
+                          {registroVendedor.observacion || "Sin observacion registrada"}
+                        </p>
+                      </div>
+
                       <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                           Financieras registradas
@@ -961,10 +998,10 @@ export default function NuevaVentaPage() {
                 <div className={sectionCardClass()}>
                   <h3 className={sectionTitleClass()}>Ingresos</h3>
 
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                     <div>
                       <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Ingreso 1
+                        Ingreso 1 valor
                       </label>
                       <input
                         value={ingreso1Base ? formatoPesos(ingreso1Base) : ""}
@@ -972,7 +1009,21 @@ export default function NuevaVentaPage() {
                         className={inputBaseClass()}
                         placeholder="$ 0"
                       />
-                      <p className="mt-1 text-xs text-slate-500">Tipo fijo: EFECTIVO</p>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">
+                        Tipo ingreso 1
+                      </label>
+                      <select
+                        value={tipoIngreso1}
+                        onChange={(e) => setTipoIngreso1(e.target.value)}
+                        className={inputBaseClass()}
+                      >
+                        <option value="EFECTIVO">EFECTIVO</option>
+                        <option value="TRANSFERENCIA">TRANSFERENCIA</option>
+                        <option value="VOUCHER">VOUCHER</option>
+                      </select>
                     </div>
 
                     <div>

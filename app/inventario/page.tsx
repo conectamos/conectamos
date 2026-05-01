@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { esDeudaEntreSedes } from "@/lib/prestamos";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 import { esSedeOperativaInventario } from "@/lib/sedes";
 
@@ -679,7 +680,7 @@ export default function InventarioPage() {
 
     if (estado !== "DEUDA") return false;
     if (estadoActual !== "BODEGA" && estadoActual !== "VENDIDO") return false;
-    if (deboA.startsWith("SEDE ")) return false;
+    if (esDeudaEntreSedes(deboA)) return false;
 
     return true;
   };

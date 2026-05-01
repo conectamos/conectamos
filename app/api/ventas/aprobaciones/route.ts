@@ -104,6 +104,7 @@ export async function GET(req: Request) {
           numeroFactura: true,
           estadoFacturacion: true,
           estadoVentaRegistro: true,
+          observacion: true,
           financierasDetalle: true,
         },
       });
@@ -180,6 +181,7 @@ export async function GET(req: Request) {
         numeroFactura: true,
         estadoFacturacion: true,
         estadoVentaRegistro: true,
+        observacion: true,
         financierasDetalle: true,
       },
       orderBy: {

@@ -59,6 +59,16 @@ function ingresoCajaOficina(valorBase: number, tipoIngreso: string): number {
   return valorBase;
 }
 
+function normalizeTipoIngreso(value: unknown, fallback = "") {
+  const tipo = String(value || "").trim().toUpperCase();
+
+  if (tipo === "EFECTIVO" || tipo === "TRANSFERENCIA" || tipo === "VOUCHER") {
+    return tipo;
+  }
+
+  return fallback;
+}
+
 function servicioOcultaFinancieras(servicio: string): boolean {
   const normalized = normalizeServiceValue(servicio);
   return (
@@ -78,8 +88,8 @@ function parseVentaInput(data: Record<string, unknown>): VentaInput {
     jalador: String(data.jalador ?? "").trim(),
     cerrador: String(data.cerrador ?? "").trim(),
     registroVendedorId: toPositiveInt(data.registroVendedorId),
-    tipoIngreso1: "EFECTIVO",
-    tipoIngreso2: String(data.tipoIngreso2 ?? "").trim(),
+    tipoIngreso1: normalizeTipoIngreso(data.tipoIngreso1, "EFECTIVO"),
+    tipoIngreso2: normalizeTipoIngreso(data.tipoIngreso2),
     ingreso1Base: toNumber(data.ingreso1Base),
     ingreso2Base: toNumber(data.ingreso2Base),
     comision: toNumber(data.comision),

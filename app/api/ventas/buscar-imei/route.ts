@@ -42,6 +42,7 @@ async function buscarRegistroVentaAbierto(
       numeroFactura: true,
       estadoFacturacion: true,
       estadoVentaRegistro: true,
+      observacion: true,
       financierasDetalle: true,
       createdAt: true,
     },

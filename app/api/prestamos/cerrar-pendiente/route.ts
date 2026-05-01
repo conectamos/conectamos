@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { etiquetaSedeAcreedora } from "@/lib/prestamos";
 
 type AccionCierre = "RECHAZADO" | "CANCELADO";
 
@@ -65,6 +66,26 @@ export async function POST(req: Request) {
         { status: 403 }
       );
     }
+    const sedes = await prisma.sede.findMany({
+      where: {
+        id: {
+          in: [prestamo.sedeOrigenId, prestamo.sedeDestinoId],
+        },
+      },
+      select: {
+        id: true,
+        nombre: true,
+      },
+    });
+    const nombresSede = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
+    const sedeOrigenNombre = etiquetaSedeAcreedora(
+      prestamo.sedeOrigenId,
+      nombresSede.get(prestamo.sedeOrigenId)
+    );
+    const sedeDestinoNombre = etiquetaSedeAcreedora(
+      prestamo.sedeDestinoId,
+      nombresSede.get(prestamo.sedeDestinoId)
+    );
 
     const itemOrigen = await prisma.inventarioSede.findFirst({
       where: {
@@ -97,8 +118,8 @@ export async function POST(req: Request) {
             fechaMovimiento: new Date(),
             observacion:
               accion === "RECHAZADO"
-                ? `Solicitud rechazada por la sede destino ${prestamo.sedeDestinoId}.`
-                : `Solicitud cancelada antes de aprobacion hacia la sede ${prestamo.sedeDestinoId}.`,
+                ? `Solicitud rechazada por la sede destino ${sedeDestinoNombre}.`
+                : `Solicitud cancelada antes de aprobacion hacia ${sedeDestinoNombre}.`,
           },
         });
       }
@@ -117,8 +138,8 @@ export async function POST(req: Request) {
           origen: "PRESTAMO",
           observacion:
             accion === "RECHAZADO"
-              ? `La sede ${prestamo.sedeDestinoId} rechazo la solicitud pendiente.`
-              : `La sede ${prestamo.sedeOrigenId} cancelo la solicitud pendiente antes de aprobacion.`,
+              ? `${sedeDestinoNombre} rechazo la solicitud pendiente.`
+              : `${sedeOrigenNombre} cancelo la solicitud pendiente antes de aprobacion.`,
         },
       });
     });

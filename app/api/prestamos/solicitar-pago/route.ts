@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { esDeudaEntreSedes, esEstadoDeuda } from "@/lib/prestamos";
+import {
+  etiquetaSedeAcreedora,
+  esDeudaEntreSedes,
+  esEstadoDeuda,
+} from "@/lib/prestamos";
 
 export async function POST(req: Request) {
   try {
@@ -95,6 +99,26 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    const sedes = await prisma.sede.findMany({
+      where: {
+        id: {
+          in: [prestamo.sedeOrigenId, prestamo.sedeDestinoId],
+        },
+      },
+      select: {
+        id: true,
+        nombre: true,
+      },
+    });
+    const nombresSede = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
+    const sedeOrigenNombre = etiquetaSedeAcreedora(
+      prestamo.sedeOrigenId,
+      nombresSede.get(prestamo.sedeOrigenId)
+    );
+    const sedeDestinoNombre = etiquetaSedeAcreedora(
+      prestamo.sedeDestinoId,
+      nombresSede.get(prestamo.sedeDestinoId)
+    );
 
     await prisma.$transaction(async (tx) => {
       await tx.prestamoSede.update({
@@ -148,7 +172,7 @@ export async function POST(req: Request) {
           deboA: equipoDestino.deboA,
           estadoFinanciero: "DEUDA",
           origen: "PRESTAMO",
-          observacion: `SEDE ${prestamo.sedeDestinoId} solicita pagar a SEDE ${prestamo.sedeOrigenId}. Prestamo #${prestamo.id}.`,
+          observacion: `${sedeDestinoNombre} solicita pagar a ${sedeOrigenNombre}. Prestamo #${prestamo.id}.`,
         },
       });
     });
