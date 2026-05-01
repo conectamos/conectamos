@@ -12,6 +12,7 @@ type CajaMovimiento = {
   descripcion: string | null;
   sedeId: number;
   createdAt: string;
+  editable: boolean;
   sede?: {
     nombre: string;
   };
@@ -32,7 +33,11 @@ type Sede = {
   nombre: string;
 };
 
-function formatoPesos(valor: number) {
+function limpiarNumero(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function formatoPesos(valor: string | number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
 
@@ -65,6 +70,16 @@ export default function CajaPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
+  const [editandoMovimiento, setEditandoMovimiento] =
+    useState<CajaMovimiento | null>(null);
+  const [tipoEdicion, setTipoEdicion] = useState<"INGRESO" | "EGRESO">(
+    "INGRESO"
+  );
+  const [conceptoEdicion, setConceptoEdicion] = useState("");
+  const [valorEdicion, setValorEdicion] = useState("");
+  const [descripcionEdicion, setDescripcionEdicion] = useState("");
+  const [sedeEdicionId, setSedeEdicionId] = useState("");
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
   const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
 
@@ -133,6 +148,84 @@ export default function CajaPage() {
   }, [user, sedeFiltroId]);
 
   useLiveRefresh(cargarCaja, { intervalMs: 10000 });
+
+  const cancelarEdicion = () => {
+    setEditandoMovimiento(null);
+    setTipoEdicion("INGRESO");
+    setConceptoEdicion("");
+    setValorEdicion("");
+    setDescripcionEdicion("");
+    setSedeEdicionId("");
+  };
+
+  const iniciarEdicion = (movimiento: CajaMovimiento) => {
+    setEditandoMovimiento(movimiento);
+    setTipoEdicion(
+      String(movimiento.tipo || "").toUpperCase() === "EGRESO"
+        ? "EGRESO"
+        : "INGRESO"
+    );
+    setConceptoEdicion(movimiento.concepto || "");
+    setValorEdicion(String(Math.trunc(Number(movimiento.valor || 0))));
+    setDescripcionEdicion(movimiento.descripcion || "");
+    setSedeEdicionId(String(movimiento.sedeId || ""));
+    setMensaje("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const guardarEdicion = async () => {
+    if (!editandoMovimiento) {
+      return;
+    }
+
+    try {
+      setGuardandoEdicion(true);
+      setMensaje("");
+
+      if (!conceptoEdicion.trim()) {
+        setMensaje("Debes ingresar el concepto");
+        return;
+      }
+
+      if (!valorEdicion || Number(valorEdicion) <= 0) {
+        setMensaje("Debes ingresar un valor mayor a 0");
+        return;
+      }
+
+      if (!sedeEdicionId || Number(sedeEdicionId) <= 0) {
+        setMensaje("Debes seleccionar la sede");
+        return;
+      }
+
+      const res = await fetch(`/api/caja?id=${editandoMovimiento.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tipo: tipoEdicion,
+          concepto: conceptoEdicion,
+          valor: Number(valorEdicion),
+          descripcion: descripcionEdicion,
+          sedeId: Number(sedeEdicionId),
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "No se pudo actualizar el movimiento");
+        return;
+      }
+
+      setMensaje(data.mensaje || "Movimiento actualizado correctamente");
+      cancelarEdicion();
+      await cargarCaja();
+    } catch {
+      setMensaje("Error actualizando movimiento");
+    } finally {
+      setGuardandoEdicion(false);
+    }
+  };
 
   const sedeFiltroNombre = useMemo(() => {
     if (!esAdmin) {
@@ -261,6 +354,106 @@ export default function CajaPage() {
           </div>
         )}
 
+        {esAdmin && editandoMovimiento && (
+          <section className="mt-6 overflow-hidden rounded-[30px] border border-[#e8e0d1] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <div className="flex flex-col gap-3 border-b border-[#ece5d8] px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="inline-flex rounded-full border border-[#ddd2bf] bg-[#faf6ee] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7b5b2b]">
+                  Edicion de caja
+                </div>
+                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                  Movimiento #{editandoMovimiento.id}
+                </h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Ajusta el ingreso o egreso manual registrado por la sede.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={cancelarEdicion}
+                className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 xl:grid-cols-5">
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Tipo
+                <select
+                  value={tipoEdicion}
+                  onChange={(event) =>
+                    setTipoEdicion(event.target.value as "INGRESO" | "EGRESO")
+                  }
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                >
+                  <option value="INGRESO">INGRESO</option>
+                  <option value="EGRESO">EGRESO</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Sede
+                <select
+                  value={sedeEdicionId}
+                  onChange={(event) => setSedeEdicionId(event.target.value)}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                >
+                  <option value="">Seleccionar sede</option>
+                  {sedes.map((sede) => (
+                    <option key={sede.id} value={String(sede.id)}>
+                      {sede.nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Concepto
+                <input
+                  value={conceptoEdicion}
+                  onChange={(event) => setConceptoEdicion(event.target.value)}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Valor
+                <input
+                  value={valorEdicion ? formatoPesos(valorEdicion) : ""}
+                  onChange={(event) =>
+                    setValorEdicion(limpiarNumero(event.target.value))
+                  }
+                  placeholder="$ 0"
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Descripcion
+                <input
+                  value={descripcionEdicion}
+                  onChange={(event) => setDescripcionEdicion(event.target.value)}
+                  placeholder="Detalle opcional"
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end border-t border-[#ece5d8] px-6 py-5">
+              <button
+                type="button"
+                onClick={() => void guardarEdicion()}
+                disabled={guardandoEdicion}
+                className="rounded-2xl bg-red-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {guardandoEdicion ? "Guardando..." : "Guardar cambios"}
+              </button>
+            </div>
+          </section>
+        )}
+
         <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div
             className={`rounded-[30px] border px-5 py-5 shadow-sm ${metricToneClass("emerald")}`}
@@ -356,7 +549,7 @@ export default function CajaPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1180px] text-sm">
+            <table className="min-w-[1280px] text-sm">
               <thead className="bg-[#f8f5ee] text-slate-600">
                 <tr>
                   <th className="px-5 py-4 text-left font-semibold">ID</th>
@@ -366,13 +559,19 @@ export default function CajaPage() {
                   <th className="px-5 py-4 text-left font-semibold">Descripcion</th>
                   <th className="px-5 py-4 text-left font-semibold">Sede</th>
                   <th className="px-5 py-4 text-left font-semibold">Fecha</th>
+                  {esAdmin && (
+                    <th className="px-5 py-4 text-left font-semibold">Acciones</th>
+                  )}
                 </tr>
               </thead>
 
               <tbody>
                 {movimientos.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-16 text-center">
+                    <td
+                      colSpan={esAdmin ? 8 : 7}
+                      className="px-6 py-16 text-center"
+                    >
                       <div className="mx-auto max-w-md">
                         <p className="text-base font-semibold text-slate-900">
                           No hay movimientos para esta vista
@@ -439,6 +638,24 @@ export default function CajaPage() {
                       <td className="px-5 py-5 text-slate-600">
                         {formatoFecha(item.createdAt)}
                       </td>
+
+                      {esAdmin && (
+                        <td className="px-5 py-5">
+                          {item.editable ? (
+                            <button
+                              type="button"
+                              onClick={() => iniciarEdicion(item)}
+                              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                            >
+                              Editar
+                            </button>
+                          ) : (
+                            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              Protegido
+                            </span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
