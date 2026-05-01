@@ -712,6 +712,16 @@ export default function InventarioPage() {
     [itemsSeleccionados]
   );
 
+  const itemsSeleccionadosParaPendiente = useMemo(
+    () => itemsSeleccionados.filter((item) => puedePasarAPendiente(item)),
+    [itemsSeleccionados]
+  );
+
+  const itemsSeleccionadosParaGarantia = useMemo(
+    () => itemsSeleccionados.filter((item) => puedePasarAGarantia(item)),
+    [itemsSeleccionados]
+  );
+
   const totalPagoMasivo = useMemo(
     () =>
       itemsSeleccionadosParaPago.reduce(
@@ -875,6 +885,71 @@ export default function InventarioPage() {
       await cargarInventario();
     } catch {
       setMensaje("Error ejecutando pago masivo");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const ejecutarCambioEstadoMasivo = async (
+    estadoActual: "PENDIENTE" | "GARANTIA",
+    itemsObjetivo: InventarioItem[]
+  ) => {
+    if (itemsObjetivo.length === 0) {
+      setMensaje(
+        estadoActual === "PENDIENTE"
+          ? "No hay equipos seleccionados disponibles para pasar a pendiente"
+          : "No hay equipos seleccionados disponibles para pasar a garantia"
+      );
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      let procesados = 0;
+      const errores: string[] = [];
+
+      for (const item of itemsObjetivo) {
+        const res = await fetch("/api/inventario/cambiar-estado", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: item.id,
+            estadoActual,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          procesados += 1;
+        } else {
+          errores.push(`${item.imei}: ${data.error || "Error actualizando estado"}`);
+        }
+      }
+
+      setMensaje(
+        [
+          `${
+            estadoActual === "PENDIENTE" ? "Pendiente" : "Garantia"
+          } masiva finalizada: ${procesados} equipo${
+            procesados === 1 ? "" : "s"
+          } actualizado${procesados === 1 ? "" : "s"}.`,
+          errores.length
+            ? `${errores.length} no se procesaron. ${errores.slice(0, 3).join(" | ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      limpiarSeleccionMasiva();
+      await cargarInventario();
+    } catch {
+      setMensaje("Error ejecutando cambio masivo de estado");
     } finally {
       setCargando(false);
     }
@@ -1126,6 +1201,9 @@ export default function InventarioPage() {
                     {itemsSeleccionadosParaPrestamo.length === 1 ? "" : "s"} para envio
                     {" "}a sede · {itemsSeleccionadosParaPago.length} deuda
                     {itemsSeleccionadosParaPago.length === 1 ? "" : "s"} pagable
+                    {esAdmin
+                      ? ` | ${itemsSeleccionadosParaPendiente.length} para pendiente | ${itemsSeleccionadosParaGarantia.length} para garantia`
+                      : ""}
                   </p>
                 </div>
 
@@ -1150,6 +1228,38 @@ export default function InventarioPage() {
                   >
                     Pagar deudas
                   </button>
+
+                  {esAdmin && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void ejecutarCambioEstadoMasivo(
+                          "PENDIENTE",
+                          itemsSeleccionadosParaPendiente
+                        )
+                      }
+                      disabled={cargando || itemsSeleccionadosParaPendiente.length === 0}
+                      className="rounded-2xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Marcar pendiente
+                    </button>
+                  )}
+
+                  {esAdmin && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void ejecutarCambioEstadoMasivo(
+                          "GARANTIA",
+                          itemsSeleccionadosParaGarantia
+                        )
+                      }
+                      disabled={cargando || itemsSeleccionadosParaGarantia.length === 0}
+                      className="rounded-2xl bg-fuchsia-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-fuchsia-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Marcar garantia
+                    </button>
+                  )}
 
                   {esAdmin && (
                     <button
