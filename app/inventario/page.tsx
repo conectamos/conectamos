@@ -40,6 +40,15 @@ type Sede = {
 
 type EstadoFiltro = "TODOS" | "BODEGA" | "PENDIENTE" | "GARANTIA" | "PRESTAMO" | "DEUDA";
 
+type EditarInventarioForm = {
+  referencia: string;
+  color: string;
+  costo: string;
+  distribuidor: string;
+  estadoFinanciero: string;
+  deboA: string;
+};
+
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
@@ -145,9 +154,17 @@ export default function InventarioPage() {
   const [idsSeleccionados, setIdsSeleccionados] = useState<number[]>([]);
 
   const [modalEliminar, setModalEliminar] = useState(false);
-  const [idEliminar, setIdEliminar] = useState<number | null>(null);
-  const [claveEliminar, setClaveEliminar] = useState("");
-  const [errorClave, setErrorClave] = useState("");
+  const [idsEliminar, setIdsEliminar] = useState<number[]>([]);
+  const [mostrarModalEditar, setMostrarModalEditar] = useState(false);
+  const [itemEditar, setItemEditar] = useState<InventarioItem | null>(null);
+  const [formularioEditar, setFormularioEditar] = useState<EditarInventarioForm>({
+    referencia: "",
+    color: "",
+    costo: "",
+    distribuidor: "",
+    estadoFinanciero: "PAGO",
+    deboA: "",
+  });
 
   const esAdmin = String(user?.rolNombre || "").toUpperCase() === "ADMIN";
 
@@ -369,10 +386,7 @@ export default function InventarioPage() {
       });
   }, [busqueda, filtroEstado, items]);
 
-  const eliminar = async (id: number) => {
-    const confirmado = window.confirm("Seguro que deseas eliminar este equipo?");
-    if (!confirmado) return;
-
+  const eliminar = async (ids: number[]) => {
     try {
       setCargando(true);
       setMensaje("");
@@ -382,20 +396,131 @@ export default function InventarioPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ ids }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setMensaje(data.error || "Error eliminando equipo");
+        const detalleBloqueados = Array.isArray(data.bloqueados) && data.bloqueados.length
+          ? ` ${data.bloqueados.slice(0, 3).join(" | ")}`
+          : "";
+        setMensaje(`${data.error || "Error eliminando equipo"}${detalleBloqueados}`);
         return;
       }
 
-      setMensaje("Equipo eliminado correctamente");
+      const eliminados = Number(data.eliminados ?? 0);
+      const bloqueados = Array.isArray(data.bloqueados) ? data.bloqueados : [];
+
+      setMensaje(
+        [
+          eliminados === 1
+            ? "1 equipo eliminado correctamente."
+            : `${eliminados} equipos eliminados correctamente.`,
+          bloqueados.length
+            ? `${bloqueados.length} no se eliminaron. ${bloqueados.slice(0, 3).join(" | ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      setIdsSeleccionados((actuales) => actuales.filter((id) => !ids.includes(id)));
       await cargarInventario();
     } catch {
       setMensaje("Error eliminando equipo");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const abrirEdicion = (item: InventarioItem) => {
+    setItemEditar(item);
+    setFormularioEditar({
+      referencia: item.referencia || "",
+      color: item.color || "",
+      costo: String(item.costo || ""),
+      distribuidor: item.distribuidor || "",
+      estadoFinanciero: item.estadoFinanciero || "PAGO",
+      deboA: item.deboA || "",
+    });
+    setMostrarModalEditar(true);
+  };
+
+  const cerrarEdicion = () => {
+    setMostrarModalEditar(false);
+    setItemEditar(null);
+    setFormularioEditar({
+      referencia: "",
+      color: "",
+      costo: "",
+      distribuidor: "",
+      estadoFinanciero: "PAGO",
+      deboA: "",
+    });
+  };
+
+  const guardarEdicion = async () => {
+    if (!itemEditar) return;
+
+    if (!formularioEditar.referencia.trim()) {
+      setMensaje("Debes ingresar la referencia");
+      return;
+    }
+
+    if (!formularioEditar.costo || Number(formularioEditar.costo) <= 0) {
+      setMensaje("Debes ingresar un costo valido");
+      return;
+    }
+
+    if (!formularioEditar.distribuidor.trim()) {
+      setMensaje("Debes seleccionar un distribuidor");
+      return;
+    }
+
+    if (
+      formularioEditar.estadoFinanciero === "DEUDA" &&
+      !formularioEditar.deboA.trim()
+    ) {
+      setMensaje("Debes indicar a quien se debe");
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/inventario/actualizar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: itemEditar.id,
+          referencia: formularioEditar.referencia,
+          color: formularioEditar.color,
+          costo: Number(formularioEditar.costo),
+          distribuidor: formularioEditar.distribuidor,
+          estadoFinanciero: formularioEditar.estadoFinanciero,
+          deboA:
+            formularioEditar.estadoFinanciero === "DEUDA"
+              ? formularioEditar.deboA
+              : null,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "Error actualizando equipo");
+        return;
+      }
+
+      setMensaje("Equipo actualizado correctamente");
+      cerrarEdicion();
+      await cargarInventario();
+    } catch {
+      setMensaje("Error actualizando equipo");
     } finally {
       setCargando(false);
     }
@@ -563,6 +688,7 @@ export default function InventarioPage() {
     () => items.filter((item) => idsSeleccionados.includes(item.id)),
     [idsSeleccionados, items]
   );
+  const itemSeleccionadoUnico = itemsSeleccionados.length === 1 ? itemsSeleccionados[0] : null;
 
   const idsVisibles = useMemo(
     () => itemsFiltrados.map((item) => item.id),
@@ -626,6 +752,16 @@ export default function InventarioPage() {
     setSedeDestinoId("");
     setMostrarModalPrestamoMasivo(false);
     setMostrarModalPagoMasivo(false);
+  };
+
+  const abrirEliminacion = (ids: number[]) => {
+    setIdsEliminar(ids);
+    setModalEliminar(true);
+  };
+
+  const cerrarEliminacion = () => {
+    setModalEliminar(false);
+    setIdsEliminar([]);
   };
 
   const ejecutarEnvioMasivo = async () => {
@@ -745,17 +881,10 @@ export default function InventarioPage() {
   };
 
   const confirmarEliminacion = () => {
-    if (false) {
-      setErrorClave("Clave incorrecta");
-    }
+    if (idsEliminar.length === 0) return;
 
-    if (!idEliminar) return;
-
-    void eliminar(idEliminar);
-    setModalEliminar(false);
-    setIdEliminar(null);
-    setClaveEliminar("");
-    setErrorClave("");
+    void eliminar(idsEliminar);
+    cerrarEliminacion();
   };
 
   return (
@@ -1022,6 +1151,28 @@ export default function InventarioPage() {
                     Pagar deudas
                   </button>
 
+                  {esAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => itemSeleccionadoUnico && abrirEdicion(itemSeleccionadoUnico)}
+                      disabled={cargando || !itemSeleccionadoUnico}
+                      className="rounded-2xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Editar seleccionado
+                    </button>
+                  )}
+
+                  {esAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => abrirEliminacion(idsSeleccionados)}
+                      disabled={cargando || idsSeleccionados.length === 0}
+                      className="rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Eliminar seleccion
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={limpiarSeleccionMasiva}
@@ -1249,11 +1400,32 @@ export default function InventarioPage() {
 
                           {esAdmin && (
                             <button
+                              onClick={() => abrirEdicion(item)}
+                              disabled={cargando}
+                              title="Editar"
+                              className="rounded-xl bg-amber-100 p-2.5 transition hover:bg-amber-200 disabled:opacity-70"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-4 w-4 text-amber-700"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L12 15l-4 1 1-4 9.586-9.586z"
+                                />
+                              </svg>
+                            </button>
+                          )}
+
+                          {esAdmin && (
+                            <button
                               onClick={() => {
-                                setIdEliminar(item.id);
-                                setModalEliminar(true);
-                                setClaveEliminar("");
-                                setErrorClave("");
+                                abrirEliminacion([item.id]);
                               }}
                               disabled={cargando}
                               title="Eliminar"
@@ -1497,38 +1669,158 @@ export default function InventarioPage() {
         </div>
       )}
 
+      {mostrarModalEditar && itemEditar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900">
+              Editar inventario
+            </h3>
+
+            <p className="mt-2 text-sm text-slate-600">
+              IMEI: {itemEditar.imei}. Esta edicion actualiza la ficha del inventario de sede sin cambiar el IMEI.
+            </p>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Referencia
+                </label>
+                <input
+                  value={formularioEditar.referencia}
+                  onChange={(e) =>
+                    setFormularioEditar((actual) => ({
+                      ...actual,
+                      referencia: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Color
+                </label>
+                <input
+                  value={formularioEditar.color}
+                  onChange={(e) =>
+                    setFormularioEditar((actual) => ({
+                      ...actual,
+                      color: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Costo
+                </label>
+                <input
+                  value={formularioEditar.costo ? formatoPesos(Number(formularioEditar.costo)) : ""}
+                  onChange={(e) =>
+                    setFormularioEditar((actual) => ({
+                      ...actual,
+                      costo: e.target.value.replace(/\D/g, ""),
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Distribuidor
+                </label>
+                <input
+                  value={formularioEditar.distribuidor}
+                  onChange={(e) =>
+                    setFormularioEditar((actual) => ({
+                      ...actual,
+                      distribuidor: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Estado financiero
+                </label>
+                <select
+                  value={formularioEditar.estadoFinanciero}
+                  onChange={(e) =>
+                    setFormularioEditar((actual) => ({
+                      ...actual,
+                      estadoFinanciero: e.target.value,
+                      deboA: e.target.value === "DEUDA" ? actual.deboA : "",
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                >
+                  <option value="PAGO">PAGO</option>
+                  <option value="DEUDA">DEUDA</option>
+                  <option value="CANCELADO">CANCELADO</option>
+                </select>
+              </div>
+
+              {formularioEditar.estadoFinanciero === "DEUDA" && (
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    Debe a
+                  </label>
+                  <input
+                    value={formularioEditar.deboA}
+                    onChange={(e) =>
+                      setFormularioEditar((actual) => ({
+                        ...actual,
+                        deboA: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={guardarEdicion}
+                disabled={cargando}
+                className="flex-1 rounded-2xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:opacity-70"
+              >
+                Guardar cambios
+              </button>
+
+              <button
+                onClick={cerrarEdicion}
+                className="flex-1 rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalEliminar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-900">
-              Autorizacion requerida
+              Confirmar eliminacion
             </h3>
 
             <p className="mt-2 text-sm text-slate-600">
-              Ingresa la clave para eliminar el registro
+              {idsEliminar.length === 1
+                ? "Se eliminara 1 equipo si no tiene ventas, prestamos activos ni registros comerciales pendientes."
+                : `Se eliminaran ${idsEliminar.length} equipos si cumplen las reglas de seguridad.`}
             </p>
-
-            <input
-              type="password"
-              value={claveEliminar}
-              onChange={(e) => setClaveEliminar(e.target.value)}
-              autoFocus
-              className="mt-4 w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              placeholder="Ingresa clave"
-            />
-
-            {errorClave && (
-              <p className="mt-2 text-sm font-medium text-red-600">{errorClave}</p>
-            )}
 
             <div className="mt-6 flex gap-3">
               <button
-                onClick={() => {
-                  setModalEliminar(false);
-                  setIdEliminar(null);
-                  setClaveEliminar("");
-                  setErrorClave("");
-                }}
+                onClick={cerrarEliminacion}
                 className="flex-1 rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 Cancelar
