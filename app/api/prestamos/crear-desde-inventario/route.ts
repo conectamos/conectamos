@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
+  ESTADO_INVENTARIO_PRESTAMO,
+  ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
   etiquetaSedeAcreedora,
   esEstadoDeuda,
   esDeudaProveedor,
@@ -170,7 +172,7 @@ export async function POST(req: Request) {
         where: { id: inventario.id },
         data: {
           estadoAnterior: inventario.estadoActual || null,
-          estadoActual: "PRESTAMO",
+          estadoActual: ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
           fechaMovimiento: new Date(),
           observacion: trasladaDeudaDePrincipal
             ? `Solicitud enviada a ${sedeDestino.nombre}. La deuda de principal solo se trasladara cuando la sede destino apruebe el prestamo.`
@@ -188,7 +190,7 @@ export async function POST(req: Request) {
           sedeId: inventario.sedeId,
           deboA: inventario.deboA,
           estadoFinanciero: inventario.estadoFinanciero,
-          origen: "PRESTAMO",
+          origen: ESTADO_INVENTARIO_PRESTAMO,
           observacion: trasladaDeudaDePrincipal
             ? `Solicitud de prestamo enviada desde ${sedeOrigenNombre} hacia ${sedeDestino.nombre}. La deuda del proveedor se trasladara cuando el destino apruebe.`
             : `Solicitud de prestamo enviada desde ${sedeOrigenNombre} hacia ${sedeDestino.nombre}. Pendiente por aprobacion.`,

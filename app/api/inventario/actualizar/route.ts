@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { esEstadoInventarioBloqueadoPorPrestamo } from "@/lib/prestamos";
 
 const ESTADOS_PRESTAMO_ACTIVOS = [
   "PENDIENTE",
@@ -125,7 +126,7 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    if (prestamoActivo || estadoActual === "PRESTAMO") {
+    if (prestamoActivo || esEstadoInventarioBloqueadoPorPrestamo(estadoActual)) {
       return NextResponse.json(
         { error: "No se puede editar un equipo con prestamo activo" },
         { status: 400 }

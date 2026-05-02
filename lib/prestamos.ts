@@ -1,5 +1,8 @@
 export const NOMBRE_SEDE_BODEGA = "BODEGA PRINCIPAL";
 export const PROVEEDOR_FINSER = "Proveedor Finser";
+export const ESTADO_INVENTARIO_PRESTAMO = "PRESTAMO";
+export const ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR =
+  "PRESTAMO_POR_ACEPTAR";
 const PROVEEDOR_KEYWORDS = [
   "PROVEEDOR",
   "FINSER",
@@ -25,6 +28,48 @@ export function normalizarEstadoFinanciero(
   estado: string | null | undefined
 ) {
   return normalizarTexto(estado);
+}
+
+export function normalizarEstadoInventario(
+  estado: string | null | undefined
+) {
+  return normalizarTexto(estado);
+}
+
+export function esEstadoInventarioPrestamo(
+  estado: string | null | undefined
+) {
+  return normalizarEstadoInventario(estado) === ESTADO_INVENTARIO_PRESTAMO;
+}
+
+export function esEstadoInventarioPrestamoPorAceptar(
+  estado: string | null | undefined
+) {
+  return (
+    normalizarEstadoInventario(estado) ===
+    ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR
+  );
+}
+
+export function esEstadoInventarioBloqueadoPorPrestamo(
+  estado: string | null | undefined
+) {
+  return (
+    esEstadoInventarioPrestamo(estado) ||
+    esEstadoInventarioPrestamoPorAceptar(estado)
+  );
+}
+
+export function etiquetaEstadoInventario(
+  estado: string | null | undefined
+) {
+  const normalizado = normalizarEstadoInventario(estado);
+
+  if (normalizado === ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR) {
+    return "PRESTAMO POR ACEPTAR";
+  }
+
+  return normalizado || "-";
 }
 
 export function esEstadoDeuda(estado: string | null | undefined) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
+  ESTADO_INVENTARIO_PRESTAMO,
   NOMBRE_SEDE_BODEGA,
   etiquetaSedeAcreedora,
   esDeudaProveedor,
@@ -176,7 +177,7 @@ export async function POST(req: Request) {
             distribuidor: itemOrigen.distribuidor,
             deboA: finanzasDestino.deboA,
             estadoFinanciero: finanzasDestino.estadoFinanciero,
-            origen: "PRESTAMO",
+            origen: ESTADO_INVENTARIO_PRESTAMO,
             estadoAnterior: existenteDestino.estadoActual,
             estadoActual: "BODEGA",
             fechaMovimiento: new Date(),
@@ -195,7 +196,7 @@ export async function POST(req: Request) {
             sedeId: Number(prestamo.sedeDestinoId),
             deboA: finanzasDestino.deboA,
             estadoFinanciero: finanzasDestino.estadoFinanciero,
-            origen: "PRESTAMO",
+            origen: ESTADO_INVENTARIO_PRESTAMO,
             estadoAnterior: itemOrigen.estadoActual,
             estadoActual: "BODEGA",
             fechaMovimiento: new Date(),
@@ -209,7 +210,7 @@ export async function POST(req: Request) {
         where: { id: itemOrigen.id },
         data: {
           estadoAnterior: itemOrigen.estadoActual,
-          estadoActual: "PRESTAMO",
+          estadoActual: ESTADO_INVENTARIO_PRESTAMO,
           fechaMovimiento: new Date(),
           observacion: trasladaDeudaDePrincipal
             ? `Prestamo aprobado hacia ${sedeDestinoNombre}. La deuda de principal queda trasladada a la sede destino.`
@@ -287,7 +288,7 @@ export async function POST(req: Request) {
           sedeId: Number(prestamo.sedeDestinoId),
           deboA: finanzasDestino.deboA,
           estadoFinanciero: finanzasDestino.estadoFinanciero,
-          origen: "PRESTAMO",
+          origen: ESTADO_INVENTARIO_PRESTAMO,
           observacion: trasladaDeudaDePrincipal
             ? `Prestamo aprobado desde ${sedeOrigenNombre}. La deuda del proveedor queda ahora en la sede destino.`
             : `Prestamo aprobado y recibido desde ${sedeOrigenNombre}.`,

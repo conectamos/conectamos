@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { esEstadoInventarioBloqueadoPorPrestamo } from "@/lib/prestamos";
 
 const ESTADOS_PRESTAMO_ACTIVOS = [
   "PENDIENTE",
@@ -122,7 +123,10 @@ export async function POST(req: Request) {
         continue;
       }
 
-      if (imeisConPrestamoActivo.has(item.imei) || estadoActual === "PRESTAMO") {
+      if (
+        imeisConPrestamoActivo.has(item.imei) ||
+        esEstadoInventarioBloqueadoPorPrestamo(estadoActual)
+      ) {
         bloqueados.push(`${item.imei}: tiene un prestamo activo`);
         continue;
       }

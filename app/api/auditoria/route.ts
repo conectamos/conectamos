@@ -80,7 +80,7 @@ const auditDefinitions: AuditDefinition[] = [
              ARRAY_AGG(DISTINCT "sedeId" ORDER BY "sedeId") AS sedes,
              ARRAY_AGG(id ORDER BY id) AS ids
       FROM "InventarioSede"
-      WHERE UPPER(COALESCE("estadoActual", '')) <> 'PRESTAMO'
+      WHERE UPPER(COALESCE("estadoActual", '')) NOT IN ('PRESTAMO', 'PRESTAMO_POR_ACEPTAR')
       GROUP BY imei
       HAVING COUNT(*) > 1
       ORDER BY cantidad DESC, imei

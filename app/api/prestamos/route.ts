@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
+  ESTADO_INVENTARIO_PRESTAMO,
+  ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
   esDeudaEntreSedes,
   esDeudaProveedor,
   esEstadoDeuda,
+  esEstadoInventarioPrestamo,
   etiquetaSedeAcreedora,
   NOMBRE_SEDE_BODEGA,
 } from "@/lib/prestamos";
@@ -124,8 +127,7 @@ export async function GET(req: Request) {
       const destinoVieneDePrincipal =
         destinoMarcadoComoPrincipal || destinoTieneDeudaDePrincipal;
       const origenTieneEquipoEnPrestamo =
-        String(equipoOrigen?.estadoActual || "").trim().toUpperCase() ===
-        "PRESTAMO";
+        esEstadoInventarioPrestamo(equipoOrigen?.estadoActual);
       const origenEsProxyDePrincipal =
         origenTieneEquipoEnPrestamo &&
         String(equipoOrigen?.origen || "").trim().toUpperCase() ===
@@ -166,8 +168,7 @@ export async function GET(req: Request) {
           otro.imei === prestamo.imei &&
           otro.sedeDestinoId === prestamo.sedeDestinoId &&
           !otro.prestamoDesdePrincipal &&
-          String(otro.equipoOrigen?.estadoActual || "").trim().toUpperCase() ===
-            "PRESTAMO"
+          esEstadoInventarioPrestamo(otro.equipoOrigen?.estadoActual)
         );
       });
 
@@ -419,7 +420,7 @@ export async function POST(req: Request) {
         where: { id: inventarioOrigen.id },
         data: {
           estadoAnterior: inventarioOrigen.estadoActual || null,
-          estadoActual: "PRESTAMO",
+          estadoActual: ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
           fechaMovimiento: new Date(),
           observacion: trasladaDeudaDePrincipal
             ? `Solicitud enviada a ${sedeDestino.nombre}. La deuda de principal solo se trasladara cuando la sede destino apruebe el prestamo.`
@@ -437,7 +438,7 @@ export async function POST(req: Request) {
           sedeId: sedeOrigenId,
           deboA: inventarioOrigen.deboA,
           estadoFinanciero: inventarioOrigen.estadoFinanciero,
-          origen: "PRESTAMO",
+          origen: ESTADO_INVENTARIO_PRESTAMO,
           observacion: trasladaDeudaDePrincipal
             ? `Solicitud de prestamo enviada desde ${sedeOrigen.nombre} hacia ${sedeDestino.nombre}. La deuda del proveedor se trasladara cuando el destino apruebe.`
             : `Solicitud de prestamo enviada desde ${sedeOrigen.nombre} hacia ${sedeDestino.nombre}. Pendiente por aprobacion.`,

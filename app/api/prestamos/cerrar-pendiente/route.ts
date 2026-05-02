@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { etiquetaSedeAcreedora } from "@/lib/prestamos";
+import {
+  ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
+  esEstadoInventarioBloqueadoPorPrestamo,
+  etiquetaSedeAcreedora,
+} from "@/lib/prestamos";
 
 type AccionCierre = "RECHAZADO" | "CANCELADO";
 
@@ -109,11 +113,15 @@ export async function POST(req: Request) {
         },
       });
 
-      if (itemOrigen && String(itemOrigen.estadoActual || "").toUpperCase() === "PRESTAMO") {
+      if (
+        itemOrigen &&
+        esEstadoInventarioBloqueadoPorPrestamo(itemOrigen.estadoActual)
+      ) {
         await tx.inventarioSede.update({
           where: { id: itemOrigen.id },
           data: {
-            estadoAnterior: "PRESTAMO",
+            estadoAnterior:
+              itemOrigen.estadoActual || ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
             estadoActual: itemOrigen.estadoAnterior || "BODEGA",
             fechaMovimiento: new Date(),
             observacion:

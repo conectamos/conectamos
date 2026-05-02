@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { esDeudaEntreSedes } from "@/lib/prestamos";
+import {
+  esDeudaEntreSedes,
+  etiquetaEstadoInventario,
+} from "@/lib/prestamos";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 import { esSedeOperativaInventario } from "@/lib/sedes";
 
@@ -39,7 +42,14 @@ type Sede = {
   nombre: string;
 };
 
-type EstadoFiltro = "TODOS" | "BODEGA" | "PENDIENTE" | "GARANTIA" | "PRESTAMO" | "DEUDA";
+type EstadoFiltro =
+  | "TODOS"
+  | "BODEGA"
+  | "PENDIENTE"
+  | "GARANTIA"
+  | "PRESTAMO"
+  | "PRESTAMO_POR_ACEPTAR"
+  | "DEUDA";
 
 type EditarInventarioForm = {
   referencia: string;
@@ -66,6 +76,8 @@ function badgeClaseEstadoInventario(estado: string | null) {
       return "bg-emerald-100 text-emerald-700";
     case "PRESTAMO":
       return "bg-sky-100 text-sky-700";
+    case "PRESTAMO_POR_ACEPTAR":
+      return "bg-amber-100 text-amber-700";
     default:
       return "bg-slate-100 text-slate-700";
   }
@@ -1142,7 +1154,17 @@ export default function InventarioPage() {
               />
 
               <div className="flex flex-wrap gap-2">
-                {(["TODOS", "BODEGA", "PENDIENTE", "GARANTIA", "PRESTAMO", "DEUDA"] as EstadoFiltro[]).map((estado) => (
+                {(
+                  [
+                    "TODOS",
+                    "BODEGA",
+                    "PENDIENTE",
+                    "GARANTIA",
+                    "PRESTAMO",
+                    "PRESTAMO_POR_ACEPTAR",
+                    "DEUDA",
+                  ] as EstadoFiltro[]
+                ).map((estado) => (
                   <button
                     key={estado}
                     type="button"
@@ -1154,7 +1176,9 @@ export default function InventarioPage() {
                         : "border border-[#d9cfbe] bg-white text-slate-700 hover:bg-[#faf7f1]",
                     ].join(" ")}
                   >
-                    {estado}
+                    {estado === "TODOS"
+                      ? "TODOS"
+                      : etiquetaEstadoInventario(estado)}
                   </button>
                 ))}
               </div>
@@ -1379,7 +1403,7 @@ export default function InventarioPage() {
                             item.estadoActual
                           )}`}
                         >
-                          {item.estadoActual ?? "-"}
+                          {etiquetaEstadoInventario(item.estadoActual)}
                         </span>
                       </td>
                       <td className="px-4 py-4">
