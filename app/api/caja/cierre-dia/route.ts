@@ -345,6 +345,37 @@ function financierasVentaDetalle(
     : financierasRegistroDetalle(registro?.financierasDetalle);
 }
 
+function buildRegistroPaymentSources(registro?: Record<string, unknown>) {
+  if (!registro) return [];
+
+  return [
+    {
+      tipo: normalizePaymentType(registro.medioPago1Tipo),
+      valor: n(registro.medioPago1Valor || registro.cuotaInicial),
+      usado: false,
+    },
+    {
+      tipo: normalizePaymentType(registro.medioPago2Tipo),
+      valor: n(registro.medioPago2Valor),
+      usado: false,
+    },
+  ].filter((item) => item.tipo && item.valor > 0);
+}
+
+function buildIngresoDetalle(label: string, neto: number, bruto?: number) {
+  const tipo = normalizePaymentType(label) || "INGRESO";
+
+  if (tipo === "VOUCHER") {
+    if (bruto && Math.abs(bruto - neto) > 0.5) {
+      return `VOUCHER bruto: ${formatoPesos(bruto)} | Neto caja: ${formatoPesos(neto)}`;
+    }
+
+    return `VOUCHER neto caja: ${formatoPesos(neto)}`;
+  }
+
+  return `${tipo}: ${formatoPesos(neto)}`;
+}
+
 function buildIngresosVenta(
   venta: Record<string, unknown>,
   registro?: Record<string, unknown>
@@ -352,23 +383,33 @@ function buildIngresosVenta(
   const primerIngresoNombre =
     textoLimpio(venta.ingreso1) || textoLimpio(venta.tipoIngreso) || "Ingreso";
   const segundoIngresoNombre = textoLimpio(venta.ingreso2) || "Ingreso 2";
+  const pagosVenta = [
+    {
+      tipo: primerIngresoNombre,
+      valor: n(venta.primerValor || venta.ingreso),
+    },
+    {
+      tipo: segundoIngresoNombre,
+      valor: n(venta.segundoValor),
+    },
+  ].filter((item) => item.tipo && item.valor > 0);
+  const pagosRegistro = buildRegistroPaymentSources(registro);
+  const detalles = pagosVenta.map((pago) => {
+    const tipo = normalizePaymentType(pago.tipo);
+    const pagoRegistro = pagosRegistro.find((item) => !item.usado && item.tipo === tipo);
 
-  return joinParts([
-    moneyPart(primerIngresoNombre, venta.primerValor || venta.ingreso),
-    moneyPart(segundoIngresoNombre, venta.segundoValor),
-    registro
-      ? moneyPart(
-          textoLimpio(registro.medioPago1Tipo) || "Inicial 1",
-          registro.medioPago1Valor || registro.cuotaInicial
-        )
-      : null,
-    registro
-      ? moneyPart(
-          textoLimpio(registro.medioPago2Tipo) || "Inicial 2",
-          registro.medioPago2Valor
-        )
-      : null,
-  ]);
+    if (pagoRegistro) {
+      pagoRegistro.usado = true;
+    }
+
+    return buildIngresoDetalle(pago.tipo, pago.valor, pagoRegistro?.valor);
+  });
+
+  for (const pagoRegistro of pagosRegistro.filter((item) => !item.usado)) {
+    detalles.push(buildIngresoDetalle(pagoRegistro.tipo, pagoRegistro.valor));
+  }
+
+  return joinParts(detalles);
 }
 
 function buildEquipoVenta(
