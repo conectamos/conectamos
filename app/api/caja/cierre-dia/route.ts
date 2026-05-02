@@ -399,7 +399,7 @@ function buildIngresosVenta(
     detalles.push(buildIngresoDetalle(pagoRegistro.tipo, pagoRegistro.valor));
   }
 
-  return joinParts(detalles, "No hay ingreso");
+  return joinParts(detalles, "NO HAY INGRESO");
 }
 
 function buildEquipoVenta(
@@ -476,7 +476,9 @@ function moneyCell(value: number) {
 
 function detailIncomeCell(value: string) {
   const text = textoLimpio(value);
-  return !text || text === "-" ? "NO HAY INGRESO" : text;
+  return !text || text === "-" || text.toLowerCase() === "no hay ingreso"
+    ? "NO HAY INGRESO"
+    : text;
 }
 
 function buildTrialTotals(rows: SaleTableRow[], movimientos: CashMovementRow[]) {
@@ -705,7 +707,7 @@ async function buildExcelCierreTabla(params: {
       pattern: "solid",
       fgColor: { argb: "FF151923" },
     };
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 8 };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 9 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.border = {
       top: { style: "thin", color: { argb: "FF151923" } },
@@ -738,7 +740,7 @@ async function buildExcelCierreTabla(params: {
       const cajaTone =
         header === "CAJA" && saleRow.caja < 0
           ? "expense"
-          : header === "CAJA" && saleRow.caja > 0
+          : header === "CAJA" && saleRow.caja >= 0
             ? "income"
             : null;
       cell.fill = {
@@ -764,7 +766,7 @@ async function buildExcelCierreTabla(params: {
                 ? "FF16694F"
                 : "FF151923",
         },
-        size: 8.5,
+        size: 9,
       };
       cell.alignment = {
         horizontal: moneyHeaders.has(header) ? "right" : "left",
@@ -927,7 +929,7 @@ async function buildExcelCierreTabla(params: {
         color: {
           argb: isEgreso ? "FF9F2737" : isIngreso ? "FF16694F" : "FF151923",
         },
-        size: 8.5,
+        size: 9,
       };
       cell.fill = {
         type: "pattern",
@@ -997,10 +999,10 @@ function drawCompactTableHeader(
   for (const column of columns) {
     const headerFontSize =
       column.tone === "financial"
-        ? 5.2
+        ? 5.8
         : column.title.length > 9
-          ? 5.5
-          : 5.9;
+          ? 6
+          : 6.4;
     const fillColor =
       column.tone === "financial"
         ? "#2b3446"
@@ -1026,12 +1028,7 @@ function drawCompactTableHeader(
       .text(title, cursorX + 2, y + 6, {
         width: Math.max(8, column.width - 4),
         height: headerHeight - 8,
-        align:
-          column.align === "right"
-            ? "right"
-            : column.tone === "financial"
-              ? "center"
-              : "left",
+        align: "center",
         ellipsis: true,
       });
     cursorX += column.width;
@@ -1089,7 +1086,7 @@ function drawCompactRow(
     doc
       .fillColor(toneColor)
       .font(column.tone ? fonts.bold : fonts.regular)
-      .fontSize(column.key === "jalador" ? 5.6 : 5.8)
+      .fontSize(column.key === "jalador" ? 6.2 : 6.6)
       .text(values[column.key] || "-", cursorX + 2, y + 5, {
         width: Math.max(8, column.width - 4),
         height: rowHeight - 8,
@@ -1429,9 +1426,7 @@ async function buildPdfCierreTabla(params: {
       };
 
       params.financieras.forEach((nombre) => {
-        values[`fin_${nombre}`] = row.financieras[nombre]
-          ? formatoPesos(row.financieras[nombre])
-          : "-";
+        values[`fin_${nombre}`] = formatoPesos(row.financieras[nombre] || 0);
       });
 
       y = drawCompactRow(doc, columns, values, y, tableX, 30, params.fonts, {
@@ -1439,7 +1434,7 @@ async function buildPdfCierreTabla(params: {
         cellTones:
           row.caja < 0
             ? { caja: "expense" }
-            : row.caja > 0
+            : row.caja >= 0
               ? { caja: "income" }
               : undefined,
       });
