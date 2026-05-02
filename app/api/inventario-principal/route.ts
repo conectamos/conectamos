@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import {
+  buscarReferenciaInventarioActiva,
+  normalizarReferenciaInventario,
+} from "@/lib/inventory-references";
 
 export async function GET() {
   try {
@@ -73,7 +77,7 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    const referencia = String(body.referencia ?? "").trim();
+    const referencia = normalizarReferenciaInventario(body.referencia);
     const color = String(body.color ?? "").trim();
     const costo = Number(body.costo ?? 0);
     const numeroFactura = String(body.numeroFactura ?? "").trim();
@@ -115,6 +119,17 @@ const imeis: string[] = imeisRawTyped
         { status: 400 }
       );
     }
+
+    const referenciaCatalogo = await buscarReferenciaInventarioActiva(referencia);
+
+    if (!referenciaCatalogo) {
+      return NextResponse.json(
+        { error: "Selecciona una referencia activa del catalogo" },
+        { status: 400 }
+      );
+    }
+
+    const referenciaGuardar = referenciaCatalogo.nombre;
 
     if (!costo || costo <= 0) {
       return NextResponse.json(
@@ -173,7 +188,7 @@ const imeis: string[] = imeisRawTyped
       await tx.inventarioPrincipal.createMany({
         data: imeisParaInsertar.map((item: string) => ({
           imei: item,
-          referencia,
+          referencia: referenciaGuardar,
           color: color || null,
           costo,
           numeroFactura,
@@ -185,7 +200,7 @@ const imeis: string[] = imeisRawTyped
         data: imeisParaInsertar.map((item: string) => ({
           imei: item,
           tipoMovimiento: "INGRESO_PRINCIPAL",
-          referencia,
+          referencia: referenciaGuardar,
           color: color || null,
           costo,
           origen: "PRINCIPAL",

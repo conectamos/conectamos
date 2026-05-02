@@ -41,6 +41,12 @@ type SessionUser = {
   rolNombre: string;
 };
 
+type ReferenciaCatalogo = {
+  id: number;
+  nombre: string;
+  activo: boolean;
+};
+
 function formatearPesos(valor: string) {
   const limpio = valor.replace(/\D/g, "");
   if (!limpio) return "";
@@ -91,6 +97,7 @@ export default function NuevoInventarioPage() {
   const [distribuidor, setDistribuidor] = useState("");
   const [estadoFinanciero, setEstadoFinanciero] = useState("PAGO");
   const [deboA, setDeboA] = useState("");
+  const [referenciasCatalogo, setReferenciasCatalogo] = useState<ReferenciaCatalogo[]>([]);
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
 
@@ -107,6 +114,10 @@ export default function NuevoInventarioPage() {
   const opcionesDistribuidor = esAdmin
     ? OPCIONES_PROVEEDOR_BODEGA
     : OPCIONES_PROVEEDOR_SEDE;
+  const referenciasActivas = useMemo(
+    () => referenciasCatalogo.filter((item) => item.activo),
+    [referenciasCatalogo]
+  );
 
   const mensajeEsOk = useMemo(() => mensaje.startsWith("OK:"), [mensaje]);
 
@@ -122,8 +133,24 @@ export default function NuevoInventarioPage() {
     }
   };
 
+  const cargarReferenciasCatalogo = async () => {
+    try {
+      const res = await fetch("/api/inventario-principal/referencias", {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      if (res.ok && Array.isArray(data.referencias)) {
+        setReferenciasCatalogo(data.referencias);
+      }
+    } catch (error) {
+      console.error("Error cargando referencias:", error);
+    }
+  };
+
   useEffect(() => {
     void cargarUsuario();
+    void cargarReferenciasCatalogo();
   }, []);
 
   const buscarIMEI = async (imeiValor: string) => {
@@ -192,6 +219,14 @@ export default function NuevoInventarioPage() {
 
       if (!referencia) {
         setMensaje("Error: la referencia es obligatoria.");
+        return;
+      }
+
+      if (
+        esAdmin &&
+        !referenciasActivas.some((item) => item.nombre === referencia)
+      ) {
+        setMensaje("Error: selecciona una referencia activa del catalogo.");
         return;
       }
 
@@ -467,12 +502,32 @@ export default function NuevoInventarioPage() {
               <div className="grid gap-5 md:grid-cols-2">
                 <div>
                   <FieldLabel>Referencia</FieldLabel>
-                  <input
-                    placeholder="Ej: iPhone 13"
-                    value={referencia}
-                    onChange={(event) => setReferencia(event.target.value)}
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                  />
+                  {esAdmin ? (
+                    <>
+                      <select
+                        value={referencia}
+                        onChange={(event) => setReferencia(event.target.value)}
+                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                      >
+                        <option value="">Seleccionar referencia</option>
+                        {referenciasActivas.map((item) => (
+                          <option key={item.id} value={item.nombre}>
+                            {item.nombre}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-2 text-xs text-slate-500">
+                        El catalogo se actualiza desde Bodega Principal.
+                      </p>
+                    </>
+                  ) : (
+                    <input
+                      placeholder="Ej: iPhone 13"
+                      value={referencia}
+                      onChange={(event) => setReferencia(event.target.value)}
+                      className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                    />
+                  )}
                 </div>
 
                 <div>

@@ -24,6 +24,12 @@ type Sede = {
   nombre: string;
 };
 
+type ReferenciaCatalogo = {
+  id: number;
+  nombre: string;
+  activo: boolean;
+};
+
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
@@ -55,9 +61,13 @@ function MetricCard({
 export default function InventarioPrincipalPage() {
   const [items, setItems] = useState<ItemPrincipal[]>([]);
   const [sedes, setSedes] = useState<Sede[]>([]);
+  const [referenciasCatalogo, setReferenciasCatalogo] = useState<ReferenciaCatalogo[]>([]);
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [nuevaReferencia, setNuevaReferencia] = useState("");
+  const [referenciaEditada, setReferenciaEditada] = useState("");
+  const [editandoReferenciaId, setEditandoReferenciaId] = useState<number | null>(null);
 
   const [mostrarModal, setMostrarModal] = useState(false);
   const [mostrarModalMasivo, setMostrarModalMasivo] = useState(false);
@@ -99,10 +109,29 @@ export default function InventarioPrincipalPage() {
     } catch {}
   }, []);
 
+  const cargarReferenciasCatalogo = useCallback(async () => {
+    try {
+      const res = await fetch("/api/inventario-principal/referencias", {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(`Error: ${data.error || "Error cargando catalogo de referencias"}`);
+        return;
+      }
+
+      setReferenciasCatalogo(Array.isArray(data.referencias) ? data.referencias : []);
+    } catch {
+      setMensaje("Error cargando catalogo de referencias");
+    }
+  }, []);
+
   useEffect(() => {
     void cargarInventarioPrincipal();
     void cargarSedes();
-  }, [cargarInventarioPrincipal, cargarSedes]);
+    void cargarReferenciasCatalogo();
+  }, [cargarInventarioPrincipal, cargarReferenciasCatalogo, cargarSedes]);
 
   useLiveRefresh(cargarInventarioPrincipal, { intervalMs: 10000 });
 
@@ -136,6 +165,11 @@ export default function InventarioPrincipalPage() {
   const pendientesCobro = useMemo(
     () => items.filter((item) => String(item.estadoCobro || "").toUpperCase() === "PENDIENTE"),
     [items]
+  );
+
+  const referenciasActivas = useMemo(
+    () => referenciasCatalogo.filter((item) => item.activo),
+    [referenciasCatalogo]
   );
 
   const itemsFiltrados = useMemo(() => {
@@ -222,6 +256,95 @@ export default function InventarioPrincipalPage() {
     setIdsSeleccionados([]);
     setSedeDestinoId("");
     setMostrarModalMasivo(false);
+  };
+
+  const agregarReferencia = async () => {
+    const nombre = nuevaReferencia.trim();
+
+    if (!nombre) {
+      setMensaje("Debes escribir una referencia para agregar al catalogo");
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/inventario-principal/referencias", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ nombre }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(`Error: ${data.error || "No se pudo guardar la referencia"}`);
+        return;
+      }
+
+      setReferenciasCatalogo(Array.isArray(data.referencias) ? data.referencias : []);
+      setNuevaReferencia("");
+      setMensaje(data.mensaje || "Referencia agregada correctamente");
+    } catch {
+      setMensaje("Error guardando referencia");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const iniciarEdicionReferencia = (item: ReferenciaCatalogo) => {
+    setEditandoReferenciaId(item.id);
+    setReferenciaEditada(item.nombre);
+  };
+
+  const cancelarEdicionReferencia = () => {
+    setEditandoReferenciaId(null);
+    setReferenciaEditada("");
+  };
+
+  const actualizarReferencia = async (item: ReferenciaCatalogo, activo?: boolean) => {
+    const nombre = referenciaEditada.trim();
+    const editandoNombre = editandoReferenciaId === item.id;
+
+    if (editandoNombre && !nombre) {
+      setMensaje("La referencia no puede quedar vacia");
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/inventario-principal/referencias", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: item.id,
+          ...(editandoNombre ? { nombre } : {}),
+          ...(typeof activo === "boolean" ? { activo } : {}),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(`Error: ${data.error || "No se pudo actualizar la referencia"}`);
+        return;
+      }
+
+      setReferenciasCatalogo(Array.isArray(data.referencias) ? data.referencias : []);
+      cancelarEdicionReferencia();
+      setMensaje(data.mensaje || "Referencia actualizada correctamente");
+    } catch {
+      setMensaje("Error actualizando referencia");
+    } finally {
+      setCargando(false);
+    }
   };
 
   const eliminar = async (id: number) => {
@@ -466,6 +589,135 @@ export default function InventarioPrincipalPage() {
             detail="Casos enviados con seguimiento de cobro."
             valueClass="text-amber-600"
           />
+        </section>
+
+        <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                Catalogo
+              </div>
+              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                Referencias para ingreso
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+                Estas referencias aparecen en el ingreso de inventario principal para evitar escritura manual y errores de nombre.
+              </p>
+            </div>
+
+            <div className="w-full xl:max-w-[620px]">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
+                <input
+                  type="text"
+                  value={nuevaReferencia}
+                  onChange={(event) => setNuevaReferencia(event.target.value)}
+                  placeholder="Agregar referencia al catalogo..."
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => void agregarReferencia()}
+                  disabled={cargando}
+                  className="rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Agregar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            {referenciasCatalogo.length === 0 ? (
+              <div className="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                Aun no hay referencias en el catalogo.
+              </div>
+            ) : (
+              referenciasCatalogo.map((item) => {
+                const editando = editandoReferenciaId === item.id;
+
+                return (
+                  <div
+                    key={item.id}
+                    className={[
+                      "flex min-h-[58px] flex-col gap-3 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center",
+                      item.activo
+                        ? "border-emerald-100 bg-emerald-50/60"
+                        : "border-slate-200 bg-slate-50 opacity-80",
+                    ].join(" ")}
+                  >
+                    {editando ? (
+                      <input
+                        value={referenciaEditada}
+                        onChange={(event) => setReferenciaEditada(event.target.value)}
+                        className="min-w-[240px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                      />
+                    ) : (
+                      <div>
+                        <p className="text-sm font-black text-slate-950">{item.nombre}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          {item.activo ? "Activa" : "Oculta"}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2 sm:ml-auto">
+                      {editando ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void actualizarReferencia(item)}
+                            disabled={cargando}
+                            className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                          >
+                            Guardar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelarEdicionReferencia}
+                            disabled={cargando}
+                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            Cancelar
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => iniciarEdicionReferencia(item)}
+                            disabled={cargando}
+                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void actualizarReferencia(item, !item.activo)}
+                            disabled={cargando}
+                            className={[
+                              "rounded-xl px-3 py-2 text-xs font-bold transition disabled:opacity-60",
+                              item.activo
+                                ? "border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                : "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+                            ].join(" ")}
+                          >
+                            {item.activo ? "Ocultar" : "Activar"}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            {referenciasActivas.length} referencia
+            {referenciasActivas.length === 1 ? "" : "s"} activa
+            {referenciasActivas.length === 1 ? "" : "s"} disponible
+            {referenciasActivas.length === 1 ? "" : "s"} para nuevos ingresos.
+          </div>
         </section>
 
         <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-sm">

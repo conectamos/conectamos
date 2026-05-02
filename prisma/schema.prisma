@@ -246,6 +246,15 @@ model CatalogoPersonalVenta {
   @@unique([tipo, nombreNormalizado])
 }
 
+model CatalogoReferenciaInventario {
+  id                Int      @id @default(autoincrement())
+  nombre            String
+  nombreNormalizado String   @unique
+  activo            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
 model InventarioPrincipal {
   id              Int              @id @default(autoincrement())
   imei            String           @unique
