@@ -176,15 +176,44 @@ export async function POST(req: Request) {
 
     const imeisUnicos = [...new Set(imeis)];
 
-    const existentes = await prisma.inventarioSede.findMany({
+    const existentesEnSedes = await prisma.inventarioSede.findMany({
       where: {
-        sedeId,
         imei: { in: imeisUnicos },
       },
-      select: { imei: true },
+      select: {
+        imei: true,
+        sedeId: true,
+        sede: {
+          select: {
+            nombre: true,
+          },
+        },
+      },
     });
 
-    const imeisExistentes = new Set(existentes.map((item) => item.imei));
+    const existentesOtraSede = existentesEnSedes.filter(
+      (item) => item.sedeId !== sedeId
+    );
+
+    if (existentesOtraSede.length > 0) {
+      const detalle = existentesOtraSede
+        .slice(0, 5)
+        .map((item) => `${item.imei} (${item.sede?.nombre || "otra sede"})`)
+        .join(", ");
+
+      return NextResponse.json(
+        {
+          error: `Estos IMEI ya existen en otra sede y deben moverse por el flujo de prestamos: ${detalle}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const imeisExistentes = new Set(
+      existentesEnSedes
+        .filter((item) => item.sedeId === sedeId)
+        .map((item) => item.imei)
+    );
     const imeisParaInsertar = imeisUnicos.filter(
       (item) => !imeisExistentes.has(item)
     );
