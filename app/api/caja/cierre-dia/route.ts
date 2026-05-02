@@ -525,6 +525,7 @@ async function buildExcelCierreTabla(params: {
   rows: SaleTableRow[];
   financieras: string[];
   movimientos: CashMovementRow[];
+  cajaAcumulada: number;
 }) {
   const totals = buildTrialTotals(params.rows, params.movimientos);
   const headers = [
@@ -623,6 +624,7 @@ async function buildExcelCierreTabla(params: {
         ["INGRESOS", totals.ingresosAcumulados],
         ["INGRESO VENTAS", totals.ingresosVentas],
         ["INGRESO CAJA", totals.ingresosCaja],
+        ["CAJA ACUMULADA", params.cajaAcumulada],
       ],
     },
     {
@@ -631,7 +633,7 @@ async function buildExcelCierreTabla(params: {
         ["TRANSFERENCIA", totals.transferencia],
         ["VOUCHER", totals.voucher],
         ["FINANCIERAS", totals.financieras],
-        ["CAJA NETA", totals.cajaNeta],
+        ["CAJA NETA DIA", totals.cajaNeta],
       ],
     },
   ];
@@ -884,6 +886,7 @@ function drawCompactTableHeader(
   fonts: PdfFonts
 ) {
   let cursorX = x;
+  const headerHeight = 32;
 
   for (const column of columns) {
     const fillColor =
@@ -896,22 +899,28 @@ function drawCompactTableHeader(
             : "#182235";
 
     doc
-      .rect(cursorX, y, column.width, 24)
+      .rect(cursorX, y, column.width, headerHeight)
       .fillAndStroke(fillColor, "#334155");
+
+    const title =
+      column.tone === "financial"
+        ? column.title.replace(/\s+/g, "\n")
+        : column.title;
 
     doc
       .fillColor("#ffffff")
       .font(fonts.bold)
-      .fontSize(6.2)
-      .text(column.title, cursorX + 2, y + 8, {
+      .fontSize(column.tone === "financial" ? 5.6 : 6.2)
+      .text(title, cursorX + 2, y + 6, {
         width: Math.max(8, column.width - 4),
-        align: column.align ?? "left",
+        height: headerHeight - 8,
+        align: column.tone === "financial" ? "center" : column.align ?? "left",
         ellipsis: true,
       });
     cursorX += column.width;
   }
 
-  return y + 24;
+  return y + headerHeight;
 }
 
 function drawCompactRow(
@@ -1073,6 +1082,7 @@ async function buildPdfCierreTabla(params: {
   rows: SaleTableRow[];
   financieras: string[];
   movimientos: CashMovementRow[];
+  cajaAcumulada: number;
   previousSalesCount: number;
   fonts: PdfFonts;
 }) {
@@ -1162,15 +1172,15 @@ async function buildPdfCierreTabla(params: {
     .fillColor("#64748b")
     .font(params.fonts.bold)
     .fontSize(7)
-    .text("INGRESO ACUMULADO", doc.page.width - 262, 45, {
+    .text("CAJA ACUMULADA", doc.page.width - 262, 45, {
       width: 190,
       characterSpacing: 0.6,
     });
   doc
-    .fillColor("#047857")
+    .fillColor(params.cajaAcumulada < 0 ? "#9f2737" : "#16694f")
     .font(params.fonts.bold)
     .fontSize(14)
-    .text(formatoPesos(totals.ingresosAcumulados), doc.page.width - 262, 58, {
+    .text(formatoPesos(params.cajaAcumulada), doc.page.width - 262, 58, {
       width: 190,
       align: "left",
       ellipsis: true,
@@ -1179,10 +1189,14 @@ async function buildPdfCierreTabla(params: {
     .fillColor("#64748b")
     .font(params.fonts.regular)
     .fontSize(6.4)
-    .text("Ventas + caja", doc.page.width - 262, 75, { width: 160 });
+    .text("Caja ventas + neto de caja", doc.page.width - 262, 75, { width: 160 });
 
   const metricCards = [
-    { label: "Ventas", value: String(totals.ventas), color: "#334155" },
+    {
+      label: "Ingresos del dia",
+      value: formatoPesos(totals.ingresosAcumulados),
+      color: "#1f7a5c",
+    },
     {
       label: "Ingreso ventas",
       value: formatoPesos(totals.ingresosVentas),
@@ -1896,6 +1910,7 @@ export async function GET(req: Request) {
           rows: tablaCierre.rows,
           financieras: tablaCierre.financieras,
           movimientos: movimientosCierre,
+          cajaAcumulada,
         });
 
         return new Response(Uint8Array.from(excelBuffer), {
@@ -1915,6 +1930,7 @@ export async function GET(req: Request) {
         rows: tablaCierre.rows,
         financieras: tablaCierre.financieras,
         movimientos: movimientosCierre,
+        cajaAcumulada,
         previousSalesCount: ventasDiaAnterior,
         fonts,
       });
