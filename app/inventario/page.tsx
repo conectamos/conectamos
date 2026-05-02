@@ -1056,7 +1056,7 @@ export default function InventarioPage() {
                 href="/inventario/historial"
                 className="inline-flex h-[58px] w-full items-center justify-center rounded-2xl border border-white/12 bg-white/95 px-6 text-center text-[15px] font-bold leading-none tracking-[0.01em] text-slate-900 transition hover:bg-white"
               >
-                Ver historial
+                Centro IMEI
               </Link>
 
               <Link

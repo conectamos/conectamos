@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { etiquetaEstadoInventario } from "@/lib/prestamos";
 
 type SearchParams = Promise<{ imei?: string }>;
 type TimelineTone =
@@ -29,6 +30,20 @@ type TimelineEvent = {
   titulo: string;
   tone: TimelineTone;
   valor?: number | null;
+};
+
+type ControlAlert = {
+  detalle: string;
+  nivel: "OK" | "INFO" | "ALERTA" | "CRITICO";
+  titulo: string;
+  tone: TimelineTone;
+};
+
+type QuickAction = {
+  detalle: string;
+  href: string;
+  label: string;
+  tone: TimelineTone;
 };
 
 function formatoPesos(valor: number | null | undefined) {
@@ -133,6 +148,10 @@ function movementTone(tipo: string): TimelineTone {
   return "slate";
 }
 
+function normalizar(valor: string | null | undefined) {
+  return String(valor || "").trim().toUpperCase();
+}
+
 function eventoTieneTexto(evento: TimelineEvent, texto: string) {
   const base = [
     evento.categoria,
@@ -195,6 +214,42 @@ function MetricCard({
       </p>
       <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
     </div>
+  );
+}
+
+function ControlAlertCard({ alerta }: { alerta: ControlAlert }) {
+  return (
+    <article className={["rounded-[24px] border px-4 py-4", toneBadge(alerta.tone)].join(" ")}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em]">
+            {alerta.nivel}
+          </p>
+          <h3 className="mt-2 text-base font-black text-slate-950">
+            {alerta.titulo}
+          </h3>
+        </div>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{alerta.detalle}</p>
+    </article>
+  );
+}
+
+function QuickActionCard({ action }: { action: QuickAction }) {
+  return (
+    <Link
+      href={action.href}
+      className={[
+        "block rounded-[24px] border px-4 py-4 transition hover:-translate-y-0.5 hover:shadow-sm",
+        toneBadge(action.tone),
+      ].join(" ")}
+    >
+      <p className="text-[10px] font-black uppercase tracking-[0.16em]">
+        Abrir
+      </p>
+      <h3 className="mt-2 text-base font-black text-slate-950">{action.label}</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{action.detalle}</p>
+    </Link>
   );
 }
 
@@ -500,7 +555,7 @@ export default async function HistorialInventarioPage(props: {
       id: `inventario-sede-${item.id}`,
       meta: [
         { label: "Sede", value: item.sede?.nombre || sedeNombre(item.sedeId) },
-        { label: "Estado actual", value: item.estadoActual || "-" },
+        { label: "Estado actual", value: etiquetaEstadoInventario(item.estadoActual) },
         { label: "Estado financiero", value: item.estadoFinanciero || "-" },
         { label: "Debe a", value: item.deboA || "-" },
         { label: "Origen", value: item.origen || "-" },
@@ -521,7 +576,7 @@ export default async function HistorialInventarioPage(props: {
         id: `inventario-sede-update-${item.id}`,
         meta: [
           { label: "Sede", value: item.sede?.nombre || sedeNombre(item.sedeId) },
-          { label: "Estado actual", value: item.estadoActual || "-" },
+          { label: "Estado actual", value: etiquetaEstadoInventario(item.estadoActual) },
           { label: "Anterior", value: item.estadoAnterior || "-" },
           { label: "Estado financiero", value: item.estadoFinanciero || "-" },
           { label: "Debe a", value: item.deboA || "-" },
@@ -747,6 +802,177 @@ export default async function HistorialInventarioPage(props: {
 
   const cobertura = esAdmin ? "Todas las sedes" : user.sedeNombre;
   const totalEventos = timelineOrdenado.length;
+  const estadosPrestamoActivos = new Set([
+    "PENDIENTE",
+    "APROBADO",
+    "PAGO_PENDIENTE_APROBACION",
+    "DEVOLUCION_PENDIENTE",
+  ]);
+  const estadosInventarioNoDisponibles = new Set([
+    "PRESTAMO",
+    "PRESTAMO_POR_ACEPTAR",
+    "VENDIDO",
+  ]);
+  const inventariosOperativos = inventariosSede.filter(
+    (item) => !estadosInventarioNoDisponibles.has(normalizar(item.estadoActual))
+  );
+  const prestamosActivos = prestamos.filter((item) =>
+    estadosPrestamoActivos.has(normalizar(item.estado))
+  );
+  const prestamosPendientes = prestamos.filter(
+    (item) => normalizar(item.estado) === "PENDIENTE"
+  );
+  const pagosPendientes = prestamos.filter(
+    (item) => normalizar(item.estado) === "PAGO_PENDIENTE_APROBACION"
+  );
+  const registrosVentaPendientes = registrosVenta.filter((registro) => {
+    const estadoVenta = normalizar(registro.estadoVentaRegistro);
+
+    return !registro.ventaIdRelacionada && !["COMPLETADA", "FINALIZADA", "ANULADA"].includes(estadoVenta);
+  });
+  const ventaSinInventario = ventas.some((venta) => !venta.inventarioSedeId);
+  const inventarioNoVendidoConVenta =
+    ventas.length > 0 &&
+    inventariosSede.some(
+      (item) => normalizar(item.estadoActual) !== "VENDIDO"
+    );
+  const deudaSinAcreedor =
+    normalizar(registroSedeActual?.estadoFinanciero) === "DEUDA" &&
+    !String(registroSedeActual?.deboA || "").trim();
+  const principalDisponibleConSede =
+    normalizar(inventarioPrincipal?.estado) === "BODEGA" &&
+    inventariosSede.length > 0;
+
+  const alertasControl: ControlAlert[] = [];
+
+  if (imei && totalEventos === 0) {
+    alertasControl.push({
+      detalle: "No hay registros relacionados en inventario, prestamos, caja ni ventas.",
+      nivel: "INFO",
+      titulo: "IMEI sin trazabilidad",
+      tone: "slate",
+    });
+  }
+
+  if (inventariosOperativos.length > 1) {
+    alertasControl.push({
+      detalle: `Aparece operativo en ${inventariosOperativos.length} sedes. Revisar antes de vender o mover.`,
+      nivel: "CRITICO",
+      titulo: "IMEI activo en varias sedes",
+      tone: "rose",
+    });
+  }
+
+  if (principalDisponibleConSede) {
+    alertasControl.push({
+      detalle: "Figura disponible en Bodega Principal y tambien tiene registro en sede.",
+      nivel: "ALERTA",
+      titulo: "Principal y sede simultaneos",
+      tone: "amber",
+    });
+  }
+
+  if (deudaSinAcreedor) {
+    alertasControl.push({
+      detalle: "El equipo esta en DEUDA, pero no tiene acreedor definido.",
+      nivel: "ALERTA",
+      titulo: "Deuda sin acreedor",
+      tone: "amber",
+    });
+  }
+
+  if (prestamosPendientes.length > 0) {
+    alertasControl.push({
+      detalle: `${prestamosPendientes.length} solicitud(es) esperan aprobacion de la sede destino.`,
+      nivel: "INFO",
+      titulo: "Prestamo por aceptar",
+      tone: "sky",
+    });
+  }
+
+  if (pagosPendientes.length > 0) {
+    alertasControl.push({
+      detalle: `${pagosPendientes.length} pago(s) requieren aprobacion de la sede acreedora.`,
+      nivel: "ALERTA",
+      titulo: "Pago pendiente de aprobacion",
+      tone: "violet",
+    });
+  }
+
+  if (ventaSinInventario) {
+    alertasControl.push({
+      detalle: "Hay venta registrada sin relacion directa al inventario de sede.",
+      nivel: "ALERTA",
+      titulo: "Venta sin inventario enlazado",
+      tone: "amber",
+    });
+  }
+
+  if (inventarioNoVendidoConVenta) {
+    alertasControl.push({
+      detalle: "Existe venta del IMEI y al menos un registro de inventario no esta marcado como VENDIDO.",
+      nivel: "ALERTA",
+      titulo: "Venta con inventario abierto",
+      tone: "amber",
+    });
+  }
+
+  if (registrosVentaPendientes.length > 0) {
+    alertasControl.push({
+      detalle: `${registrosVentaPendientes.length} registro(s) comercial(es) siguen sin venta final enlazada.`,
+      nivel: "INFO",
+      titulo: "Registro comercial pendiente",
+      tone: "violet",
+    });
+  }
+
+  if (imei && totalEventos > 0 && alertasControl.length === 0) {
+    alertasControl.push({
+      detalle: "No se detectaron inconsistencias principales para este IMEI.",
+      nivel: "OK",
+      titulo: "Lectura estable",
+      tone: "emerald",
+    });
+  }
+
+  const quickActions: QuickAction[] = [
+    {
+      detalle: "Listado operativo por sede, estado y deuda.",
+      href: "/inventario",
+      label: "Inventario",
+      tone: "slate",
+    },
+    {
+      detalle: `${prestamosActivos.length} prestamo(s) activo(s) relacionado(s).`,
+      href: "/prestamos",
+      label: "Prestamos",
+      tone: "sky",
+    },
+    {
+      detalle: `${ventas.length} venta(s) final(es) y ${registrosVenta.length} registro(s) comercial(es).`,
+      href: "/ventas/aprobaciones",
+      label: "Ventas / aprobaciones",
+      tone: "emerald",
+    },
+  ];
+
+  if (ventas[0]) {
+    quickActions.push({
+      detalle: `Abrir venta ${ventas[0].idVenta}.`,
+      href: `/ventas/editar/${ventas[0].id}`,
+      label: "Venta relacionada",
+      tone: "emerald",
+    });
+  }
+
+  if (esAdmin) {
+    quickActions.push({
+      detalle: "Cruzar hallazgos generales con auditoria.",
+      href: "/dashboard/auditoria",
+      label: "Auditoria",
+      tone: "amber",
+    });
+  }
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-4 py-8">
@@ -757,16 +983,16 @@ export default async function HistorialInventarioPage(props: {
           <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1fr)_220px]">
             <div>
               <div className="inline-flex rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f2d7a6]">
-                Trazabilidad por IMEI
+                Centro de control
               </div>
 
               <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Historial avanzado
+                Control de IMEI
               </h1>
 
               <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                Reconstruye el ciclo del equipo cruzando Bodega Principal,
-                inventario de sede, prestamos, caja, registros comerciales y ventas.
+                Ficha unica del equipo con inventario, prestamos, caja, registros
+                comerciales, ventas y alertas operativas.
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
@@ -820,7 +1046,7 @@ export default async function HistorialInventarioPage(props: {
               type="submit"
               className="inline-flex h-[56px] min-w-[190px] items-center justify-center rounded-2xl bg-[#111318] px-6 text-[15px] font-bold text-white transition hover:bg-[#1d2330]"
             >
-              Buscar historial
+              Buscar IMEI
             </button>
           </form>
         </section>
@@ -834,7 +1060,7 @@ export default async function HistorialInventarioPage(props: {
           <MetricCard
             label="Ubicacion actual"
             value={ubicacionActual}
-            detail={`Estado: ${estadoActual}`}
+            detail={`Estado: ${etiquetaEstadoInventario(estadoActual)}`}
             valueClass="text-slate-950 text-2xl"
           />
           <MetricCard
@@ -856,6 +1082,50 @@ export default async function HistorialInventarioPage(props: {
             valueClass="text-2xl text-slate-950"
           />
         </section>
+
+        {imei && (
+          <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+            <div className="rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                    Alertas
+                  </div>
+                  <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                    Lectura del equipo
+                  </h2>
+                </div>
+                <span className="text-sm font-medium text-slate-500">
+                  {alertasControl.length} hallazgo(s)
+                </span>
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                {alertasControl.map((alerta) => (
+                  <ControlAlertCard
+                    key={`${alerta.nivel}-${alerta.titulo}`}
+                    alerta={alerta}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
+              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                Accesos
+              </div>
+              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                Modulos relacionados
+              </h2>
+
+              <div className="mt-5 grid gap-3">
+                {quickActions.map((action) => (
+                  <QuickActionCard key={action.label} action={action} />
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
 
         {imei && (
           <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
@@ -950,7 +1220,7 @@ export default async function HistorialInventarioPage(props: {
           <div className="mt-5 space-y-4">
             {!imei ? (
               <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-slate-500">
-                Escribe un IMEI para consultar su historial completo.
+                Escribe un IMEI para abrir su centro de control.
               </div>
             ) : timelineOrdenado.length === 0 ? (
               <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-slate-500">
