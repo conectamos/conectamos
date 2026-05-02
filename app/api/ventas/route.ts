@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import {
   esPerfilAdministrador,
   esRolAdmin,
+  puedeAccederModulosOperativos,
 } from "@/lib/access-control";
 import {
   buildLegacyFinancieraPayload,
@@ -473,6 +474,13 @@ export async function GET(req: Request) {
     }
 
     const user = session.user;
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso a ventas" },
+        { status: 403 }
+      );
+    }
+
     const esAdmin = isAdminRole(user.rolNombre);
     const requestUrl = new URL(req.url);
     const ventaIdParam = requestUrl.searchParams.get("id");
@@ -567,6 +575,13 @@ export async function POST(req: Request) {
     }
 
     const user = session.user;
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no puede completar ventas" },
+        { status: 403 }
+      );
+    }
+
     const data = (await req.json()) as Record<string, unknown>;
     const input = parseVentaInput(data);
 
@@ -780,6 +795,12 @@ export async function PUT(req: Request) {
     }
 
     const user = session.user;
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no puede editar ventas" },
+        { status: 403 }
+      );
+    }
 
     if (!isAdminRole(user.rolNombre)) {
       return NextResponse.json(
@@ -883,6 +904,12 @@ export async function DELETE(req: Request) {
     }
 
     const user = session.user;
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no puede eliminar ventas" },
+        { status: 403 }
+      );
+    }
 
     if (!isAdminRole(user.rolNombre)) {
       return NextResponse.json(

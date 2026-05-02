@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   ESTADO_INVENTARIO_PRESTAMO,
   ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
@@ -33,6 +34,13 @@ export async function GET(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso a prestamos" },
+        { status: 403 }
+      );
     }
 
     const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
@@ -242,6 +250,13 @@ export async function POST(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no puede crear prestamos" },
+        { status: 403 }
+      );
     }
 
     const data = await req.json();

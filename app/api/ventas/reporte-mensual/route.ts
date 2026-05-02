@@ -4,6 +4,7 @@ import PDFDocument from "pdfkit";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { getCommercialMonthlyReport } from "@/lib/commercial-monthly-report";
 import { getCurrentBogotaMonthInput } from "@/lib/ventas-utils";
 
@@ -174,6 +175,13 @@ export async function GET(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso al reporte mensual" },
+        { status: 403 }
+      );
     }
 
     if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {

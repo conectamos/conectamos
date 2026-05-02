@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   createFinancialAccessToken,
   FINANCIAL_ACCESS_COOKIE_NAME,
@@ -13,6 +14,13 @@ export async function POST(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso al panel analitico" },
+        { status: 403 }
+      );
     }
 
     const body = (await req.json()) as Record<string, unknown>;

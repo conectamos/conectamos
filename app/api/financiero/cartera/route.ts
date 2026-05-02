@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { requireFinancialAccess } from "@/lib/financial-access";
 import prisma from "@/lib/prisma";
 
@@ -188,6 +189,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "No autenticado" },
         { status: 401 }
+      );
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no puede registrar cartera" },
+        { status: 403 }
       );
     }
 

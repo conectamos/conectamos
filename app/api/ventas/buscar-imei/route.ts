@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import {
   esPerfilAdministrador,
   esRolAdmin,
+  puedeAccederModulosOperativos,
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
@@ -178,6 +179,13 @@ export async function POST(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no puede consultar IMEI para ventas" },
+        { status: 403 }
+      );
     }
 
     const body = await req.json();

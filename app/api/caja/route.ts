@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 
 const CONCEPTOS_PROTEGIDOS = new Set([
   "GASTO CARTERA",
@@ -35,6 +36,13 @@ export async function GET(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso a caja" },
+        { status: 403 }
+      );
     }
 
     const esAdmin = user.rolNombre.toUpperCase() === "ADMIN";
@@ -78,6 +86,13 @@ export async function PUT(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no puede editar caja" },
+        { status: 403 }
+      );
     }
 
     if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
@@ -192,6 +207,13 @@ export async function DELETE(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no puede eliminar movimientos de caja" },
+        { status: 403 }
+      );
     }
 
     if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {

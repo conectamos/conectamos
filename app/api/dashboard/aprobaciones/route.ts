@@ -6,6 +6,7 @@ import {
   esPerfilFacturador,
   esPerfilVendedor,
   esRolAdmin,
+  puedeAccederModulosOperativos,
   puedeAccederPanelFacturador,
 } from "@/lib/access-control";
 import { etiquetaSedeAcreedora } from "@/lib/prestamos";
@@ -54,6 +55,13 @@ export async function GET() {
 
     if (!session) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(session.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso a aprobaciones" },
+        { status: 403 }
+      );
     }
 
     const accesoTotal = esAccesoTotal(session);

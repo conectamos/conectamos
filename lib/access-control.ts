@@ -26,6 +26,10 @@ export function esPerfilVendedor(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "VENDEDOR";
 }
 
+export function puedeAccederModulosOperativos(perfilTipo: unknown) {
+  return !esPerfilVendedor(perfilTipo) && !esPerfilFacturador(perfilTipo);
+}
+
 export function puedeAccederPanelVendedor(
   perfilTipo: unknown,
   rolNombre: unknown

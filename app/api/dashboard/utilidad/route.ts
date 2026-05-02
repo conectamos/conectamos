@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { verifyFinancialPasswordForSede } from "@/lib/financial-access";
 import { getMonthlyCommercialSummary } from "@/lib/dashboard-commercial-summary";
 
@@ -11,6 +12,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "No autenticado" },
         { status: 401 }
+      );
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso a utilidad" },
+        { status: 403 }
       );
     }
 

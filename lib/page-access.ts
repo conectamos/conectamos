@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import {
-  esPerfilFacturador,
-  esPerfilVendedor,
   esRolAdmin,
+  puedeAccederModulosOperativos,
   puedeAccederPanelFacturador,
   puedeAccederPanelVendedor,
 } from "@/lib/access-control";
@@ -21,7 +20,7 @@ export async function requireSessionPage() {
 export async function requireNonVendorPage() {
   const session = await requireSessionPage();
 
-  if (esPerfilVendedor(session.perfilTipo) || esPerfilFacturador(session.perfilTipo)) {
+  if (!puedeAccederModulosOperativos(session.perfilTipo)) {
     redirect("/dashboard");
   }
 

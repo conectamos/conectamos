@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   createFinancialAccessToken,
   clearFinancialAccessCookie,
@@ -20,6 +21,13 @@ export async function GET() {
       return NextResponse.json(
         { error: "No autenticado" },
         { status: 401 }
+      );
+    }
+
+    if (!puedeAccederModulosOperativos(state.user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso al modulo financiero" },
+        { status: 403 }
       );
     }
 
@@ -61,6 +69,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "No autenticado" },
         { status: 401 }
+      );
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso al modulo financiero" },
+        { status: 403 }
       );
     }
 

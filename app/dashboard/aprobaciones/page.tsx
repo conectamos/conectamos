@@ -1,9 +1,9 @@
-import { requireSessionPage } from "@/lib/page-access";
+import { requireNonVendorPage } from "@/lib/page-access";
 import { puedeAccederPanelFacturador } from "@/lib/access-control";
 import AprobacionesWorkspace from "./workspace";
 
 export default async function DashboardAprobacionesPage() {
-  const session = await requireSessionPage();
+  const session = await requireNonVendorPage();
 
   return (
     <AprobacionesWorkspace

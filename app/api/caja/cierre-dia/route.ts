@@ -5,6 +5,7 @@ import PDFDocument from "pdfkit";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   extraerFinancierasDetalle,
   type CatalogoFinanciera,
@@ -1831,6 +1832,13 @@ export async function GET(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso al cierre de caja" },
+        { status: 403 }
+      );
     }
 
     const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";

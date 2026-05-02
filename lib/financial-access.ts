@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import prisma from "@/lib/prisma";
 import { getSessionCookieOptions } from "@/lib/session";
@@ -256,6 +257,16 @@ export async function requireFinancialAccess():
       response: NextResponse.json(
         { error: "No autenticado" },
         { status: 401 }
+      ),
+    };
+  }
+
+  if (!puedeAccederModulosOperativos(state.user.perfilTipo)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Este perfil no tiene acceso al modulo financiero" },
+        { status: 403 }
       ),
     };
   }

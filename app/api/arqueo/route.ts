@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   ARQUEO_DENOMINACIONES,
   calcularTotalArqueo,
@@ -94,6 +95,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no tiene acceso al arqueo" },
+        { status: 403 }
+      );
+    }
+
     const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
     const url = new URL(req.url);
     const fecha = String(url.searchParams.get("fecha") || getTodayBogotaDateKey());
@@ -173,6 +181,13 @@ export async function POST(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+      return NextResponse.json(
+        { error: "Este perfil no puede registrar arqueos" },
+        { status: 403 }
+      );
     }
 
     const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
