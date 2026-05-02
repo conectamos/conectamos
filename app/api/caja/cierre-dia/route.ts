@@ -176,18 +176,6 @@ function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
 
-function formatoPesosCompacto(valor: number) {
-  const absValue = Math.abs(Number(valor || 0));
-
-  if (absValue >= 1_000_000) {
-    return `$ ${(Number(valor || 0) / 1_000_000).toLocaleString("es-CO", {
-      maximumFractionDigits: 1,
-    })} M`;
-  }
-
-  return formatoPesos(valor);
-}
-
 function textoLimpio(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -521,6 +509,16 @@ function buildTrialTotals(rows: SaleTableRow[], movimientos: CashMovementRow[]) 
   };
 }
 
+function trialExcelColumnWidth(header: string, financieras: string[]) {
+  if (financieras.includes(header)) return 19;
+  if (header === "JALADOR") return 20;
+  if (header === "DETALLES DE INGRESO") return 32;
+  if (header === "IMEI") return 19;
+  if (header === "SERVICIO") return 22;
+
+  return header.length < 9 ? 14 : 17;
+}
+
 async function buildExcelCierreTabla(params: {
   periodoKey: string;
   cobertura: string;
@@ -575,16 +573,7 @@ async function buildExcelCierreTabla(params: {
 
   worksheet.columns = headers.map((header) => ({
     key: header,
-    width:
-      header === "DETALLES DE INGRESO"
-        ? 32
-        : header === "IMEI"
-          ? 19
-          : header === "SERVICIO"
-            ? 22
-            : header.length < 9
-              ? 14
-              : 17,
+    width: trialExcelColumnWidth(header, params.financieras),
   }));
 
   worksheet.mergeCells(1, 3, 1, totalColumns);
@@ -899,12 +888,12 @@ function drawCompactTableHeader(
   for (const column of columns) {
     const fillColor =
       column.tone === "financial"
-        ? "#1e3a8a"
+        ? "#23395d"
         : column.tone === "danger"
-          ? "#7f1d1d"
+          ? "#6f2432"
           : column.tone === "money"
-            ? "#065f46"
-            : "#111827";
+            ? "#1f5f4b"
+            : "#182235";
 
     doc
       .rect(cursorX, y, column.width, 24)
@@ -913,7 +902,7 @@ function drawCompactTableHeader(
     doc
       .fillColor("#ffffff")
       .font(fonts.bold)
-      .fontSize(5.7)
+      .fontSize(6.2)
       .text(column.title, cursorX + 2, y + 8, {
         width: Math.max(8, column.width - 4),
         align: column.align ?? "left",
@@ -948,17 +937,17 @@ function drawCompactRow(
   for (const column of columns) {
     const toneColor =
       column.tone === "danger"
-        ? "#b91c1c"
+        ? "#9f2737"
         : column.tone === "financial"
-          ? "#1d4ed8"
+          ? "#254f87"
           : column.tone === "money"
-            ? "#047857"
-            : "#0f172a";
+            ? "#16694f"
+            : "#162033";
 
     doc
       .fillColor(toneColor)
       .font(column.tone ? fonts.bold : fonts.regular)
-      .fontSize(5.9)
+      .fontSize(6.2)
       .text(values[column.key] || "-", cursorX + 2, y + 5, {
         width: Math.max(8, column.width - 4),
         height: rowHeight - 8,
@@ -971,16 +960,124 @@ function drawCompactRow(
   return y + rowHeight;
 }
 
+function drawTrialMetricCard(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  width: number,
+  label: string,
+  value: string,
+  fonts: PdfFonts,
+  accent: string
+) {
+  const valueSize = value.length > 18 ? 11 : value.length > 14 ? 12 : 13.5;
+
+  doc.roundedRect(x, y, width, 46, 10).fillAndStroke("#ffffff", "#d8e0ec");
+  doc.roundedRect(x + 10, y + 12, 4, 22, 2).fill(accent);
+  doc
+    .fillColor("#65748a")
+    .font(fonts.bold)
+    .fontSize(6.8)
+    .text(label.toUpperCase(), x + 22, y + 10, {
+      width: width - 34,
+      characterSpacing: 0.7,
+      ellipsis: true,
+    });
+  doc
+    .fillColor("#142033")
+    .font(fonts.bold)
+    .fontSize(valueSize)
+    .text(value, x + 22, y + 25, {
+      width: width - 34,
+      ellipsis: true,
+    });
+}
+
+function drawSalesComparisonChart(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  width: number,
+  currentSales: number,
+  previousSales: number,
+  fonts: PdfFonts
+) {
+  const chartHeight = 66;
+  const maxSales = Math.max(currentSales, previousSales, 1);
+  const currentWidth =
+    currentSales > 0 ? Math.max(8, ((width - 170) * currentSales) / maxSales) : 0;
+  const previousWidth =
+    previousSales > 0
+      ? Math.max(8, ((width - 170) * previousSales) / maxSales)
+      : 0;
+  const diff = currentSales - previousSales;
+  const diffText =
+    previousSales === 0
+      ? currentSales > 0
+        ? "Sin ventas el dia anterior"
+        : "Sin variacion"
+      : `${diff >= 0 ? "+" : ""}${diff} ventas vs ayer`;
+
+  doc.roundedRect(x, y, width, chartHeight, 12).fillAndStroke("#ffffff", "#d8e0ec");
+  doc
+    .fillColor("#142033")
+    .font(fonts.bold)
+    .fontSize(10)
+    .text("Comparativo de ventas", x + 14, y + 11, { width: width - 28 });
+  doc
+    .fillColor(diff >= 0 ? "#16694f" : "#9f2737")
+    .font(fonts.bold)
+    .fontSize(8)
+    .text(diffText, x + width - 210, y + 12, {
+      width: 190,
+      align: "right",
+      ellipsis: true,
+    });
+
+  const barX = x + 100;
+  const barWidth = width - 170;
+  const currentY = y + 34;
+  const previousY = y + 49;
+
+  doc
+    .fillColor("#65748a")
+    .font(fonts.bold)
+    .fontSize(7)
+    .text("Hoy", x + 14, currentY - 1, { width: 70 })
+    .text("Ayer", x + 14, previousY - 1, { width: 70 });
+  doc.roundedRect(barX, currentY, barWidth, 8, 4).fill("#edf2f7");
+  doc.roundedRect(barX, previousY, barWidth, 8, 4).fill("#edf2f7");
+  if (currentWidth > 0) {
+    doc.roundedRect(barX, currentY, currentWidth, 8, 4).fill("#16694f");
+  }
+  if (previousWidth > 0) {
+    doc.roundedRect(barX, previousY, previousWidth, 8, 4).fill("#7b8ca7");
+  }
+  doc
+    .fillColor("#142033")
+    .font(fonts.bold)
+    .fontSize(8)
+    .text(String(currentSales), barX + barWidth + 12, currentY - 1, {
+      width: 44,
+      align: "right",
+    })
+    .text(String(previousSales), barX + barWidth + 12, previousY - 1, {
+      width: 44,
+      align: "right",
+    });
+}
+
 async function buildPdfCierreTabla(params: {
   periodoLabel: string;
   cobertura: string;
   rows: SaleTableRow[];
   financieras: string[];
   movimientos: CashMovementRow[];
+  previousSalesCount: number;
   fonts: PdfFonts;
 }) {
   const doc = new PDFDocument({
-    size: "LEGAL",
+    size: "A3",
     layout: "landscape",
     margin: 22,
     font: params.fonts.regular,
@@ -997,30 +1094,31 @@ async function buildPdfCierreTabla(params: {
 
   const columns = fitColumns(
     [
-      { key: "venta", title: "# VENTA", width: 58 },
-      { key: "servicio", title: "SERVICIO", width: 72 },
-      { key: "imei", title: "IMEI", width: 84 },
-      { key: "jalador", title: "JALADOR", width: 68 },
-      { key: "ingresos", title: "INGRESOS", width: 62, align: "right", tone: "money" },
-      { key: "detalleIngresos", title: "DETALLES DE INGRESO", width: 118 },
+      { key: "venta", title: "# VENTA", width: 56 },
+      { key: "servicio", title: "SERVICIO", width: 70 },
+      { key: "imei", title: "IMEI", width: 86 },
+      { key: "jalador", title: "JALADOR", width: 112 },
+      { key: "ingresos", title: "INGRESOS", width: 72, align: "right", tone: "money" },
+      { key: "detalleIngresos", title: "DETALLES DE INGRESO", width: 120 },
       ...params.financieras.map((nombre) => ({
         key: `fin_${nombre}`,
         title: nombre,
-        width: 58,
+        width: 86,
         align: "right" as const,
         tone: "financial" as const,
       })),
-      { key: "utilidad", title: "UTILIDAD", width: 62, align: "right", tone: "money" },
-      { key: "vendedor", title: "VENDEDOR", width: 68 },
-      { key: "comision", title: "COMISION", width: 58, align: "right", tone: "danger" },
-      { key: "salida", title: "SALIDA", width: 58, align: "right", tone: "danger" },
-      { key: "caja", title: "CAJA", width: 62, align: "right", tone: "money" },
+      { key: "utilidad", title: "UTILIDAD", width: 76, align: "right", tone: "money" },
+      { key: "vendedor", title: "VENDEDOR", width: 78 },
+      { key: "comision", title: "COMISION", width: 66, align: "right", tone: "danger" },
+      { key: "salida", title: "SALIDA", width: 66, align: "right", tone: "danger" },
+      { key: "caja", title: "CAJA", width: 76, align: "right", tone: "money" },
     ],
     contentWidth
   );
 
+  doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f4f6fa");
   const headerGradient = doc.linearGradient(tableX, 18, doc.page.width - 22, 104);
-  headerGradient.stop(0, "#111827").stop(0.58, "#1f2937").stop(1, "#8b1e24");
+  headerGradient.stop(0, "#111827").stop(0.58, "#1e293b").stop(1, "#79313a");
   doc.roundedRect(tableX, 18, contentWidth, 86, 16).fill(headerGradient);
 
   doc.roundedRect(tableX + 18, 30, 62, 62, 14).fill("#ffffff");
@@ -1058,22 +1156,22 @@ async function buildPdfCierreTabla(params: {
     });
 
   doc
-    .roundedRect(doc.page.width - 225, 36, 178, 46, 12)
-    .fillAndStroke("#ffffff", "#fee2e2");
+    .roundedRect(doc.page.width - 278, 36, 228, 46, 12)
+    .fillAndStroke("#ffffff", "#ead5d8");
   doc
     .fillColor("#64748b")
     .font(params.fonts.bold)
     .fontSize(7)
-    .text("INGRESO ACUMULADO", doc.page.width - 211, 45, {
-      width: 150,
+    .text("INGRESO ACUMULADO", doc.page.width - 262, 45, {
+      width: 190,
       characterSpacing: 0.6,
     });
   doc
     .fillColor("#047857")
     .font(params.fonts.bold)
-    .fontSize(15)
-    .text(formatoPesosCompacto(totals.ingresosAcumulados), doc.page.width - 211, 58, {
-      width: 145,
+    .fontSize(14)
+    .text(formatoPesos(totals.ingresosAcumulados), doc.page.width - 262, 58, {
+      width: 190,
       align: "left",
       ellipsis: true,
     });
@@ -1081,39 +1179,39 @@ async function buildPdfCierreTabla(params: {
     .fillColor("#64748b")
     .font(params.fonts.regular)
     .fontSize(6.4)
-    .text("Ventas + caja", doc.page.width - 211, 75, { width: 120 });
+    .text("Ventas + caja", doc.page.width - 262, 75, { width: 160 });
 
   const metricCards = [
-    { label: "Ventas", value: String(totals.ventas), color: "#0f172a" },
+    { label: "Ventas", value: String(totals.ventas), color: "#334155" },
     {
       label: "Ingreso ventas",
-      value: formatoPesosCompacto(totals.ingresosVentas),
-      color: "#047857",
+      value: formatoPesos(totals.ingresosVentas),
+      color: "#1f7a5c",
     },
     {
       label: "Ingreso caja",
-      value: formatoPesosCompacto(totals.ingresosCaja),
-      color: "#0f766e",
+      value: formatoPesos(totals.ingresosCaja),
+      color: "#277489",
     },
     {
       label: "Transferencia",
-      value: formatoPesosCompacto(totals.transferencia),
-      color: "#2563eb",
+      value: formatoPesos(totals.transferencia),
+      color: "#3b5b92",
     },
     {
       label: "Voucher",
-      value: formatoPesosCompacto(totals.voucher),
-      color: "#7c3aed",
+      value: formatoPesos(totals.voucher),
+      color: "#6f4f9f",
     },
     {
       label: "Financieras",
-      value: formatoPesosCompacto(totals.financieras),
-      color: "#1d4ed8",
+      value: formatoPesos(totals.financieras),
+      color: "#254f87",
     },
-    { label: "Utilidad", value: formatoPesosCompacto(totals.utilidad), color: "#a16207" },
-    { label: "Caja neta", value: formatoPesosCompacto(totals.cajaNeta), color: "#b91c1c" },
+    { label: "Utilidad", value: formatoPesos(totals.utilidad), color: "#8a651e" },
+    { label: "Caja neta", value: formatoPesos(totals.cajaNeta), color: "#9f2737" },
   ];
-  const metricGap = 10;
+  const metricGap = 12;
   const cardsPerRow = 4;
   const metricWidth =
     (contentWidth - metricGap * (cardsPerRow - 1)) / cardsPerRow;
@@ -1122,33 +1220,36 @@ async function buildPdfCierreTabla(params: {
     const rowIndex = Math.floor(index / cardsPerRow);
     const columnIndex = index % cardsPerRow;
     const x = tableX + columnIndex * (metricWidth + metricGap);
-    const cardY = 120 + rowIndex * 50;
+    const cardY = 120 + rowIndex * 54;
 
-    doc.roundedRect(x, cardY, metricWidth, 44, 10).fillAndStroke("#ffffff", "#e2e8f0");
-    doc
-      .fillColor("#64748b")
-      .font(params.fonts.bold)
-      .fontSize(6.8)
-      .text(metric.label.toUpperCase(), x + 10, cardY + 11, {
-        width: metricWidth - 20,
-        characterSpacing: 0.7,
-      });
-    doc
-      .fillColor(metric.color)
-      .font(params.fonts.bold)
-      .fontSize(12.5)
-      .text(metric.value, x + 10, cardY + 25, {
-        width: metricWidth - 20,
-        ellipsis: true,
-      });
+    drawTrialMetricCard(
+      doc,
+      x,
+      cardY,
+      metricWidth,
+      metric.label,
+      metric.value,
+      params.fonts,
+      metric.color
+    );
   });
 
-  let y = 238;
+  drawSalesComparisonChart(
+    doc,
+    tableX,
+    232,
+    contentWidth,
+    totals.ventas,
+    params.previousSalesCount,
+    params.fonts
+  );
+
+  let y = 330;
   doc
     .fillColor("#0f172a")
     .font(params.fonts.bold)
     .fontSize(11)
-    .text("VENTAS DEL DIA - FINANCIERAS DEL CATALOGO", tableX, 222);
+    .text("VENTAS DEL DIA - FINANCIERAS DEL CATALOGO", tableX, 314);
   y = drawCompactTableHeader(doc, columns, y, tableX, params.fonts);
 
   if (!params.rows.length) {
@@ -1162,6 +1263,7 @@ async function buildPdfCierreTabla(params: {
     for (const row of params.rows) {
       if (y + 32 > doc.page.height - 44) {
         doc.addPage();
+        doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f4f6fa");
         y = drawCompactTableHeader(doc, columns, 34, tableX, params.fonts);
       }
 
@@ -1194,6 +1296,7 @@ async function buildPdfCierreTabla(params: {
   y += 22;
   if (y + 78 > doc.page.height - 36) {
     doc.addPage();
+    doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f4f6fa");
     y = 34;
   }
 
@@ -1237,6 +1340,7 @@ async function buildPdfCierreTabla(params: {
     for (const movimiento of params.movimientos) {
       if (y + 26 > doc.page.height - 36) {
         doc.addPage();
+        doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f4f6fa");
         y = drawCompactTableHeader(doc, cashColumns, 34, tableX, params.fonts);
       }
 
@@ -1494,6 +1598,9 @@ export async function GET(req: Request) {
     const vista = String(url.searchParams.get("vista") || "").toLowerCase();
     const formato = String(url.searchParams.get("formato") || "pdf").toLowerCase();
     const periodo = getBogotaDayRangeFromInput(fechaParam) || getTodayBogotaRange();
+    const previousStart = new Date(periodo.start);
+    previousStart.setUTCDate(previousStart.getUTCDate() - 1);
+    const previousEnd = new Date(periodo.start);
     const sedeIdFiltro = parseSedeId(url.searchParams.get("sedeId"));
     const sedeSeleccionada =
       esAdmin && sedeIdFiltro
@@ -1513,6 +1620,7 @@ export async function GET(req: Request) {
 
     const [
       ventasDia,
+      ventasDiaAnterior,
       movimientosDia,
       gastosCarteraDia,
       ventasDetalleDia,
@@ -1535,6 +1643,15 @@ export async function GET(req: Request) {
           utilidad: true,
           comision: true,
           salida: true,
+        },
+      }),
+      prisma.venta.count({
+        where: {
+          fecha: {
+            gte: previousStart,
+            lt: previousEnd,
+          },
+          ...scope,
         },
       }),
       prisma.cajaMovimiento.findMany({
@@ -1798,6 +1915,7 @@ export async function GET(req: Request) {
         rows: tablaCierre.rows,
         financieras: tablaCierre.financieras,
         movimientos: movimientosCierre,
+        previousSalesCount: ventasDiaAnterior,
         fonts,
       });
 
