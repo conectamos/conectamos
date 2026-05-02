@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { getTodayBogotaDateKey } from "@/lib/ventas-utils";
+import {
+  getCurrentBogotaMonthInput,
+  getTodayBogotaDateKey,
+} from "@/lib/ventas-utils";
 
 type SessionUser = {
   id: number;
@@ -19,10 +22,16 @@ type Sede = {
   nombre: string;
 };
 
+type PeriodoTipo = "dia" | "rango" | "mes";
+
 export default function CierreDiaPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [fecha, setFecha] = useState(() => getTodayBogotaDateKey());
+  const [fechaInicio, setFechaInicio] = useState(() => getTodayBogotaDateKey());
+  const [fechaFin, setFechaFin] = useState(() => getTodayBogotaDateKey());
+  const [mes, setMes] = useState(() => getCurrentBogotaMonthInput());
+  const [periodoTipo, setPeriodoTipo] = useState<PeriodoTipo>("dia");
   const [sedeId, setSedeId] = useState("TODAS");
   const [mensaje, setMensaje] = useState("");
 
@@ -69,39 +78,63 @@ export default function CierreDiaPage() {
     return sedes.find((sede) => String(sede.id) === sedeId)?.nombre || "Sede";
   }, [esAdmin, sedeId, sedes, user?.sedeNombre]);
 
-  const generarCierre = () => {
-    if (!fecha) {
-      setMensaje("Selecciona una fecha para generar el cierre");
-      return;
+  const periodoActual = useMemo(() => {
+    if (!esAdmin || periodoTipo === "dia") {
+      return fecha || "-";
     }
 
+    if (periodoTipo === "rango") {
+      return `${fechaInicio || "-"} a ${fechaFin || "-"}`;
+    }
+
+    return mes || "-";
+  }, [esAdmin, fecha, fechaFin, fechaInicio, mes, periodoTipo]);
+
+  const buildParams = (formato: "pdf" | "excel") => {
     const params = new URLSearchParams({
-      fecha,
+      formato,
+      vista: "tabla",
     });
+
+    if (esAdmin && periodoTipo === "rango") {
+      if (!fechaInicio || !fechaFin) {
+        setMensaje("Selecciona fecha inicial y fecha final");
+        return null;
+      }
+
+      params.set("fechaInicio", fechaInicio);
+      params.set("fechaFin", fechaFin);
+    } else if (esAdmin && periodoTipo === "mes") {
+      if (!mes) {
+        setMensaje("Selecciona el mes para generar el cierre");
+        return null;
+      }
+
+      params.set("mes", mes);
+    } else {
+      if (!fecha) {
+        setMensaje("Selecciona una fecha para generar el cierre");
+        return null;
+      }
+
+      params.set("fecha", fecha);
+    }
 
     if (esAdmin && sedeId !== "TODAS") {
       params.set("sedeId", sedeId);
     }
 
-    window.open(`/api/caja/cierre-dia?${params.toString()}`, "_blank", "noopener");
+    return params;
   };
 
-  const generarCierrePrueba = (formato: "pdf" | "excel") => {
-    if (!fecha) {
-      setMensaje("Selecciona una fecha para generar el cierre");
+  const generarCierre = (formato: "pdf" | "excel") => {
+    const params = buildParams(formato);
+
+    if (!params) {
       return;
     }
 
-    const params = new URLSearchParams({
-      fecha,
-      vista: "tabla",
-      formato,
-    });
-
-    if (esAdmin && sedeId !== "TODAS") {
-      params.set("sedeId", sedeId);
-    }
-
+    setMensaje("");
     window.open(`/api/caja/cierre-dia?${params.toString()}`, "_blank", "noopener");
   };
 
@@ -120,7 +153,7 @@ export default function CierreDiaPage() {
                 CIERRE DEL DIA
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200 md:text-base">
-                Genera el PDF de cierre por fecha y cobertura, con ventas,
+                Genera el cierre oficial por fecha, rango o mes, con ventas,
                 ingresos, egresos, comisiones, salidas y caja acumulada.
               </p>
             </div>
@@ -135,18 +168,78 @@ export default function CierreDiaPage() {
         </section>
 
         <section className="rounded-[30px] border border-[#e4dccd] bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-          <div className="grid gap-5 md:grid-cols-2">
-            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-              Fecha del cierre
-              <input
-                type="date"
-                value={fecha}
-                onChange={(event) => setFecha(event.target.value)}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
+          {esAdmin && (
+            <div className="mb-5 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+              {[
+                ["dia", "Dia"],
+                ["rango", "Rango"],
+                ["mes", "Mes completo"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setPeriodoTipo(value as PeriodoTipo)}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    periodoTipo === value
+                      ? "bg-slate-950 text-white"
+                      : "bg-white text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
 
-            {esAdmin ? (
+          <div className="grid gap-5 md:grid-cols-2">
+            {(!esAdmin || periodoTipo === "dia") && (
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Fecha del cierre
+                <input
+                  type="date"
+                  value={fecha}
+                  onChange={(event) => setFecha(event.target.value)}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </label>
+            )}
+
+            {esAdmin && periodoTipo === "rango" && (
+              <>
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Fecha inicial
+                  <input
+                    type="date"
+                    value={fechaInicio}
+                    onChange={(event) => setFechaInicio(event.target.value)}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Fecha final
+                  <input
+                    type="date"
+                    value={fechaFin}
+                    onChange={(event) => setFechaFin(event.target.value)}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  />
+                </label>
+              </>
+            )}
+
+            {esAdmin && periodoTipo === "mes" && (
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Mes del cierre
+                <input
+                  type="month"
+                  value={mes}
+                  onChange={(event) => setMes(event.target.value)}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </label>
+            )}
+
+            {esAdmin && (
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                 Sede
                 <select
@@ -162,7 +255,9 @@ export default function CierreDiaPage() {
                   ))}
                 </select>
               </label>
-            ) : (
+            )}
+
+            {!esAdmin && (
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                 Sede
                 <input
@@ -179,7 +274,7 @@ export default function CierreDiaPage() {
               Configuracion actual
             </p>
             <p className="mt-2 text-sm font-semibold text-slate-950">
-              Fecha: {fecha || "-"} | Cobertura: {cobertura}
+              Periodo: {periodoActual} | Cobertura: {cobertura}
             </p>
           </div>
 
@@ -192,24 +287,17 @@ export default function CierreDiaPage() {
           <div className="mt-6 flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={generarCierre}
+              onClick={() => generarCierre("pdf")}
               className="rounded-2xl bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-              Generar PDF
+              Descargar PDF
             </button>
             <button
               type="button"
-              onClick={() => generarCierrePrueba("pdf")}
-              className="rounded-2xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              PDF prueba
-            </button>
-            <button
-              type="button"
-              onClick={() => generarCierrePrueba("excel")}
+              onClick={() => generarCierre("excel")}
               className="rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
             >
-              Excel prueba
+              Descargar Excel
             </button>
             <Link
               href="/caja"

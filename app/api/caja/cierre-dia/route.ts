@@ -12,6 +12,7 @@ import {
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
   getBogotaDayRangeFromInput,
+  getBogotaMonthRangeFromInput,
   getTodayBogotaDateKey,
   getTodayBogotaRange,
 } from "@/lib/ventas-utils";
@@ -599,7 +600,7 @@ async function buildExcelCierreTabla(params: {
   worksheet.getCell(2, 3).value = "CIERRE DEL DIA";
   worksheet.getCell(3, 3).value = `${params.periodoKey} | ${params.cobertura}`;
   worksheet.getCell(4, 3).value =
-    "Vista de prueba con ventas, financieras utilizadas y flujo de caja del dia.";
+    "Cierre oficial con ventas, financieras utilizadas y flujo de caja del periodo.";
 
   [1, 2, 3, 4].forEach((rowNumber) => {
     const row = worksheet.getRow(rowNumber);
@@ -1153,9 +1154,9 @@ function drawSalesComparisonChart(
   const diffText =
     previousSales === 0
       ? currentSales > 0
-        ? "Sin ventas el dia anterior"
+        ? "Sin ventas en el periodo anterior"
         : "Sin variacion"
-      : `${diff >= 0 ? "+" : ""}${diff} ventas vs ayer`;
+      : `${diff >= 0 ? "+" : ""}${diff} ventas vs periodo anterior`;
 
   doc.roundedRect(x, y, width, chartHeight, 12).fillAndStroke("#ffffff", "#d9dee8");
   doc
@@ -1182,8 +1183,8 @@ function drawSalesComparisonChart(
     .fillColor("#667085")
     .font(fonts.bold)
     .fontSize(7)
-    .text("Hoy", x + 14, currentY - 1, { width: 70 })
-    .text("Ayer", x + 14, previousY - 1, { width: 70 });
+    .text("Periodo", x + 14, currentY - 1, { width: 70 })
+    .text("Anterior", x + 14, previousY - 1, { width: 70 });
   doc.roundedRect(barX, currentY, barWidth, 8, 4).fill("#edf0f5");
   doc.roundedRect(barX, previousY, barWidth, 8, 4).fill("#edf0f5");
   if (currentWidth > 0) {
@@ -1222,7 +1223,7 @@ async function buildPdfCierreTabla(params: {
     margin: 22,
     font: params.fonts.regular,
     info: {
-      Title: "Cierre del dia - vista prueba",
+      Title: "Cierre oficial",
       Author: "CONECTAMOS.APP",
     },
   });
@@ -1770,6 +1771,60 @@ function parseSedeId(value: string | null) {
   return Number.isInteger(sedeId) && sedeId > 0 ? sedeId : null;
 }
 
+function buildPeriodoCierre(url: URL, esAdmin: boolean) {
+  const fechaParam = url.searchParams.get("fecha") || getTodayBogotaDateKey();
+  const fechaInicioParam = url.searchParams.get("fechaInicio");
+  const fechaFinParam = url.searchParams.get("fechaFin");
+  const mesParam = url.searchParams.get("mes");
+
+  if (esAdmin && mesParam) {
+    const mes = getBogotaMonthRangeFromInput(mesParam);
+    if (mes) {
+      return {
+        ...mes,
+        tipo: "mes",
+      };
+    }
+  }
+
+  if (esAdmin && fechaInicioParam && fechaFinParam) {
+    const inicio = getBogotaDayRangeFromInput(fechaInicioParam);
+    const fin = getBogotaDayRangeFromInput(fechaFinParam);
+
+    if (inicio && fin) {
+      const [startRange, endRange] =
+        inicio.start <= fin.start ? [inicio, fin] : [fin, inicio];
+
+      return {
+        start: startRange.start,
+        end: endRange.end,
+        key: `${startRange.key}_a_${endRange.key}`,
+        label:
+          startRange.key === endRange.key
+            ? startRange.label
+            : `${startRange.label} - ${endRange.label}`,
+        tipo: "rango",
+      };
+    }
+  }
+
+  return {
+    ...(getBogotaDayRangeFromInput(fechaParam) || getTodayBogotaRange()),
+    tipo: "dia",
+  };
+}
+
+function buildPreviousPeriodo(periodo: { start: Date; end: Date; tipo?: string }) {
+  const duration = periodo.end.getTime() - periodo.start.getTime();
+  const previousEnd = new Date(periodo.start);
+  const previousStart = new Date(periodo.start.getTime() - duration);
+
+  return {
+    start: previousStart,
+    end: previousEnd,
+  };
+}
+
 export async function GET(req: Request) {
   try {
     const user = await getSessionUser();
@@ -1780,13 +1835,10 @@ export async function GET(req: Request) {
 
     const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
     const url = new URL(req.url);
-    const fechaParam = url.searchParams.get("fecha") || getTodayBogotaDateKey();
-    const vista = String(url.searchParams.get("vista") || "").toLowerCase();
+    const vista = String(url.searchParams.get("vista") || "tabla").toLowerCase();
     const formato = String(url.searchParams.get("formato") || "pdf").toLowerCase();
-    const periodo = getBogotaDayRangeFromInput(fechaParam) || getTodayBogotaRange();
-    const previousStart = new Date(periodo.start);
-    previousStart.setUTCDate(previousStart.getUTCDate() - 1);
-    const previousEnd = new Date(periodo.start);
+    const periodo = buildPeriodoCierre(url, esAdmin);
+    const previousPeriodo = buildPreviousPeriodo(periodo);
     const sedeIdFiltro = parseSedeId(url.searchParams.get("sedeId"));
     const sedeSeleccionada =
       esAdmin && sedeIdFiltro
@@ -1834,8 +1886,8 @@ export async function GET(req: Request) {
       prisma.venta.count({
         where: {
           fecha: {
-            gte: previousStart,
-            lt: previousEnd,
+            gte: previousPeriodo.start,
+            lt: previousPeriodo.end,
           },
           ...scope,
         },
@@ -2071,7 +2123,7 @@ export async function GET(req: Request) {
     const fonts = getPdfFonts();
 
     if (vista === "tabla") {
-      const baseFileName = `cierre-del-dia-prueba-${periodo.key}${
+      const baseFileName = `cierre-${periodo.key}${
         sedeIdFiltro ? `-sede-${sedeIdFiltro}` : ""
       }`;
 
