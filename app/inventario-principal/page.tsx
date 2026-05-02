@@ -68,6 +68,7 @@ export default function InventarioPrincipalPage() {
   const [nuevaReferencia, setNuevaReferencia] = useState("");
   const [referenciaEditada, setReferenciaEditada] = useState("");
   const [editandoReferenciaId, setEditandoReferenciaId] = useState<number | null>(null);
+  const [mostrarCatalogoReferencias, setMostrarCatalogoReferencias] = useState(false);
 
   const [mostrarModal, setMostrarModal] = useState(false);
   const [mostrarModalMasivo, setMostrarModalMasivo] = useState(false);
@@ -169,6 +170,11 @@ export default function InventarioPrincipalPage() {
 
   const referenciasActivas = useMemo(
     () => referenciasCatalogo.filter((item) => item.activo),
+    [referenciasCatalogo]
+  );
+
+  const referenciasOcultas = useMemo(
+    () => referenciasCatalogo.filter((item) => !item.activo),
     [referenciasCatalogo]
   );
 
@@ -598,20 +604,25 @@ export default function InventarioPrincipalPage() {
                 Catalogo
               </div>
               <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Referencias para ingreso
+                Referencias de bodega
               </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                Estas referencias aparecen en el ingreso de inventario principal para evitar escritura manual y errores de nombre.
-              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.14em]">
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-700">
+                  {referenciasActivas.length} activas
+                </span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-600">
+                  {referenciasOcultas.length} ocultas
+                </span>
+              </div>
             </div>
 
-            <div className="w-full xl:max-w-[620px]">
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
+            <div className="flex w-full flex-col gap-3 xl:max-w-[760px]">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_160px]">
                 <input
                   type="text"
                   value={nuevaReferencia}
                   onChange={(event) => setNuevaReferencia(event.target.value)}
-                  placeholder="Agregar referencia al catalogo..."
+                  placeholder="Nueva referencia..."
                   className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
                 />
                 <button
@@ -622,102 +633,117 @@ export default function InventarioPrincipalPage() {
                 >
                   Agregar
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setMostrarCatalogoReferencias((actual) => !actual)}
+                  className="rounded-2xl border border-slate-300 bg-[#fbf8f2] px-5 py-3.5 text-sm font-bold text-slate-800 transition hover:bg-white"
+                >
+                  {mostrarCatalogoReferencias ? "Ocultar lista" : "Ver catalogo"}
+                </button>
               </div>
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            {referenciasCatalogo.length === 0 ? (
-              <div className="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                Aun no hay referencias en el catalogo.
-              </div>
-            ) : (
-              referenciasCatalogo.map((item) => {
-                const editando = editandoReferenciaId === item.id;
-
-                return (
-                  <div
-                    key={item.id}
-                    className={[
-                      "flex min-h-[58px] flex-col gap-3 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center",
-                      item.activo
-                        ? "border-emerald-100 bg-emerald-50/60"
-                        : "border-slate-200 bg-slate-50 opacity-80",
-                    ].join(" ")}
-                  >
-                    {editando ? (
-                      <input
-                        value={referenciaEditada}
-                        onChange={(event) => setReferenciaEditada(event.target.value)}
-                        className="min-w-[240px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                      />
-                    ) : (
-                      <div>
-                        <p className="text-sm font-black text-slate-950">{item.nombre}</p>
-                        <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          {item.activo ? "Activa" : "Oculta"}
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="flex flex-wrap gap-2 sm:ml-auto">
-                      {editando ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => void actualizarReferencia(item)}
-                            disabled={cargando}
-                            className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-60"
-                          >
-                            Guardar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelarEdicionReferencia}
-                            disabled={cargando}
-                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-                          >
-                            Cancelar
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => iniciarEdicionReferencia(item)}
-                            disabled={cargando}
-                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void actualizarReferencia(item, !item.activo)}
-                            disabled={cargando}
-                            className={[
-                              "rounded-xl px-3 py-2 text-xs font-bold transition disabled:opacity-60",
-                              item.activo
-                                ? "border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                                : "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-                            ].join(" ")}
-                          >
-                            {item.activo ? "Ocultar" : "Activar"}
-                          </button>
-                        </>
-                      )}
-                    </div>
+          {mostrarCatalogoReferencias && (
+            <div className="mt-5 max-w-[760px] rounded-[26px] border border-slate-200 bg-[#f8fafc] p-3 shadow-inner">
+              <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+                {referenciasCatalogo.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-500">
+                    Aun no hay referencias en el catalogo.
                   </div>
-                );
-              })
-            )}
-          </div>
+                ) : (
+                  referenciasCatalogo.map((item) => {
+                    const editando = editandoReferenciaId === item.id;
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            {referenciasActivas.length} referencia
-            {referenciasActivas.length === 1 ? "" : "s"} activa
-            {referenciasActivas.length === 1 ? "" : "s"} disponible
-            {referenciasActivas.length === 1 ? "" : "s"} para nuevos ingresos.
-          </div>
+                    return (
+                      <div
+                        key={item.id}
+                        className={[
+                          "rounded-2xl border bg-white px-4 py-3 shadow-sm transition",
+                          item.activo
+                            ? "border-emerald-100"
+                            : "border-slate-200 opacity-75",
+                        ].join(" ")}
+                      >
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          {editando ? (
+                            <input
+                              value={referenciaEditada}
+                              onChange={(event) => setReferenciaEditada(event.target.value)}
+                              className="min-h-[42px] min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          ) : (
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-black text-slate-950">
+                                {item.nombre}
+                              </p>
+                              <span
+                                className={[
+                                  "mt-1 inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em]",
+                                  item.activo
+                                    ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
+                                    : "bg-slate-100 text-slate-500 ring-1 ring-slate-200",
+                                ].join(" ")}
+                              >
+                                {item.activo ? "Activa" : "Oculta"}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap gap-2 md:justify-end">
+                            {editando ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void actualizarReferencia(item)}
+                                  disabled={cargando}
+                                  className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                                >
+                                  Guardar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelarEdicionReferencia}
+                                  disabled={cargando}
+                                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                                >
+                                  Cancelar
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => iniciarEdicionReferencia(item)}
+                                  disabled={cargando}
+                                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void actualizarReferencia(item, !item.activo)}
+                                  disabled={cargando}
+                                  className={[
+                                    "rounded-xl px-3 py-2 text-xs font-bold transition disabled:opacity-60",
+                                    item.activo
+                                      ? "border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                      : "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+                                  ].join(" ")}
+                                >
+                                  {item.activo ? "Ocultar" : "Activar"}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-sm">

@@ -222,10 +222,35 @@ export async function PATCH(req: Request) {
       );
     }
 
-    await prisma.catalogoReferenciaInventario.update({
-      where: { id },
-      data,
-    });
+    if (data.nombre && data.nombre !== existente.nombre) {
+      await prisma.$transaction([
+        prisma.catalogoReferenciaInventario.update({
+          where: { id },
+          data,
+        }),
+        prisma.inventarioPrincipal.updateMany({
+          where: { referencia: existente.nombre },
+          data: { referencia: data.nombre },
+        }),
+        prisma.inventarioSede.updateMany({
+          where: { referencia: existente.nombre },
+          data: { referencia: data.nombre },
+        }),
+        prisma.prestamoSede.updateMany({
+          where: { referencia: existente.nombre },
+          data: { referencia: data.nombre },
+        }),
+        prisma.movimientoInventario.updateMany({
+          where: { referencia: existente.nombre },
+          data: { referencia: data.nombre },
+        }),
+      ]);
+    } else {
+      await prisma.catalogoReferenciaInventario.update({
+        where: { id },
+        data,
+      });
+    }
 
     const referencias = await respuestaCatalogo();
 
