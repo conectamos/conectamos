@@ -196,16 +196,26 @@ export async function POST(req: Request) {
       );
     }
 
-    const principales = await prisma.inventarioPrincipal.findMany({
+    const existentesEnPrincipal = await prisma.inventarioPrincipal.findMany({
       where: {
         imei: { in: imeisParaInsertar },
       },
-      select: { id: true, imei: true },
+      select: { imei: true },
     });
 
-    const principalPorImei = new Map(
-      principales.map((item) => [item.imei, item.id])
-    );
+    if (existentesEnPrincipal.length > 0) {
+      const imeisPrincipal = existentesEnPrincipal
+        .map((item) => item.imei)
+        .slice(0, 5)
+        .join(", ");
+
+      return NextResponse.json(
+        {
+          error: `Estos IMEI ya existen en Bodega Principal y deben enviarse desde ese modulo: ${imeisPrincipal}`,
+        },
+        { status: 400 }
+      );
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.inventarioSede.createMany({
@@ -219,8 +229,8 @@ export async function POST(req: Request) {
           estadoFinanciero,
           deboA,
           estadoActual: "BODEGA",
-          origen: principalPorImei.has(item) ? "PRINCIPAL" : "MANUAL",
-          inventarioPrincipalId: principalPorImei.get(item) ?? null,
+          origen: "MANUAL",
+          inventarioPrincipalId: null,
         })),
       });
 
@@ -234,7 +244,7 @@ export async function POST(req: Request) {
           sedeId,
           deboA,
           estadoFinanciero,
-          origen: principalPorImei.has(item) ? "PRINCIPAL" : "MANUAL",
+          origen: "MANUAL",
           observacion: `Ingreso manual desde ${distribuidor}`,
         })),
       });
