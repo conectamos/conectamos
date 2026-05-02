@@ -73,11 +73,20 @@ function normalizarFinancierasRegistro(registro: {
   cuotaInicial?: unknown;
   medioPago1Tipo?: unknown;
 }) {
+  const plataformaCredito = String(registro.plataformaCredito || "").trim();
+  const plataformaNormalizada = plataformaCredito.toUpperCase();
+
+  if (
+    plataformaNormalizada === "CONTADO" ||
+    plataformaNormalizada === "CONTADO CLARO" ||
+    plataformaNormalizada === "CONTADO LIBRES"
+  ) {
+    return [];
+  }
+
   if (Array.isArray(registro.financierasDetalle) && registro.financierasDetalle.length) {
     return registro.financierasDetalle;
   }
-
-  const plataformaCredito = String(registro.plataformaCredito || "").trim();
 
   return plataformaCredito
     ? [

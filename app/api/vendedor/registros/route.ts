@@ -15,10 +15,12 @@ import {
   normalizarFechaIso,
   normalizarFinancierasDetalle,
   normalizarImei,
+  normalizarMoneda,
   normalizarTextoCorto,
   normalizarTextoLargo,
   normalizarTipoEquipoRegistro,
   normalizarTipoDocumentoCliente,
+  normalizarTipoPagoRegistroVenta,
   normalizarWhatsappRegistro,
 } from "@/lib/vendor-sale-records";
 
@@ -36,6 +38,10 @@ const REGISTRO_RESUMEN_SELECT = {
   cuotaInicial: true,
   valorCuota: true,
   numeroCuotas: true,
+  medioPago1Tipo: true,
+  medioPago1Valor: true,
+  medioPago2Tipo: true,
+  medioPago2Valor: true,
   jaladorNombre: true,
   createdAt: true,
 } as const;
@@ -166,6 +172,36 @@ function decimalToNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function esServicioContado(value: unknown) {
+  const servicio = String(value || "").trim().toUpperCase();
+  return (
+    servicio === "CONTADO" ||
+    servicio === "CONTADO CLARO" ||
+    servicio === "CONTADO LIBRES"
+  );
+}
+
+function normalizarServicioRegistro(
+  servicio: unknown,
+  plataformaCredito: unknown
+) {
+  const valor = String(servicio || "").trim().toUpperCase();
+
+  if (esServicioContado(valor) || esServicioContado(plataformaCredito)) {
+    return "CONTADO";
+  }
+
+  if (valor === "FINANCIERA" || valor === "FINANCIERO") {
+    return "FINANCIERA";
+  }
+
+  return "FINANCIERA";
+}
+
+function monedaMayorQueCero(value: string | null) {
+  return value !== null && Number(value) > 0;
+}
+
 function serializarFinancierasDetalle(valor: unknown) {
   if (!Array.isArray(valor)) {
     return null;
@@ -209,6 +245,8 @@ function serializarRegistroResumen(
     creditoAutorizado: unknown;
     cuotaInicial: unknown;
     valorCuota: unknown;
+    medioPago1Valor: unknown;
+    medioPago2Valor: unknown;
     financierasDetalle: unknown;
   } & Record<string, unknown>
 ) {
@@ -217,6 +255,8 @@ function serializarRegistroResumen(
     creditoAutorizado: decimalToNumber(registro.creditoAutorizado),
     cuotaInicial: decimalToNumber(registro.cuotaInicial),
     valorCuota: decimalToNumber(registro.valorCuota),
+    medioPago1Valor: decimalToNumber(registro.medioPago1Valor),
+    medioPago2Valor: decimalToNumber(registro.medioPago2Valor),
     totalFinancieras: Array.isArray(registro.financierasDetalle)
       ? registro.financierasDetalle.length
       : 0,
@@ -261,21 +301,15 @@ function validarPayload(
   body: Record<string, unknown>,
   plataformasPermitidas: string[]
 ) {
-  if (plataformasPermitidas.length === 0) {
-    return {
-      error: "No hay financieras creadas en el catalogo comercial",
-    };
-  }
-
+  const servicio = normalizarServicioRegistro(
+    body.servicio,
+    body.plataformaCredito
+  );
   const ciudad = normalizarTextoCorto(body.ciudad);
   const puntoVenta = normalizarTextoCorto(body.puntoVenta);
   const clienteNombre = normalizarTextoCorto(body.clienteNombre);
   const tipoDocumento = normalizarTipoDocumentoCliente(body.tipoDocumento);
   const documentoNumero = normalizarTextoCorto(body.documentoNumero);
-  const financierasDetalleResult = normalizarFinancierasDetalle(
-    body.financierasDetalle,
-    plataformasPermitidas
-  );
   const aceptaDeclaracionIntermediacion = Boolean(
     body.aceptaDeclaracionIntermediacion
   );
@@ -314,6 +348,7 @@ function validarPayload(
   const jaladorNombre = normalizarTextoCorto(body.jaladorNombre);
   const firmaClienteDataUrl = normalizarTextoLargo(body.firmaClienteDataUrl);
   const fotoEntregaDataUrl = normalizarTextoLargo(body.fotoEntregaDataUrl);
+  const esContado = servicio === "CONTADO";
 
   if (!ciudad) return { error: "La ciudad es obligatoria" };
   if (!puntoVenta) return { error: "Debes seleccionar el punto de venta" };
@@ -325,17 +360,8 @@ function validarPayload(
   if (!clienteNombre) return { error: "El nombre del cliente es obligatorio" };
   if (!tipoDocumento) return { error: "Debes seleccionar el tipo de documento" };
   if (!documentoNumero) return { error: "El documento del cliente es obligatorio" };
-  if ("error" in financierasDetalleResult) {
-    return { error: financierasDetalleResult.error };
-  }
   if (!serialImei) return { error: "El IMEI debe tener 15 digitos" };
-  if (!tipoEquipo) {
-    return { error: "Debes seleccionar un tipo de equipo valido" };
-  }
   if (!observacion) return { error: "La observacion es obligatoria" };
-  if (!referenciaEquipo) return { error: "La referencia del equipo es obligatoria" };
-  if (!almacenamiento) return { error: "El almacenamiento es obligatorio" };
-  if (!color) return { error: "El color es obligatorio" };
   if (!correoTexto) return { error: "El correo es obligatorio" };
   if (!correo) {
     return {
@@ -344,13 +370,117 @@ function validarPayload(
   }
   if (!whatsappTexto) return { error: "El WhatsApp es obligatorio" };
   if (!whatsapp) return { error: "El WhatsApp debe tener 10 digitos" };
-  if (!fechaNacimiento) return { error: "La fecha de nacimiento es obligatoria" };
-  if (!fechaExpedicion) return { error: "La fecha de expedicion es obligatoria" };
   if (!direccion) return { error: "La direccion es obligatoria" };
-  if (!barrio) return { error: "El barrio es obligatorio" };
-  if (!telefono) return { error: "El telefono es obligatorio" };
   if (!simCardRegistro1) return { error: "El registro SIM 1 es obligatorio" };
   if (!asesorNombre) return { error: "El asesor es obligatorio" };
+  if (!jaladorNombre) return { error: "Debes seleccionar el jalador" };
+  if (!firmaClienteDataUrl) {
+    return { error: "Debes capturar la firma digital del cliente" };
+  }
+  if (!fotoEntregaDataUrl) {
+    return { error: "Debes adjuntar la foto de entrega del producto" };
+  }
+
+  if (esContado) {
+    const medioPago1Tipo = normalizarTipoPagoRegistroVenta(body.medioPago1Tipo);
+    const medioPago1Valor = normalizarMoneda(body.medioPago1Valor);
+    const medioPago2Tipo = normalizarTipoPagoRegistroVenta(body.medioPago2Tipo);
+    const medioPago2Valor = normalizarMoneda(body.medioPago2Valor);
+    const intentoSegundoPago = Boolean(body.medioPago2Tipo) || Boolean(body.medioPago2Valor);
+
+    if (!medioPago1Tipo) {
+      return { error: "Selecciona el tipo del ingreso contado" };
+    }
+
+    if (!monedaMayorQueCero(medioPago1Valor)) {
+      return { error: "Registra el valor del ingreso contado" };
+    }
+
+    if (intentoSegundoPago && !medioPago2Tipo) {
+      return { error: "Selecciona el tipo del segundo ingreso contado" };
+    }
+
+    if (intentoSegundoPago && !monedaMayorQueCero(medioPago2Valor)) {
+      return { error: "Registra el valor del segundo ingreso contado" };
+    }
+
+    return {
+      data: {
+        ciudad,
+        puntoVenta,
+        clienteNombre,
+        tipoDocumento,
+        documentoNumero,
+        plataformaCredito: "CONTADO",
+        financierasDetalle: [],
+        aceptaDeclaracionIntermediacion: false,
+        aceptaPoliticaGarantia: false,
+        aceptaCondicionesCredito: false,
+        dobleCredito: false,
+        observacion,
+        referenciaEquipo,
+        almacenamiento,
+        color,
+        serialImei,
+        tipoEquipo: null,
+        creditoAutorizado: null,
+        cuotaInicial: null,
+        valorCuota: null,
+        numeroCuotas: null,
+        frecuenciaCuota: null,
+        correo,
+        whatsapp,
+        fechaNacimiento: null,
+        fechaExpedicion: null,
+        direccion,
+        barrio: null,
+        referenciaFamiliar1Nombre: null,
+        referenciaFamiliar1Telefono: null,
+        referenciaFamiliar2Nombre: null,
+        referenciaFamiliar2Telefono: null,
+        telefono: null,
+        simCardRegistro1,
+        simCardRegistro2,
+        medioPago1Tipo,
+        medioPago1Valor,
+        medioPago2Tipo: intentoSegundoPago ? medioPago2Tipo : null,
+        medioPago2Valor: intentoSegundoPago ? medioPago2Valor : null,
+        asesorNombre,
+        jaladorNombre,
+        firmaClienteDataUrl,
+        fotoEntregaDataUrl,
+        confirmacionCliente: true,
+      },
+    };
+  }
+
+  if (plataformasPermitidas.length === 0) {
+    return {
+      error: "No hay financieras creadas en el catalogo comercial",
+    };
+  }
+
+  const financierasDetalleResult = normalizarFinancierasDetalle(
+    body.financierasDetalle,
+    plataformasPermitidas
+  );
+
+  if ("error" in financierasDetalleResult) {
+    return { error: financierasDetalleResult.error };
+  }
+  if (financierasDetalleResult.data.length === 0) {
+    return { error: "Debes registrar al menos una financiera" };
+  }
+  if (!tipoEquipo) {
+    return { error: "Debes seleccionar un tipo de equipo valido" };
+  }
+  if (!referenciaEquipo) return { error: "La referencia del equipo es obligatoria" };
+  if (!almacenamiento) return { error: "El almacenamiento es obligatorio" };
+  if (!color) return { error: "El color es obligatorio" };
+  if (!fechaNacimiento) return { error: "La fecha de nacimiento es obligatoria" };
+  if (!fechaExpedicion) return { error: "La fecha de expedicion es obligatoria" };
+  if (!barrio) return { error: "El barrio es obligatorio" };
+  if (!telefono) return { error: "El telefono es obligatorio" };
   if (!referenciaFamiliar1Nombre || !referenciaFamiliar1Telefono) {
     return {
       error:
@@ -363,19 +493,12 @@ function validarPayload(
         "Debes registrar la segunda referencia familiar con nombre y telefono",
     };
   }
-  if (!jaladorNombre) return { error: "Debes seleccionar el jalador" };
   if (
     !aceptaDeclaracionIntermediacion ||
     !aceptaPoliticaGarantia ||
     !aceptaCondicionesCredito
   ) {
     return { error: "Debes confirmar los textos visibles del formato" };
-  }
-  if (!firmaClienteDataUrl) {
-    return { error: "Debes capturar la firma digital del cliente" };
-  }
-  if (!fotoEntregaDataUrl) {
-    return { error: "Debes adjuntar la foto de entrega del producto" };
   }
 
   const primeraFinanciera = financierasDetalleResult.data[0];

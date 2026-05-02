@@ -108,6 +108,7 @@ function servicioOcultaFinancieras(servicio: string): boolean {
   const normalized = normalizeServiceValue(servicio);
   return (
     normalized.includes("ACTIVACI") ||
+    normalized === "CONTADO" ||
     normalized === "CONTADO CLARO" ||
     normalized === "CONTADO LIBRES"
   );
@@ -209,6 +210,10 @@ function extraerFinanzasRegistro(registro: {
   creditoAutorizado: unknown;
   financierasDetalle: unknown;
 }) {
+  if (servicioOcultaFinancieras(String(registro.plataformaCredito || ""))) {
+    return [];
+  }
+
   const desdeDetalle = Array.isArray(registro.financierasDetalle)
     ? registro.financierasDetalle
         .map((item) => {
@@ -219,6 +224,10 @@ function extraerFinanzasRegistro(registro: {
           const row = item as Record<string, unknown>;
           const nombre = String(row.plataformaCredito || "").trim();
           const valor = toNumber(row.creditoAutorizado);
+
+          if (servicioOcultaFinancieras(nombre)) {
+            return null;
+          }
 
           return nombre && valor > 0 ? { nombre, valor } : null;
         })
@@ -317,6 +326,9 @@ function aplicarRegistroVendedorInput<
       nombre: finanzasRegistro[index]?.nombre || "",
       valor: finanzasRegistro[index]?.valor || 0,
     }));
+  } else if (servicioOcultaFinancieras(String(registro.plataformaCredito || ""))) {
+    next.servicio = "CONTADO";
+    next.finanzas = input.finanzas.map(() => ({ nombre: "", valor: 0 }));
   }
 
   const pagosRegistro = extraerPagosRegistro(registro);

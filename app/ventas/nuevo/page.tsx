@@ -8,8 +8,7 @@ import {
   type CatalogoFinanciera,
 } from "@/lib/ventas-financieras";
 const SERVICIOS = [
-  "CONTADO CLARO",
-  "CONTADO LIBRES",
+  "CONTADO",
   "FINANCIERA",
 ];
 
@@ -218,7 +217,11 @@ function cajaIngreso(valor: number, tipo: string) {
 
 function ocultaFinancieras(servicio: string) {
   const s = servicio.toUpperCase();
-  return s === "CONTADO CLARO" || s === "CONTADO LIBRES";
+  return s === "CONTADO" || s === "CONTADO CLARO" || s === "CONTADO LIBRES";
+}
+
+function esServicioContado(servicio: unknown) {
+  return ocultaFinancieras(String(servicio || ""));
 }
 
 function normalizarTipoIngresoDesdeRegistro(value: string | null | undefined) {
@@ -235,8 +238,14 @@ function tieneMonedaRegistrada(value: unknown) {
 }
 
 function financierasDesdeRegistro(registro: RegistroVentaRelacionado) {
+  if (esServicioContado(registro.plataformaCredito)) {
+    return [];
+  }
+
   if (registro.financierasDetalle.length) {
-    return registro.financierasDetalle;
+    return registro.financierasDetalle.filter(
+      (item) => !esServicioContado(item.plataformaCredito)
+    );
   }
 
   if (!registro.plataformaCredito) {
@@ -459,6 +468,9 @@ export default function NuevaVentaPage() {
         { nombre: "", valor: "" },
         { nombre: "", valor: "" },
       ]);
+      if (esServicioContado(registro.plataformaCredito)) {
+        setServicio("CONTADO");
+      }
     }
   };
 
@@ -1001,32 +1013,51 @@ export default function NuevaVentaPage() {
 
                       <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Financieras registradas
+                          {esServicioContado(registroVendedor.plataformaCredito)
+                            ? "Servicio registrado"
+                            : "Financieras registradas"}
                         </p>
-                        <div className="mt-3 grid gap-3 md:grid-cols-2">
-                          {financierasDesdeRegistro(registroVendedor).map((item, index) => (
-                            <div
-                              key={`${registroVendedor.id}-${item.plataformaCredito}-${index}`}
-                              className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
-                            >
-                              <p className="text-sm font-bold text-slate-900">
-                                {item.plataformaCredito}
-                              </p>
-                              <p className="mt-2 text-sm text-slate-600">
-                                Credito autorizado:{" "}
-                                <span className="font-semibold text-slate-900">
-                                  {formatoPesos(Number(item.creditoAutorizado || 0))}
-                                </span>
-                              </p>
-                              <p className="mt-1 text-sm text-slate-600">
-                                Cuota:{" "}
-                                <span className="font-semibold text-slate-900">
-                                  {formatoPesos(Number(item.valorCuota || 0))}
-                                </span>
-                              </p>
-                            </div>
-                          ))}
-                        </div>
+                        {esServicioContado(registroVendedor.plataformaCredito) ? (
+                          <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                            <p className="text-sm font-bold text-emerald-800">
+                              CONTADO
+                            </p>
+                            <p className="mt-2 text-sm text-slate-600">
+                              Ingreso registrado:{" "}
+                              <span className="font-semibold text-slate-900">
+                                {formatoPesos(
+                                  Number(registroVendedor.medioPago1Valor || 0) +
+                                    Number(registroVendedor.medioPago2Valor || 0)
+                                )}
+                              </span>
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            {financierasDesdeRegistro(registroVendedor).map((item, index) => (
+                              <div
+                                key={`${registroVendedor.id}-${item.plataformaCredito}-${index}`}
+                                className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                              >
+                                <p className="text-sm font-bold text-slate-900">
+                                  {item.plataformaCredito}
+                                </p>
+                                <p className="mt-2 text-sm text-slate-600">
+                                  Credito autorizado:{" "}
+                                  <span className="font-semibold text-slate-900">
+                                    {formatoPesos(Number(item.creditoAutorizado || 0))}
+                                  </span>
+                                </p>
+                                <p className="mt-1 text-sm text-slate-600">
+                                  Cuota:{" "}
+                                  <span className="font-semibold text-slate-900">
+                                    {formatoPesos(Number(item.valorCuota || 0))}
+                                  </span>
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

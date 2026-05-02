@@ -31,6 +31,11 @@ type RegistroAprobacion = {
   estadoFacturacion: string | null;
   estadoVentaRegistro: string | null;
   observacion: string | null;
+  plataformaCredito: string | null;
+  medioPago1Tipo: string | null;
+  medioPago1Valor: string | number | null;
+  medioPago2Tipo: string | null;
+  medioPago2Valor: string | number | null;
   financierasDetalle: FinancieraRegistro[];
 };
 
@@ -60,6 +65,21 @@ function formatMoney(value: string | number | null | undefined) {
   }
 
   return `$ ${parsed.toLocaleString("es-CO")}`;
+}
+
+function esRegistroContado(registro: Pick<RegistroAprobacion, "plataformaCredito">) {
+  const servicio = String(registro.plataformaCredito || "").trim().toUpperCase();
+  return (
+    servicio === "CONTADO" ||
+    servicio === "CONTADO CLARO" ||
+    servicio === "CONTADO LIBRES"
+  );
+}
+
+function totalIngresosRegistro(registro: RegistroAprobacion) {
+  const primero = Number(registro.medioPago1Valor ?? 0);
+  const segundo = Number(registro.medioPago2Valor ?? 0);
+  return (Number.isFinite(primero) ? primero : 0) + (Number.isFinite(segundo) ? segundo : 0);
 }
 
 export default function VentasAprobacionesWorkspace({
@@ -306,18 +326,34 @@ export default function VentasAprobacionesWorkspace({
                         </p>
                       </td>
                       <td className="px-5 py-5">
-                        <div className="space-y-2">
-                          {registro.financierasDetalle.map((item, index) => (
-                            <div key={`${registro.id}-fin-${index}`} className="min-w-48">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                {item.plataformaCredito || `Financiera ${index + 1}`}
-                              </div>
-                              <div className="mt-1 font-semibold text-slate-900">
-                                {formatMoney(item.creditoAutorizado)}
-                              </div>
+                        {esRegistroContado(registro) ? (
+                          <div className="min-w-48">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                              CONTADO
                             </div>
-                          ))}
-                        </div>
+                            <div className="mt-1 font-semibold text-slate-900">
+                              {formatMoney(totalIngresosRegistro(registro))}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {[registro.medioPago1Tipo, registro.medioPago2Tipo]
+                                .filter(Boolean)
+                                .join(" / ") || "Sin detalle"}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {registro.financierasDetalle.map((item, index) => (
+                              <div key={`${registro.id}-fin-${index}`} className="min-w-48">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                  {item.plataformaCredito || `Financiera ${index + 1}`}
+                                </div>
+                                <div className="mt-1 font-semibold text-slate-900">
+                                  {formatMoney(item.creditoAutorizado)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="px-5 py-5">
                         <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">

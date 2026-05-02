@@ -43,6 +43,10 @@ type RegistroResumen = {
   cuotaInicial: number | null;
   valorCuota: number | null;
   numeroCuotas: number | null;
+  medioPago1Tipo: string | null;
+  medioPago1Valor: number | null;
+  medioPago2Tipo: string | null;
+  medioPago2Valor: number | null;
   jaladorNombre: string | null;
   totalFinancieras: number;
   createdAt: string;
@@ -84,6 +88,7 @@ type FinancialFormState = {
 };
 
 type FormState = {
+  servicio: string;
   ciudad: string;
   puntoVenta: string;
   clienteNombre: string;
@@ -111,6 +116,10 @@ type FormState = {
   telefono: string;
   simCardRegistro1: string;
   simCardRegistro2: string;
+  medioPago1Tipo: string;
+  medioPago1Valor: string;
+  medioPago2Tipo: string;
+  medioPago2Valor: string;
   asesorNombre: string;
   jaladorNombre: string;
   firmaClienteDataUrl: string;
@@ -143,6 +152,11 @@ const TIPO_EQUIPO_OPTIONS = [
   { value: "EXHIBICION", label: "EXHIBICION" },
 ] as const;
 
+const SERVICIO_REGISTRO_OPTIONS = [
+  { value: "CONTADO", label: "CONTADO" },
+  { value: "FINANCIERA", label: "FINANCIERA" },
+] as const;
+
 function createEmptyFinanciera(): FinancialFormState {
   return {
     plataformaCredito: "",
@@ -157,6 +171,7 @@ function createEmptyFinanciera(): FinancialFormState {
 
 function createInitialState(session: SessionProps): FormState {
   return {
+    servicio: "",
     ciudad: "",
     puntoVenta: PUNTOS_VENTA_EXCLUIDOS.has(
       String(session.sedeNombre || "").trim().toUpperCase()
@@ -188,6 +203,10 @@ function createInitialState(session: SessionProps): FormState {
     telefono: "",
     simCardRegistro1: "",
     simCardRegistro2: "",
+    medioPago1Tipo: "EFECTIVO",
+    medioPago1Valor: "",
+    medioPago2Tipo: "",
+    medioPago2Valor: "",
     asesorNombre: session.perfilNombre,
     jaladorNombre: "",
     firmaClienteDataUrl: "",
@@ -219,6 +238,11 @@ function formatMoney(value: number | null) {
   }
 
   return `$ ${value.toLocaleString("es-CO")}`;
+}
+
+function moneyInputToNumber(value: string) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
 }
 
 function formatMoneyInputFromStored(value: string | number | null | undefined) {
@@ -256,6 +280,23 @@ function formatDate(value: string) {
 
 function isTextFilled(value: string) {
   return value.trim().length > 0;
+}
+
+function esServicioContado(value: unknown) {
+  const servicio = String(value || "").trim().toUpperCase();
+  return (
+    servicio === "CONTADO" ||
+    servicio === "CONTADO CLARO" ||
+    servicio === "CONTADO LIBRES"
+  );
+}
+
+function esServicioFinanciera(value: unknown) {
+  return String(value || "").trim().toUpperCase() === "FINANCIERA";
+}
+
+function totalIngresosContado(form: Pick<FormState, "medioPago1Valor" | "medioPago2Valor">) {
+  return moneyInputToNumber(form.medioPago1Valor) + moneyInputToNumber(form.medioPago2Valor);
 }
 
 function toDateInputValue(value: string | null | undefined) {
@@ -304,10 +345,16 @@ function mapRegistroToForm(
   session: SessionProps
 ) {
   const nextForm = createInitialState(session);
+  const servicio = esServicioContado(registro.plataformaCredito)
+    ? "CONTADO"
+    : "FINANCIERA";
   const detalleFinancieras =
-    Array.isArray(registro.financierasDetalle) && registro.financierasDetalle.length > 0
+    servicio === "FINANCIERA" &&
+    Array.isArray(registro.financierasDetalle) &&
+    registro.financierasDetalle.length > 0
       ? registro.financierasDetalle
-      : [
+      : servicio === "FINANCIERA"
+        ? [
           {
             plataformaCredito: registro.plataformaCredito,
             creditoAutorizado: registro.creditoAutorizado,
@@ -317,7 +364,8 @@ function mapRegistroToForm(
             numeroCuotas: registro.numeroCuotas,
             frecuenciaCuota: registro.frecuenciaCuota,
           },
-        ];
+        ]
+        : [];
 
   const financierasDetalle = Array.from(
     { length: MAX_FINANCIERAS_REGISTRO },
@@ -342,6 +390,7 @@ function mapRegistroToForm(
   return {
     form: {
       ...nextForm,
+      servicio,
       ciudad: registro.ciudad ?? "",
       puntoVenta: registro.puntoVenta ?? nextForm.puntoVenta,
       clienteNombre: registro.clienteNombre,
@@ -369,6 +418,10 @@ function mapRegistroToForm(
       telefono: registro.telefono ?? "",
       simCardRegistro1: registro.simCardRegistro1 ?? "",
       simCardRegistro2: registro.simCardRegistro2 ?? "",
+      medioPago1Tipo: registro.medioPago1Tipo ?? "EFECTIVO",
+      medioPago1Valor: formatMoneyInputFromStored(registro.medioPago1Valor),
+      medioPago2Tipo: registro.medioPago2Tipo ?? "",
+      medioPago2Valor: formatMoneyInputFromStored(registro.medioPago2Valor),
       asesorNombre: registro.asesorNombre ?? nextForm.asesorNombre,
       jaladorNombre: registro.jaladorNombre ?? "",
       firmaClienteDataUrl: registro.firmaClienteDataUrl ?? "",
@@ -376,7 +429,13 @@ function mapRegistroToForm(
       confirmacionCliente: registro.confirmacionCliente,
       financierasDetalle,
     },
-    financierasVisibles: Math.max(1, Math.min(detalleFinancieras.length, MAX_FINANCIERAS_REGISTRO)),
+    financierasVisibles:
+      servicio === "FINANCIERA"
+        ? Math.max(
+            1,
+            Math.min(detalleFinancieras.length, MAX_FINANCIERAS_REGISTRO)
+          )
+        : 1,
   };
 }
 
@@ -605,6 +664,7 @@ export default function VendedorRegistroWorkspace({
   const [imeiDetalle, setImeiDetalle] = useState("");
   const [signaturePadKey, setSignaturePadKey] = useState(0);
   const [financierasVisibles, setFinancierasVisibles] = useState(1);
+  const [ingresoContado2Visible, setIngresoContado2Visible] = useState(false);
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const [errorCamara, setErrorCamara] = useState("");
   const [registroEditando, setRegistroEditando] =
@@ -637,6 +697,7 @@ export default function VendedorRegistroWorkspace({
     setImeiDetalle("");
     setSignaturePadKey((current) => current + 1);
     setFinancierasVisibles(1);
+    setIngresoContado2Visible(false);
     setRegistroEditando(null);
     setForm((current) => {
       if (preservarContexto) {
@@ -735,6 +796,32 @@ export default function VendedorRegistroWorkspace({
       ...current,
       [field]: value,
     }));
+  };
+
+  const seleccionarServicio = (servicio: string) => {
+    setForm((current) => {
+      if (servicio === "CONTADO") {
+        return {
+          ...current,
+          servicio,
+          financierasDetalle: Array.from(
+            { length: MAX_FINANCIERAS_REGISTRO },
+            createEmptyFinanciera
+          ),
+        };
+      }
+
+      return {
+        ...current,
+        servicio,
+        medioPago1Tipo: "EFECTIVO",
+        medioPago1Valor: "",
+        medioPago2Tipo: "",
+        medioPago2Valor: "",
+      };
+    });
+    setFinancierasVisibles(1);
+    setIngresoContado2Visible(false);
   };
 
   const setFinancieraField = <K extends keyof FinancialFormState>(
@@ -976,6 +1063,9 @@ export default function VendedorRegistroWorkspace({
         setRegistroEditando(registro);
         setForm(mapped.form);
         setFinancierasVisibles(mapped.financierasVisibles);
+        setIngresoContado2Visible(
+          Boolean(mapped.form.medioPago2Tipo || mapped.form.medioPago2Valor)
+        );
         setImeiDetalle(
           [
             registro.referenciaEquipo,
@@ -1010,30 +1100,49 @@ export default function VendedorRegistroWorkspace({
     if (!isTextFilled(form.clienteNombre)) return "El nombre del cliente es obligatorio";
     if (!isTextFilled(form.tipoDocumento)) return "Debes seleccionar el tipo de documento";
     if (!isTextFilled(form.documentoNumero)) return "El documento del cliente es obligatorio";
+    if (!isTextFilled(form.servicio)) return "Selecciona CONTADO o FINANCIERA";
     if (!isTextFilled(form.serialImei) || form.serialImei.length !== 15) {
       return "El IMEI debe tener 15 digitos";
     }
-    if (!isTextFilled(form.referenciaEquipo)) {
-      return "La referencia del equipo es obligatoria";
-    }
-    if (!isTextFilled(form.almacenamiento)) return "El almacenamiento es obligatorio";
-    if (!isTextFilled(form.color)) return "El color es obligatorio";
-    if (!isTextFilled(form.tipoEquipo)) return "Debes seleccionar el tipo de equipo";
-    if (financierasCatalogo.length === 0) {
-      return "No hay financieras creadas en el catalogo comercial";
-    }
 
-    const financierasActivas = form.financierasDetalle.slice(0, financierasVisibles);
-
-    for (let index = 0; index < financierasActivas.length; index += 1) {
-      const item = financierasActivas[index];
-
-      if (index > 0 && !detalleFinancieraTieneDatos(item)) {
-        continue;
+    if (esServicioFinanciera(form.servicio)) {
+      if (!isTextFilled(form.referenciaEquipo)) {
+        return "La referencia del equipo es obligatoria";
+      }
+      if (!isTextFilled(form.almacenamiento)) return "El almacenamiento es obligatorio";
+      if (!isTextFilled(form.color)) return "El color es obligatorio";
+      if (!isTextFilled(form.tipoEquipo)) return "Debes seleccionar el tipo de equipo";
+      if (financierasCatalogo.length === 0) {
+        return "No hay financieras creadas en el catalogo comercial";
       }
 
-      if (!isFinancieraCompleta(item, index)) {
-        return `Todos los campos de la financiera ${index + 1} son obligatorios`;
+      const financierasActivas = form.financierasDetalle.slice(0, financierasVisibles);
+
+      for (let index = 0; index < financierasActivas.length; index += 1) {
+        const item = financierasActivas[index];
+
+        if (index > 0 && !detalleFinancieraTieneDatos(item)) {
+          continue;
+        }
+
+        if (!isFinancieraCompleta(item, index)) {
+          return `Todos los campos de la financiera ${index + 1} son obligatorios`;
+        }
+      }
+    } else if (esServicioContado(form.servicio)) {
+      if (!isTextFilled(form.medioPago1Tipo)) {
+        return "Selecciona el tipo del ingreso contado";
+      }
+      if (moneyInputToNumber(form.medioPago1Valor) <= 0) {
+        return "Registra el valor del ingreso contado";
+      }
+      if (ingresoContado2Visible) {
+        if (!isTextFilled(form.medioPago2Tipo)) {
+          return "Selecciona el tipo del segundo ingreso contado";
+        }
+        if (moneyInputToNumber(form.medioPago2Valor) <= 0) {
+          return "Registra el valor del segundo ingreso contado";
+        }
       }
     }
 
@@ -1045,36 +1154,39 @@ export default function VendedorRegistroWorkspace({
     if (!esWhatsappRegistroValido(form.whatsapp)) {
       return "El WhatsApp debe tener 10 digitos";
     }
-    if (!isTextFilled(form.telefono)) return "El telefono es obligatorio";
-    if (!isTextFilled(form.barrio)) return "El barrio es obligatorio";
-    if (!isTextFilled(form.fechaNacimiento)) {
-      return "La fecha de nacimiento es obligatoria";
-    }
-    if (!isTextFilled(form.fechaExpedicion)) {
-      return "La fecha de expedicion es obligatoria";
-    }
     if (!isTextFilled(form.direccion)) return "La direccion es obligatoria";
-    if (!isTextFilled(form.referenciaFamiliar1Nombre)) {
-      return "La referencia familiar 1 es obligatoria";
-    }
-    if (!isTextFilled(form.referenciaFamiliar1Telefono)) {
-      return "El telefono de la referencia familiar 1 es obligatorio";
-    }
-    if (!isTextFilled(form.referenciaFamiliar2Nombre)) {
-      return "La referencia familiar 2 es obligatoria";
-    }
-    if (!isTextFilled(form.referenciaFamiliar2Telefono)) {
-      return "El telefono de la referencia familiar 2 es obligatorio";
-    }
     if (!isTextFilled(form.simCardRegistro1)) return "El registro SIM 1 es obligatorio";
-    if (!form.aceptaDeclaracionIntermediacion) {
-      return "Debes confirmar el primer texto visible del formato";
-    }
-    if (!form.aceptaPoliticaGarantia) {
-      return "Debes confirmar el segundo texto visible del formato";
-    }
-    if (!form.aceptaCondicionesCredito) {
-      return "Debes confirmar el tercer texto visible del formato";
+
+    if (esServicioFinanciera(form.servicio)) {
+      if (!isTextFilled(form.telefono)) return "El telefono es obligatorio";
+      if (!isTextFilled(form.barrio)) return "El barrio es obligatorio";
+      if (!isTextFilled(form.fechaNacimiento)) {
+        return "La fecha de nacimiento es obligatoria";
+      }
+      if (!isTextFilled(form.fechaExpedicion)) {
+        return "La fecha de expedicion es obligatoria";
+      }
+      if (!isTextFilled(form.referenciaFamiliar1Nombre)) {
+        return "La referencia familiar 1 es obligatoria";
+      }
+      if (!isTextFilled(form.referenciaFamiliar1Telefono)) {
+        return "El telefono de la referencia familiar 1 es obligatorio";
+      }
+      if (!isTextFilled(form.referenciaFamiliar2Nombre)) {
+        return "La referencia familiar 2 es obligatoria";
+      }
+      if (!isTextFilled(form.referenciaFamiliar2Telefono)) {
+        return "El telefono de la referencia familiar 2 es obligatorio";
+      }
+      if (!form.aceptaDeclaracionIntermediacion) {
+        return "Debes confirmar el primer texto visible del formato";
+      }
+      if (!form.aceptaPoliticaGarantia) {
+        return "Debes confirmar el segundo texto visible del formato";
+      }
+      if (!form.aceptaCondicionesCredito) {
+        return "Debes confirmar el tercer texto visible del formato";
+      }
     }
     if (!isTextFilled(form.jaladorNombre)) return "Debes seleccionar el jalador";
     if (!isTextFilled(form.observacion)) return "La observacion es obligatoria";
@@ -1103,9 +1215,19 @@ export default function VendedorRegistroWorkspace({
       const payload = {
         ...form,
         confirmacionCliente: true,
-        financierasDetalle: form.financierasDetalle
-          .slice(0, financierasVisibles)
-          .filter((item, index) => index === 0 || detalleFinancieraTieneDatos(item)),
+        financierasDetalle: esServicioFinanciera(form.servicio)
+          ? form.financierasDetalle
+              .slice(0, financierasVisibles)
+              .filter((item, index) => index === 0 || detalleFinancieraTieneDatos(item))
+          : [],
+        medioPago2Tipo:
+          esServicioContado(form.servicio) && ingresoContado2Visible
+            ? form.medioPago2Tipo
+            : "",
+        medioPago2Valor:
+          esServicioContado(form.servicio) && ingresoContado2Visible
+            ? form.medioPago2Valor
+            : "",
       };
 
       const res = await fetch("/api/vendedor/registros", {
@@ -1146,6 +1268,9 @@ export default function VendedorRegistroWorkspace({
         setRegistroEditando(registro);
         setForm(mapped.form);
         setFinancierasVisibles(mapped.financierasVisibles);
+        setIngresoContado2Visible(
+          Boolean(mapped.form.medioPago2Tipo || mapped.form.medioPago2Valor)
+        );
       } else {
         limpiarFormulario(true);
       }
@@ -1302,6 +1427,32 @@ export default function VendedorRegistroWorkspace({
                   </select>
                 </label>
 
+                <div className="md:col-span-2">
+                  <p className="mb-2 text-sm font-semibold text-slate-700">
+                    Tipo de venta
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {SERVICIO_REGISTRO_OPTIONS.map((option) => {
+                      const active = form.servicio === option.value;
+
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => seleccionarServicio(option.value)}
+                          className={`rounded-2xl border px-4 py-4 text-left text-sm font-black transition ${
+                            active
+                              ? "border-slate-950 bg-slate-950 text-white shadow-sm"
+                              : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Nombre del cliente
                   <input
@@ -1378,59 +1529,65 @@ export default function VendedorRegistroWorkspace({
                   </div>
                 </div>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Referencia
-                  <input
-                    value={form.referenciaEquipo}
-                    onChange={(event) =>
-                      setField("referenciaEquipo", event.target.value)
-                    }
-                    className={inputClass()}
-                    placeholder="Se completa desde el IMEI"
-                  />
-                </label>
+                {esServicioFinanciera(form.servicio) && (
+                  <>
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Referencia
+                      <input
+                        value={form.referenciaEquipo}
+                        onChange={(event) =>
+                          setField("referenciaEquipo", event.target.value)
+                        }
+                        className={inputClass()}
+                        placeholder="Se completa desde el IMEI"
+                      />
+                    </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Almacenamiento
-                  <input
-                    value={form.almacenamiento}
-                    onChange={(event) => setField("almacenamiento", event.target.value)}
-                    className={inputClass()}
-                    placeholder="128 GB"
-                  />
-                </label>
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Almacenamiento
+                      <input
+                        value={form.almacenamiento}
+                        onChange={(event) =>
+                          setField("almacenamiento", event.target.value)
+                        }
+                        className={inputClass()}
+                        placeholder="128 GB"
+                      />
+                    </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Color
-                  <input
-                    value={form.color}
-                    onChange={(event) => setField("color", event.target.value)}
-                    className={inputClass()}
-                    placeholder="Color"
-                  />
-                </label>
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Color
+                      <input
+                        value={form.color}
+                        onChange={(event) => setField("color", event.target.value)}
+                        className={inputClass()}
+                        placeholder="Color"
+                      />
+                    </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Tipo de equipo
-                  <select
-                    value={form.tipoEquipo}
-                    onChange={(event) => setField("tipoEquipo", event.target.value)}
-                    className={inputClass()}
-                  >
-                    <option value="">Selecciona una opcion</option>
-                    {TIPO_EQUIPO_OPTIONS.map((item) => (
-                      <option
-                        key={item.value}
-                        value={item.value}
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Tipo de equipo
+                      <select
+                        value={form.tipoEquipo}
+                        onChange={(event) =>
+                          setField("tipoEquipo", event.target.value)
+                        }
+                        className={inputClass()}
                       >
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                        <option value="">Selecciona una opcion</option>
+                        {TIPO_EQUIPO_OPTIONS.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                )}
               </div>
             </section>
 
+            {esServicioFinanciera(form.servicio) && (
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                 Financieras del tramite
@@ -1655,6 +1812,111 @@ export default function VendedorRegistroWorkspace({
                 </div>
               </div>
             </section>
+            )}
+
+            {esServicioContado(form.servicio) && (
+              <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Ingresos del contado
+                </div>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    Valor ingreso
+                    <input
+                      value={form.medioPago1Valor}
+                      onChange={(event) =>
+                        setField("medioPago1Valor", formatearPesoInput(event.target.value))
+                      }
+                      className={inputClass()}
+                      inputMode="numeric"
+                      placeholder="$ 0"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    Tipo de ingreso
+                    <select
+                      value={form.medioPago1Tipo}
+                      onChange={(event) => setField("medioPago1Tipo", event.target.value)}
+                      className={inputClass()}
+                    >
+                      {MEDIOS_PAGO_REGISTRO_VENTA.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                      Total contado
+                    </p>
+                    <p className="mt-2 text-xl font-black text-emerald-700">
+                      {formatMoney(totalIngresosContado(form))}
+                    </p>
+                  </div>
+                </div>
+
+                {!ingresoContado2Visible ? (
+                  <button
+                    type="button"
+                    onClick={() => setIngresoContado2Visible(true)}
+                    className="mt-4 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                  >
+                    Agregar segundo ingreso
+                  </button>
+                ) : (
+                  <div className="mt-4 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Segundo valor
+                        <input
+                          value={form.medioPago2Valor}
+                          onChange={(event) =>
+                            setField("medioPago2Valor", formatearPesoInput(event.target.value))
+                          }
+                          className={inputClass()}
+                          inputMode="numeric"
+                          placeholder="$ 0"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Tipo segundo ingreso
+                        <select
+                          value={form.medioPago2Tipo}
+                          onChange={(event) =>
+                            setField("medioPago2Tipo", event.target.value)
+                          }
+                          className={inputClass()}
+                        >
+                          <option value="">Selecciona una opcion</option>
+                          {MEDIOS_PAGO_REGISTRO_VENTA.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIngresoContado2Visible(false);
+                        setField("medioPago2Tipo", "");
+                        setField("medioPago2Valor", "");
+                      }}
+                      className="mt-4 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                    >
+                      Quitar segundo ingreso
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
 
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
@@ -1689,51 +1951,55 @@ export default function VendedorRegistroWorkspace({
                     />
                   </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Telefono
-                  <input
-                    value={form.telefono}
-                    onChange={(event) =>
-                      setField("telefono", onlyDigits(event.target.value))
-                    }
-                    className={inputClass()}
-                    placeholder="Telefono principal"
-                  />
-                </label>
+                {esServicioFinanciera(form.servicio) && (
+                  <>
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Telefono
+                      <input
+                        value={form.telefono}
+                        onChange={(event) =>
+                          setField("telefono", onlyDigits(event.target.value))
+                        }
+                        className={inputClass()}
+                        placeholder="Telefono principal"
+                      />
+                    </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Barrio
-                  <input
-                    value={form.barrio}
-                    onChange={(event) => setField("barrio", event.target.value)}
-                    className={inputClass()}
-                    placeholder="Barrio"
-                  />
-                </label>
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Barrio
+                      <input
+                        value={form.barrio}
+                        onChange={(event) => setField("barrio", event.target.value)}
+                        className={inputClass()}
+                        placeholder="Barrio"
+                      />
+                    </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Fecha de nacimiento
-                  <input
-                    type="date"
-                    value={form.fechaNacimiento}
-                    onChange={(event) =>
-                      setField("fechaNacimiento", event.target.value)
-                    }
-                    className={inputClass()}
-                  />
-                </label>
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Fecha de nacimiento
+                      <input
+                        type="date"
+                        value={form.fechaNacimiento}
+                        onChange={(event) =>
+                          setField("fechaNacimiento", event.target.value)
+                        }
+                        className={inputClass()}
+                      />
+                    </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Fecha de expedicion
-                  <input
-                    type="date"
-                    value={form.fechaExpedicion}
-                    onChange={(event) =>
-                      setField("fechaExpedicion", event.target.value)
-                    }
-                    className={inputClass()}
-                  />
-                </label>
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Fecha de expedicion
+                      <input
+                        type="date"
+                        value={form.fechaExpedicion}
+                        onChange={(event) =>
+                          setField("fechaExpedicion", event.target.value)
+                        }
+                        className={inputClass()}
+                      />
+                    </label>
+                  </>
+                )}
 
                 <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Direccion
@@ -1745,66 +2011,68 @@ export default function VendedorRegistroWorkspace({
                   />
                 </label>
 
-                <div className="md:col-span-2 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-bold text-slate-900">
-                    Referencias familiares
-                  </p>
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Referencia familiar 1
-                      <input
-                        value={form.referenciaFamiliar1Nombre}
-                        onChange={(event) =>
-                          setField("referenciaFamiliar1Nombre", event.target.value)
-                        }
-                        className={inputClass()}
-                        placeholder="Nombre completo"
-                      />
-                    </label>
+                {esServicioFinanciera(form.servicio) && (
+                  <div className="md:col-span-2 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-sm font-bold text-slate-900">
+                      Referencias familiares
+                    </p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Referencia familiar 1
+                        <input
+                          value={form.referenciaFamiliar1Nombre}
+                          onChange={(event) =>
+                            setField("referenciaFamiliar1Nombre", event.target.value)
+                          }
+                          className={inputClass()}
+                          placeholder="Nombre completo"
+                        />
+                      </label>
 
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Telefono referencia 1
-                      <input
-                        value={form.referenciaFamiliar1Telefono}
-                        onChange={(event) =>
-                          setField(
-                            "referenciaFamiliar1Telefono",
-                            onlyDigits(event.target.value)
-                          )
-                        }
-                        className={inputClass()}
-                        placeholder="Telefono"
-                      />
-                    </label>
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Telefono referencia 1
+                        <input
+                          value={form.referenciaFamiliar1Telefono}
+                          onChange={(event) =>
+                            setField(
+                              "referenciaFamiliar1Telefono",
+                              onlyDigits(event.target.value)
+                            )
+                          }
+                          className={inputClass()}
+                          placeholder="Telefono"
+                        />
+                      </label>
 
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Referencia familiar 2
-                      <input
-                        value={form.referenciaFamiliar2Nombre}
-                        onChange={(event) =>
-                          setField("referenciaFamiliar2Nombre", event.target.value)
-                        }
-                        className={inputClass()}
-                        placeholder="Nombre completo"
-                      />
-                    </label>
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Referencia familiar 2
+                        <input
+                          value={form.referenciaFamiliar2Nombre}
+                          onChange={(event) =>
+                            setField("referenciaFamiliar2Nombre", event.target.value)
+                          }
+                          className={inputClass()}
+                          placeholder="Nombre completo"
+                        />
+                      </label>
 
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Telefono referencia 2
-                      <input
-                        value={form.referenciaFamiliar2Telefono}
-                        onChange={(event) =>
-                          setField(
-                            "referenciaFamiliar2Telefono",
-                            onlyDigits(event.target.value)
-                          )
-                        }
-                        className={inputClass()}
-                        placeholder="Telefono"
-                      />
-                    </label>
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Telefono referencia 2
+                        <input
+                          value={form.referenciaFamiliar2Telefono}
+                          onChange={(event) =>
+                            setField(
+                              "referenciaFamiliar2Telefono",
+                              onlyDigits(event.target.value)
+                            )
+                          }
+                          className={inputClass()}
+                          placeholder="Telefono"
+                        />
+                      </label>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Registro SIM 1
@@ -1818,52 +2086,58 @@ export default function VendedorRegistroWorkspace({
                   />
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Registro SIM 2
-                  <input
-                    value={form.simCardRegistro2}
-                    onChange={(event) =>
-                      setField("simCardRegistro2", event.target.value)
-                    }
-                    className={inputClass()}
-                    placeholder="Opcional"
-                  />
-                </label>
+                {esServicioFinanciera(form.servicio) && (
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    Registro SIM 2
+                    <input
+                      value={form.simCardRegistro2}
+                      onChange={(event) =>
+                        setField("simCardRegistro2", event.target.value)
+                      }
+                      className={inputClass()}
+                      placeholder="Opcional"
+                    />
+                  </label>
+                )}
               </div>
             </section>
 
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Texto visible al cliente
+                {esServicioFinanciera(form.servicio)
+                  ? "Texto visible al cliente"
+                  : "Firma y entrega"}
               </div>
 
-              <div className="mt-6 space-y-4">
-                {TEXTOS_VISIBLES_CLIENTE.map((texto, index) => {
-                  const field: ConsentField =
-                    index === 0
-                      ? "aceptaDeclaracionIntermediacion"
-                      : index === 1
-                        ? "aceptaPoliticaGarantia"
-                        : "aceptaCondicionesCredito";
+              {esServicioFinanciera(form.servicio) && (
+                <div className="mt-6 space-y-4">
+                  {TEXTOS_VISIBLES_CLIENTE.map((texto, index) => {
+                    const field: ConsentField =
+                      index === 0
+                        ? "aceptaDeclaracionIntermediacion"
+                        : index === 1
+                          ? "aceptaPoliticaGarantia"
+                          : "aceptaCondicionesCredito";
 
-                  return (
-                    <label
-                      key={field}
-                      className="flex items-start gap-4 rounded-[26px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={form[field]}
-                        onChange={(event) =>
-                          setField(field, event.target.checked)
-                        }
-                        className="mt-1 h-4 w-4"
-                      />
-                      <span className="leading-6">{texto}</span>
-                    </label>
-                  );
-                })}
-              </div>
+                    return (
+                      <label
+                        key={field}
+                        className="flex items-start gap-4 rounded-[26px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={form[field]}
+                          onChange={(event) =>
+                            setField(field, event.target.checked)
+                          }
+                          className="mt-1 h-4 w-4"
+                        />
+                        <span className="leading-6">{texto}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.92fr)]">
                 <SignaturePad
@@ -2020,6 +2294,15 @@ export default function VendedorRegistroWorkspace({
               <div className="mt-5 space-y-3 text-sm text-slate-700">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Tipo
+                  </span>
+                  <span className="mt-1 block font-semibold text-slate-900">
+                    {form.servicio || "Pendiente"}
+                  </span>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
                     Punto de venta
                   </span>
                   <span className="mt-1 block font-semibold text-slate-900">
@@ -2054,15 +2337,25 @@ export default function VendedorRegistroWorkspace({
                   </span>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
-                    Financieras cargadas
-                  </span>
-                  <span className="mt-1 block font-semibold text-slate-900">
-                    {financierasVisibles}{" "}
-                    / {MAX_FINANCIERAS_REGISTRO}
-                  </span>
-                </div>
+                {esServicioContado(form.servicio) ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                    <span className="block text-xs uppercase tracking-[0.18em] text-emerald-700">
+                      Ingresos
+                    </span>
+                    <span className="mt-1 block font-semibold text-emerald-800">
+                      {formatMoney(totalIngresosContado(form))}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
+                      Financieras cargadas
+                    </span>
+                    <span className="mt-1 block font-semibold text-slate-900">
+                      {financierasVisibles} / {MAX_FINANCIERAS_REGISTRO}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <button
@@ -2110,7 +2403,10 @@ export default function VendedorRegistroWorkspace({
                           {registro.clienteNombre}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                          {registro.puntoVenta || "Sin punto"} | {registro.plataformaCredito}
+                          {registro.puntoVenta || "Sin punto"} |{" "}
+                          {esServicioContado(registro.plataformaCredito)
+                            ? "CONTADO"
+                            : registro.plataformaCredito}
                         </p>
                       </div>
 
@@ -2123,15 +2419,35 @@ export default function VendedorRegistroWorkspace({
                       <span>IMEI: {registro.serialImei || "Sin IMEI"}</span>
                       <span>Referencia: {registro.referenciaEquipo || "Sin referencia"}</span>
                       <span>Jalador: {registro.jaladorNombre || "Sin jalador"}</span>
-                      <span>
-                        Credito: {formatMoney(registro.creditoAutorizado)} | Inicial:{" "}
-                        {formatMoney(registro.cuotaInicial)}
-                      </span>
-                      <span>
-                        Cuota: {formatMoney(registro.valorCuota)} | Plazo:{" "}
-                        {registro.numeroCuotas || 0}
-                      </span>
-                      <span>Financieras: {registro.totalFinancieras || 1}</span>
+                      {esServicioContado(registro.plataformaCredito) ? (
+                        <>
+                          <span>
+                            Ingreso:{" "}
+                            {formatMoney(
+                              (registro.medioPago1Valor ?? 0) +
+                                (registro.medioPago2Valor ?? 0)
+                            )}
+                          </span>
+                          <span>
+                            Detalle:{" "}
+                            {[registro.medioPago1Tipo, registro.medioPago2Tipo]
+                              .filter(Boolean)
+                              .join(" / ") || "Sin detalle"}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span>
+                            Credito: {formatMoney(registro.creditoAutorizado)} | Inicial:{" "}
+                            {formatMoney(registro.cuotaInicial)}
+                          </span>
+                          <span>
+                            Cuota: {formatMoney(registro.valorCuota)} | Plazo:{" "}
+                            {registro.numeroCuotas || 0}
+                          </span>
+                          <span>Financieras: {registro.totalFinancieras || 1}</span>
+                        </>
+                      )}
                       <span>{formatDate(registro.createdAt)}</span>
                     </div>
                   </article>
