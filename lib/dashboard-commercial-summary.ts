@@ -109,6 +109,7 @@ export async function getMonthlyCommercialSummary(options?: {
       select: {
         jalador: true,
         cerrador: true,
+        comision: true,
         financierasDetalle: true,
         alcanos: true,
         payjoy: true,
@@ -170,7 +171,7 @@ export async function getMonthlyCommercialSummary(options?: {
       if (isSedeJalador(venta.jalador)) {
         pushRanking(sedesJalador, venta.jalador);
       } else {
-        pushRanking(jaladores, venta.jalador);
+        pushRanking(jaladores, venta.jalador, n(venta.comision));
       }
     }
 

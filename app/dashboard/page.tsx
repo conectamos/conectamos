@@ -113,13 +113,22 @@ function CommercialRankingPanel({
   items,
   countLabel,
   showAmount = false,
+  showCommissionToggle = false,
 }: {
   title: string;
   accent: string;
   items: CommercialRankingItem[];
   countLabel: string;
   showAmount?: boolean;
+  showCommissionToggle?: boolean;
 }) {
+  const countText = (total: number) => {
+    if (countLabel === "uso") {
+      return total === 1 ? "uso" : "usos";
+    }
+
+    return total === 1 ? "venta" : "ventas";
+  };
   const topItems = items.slice(0, 5);
   const renderItems = (rankingItems: CommercialRankingItem[]) =>
     rankingItems.map((item, index) => (
@@ -155,21 +164,48 @@ function CommercialRankingPanel({
       </div>
     ));
 
-  const countText = (total: number) => {
-    if (countLabel === "uso") {
-      return total === 1 ? "uso" : "usos";
-    }
-
-    return total === 1 ? "venta" : "ventas";
-  };
-
   return (
     <div className="rounded-[26px] border border-[#ebe4d7] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-black tracking-tight text-slate-950">
           {title}
         </p>
-        <span className={["h-2.5 w-2.5 rounded-full", accent].join(" ")} />
+        <div className="flex items-center gap-2">
+          {showCommissionToggle && (
+            <details className="relative">
+              <summary className="flex cursor-pointer list-none items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700 transition hover:bg-emerald-100 [&::-webkit-details-marker]:hidden">
+                Comisiones
+              </summary>
+              <div className="absolute right-0 z-20 mt-2 max-h-80 w-72 overflow-auto rounded-2xl border border-[#e6ddcf] bg-white p-3 shadow-[0_18px_55px_rgba(15,23,42,0.16)]">
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  Comisiones recibidas
+                </p>
+                <div className="space-y-2">
+                  {items.length === 0 ? (
+                    <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                      Sin comisiones registradas.
+                    </p>
+                  ) : (
+                    items.map((item) => (
+                      <div
+                        key={`comision-${item.nombre}`}
+                        className="flex items-center justify-between gap-3 rounded-xl bg-[#fcfbf8] px-3 py-2"
+                      >
+                        <span className="truncate text-xs font-bold text-slate-800">
+                          {item.nombre}
+                        </span>
+                        <span className="shrink-0 text-xs font-black text-emerald-700">
+                          {formatoPesos(item.monto)}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </details>
+          )}
+          <span className={["h-2.5 w-2.5 rounded-full", accent].join(" ")} />
+        </div>
       </div>
 
       <details className="group mt-4">
@@ -188,6 +224,9 @@ function CommercialRankingPanel({
         </div>
 
         <div className="mt-3 space-y-3 group-open:hidden">
+          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+            Top 5
+          </p>
           {items.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-[#e6ddcf] bg-[#fcfaf6] px-4 py-4 text-sm text-slate-500">
               Sin movimientos registrados en este periodo.
@@ -243,25 +282,26 @@ function CommercialRankingSection({
 
       <div className="mt-6 grid gap-4 xl:grid-cols-4">
         <CommercialRankingPanel
-          title="Top 5 SEDES"
+          title="Ventas SEDE"
           accent="bg-sky-500"
           items={topSedesJalador}
           countLabel="venta"
         />
         <CommercialRankingPanel
-          title="Top 5 Jalador"
+          title="Ventas Jalador"
           accent="bg-sky-500"
           items={topJaladores}
           countLabel="venta"
+          showCommissionToggle
         />
         <CommercialRankingPanel
-          title="Top 5 cerrador"
+          title="Ventas Cerrador"
           accent="bg-rose-500"
           items={topCerradores}
           countLabel="venta"
         />
         <CommercialRankingPanel
-          title="Top 5 financieras mas usadas"
+          title="Ventas Financieras"
           accent="bg-amber-500"
           items={topFinancieras}
           countLabel="uso"
