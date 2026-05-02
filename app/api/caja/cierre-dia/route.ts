@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
-import * as XLSX from "xlsx";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
@@ -39,6 +39,16 @@ const SERVER_DIR_FONT_REGULAR = path.join(
   "pdf-fonts",
   "Geist-Regular.ttf"
 );
+const BRAND_LOGO_PATHS = [
+  path.join(process.cwd(), "public", "branding", "conectamos-logo.png"),
+  path.join(process.cwd(), ".next", "standalone", "public", "branding", "conectamos-logo.png"),
+  path.join(
+    path.dirname(process.argv[1] || process.cwd()),
+    "public",
+    "branding",
+    "conectamos-logo.png"
+  ),
+];
 
 type PdfFonts = {
   regular: string;
@@ -76,6 +86,14 @@ type SaleTableRow = {
   caja: number;
 };
 
+type CompactColumn = {
+  key: string;
+  title: string;
+  width: number;
+  align?: "left" | "right";
+  tone?: "neutral" | "money" | "danger" | "financial";
+};
+
 function getPdfFonts(): PdfFonts {
   if (existsSync(SYSTEM_FONT_REGULAR) && existsSync(SYSTEM_FONT_BOLD)) {
     return {
@@ -101,6 +119,10 @@ function getPdfFonts(): PdfFonts {
     regular: BUNDLED_FONT_REGULAR,
     bold: BUNDLED_FONT_REGULAR,
   };
+}
+
+function getBrandLogoPath() {
+  return BRAND_LOGO_PATHS.find((logoPath) => existsSync(logoPath));
 }
 
 function toBuffer(doc: PDFKit.PDFDocument) {
@@ -131,6 +153,18 @@ function n(value: unknown) {
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
+}
+
+function formatoPesosCompacto(valor: number) {
+  const absValue = Math.abs(Number(valor || 0));
+
+  if (absValue >= 1_000_000) {
+    return `$ ${(Number(valor || 0) / 1_000_000).toLocaleString("es-CO", {
+      maximumFractionDigits: 1,
+    })} M`;
+  }
+
+  return formatoPesos(valor);
 }
 
 function textoLimpio(value: unknown) {
@@ -328,13 +362,45 @@ function moneyCell(value: number) {
   return value ? value : null;
 }
 
-function buildExcelCierreTabla(params: {
+function buildTrialTotals(rows: SaleTableRow[], movimientos: CashMovementRow[]) {
+  const totalFinancieras = rows.reduce(
+    (acc, row) =>
+      acc +
+      Object.values(row.financieras).reduce(
+        (finAcc, value) => finAcc + Number(value || 0),
+        0
+      ),
+    0
+  );
+  const ingresosCaja = movimientos
+    .filter((movimiento) => movimiento.tipo.toUpperCase() === "INGRESO")
+    .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0);
+  const egresosCaja = movimientos
+    .filter((movimiento) => movimiento.tipo.toUpperCase() === "EGRESO")
+    .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0);
+
+  return {
+    ventas: rows.length,
+    ingresos: rows.reduce((acc, row) => acc + Number(row.ingresos || 0), 0),
+    financieras: totalFinancieras,
+    utilidad: rows.reduce((acc, row) => acc + Number(row.utilidad || 0), 0),
+    comision: rows.reduce((acc, row) => acc + Number(row.comision || 0), 0),
+    salida: rows.reduce((acc, row) => acc + Number(row.salida || 0), 0),
+    caja: rows.reduce((acc, row) => acc + Number(row.caja || 0), 0),
+    ingresosCaja,
+    egresosCaja,
+    cajaNeta: ingresosCaja - egresosCaja,
+  };
+}
+
+async function buildExcelCierreTabla(params: {
   periodoKey: string;
   cobertura: string;
   rows: SaleTableRow[];
   financieras: string[];
   movimientos: CashMovementRow[];
 }) {
+  const totals = buildTrialTotals(params.rows, params.movimientos);
   const headers = [
     "# VENTA",
     "SERVICIO",
@@ -349,61 +415,308 @@ function buildExcelCierreTabla(params: {
     "SALIDA",
     "CAJA",
   ];
-  const ventasRows = params.rows.map((row) => [
-    row.venta,
-    row.servicio,
-    row.imei,
-    row.jalador,
-    moneyCell(row.ingresos),
-    row.detalleIngresos,
-    ...params.financieras.map((nombre) => moneyCell(row.financieras[nombre] || 0)),
-    moneyCell(row.utilidad),
-    row.vendedor,
-    moneyCell(row.comision),
-    moneyCell(row.salida),
-    moneyCell(row.caja),
-  ]);
-  const cajaHeaders = ["TIPO", "CONCEPTO", "SEDE", "VALOR"];
-  const cajaRows = params.movimientos.map((movimiento) => [
-    movimiento.tipo,
-    movimiento.concepto,
-    movimiento.sedeNombre,
-    moneyCell(movimiento.valor),
-  ]);
 
-  const worksheet = XLSX.utils.aoa_to_sheet([
-    [`CIERRE DEL DIA - ${params.periodoKey} - ${params.cobertura}`],
-    [],
-    headers,
-    ...ventasRows,
-    [],
-    ["INGRESOS Y EGRESOS DE CAJA"],
-    cajaHeaders,
-    ...cajaRows,
-  ]);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "CONECTAMOS.APP";
+  workbook.created = new Date();
+  workbook.modified = new Date();
 
-  worksheet["!cols"] = headers.map((header) => ({
-    wch:
+  const worksheet = workbook.addWorksheet("Cierre del dia", {
+    properties: {
+      defaultRowHeight: 20,
+    },
+    views: [
+      {
+        state: "frozen",
+        ySplit: 8,
+        showGridLines: false,
+      },
+    ],
+  });
+  const totalColumns = headers.length;
+  const moneyHeaders = new Set([
+    "INGRESOS",
+    ...params.financieras,
+    "UTILIDAD",
+    "COMISION",
+    "SALIDA",
+    "CAJA",
+    "VALOR",
+  ]);
+  const logoPath = getBrandLogoPath();
+
+  worksheet.columns = headers.map((header) => ({
+    key: header,
+    width:
       header === "DETALLES DE INGRESO"
-        ? 28
+        ? 32
         : header === "IMEI"
-          ? 18
-          : header.length < 9
-            ? 14
-            : 18,
+          ? 19
+          : header === "SERVICIO"
+            ? 22
+            : header.length < 9
+              ? 14
+              : 17,
   }));
 
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Cierre del dia");
+  worksheet.mergeCells(1, 3, 1, totalColumns);
+  worksheet.mergeCells(2, 3, 2, totalColumns);
+  worksheet.mergeCells(3, 3, 3, totalColumns);
+  worksheet.mergeCells(4, 3, 4, totalColumns);
+  worksheet.getCell(1, 3).value = "CONECTAMOS FINAN SERVICES S.A.S";
+  worksheet.getCell(2, 3).value = "CIERRE DEL DIA";
+  worksheet.getCell(3, 3).value = `${params.periodoKey} | ${params.cobertura}`;
+  worksheet.getCell(4, 3).value =
+    "Vista de prueba con ventas, financieras activas y caja del dia.";
 
-  return XLSX.write(workbook, {
-    type: "buffer",
-    bookType: "xlsx",
-  }) as Buffer;
+  [1, 2, 3, 4].forEach((rowNumber) => {
+    const row = worksheet.getRow(rowNumber);
+    row.height = rowNumber === 2 ? 28 : 22;
+    row.eachCell((cell) => {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: rowNumber === 2 ? "FF111827" : "FFF8FAFC" },
+      };
+      cell.font = {
+        bold: rowNumber <= 2,
+        color: { argb: rowNumber === 2 ? "FFFFFFFF" : "FF0F172A" },
+        size: rowNumber === 2 ? 18 : 11,
+      };
+      cell.alignment = { vertical: "middle" };
+    });
+  });
+
+  if (logoPath) {
+    const logoId = workbook.addImage({
+      filename: logoPath,
+      extension: "png",
+    });
+    worksheet.addImage(logoId, {
+      tl: { col: 0.15, row: 0.2 },
+      ext: { width: 92, height: 92 },
+    });
+  }
+
+  const metricLabels = [
+    ["VENTAS", totals.ventas],
+    ["INGRESOS", totals.ingresos],
+    ["FINANCIERAS", totals.financieras],
+    ["UTILIDAD", totals.utilidad],
+    ["CAJA NETA", totals.cajaNeta],
+  ];
+  const metricRow = worksheet.getRow(6);
+  metricRow.height = 28;
+  metricLabels.forEach(([label, value], index) => {
+    const labelCell = worksheet.getCell(6, index * 2 + 1);
+    const valueCell = worksheet.getCell(6, index * 2 + 2);
+    labelCell.value = label;
+    valueCell.value = value;
+    labelCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFEFF6FF" },
+    };
+    valueCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFFFFFF" },
+    };
+    labelCell.font = { bold: true, color: { argb: "FF1E3A5F" }, size: 9 };
+    valueCell.font = { bold: true, color: { argb: "FF0F172A" }, size: 11 };
+    valueCell.numFmt =
+      label === "VENTAS" ? "0" : '"$"#,##0;[Red]-"$"#,##0';
+    labelCell.alignment = { horizontal: "center", vertical: "middle" };
+    valueCell.alignment = { horizontal: "center", vertical: "middle" };
+    [labelCell, valueCell].forEach((cell) => {
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFD7E3F2" } },
+        left: { style: "thin", color: { argb: "FFD7E3F2" } },
+        bottom: { style: "thin", color: { argb: "FFD7E3F2" } },
+        right: { style: "thin", color: { argb: "FFD7E3F2" } },
+      };
+    });
+  });
+
+  worksheet.addRow([]);
+  const headerRow = worksheet.addRow(headers);
+  headerRow.height = 25;
+  headerRow.eachCell((cell) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF111827" },
+    };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 9 };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FF111827" } },
+      left: { style: "thin", color: { argb: "FF334155" } },
+      bottom: { style: "thin", color: { argb: "FF111827" } },
+      right: { style: "thin", color: { argb: "FF334155" } },
+    };
+  });
+
+  params.rows.forEach((saleRow, index) => {
+    const row = worksheet.addRow([
+      saleRow.venta,
+      saleRow.servicio,
+      saleRow.imei,
+      saleRow.jalador,
+      moneyCell(saleRow.ingresos),
+      saleRow.detalleIngresos,
+      ...params.financieras.map((nombre) =>
+        moneyCell(saleRow.financieras[nombre] || 0)
+      ),
+      moneyCell(saleRow.utilidad),
+      saleRow.vendedor,
+      moneyCell(saleRow.comision),
+      moneyCell(saleRow.salida),
+      moneyCell(saleRow.caja),
+    ]);
+    row.height = 22;
+    row.eachCell((cell, colNumber) => {
+      const header = headers[colNumber - 1];
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: index % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC" },
+      };
+      cell.font = {
+        color: { argb: header === "SALIDA" ? "FFB91C1C" : "FF0F172A" },
+        size: 9,
+      };
+      cell.alignment = {
+        horizontal: moneyHeaders.has(header) ? "right" : "left",
+        vertical: "middle",
+        wrapText: header === "DETALLES DE INGRESO",
+      };
+      cell.border = {
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+
+      if (moneyHeaders.has(header)) {
+        cell.numFmt = '"$"#,##0;[Red]-"$"#,##0';
+      }
+    });
+  });
+
+  const totalsRow = worksheet.addRow([
+    "TOTALES",
+    "",
+    "",
+    "",
+    totals.ingresos,
+    "",
+    ...params.financieras.map((nombre) =>
+      params.rows.reduce(
+        (acc, row) => acc + Number(row.financieras[nombre] || 0),
+        0
+      )
+    ),
+    totals.utilidad,
+    "",
+    totals.comision,
+    totals.salida,
+    totals.caja,
+  ]);
+  totalsRow.height = 24;
+  totalsRow.eachCell((cell, colNumber) => {
+    const header = headers[colNumber - 1];
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFFFBEB" },
+    };
+    cell.font = { bold: true, color: { argb: "FF78350F" }, size: 9 };
+    cell.alignment = {
+      horizontal: moneyHeaders.has(header) ? "right" : "left",
+      vertical: "middle",
+    };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFF59E0B" } },
+      bottom: { style: "thin", color: { argb: "FFF59E0B" } },
+    };
+    if (moneyHeaders.has(header)) {
+      cell.numFmt = '"$"#,##0;[Red]-"$"#,##0';
+    }
+  });
+
+  worksheet.addRow([]);
+  const cajaTitleRow = worksheet.addRow(["INGRESOS Y EGRESOS DE CAJA"]);
+  worksheet.mergeCells(cajaTitleRow.number, 1, cajaTitleRow.number, 4);
+  cajaTitleRow.height = 24;
+  cajaTitleRow.eachCell((cell) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF7F1D1D" },
+    };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    cell.alignment = { vertical: "middle" };
+  });
+
+  const cajaHeaderRow = worksheet.addRow(["TIPO", "CONCEPTO", "SEDE", "VALOR"]);
+  cajaHeaderRow.eachCell((cell) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFF3F4F6" },
+    };
+    cell.font = { bold: true, color: { argb: "FF111827" }, size: 9 };
+    cell.border = {
+      bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+    };
+  });
+
+  params.movimientos.forEach((movimiento) => {
+    const row = worksheet.addRow([
+      movimiento.tipo,
+      movimiento.concepto,
+      movimiento.sedeNombre,
+      moneyCell(movimiento.valor),
+    ]);
+    row.eachCell((cell, colNumber) => {
+      cell.font = {
+        color: {
+          argb:
+            movimiento.tipo.toUpperCase() === "EGRESO"
+              ? "FFB91C1C"
+              : "FF047857",
+        },
+        size: 9,
+      };
+      cell.alignment = {
+        horizontal: colNumber === 4 ? "right" : "left",
+        vertical: "middle",
+      };
+      cell.border = {
+        bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+      };
+      if (colNumber === 4) {
+        cell.numFmt = '"$"#,##0;[Red]-"$"#,##0';
+      }
+    });
+  });
+
+  worksheet.autoFilter = {
+    from: { row: headerRow.number, column: 1 },
+    to: { row: headerRow.number, column: totalColumns },
+  };
+  worksheet.pageSetup = {
+    orientation: "landscape",
+    paperSize: 5,
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+  };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }
 
 function fitColumns(
-  columns: Array<{ key: string; title: string; width: number; align?: "left" | "right" }>,
+  columns: CompactColumn[],
   availableWidth: number
 ) {
   const totalWidth = columns.reduce((acc, column) => acc + column.width, 0);
@@ -417,16 +730,27 @@ function fitColumns(
 
 function drawCompactTableHeader(
   doc: PDFKit.PDFDocument,
-  columns: Array<{ key: string; title: string; width: number; align?: "left" | "right" }>,
+  columns: CompactColumn[],
   y: number,
   x: number,
   fonts: PdfFonts
 ) {
   let cursorX = x;
 
-  doc.rect(x, y, columns.reduce((acc, column) => acc + column.width, 0), 24).fill("#111827");
-
   for (const column of columns) {
+    const fillColor =
+      column.tone === "financial"
+        ? "#1e3a8a"
+        : column.tone === "danger"
+          ? "#7f1d1d"
+          : column.tone === "money"
+            ? "#065f46"
+            : "#111827";
+
+    doc
+      .rect(cursorX, y, column.width, 24)
+      .fillAndStroke(fillColor, "#334155");
+
     doc
       .fillColor("#ffffff")
       .font(fonts.bold)
@@ -444,23 +768,37 @@ function drawCompactTableHeader(
 
 function drawCompactRow(
   doc: PDFKit.PDFDocument,
-  columns: Array<{ key: string; title: string; width: number; align?: "left" | "right" }>,
+  columns: CompactColumn[],
   values: Record<string, string>,
   y: number,
   x: number,
   rowHeight: number,
-  fonts: PdfFonts
+  fonts: PdfFonts,
+  options?: { index?: number }
 ) {
   let cursorX = x;
+  const rowFill =
+    options?.index !== undefined && options.index % 2 === 1
+      ? "#f8fafc"
+      : "#ffffff";
 
   doc
     .rect(x, y, columns.reduce((acc, column) => acc + column.width, 0), rowHeight)
-    .fillAndStroke("#ffffff", "#e5e7eb");
+    .fillAndStroke(rowFill, "#e5e7eb");
 
   for (const column of columns) {
+    const toneColor =
+      column.tone === "danger"
+        ? "#b91c1c"
+        : column.tone === "financial"
+          ? "#1d4ed8"
+          : column.tone === "money"
+            ? "#047857"
+            : "#0f172a";
+
     doc
-      .fillColor("#0f172a")
-      .font(fonts.regular)
+      .fillColor(toneColor)
+      .font(column.tone ? fonts.bold : fonts.regular)
       .fontSize(5.9)
       .text(values[column.key] || "-", cursorX + 2, y + 5, {
         width: Math.max(8, column.width - 4),
@@ -495,6 +833,8 @@ async function buildPdfCierreTabla(params: {
   const bufferPromise = toBuffer(doc);
   const contentWidth = doc.page.width - 44;
   const tableX = 22;
+  const logoPath = getBrandLogoPath();
+  const totals = buildTrialTotals(params.rows, params.movimientos);
 
   const columns = fitColumns(
     [
@@ -502,36 +842,125 @@ async function buildPdfCierreTabla(params: {
       { key: "servicio", title: "SERVICIO", width: 72 },
       { key: "imei", title: "IMEI", width: 84 },
       { key: "jalador", title: "JALADOR", width: 68 },
-      { key: "ingresos", title: "INGRESOS", width: 62, align: "right" },
+      { key: "ingresos", title: "INGRESOS", width: 62, align: "right", tone: "money" },
       { key: "detalleIngresos", title: "DETALLES DE INGRESO", width: 118 },
       ...params.financieras.map((nombre) => ({
         key: `fin_${nombre}`,
         title: nombre,
         width: 58,
         align: "right" as const,
+        tone: "financial" as const,
       })),
-      { key: "utilidad", title: "UTILIDAD", width: 62, align: "right" },
+      { key: "utilidad", title: "UTILIDAD", width: 62, align: "right", tone: "money" },
       { key: "vendedor", title: "VENDEDOR", width: 68 },
-      { key: "comision", title: "COMISION", width: 58, align: "right" },
-      { key: "salida", title: "SALIDA", width: 58, align: "right" },
-      { key: "caja", title: "CAJA", width: 62, align: "right" },
+      { key: "comision", title: "COMISION", width: 58, align: "right", tone: "danger" },
+      { key: "salida", title: "SALIDA", width: 58, align: "right", tone: "danger" },
+      { key: "caja", title: "CAJA", width: 62, align: "right", tone: "money" },
     ],
     contentWidth
   );
 
-  doc.rect(0, 0, doc.page.width, 76).fill("#0f172a");
+  const headerGradient = doc.linearGradient(tableX, 18, doc.page.width - 22, 104);
+  headerGradient.stop(0, "#111827").stop(0.58, "#1f2937").stop(1, "#8b1e24");
+  doc.roundedRect(tableX, 18, contentWidth, 86, 16).fill(headerGradient);
+
+  doc.roundedRect(tableX + 18, 30, 62, 62, 14).fill("#ffffff");
+  if (logoPath) {
+    try {
+      doc.image(logoPath, tableX + 23, 35, { fit: [52, 52], align: "center" });
+    } catch {
+      doc
+        .fillColor("#ef3333")
+        .font(params.fonts.bold)
+        .fontSize(10)
+        .text("C", tableX + 45, 52);
+    }
+  }
+
   doc
     .fillColor("#ffffff")
     .font(params.fonts.bold)
-    .fontSize(19)
-    .text("CIERRE DEL DIA - VISTA PRUEBA", tableX, 22);
+    .fontSize(21)
+    .text("CIERRE DEL DIA", tableX + 96, 31, { width: 360 });
+  doc
+    .fillColor("#f8fafc")
+    .font(params.fonts.bold)
+    .fontSize(8)
+    .text("CONECTAMOS FINAN SERVICES S.A.S", tableX + 98, 58, {
+      width: 270,
+      characterSpacing: 0.8,
+    });
   doc
     .fillColor("#cbd5e1")
     .font(params.fonts.regular)
     .fontSize(8)
-    .text(`${params.periodoLabel} | ${params.cobertura}`, tableX, 48);
+    .text(`${params.periodoLabel} | ${params.cobertura}`, tableX + 98, 75, {
+      width: 360,
+    });
 
-  let y = 96;
+  doc
+    .roundedRect(doc.page.width - 225, 36, 178, 46, 12)
+    .fillAndStroke("#ffffff", "#fee2e2");
+  doc
+    .fillColor("#64748b")
+    .font(params.fonts.bold)
+    .fontSize(7)
+    .text("RESUMEN DE CAJA", doc.page.width - 211, 47, {
+      width: 150,
+      characterSpacing: 0.6,
+    });
+  doc
+    .fillColor(totals.cajaNeta < 0 ? "#b91c1c" : "#047857")
+    .font(params.fonts.bold)
+    .fontSize(15)
+    .text(formatoPesosCompacto(totals.cajaNeta), doc.page.width - 211, 60, {
+      width: 145,
+      align: "left",
+      ellipsis: true,
+    });
+
+  const metricCards = [
+    { label: "Ventas", value: String(totals.ventas), color: "#0f172a" },
+    { label: "Ingresos", value: formatoPesosCompacto(totals.ingresos), color: "#047857" },
+    {
+      label: "Financieras",
+      value: formatoPesosCompacto(totals.financieras),
+      color: "#1d4ed8",
+    },
+    { label: "Utilidad", value: formatoPesosCompacto(totals.utilidad), color: "#a16207" },
+    { label: "Salida", value: formatoPesosCompacto(totals.salida), color: "#b91c1c" },
+  ];
+  const metricGap = 10;
+  const metricWidth =
+    (contentWidth - metricGap * (metricCards.length - 1)) / metricCards.length;
+
+  metricCards.forEach((metric, index) => {
+    const x = tableX + index * (metricWidth + metricGap);
+    doc.roundedRect(x, 120, metricWidth, 44, 10).fillAndStroke("#ffffff", "#e2e8f0");
+    doc
+      .fillColor("#64748b")
+      .font(params.fonts.bold)
+      .fontSize(6.8)
+      .text(metric.label.toUpperCase(), x + 10, 131, {
+        width: metricWidth - 20,
+        characterSpacing: 0.7,
+      });
+    doc
+      .fillColor(metric.color)
+      .font(params.fonts.bold)
+      .fontSize(12.5)
+      .text(metric.value, x + 10, 145, {
+        width: metricWidth - 20,
+        ellipsis: true,
+      });
+  });
+
+  let y = 188;
+  doc
+    .fillColor("#0f172a")
+    .font(params.fonts.bold)
+    .fontSize(11)
+    .text("VENTAS DEL DIA", tableX, 172);
   y = drawCompactTableHeader(doc, columns, y, tableX, params.fonts);
 
   if (!params.rows.length) {
@@ -568,7 +997,9 @@ async function buildPdfCierreTabla(params: {
           : "-";
       });
 
-      y = drawCompactRow(doc, columns, values, y, tableX, 30, params.fonts);
+      y = drawCompactRow(doc, columns, values, y, tableX, 30, params.fonts, {
+        index: params.rows.indexOf(row),
+      });
     }
   }
 
@@ -583,6 +1014,18 @@ async function buildPdfCierreTabla(params: {
     .font(params.fonts.bold)
     .fontSize(12)
     .text("INGRESOS Y EGRESOS DE CAJA", tableX, y);
+  doc
+    .fillColor("#64748b")
+    .font(params.fonts.regular)
+    .fontSize(8)
+    .text(
+      `Ingresos: ${formatoPesos(totals.ingresosCaja)} | Egresos: ${formatoPesos(
+        totals.egresosCaja
+      )}`,
+      tableX + 190,
+      y + 2,
+      { width: 300 }
+    );
   y += 18;
 
   const cashColumns = fitColumns(
@@ -590,7 +1033,7 @@ async function buildPdfCierreTabla(params: {
       { key: "tipo", title: "TIPO", width: 80 },
       { key: "concepto", title: "CONCEPTO", width: 300 },
       { key: "sede", title: "SEDE", width: 140 },
-      { key: "valor", title: "VALOR", width: 120, align: "right" },
+      { key: "valor", title: "VALOR", width: 120, align: "right", tone: "money" },
     ],
     640
   );
@@ -621,7 +1064,8 @@ async function buildPdfCierreTabla(params: {
         y,
         tableX,
         26,
-        params.fonts
+        params.fonts,
+        { index: params.movimientos.indexOf(movimiento) }
       );
     }
   }
@@ -1138,7 +1582,7 @@ export async function GET(req: Request) {
       }`;
 
       if (formato === "excel" || formato === "xlsx") {
-        const excelBuffer = buildExcelCierreTabla({
+        const excelBuffer = await buildExcelCierreTabla({
           periodoKey: periodo.key,
           cobertura,
           rows: tablaCierre.rows,
