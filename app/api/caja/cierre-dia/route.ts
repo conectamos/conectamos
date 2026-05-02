@@ -115,6 +115,8 @@ type CompactColumn = {
   tone?: "neutral" | "money" | "danger" | "financial";
 };
 
+type CompactTone = "income" | "expense";
+
 function getPdfFonts(): PdfFonts {
   if (existsSync(SYSTEM_FONT_REGULAR) && existsSync(SYSTEM_FONT_BOLD)) {
     return {
@@ -474,7 +476,7 @@ function moneyCell(value: number) {
 
 function detailIncomeCell(value: string) {
   const text = textoLimpio(value);
-  return !text || text === "-" ? "No hay ingreso" : text;
+  return !text || text === "-" ? "NO HAY INGRESO" : text;
 }
 
 function buildTrialTotals(rows: SaleTableRow[], movimientos: CashMovementRow[]) {
@@ -521,7 +523,7 @@ function buildTrialTotals(rows: SaleTableRow[], movimientos: CashMovementRow[]) 
 
 function trialExcelColumnWidth(header: string, financieras: string[]) {
   if (financieras.includes(header)) return 19;
-  if (header === "JALADOR") return 20;
+  if (header === "JALADOR") return 17;
   if (header === "DETALLES DE INGRESO") return 32;
   if (header === "IMEI") return 19;
   if (header === "SERVICIO") return 22;
@@ -703,7 +705,7 @@ async function buildExcelCierreTabla(params: {
       pattern: "solid",
       fgColor: { argb: "FF151923" },
     };
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 9 };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 8 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.border = {
       top: { style: "thin", color: { argb: "FF151923" } },
@@ -733,14 +735,36 @@ async function buildExcelCierreTabla(params: {
     row.height = 22;
     row.eachCell((cell, colNumber) => {
       const header = headers[colNumber - 1];
+      const cajaTone =
+        header === "CAJA" && saleRow.caja < 0
+          ? "expense"
+          : header === "CAJA" && saleRow.caja > 0
+            ? "income"
+            : null;
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: index % 2 === 0 ? "FFFFFFFF" : "FFF7F8FA" },
+        fgColor: {
+          argb:
+            cajaTone === "expense"
+              ? "FFFFF1F2"
+              : cajaTone === "income"
+                ? "FFECFDF5"
+                : index % 2 === 0
+                  ? "FFFFFFFF"
+                  : "FFF7F8FA",
+        },
       };
       cell.font = {
-        color: { argb: header === "SALIDA" ? "FF9F2737" : "FF151923" },
-        size: 9,
+        color: {
+          argb:
+            cajaTone === "expense" || header === "SALIDA"
+              ? "FF9F2737"
+              : cajaTone === "income"
+                ? "FF16694F"
+                : "FF151923",
+        },
+        size: 8.5,
       };
       cell.alignment = {
         horizontal: moneyHeaders.has(header) ? "right" : "left",
@@ -827,14 +851,36 @@ async function buildExcelCierreTabla(params: {
   cajaSummaryRow.height = 25;
   cajaSummaryRow.eachCell((cell, colNumber) => {
     const isLabel = colNumber % 2 === 1;
+    const value = Number(cell.value || 0);
+    const isEgresoValue = !isLabel && colNumber === 4;
+    const isIngresoValue = !isLabel && colNumber === 2;
+    const isNegativeValue = !isLabel && value < 0;
     cell.fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: isLabel ? "FFF1F3F7" : "FFFFFFFF" },
+      fgColor: {
+        argb:
+          isEgresoValue || isNegativeValue
+            ? "FFFFF1F2"
+            : isIngresoValue
+              ? "FFECFDF5"
+              : isLabel
+                ? "FFF1F3F7"
+                : "FFFFFFFF",
+      },
     };
     cell.font = {
       bold: true,
-      color: { argb: isLabel ? "FF334155" : "FF151923" },
+      color: {
+        argb:
+          isEgresoValue || isNegativeValue
+            ? "FF9F2737"
+            : isIngresoValue
+              ? "FF16694F"
+              : isLabel
+                ? "FF334155"
+                : "FF151923",
+      },
       size: 9,
     };
     cell.alignment = {
@@ -876,16 +922,25 @@ async function buildExcelCierreTabla(params: {
     ]);
     row.eachCell((cell, colNumber) => {
       const isEgreso = movimiento.tipo.toUpperCase() === "EGRESO";
+      const isIngreso = movimiento.tipo.toUpperCase() === "INGRESO";
       cell.font = {
         color: {
-          argb: isEgreso ? "FF9F2737" : "FF1F6B4F",
+          argb: isEgreso ? "FF9F2737" : isIngreso ? "FF16694F" : "FF151923",
         },
-        size: 9,
+        size: 8.5,
       };
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: index % 2 === 0 ? "FFFFFFFF" : "FFF7F8FA" },
+        fgColor: {
+          argb: isEgreso
+            ? "FFFFF1F2"
+            : isIngreso
+              ? "FFECFDF5"
+              : index % 2 === 0
+                ? "FFFFFFFF"
+                : "FFF7F8FA",
+        },
       };
       cell.alignment = {
         horizontal: colNumber === 4 ? "right" : "left",
@@ -940,6 +995,12 @@ function drawCompactTableHeader(
   const headerHeight = 32;
 
   for (const column of columns) {
+    const headerFontSize =
+      column.tone === "financial"
+        ? 5.2
+        : column.title.length > 9
+          ? 5.5
+          : 5.9;
     const fillColor =
       column.tone === "financial"
         ? "#2b3446"
@@ -961,11 +1022,16 @@ function drawCompactTableHeader(
     doc
       .fillColor("#ffffff")
       .font(fonts.bold)
-      .fontSize(column.tone === "financial" ? 5.6 : 6.2)
+      .fontSize(headerFontSize)
       .text(title, cursorX + 2, y + 6, {
         width: Math.max(8, column.width - 4),
         height: headerHeight - 8,
-        align: column.tone === "financial" ? "center" : column.align ?? "left",
+        align:
+          column.align === "right"
+            ? "right"
+            : column.tone === "financial"
+              ? "center"
+              : "left",
         ellipsis: true,
       });
     cursorX += column.width;
@@ -982,21 +1048,36 @@ function drawCompactRow(
   x: number,
   rowHeight: number,
   fonts: PdfFonts,
-  options?: { index?: number }
+  options?: {
+    index?: number;
+    rowTone?: CompactTone;
+    cellTones?: Record<string, CompactTone>;
+  }
 ) {
   let cursorX = x;
   const rowFill =
-    options?.index !== undefined && options.index % 2 === 1
+    options?.rowTone === "expense"
+      ? "#fff1f2"
+      : options?.rowTone === "income"
+        ? "#ecfdf5"
+        : options?.index !== undefined && options.index % 2 === 1
       ? "#f8fafc"
       : "#ffffff";
 
-  doc
-    .rect(x, y, columns.reduce((acc, column) => acc + column.width, 0), rowHeight)
-    .fillAndStroke(rowFill, "#e5e7eb");
-
   for (const column of columns) {
+    const activeTone = options?.cellTones?.[column.key] ?? options?.rowTone;
+    const cellFill =
+      activeTone === "expense"
+        ? "#fff1f2"
+        : activeTone === "income"
+          ? "#ecfdf5"
+          : rowFill;
     const toneColor =
-      column.tone === "danger"
+      activeTone === "expense"
+        ? "#9f2737"
+        : activeTone === "income"
+          ? "#16694f"
+          : column.tone === "danger"
         ? "#9f2737"
         : column.tone === "financial"
           ? "#2f4d75"
@@ -1004,10 +1085,11 @@ function drawCompactRow(
             ? "#16694f"
             : "#151923";
 
+    doc.rect(cursorX, y, column.width, rowHeight).fillAndStroke(cellFill, "#e5e7eb");
     doc
       .fillColor(toneColor)
       .font(column.tone ? fonts.bold : fonts.regular)
-      .fontSize(6.2)
+      .fontSize(column.key === "jalador" ? 5.6 : 5.8)
       .text(values[column.key] || "-", cursorX + 2, y + 5, {
         width: Math.max(8, column.width - 4),
         height: rowHeight - 8,
@@ -1158,7 +1240,7 @@ async function buildPdfCierreTabla(params: {
       { key: "venta", title: "# VENTA", width: 56 },
       { key: "servicio", title: "SERVICIO", width: 70 },
       { key: "imei", title: "IMEI", width: 86 },
-      { key: "jalador", title: "JALADOR", width: 112 },
+      { key: "jalador", title: "JALADOR", width: 96 },
       { key: "ingresos", title: "INGRESOS", width: 72, align: "right", tone: "money" },
       { key: "detalleIngresos", title: "DETALLES DE INGRESO", width: 120 },
       ...params.financieras.map((nombre) => ({
@@ -1168,7 +1250,7 @@ async function buildPdfCierreTabla(params: {
         align: "right" as const,
         tone: "financial" as const,
       })),
-      { key: "utilidad", title: "UTILIDAD", width: 76, align: "right", tone: "money" },
+      { key: "utilidad", title: "UTILIDAD", width: 84, align: "right", tone: "money" },
       { key: "vendedor", title: "VENDEDOR", width: 78 },
       { key: "comision", title: "COMISION", width: 66, align: "right", tone: "danger" },
       { key: "salida", title: "SALIDA", width: 66, align: "right", tone: "danger" },
@@ -1354,6 +1436,12 @@ async function buildPdfCierreTabla(params: {
 
       y = drawCompactRow(doc, columns, values, y, tableX, 30, params.fonts, {
         index: params.rows.indexOf(row),
+        cellTones:
+          row.caja < 0
+            ? { caja: "expense" }
+            : row.caja > 0
+              ? { caja: "income" }
+              : undefined,
       });
     }
   }
@@ -1438,6 +1526,7 @@ async function buildPdfCierreTabla(params: {
         y = drawCompactTableHeader(doc, cashColumns, 34, tableX, params.fonts);
       }
 
+      const tipoMovimiento = movimiento.tipo.toUpperCase();
       y = drawCompactRow(
         doc,
         cashColumns,
@@ -1451,7 +1540,15 @@ async function buildPdfCierreTabla(params: {
         tableX,
         26,
         params.fonts,
-        { index: params.movimientos.indexOf(movimiento) }
+        {
+          index: params.movimientos.indexOf(movimiento),
+          rowTone:
+            tipoMovimiento === "EGRESO"
+              ? "expense"
+              : tipoMovimiento === "INGRESO"
+                ? "income"
+                : undefined,
+        }
       );
     }
   }
