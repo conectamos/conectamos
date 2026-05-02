@@ -4,6 +4,7 @@ export type ReferenciaInventarioCatalogo = {
   id: number;
   nombre: string;
   activo: boolean;
+  eliminado: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -29,6 +30,11 @@ export async function asegurarTablaCatalogoReferenciasInventario() {
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "CatalogoReferenciaInventario"
+    ADD COLUMN IF NOT EXISTS "eliminado" BOOLEAN NOT NULL DEFAULT false
   `);
 }
 
@@ -78,7 +84,10 @@ export async function obtenerCatalogoReferenciasInventario(options?: {
   await sincronizarCatalogoReferenciasInventario();
 
   return prisma.catalogoReferenciaInventario.findMany({
-    where: options?.incluirInactivas ? {} : { activo: true },
+    where: {
+      eliminado: false,
+      ...(options?.incluirInactivas ? {} : { activo: true }),
+    },
     orderBy: [
       { activo: "desc" },
       { nombre: "asc" },
@@ -99,6 +108,7 @@ export async function buscarReferenciaInventarioActiva(nombre: string) {
     where: {
       nombreNormalizado,
       activo: true,
+      eliminado: false,
     },
   });
 }

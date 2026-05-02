@@ -28,6 +28,7 @@ type ReferenciaCatalogo = {
   id: number;
   nombre: string;
   activo: boolean;
+  eliminado?: boolean;
 };
 
 function formatoPesos(valor: number) {
@@ -348,6 +349,42 @@ export default function InventarioPrincipalPage() {
       setMensaje(data.mensaje || "Referencia actualizada correctamente");
     } catch {
       setMensaje("Error actualizando referencia");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const eliminarReferencia = async (item: ReferenciaCatalogo) => {
+    const confirmado = window.confirm(
+      `Eliminar "${item.nombre}" del catalogo? Los equipos ya registrados no se modifican.`
+    );
+
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch(`/api/inventario-principal/referencias?id=${item.id}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(`Error: ${data.error || "No se pudo eliminar la referencia"}`);
+        return;
+      }
+
+      setReferenciasCatalogo(Array.isArray(data.referencias) ? data.referencias : []);
+      if (editandoReferenciaId === item.id) {
+        cancelarEdicionReferencia();
+      }
+      setMensaje(data.mensaje || "Referencia eliminada del catalogo");
+    } catch {
+      setMensaje("Error eliminando referencia");
     } finally {
       setCargando(false);
     }
@@ -732,6 +769,14 @@ export default function InventarioPrincipalPage() {
                                   ].join(" ")}
                                 >
                                   {item.activo ? "Ocultar" : "Activar"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void eliminarReferencia(item)}
+                                  disabled={cargando}
+                                  className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
+                                >
+                                  Eliminar
                                 </button>
                               </>
                             )}

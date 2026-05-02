@@ -29,6 +29,7 @@ function serializarReferencias(
     id: referencia.id,
     nombre: referencia.nombre,
     activo: referencia.activo,
+    eliminado: referencia.eliminado,
     createdAt: referencia.createdAt.toISOString(),
     updatedAt: referencia.updatedAt.toISOString(),
   }));
@@ -110,6 +111,7 @@ export async function POST(req: Request) {
         data: {
           nombre,
           activo: true,
+          eliminado: false,
         },
       });
     } else {
@@ -263,6 +265,68 @@ export async function PATCH(req: Request) {
     console.error("ERROR PATCH REFERENCIAS INVENTARIO:", error);
     return NextResponse.json(
       { error: "Error actualizando referencia" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await requireUser();
+
+    if (!session.ok) {
+      return session.response;
+    }
+
+    if (!esRolAdmin(session.user.rolNombre)) {
+      return NextResponse.json(
+        { error: "Solo el administrador puede gestionar referencias" },
+        { status: 403 }
+      );
+    }
+
+    await asegurarTablaCatalogoReferenciasInventario();
+
+    const requestUrl = new URL(req.url);
+    const id = Number(requestUrl.searchParams.get("id"));
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return NextResponse.json(
+        { error: "Referencia invalida" },
+        { status: 400 }
+      );
+    }
+
+    const existente = await prisma.catalogoReferenciaInventario.findUnique({
+      where: { id },
+    });
+
+    if (!existente || existente.eliminado) {
+      return NextResponse.json(
+        { error: "Referencia no encontrada" },
+        { status: 404 }
+      );
+    }
+
+    await prisma.catalogoReferenciaInventario.update({
+      where: { id },
+      data: {
+        activo: false,
+        eliminado: true,
+      },
+    });
+
+    const referencias = await respuestaCatalogo();
+
+    return NextResponse.json({
+      ok: true,
+      mensaje: "Referencia eliminada del catalogo",
+      referencias,
+    });
+  } catch (error) {
+    console.error("ERROR DELETE REFERENCIAS INVENTARIO:", error);
+    return NextResponse.json(
+      { error: "Error eliminando referencia" },
       { status: 500 }
     );
   }
