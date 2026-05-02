@@ -31,6 +31,16 @@ type ReferenciaCatalogo = {
   eliminado?: boolean;
 };
 
+type FiltroEstado = "TODOS" | "BODEGA" | "ENVIADOS" | "COBRO_PENDIENTE" | "PAGADOS";
+
+const FILTROS_ESTADO: Array<{ value: FiltroEstado; label: string }> = [
+  { value: "TODOS", label: "Todos" },
+  { value: "BODEGA", label: "Bodega" },
+  { value: "ENVIADOS", label: "Enviados a sede" },
+  { value: "COBRO_PENDIENTE", label: "Cobro pendiente" },
+  { value: "PAGADOS", label: "Pagados" },
+];
+
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
@@ -66,6 +76,8 @@ export default function InventarioPrincipalPage() {
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("TODOS");
+  const [filtroSedeDestinoId, setFiltroSedeDestinoId] = useState("");
   const [nuevaReferencia, setNuevaReferencia] = useState("");
   const [referenciaEditada, setReferenciaEditada] = useState("");
   const [editandoReferenciaId, setEditandoReferenciaId] = useState<number | null>(null);
@@ -76,6 +88,13 @@ export default function InventarioPrincipalPage() {
   const [itemSeleccionado, setItemSeleccionado] = useState<ItemPrincipal | null>(null);
   const [sedeDestinoId, setSedeDestinoId] = useState("");
   const [idsSeleccionados, setIdsSeleccionados] = useState<number[]>([]);
+  const [mostrarModalEdicion, setMostrarModalEdicion] = useState(false);
+  const [idsEdicion, setIdsEdicion] = useState<number[]>([]);
+  const [edicionReferencia, setEdicionReferencia] = useState("");
+  const [edicionColor, setEdicionColor] = useState("");
+  const [edicionCosto, setEdicionCosto] = useState("");
+  const [edicionFactura, setEdicionFactura] = useState("");
+  const [edicionDistribuidor, setEdicionDistribuidor] = useState("");
 
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
 
@@ -182,13 +201,34 @@ export default function InventarioPrincipalPage() {
   const itemsFiltrados = useMemo(() => {
     const termino = busqueda.trim().toLowerCase();
 
-    if (!termino) {
-      return items;
-    }
-
     return items.filter((item) => {
       const sedeDestino =
         sedes.find((sede) => sede.id === item.sedeDestinoId)?.nombre || "";
+      const estadoNormalizado = String(item.estado || "BODEGA").toUpperCase();
+      const cobroNormalizado = String(item.estadoCobro || "").toUpperCase();
+
+      const cumpleEstado =
+        filtroEstado === "TODOS" ||
+        (filtroEstado === "BODEGA" && estadoNormalizado === "BODEGA") ||
+        (filtroEstado === "ENVIADOS" && estadoNormalizado !== "BODEGA") ||
+        (filtroEstado === "COBRO_PENDIENTE" && cobroNormalizado === "PENDIENTE") ||
+        (filtroEstado === "PAGADOS" &&
+          (estadoNormalizado === "PAGO" || cobroNormalizado === "PAGADO"));
+
+      if (!cumpleEstado) {
+        return false;
+      }
+
+      if (
+        filtroSedeDestinoId &&
+        Number(item.sedeDestinoId || 0) !== Number(filtroSedeDestinoId)
+      ) {
+        return false;
+      }
+
+      if (!termino) {
+        return true;
+      }
 
       return [
         String(item.imei || ""),
@@ -204,7 +244,7 @@ export default function InventarioPrincipalPage() {
         .toLowerCase()
         .includes(termino);
     });
-  }, [busqueda, items, sedes]);
+  }, [busqueda, filtroEstado, filtroSedeDestinoId, items, sedes]);
 
   const idsVisibles = useMemo(
     () => itemsFiltrados.map((item) => item.id),
@@ -229,6 +269,11 @@ export default function InventarioPrincipalPage() {
         (item) => String(item.estado || "BODEGA").toUpperCase() === "BODEGA"
       ),
     [itemsSeleccionados]
+  );
+
+  const itemsEdicion = useMemo(
+    () => items.filter((item) => idsEdicion.includes(item.id)),
+    [idsEdicion, items]
   );
 
   const sedesDestinoOperativas = useMemo(
@@ -263,6 +308,33 @@ export default function InventarioPrincipalPage() {
     setIdsSeleccionados([]);
     setSedeDestinoId("");
     setMostrarModalMasivo(false);
+  };
+
+  const limpiarFormularioEdicion = () => {
+    setEdicionReferencia("");
+    setEdicionColor("");
+    setEdicionCosto("");
+    setEdicionFactura("");
+    setEdicionDistribuidor("");
+  };
+
+  const abrirModalEdicion = (ids: number[]) => {
+    const idsValidos = ids.filter((id) => items.some((item) => item.id === id));
+
+    if (idsValidos.length === 0) {
+      setMensaje("Debes seleccionar al menos un equipo para editar");
+      return;
+    }
+
+    setIdsEdicion(idsValidos);
+    limpiarFormularioEdicion();
+    setMostrarModalEdicion(true);
+  };
+
+  const cerrarModalEdicion = () => {
+    setMostrarModalEdicion(false);
+    setIdsEdicion([]);
+    limpiarFormularioEdicion();
   };
 
   const agregarReferencia = async () => {
@@ -422,6 +494,107 @@ export default function InventarioPrincipalPage() {
       await cargarInventarioPrincipal();
     } catch {
       setMensaje("Error eliminando equipo");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const eliminarSeleccion = async () => {
+    if (idsSeleccionados.length === 0) {
+      setMensaje("Debes seleccionar al menos un equipo para eliminar");
+      return;
+    }
+
+    const confirmado = window.confirm(
+      `Eliminar ${idsSeleccionados.length} equipo(s) seleccionado(s)? Solo se eliminaran los que esten disponibles en BODEGA.`
+    );
+
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/inventario-principal/eliminar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ids: idsSeleccionados }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(`Error: ${data.error || "No se pudo eliminar la seleccion"}`);
+        return;
+      }
+
+      setMensaje(
+        [
+          data.mensaje || "Seleccion eliminada correctamente",
+          Number(data.omitidos || 0) > 0
+            ? `${data.omitidos} equipo(s) no se eliminaron por estar enviados o bloqueados.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+      setIdsSeleccionados([]);
+      await cargarInventarioPrincipal();
+    } catch {
+      setMensaje("Error eliminando seleccion");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const guardarEdicionMasiva = async () => {
+    if (idsEdicion.length === 0) {
+      setMensaje("Debes seleccionar al menos un equipo para editar");
+      return;
+    }
+
+    const payload: Record<string, unknown> = { ids: idsEdicion };
+
+    if (edicionReferencia) payload.referencia = edicionReferencia;
+    if (edicionColor.trim()) payload.color = edicionColor.trim();
+    if (edicionCosto.trim()) payload.costo = Number(edicionCosto.replace(/\D/g, ""));
+    if (edicionFactura.trim()) payload.numeroFactura = edicionFactura.trim();
+    if (edicionDistribuidor.trim()) payload.distribuidor = edicionDistribuidor.trim();
+
+    if (Object.keys(payload).length === 1) {
+      setMensaje("Completa al menos un campo para editar");
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/inventario-principal/actualizar", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(`Error: ${data.error || "No se pudo actualizar la seleccion"}`);
+        return;
+      }
+
+      setMensaje(data.mensaje || "Inventario actualizado correctamente");
+      cerrarModalEdicion();
+      setIdsSeleccionados([]);
+      await cargarInventarioPrincipal();
+    } catch {
+      setMensaje("Error actualizando seleccion");
     } finally {
       setCargando(false);
     }
@@ -805,14 +978,45 @@ export default function InventarioPrincipalPage() {
               </p>
             </div>
 
-            <div className="w-full xl:max-w-[520px]">
-              <input
-                type="text"
-                value={busqueda}
-                onChange={(event) => setBusqueda(event.target.value)}
-                placeholder="Buscar por IMEI, referencia, factura, distribuidor o estado..."
-                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              />
+            <div className="w-full xl:max-w-[680px]">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={(event) => setBusqueda(event.target.value)}
+                  placeholder="Buscar por IMEI, referencia, factura o distribuidor..."
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+                <select
+                  value={filtroSedeDestinoId}
+                  onChange={(event) => setFiltroSedeDestinoId(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                >
+                  <option value="">Todas las sedes</option>
+                  {sedesDestinoOperativas.map((sede) => (
+                    <option key={sede.id} value={sede.id}>
+                      {sede.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {FILTROS_ESTADO.map((filtro) => (
+                  <button
+                    key={filtro.value}
+                    type="button"
+                    onClick={() => setFiltroEstado(filtro.value)}
+                    className={[
+                      "rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.12em] transition",
+                      filtroEstado === filtro.value
+                        ? "border-slate-950 bg-slate-950 text-white"
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                    ].join(" ")}
+                  >
+                    {filtro.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -863,6 +1067,24 @@ export default function InventarioPrincipalPage() {
                     className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Enviar a sede
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => abrirModalEdicion(idsSeleccionados)}
+                    disabled={cargando}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Editar seleccion
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void eliminarSeleccion()}
+                    disabled={cargando}
+                    className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
+                  >
+                    Eliminar seleccion
                   </button>
 
                   <button
@@ -974,6 +1196,14 @@ export default function InventarioPrincipalPage() {
                         <td className="px-4 py-4">
                           <div className="flex flex-wrap items-center gap-2">
                             <button
+                              onClick={() => abrirModalEdicion([item.id])}
+                              disabled={cargando}
+                              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+                            >
+                              Editar
+                            </button>
+
+                            <button
                               onClick={() => abrirModalEnvio(item)}
                               disabled={cargando || bloqueadoParaEnvio}
                               className="rounded-xl bg-[#111318] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d2330] disabled:cursor-not-allowed disabled:opacity-50"
@@ -999,6 +1229,112 @@ export default function InventarioPrincipalPage() {
           </div>
         </section>
       </div>
+
+      {mostrarModalEdicion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-3xl rounded-[30px] border border-[#e2d9ca] bg-white p-6 shadow-2xl">
+            <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              Edicion masiva
+            </div>
+            <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              Editar inventario principal
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Se actualizaran {itemsEdicion.length || idsEdicion.length} equipo
+              {(itemsEdicion.length || idsEdicion.length) === 1 ? "" : "s"}. Deja vacios
+              los campos que no quieras cambiar.
+            </p>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-[12px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                  Referencia
+                </label>
+                <select
+                  value={edicionReferencia}
+                  onChange={(event) => setEdicionReferencia(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                >
+                  <option value="">Mantener referencia</option>
+                  {referenciasActivas.map((item) => (
+                    <option key={item.id} value={item.nombre}>
+                      {item.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[12px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                  Color
+                </label>
+                <input
+                  value={edicionColor}
+                  onChange={(event) => setEdicionColor(event.target.value)}
+                  placeholder="Mantener color"
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[12px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                  Costo
+                </label>
+                <input
+                  value={edicionCosto ? formatoPesos(Number(edicionCosto)) : ""}
+                  onChange={(event) =>
+                    setEdicionCosto(event.target.value.replace(/\D/g, ""))
+                  }
+                  placeholder="Mantener costo"
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[12px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                  Factura
+                </label>
+                <input
+                  value={edicionFactura}
+                  onChange={(event) => setEdicionFactura(event.target.value)}
+                  placeholder="Mantener factura"
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-[12px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                  Distribuidor
+                </label>
+                <input
+                  value={edicionDistribuidor}
+                  onChange={(event) => setEdicionDistribuidor(event.target.value)}
+                  placeholder="Mantener distribuidor"
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                onClick={() => void guardarEdicionMasiva()}
+                disabled={cargando}
+                className="inline-flex h-[56px] w-full items-center justify-center rounded-2xl bg-[#111318] px-5 text-sm font-bold text-white transition hover:bg-[#1d2330] disabled:opacity-70"
+              >
+                Guardar cambios
+              </button>
+
+              <button
+                onClick={cerrarModalEdicion}
+                disabled={cargando}
+                className="inline-flex h-[56px] w-full items-center justify-center rounded-2xl border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {mostrarModalMasivo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
