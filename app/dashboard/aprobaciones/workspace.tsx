@@ -32,6 +32,9 @@ type BandejaResponse = {
   cobertura: string;
   items: BandejaItem[];
   ok: boolean;
+  permisos?: {
+    facturacion: boolean;
+  };
   resumen: {
     alta: number;
     devoluciones: number;
@@ -49,6 +52,7 @@ type SessionProps = {
   rolNombre: string;
   perfilNombre: string;
   perfilTipoLabel: string;
+  puedeVerFacturacion: boolean;
 };
 
 type Filtro = "todos" | Categoria;
@@ -272,6 +276,8 @@ export default function AprobacionesWorkspace({
   }, [cargarBandeja]);
 
   const items = useMemo(() => data?.items ?? [], [data]);
+  const puedeVerFacturacion =
+    data?.permisos?.facturacion ?? session.puedeVerFacturacion;
   const resumen = data?.resumen ?? {
     alta: 0,
     devoluciones: 0,
@@ -281,6 +287,19 @@ export default function AprobacionesWorkspace({
     total: 0,
     ventas: 0,
   };
+  const filtrosVisibles = useMemo(
+    () =>
+      filtros.filter(
+        (item) => item.key !== "facturacion" || puedeVerFacturacion
+      ),
+    [puedeVerFacturacion]
+  );
+
+  useEffect(() => {
+    if (!puedeVerFacturacion && filtro === "facturacion") {
+      setFiltro("todos");
+    }
+  }, [filtro, puedeVerFacturacion]);
 
   const itemsFiltrados = useMemo(() => {
     const termino = busqueda.trim().toLowerCase();
@@ -322,7 +341,9 @@ export default function AprobacionesWorkspace({
                 Bandeja de aprobaciones
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                Unifica prestamos, pagos, devoluciones, ventas y facturacion pendiente sin cambiar los flujos existentes.
+                {puedeVerFacturacion
+                  ? "Unifica prestamos, pagos, devoluciones, ventas y facturacion pendiente sin cambiar los flujos existentes."
+                  : "Unifica prestamos, pagos, devoluciones y ventas pendientes sin cambiar los flujos existentes."}
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
@@ -362,7 +383,12 @@ export default function AprobacionesWorkspace({
           </div>
         )}
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <section
+          className={[
+            "mt-6 grid gap-4 md:grid-cols-2",
+            puedeVerFacturacion ? "xl:grid-cols-5" : "xl:grid-cols-4",
+          ].join(" ")}
+        >
           <MetricCard
             label="Total"
             value={cargando ? "..." : resumen.total}
@@ -386,12 +412,14 @@ export default function AprobacionesWorkspace({
             detail="Registros comerciales por completar."
             valueClass="text-rose-600"
           />
-          <MetricCard
-            label="Facturacion"
-            value={resumen.facturacion}
-            detail="Registros con factura pendiente."
-            valueClass="text-emerald-600"
-          />
+          {puedeVerFacturacion && (
+            <MetricCard
+              label="Facturacion"
+              value={resumen.facturacion}
+              detail="Registros con factura pendiente."
+              valueClass="text-emerald-600"
+            />
+          )}
         </section>
 
         <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
@@ -417,7 +445,7 @@ export default function AprobacionesWorkspace({
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            {filtros.map((item) => (
+            {filtrosVisibles.map((item) => (
               <button
                 key={item.key}
                 type="button"

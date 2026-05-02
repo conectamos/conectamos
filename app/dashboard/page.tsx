@@ -4,6 +4,7 @@ import {
   esPerfilFacturador,
   esPerfilSupervisor,
   esPerfilVendedor,
+  puedeAccederPanelFacturador,
   esRolAdmin,
 } from "@/lib/access-control";
 import DashboardUtilityGate from "./_components/dashboard-utility-gate";
@@ -481,6 +482,10 @@ export default async function DashboardPage() {
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
   const puedeVerEquality = esAdmin || esSupervisor;
+  const puedeVerFacturacion = puedeAccederPanelFacturador(
+    session.perfilTipo,
+    session.rolNombre
+  );
   const nombreUsuario = session.nombre ?? "Usuario";
   const rolUsuario = session.perfilTipoLabel ?? session.rolNombre ?? "USUARIO";
   const sedeLabel = esAdmin
@@ -519,8 +524,9 @@ export default async function DashboardPage() {
       key: "aprobaciones",
       title: "APROBACIONES",
       eyebrow: "Bandeja",
-      description:
-        "Centraliza prestamos, pagos, devoluciones, ventas y facturacion pendiente.",
+      description: puedeVerFacturacion
+        ? "Centraliza prestamos, pagos, devoluciones, ventas y facturacion pendiente."
+        : "Centraliza prestamos, pagos, devoluciones y ventas pendientes.",
       actions: [
         { href: "/dashboard/aprobaciones", label: "Abrir bandeja", tone: "primary" },
         { href: "/prestamos", label: "Prestamos", tone: "secondary" },

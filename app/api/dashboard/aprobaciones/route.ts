@@ -286,6 +286,9 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       cobertura: accesoTotal ? "Todas las sedes" : session.sedeNombre,
+      permisos: {
+        facturacion: puedeVerFacturacion,
+      },
       resumen,
       items,
     });
