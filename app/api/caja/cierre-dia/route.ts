@@ -594,7 +594,7 @@ function svgText(params: {
     })
     .join("");
 
-  return `<text x="${params.x}" y="${params.y}" fill="${params.fill ?? "#151923"}" font-family="Arial, Helvetica, sans-serif" font-size="${size}" font-weight="${params.weight ?? 400}" text-anchor="${params.anchor ?? "start"}" letter-spacing="${params.letterSpacing ?? 0}">${tspans}</text>`;
+  return `<text x="${params.x}" y="${params.y}" fill="${params.fill ?? "#151923"}" font-family="ConectamosReport, sans-serif" font-size="${size}" font-weight="${params.weight ?? 400}" text-anchor="${params.anchor ?? "start"}" letter-spacing="${params.letterSpacing ?? 0}">${tspans}</text>`;
 }
 
 function getBrandLogoDataUrl() {
@@ -605,6 +605,36 @@ function getBrandLogoDataUrl() {
     return `data:image/png;base64,${readFileSync(logoPath).toString("base64")}`;
   } catch {
     return null;
+  }
+}
+
+function getSvgReportFontCss() {
+  const fontPath = [
+    BUNDLED_FONT_REGULAR,
+    STANDALONE_FONT_REGULAR,
+    SERVER_DIR_FONT_REGULAR,
+    SYSTEM_FONT_REGULAR,
+  ].find((candidate) => existsSync(candidate));
+
+  if (!fontPath) return "";
+
+  try {
+    const fontBase64 = readFileSync(fontPath).toString("base64");
+    return `
+      <style>
+        @font-face {
+          font-family: "ConectamosReport";
+          src: url("data:font/truetype;base64,${fontBase64}") format("truetype");
+          font-weight: 400 900;
+          font-style: normal;
+        }
+        text {
+          font-family: "ConectamosReport", sans-serif;
+        }
+      </style>
+    `;
+  } catch {
+    return "";
   }
 }
 
@@ -844,6 +874,7 @@ async function buildPngCierreTabla(params: {
   previousSalesCount: number;
 }) {
   const logoDataUrl = getBrandLogoDataUrl();
+  const reportFontCss = getSvgReportFontCss();
   const totals = buildTrialTotals(params.rows, params.movimientos);
   const columns = buildImageColumns(params.financieras);
   const tableWidth = columns.reduce((acc, column) => acc + column.width, 0);
@@ -881,6 +912,7 @@ async function buildPngCierreTabla(params: {
   let svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <defs>
+        ${reportFontCss}
         <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stop-color="#101522"/>
           <stop offset="0.58" stop-color="#1d2638"/>
