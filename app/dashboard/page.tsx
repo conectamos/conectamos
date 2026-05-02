@@ -24,6 +24,7 @@ type ModuleAction = {
 };
 
 type ModuleKey =
+  | "aprobaciones"
   | "inventario"
   | "ventas"
   | "caja"
@@ -514,6 +515,19 @@ export default async function DashboardPage() {
   ];
 
   const moduleCatalog: Record<ModuleKey, ModuleCard> = {
+    aprobaciones: {
+      key: "aprobaciones",
+      title: "APROBACIONES",
+      eyebrow: "Bandeja",
+      description:
+        "Centraliza prestamos, pagos, devoluciones, ventas y facturacion pendiente.",
+      actions: [
+        { href: "/dashboard/aprobaciones", label: "Abrir bandeja", tone: "primary" },
+        { href: "/prestamos", label: "Prestamos", tone: "secondary" },
+        { href: "/ventas/aprobaciones", label: "Ventas", tone: "secondary" },
+      ],
+      tone: "amber",
+    },
     inventario: {
       key: "inventario",
       title: "INVENTARIO",
@@ -670,6 +684,7 @@ export default async function DashboardPage() {
 
   const moduleOrder: ModuleKey[] = esAdmin
     ? [
+        "aprobaciones",
         "inventario",
         "ventas",
         "caja",
@@ -682,6 +697,7 @@ export default async function DashboardPage() {
       ]
     : esSupervisor
       ? [
+          "aprobaciones",
           "inventario",
           "ventas",
           "caja",
