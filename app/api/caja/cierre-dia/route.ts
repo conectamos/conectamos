@@ -397,7 +397,7 @@ function buildIngresosVenta(
     detalles.push(buildIngresoDetalle(pagoRegistro.tipo, pagoRegistro.valor));
   }
 
-  return joinParts(detalles);
+  return joinParts(detalles, "No hay ingreso");
 }
 
 function buildEquipoVenta(
@@ -449,22 +449,32 @@ function buildSaleTableRows(
   });
 
   const catalogColumns = buildFinancialColumns(catalogoFinancieras);
-  const known = new Set(catalogColumns);
+  const used = new Set<string>();
   const extras = new Set<string>();
 
   for (const row of rows) {
     Object.keys(row.financieras).forEach((nombre) => {
-      if (!known.has(nombre)) extras.add(nombre);
+      if (Number(row.financieras[nombre] || 0) <= 0) return;
+      used.add(nombre);
+      if (!catalogColumns.includes(nombre)) extras.add(nombre);
     });
   }
 
-  const financieras = [...catalogColumns, ...Array.from(extras).sort()];
+  const financieras = [
+    ...catalogColumns.filter((nombre) => used.has(nombre)),
+    ...Array.from(extras).sort(),
+  ];
 
   return { rows, financieras };
 }
 
 function moneyCell(value: number) {
-  return value ? value : null;
+  return Number(value || 0);
+}
+
+function detailIncomeCell(value: string) {
+  const text = textoLimpio(value);
+  return !text || text === "-" ? "No hay ingreso" : text;
 }
 
 function buildTrialTotals(rows: SaleTableRow[], movimientos: CashMovementRow[]) {
@@ -585,7 +595,7 @@ async function buildExcelCierreTabla(params: {
   worksheet.getCell(2, 3).value = "CIERRE DEL DIA";
   worksheet.getCell(3, 3).value = `${params.periodoKey} | ${params.cobertura}`;
   worksheet.getCell(4, 3).value =
-    "Vista de prueba con ventas, catalogo completo de financieras y caja del dia.";
+    "Vista de prueba con ventas, financieras utilizadas y flujo de caja del dia.";
 
   [1, 2, 3, 4].forEach((rowNumber) => {
     const row = worksheet.getRow(rowNumber);
@@ -594,11 +604,11 @@ async function buildExcelCierreTabla(params: {
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: rowNumber === 2 ? "FF111827" : "FFF8FAFC" },
+        fgColor: { argb: rowNumber === 2 ? "FF151923" : "FFF7F8FA" },
       };
       cell.font = {
         bold: rowNumber <= 2,
-        color: { argb: rowNumber === 2 ? "FFFFFFFF" : "FF0F172A" },
+        color: { argb: rowNumber === 2 ? "FFFFFFFF" : "FF151923" },
         size: rowNumber === 2 ? 18 : 11,
       };
       cell.alignment = { vertical: "middle" };
@@ -652,21 +662,21 @@ async function buildExcelCierreTabla(params: {
       labelCell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: isMainIncome ? "FFDCFCE7" : "FFEFF6FF" },
+        fgColor: { argb: isMainIncome ? "FFEAF7F0" : "FFF1F3F7" },
       };
       valueCell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FFFFFFFF" },
+        fgColor: { argb: "FFFEFEFE" },
       };
       labelCell.font = {
         bold: true,
-        color: { argb: isMainIncome ? "FF166534" : "FF1E3A5F" },
+        color: { argb: isMainIncome ? "FF1F6B4F" : "FF334155" },
         size: 9,
       };
       valueCell.font = {
         bold: true,
-        color: { argb: isMainIncome ? "FF047857" : "FF0F172A" },
+        color: { argb: isMainIncome ? "FF1F6B4F" : "FF151923" },
         size: 11,
       };
       valueCell.numFmt =
@@ -675,10 +685,10 @@ async function buildExcelCierreTabla(params: {
       valueCell.alignment = { horizontal: "center", vertical: "middle" };
       [labelCell, valueCell].forEach((cell) => {
         cell.border = {
-          top: { style: "thin", color: { argb: "FFD7E3F2" } },
-          left: { style: "thin", color: { argb: "FFD7E3F2" } },
-          bottom: { style: "thin", color: { argb: "FFD7E3F2" } },
-          right: { style: "thin", color: { argb: "FFD7E3F2" } },
+          top: { style: "thin", color: { argb: "FFD7DCE5" } },
+          left: { style: "thin", color: { argb: "FFD7DCE5" } },
+          bottom: { style: "thin", color: { argb: "FFD7DCE5" } },
+          right: { style: "thin", color: { argb: "FFD7DCE5" } },
         };
       });
     });
@@ -691,15 +701,15 @@ async function buildExcelCierreTabla(params: {
     cell.fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: "FF111827" },
+      fgColor: { argb: "FF151923" },
     };
     cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 9 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.border = {
-      top: { style: "thin", color: { argb: "FF111827" } },
-      left: { style: "thin", color: { argb: "FF334155" } },
-      bottom: { style: "thin", color: { argb: "FF111827" } },
-      right: { style: "thin", color: { argb: "FF334155" } },
+      top: { style: "thin", color: { argb: "FF151923" } },
+      left: { style: "thin", color: { argb: "FF404A5F" } },
+      bottom: { style: "thin", color: { argb: "FFB08A3A" } },
+      right: { style: "thin", color: { argb: "FF404A5F" } },
     };
   });
 
@@ -710,7 +720,7 @@ async function buildExcelCierreTabla(params: {
       saleRow.imei,
       saleRow.jalador,
       moneyCell(saleRow.ingresos),
-      saleRow.detalleIngresos,
+      detailIncomeCell(saleRow.detalleIngresos),
       ...params.financieras.map((nombre) =>
         moneyCell(saleRow.financieras[nombre] || 0)
       ),
@@ -726,10 +736,10 @@ async function buildExcelCierreTabla(params: {
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: index % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC" },
+        fgColor: { argb: index % 2 === 0 ? "FFFFFFFF" : "FFF7F8FA" },
       };
       cell.font = {
-        color: { argb: header === "SALIDA" ? "FFB91C1C" : "FF0F172A" },
+        color: { argb: header === "SALIDA" ? "FF9F2737" : "FF151923" },
         size: 9,
       };
       cell.alignment = {
@@ -738,7 +748,7 @@ async function buildExcelCierreTabla(params: {
         wrapText: header === "DETALLES DE INGRESO",
       };
       cell.border = {
-        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E5EA" } },
       };
 
       if (moneyHeaders.has(header)) {
@@ -776,16 +786,16 @@ async function buildExcelCierreTabla(params: {
     cell.fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: "FFFFFBEB" },
+      fgColor: { argb: "FFFFF7E6" },
     };
-    cell.font = { bold: true, color: { argb: "FF78350F" }, size: 9 };
+    cell.font = { bold: true, color: { argb: "FF6E531F" }, size: 9 };
     cell.alignment = {
       horizontal: moneyHeaders.has(header) ? "right" : "left",
       vertical: "middle",
     };
     cell.border = {
-      top: { style: "thin", color: { argb: "FFF59E0B" } },
-      bottom: { style: "thin", color: { argb: "FFF59E0B" } },
+      top: { style: "thin", color: { argb: "FFB08A3A" } },
+      bottom: { style: "thin", color: { argb: "FFB08A3A" } },
     };
     if (moneyHeaders.has(header)) {
       cell.numFmt = '"$"#,##0;[Red]-"$"#,##0';
@@ -793,33 +803,71 @@ async function buildExcelCierreTabla(params: {
   });
 
   worksheet.addRow([]);
-  const cajaTitleRow = worksheet.addRow(["INGRESOS Y EGRESOS DE CAJA"]);
-  worksheet.mergeCells(cajaTitleRow.number, 1, cajaTitleRow.number, 4);
+  const cajaTitleRow = worksheet.addRow(["FLUJO DE CAJA DEL DIA"]);
+  worksheet.mergeCells(cajaTitleRow.number, 1, cajaTitleRow.number, 6);
   cajaTitleRow.height = 24;
   cajaTitleRow.eachCell((cell) => {
     cell.fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: "FF7F1D1D" },
+      fgColor: { argb: "FF151923" },
     };
     cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
     cell.alignment = { vertical: "middle" };
   });
 
-  const cajaHeaderRow = worksheet.addRow(["TIPO", "CONCEPTO", "SEDE", "VALOR"]);
+  const cajaSummaryRow = worksheet.addRow([
+    "INGRESOS CAJA",
+    totals.ingresosCaja,
+    "EGRESOS CAJA",
+    totals.egresosCaja,
+    "NETO CAJA DIA",
+    totals.cajaNeta,
+  ]);
+  cajaSummaryRow.height = 25;
+  cajaSummaryRow.eachCell((cell, colNumber) => {
+    const isLabel = colNumber % 2 === 1;
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: isLabel ? "FFF1F3F7" : "FFFFFFFF" },
+    };
+    cell.font = {
+      bold: true,
+      color: { argb: isLabel ? "FF334155" : "FF151923" },
+      size: 9,
+    };
+    cell.alignment = {
+      horizontal: isLabel ? "center" : "right",
+      vertical: "middle",
+    };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFD7DCE5" } },
+      left: { style: "thin", color: { argb: "FFD7DCE5" } },
+      bottom: { style: "thin", color: { argb: "FFD7DCE5" } },
+      right: { style: "thin", color: { argb: "FFD7DCE5" } },
+    };
+    if (!isLabel) {
+      cell.numFmt = '"$"#,##0;[Red]-"$"#,##0';
+    }
+  });
+
+  worksheet.addRow([]);
+  const cajaHeaderRow = worksheet.addRow(["MOVIMIENTO", "CONCEPTO", "SEDE", "VALOR"]);
   cajaHeaderRow.eachCell((cell) => {
     cell.fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: "FFF3F4F6" },
+      fgColor: { argb: "FF2B3446" },
     };
-    cell.font = { bold: true, color: { argb: "FF111827" }, size: 9 };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 9 };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
     cell.border = {
-      bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+      bottom: { style: "thin", color: { argb: "FFB08A3A" } },
     };
   });
 
-  params.movimientos.forEach((movimiento) => {
+  params.movimientos.forEach((movimiento, index) => {
     const row = worksheet.addRow([
       movimiento.tipo,
       movimiento.concepto,
@@ -827,21 +875,24 @@ async function buildExcelCierreTabla(params: {
       moneyCell(movimiento.valor),
     ]);
     row.eachCell((cell, colNumber) => {
+      const isEgreso = movimiento.tipo.toUpperCase() === "EGRESO";
       cell.font = {
         color: {
-          argb:
-            movimiento.tipo.toUpperCase() === "EGRESO"
-              ? "FFB91C1C"
-              : "FF047857",
+          argb: isEgreso ? "FF9F2737" : "FF1F6B4F",
         },
         size: 9,
+      };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: index % 2 === 0 ? "FFFFFFFF" : "FFF7F8FA" },
       };
       cell.alignment = {
         horizontal: colNumber === 4 ? "right" : "left",
         vertical: "middle",
       };
       cell.border = {
-        bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+        bottom: { style: "thin", color: { argb: "FFE2E5EA" } },
       };
       if (colNumber === 4) {
         cell.numFmt = '"$"#,##0;[Red]-"$"#,##0';
@@ -891,12 +942,12 @@ function drawCompactTableHeader(
   for (const column of columns) {
     const fillColor =
       column.tone === "financial"
-        ? "#23395d"
+        ? "#2b3446"
         : column.tone === "danger"
-          ? "#6f2432"
+          ? "#7e2735"
           : column.tone === "money"
-            ? "#1f5f4b"
-            : "#182235";
+            ? "#1f6b4f"
+            : "#151923";
 
     doc
       .rect(cursorX, y, column.width, headerHeight)
@@ -948,10 +999,10 @@ function drawCompactRow(
       column.tone === "danger"
         ? "#9f2737"
         : column.tone === "financial"
-          ? "#254f87"
+          ? "#2f4d75"
           : column.tone === "money"
             ? "#16694f"
-            : "#162033";
+            : "#151923";
 
     doc
       .fillColor(toneColor)
@@ -981,10 +1032,10 @@ function drawTrialMetricCard(
 ) {
   const valueSize = value.length > 18 ? 11 : value.length > 14 ? 12 : 13.5;
 
-  doc.roundedRect(x, y, width, 46, 10).fillAndStroke("#ffffff", "#d8e0ec");
+  doc.roundedRect(x, y, width, 46, 10).fillAndStroke("#ffffff", "#d9dee8");
   doc.roundedRect(x + 10, y + 12, 4, 22, 2).fill(accent);
   doc
-    .fillColor("#65748a")
+    .fillColor("#667085")
     .font(fonts.bold)
     .fontSize(6.8)
     .text(label.toUpperCase(), x + 22, y + 10, {
@@ -993,7 +1044,7 @@ function drawTrialMetricCard(
       ellipsis: true,
     });
   doc
-    .fillColor("#142033")
+    .fillColor("#151923")
     .font(fonts.bold)
     .fontSize(valueSize)
     .text(value, x + 22, y + 25, {
@@ -1027,14 +1078,14 @@ function drawSalesComparisonChart(
         : "Sin variacion"
       : `${diff >= 0 ? "+" : ""}${diff} ventas vs ayer`;
 
-  doc.roundedRect(x, y, width, chartHeight, 12).fillAndStroke("#ffffff", "#d8e0ec");
+  doc.roundedRect(x, y, width, chartHeight, 12).fillAndStroke("#ffffff", "#d9dee8");
   doc
-    .fillColor("#142033")
+    .fillColor("#151923")
     .font(fonts.bold)
     .fontSize(10)
     .text("Comparativo de ventas", x + 14, y + 11, { width: width - 28 });
   doc
-    .fillColor(diff >= 0 ? "#16694f" : "#9f2737")
+    .fillColor(diff >= 0 ? "#1f6b4f" : "#9f2737")
     .font(fonts.bold)
     .fontSize(8)
     .text(diffText, x + width - 210, y + 12, {
@@ -1049,21 +1100,21 @@ function drawSalesComparisonChart(
   const previousY = y + 49;
 
   doc
-    .fillColor("#65748a")
+    .fillColor("#667085")
     .font(fonts.bold)
     .fontSize(7)
     .text("Hoy", x + 14, currentY - 1, { width: 70 })
     .text("Ayer", x + 14, previousY - 1, { width: 70 });
-  doc.roundedRect(barX, currentY, barWidth, 8, 4).fill("#edf2f7");
-  doc.roundedRect(barX, previousY, barWidth, 8, 4).fill("#edf2f7");
+  doc.roundedRect(barX, currentY, barWidth, 8, 4).fill("#edf0f5");
+  doc.roundedRect(barX, previousY, barWidth, 8, 4).fill("#edf0f5");
   if (currentWidth > 0) {
-    doc.roundedRect(barX, currentY, currentWidth, 8, 4).fill("#16694f");
+    doc.roundedRect(barX, currentY, currentWidth, 8, 4).fill("#1f6b4f");
   }
   if (previousWidth > 0) {
-    doc.roundedRect(barX, previousY, previousWidth, 8, 4).fill("#7b8ca7");
+    doc.roundedRect(barX, previousY, previousWidth, 8, 4).fill("#7a8799");
   }
   doc
-    .fillColor("#142033")
+    .fillColor("#151923")
     .font(fonts.bold)
     .fontSize(8)
     .text(String(currentSales), barX + barWidth + 12, currentY - 1, {
@@ -1126,9 +1177,9 @@ async function buildPdfCierreTabla(params: {
     contentWidth
   );
 
-  doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f4f6fa");
+  doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f3f5f8");
   const headerGradient = doc.linearGradient(tableX, 18, doc.page.width - 22, 104);
-  headerGradient.stop(0, "#111827").stop(0.58, "#1e293b").stop(1, "#79313a");
+  headerGradient.stop(0, "#101522").stop(0.56, "#1d2638").stop(1, "#812630");
   doc.roundedRect(tableX, 18, contentWidth, 86, 16).fill(headerGradient);
 
   doc.roundedRect(tableX + 18, 30, 62, 62, 14).fill("#ffffff");
@@ -1167,7 +1218,7 @@ async function buildPdfCierreTabla(params: {
 
   doc
     .roundedRect(doc.page.width - 278, 36, 228, 46, 12)
-    .fillAndStroke("#ffffff", "#ead5d8");
+    .fillAndStroke("#ffffff", "#d9dee8");
   doc
     .fillColor("#64748b")
     .font(params.fonts.bold)
@@ -1177,7 +1228,7 @@ async function buildPdfCierreTabla(params: {
       characterSpacing: 0.6,
     });
   doc
-    .fillColor(params.cajaAcumulada < 0 ? "#9f2737" : "#16694f")
+    .fillColor(params.cajaAcumulada < 0 ? "#9f2737" : "#1f6b4f")
     .font(params.fonts.bold)
     .fontSize(14)
     .text(formatoPesos(params.cajaAcumulada), doc.page.width - 262, 58, {
@@ -1195,34 +1246,34 @@ async function buildPdfCierreTabla(params: {
     {
       label: "Ingresos del dia",
       value: formatoPesos(totals.ingresosAcumulados),
-      color: "#1f7a5c",
+      color: "#1f6b4f",
     },
     {
       label: "Ingreso ventas",
       value: formatoPesos(totals.ingresosVentas),
-      color: "#1f7a5c",
+      color: "#1f6b4f",
     },
     {
       label: "Ingreso caja",
       value: formatoPesos(totals.ingresosCaja),
-      color: "#277489",
+      color: "#2d6f82",
     },
     {
       label: "Transferencia",
       value: formatoPesos(totals.transferencia),
-      color: "#3b5b92",
+      color: "#344f7a",
     },
     {
       label: "Voucher",
       value: formatoPesos(totals.voucher),
-      color: "#6f4f9f",
+      color: "#7652a6",
     },
     {
       label: "Financieras",
       value: formatoPesos(totals.financieras),
-      color: "#254f87",
+      color: "#2f4d75",
     },
-    { label: "Utilidad", value: formatoPesos(totals.utilidad), color: "#8a651e" },
+    { label: "Utilidad", value: formatoPesos(totals.utilidad), color: "#9a7324" },
     { label: "Caja neta", value: formatoPesos(totals.cajaNeta), color: "#9f2737" },
   ];
   const metricGap = 12;
@@ -1277,7 +1328,7 @@ async function buildPdfCierreTabla(params: {
     for (const row of params.rows) {
       if (y + 32 > doc.page.height - 44) {
         doc.addPage();
-        doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f4f6fa");
+        doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f3f5f8");
         y = drawCompactTableHeader(doc, columns, 34, tableX, params.fonts);
       }
 
@@ -1287,7 +1338,7 @@ async function buildPdfCierreTabla(params: {
         imei: row.imei,
         jalador: row.jalador,
         ingresos: formatoPesos(row.ingresos),
-        detalleIngresos: row.detalleIngresos,
+        detalleIngresos: detailIncomeCell(row.detalleIngresos),
         utilidad: formatoPesos(row.utilidad),
         vendedor: row.vendedor,
         comision: formatoPesos(row.comision),
@@ -1308,39 +1359,68 @@ async function buildPdfCierreTabla(params: {
   }
 
   y += 22;
-  if (y + 78 > doc.page.height - 36) {
+  if (y + 156 > doc.page.height - 36) {
     doc.addPage();
-    doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f4f6fa");
+    doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f3f5f8");
     y = 34;
   }
 
   doc
-    .fillColor("#0f172a")
-    .font(params.fonts.bold)
-    .fontSize(12)
-    .text("INGRESOS Y EGRESOS DE CAJA", tableX, y);
+    .roundedRect(tableX, y, contentWidth, 104, 14)
+    .fillAndStroke("#ffffff", "#d9dee8");
   doc
-    .fillColor("#64748b")
+    .fillColor("#151923")
+    .font(params.fonts.bold)
+    .fontSize(13)
+    .text("FLUJO DE CAJA DEL DIA", tableX + 16, y + 14);
+  doc
+    .fillColor("#667085")
     .font(params.fonts.regular)
     .fontSize(8)
     .text(
-      `Ingresos: ${formatoPesos(totals.ingresosCaja)} | Egresos: ${formatoPesos(
-        totals.egresosCaja
-      )}`,
-      tableX + 190,
-      y + 2,
-      { width: 300 }
+      "Movimientos manuales y cartera incluidos en el cierre.",
+      tableX + 16,
+      y + 32,
+      { width: 420 }
     );
+
+  [
+    { label: "Ingresos caja", value: formatoPesos(totals.ingresosCaja), color: "#1f6b4f" },
+    { label: "Egresos caja", value: formatoPesos(totals.egresosCaja), color: "#9f2737" },
+    { label: "Neto caja dia", value: formatoPesos(totals.cajaNeta), color: totals.cajaNeta < 0 ? "#9f2737" : "#1f6b4f" },
+    { label: "Movimientos", value: String(params.movimientos.length), color: "#2f4d75" },
+  ].forEach((item, index) => {
+    const gap = 12;
+    const cardWidth = (contentWidth - 32 - gap * 3) / 4;
+    const cardX = tableX + 16 + index * (cardWidth + gap);
+    drawTrialMetricCard(
+      doc,
+      cardX,
+      y + 50,
+      cardWidth,
+      item.label,
+      item.value,
+      params.fonts,
+      item.color
+    );
+  });
+
+  y += 124;
+  doc
+    .fillColor("#151923")
+    .font(params.fonts.bold)
+    .fontSize(10.5)
+    .text("DETALLE DE MOVIMIENTOS", tableX, y);
   y += 18;
 
   const cashColumns = fitColumns(
     [
-      { key: "tipo", title: "TIPO", width: 80 },
-      { key: "concepto", title: "CONCEPTO", width: 300 },
-      { key: "sede", title: "SEDE", width: 140 },
-      { key: "valor", title: "VALOR", width: 120, align: "right", tone: "money" },
+      { key: "tipo", title: "MOVIMIENTO", width: 110 },
+      { key: "concepto", title: "CONCEPTO", width: 520 },
+      { key: "sede", title: "SEDE", width: 180 },
+      { key: "valor", title: "VALOR", width: 150, align: "right", tone: "money" },
     ],
-    640
+    contentWidth
   );
   y = drawCompactTableHeader(doc, cashColumns, y, tableX, params.fonts);
 
@@ -1354,7 +1434,7 @@ async function buildPdfCierreTabla(params: {
     for (const movimiento of params.movimientos) {
       if (y + 26 > doc.page.height - 36) {
         doc.addPage();
-        doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f4f6fa");
+        doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f3f5f8");
         y = drawCompactTableHeader(doc, cashColumns, 34, tableX, params.fonts);
       }
 
