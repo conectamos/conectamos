@@ -32,6 +32,7 @@ type ModuleKey =
   | "prestamos"
   | "registrarVenta"
   | "registrarFacturacion"
+  | "administracion"
   | "payjoy"
   | "nuovo"
   | "equality";
@@ -43,6 +44,13 @@ type ModuleCard = {
   description: string;
   actions: ModuleAction[];
   tone: ModuleTone;
+};
+
+type ModuleSectionConfig = {
+  title: string;
+  eyebrow: string;
+  description: string;
+  modules: ModuleCard[];
 };
 
 type SessionBadge = {
@@ -434,6 +442,41 @@ function ModulePanel({
   );
 }
 
+function ModuleSectionBlock({
+  title,
+  eyebrow,
+  description,
+  modules,
+}: ModuleSectionConfig) {
+  return (
+    <section className="border-t border-[#e4dccf] pt-6 first:border-t-0 first:pt-0">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="inline-flex rounded-full border border-[#e5ddd0] bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+            {eyebrow}
+          </div>
+          <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+            {title}
+          </h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+            {description}
+          </p>
+        </div>
+
+        <div className="w-max rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+          {modules.length} {modules.length === 1 ? "modulo" : "modulos"}
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {modules.map(({ key, ...module }) => (
+          <ModulePanel key={key} {...module} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function resolveSaludo({
   esAdmin,
   esSupervisor,
@@ -544,13 +587,7 @@ export default async function DashboardPage() {
         { href: "/inventario", label: "Ver inventario", tone: "primary" },
         { href: "/inventario/nuevo", label: "Nuevo inventario", tone: "secondary" },
         ...(esAdmin
-          ? ([{ href: "/dashboard/sedes", label: "Gestion sedes", tone: "secondary" }] as ModuleAction[])
-          : []),
-        ...(esAdmin
           ? ([{ href: "/inventario-principal", label: "Bodega principal", tone: "secondary" }] as ModuleAction[])
-          : []),
-        ...(esAdmin
-          ? ([{ href: "/dashboard/auditoria", label: "Auditoria", tone: "secondary" }] as ModuleAction[])
           : []),
         { href: "/inventario/historial", label: "IMEI historico", tone: "secondary" },
       ],
@@ -567,15 +604,6 @@ export default async function DashboardPage() {
         { href: "/ventas/nuevo", label: "Nueva venta", tone: "secondary" },
         ...(esAdmin || esSupervisor
           ? ([{ href: "/ventas/aprobaciones", label: "Aprobacion de ventas", tone: "secondary" }] as ModuleAction[])
-          : []),
-        ...(esAdmin
-          ? ([{ href: "/ventas/perfiles", label: "Perfiles vendedores", tone: "secondary" }] as ModuleAction[])
-          : []),
-        ...(esAdmin
-          ? ([{ href: "/ventas/equipo-comercial", label: "Catalogos de ventas", tone: "secondary" }] as ModuleAction[])
-          : []),
-        ...(esAdmin
-          ? ([{ href: "/dashboard/lista-precios", label: "Lista de precios", tone: "secondary" }] as ModuleAction[])
           : []),
       ],
       tone: "violet",
@@ -623,11 +651,15 @@ export default async function DashboardPage() {
         : "Digitaliza la hoja de plataforma y registra el tramite completo desde este modulo.",
       actions: [
         { href: "/vendedor/registros", label: "Registrar venta", tone: "primary" },
-        {
-          href: esAdmin ? "/dashboard/lista-precios" : "/vendedor/lista-precios",
-          label: "LISTA DE PRECIOS",
-          tone: "secondary",
-        },
+        ...(!esAdmin
+          ? ([
+              {
+                href: "/vendedor/lista-precios",
+                label: "LISTA DE PRECIOS",
+                tone: "secondary",
+              },
+            ] as ModuleAction[])
+          : []),
         ...(!esVendedor
           ? ([{ href: "/vendedor/registros/buscar", label: "Buscar registro", tone: "secondary" }] as ModuleAction[])
           : []),
@@ -648,6 +680,21 @@ export default async function DashboardPage() {
         },
       ],
       tone: "emerald",
+    },
+    administracion: {
+      key: "administracion",
+      title: "ADMINISTRACION",
+      eyebrow: "Sistema",
+      description:
+        "Gestiona sedes, perfiles, catalogos y revisiones internas del sistema.",
+      actions: [
+        { href: "/dashboard/sedes", label: "Gestion sedes", tone: "primary" },
+        { href: "/ventas/perfiles", label: "Perfiles vendedores", tone: "secondary" },
+        { href: "/ventas/equipo-comercial", label: "Catalogos de ventas", tone: "secondary" },
+        { href: "/dashboard/lista-precios", label: "Lista de precios", tone: "secondary" },
+        { href: "/dashboard/auditoria", label: "Auditoria", tone: "secondary" },
+      ],
+      tone: "slate",
     },
     payjoy: {
       key: "payjoy",
@@ -688,6 +735,51 @@ export default async function DashboardPage() {
     },
   };
 
+  const mapModuleKeys = (keys: ModuleKey[]) =>
+    keys
+      .filter((key) => (key === "equality" ? puedeVerEquality : true))
+      .map((key) => moduleCatalog[key]);
+
+  const adminModuleSections: ModuleSectionConfig[] = esAdmin
+    ? [
+        {
+          eyebrow: "Operacion",
+          title: "Control operativo",
+          description:
+            "Atajos para aprobar movimientos, revisar inventario y controlar prestamos entre sedes.",
+          modules: mapModuleKeys(["aprobaciones", "inventario", "prestamos"]),
+        },
+        {
+          eyebrow: "Comercial",
+          title: "Gestion comercial",
+          description:
+            "Ventas, registros del asesor y facturacion quedan reunidos en el mismo bloque.",
+          modules: mapModuleKeys(["ventas", "registrarVenta", "registrarFacturacion"]),
+        },
+        {
+          eyebrow: "Finanzas",
+          title: "Caja y control financiero",
+          description:
+            "Movimientos de caja, cierre del dia, arqueos, cartera y panel financiero.",
+          modules: mapModuleKeys(["caja"]),
+        },
+        {
+          eyebrow: "Administracion",
+          title: "Configuracion y auditoria",
+          description:
+            "Sedes, perfiles, catalogos, lista de precios y auditoria quedan separados de la operacion diaria.",
+          modules: mapModuleKeys(["administracion"]),
+        },
+        {
+          eyebrow: "Plataformas",
+          title: "Plataformas externas",
+          description:
+            "Accesos directos a PayJoy, NUOVO y Trustonic para consulta y seguimiento.",
+          modules: mapModuleKeys(["payjoy", "nuovo", "equality"]),
+        },
+      ]
+    : [];
+
   const moduleOrder: ModuleKey[] = esAdmin
     ? [
         "aprobaciones",
@@ -697,6 +789,7 @@ export default async function DashboardPage() {
         "prestamos",
         "registrarVenta",
         "registrarFacturacion",
+        "administracion",
         "payjoy",
         "nuovo",
         "equality",
@@ -718,9 +811,7 @@ export default async function DashboardPage() {
           ? ["registrarFacturacion"]
           : ["inventario", "ventas", "caja"];
 
-  const modules = moduleOrder
-    .filter((key) => (key === "equality" ? puedeVerEquality : true))
-    .map((key) => moduleCatalog[key]);
+  const modules = mapModuleKeys(moduleOrder);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] text-slate-950">
@@ -798,28 +889,38 @@ export default async function DashboardPage() {
                 Modulos disponibles
               </div>
               <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-                Accesos por rol
+                {esAdmin ? "Panel administrativo" : "Accesos por rol"}
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Vista simplificada del dashboard para entrar directo a cada modulo principal.
+                {esAdmin
+                  ? "Vista organizada por areas para encontrar rapido cada control del sistema."
+                  : "Vista simplificada del dashboard para entrar directo a cada modulo principal."}
               </p>
             </div>
           </div>
 
-          <div
-            className={[
-              "mt-6 grid gap-5",
-              modules.length === 1
-                ? "max-w-xl"
-                : modules.length === 7
-                  ? "md:grid-cols-2 xl:grid-cols-3"
-                  : "md:grid-cols-2 xl:grid-cols-3",
-            ].join(" ")}
-          >
-            {modules.map(({ key, ...module }) => (
-              <ModulePanel key={key} {...module} />
-            ))}
-          </div>
+          {esAdmin ? (
+            <div className="mt-6 space-y-9">
+              {adminModuleSections.map((section) => (
+                <ModuleSectionBlock key={section.title} {...section} />
+              ))}
+            </div>
+          ) : (
+            <div
+              className={[
+                "mt-6 grid gap-5",
+                modules.length === 1
+                  ? "max-w-xl"
+                  : modules.length === 7
+                    ? "md:grid-cols-2 xl:grid-cols-3"
+                    : "md:grid-cols-2 xl:grid-cols-3",
+              ].join(" ")}
+            >
+              {modules.map(({ key, ...module }) => (
+                <ModulePanel key={key} {...module} />
+              ))}
+            </div>
+          )}
         </section>
 
         {!esVendedor && !esFacturador && resumenComercialMensual && (
