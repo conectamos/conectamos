@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 
 const ESTADOS_PRESTAMO_ACTIVOS = [
   "PENDIENTE",
   "APROBADO",
   "PAGO_PENDIENTE_APROBACION",
+  "DEVOLUCION_PENDIENTE",
 ];
 
 export async function POST(req: Request) {
@@ -45,6 +47,8 @@ export async function POST(req: Request) {
         color: true,
         costo: true,
         estado: true,
+        estadoCobro: true,
+        sedeDestinoId: true,
       },
     });
 
@@ -55,12 +59,30 @@ export async function POST(req: Request) {
       );
     }
 
+    const sedeBodega = await prisma.sede.findFirst({
+      where: {
+        nombre: {
+          equals: NOMBRE_SEDE_BODEGA,
+          mode: "insensitive",
+        },
+      },
+      select: { id: true, nombre: true },
+    });
+
     const inventarioSedeVinculado = await prisma.inventarioSede.findMany({
       where: {
         inventarioPrincipalId: { in: items.map((item) => item.id) },
       },
       select: {
+        id: true,
+        imei: true,
         inventarioPrincipalId: true,
+        sedeId: true,
+        estadoActual: true,
+        ventas: {
+          select: { id: true },
+          take: 1,
+        },
       },
     });
 
@@ -70,32 +92,108 @@ export async function POST(req: Request) {
         estado: { in: ESTADOS_PRESTAMO_ACTIVOS },
       },
       select: {
+        id: true,
         imei: true,
+        estado: true,
+        sedeOrigenId: true,
+        sedeDestinoId: true,
+        movimientosCaja: {
+          select: { id: true },
+          take: 1,
+        },
       },
     });
 
-    const idsConInventarioSede = new Set(
-      inventarioSedeVinculado
-        .map((item) => item.inventarioPrincipalId)
-        .filter((item): item is number => typeof item === "number")
-    );
-    const imeisConPrestamoActivo = new Set(
-      prestamosActivos.map((item) => item.imei)
+    const registrosVentaAbiertos = await prisma.registroVendedorVenta.findMany({
+      where: {
+        serialImei: { in: items.map((item) => item.imei) },
+        eliminadoEn: null,
+        ventaIdRelacionada: null,
+      },
+      select: {
+        serialImei: true,
+      },
+    });
+
+    const imeisConRegistroAbierto = new Set(
+      registrosVentaAbiertos
+        .map((item) => item.serialImei || "")
+        .filter(Boolean)
     );
 
-    const eliminables = items.filter(
-      (item) =>
-        String(item.estado || "BODEGA").toUpperCase() === "BODEGA" &&
-        !idsConInventarioSede.has(item.id) &&
-        !imeisConPrestamoActivo.has(item.imei)
-    );
-    const omitidos = items.filter((item) => !eliminables.includes(item));
+    const eliminablesBodega: typeof items = [];
+    const eliminablesCorreccion: Array<{
+      item: (typeof items)[number];
+      inventarioSedeId: number;
+      prestamoId: number;
+    }> = [];
+    const omitidos: typeof items = [];
+
+    for (const item of items) {
+      const estadoPrincipal = String(item.estado || "BODEGA").toUpperCase();
+      const estadoCobro = String(item.estadoCobro || "").toUpperCase();
+      const inventariosItem = inventarioSedeVinculado.filter(
+        (inventario) => inventario.inventarioPrincipalId === item.id
+      );
+      const prestamosItem = prestamosActivos.filter(
+        (prestamo) => prestamo.imei === item.imei
+      );
+      const tieneRegistroAbierto = imeisConRegistroAbierto.has(item.imei);
+
+      if (estadoPrincipal === "BODEGA") {
+        if (
+          inventariosItem.length === 0 &&
+          prestamosItem.length === 0 &&
+          !tieneRegistroAbierto
+        ) {
+          eliminablesBodega.push(item);
+        } else {
+          omitidos.push(item);
+        }
+        continue;
+      }
+
+      if (estadoPrincipal === "PRESTAMO" && sedeBodega) {
+        const inventarioSede = inventariosItem[0];
+        const prestamo = prestamosItem[0];
+        const cobroLimpio = !estadoCobro || estadoCobro === "PENDIENTE";
+        const esCorreccionSegura =
+          cobroLimpio &&
+          inventariosItem.length === 1 &&
+          String(inventarioSede?.estadoActual || "").toUpperCase() === "BODEGA" &&
+          inventarioSede.ventas.length === 0 &&
+          prestamosItem.length === 1 &&
+          prestamo.estado === "APROBADO" &&
+          prestamo.sedeOrigenId === sedeBodega.id &&
+          prestamo.sedeDestinoId === inventarioSede.sedeId &&
+          prestamo.movimientosCaja.length === 0 &&
+          !tieneRegistroAbierto;
+
+        if (esCorreccionSegura) {
+          eliminablesCorreccion.push({
+            item,
+            inventarioSedeId: inventarioSede.id,
+            prestamoId: prestamo.id,
+          });
+        } else {
+          omitidos.push(item);
+        }
+        continue;
+      }
+
+      omitidos.push(item);
+    }
+
+    const eliminables = [
+      ...eliminablesBodega,
+      ...eliminablesCorreccion.map(({ item }) => item),
+    ];
 
     if (eliminables.length === 0) {
       return NextResponse.json(
         {
           error:
-            "No hay equipos disponibles para eliminar. Solo se eliminan equipos en BODEGA sin envio ni prestamo activo.",
+            "No hay equipos elegibles para eliminar. Solo se eliminan equipos en BODEGA o envios en PRESTAMO sin ventas, pagos ni movimientos posteriores.",
           omitidos: omitidos.length,
           detallesOmitidos: omitidos.map((item) => item.imei),
         },
@@ -104,6 +202,24 @@ export async function POST(req: Request) {
     }
 
     await prisma.$transaction(async (tx) => {
+      if (eliminablesCorreccion.length > 0) {
+        await tx.inventarioSede.deleteMany({
+          where: {
+            id: {
+              in: eliminablesCorreccion.map((item) => item.inventarioSedeId),
+            },
+          },
+        });
+
+        await tx.prestamoSede.deleteMany({
+          where: {
+            id: {
+              in: eliminablesCorreccion.map((item) => item.prestamoId),
+            },
+          },
+        });
+      }
+
       await tx.inventarioPrincipal.deleteMany({
         where: {
           id: { in: eliminables.map((item) => item.id) },
@@ -113,13 +229,21 @@ export async function POST(req: Request) {
       await tx.movimientoInventario.createMany({
         data: eliminables.map((item) => ({
           imei: item.imei,
-          tipoMovimiento: "ELIMINACION_PRINCIPAL",
+          tipoMovimiento: eliminablesCorreccion.some(
+            (correccion) => correccion.item.id === item.id
+          )
+            ? "ELIMINACION_PRINCIPAL_CORRECCION_ENVIO"
+            : "ELIMINACION_PRINCIPAL",
           referencia: item.referencia,
           color: item.color || null,
           costo: item.costo,
           sedeId: null,
           origen: "PRINCIPAL",
-          observacion: "Equipo eliminado de bodega principal por administrador",
+          observacion: eliminablesCorreccion.some(
+            (correccion) => correccion.item.id === item.id
+          )
+            ? `Equipo eliminado por admin ${user.usuario}; se revirtio el envio a sede antes de eliminar.`
+            : "Equipo eliminado de bodega principal por administrador",
         })),
       });
     });

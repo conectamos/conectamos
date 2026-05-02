@@ -271,6 +271,14 @@ export default function InventarioPrincipalPage() {
     [itemsSeleccionados]
   );
 
+  const itemsSeleccionadosEnPrestamo = useMemo(
+    () =>
+      itemsSeleccionados.filter(
+        (item) => String(item.estado || "").toUpperCase() === "PRESTAMO"
+      ),
+    [itemsSeleccionados]
+  );
+
   const itemsEdicion = useMemo(
     () => items.filter((item) => idsEdicion.includes(item.id)),
     [idsEdicion, items]
@@ -464,7 +472,7 @@ export default function InventarioPrincipalPage() {
 
   const eliminar = async (id: number) => {
     const confirmado = window.confirm(
-      "Seguro que deseas eliminar este equipo de bodega principal?"
+      "Seguro que deseas eliminar este equipo de bodega principal? Si esta en PRESTAMO solo se eliminara si no tiene ventas, pagos ni movimientos posteriores."
     );
 
     if (!confirmado) {
@@ -499,6 +507,43 @@ export default function InventarioPrincipalPage() {
     }
   };
 
+  const restaurarBodega = async (id: number) => {
+    const confirmado = window.confirm(
+      "Volver este equipo a Bodega Principal? Solo aplica si el envio sigue limpio: sin venta, sin pago y sin otro prestamo posterior."
+    );
+
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/inventario-principal/restaurar-bodega", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(`Error: ${data.error || "No se pudo volver a bodega"}`);
+        return;
+      }
+
+      setMensaje(data.mensaje || "Equipo devuelto a Bodega Principal");
+      await cargarInventarioPrincipal();
+    } catch {
+      setMensaje("Error devolviendo equipo a Bodega Principal");
+    } finally {
+      setCargando(false);
+    }
+  };
+
   const eliminarSeleccion = async () => {
     if (idsSeleccionados.length === 0) {
       setMensaje("Debes seleccionar al menos un equipo para eliminar");
@@ -506,7 +551,7 @@ export default function InventarioPrincipalPage() {
     }
 
     const confirmado = window.confirm(
-      `Eliminar ${idsSeleccionados.length} equipo(s) seleccionado(s)? Solo se eliminaran los que esten disponibles en BODEGA.`
+      `Eliminar ${idsSeleccionados.length} equipo(s) seleccionado(s)? Se eliminaran los que esten en BODEGA y los envios en PRESTAMO que no tengan ventas, pagos ni movimientos posteriores.`
     );
 
     if (!confirmado) {
@@ -536,7 +581,7 @@ export default function InventarioPrincipalPage() {
         [
           data.mensaje || "Seleccion eliminada correctamente",
           Number(data.omitidos || 0) > 0
-            ? `${data.omitidos} equipo(s) no se eliminaron por estar enviados o bloqueados.`
+            ? `${data.omitidos} equipo(s) no se eliminaron por estar bloqueados.`
             : "",
         ]
           .filter(Boolean)
@@ -546,6 +591,58 @@ export default function InventarioPrincipalPage() {
       await cargarInventarioPrincipal();
     } catch {
       setMensaje("Error eliminando seleccion");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const restaurarSeleccionBodega = async () => {
+    if (itemsSeleccionadosEnPrestamo.length === 0) {
+      setMensaje("Debes seleccionar al menos un equipo en PRESTAMO para volver a bodega");
+      return;
+    }
+
+    const confirmado = window.confirm(
+      `Volver ${itemsSeleccionadosEnPrestamo.length} equipo(s) a Bodega Principal? Solo se procesaran envios limpios sin ventas, pagos ni movimientos posteriores.`
+    );
+
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/inventario-principal/restaurar-bodega", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ids: itemsSeleccionadosEnPrestamo.map((item) => item.id) }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(`Error: ${data.error || "No se pudo volver la seleccion a bodega"}`);
+        return;
+      }
+
+      setMensaje(
+        [
+          data.mensaje || "Seleccion devuelta a Bodega Principal",
+          Array.isArray(data.bloqueados) && data.bloqueados.length > 0
+            ? `${data.bloqueados.length} equipo(s) no se procesaron por bloqueo.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+      setIdsSeleccionados([]);
+      await cargarInventarioPrincipal();
+    } catch {
+      setMensaje("Error devolviendo seleccion a Bodega Principal");
     } finally {
       setCargando(false);
     }
@@ -1052,7 +1149,8 @@ export default function InventarioPrincipalPage() {
                   <p className="mt-1 text-xs text-slate-500">
                     {itemsSeleccionadosDisponibles.length} disponible
                     {itemsSeleccionadosDisponibles.length === 1 ? "" : "s"} para envio
-                    desde Bodega Principal.
+                    desde Bodega Principal. {itemsSeleccionadosEnPrestamo.length} en PRESTAMO
+                    para correccion admin.
                   </p>
                 </div>
 
@@ -1076,6 +1174,15 @@ export default function InventarioPrincipalPage() {
                     className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-60"
                   >
                     Editar seleccion
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void restaurarSeleccionBodega()}
+                    disabled={cargando || itemsSeleccionadosEnPrestamo.length === 0}
+                    className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Volver a bodega
                   </button>
 
                   <button
@@ -1209,6 +1316,14 @@ export default function InventarioPrincipalPage() {
                               className="rounded-xl bg-[#111318] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d2330] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Enviar a sede
+                            </button>
+
+                            <button
+                              onClick={() => void restaurarBodega(item.id)}
+                              disabled={cargando || estadoNormalizado !== "PRESTAMO"}
+                              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Volver a bodega
                             </button>
 
                             <button
