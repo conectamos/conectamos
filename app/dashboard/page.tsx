@@ -120,6 +120,41 @@ function CommercialRankingPanel({
   countLabel: string;
   showAmount?: boolean;
 }) {
+  const topItems = items.slice(0, 5);
+  const renderItems = (rankingItems: CommercialRankingItem[]) =>
+    rankingItems.map((item, index) => (
+      <div
+        key={`${title}-${item.nombre}-${index}`}
+        className="flex items-start justify-between gap-4 rounded-2xl border border-[#eee6da] bg-[#fcfbf8] px-4 py-3"
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-black text-white">
+            {index + 1}
+          </div>
+
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-slate-950">
+              {item.nombre}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {item.total} {countText(item.total)}
+            </p>
+          </div>
+        </div>
+
+        {showAmount && (
+          <div className="shrink-0 text-right">
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">
+              Monto
+            </p>
+            <p className="mt-1 text-sm font-black text-slate-950">
+              {formatoPesos(item.monto)}
+            </p>
+          </div>
+        )}
+      </div>
+    ));
+
   const countText = (total: number) => {
     if (countLabel === "uso") {
       return total === 1 ? "uso" : "usos";
@@ -137,46 +172,31 @@ function CommercialRankingPanel({
         <span className={["h-2.5 w-2.5 rounded-full", accent].join(" ")} />
       </div>
 
-      <div className="mt-4 space-y-3">
-        {items.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#e6ddcf] bg-[#fcfaf6] px-4 py-4 text-sm text-slate-500">
-            Sin movimientos registrados en este periodo.
-          </div>
-        ) : (
-          items.map((item, index) => (
-            <div
-              key={`${title}-${item.nombre}`}
-              className="flex items-start justify-between gap-4 rounded-2xl border border-[#eee6da] bg-[#fcfbf8] px-4 py-3"
-            >
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-black text-white">
-                  {index + 1}
-                </div>
+      <details className="group mt-4">
+        <summary className="flex w-max cursor-pointer list-none items-center rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-700 transition hover:bg-white [&::-webkit-details-marker]:hidden">
+          Todos
+        </summary>
 
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-slate-950">
-                    {item.nombre}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {item.total} {countText(item.total)}
-                  </p>
-                </div>
-              </div>
-
-              {showAmount && (
-                <div className="text-right">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-400">
-                    Monto
-                  </p>
-                  <p className="mt-1 text-sm font-black text-slate-950">
-                    {formatoPesos(item.monto)}
-                  </p>
-                </div>
-              )}
+        <div className="mt-3 hidden space-y-3 group-open:block">
+          {items.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[#e6ddcf] bg-[#fcfaf6] px-4 py-4 text-sm text-slate-500">
+              Sin movimientos registrados en este periodo.
             </div>
-          ))
-        )}
-      </div>
+          ) : (
+            renderItems(items)
+          )}
+        </div>
+
+        <div className="mt-3 space-y-3 group-open:hidden">
+          {items.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[#e6ddcf] bg-[#fcfaf6] px-4 py-4 text-sm text-slate-500">
+              Sin movimientos registrados en este periodo.
+            </div>
+          ) : (
+            renderItems(topItems)
+          )}
+        </div>
+      </details>
     </div>
   );
 }
@@ -184,12 +204,14 @@ function CommercialRankingPanel({
 function CommercialRankingSection({
   periodLabel,
   coverageLabel,
+  topSedesJalador,
   topJaladores,
   topCerradores,
   topFinancieras,
 }: {
   periodLabel: string;
   coverageLabel: string;
+  topSedesJalador: CommercialRankingItem[];
   topJaladores: CommercialRankingItem[];
   topCerradores: CommercialRankingItem[];
   topFinancieras: CommercialRankingItem[];
@@ -219,9 +241,15 @@ function CommercialRankingSection({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 xl:grid-cols-3">
+      <div className="mt-6 grid gap-4 xl:grid-cols-4">
         <CommercialRankingPanel
-          title="Top 5 jalador"
+          title="Top 5 SEDES"
+          accent="bg-sky-500"
+          items={topSedesJalador}
+          countLabel="venta"
+        />
+        <CommercialRankingPanel
+          title="Top 5 Jalador"
           accent="bg-sky-500"
           items={topJaladores}
           countLabel="venta"
@@ -737,6 +765,7 @@ export default async function DashboardPage() {
             <CommercialRankingSection
               periodLabel={mesActual.label}
               coverageLabel={esAdmin ? "Todas las sedes" : sedeLabel}
+              topSedesJalador={resumenComercialMensual.topSedesJalador}
               topJaladores={resumenComercialMensual.topJaladores}
               topCerradores={resumenComercialMensual.topCerradores}
               topFinancieras={resumenComercialMensual.topFinancieras}

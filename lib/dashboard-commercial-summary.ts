@@ -55,7 +55,11 @@ function pushRanking(
   });
 }
 
-function topRanking(map: Map<string, CommercialRankingItem>, limit = 5) {
+function isSedeJalador(value: string) {
+  return /^SEDE\s*\d+$/i.test(normalizeLabel(value));
+}
+
+function sortedRanking(map: Map<string, CommercialRankingItem>) {
   return Array.from(map.values())
     .sort((a, b) => {
       if (b.total !== a.total) {
@@ -67,8 +71,7 @@ function topRanking(map: Map<string, CommercialRankingItem>, limit = 5) {
       }
 
       return a.nombre.localeCompare(b.nombre, "es");
-    })
-    .slice(0, limit);
+    });
 }
 
 export async function getMonthlyCommercialSummary(options?: {
@@ -157,13 +160,18 @@ export async function getMonthlyCommercialSummary(options?: {
 
   const cajaVentas = n(ventas._sum.cajaOficina);
   const cajaOperativa = n(ingresosCaja._sum.valor) - n(egresosCaja._sum.valor);
+  const sedesJalador = new Map<string, CommercialRankingItem>();
   const jaladores = new Map<string, CommercialRankingItem>();
   const cerradores = new Map<string, CommercialRankingItem>();
   const financieras = new Map<string, CommercialRankingItem>();
 
   for (const venta of ventasDetalle) {
     if (venta.jalador) {
-      pushRanking(jaladores, venta.jalador);
+      if (isSedeJalador(venta.jalador)) {
+        pushRanking(sedesJalador, venta.jalador);
+      } else {
+        pushRanking(jaladores, venta.jalador);
+      }
     }
 
     if (venta.cerrador) {
@@ -187,8 +195,9 @@ export async function getMonthlyCommercialSummary(options?: {
     ventas: Number(ventas._count.id || 0),
     cajaVentas,
     cajaOperativa,
-    topJaladores: topRanking(jaladores),
-    topCerradores: topRanking(cerradores),
-    topFinancieras: topRanking(financieras),
+    topSedesJalador: sortedRanking(sedesJalador),
+    topJaladores: sortedRanking(jaladores),
+    topCerradores: sortedRanking(cerradores),
+    topFinancieras: sortedRanking(financieras),
   };
 }
