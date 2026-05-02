@@ -299,6 +299,27 @@ function totalIngresosContado(form: Pick<FormState, "medioPago1Valor" | "medioPa
   return moneyInputToNumber(form.medioPago1Valor) + moneyInputToNumber(form.medioPago2Valor);
 }
 
+function totalIngresosInicialFinanciera(form: Pick<FormState, "medioPago1Valor" | "medioPago2Valor">) {
+  return totalIngresosContado(form);
+}
+
+function debeMostrarSegundoIngreso(form: FormState) {
+  const tieneSegundoIngreso = Boolean(form.medioPago2Tipo || form.medioPago2Valor);
+
+  if (!tieneSegundoIngreso) {
+    return false;
+  }
+
+  if (esServicioContado(form.servicio)) {
+    return true;
+  }
+
+  const inicial = moneyInputToNumber(form.financierasDetalle[0]?.cuotaInicial ?? "");
+  const ingresos = totalIngresosInicialFinanciera(form);
+
+  return inicial > 0 && ingresos === inicial;
+}
+
 function toDateInputValue(value: string | null | undefined) {
   if (!value) {
     return "";
@@ -1063,9 +1084,7 @@ export default function VendedorRegistroWorkspace({
         setRegistroEditando(registro);
         setForm(mapped.form);
         setFinancierasVisibles(mapped.financierasVisibles);
-        setIngresoContado2Visible(
-          Boolean(mapped.form.medioPago2Tipo || mapped.form.medioPago2Valor)
-        );
+        setIngresoContado2Visible(debeMostrarSegundoIngreso(mapped.form));
         setImeiDetalle(
           [
             registro.referenciaEquipo,
@@ -1127,6 +1146,30 @@ export default function VendedorRegistroWorkspace({
 
         if (!isFinancieraCompleta(item, index)) {
           return `Todos los campos de la financiera ${index + 1} son obligatorios`;
+        }
+      }
+
+      const primeraFinanciera = financierasActivas[0];
+
+      if (ingresoContado2Visible && primeraFinanciera) {
+        const inicial = moneyInputToNumber(primeraFinanciera.cuotaInicial);
+        const ingreso1 = moneyInputToNumber(form.medioPago1Valor);
+        const ingreso2 = moneyInputToNumber(form.medioPago2Valor);
+
+        if (ingreso1 <= 0) {
+          return "Registra el valor del primer ingreso de la inicial";
+        }
+
+        if (!isTextFilled(form.medioPago2Tipo)) {
+          return "Selecciona el tipo del segundo ingreso de la inicial";
+        }
+
+        if (ingreso2 <= 0) {
+          return "Registra el valor del segundo ingreso de la inicial";
+        }
+
+        if (ingreso1 + ingreso2 !== inicial) {
+          return "La suma de los ingresos debe ser igual a la inicial";
         }
       }
     } else if (esServicioContado(form.servicio)) {
@@ -1221,11 +1264,13 @@ export default function VendedorRegistroWorkspace({
               .filter((item, index) => index === 0 || detalleFinancieraTieneDatos(item))
           : [],
         medioPago2Tipo:
-          esServicioContado(form.servicio) && ingresoContado2Visible
+          (esServicioContado(form.servicio) || esServicioFinanciera(form.servicio)) &&
+          ingresoContado2Visible
             ? form.medioPago2Tipo
             : "",
         medioPago2Valor:
-          esServicioContado(form.servicio) && ingresoContado2Visible
+          (esServicioContado(form.servicio) || esServicioFinanciera(form.servicio)) &&
+          ingresoContado2Visible
             ? form.medioPago2Valor
             : "",
       };
@@ -1268,9 +1313,7 @@ export default function VendedorRegistroWorkspace({
         setRegistroEditando(registro);
         setForm(mapped.form);
         setFinancierasVisibles(mapped.financierasVisibles);
-        setIngresoContado2Visible(
-          Boolean(mapped.form.medioPago2Tipo || mapped.form.medioPago2Valor)
-        );
+        setIngresoContado2Visible(debeMostrarSegundoIngreso(mapped.form));
       } else {
         limpiarFormulario(true);
       }
@@ -1695,7 +1738,9 @@ export default function VendedorRegistroWorkspace({
                                 </label>
 
                                 <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                                  Tipo de pago de la inicial
+                                  {index === 0 && ingresoContado2Visible
+                                    ? "Tipo ingreso 1"
+                                    : "Tipo de pago de la inicial"}
                                   <select
                                     value={item.tipoPagoInicial}
                                     onChange={(event) =>
@@ -1715,6 +1760,99 @@ export default function VendedorRegistroWorkspace({
                                     ))}
                                   </select>
                                 </label>
+
+                                {index === 0 && (
+                                  <div className="md:col-span-2 xl:col-span-3 rounded-[24px] border border-slate-200 bg-white p-4">
+                                    {!ingresoContado2Visible ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!form.medioPago1Valor && item.cuotaInicial) {
+                                            setField("medioPago1Valor", item.cuotaInicial);
+                                          }
+                                          setIngresoContado2Visible(true);
+                                        }}
+                                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                                      >
+                                        + Agregar segundo ingreso
+                                      </button>
+                                    ) : (
+                                      <div className="space-y-4">
+                                        <div className="grid gap-4 md:grid-cols-3">
+                                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                            Valor ingreso 1
+                                            <input
+                                              value={form.medioPago1Valor}
+                                              onChange={(event) =>
+                                                setField(
+                                                  "medioPago1Valor",
+                                                  formatearPesoInput(event.target.value)
+                                                )
+                                              }
+                                              className={inputClass()}
+                                              inputMode="numeric"
+                                              placeholder="$ 0"
+                                            />
+                                          </label>
+
+                                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                            Valor ingreso 2
+                                            <input
+                                              value={form.medioPago2Valor}
+                                              onChange={(event) =>
+                                                setField(
+                                                  "medioPago2Valor",
+                                                  formatearPesoInput(event.target.value)
+                                                )
+                                              }
+                                              className={inputClass()}
+                                              inputMode="numeric"
+                                              placeholder="$ 0"
+                                            />
+                                          </label>
+
+                                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                            Tipo ingreso 2
+                                            <select
+                                              value={form.medioPago2Tipo}
+                                              onChange={(event) =>
+                                                setField("medioPago2Tipo", event.target.value)
+                                              }
+                                              className={inputClass()}
+                                            >
+                                              <option value="">Selecciona una opcion</option>
+                                              {MEDIOS_PAGO_REGISTRO_VENTA.map((option) => (
+                                                <option key={option} value={option}>
+                                                  {option}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+                                            Suma ingresos:{" "}
+                                            {formatMoney(totalIngresosInicialFinanciera(form))}
+                                          </div>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setIngresoContado2Visible(false);
+                                              setField("medioPago1Valor", "");
+                                              setField("medioPago2Tipo", "");
+                                              setField("medioPago2Valor", "");
+                                            }}
+                                            className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                                          >
+                                            Quitar segundo ingreso
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </>
                             )}
 

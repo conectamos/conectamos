@@ -352,6 +352,23 @@ export default function VentasAprobacionesWorkspace({
                                 </div>
                               </div>
                             ))}
+                            {(registro.medioPago1Valor || registro.medioPago2Valor) && (
+                              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                                <div className="font-semibold uppercase tracking-[0.14em]">
+                                  Inicial
+                                </div>
+                                <div className="mt-1">
+                                  {registro.medioPago1Tipo || "INGRESO 1"}:{" "}
+                                  {formatMoney(registro.medioPago1Valor)}
+                                </div>
+                                {registro.medioPago2Valor && (
+                                  <div className="mt-1">
+                                    {registro.medioPago2Tipo || "INGRESO 2"}:{" "}
+                                    {formatMoney(registro.medioPago2Valor)}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </td>

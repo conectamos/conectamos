@@ -202,6 +202,15 @@ function monedaMayorQueCero(value: string | null) {
   return value !== null && Number(value) > 0;
 }
 
+function monedaNumero(value: string | null) {
+  const numero = Number(value);
+  return Number.isFinite(numero) ? numero : 0;
+}
+
+function monedasSumanIgual(a: string | null, b: string | null, total: string | null) {
+  return monedaNumero(a) + monedaNumero(b) === monedaNumero(total);
+}
+
 function serializarFinancierasDetalle(valor: unknown) {
   if (!Array.isArray(valor)) {
     return null;
@@ -503,6 +512,42 @@ function validarPayload(
 
   const primeraFinanciera = financierasDetalleResult.data[0];
   const segundaFinanciera = financierasDetalleResult.data[1] ?? null;
+  const divideInicial =
+    Boolean(body.medioPago2Tipo) || Boolean(body.medioPago2Valor);
+  const medioPago1ValorDividido = normalizarMoneda(body.medioPago1Valor);
+  const medioPago2TipoDividido = normalizarTipoPagoRegistroVenta(body.medioPago2Tipo);
+  const medioPago2ValorDividido = normalizarMoneda(body.medioPago2Valor);
+
+  if (divideInicial) {
+    if (!monedaMayorQueCero(medioPago1ValorDividido)) {
+      return { error: "Registra el valor del primer ingreso de la inicial" };
+    }
+
+    if (!medioPago2TipoDividido) {
+      return { error: "Selecciona el tipo del segundo ingreso de la inicial" };
+    }
+
+    if (!monedaMayorQueCero(medioPago2ValorDividido)) {
+      return { error: "Registra el valor del segundo ingreso de la inicial" };
+    }
+
+    if (
+      !monedasSumanIgual(
+        medioPago1ValorDividido,
+        medioPago2ValorDividido,
+        primeraFinanciera.cuotaInicial
+      )
+    ) {
+      return { error: "La suma de los ingresos debe ser igual a la inicial" };
+    }
+
+    if (monedaMayorQueCero(segundaFinanciera?.cuotaInicial ?? null)) {
+      return {
+        error:
+          "Si divides la inicial en dos ingresos, la segunda financiera no puede tener inicial",
+      };
+    }
+  }
 
   return {
     data: {
@@ -542,9 +587,15 @@ function validarPayload(
       simCardRegistro1,
       simCardRegistro2,
       medioPago1Tipo: primeraFinanciera.tipoPagoInicial,
-      medioPago1Valor: primeraFinanciera.cuotaInicial,
-      medioPago2Tipo: segundaFinanciera?.tipoPagoInicial ?? null,
-      medioPago2Valor: segundaFinanciera?.cuotaInicial ?? null,
+      medioPago1Valor: divideInicial
+        ? medioPago1ValorDividido
+        : primeraFinanciera.cuotaInicial,
+      medioPago2Tipo: divideInicial
+        ? medioPago2TipoDividido
+        : segundaFinanciera?.tipoPagoInicial ?? null,
+      medioPago2Valor: divideInicial
+        ? medioPago2ValorDividido
+        : segundaFinanciera?.cuotaInicial ?? null,
       asesorNombre,
       jaladorNombre,
       firmaClienteDataUrl,
