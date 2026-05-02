@@ -5,7 +5,11 @@ import PDFDocument from "pdfkit";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { extraerFinancierasDetalle } from "@/lib/ventas-financieras";
+import {
+  extraerFinancierasDetalle,
+  type CatalogoFinanciera,
+} from "@/lib/ventas-financieras";
+import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
   getBogotaDayRangeFromInput,
   getTodayBogotaDateKey,
@@ -49,6 +53,20 @@ const BRAND_LOGO_PATHS = [
     "conectamos-logo.png"
   ),
 ];
+const FALLBACK_FINANCIERAS_CIERRE = [
+  "ALCANOS",
+  "PAYJOY",
+  "SISTECREDITO",
+  "ADDI",
+  "SU+PAY",
+  "CELYA",
+  "BANCO BOGOTA",
+  "ALO CREDIT",
+  "ESMIO",
+  "KAIOWA",
+  "FINSER",
+  "GORA",
+];
 
 type PdfFonts = {
   regular: string;
@@ -79,6 +97,9 @@ type SaleTableRow = {
   ingresos: number;
   detalleIngresos: string;
   financieras: Record<string, number>;
+  efectivo: number;
+  transferencia: number;
+  voucher: number;
   utilidad: number;
   vendedor: string;
   comision: number;
@@ -220,8 +241,76 @@ function financieraLabel(nombre: unknown) {
   if (value === "SUMASPAY" || value === "SUMAS+") return "SU+PAY";
   if (value === "BOGOTA" || value === "BANCO BOGOTA") return "BANCO BOGOTA";
   if (value === "ALO-CREDIT" || value === "ALO CREDIT") return "ALO CREDIT";
+  if (value === "FINSER PAY") return "FINSER";
 
   return value;
+}
+
+function normalizePaymentType(value: unknown) {
+  const tipo = textoLimpio(value).toUpperCase();
+
+  if (tipo === "TRANSFERENCIA") return "TRANSFERENCIA";
+  if (tipo === "VOUCHER") return "VOUCHER";
+  if (tipo === "EFECTIVO") return "EFECTIVO";
+
+  return tipo;
+}
+
+function buildPaymentBreakdown(venta: Record<string, unknown>) {
+  const primerValor = n(venta.primerValor);
+  const segundoValor = n(venta.segundoValor);
+  const hasSplitValues = primerValor > 0 || segundoValor > 0;
+  const pagos = hasSplitValues
+    ? [
+        {
+          tipo:
+            normalizePaymentType(venta.ingreso1) ||
+            normalizePaymentType(venta.tipoIngreso) ||
+            "EFECTIVO",
+          valor: primerValor,
+        },
+        {
+          tipo: normalizePaymentType(venta.ingreso2),
+          valor: segundoValor,
+        },
+      ]
+    : [
+        {
+          tipo: normalizePaymentType(venta.tipoIngreso) || "EFECTIVO",
+          valor: n(venta.ingreso),
+        },
+      ];
+
+  return pagos.reduce(
+    (acc, pago) => {
+      if (pago.valor <= 0) return acc;
+
+      if (pago.tipo === "TRANSFERENCIA") {
+        acc.transferencia += pago.valor;
+      } else if (pago.tipo === "VOUCHER") {
+        acc.voucher += pago.valor;
+      } else {
+        acc.efectivo += pago.valor;
+      }
+
+      return acc;
+    },
+    { efectivo: 0, transferencia: 0, voucher: 0 }
+  );
+}
+
+function buildFinancialColumns(catalogo?: CatalogoFinanciera[]) {
+  const columnas = (catalogo || [])
+    .map((item) => financieraLabel(item.nombre))
+    .filter(Boolean);
+  const baseColumns = columnas.length ? columnas : FALLBACK_FINANCIERAS_CIERRE;
+  const seen = new Set<string>();
+
+  return baseColumns.filter((nombre) => {
+    if (seen.has(nombre)) return false;
+    seen.add(nombre);
+    return true;
+  });
 }
 
 function financierasRegistroDetalle(value: unknown) {
@@ -297,10 +386,12 @@ function buildEquipoVenta(
 
 function buildSaleTableRows(
   ventas: Array<Record<string, unknown> & { id: number }>,
-  registrosPorVenta: Map<number, Record<string, unknown> | undefined>
+  registrosPorVenta: Map<number, Record<string, unknown> | undefined>,
+  catalogoFinancieras?: CatalogoFinanciera[]
 ) {
   const rows: SaleTableRow[] = ventas.map((venta) => {
     const registro = registrosPorVenta.get(venta.id);
+    const pagos = buildPaymentBreakdown(venta);
     const financieras = financierasVentaDetalle(venta, registro).reduce(
       (acc, item) => {
         acc[item.nombre] = (acc[item.nombre] || 0) + item.valor;
@@ -317,6 +408,9 @@ function buildSaleTableRows(
       ingresos: n(venta.ingreso),
       detalleIngresos: buildIngresosVenta(venta, registro),
       financieras,
+      efectivo: pagos.efectivo,
+      transferencia: pagos.transferencia,
+      voucher: pagos.voucher,
       utilidad: n(venta.utilidad),
       vendedor: textoLimpio(venta.cerrador || registro?.asesorNombre),
       comision: n(venta.comision),
@@ -325,35 +419,17 @@ function buildSaleTableRows(
     };
   });
 
-  const preferredOrder = [
-    "ALCANOS",
-    "PAYJOY",
-    "SISTECREDITO",
-    "ADDI",
-    "SU+PAY",
-    "CELYA",
-    "BANCO BOGOTA",
-    "ALO CREDIT",
-    "ESMIO",
-    "KAIOWA",
-    "FINSER PAY",
-    "GORA",
-  ];
-  const used = new Set<string>();
+  const catalogColumns = buildFinancialColumns(catalogoFinancieras);
+  const known = new Set(catalogColumns);
+  const extras = new Set<string>();
 
   for (const row of rows) {
-    Object.keys(row.financieras).forEach((nombre) => used.add(nombre));
+    Object.keys(row.financieras).forEach((nombre) => {
+      if (!known.has(nombre)) extras.add(nombre);
+    });
   }
 
-  const financieras = Array.from(used).sort((a, b) => {
-    const ia = preferredOrder.indexOf(a);
-    const ib = preferredOrder.indexOf(b);
-
-    if (ia === -1 && ib === -1) return a.localeCompare(b);
-    if (ia === -1) return 1;
-    if (ib === -1) return -1;
-    return ia - ib;
-  });
+  const financieras = [...catalogColumns, ...Array.from(extras).sort()];
 
   return { rows, financieras };
 }
@@ -378,18 +454,29 @@ function buildTrialTotals(rows: SaleTableRow[], movimientos: CashMovementRow[]) 
   const egresosCaja = movimientos
     .filter((movimiento) => movimiento.tipo.toUpperCase() === "EGRESO")
     .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0);
+  const ingresosVentas = rows.reduce(
+    (acc, row) => acc + Number(row.ingresos || 0),
+    0
+  );
 
   return {
     ventas: rows.length,
-    ingresos: rows.reduce((acc, row) => acc + Number(row.ingresos || 0), 0),
+    ingresosVentas,
     financieras: totalFinancieras,
     utilidad: rows.reduce((acc, row) => acc + Number(row.utilidad || 0), 0),
     comision: rows.reduce((acc, row) => acc + Number(row.comision || 0), 0),
     salida: rows.reduce((acc, row) => acc + Number(row.salida || 0), 0),
     caja: rows.reduce((acc, row) => acc + Number(row.caja || 0), 0),
+    efectivo: rows.reduce((acc, row) => acc + Number(row.efectivo || 0), 0),
+    transferencia: rows.reduce(
+      (acc, row) => acc + Number(row.transferencia || 0),
+      0
+    ),
+    voucher: rows.reduce((acc, row) => acc + Number(row.voucher || 0), 0),
     ingresosCaja,
     egresosCaja,
     cajaNeta: ingresosCaja - egresosCaja,
+    ingresosAcumulados: ingresosVentas + ingresosCaja,
   };
 }
 
@@ -428,7 +515,7 @@ async function buildExcelCierreTabla(params: {
     views: [
       {
         state: "frozen",
-        ySplit: 8,
+        ySplit: 9,
         showGridLines: false,
       },
     ],
@@ -467,7 +554,7 @@ async function buildExcelCierreTabla(params: {
   worksheet.getCell(2, 3).value = "CIERRE DEL DIA";
   worksheet.getCell(3, 3).value = `${params.periodoKey} | ${params.cobertura}`;
   worksheet.getCell(4, 3).value =
-    "Vista de prueba con ventas, financieras activas y caja del dia.";
+    "Vista de prueba con ventas, catalogo completo de financieras y caja del dia.";
 
   [1, 2, 3, 4].forEach((rowNumber) => {
     const row = worksheet.getRow(rowNumber);
@@ -498,43 +585,70 @@ async function buildExcelCierreTabla(params: {
     });
   }
 
-  const metricLabels = [
-    ["VENTAS", totals.ventas],
-    ["INGRESOS", totals.ingresos],
-    ["FINANCIERAS", totals.financieras],
-    ["UTILIDAD", totals.utilidad],
-    ["CAJA NETA", totals.cajaNeta],
+  const metricRows = [
+    {
+      rowNumber: 6,
+      items: [
+        ["VENTAS", totals.ventas],
+        ["INGRESOS", totals.ingresosAcumulados],
+        ["INGRESO VENTAS", totals.ingresosVentas],
+        ["INGRESO CAJA", totals.ingresosCaja],
+      ],
+    },
+    {
+      rowNumber: 7,
+      items: [
+        ["TRANSFERENCIA", totals.transferencia],
+        ["VOUCHER", totals.voucher],
+        ["FINANCIERAS", totals.financieras],
+        ["CAJA NETA", totals.cajaNeta],
+      ],
+    },
   ];
-  const metricRow = worksheet.getRow(6);
-  metricRow.height = 28;
-  metricLabels.forEach(([label, value], index) => {
-    const labelCell = worksheet.getCell(6, index * 2 + 1);
-    const valueCell = worksheet.getCell(6, index * 2 + 2);
-    labelCell.value = label;
-    valueCell.value = value;
-    labelCell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFEFF6FF" },
-    };
-    valueCell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFFFFFFF" },
-    };
-    labelCell.font = { bold: true, color: { argb: "FF1E3A5F" }, size: 9 };
-    valueCell.font = { bold: true, color: { argb: "FF0F172A" }, size: 11 };
-    valueCell.numFmt =
-      label === "VENTAS" ? "0" : '"$"#,##0;[Red]-"$"#,##0';
-    labelCell.alignment = { horizontal: "center", vertical: "middle" };
-    valueCell.alignment = { horizontal: "center", vertical: "middle" };
-    [labelCell, valueCell].forEach((cell) => {
-      cell.border = {
-        top: { style: "thin", color: { argb: "FFD7E3F2" } },
-        left: { style: "thin", color: { argb: "FFD7E3F2" } },
-        bottom: { style: "thin", color: { argb: "FFD7E3F2" } },
-        right: { style: "thin", color: { argb: "FFD7E3F2" } },
+
+  metricRows.forEach(({ rowNumber, items }) => {
+    const metricRow = worksheet.getRow(rowNumber);
+    metricRow.height = 28;
+
+    items.forEach(([label, value], index) => {
+      const labelCell = worksheet.getCell(rowNumber, index * 2 + 1);
+      const valueCell = worksheet.getCell(rowNumber, index * 2 + 2);
+      const isMainIncome = label === "INGRESOS";
+
+      labelCell.value = label;
+      valueCell.value = value;
+      labelCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: isMainIncome ? "FFDCFCE7" : "FFEFF6FF" },
       };
+      valueCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFFFFFFF" },
+      };
+      labelCell.font = {
+        bold: true,
+        color: { argb: isMainIncome ? "FF166534" : "FF1E3A5F" },
+        size: 9,
+      };
+      valueCell.font = {
+        bold: true,
+        color: { argb: isMainIncome ? "FF047857" : "FF0F172A" },
+        size: 11,
+      };
+      valueCell.numFmt =
+        label === "VENTAS" ? "0" : '"$"#,##0;[Red]-"$"#,##0';
+      labelCell.alignment = { horizontal: "center", vertical: "middle" };
+      valueCell.alignment = { horizontal: "center", vertical: "middle" };
+      [labelCell, valueCell].forEach((cell) => {
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFD7E3F2" } },
+          left: { style: "thin", color: { argb: "FFD7E3F2" } },
+          bottom: { style: "thin", color: { argb: "FFD7E3F2" } },
+          right: { style: "thin", color: { argb: "FFD7E3F2" } },
+        };
+      });
     });
   });
 
@@ -606,8 +720,12 @@ async function buildExcelCierreTabla(params: {
     "",
     "",
     "",
-    totals.ingresos,
-    "",
+    totals.ingresosAcumulados,
+    `Ventas: ${formatoPesos(totals.ingresosVentas)} | Caja: ${formatoPesos(
+      totals.ingresosCaja
+    )} | Transferencia: ${formatoPesos(
+      totals.transferencia
+    )} | Voucher: ${formatoPesos(totals.voucher)}`,
     ...params.financieras.map((nombre) =>
       params.rows.reduce(
         (acc, row) => acc + Number(row.financieras[nombre] || 0),
@@ -905,43 +1023,72 @@ async function buildPdfCierreTabla(params: {
     .fillColor("#64748b")
     .font(params.fonts.bold)
     .fontSize(7)
-    .text("RESUMEN DE CAJA", doc.page.width - 211, 47, {
+    .text("INGRESO ACUMULADO", doc.page.width - 211, 45, {
       width: 150,
       characterSpacing: 0.6,
     });
   doc
-    .fillColor(totals.cajaNeta < 0 ? "#b91c1c" : "#047857")
+    .fillColor("#047857")
     .font(params.fonts.bold)
     .fontSize(15)
-    .text(formatoPesosCompacto(totals.cajaNeta), doc.page.width - 211, 60, {
+    .text(formatoPesosCompacto(totals.ingresosAcumulados), doc.page.width - 211, 58, {
       width: 145,
       align: "left",
       ellipsis: true,
     });
+  doc
+    .fillColor("#64748b")
+    .font(params.fonts.regular)
+    .fontSize(6.4)
+    .text("Ventas + caja", doc.page.width - 211, 75, { width: 120 });
 
   const metricCards = [
     { label: "Ventas", value: String(totals.ventas), color: "#0f172a" },
-    { label: "Ingresos", value: formatoPesosCompacto(totals.ingresos), color: "#047857" },
+    {
+      label: "Ingreso ventas",
+      value: formatoPesosCompacto(totals.ingresosVentas),
+      color: "#047857",
+    },
+    {
+      label: "Ingreso caja",
+      value: formatoPesosCompacto(totals.ingresosCaja),
+      color: "#0f766e",
+    },
+    {
+      label: "Transferencia",
+      value: formatoPesosCompacto(totals.transferencia),
+      color: "#2563eb",
+    },
+    {
+      label: "Voucher",
+      value: formatoPesosCompacto(totals.voucher),
+      color: "#7c3aed",
+    },
     {
       label: "Financieras",
       value: formatoPesosCompacto(totals.financieras),
       color: "#1d4ed8",
     },
     { label: "Utilidad", value: formatoPesosCompacto(totals.utilidad), color: "#a16207" },
-    { label: "Salida", value: formatoPesosCompacto(totals.salida), color: "#b91c1c" },
+    { label: "Caja neta", value: formatoPesosCompacto(totals.cajaNeta), color: "#b91c1c" },
   ];
   const metricGap = 10;
+  const cardsPerRow = 4;
   const metricWidth =
-    (contentWidth - metricGap * (metricCards.length - 1)) / metricCards.length;
+    (contentWidth - metricGap * (cardsPerRow - 1)) / cardsPerRow;
 
   metricCards.forEach((metric, index) => {
-    const x = tableX + index * (metricWidth + metricGap);
-    doc.roundedRect(x, 120, metricWidth, 44, 10).fillAndStroke("#ffffff", "#e2e8f0");
+    const rowIndex = Math.floor(index / cardsPerRow);
+    const columnIndex = index % cardsPerRow;
+    const x = tableX + columnIndex * (metricWidth + metricGap);
+    const cardY = 120 + rowIndex * 50;
+
+    doc.roundedRect(x, cardY, metricWidth, 44, 10).fillAndStroke("#ffffff", "#e2e8f0");
     doc
       .fillColor("#64748b")
       .font(params.fonts.bold)
       .fontSize(6.8)
-      .text(metric.label.toUpperCase(), x + 10, 131, {
+      .text(metric.label.toUpperCase(), x + 10, cardY + 11, {
         width: metricWidth - 20,
         characterSpacing: 0.7,
       });
@@ -949,18 +1096,18 @@ async function buildPdfCierreTabla(params: {
       .fillColor(metric.color)
       .font(params.fonts.bold)
       .fontSize(12.5)
-      .text(metric.value, x + 10, 145, {
+      .text(metric.value, x + 10, cardY + 25, {
         width: metricWidth - 20,
         ellipsis: true,
       });
   });
 
-  let y = 188;
+  let y = 238;
   doc
     .fillColor("#0f172a")
     .font(params.fonts.bold)
     .fontSize(11)
-    .text("VENTAS DEL DIA", tableX, 172);
+    .text("VENTAS DEL DIA - FINANCIERAS DEL CATALOGO", tableX, 222);
   y = drawCompactTableHeader(doc, columns, y, tableX, params.fonts);
 
   if (!params.rows.length) {
@@ -1565,9 +1712,12 @@ export async function GET(req: Request) {
           financierasVenta === "-" ? financierasRegistro || "-" : financierasVenta,
       };
     });
+    const catalogoPersonal =
+      vista === "tabla" ? await obtenerCatalogoPersonalVenta() : null;
     const tablaCierre = buildSaleTableRows(
       ventasDetalleDia as unknown as Array<Record<string, unknown> & { id: number }>,
-      registrosPorVenta as Map<number, Record<string, unknown> | undefined>
+      registrosPorVenta as Map<number, Record<string, unknown> | undefined>,
+      catalogoPersonal?.financieras
     );
     const cajaAcumulada =
       n(ventasCajaAcumulada._sum.cajaOficina) +
