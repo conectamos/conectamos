@@ -86,7 +86,7 @@ export default function CierreDiaPage() {
     window.open(`/api/caja/cierre-dia?${params.toString()}`, "_blank", "noopener");
   };
 
-  const generarCierrePrueba = (formato: "pdf" | "excel" | "png") => {
+  const generarCierrePrueba = (formato: "pdf" | "excel") => {
     if (!fecha) {
       setMensaje("Selecciona una fecha para generar el cierre");
       return;
@@ -210,13 +210,6 @@ export default function CierreDiaPage() {
               className="rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
             >
               Excel prueba
-            </button>
-            <button
-              type="button"
-              onClick={() => generarCierrePrueba("png")}
-              className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
-            >
-              Imagen HD
             </button>
             <Link
               href="/caja"
