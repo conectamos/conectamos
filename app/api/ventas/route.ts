@@ -307,6 +307,9 @@ function aplicarRegistroVendedorInput<
 >(
   input: T,
   registro: {
+    referenciaEquipo: unknown;
+    asesorNombre: unknown;
+    jaladorNombre: unknown;
     plataformaCredito: unknown;
     creditoAutorizado: unknown;
     cuotaInicial: unknown;
@@ -319,6 +322,21 @@ function aplicarRegistroVendedorInput<
 ): T {
   const next: T = { ...input };
   const finanzasRegistro = extraerFinanzasRegistro(registro);
+  const referenciaEquipo = String(registro.referenciaEquipo || "").trim();
+  const asesorNombre = String(registro.asesorNombre || "").trim();
+  const jaladorNombre = String(registro.jaladorNombre || "").trim();
+
+  if (referenciaEquipo) {
+    next.descripcion = referenciaEquipo;
+  }
+
+  if (jaladorNombre) {
+    next.jalador = jaladorNombre;
+  }
+
+  if (asesorNombre) {
+    next.cerrador = asesorNombre;
+  }
 
   if (finanzasRegistro.length) {
     next.servicio = "FINANCIERA";
@@ -612,6 +630,9 @@ export async function POST(req: Request) {
             id: true,
             sedeId: true,
             estadoVentaRegistro: true,
+            referenciaEquipo: true,
+            asesorNombre: true,
+            jaladorNombre: true,
             plataformaCredito: true,
             creditoAutorizado: true,
             cuotaInicial: true,

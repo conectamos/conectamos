@@ -351,6 +351,7 @@ export default function NuevaVentaPage() {
   const [guardando, setGuardando] = useState(false);
   const registroIdParam = searchParams.get("registroId");
 
+  const ventaDesdeRegistro = Boolean(registroVendedor);
   const mostrarFinancieras = !ocultaFinancieras(servicio);
   const jaladoresDisponibles = useMemo(() => {
     const values = new Set(
@@ -877,7 +878,9 @@ export default function NuevaVentaPage() {
                       </label>
                       <input
                         value={serial}
+                        readOnly={ventaDesdeRegistro}
                         onChange={(e) => {
+                          if (ventaDesdeRegistro) return;
                           const v = limpiarNumero(e.target.value).slice(0, 15);
                           setSerial(v);
                           if (v.length === 15) void buscarIMEI(v);
@@ -888,7 +891,7 @@ export default function NuevaVentaPage() {
                             setCostoEquipo(0);
                           }
                         }}
-                        className={inputBaseClass()}
+                        className={inputBaseClass(ventaDesdeRegistro)}
                         placeholder="Ingrese IMEI"
                       />
                     </div>
@@ -900,7 +903,8 @@ export default function NuevaVentaPage() {
                       <select
                         value={servicio}
                         onChange={(e) => setServicio(e.target.value)}
-                        className={inputBaseClass()}
+                        disabled={ventaDesdeRegistro}
+                        className={inputBaseClass(ventaDesdeRegistro)}
                       >
                         <option value="">Seleccionar</option>
                         {SERVICIOS.map((s) => (
@@ -918,7 +922,8 @@ export default function NuevaVentaPage() {
                       <input
                         value={descripcion}
                         onChange={(e) => setDescripcion(e.target.value)}
-                        className={inputBaseClass(true)}
+                        readOnly={ventaDesdeRegistro}
+                        className={inputBaseClass(ventaDesdeRegistro)}
                         placeholder="Descripcion automatica"
                       />
                     </div>
@@ -951,7 +956,14 @@ export default function NuevaVentaPage() {
 
                 {registroVendedor && (
                   <div className={sectionCardClass()}>
-                    <h3 className={sectionTitleClass()}>Registro del vendedor</h3>
+                    <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
+                        Registro del vendedor
+                      </h3>
+                      <span className="inline-flex w-fit rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700">
+                        Solo comision y salida editables
+                      </span>
+                    </div>
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
@@ -1074,7 +1086,8 @@ export default function NuevaVentaPage() {
                       <select
                         value={jalador}
                         onChange={(e) => setJalador(e.target.value)}
-                        className={inputBaseClass()}
+                        disabled={ventaDesdeRegistro}
+                        className={inputBaseClass(ventaDesdeRegistro)}
                       >
                         <option value="">Seleccionar</option>
                         {jaladoresDisponibles.map((j) => (
@@ -1092,7 +1105,8 @@ export default function NuevaVentaPage() {
                       <select
                         value={cerrador}
                         onChange={(e) => setCerrador(e.target.value)}
-                        className={inputBaseClass()}
+                        disabled={ventaDesdeRegistro}
+                        className={inputBaseClass(ventaDesdeRegistro)}
                       >
                         <option value="">Seleccionar</option>
                         {cerradoresDisponibles.map((c) => (
@@ -1116,7 +1130,8 @@ export default function NuevaVentaPage() {
                       <input
                         value={ingreso1Base ? formatoPesos(ingreso1Base) : ""}
                         onChange={(e) => setIngreso1Base(limpiarNumero(e.target.value))}
-                        className={inputBaseClass()}
+                        readOnly={ventaDesdeRegistro}
+                        className={inputBaseClass(ventaDesdeRegistro)}
                         placeholder="$ 0"
                       />
                     </div>
@@ -1128,7 +1143,8 @@ export default function NuevaVentaPage() {
                       <select
                         value={tipoIngreso1}
                         onChange={(e) => setTipoIngreso1(e.target.value)}
-                        className={inputBaseClass()}
+                        disabled={ventaDesdeRegistro}
+                        className={inputBaseClass(ventaDesdeRegistro)}
                       >
                         <option value="EFECTIVO">EFECTIVO</option>
                         <option value="TRANSFERENCIA">TRANSFERENCIA</option>
@@ -1150,13 +1166,15 @@ export default function NuevaVentaPage() {
 
                   <div className="mt-4">
                     {!usarIngreso2 ? (
-                      <button
-                        type="button"
-                        onClick={() => setUsarIngreso2(true)}
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
-                      >
-                        + Agregar ingreso 2
-                      </button>
+                      ventaDesdeRegistro ? null : (
+                        <button
+                          type="button"
+                          onClick={() => setUsarIngreso2(true)}
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+                        >
+                          + Agregar ingreso 2
+                        </button>
+                      )
                     ) : (
                       <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1169,7 +1187,8 @@ export default function NuevaVentaPage() {
                               onChange={(e) =>
                                 setIngreso2Base(limpiarNumero(e.target.value))
                               }
-                              className={inputBaseClass()}
+                              readOnly={ventaDesdeRegistro}
+                              className={inputBaseClass(ventaDesdeRegistro)}
                               placeholder="$ 0"
                             />
                           </div>
@@ -1181,7 +1200,8 @@ export default function NuevaVentaPage() {
                             <select
                               value={tipoIngreso2}
                               onChange={(e) => setTipoIngreso2(e.target.value)}
-                              className={inputBaseClass()}
+                              disabled={ventaDesdeRegistro}
+                              className={inputBaseClass(ventaDesdeRegistro)}
                             >
                               <option value="">Seleccionar</option>
                               <option value="VOUCHER">VOUCHER</option>
@@ -1190,6 +1210,7 @@ export default function NuevaVentaPage() {
                           </div>
                         </div>
 
+                        {!ventaDesdeRegistro && (
                         <div className="mt-4 flex justify-end">
                           <button
                             type="button"
@@ -1199,6 +1220,7 @@ export default function NuevaVentaPage() {
                             Quitar ingreso 2
                           </button>
                         </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1219,7 +1241,8 @@ export default function NuevaVentaPage() {
                             <select
                               value={finanzas[i].nombre}
                               onChange={(e) => actualizarFin(i, "nombre", e.target.value)}
-                              className={inputBaseClass()}
+                              disabled={ventaDesdeRegistro}
+                              className={inputBaseClass(ventaDesdeRegistro)}
                             >
                               <option value="">Seleccionar financiera</option>
                               {financierasCatalogo.map((f) => (
@@ -1234,7 +1257,8 @@ export default function NuevaVentaPage() {
                               onChange={(e) =>
                                 actualizarFin(i, "valor", limpiarNumero(e.target.value))
                               }
-                              className={inputBaseClass()}
+                              readOnly={ventaDesdeRegistro}
+                              className={inputBaseClass(ventaDesdeRegistro)}
                               placeholder="$ 0"
                             />
                           </div>
