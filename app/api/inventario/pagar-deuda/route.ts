@@ -44,6 +44,7 @@ export async function POST(req: Request) {
         costo: true,
         sedeId: true,
         estadoActual: true,
+        estadoAnterior: true,
         estadoFinanciero: true,
         deboA: true,
         origen: true,
@@ -75,6 +76,7 @@ export async function POST(req: Request) {
     }
 
     const estadoActual = String(item.estadoActual || "").toUpperCase();
+    const equipoYaVendido = estadoActual === "VENDIDO";
     const sedeItemNombre = etiquetaSedeAcreedora(item.sedeId, item.sede?.nombre);
 
     if (estadoActual !== "BODEGA" && estadoActual !== "VENDIDO") {
@@ -254,10 +256,14 @@ export async function POST(req: Request) {
         data: {
           estadoFinanciero: "PAGO",
           deboA: null,
-          estadoAnterior: item.estadoActual || null,
-          estadoActual: "BODEGA",
+          estadoAnterior: equipoYaVendido
+            ? item.estadoAnterior || item.estadoActual || null
+            : item.estadoActual || null,
+          estadoActual: equipoYaVendido ? "VENDIDO" : "BODEGA",
           fechaMovimiento: new Date(),
-          observacion: "Deuda pagada al proveedor. Equipo queda en PAGO.",
+          observacion: equipoYaVendido
+            ? "Deuda pagada al proveedor. Equipo vendido queda en PAGO."
+            : "Deuda pagada al proveedor. Equipo queda en PAGO.",
         },
       });
 
