@@ -126,7 +126,7 @@ async function buscarRegistroVentaAbierto(
     const registro = await prisma.registroVendedorVenta.findFirst({
       where: {
         id: registroId,
-        serialImei: serial,
+        ...(puedeVerTodasLasSedes(session) ? {} : { serialImei: serial }),
         eliminadoEn: null,
         ventaIdRelacionada: null,
         ...registroScopeWhere(session),

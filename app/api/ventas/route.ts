@@ -654,6 +654,7 @@ export async function POST(req: Request) {
 
     const data = (await req.json()) as Record<string, unknown>;
     const input = parseVentaInput(data);
+    const adminPuedeEditarRegistroVendedor = puedeConvertirRegistrosDeTodasLasSedes(user);
 
     await ensureVendorProfilesSchema();
 
@@ -661,7 +662,7 @@ export async function POST(req: Request) {
       ? await prisma.registroVendedorVenta.findFirst({
           where: {
             id: input.registroVendedorId,
-            serialImei: input.serial,
+            ...(adminPuedeEditarRegistroVendedor ? {} : { serialImei: input.serial }),
             eliminadoEn: null,
             ventaIdRelacionada: null,
             ...registroVentaScopeWhere(user),
@@ -701,7 +702,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const inputVenta = registroVendedor
+    const inputVenta = registroVendedor && !adminPuedeEditarRegistroVendedor
       ? aplicarRegistroVendedorInput(input, registroVendedor)
       : input;
     const validationError = validateVentaInput(inputVenta);

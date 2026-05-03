@@ -75,6 +75,11 @@ type CatalogoPersonalResponse = {
   financieras: CatalogoFinanciera[];
 };
 
+type SessionResponse = {
+  rolNombre?: string | null;
+  perfilTipo?: string | null;
+};
+
 function limpiarNumero(v: string) {
   return v.replace(/\D/g, "");
 }
@@ -356,9 +361,11 @@ export default function NuevaVentaPage() {
   const [confirmoEfectivoRecibido, setConfirmoEfectivoRecibido] = useState(false);
   const [confirmoTransferenciaValidada, setConfirmoTransferenciaValidada] =
     useState(false);
+  const [esAdminActual, setEsAdminActual] = useState(false);
   const registroIdParam = searchParams.get("registroId");
 
   const ventaDesdeRegistro = Boolean(registroVendedor);
+  const bloqueoRegistroAsesor = ventaDesdeRegistro && !esAdminActual;
   const mostrarFinancieras = !ocultaFinancieras(servicio);
   const jaladoresDisponibles = useMemo(() => {
     const values = new Set(
@@ -488,6 +495,22 @@ export default function NuevaVentaPage() {
   };
 
   useEffect(() => {
+    const cargarSesion = async () => {
+      try {
+        const res = await fetch("/api/session", { cache: "no-store" });
+        const data = (await res.json()) as SessionResponse;
+
+        if (!res.ok) {
+          return;
+        }
+
+        setEsAdminActual(
+          String(data.rolNombre || "").trim().toUpperCase() === "ADMIN" ||
+            String(data.perfilTipo || "").trim().toUpperCase() === "ADMINISTRADOR"
+        );
+      } catch {}
+    };
+
     const cargarCatalogoPersonal = async () => {
       try {
         const res = await fetch("/api/ventas/catalogo-personal", {
@@ -519,6 +542,7 @@ export default function NuevaVentaPage() {
       } catch {}
     };
 
+    void cargarSesion();
     void cargarCatalogoPersonal();
   }, []);
 
@@ -938,9 +962,9 @@ export default function NuevaVentaPage() {
                       </label>
                       <input
                         value={serial}
-                        readOnly={ventaDesdeRegistro}
+                        readOnly={bloqueoRegistroAsesor}
                         onChange={(e) => {
-                          if (ventaDesdeRegistro) return;
+                          if (bloqueoRegistroAsesor) return;
                           const v = limpiarNumero(e.target.value).slice(0, 15);
                           setSerial(v);
                           if (v.length === 15) void buscarIMEI(v);
@@ -951,7 +975,7 @@ export default function NuevaVentaPage() {
                             setCostoEquipo(0);
                           }
                         }}
-                        className={inputBaseClass(ventaDesdeRegistro)}
+                        className={inputBaseClass(bloqueoRegistroAsesor)}
                         placeholder="Ingrese IMEI"
                       />
                     </div>
@@ -963,8 +987,8 @@ export default function NuevaVentaPage() {
                       <select
                         value={servicio}
                         onChange={(e) => setServicio(e.target.value)}
-                        disabled={ventaDesdeRegistro}
-                        className={inputBaseClass(ventaDesdeRegistro)}
+                        disabled={bloqueoRegistroAsesor}
+                        className={inputBaseClass(bloqueoRegistroAsesor)}
                       >
                         <option value="">Seleccionar</option>
                         {SERVICIOS.map((s) => (
@@ -982,8 +1006,8 @@ export default function NuevaVentaPage() {
                       <input
                         value={descripcion}
                         onChange={(e) => setDescripcion(e.target.value)}
-                        readOnly={ventaDesdeRegistro}
-                        className={inputBaseClass(ventaDesdeRegistro)}
+                        readOnly={bloqueoRegistroAsesor}
+                        className={inputBaseClass(bloqueoRegistroAsesor)}
                         placeholder="Descripcion automatica"
                       />
                     </div>
@@ -1021,7 +1045,9 @@ export default function NuevaVentaPage() {
                         Registro del vendedor
                       </h3>
                       <span className="inline-flex w-fit rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700">
-                        Solo comision y salida editables
+                        {bloqueoRegistroAsesor
+                          ? "Solo comision y salida editables"
+                          : "Admin puede editar el registro"}
                       </span>
                     </div>
 
@@ -1146,8 +1172,8 @@ export default function NuevaVentaPage() {
                       <select
                         value={jalador}
                         onChange={(e) => setJalador(e.target.value)}
-                        disabled={ventaDesdeRegistro}
-                        className={inputBaseClass(ventaDesdeRegistro)}
+                        disabled={bloqueoRegistroAsesor}
+                        className={inputBaseClass(bloqueoRegistroAsesor)}
                       >
                         <option value="">Seleccionar</option>
                         {jaladoresDisponibles.map((j) => (
@@ -1165,8 +1191,8 @@ export default function NuevaVentaPage() {
                       <select
                         value={cerrador}
                         onChange={(e) => setCerrador(e.target.value)}
-                        disabled={ventaDesdeRegistro}
-                        className={inputBaseClass(ventaDesdeRegistro)}
+                        disabled={bloqueoRegistroAsesor}
+                        className={inputBaseClass(bloqueoRegistroAsesor)}
                       >
                         <option value="">Seleccionar</option>
                         {cerradoresDisponibles.map((c) => (
@@ -1190,8 +1216,8 @@ export default function NuevaVentaPage() {
                       <input
                         value={ingreso1Base ? formatoPesos(ingreso1Base) : ""}
                         onChange={(e) => setIngreso1Base(limpiarNumero(e.target.value))}
-                        readOnly={ventaDesdeRegistro}
-                        className={inputBaseClass(ventaDesdeRegistro)}
+                        readOnly={bloqueoRegistroAsesor}
+                        className={inputBaseClass(bloqueoRegistroAsesor)}
                         placeholder="$ 0"
                       />
                     </div>
@@ -1203,8 +1229,8 @@ export default function NuevaVentaPage() {
                       <select
                         value={tipoIngreso1}
                         onChange={(e) => setTipoIngreso1(e.target.value)}
-                        disabled={ventaDesdeRegistro}
-                        className={inputBaseClass(ventaDesdeRegistro)}
+                        disabled={bloqueoRegistroAsesor}
+                        className={inputBaseClass(bloqueoRegistroAsesor)}
                       >
                         <option value="EFECTIVO">EFECTIVO</option>
                         <option value="TRANSFERENCIA">TRANSFERENCIA</option>
@@ -1226,7 +1252,7 @@ export default function NuevaVentaPage() {
 
                   <div className="mt-4">
                     {!usarIngreso2 ? (
-                      ventaDesdeRegistro ? null : (
+                      bloqueoRegistroAsesor ? null : (
                         <button
                           type="button"
                           onClick={() => setUsarIngreso2(true)}
@@ -1247,8 +1273,8 @@ export default function NuevaVentaPage() {
                               onChange={(e) =>
                                 setIngreso2Base(limpiarNumero(e.target.value))
                               }
-                              readOnly={ventaDesdeRegistro}
-                              className={inputBaseClass(ventaDesdeRegistro)}
+                              readOnly={bloqueoRegistroAsesor}
+                              className={inputBaseClass(bloqueoRegistroAsesor)}
                               placeholder="$ 0"
                             />
                           </div>
@@ -1260,8 +1286,8 @@ export default function NuevaVentaPage() {
                             <select
                               value={tipoIngreso2}
                               onChange={(e) => setTipoIngreso2(e.target.value)}
-                              disabled={ventaDesdeRegistro}
-                              className={inputBaseClass(ventaDesdeRegistro)}
+                              disabled={bloqueoRegistroAsesor}
+                              className={inputBaseClass(bloqueoRegistroAsesor)}
                             >
                               <option value="">Seleccionar</option>
                               <option value="VOUCHER">VOUCHER</option>
@@ -1270,7 +1296,7 @@ export default function NuevaVentaPage() {
                           </div>
                         </div>
 
-                        {!ventaDesdeRegistro && (
+                        {!bloqueoRegistroAsesor && (
                           <div className="mt-4 flex justify-end">
                             <button
                               type="button"
@@ -1340,8 +1366,8 @@ export default function NuevaVentaPage() {
                             <select
                               value={finanzas[i].nombre}
                               onChange={(e) => actualizarFin(i, "nombre", e.target.value)}
-                              disabled={ventaDesdeRegistro}
-                              className={inputBaseClass(ventaDesdeRegistro)}
+                              disabled={bloqueoRegistroAsesor}
+                              className={inputBaseClass(bloqueoRegistroAsesor)}
                             >
                               <option value="">Seleccionar financiera</option>
                               {financierasCatalogo.map((f) => (
@@ -1356,8 +1382,8 @@ export default function NuevaVentaPage() {
                               onChange={(e) =>
                                 actualizarFin(i, "valor", limpiarNumero(e.target.value))
                               }
-                              readOnly={ventaDesdeRegistro}
-                              className={inputBaseClass(ventaDesdeRegistro)}
+                              readOnly={bloqueoRegistroAsesor}
+                              className={inputBaseClass(bloqueoRegistroAsesor)}
                               placeholder="$ 0"
                             />
                           </div>
