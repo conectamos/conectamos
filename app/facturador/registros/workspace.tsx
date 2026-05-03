@@ -59,6 +59,7 @@ type EditFinancieraState = {
 
 type EditDraft = {
   id: number;
+  tipoDocumento: string;
   documentoNumero: string;
   clienteNombre: string;
   correo: string;
@@ -209,6 +210,7 @@ function createEditDraft(registro: RegistroFacturacion): EditDraft {
 
   return {
     id: registro.id,
+    tipoDocumento: registro.tipoDocumento,
     documentoNumero: registro.documentoNumero,
     clienteNombre: registro.clienteNombre,
     correo: registro.correo ?? "",
@@ -692,11 +694,12 @@ export default function FacturadorRegistrosWorkspace({
           </p>
 
           <div className="mt-6 overflow-x-auto">
-            <table className="min-w-[2360px] border-separate border-spacing-y-3">
+            <table className="min-w-[2480px] border-separate border-spacing-y-3">
               <thead>
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   <th className="px-4 py-2">Fecha</th>
                   <th className="px-4 py-2">Punto / sede</th>
+                  <th className="px-4 py-2">Tipo de identificacion</th>
                   <th className="px-4 py-2">Numero de cedula</th>
                   <th className="px-4 py-2">Nombre completo</th>
                   <th className="px-4 py-2">Correo electronico</th>
@@ -718,13 +721,13 @@ export default function FacturadorRegistrosWorkspace({
               <tbody>
                 {cargando ? (
                   <tr>
-                    <td colSpan={15} className="px-4 py-8 text-sm text-slate-500">
+                    <td colSpan={16} className="px-4 py-8 text-sm text-slate-500">
                       Cargando registros...
                     </td>
                   </tr>
                 ) : registrosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={15} className="px-4 py-8 text-sm text-slate-500">
+                    <td colSpan={16} className="px-4 py-8 text-sm text-slate-500">
                       {busqueda.trim()
                         ? "No hay registros que coincidan con la cedula o IMEI consultado."
                         : "No hay registros guardados para facturar."}
@@ -756,6 +759,9 @@ export default function FacturadorRegistrosWorkspace({
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4 text-sm">
                           {registro.puntoVenta || "Sin punto"}
+                        </td>
+                        <td className="border-y border-slate-200 px-4 py-4 text-sm font-semibold uppercase">
+                          {registro.tipoDocumento || "Sin tipo"}
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4 text-sm">
                           {registro.documentoNumero}
@@ -902,6 +908,15 @@ export default function FacturadorRegistrosWorkspace({
             </div>
 
             <div className="mt-6 grid gap-5 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Tipo de identificacion
+                <input
+                  value={editando.tipoDocumento || "Sin tipo"}
+                  readOnly
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold uppercase text-slate-700 outline-none"
+                />
+              </label>
+
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                 Numero de cedula
                 <input
