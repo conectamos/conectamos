@@ -17,6 +17,8 @@ import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
 type VentaInput = {
+  confirmoEfectivoRecibido: boolean;
+  confirmoTransferenciaValidada: boolean;
   descripcion: string;
   cerrador: string;
   comision: number;
@@ -44,6 +46,15 @@ function toNumber(value: unknown): number {
 function toPositiveInt(value: unknown): number | null {
   const num = Number(value);
   return Number.isInteger(num) && num > 0 ? num : null;
+}
+
+function toBoolean(value: unknown): boolean {
+  if (value === true || value === 1) {
+    return true;
+  }
+
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "si";
 }
 
 function normalizeServiceValue(servicio: string) {
@@ -124,6 +135,8 @@ function parseVentaInput(data: Record<string, unknown>): VentaInput {
     jalador: String(data.jalador ?? "").trim(),
     cerrador: String(data.cerrador ?? "").trim(),
     registroVendedorId: toPositiveInt(data.registroVendedorId),
+    confirmoEfectivoRecibido: toBoolean(data.confirmoEfectivoRecibido),
+    confirmoTransferenciaValidada: toBoolean(data.confirmoTransferenciaValidada),
     tipoIngreso1: normalizeTipoIngreso(data.tipoIngreso1, "EFECTIVO"),
     tipoIngreso2: normalizeTipoIngreso(data.tipoIngreso2),
     ingreso1Base: toNumber(data.ingreso1Base),
@@ -178,6 +191,33 @@ function validateVentaInput(input: VentaInput, options?: { requireSerial?: boole
 
   if (input.ingreso2Base > 0 && !input.tipoIngreso2) {
     return "Debes seleccionar el tipo del ingreso 2";
+  }
+
+  return null;
+}
+
+function ventaTieneIngresoTipo(input: VentaInput, tipoEsperado: string): boolean {
+  const tipo = tipoEsperado.trim().toUpperCase();
+
+  return (
+    (input.ingreso1Base > 0 && input.tipoIngreso1.trim().toUpperCase() === tipo) ||
+    (input.ingreso2Base > 0 && input.tipoIngreso2.trim().toUpperCase() === tipo)
+  );
+}
+
+function validateConfirmacionesRegistroVendedor(input: VentaInput) {
+  if (
+    ventaTieneIngresoTipo(input, "EFECTIVO") &&
+    !input.confirmoEfectivoRecibido
+  ) {
+    return "Debes confirmar que recibiste el efectivo";
+  }
+
+  if (
+    ventaTieneIngresoTipo(input, "TRANSFERENCIA") &&
+    !input.confirmoTransferenciaValidada
+  ) {
+    return "Debes confirmar que validaste la transferencia";
   }
 
   return null;
@@ -668,6 +708,14 @@ export async function POST(req: Request) {
 
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
+    }
+
+    if (registroVendedor) {
+      const confirmacionesError = validateConfirmacionesRegistroVendedor(inputVenta);
+
+      if (confirmacionesError) {
+        return NextResponse.json({ error: confirmacionesError }, { status: 400 });
+      }
     }
 
     const sedeVentaId = registroVendedor?.sedeId ?? user.sedeId;

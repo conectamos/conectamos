@@ -305,6 +305,10 @@ function inputBaseClass(readOnly = false) {
   }`;
 }
 
+function tipoPagoNormalizado(value: string) {
+  return String(value || "").trim().toUpperCase();
+}
+
 function sectionTitleClass() {
   return "mb-5 text-xs font-bold uppercase tracking-[0.22em] text-slate-500";
 }
@@ -349,6 +353,9 @@ export default function NuevaVentaPage() {
 
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [confirmoEfectivoRecibido, setConfirmoEfectivoRecibido] = useState(false);
+  const [confirmoTransferenciaValidada, setConfirmoTransferenciaValidada] =
+    useState(false);
   const registroIdParam = searchParams.get("registroId");
 
   const ventaDesdeRegistro = Boolean(registroVendedor);
@@ -375,6 +382,8 @@ export default function NuevaVentaPage() {
       setTipoIngreso1("EFECTIVO");
       setTipoIngreso2("");
       setUsarIngreso2(false);
+      setConfirmoEfectivoRecibido(false);
+      setConfirmoTransferenciaValidada(false);
       setFinanzas([
         { nombre: "", valor: "" },
         { nombre: "", valor: "" },
@@ -383,6 +392,9 @@ export default function NuevaVentaPage() {
       ]);
       return;
     }
+
+    setConfirmoEfectivoRecibido(false);
+    setConfirmoTransferenciaValidada(false);
 
     if (registro.referenciaEquipo) {
       setDescripcion(registro.referenciaEquipo);
@@ -528,6 +540,40 @@ export default function NuevaVentaPage() {
     }
   }, [usarIngreso2]);
 
+  const requiereConfirmarEfectivo = useMemo(() => {
+    if (!ventaDesdeRegistro) return false;
+
+    return (
+      (Number(ingreso1Base || 0) > 0 &&
+        tipoPagoNormalizado(tipoIngreso1) === "EFECTIVO") ||
+      (usarIngreso2 &&
+        Number(ingreso2Base || 0) > 0 &&
+        tipoPagoNormalizado(tipoIngreso2) === "EFECTIVO")
+    );
+  }, [ingreso1Base, ingreso2Base, tipoIngreso1, tipoIngreso2, usarIngreso2, ventaDesdeRegistro]);
+
+  const requiereConfirmarTransferencia = useMemo(() => {
+    if (!ventaDesdeRegistro) return false;
+
+    return (
+      (Number(ingreso1Base || 0) > 0 &&
+        tipoPagoNormalizado(tipoIngreso1) === "TRANSFERENCIA") ||
+      (usarIngreso2 &&
+        Number(ingreso2Base || 0) > 0 &&
+        tipoPagoNormalizado(tipoIngreso2) === "TRANSFERENCIA")
+    );
+  }, [ingreso1Base, ingreso2Base, tipoIngreso1, tipoIngreso2, usarIngreso2, ventaDesdeRegistro]);
+
+  useEffect(() => {
+    if (!requiereConfirmarEfectivo) {
+      setConfirmoEfectivoRecibido(false);
+    }
+
+    if (!requiereConfirmarTransferencia) {
+      setConfirmoTransferenciaValidada(false);
+    }
+  }, [requiereConfirmarEfectivo, requiereConfirmarTransferencia]);
+
   const ingreso1Neto = useMemo(
     () => netoIngreso(Number(ingreso1Base || 0), tipoIngreso1),
     [ingreso1Base, tipoIngreso1]
@@ -593,6 +639,10 @@ export default function NuevaVentaPage() {
   const cajaOficina = useMemo(() => {
     return totalIngresosCaja - Number(comision || 0) - Number(salida || 0);
   }, [totalIngresosCaja, comision, salida]);
+
+  const confirmacionesIngresoPendientes =
+    (requiereConfirmarEfectivo && !confirmoEfectivoRecibido) ||
+    (requiereConfirmarTransferencia && !confirmoTransferenciaValidada);
 
   const buscarIMEI = async (
     imei: string,
@@ -726,6 +776,8 @@ export default function NuevaVentaPage() {
     setTipoIngreso1("EFECTIVO");
     setTipoIngreso2("");
     setUsarIngreso2(false);
+    setConfirmoEfectivoRecibido(false);
+    setConfirmoTransferenciaValidada(false);
     setComision("");
     setSalida("");
     setFinanzas([
@@ -752,6 +804,12 @@ export default function NuevaVentaPage() {
       }
       if (usarIngreso2 && !tipoIngreso2) {
         return setMensaje("Seleccione el tipo del ingreso 2");
+      }
+      if (requiereConfirmarEfectivo && !confirmoEfectivoRecibido) {
+        return setMensaje("Debes confirmar que recibiste el efectivo");
+      }
+      if (requiereConfirmarTransferencia && !confirmoTransferenciaValidada) {
+        return setMensaje("Debes confirmar que validaste la transferencia");
       }
 
       const resValidacion = await fetch("/api/ventas/buscar-imei", {
@@ -799,6 +857,8 @@ export default function NuevaVentaPage() {
           fin3Valor: Number(finanzas[2].valor || 0),
           fin4Nombre: finanzas[3].nombre,
           fin4Valor: Number(finanzas[3].valor || 0),
+          confirmoEfectivoRecibido,
+          confirmoTransferenciaValidada,
           registroVendedorId: registroVendedor?.id ?? null,
         }),
       });
@@ -1211,19 +1271,58 @@ export default function NuevaVentaPage() {
                         </div>
 
                         {!ventaDesdeRegistro && (
-                        <div className="mt-4 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setUsarIngreso2(false)}
-                            className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                          >
-                            Quitar ingreso 2
-                          </button>
-                        </div>
+                          <div className="mt-4 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setUsarIngreso2(false)}
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                            >
+                              Quitar ingreso 2
+                            </button>
+                          </div>
                         )}
                       </div>
                     )}
                   </div>
+
+                  {ventaDesdeRegistro &&
+                    (requiereConfirmarEfectivo ||
+                      requiereConfirmarTransferencia) && (
+                      <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">
+                          Confirmacion de ingreso
+                        </p>
+                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                          {requiereConfirmarEfectivo && (
+                            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm">
+                              <input
+                                type="checkbox"
+                                checked={confirmoEfectivoRecibido}
+                                onChange={(e) =>
+                                  setConfirmoEfectivoRecibido(e.target.checked)
+                                }
+                                className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-200"
+                              />
+                              Recibi el efectivo
+                            </label>
+                          )}
+
+                          {requiereConfirmarTransferencia && (
+                            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm">
+                              <input
+                                type="checkbox"
+                                checked={confirmoTransferenciaValidada}
+                                onChange={(e) =>
+                                  setConfirmoTransferenciaValidada(e.target.checked)
+                                }
+                                className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
+                              />
+                              Valide la transferencia
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                    )}
                 </div>
 
                 <div className={sectionCardClass()}>
@@ -1365,7 +1464,7 @@ export default function NuevaVentaPage() {
 
                     <button
                       onClick={guardar}
-                      disabled={guardando}
+                      disabled={guardando || confirmacionesIngresoPendientes}
                       className="rounded-2xl bg-gradient-to-r from-red-600 to-red-500 px-6 py-4 text-base font-semibold text-white shadow-sm transition hover:from-red-700 hover:to-red-600 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {guardando ? "Guardando..." : "Guardar venta"}
