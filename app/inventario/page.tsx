@@ -49,6 +49,7 @@ type EstadoFiltro =
   | "GARANTIA"
   | "PRESTAMO"
   | "PRESTAMO_POR_ACEPTAR"
+  | "PAGO"
   | "DEUDA";
 
 type EditarInventarioForm = {
@@ -378,6 +379,7 @@ export default function InventarioPage() {
         const estadoFinanciero = (item.estadoFinanciero || "").toUpperCase();
 
         if (filtroEstado === "TODOS") return true;
+        if (filtroEstado === "PAGO") return estadoFinanciero === "PAGO";
         if (filtroEstado === "DEUDA") return estadoFinanciero === "DEUDA";
 
         return estado === filtroEstado;
@@ -1162,6 +1164,7 @@ export default function InventarioPage() {
                     "GARANTIA",
                     "PRESTAMO",
                     "PRESTAMO_POR_ACEPTAR",
+                    "PAGO",
                     "DEUDA",
                   ] as EstadoFiltro[]
                 ).map((estado) => (
