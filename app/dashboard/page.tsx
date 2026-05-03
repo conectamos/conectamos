@@ -693,6 +693,7 @@ export default async function DashboardPage() {
         { href: "/ventas/equipo-comercial", label: "Catalogos de ventas", tone: "secondary" },
         { href: "/dashboard/lista-precios", label: "Lista de precios", tone: "secondary" },
         { href: "/dashboard/auditoria", label: "Auditoria", tone: "secondary" },
+        { href: "/dashboard/seguridad", label: "Seguridad", tone: "danger" },
       ],
       tone: "slate",
     },
