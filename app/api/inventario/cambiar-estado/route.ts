@@ -5,6 +5,23 @@ import { puedeAccederModulosOperativos } from "@/lib/access-control";
 
 const ESTADOS_VALIDOS = ["BODEGA", "PENDIENTE", "GARANTIA"];
 
+function describirActor(user: NonNullable<Awaited<ReturnType<typeof getSessionUser>>>) {
+  const nombre = String(user.perfilNombre || user.nombre || user.usuario).trim();
+  const usuario = String(user.usuario || "").trim();
+  const sede = String(user.sedeNombre || "").trim();
+  const partes = [nombre];
+
+  if (usuario && usuario !== nombre) {
+    partes.push(`usuario ${usuario}`);
+  }
+
+  if (sede) {
+    partes.push(sede);
+  }
+
+  return partes.join(" - ");
+}
+
 export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
@@ -29,7 +46,7 @@ export async function POST(req: Request) {
 
     if (!id) {
       return NextResponse.json(
-        { error: "ID inválido" },
+        { error: "ID invalido" },
         { status: 400 }
       );
     }
@@ -73,6 +90,8 @@ export async function POST(req: Request) {
     }
 
     const estadoAnterior = String(item.estadoActual || "").toUpperCase();
+    const actor = describirActor(user);
+    const observacion = `Cambio manual de estado por ${actor}: ${estadoAnterior} -> ${estadoActual}`;
 
     // Solo permitir:
     // BODEGA -> GARANTIA / PENDIENTE
@@ -97,7 +116,7 @@ export async function POST(req: Request) {
           estadoAnterior: item.estadoActual || null,
           estadoActual,
           fechaMovimiento: new Date(),
-          observacion: `Cambio manual de estado: ${estadoAnterior} → ${estadoActual}`,
+          observacion,
         },
       });
 
@@ -111,7 +130,7 @@ export async function POST(req: Request) {
           sedeId: item.sedeId,
           estadoFinanciero: item.estadoFinanciero || null,
           origen: item.origen || "INVENTARIO",
-          observacion: `Cambio manual de estado: ${estadoAnterior} → ${estadoActual}`,
+          observacion,
         },
       });
     });
