@@ -248,9 +248,9 @@ export default function NuevoInventarioPage() {
           return;
         }
 
-        const imeiInvalido = imeis.find((valor) => valor.length > 15);
+        const imeiInvalido = imeis.find((valor) => valor.length !== 15);
         if (imeiInvalido) {
-          setMensaje("Error: hay IMEIs con mas de 15 digitos.");
+          setMensaje("Error: todos los IMEIs deben tener exactamente 15 digitos.");
           return;
         }
 
@@ -295,9 +295,9 @@ export default function NuevoInventarioPage() {
         return;
       }
 
-      const imeiInvalido = imeis.find((valor) => valor.length > 15);
+      const imeiInvalido = imeis.find((valor) => valor.length !== 15);
       if (imeiInvalido) {
-        setMensaje("Error: hay IMEIs con mas de 15 digitos.");
+        setMensaje("Error: todos los IMEIs deben tener exactamente 15 digitos.");
         return;
       }
 
@@ -472,7 +472,7 @@ export default function NuevoInventarioPage() {
                     className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-lg font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
                   />
                   <p className="mt-2 text-xs text-slate-500">
-                    Solo numeros, maximo 15 digitos.
+                    Solo numeros, exactamente 15 digitos.
                   </p>
                 </div>
 

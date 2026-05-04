@@ -105,10 +105,10 @@ const imeis: string[] = imeisRawTyped
       );
     }
 
-    const imeiLargoInvalido = imeis.find((item) => item.length > 15);
-    if (imeiLargoInvalido) {
+    const imeiInvalido = imeis.find((item) => !/^\d{15}$/.test(item));
+    if (imeiInvalido) {
       return NextResponse.json(
-        { error: "Hay IMEIs con más de 15 dígitos" },
+        { error: "Todos los IMEIs deben tener exactamente 15 digitos" },
         { status: 400 }
       );
     }

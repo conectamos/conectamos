@@ -117,10 +117,10 @@ export async function POST(req: Request) {
       );
     }
 
-    const imeiInvalido = imeis.find((item) => !/^\d{1,15}$/.test(item));
+    const imeiInvalido = imeis.find((item) => !/^\d{15}$/.test(item));
     if (imeiInvalido) {
       return NextResponse.json(
-        { error: "El IMEI debe tener solo numeros y maximo 15 digitos" },
+        { error: "Todos los IMEIs deben tener exactamente 15 digitos" },
         { status: 400 }
       );
     }
