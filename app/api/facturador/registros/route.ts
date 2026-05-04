@@ -50,6 +50,8 @@ function serializarRegistro(
   registro: {
     creditoAutorizado: unknown;
     cuotaInicial: unknown;
+    medioPago1Valor?: unknown;
+    medioPago2Valor?: unknown;
   } & Record<string, unknown>
 ) {
   return {
@@ -58,6 +60,12 @@ function serializarRegistro(
       ? Number(registro.creditoAutorizado)
       : null,
     cuotaInicial: registro.cuotaInicial ? Number(registro.cuotaInicial) : null,
+    medioPago1Valor: registro.medioPago1Valor
+      ? Number(registro.medioPago1Valor)
+      : null,
+    medioPago2Valor: registro.medioPago2Valor
+      ? Number(registro.medioPago2Valor)
+      : null,
   };
 }
 
@@ -165,6 +173,10 @@ export async function GET() {
         plataformaCredito: true,
         creditoAutorizado: true,
         cuotaInicial: true,
+        medioPago1Tipo: true,
+        medioPago1Valor: true,
+        medioPago2Tipo: true,
+        medioPago2Valor: true,
         referenciaEquipo: true,
         serialImei: true,
         tipoEquipo: true,
@@ -455,6 +467,10 @@ export async function PATCH(req: Request) {
           plataformaCredito: true,
           creditoAutorizado: true,
           cuotaInicial: true,
+          medioPago1Tipo: true,
+          medioPago1Valor: true,
+          medioPago2Tipo: true,
+          medioPago2Valor: true,
           referenciaEquipo: true,
           serialImei: true,
           tipoEquipo: true,
@@ -492,6 +508,10 @@ export async function PATCH(req: Request) {
         plataformaCredito: true,
         creditoAutorizado: true,
         cuotaInicial: true,
+        medioPago1Tipo: true,
+        medioPago1Valor: true,
+        medioPago2Tipo: true,
+        medioPago2Valor: true,
         referenciaEquipo: true,
         serialImei: true,
         tipoEquipo: true,

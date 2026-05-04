@@ -42,6 +42,10 @@ type RegistroFacturacion = {
   plataformaCredito: string;
   creditoAutorizado: number | null;
   cuotaInicial: number | null;
+  medioPago1Tipo: string | null;
+  medioPago1Valor: number | null;
+  medioPago2Tipo: string | null;
+  medioPago2Valor: number | null;
   referenciaEquipo: string | null;
   serialImei: string | null;
   tipoEquipo: string | null;
@@ -134,7 +138,50 @@ function formatMoneyInputFromStored(value: string | number | null | undefined) {
   return formatearPesoInput(normalized);
 }
 
+function esRegistroContado(registro: RegistroFacturacion) {
+  return String(registro.plataformaCredito || "").trim().toUpperCase() === "CONTADO";
+}
+
+function resolvePagosContado(registro: RegistroFacturacion) {
+  return [
+    {
+      tipo: registro.medioPago1Tipo,
+      valor: registro.medioPago1Valor,
+    },
+    {
+      tipo: registro.medioPago2Tipo,
+      valor: registro.medioPago2Valor,
+    },
+  ].filter(
+    (
+      item
+    ): item is {
+      tipo: string;
+      valor: number;
+    } => Boolean(item.tipo) && typeof item.valor === "number" && item.valor > 0
+  );
+}
+
+function totalPagosContado(registro: RegistroFacturacion) {
+  return resolvePagosContado(registro).reduce(
+    (total, item) => total + item.valor,
+    0
+  );
+}
+
 function resolveFinancieras(registro: RegistroFacturacion) {
+  if (esRegistroContado(registro)) {
+    const totalContado = totalPagosContado(registro);
+
+    return [
+      {
+        plataformaCredito: "CONTADO",
+        creditoAutorizado: totalContado > 0 ? totalContado : null,
+        cuotaInicial: null,
+      },
+    ];
+  }
+
   const detalle = Array.isArray(registro.financierasDetalle)
     ? registro.financierasDetalle
         .map((item) => ({
@@ -741,6 +788,8 @@ export default function FacturadorRegistrosWorkspace({
                     );
                     const draft = facturasDraft[registro.id] ?? registro.numeroFactura ?? "";
                     const financieras = resolveFinancieras(registro);
+                    const esContado = esRegistroContado(registro);
+                    const pagosContado = resolvePagosContado(registro);
                     const financierasConInicial = financieras.filter(
                       (item, index) =>
                         financieraRequiereInicial(index) &&
@@ -788,7 +837,32 @@ export default function FacturadorRegistrosWorkspace({
                           {registro.serialImei || "Sin IMEI"}
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          {financierasConInicial.length > 0 ? (
+                          {esContado ? (
+                            pagosContado.length > 0 ? (
+                              <div className="space-y-2">
+                                {pagosContado.map((item, index) => (
+                                  <div
+                                    key={`${registro.id}-contado-${index}`}
+                                    className="min-w-40"
+                                  >
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                      {item.tipo}
+                                    </div>
+                                    <div className="mt-1 font-semibold text-slate-900">
+                                      {formatMoney(item.valor)}
+                                    </div>
+                                  </div>
+                                ))}
+                                {pagosContado.length > 1 && (
+                                  <div className="border-t border-slate-200 pt-2 font-bold text-slate-950">
+                                    Total {formatMoney(totalPagosContado(registro))}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-slate-500">Sin valor</span>
+                            )
+                          ) : financierasConInicial.length > 0 ? (
                             <div className="space-y-2">
                               {financierasConInicial.map((item, index) => (
                                 <div
