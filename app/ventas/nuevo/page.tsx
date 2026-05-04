@@ -1172,8 +1172,7 @@ export default function NuevaVentaPage() {
                       <select
                         value={jalador}
                         onChange={(e) => setJalador(e.target.value)}
-                        disabled={bloqueoRegistroAsesor}
-                        className={inputBaseClass(bloqueoRegistroAsesor)}
+                        className={inputBaseClass(false)}
                       >
                         <option value="">Seleccionar</option>
                         {jaladoresDisponibles.map((j) => (

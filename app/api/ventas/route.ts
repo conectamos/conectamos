@@ -364,14 +364,9 @@ function aplicarRegistroVendedorInput<
   const finanzasRegistro = extraerFinanzasRegistro(registro);
   const referenciaEquipo = String(registro.referenciaEquipo || "").trim();
   const asesorNombre = String(registro.asesorNombre || "").trim();
-  const jaladorNombre = String(registro.jaladorNombre || "").trim();
 
   if (referenciaEquipo) {
     next.descripcion = referenciaEquipo;
-  }
-
-  if (jaladorNombre) {
-    next.jalador = jaladorNombre;
   }
 
   if (asesorNombre) {
@@ -849,6 +844,7 @@ export async function POST(req: Request) {
             ventaIdRelacionada: creada.id,
             convertidoEn: now,
             convertidoPor: user.nombre,
+            jaladorNombre: inputVenta.jalador || null,
             cerradorNombre: inputVenta.cerrador || null,
           },
         });
