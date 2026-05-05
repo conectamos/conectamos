@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
+  esPerfilAdministrativo,
   esPerfilVendedor,
   esRolAdministrativo,
   esRolAuditor,
@@ -96,6 +97,7 @@ const REGISTRO_DETALLE_SELECT = {
   numeroFactura: true,
   estadoFacturacion: true,
   estadoVentaRegistro: true,
+  ventaIdRelacionada: true,
   firmaClienteDataUrl: true,
   fotoEntregaDataUrl: true,
   confirmacionCliente: true,
@@ -606,6 +608,71 @@ function validarPayload(
   };
 }
 
+function validarPayloadBasicoConvertido(body: Record<string, unknown>) {
+  const clienteNombre = normalizarTextoCorto(body.clienteNombre);
+  const tipoDocumento = normalizarTipoDocumentoCliente(body.tipoDocumento);
+  const documentoNumero = normalizarTextoCorto(body.documentoNumero);
+  const observacion = normalizarTextoLargo(body.observacion);
+  const correoTexto = normalizarTextoCorto(body.correo);
+  const correo = normalizarCorreoRegistro(body.correo);
+  const whatsappTexto = String(body.whatsapp || "").replace(/\D/g, "").trim();
+  const whatsapp = normalizarWhatsappRegistro(body.whatsapp);
+  const fechaNacimiento = normalizarFechaIso(body.fechaNacimiento);
+  const fechaExpedicion = normalizarFechaIso(body.fechaExpedicion);
+  const direccion = normalizarTextoLargo(body.direccion);
+  const barrio = normalizarTextoCorto(body.barrio);
+  const referenciaFamiliar1Nombre = normalizarTextoCorto(
+    body.referenciaFamiliar1Nombre
+  );
+  const referenciaFamiliar1Telefono = normalizarTextoCorto(
+    body.referenciaFamiliar1Telefono
+  );
+  const referenciaFamiliar2Nombre = normalizarTextoCorto(
+    body.referenciaFamiliar2Nombre
+  );
+  const referenciaFamiliar2Telefono = normalizarTextoCorto(
+    body.referenciaFamiliar2Telefono
+  );
+  const telefono = normalizarTextoCorto(body.telefono);
+  const simCardRegistro1 = normalizarTextoCorto(body.simCardRegistro1);
+  const simCardRegistro2 = normalizarTextoCorto(body.simCardRegistro2);
+
+  if (!clienteNombre) return { error: "El nombre del cliente es obligatorio" };
+  if (!tipoDocumento) return { error: "Debes seleccionar el tipo de documento" };
+  if (!documentoNumero) return { error: "El documento del cliente es obligatorio" };
+  if (!correoTexto) return { error: "El correo es obligatorio" };
+  if (!correo) {
+    return {
+      error: `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`,
+    };
+  }
+  if (!whatsappTexto) return { error: "El WhatsApp es obligatorio" };
+  if (!whatsapp) return { error: "El WhatsApp debe tener 10 digitos" };
+  if (!direccion) return { error: "La direccion es obligatoria" };
+
+  return {
+    data: {
+      clienteNombre,
+      tipoDocumento,
+      documentoNumero,
+      observacion,
+      correo,
+      whatsapp,
+      fechaNacimiento,
+      fechaExpedicion,
+      direccion,
+      barrio,
+      referenciaFamiliar1Nombre,
+      referenciaFamiliar1Telefono,
+      referenciaFamiliar2Nombre,
+      referenciaFamiliar2Telefono,
+      telefono,
+      simCardRegistro1,
+      simCardRegistro2,
+    },
+  };
+}
+
 async function validarEquipoExistenteParaRegistro(params: {
   serialImei: string;
   sedeId: number;
@@ -877,18 +944,22 @@ export async function PATCH(req: Request) {
       );
     }
 
-    if (
+    const registroConvertido =
       existente.ventaIdRelacionada ||
       String(existente.estadoVentaRegistro || "").trim().toUpperCase() ===
-        "CONVERTIDO_EN_VENTA"
-    ) {
-      return NextResponse.json(
-        { error: "Este registro ya fue convertido en venta y no se puede modificar" },
-        { status: 400 }
-      );
-    }
+        "CONVERTIDO_EN_VENTA";
 
     if (modo === "ELIMINAR") {
+      if (registroConvertido) {
+        return NextResponse.json(
+          {
+            error:
+              "Este registro ya fue convertido en venta y no se puede eliminar desde el registro del asesor",
+          },
+          { status: 400 }
+        );
+      }
+
       if (esRolAuditor(access.session.rolNombre)) {
         return NextResponse.json(
           { error: "El rol AUDITOR no puede eliminar registros" },
@@ -910,6 +981,40 @@ export async function PATCH(req: Request) {
       return NextResponse.json({
         ok: true,
         mensaje: "Registro eliminado correctamente",
+      });
+    }
+
+    const puedeEditarConvertido =
+      esRolAdministrativo(access.session.rolNombre) ||
+      esPerfilAdministrativo(access.session.perfilTipo);
+
+    if (registroConvertido) {
+      if (!puedeEditarConvertido) {
+        return NextResponse.json(
+          {
+            error:
+              "Este registro ya fue convertido en venta y solo el administrador puede corregir datos basicos",
+          },
+          { status: 400 }
+        );
+      }
+
+      const payloadBasico = validarPayloadBasicoConvertido(body);
+
+      if ("error" in payloadBasico) {
+        return NextResponse.json({ error: payloadBasico.error }, { status: 400 });
+      }
+
+      const actualizado = await prisma.registroVendedorVenta.update({
+        where: { id },
+        data: payloadBasico.data,
+        select: REGISTRO_DETALLE_SELECT,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Datos basicos del registro actualizados correctamente",
+        registro: serializarRegistroDetalle(actualizado),
       });
     }
 

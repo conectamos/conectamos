@@ -58,6 +58,7 @@ export type RegistroVendedorDetalle = {
   numeroFactura: string | null;
   estadoFacturacion: string | null;
   estadoVentaRegistro: string | null;
+  ventaIdRelacionada: number | null;
   firmaClienteDataUrl: string | null;
   fotoEntregaDataUrl: string | null;
   confirmacionCliente: boolean;

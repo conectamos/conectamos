@@ -295,6 +295,14 @@ function esServicioFinanciera(value: unknown) {
   return String(value || "").trim().toUpperCase() === "FINANCIERA";
 }
 
+function esRegistroConvertido(registro: RegistroVendedorDetalle | null) {
+  return Boolean(
+    registro?.ventaIdRelacionada ||
+      String(registro?.estadoVentaRegistro || "").trim().toUpperCase() ===
+        "CONVERTIDO_EN_VENTA"
+  );
+}
+
 function totalIngresosContado(form: Pick<FormState, "medioPago1Valor" | "medioPago2Valor">) {
   return moneyInputToNumber(form.medioPago1Valor) + moneyInputToNumber(form.medioPago2Valor);
 }
@@ -694,6 +702,7 @@ export default function VendedorRegistroWorkspace({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
+  const registroEditandoConvertido = esRegistroConvertido(registroEditando);
 
   const setFormMessage = (texto: string, tipo: "success" | "error") => {
     setMensaje(texto);
@@ -1114,6 +1123,29 @@ export default function VendedorRegistroWorkspace({
   }, [searchParams, session]);
 
   const validarFormularioVisible = () => {
+    if (registroEditandoConvertido) {
+      if (!isTextFilled(form.clienteNombre)) {
+        return "El nombre del cliente es obligatorio";
+      }
+      if (!isTextFilled(form.tipoDocumento)) {
+        return "Debes seleccionar el tipo de documento";
+      }
+      if (!isTextFilled(form.documentoNumero)) {
+        return "El documento del cliente es obligatorio";
+      }
+      if (!isTextFilled(form.correo)) return "El correo es obligatorio";
+      if (!esCorreoRegistroValido(form.correo)) {
+        return `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`;
+      }
+      if (!isTextFilled(form.whatsapp)) return "El WhatsApp es obligatorio";
+      if (!esWhatsappRegistroValido(form.whatsapp)) {
+        return "El WhatsApp debe tener 10 digitos";
+      }
+      if (!isTextFilled(form.direccion)) return "La direccion es obligatoria";
+
+      return null;
+    }
+
     if (!isTextFilled(form.ciudad)) return "La ciudad es obligatoria";
     if (!isTextFilled(form.puntoVenta)) return "Debes seleccionar el punto de venta";
     if (!isTextFilled(form.clienteNombre)) return "El nombre del cliente es obligatorio";
@@ -1274,6 +1306,25 @@ export default function VendedorRegistroWorkspace({
             ? form.medioPago2Valor
             : "",
       };
+      const payloadConvertido = {
+        clienteNombre: form.clienteNombre,
+        tipoDocumento: form.tipoDocumento,
+        documentoNumero: form.documentoNumero,
+        observacion: form.observacion,
+        correo: form.correo,
+        whatsapp: form.whatsapp,
+        fechaNacimiento: form.fechaNacimiento,
+        fechaExpedicion: form.fechaExpedicion,
+        direccion: form.direccion,
+        barrio: form.barrio,
+        referenciaFamiliar1Nombre: form.referenciaFamiliar1Nombre,
+        referenciaFamiliar1Telefono: form.referenciaFamiliar1Telefono,
+        referenciaFamiliar2Nombre: form.referenciaFamiliar2Nombre,
+        referenciaFamiliar2Telefono: form.referenciaFamiliar2Telefono,
+        telefono: form.telefono,
+        simCardRegistro1: form.simCardRegistro1,
+        simCardRegistro2: form.simCardRegistro2,
+      };
 
       const res = await fetch("/api/vendedor/registros", {
         method: registroEditando ? "PATCH" : "POST",
@@ -1283,7 +1334,7 @@ export default function VendedorRegistroWorkspace({
         body: JSON.stringify(
           registroEditando
             ? {
-                ...payload,
+                ...(registroEditandoConvertido ? payloadConvertido : payload),
                 id: registroEditando.id,
                 modo: "EDITAR",
               }
@@ -1359,7 +1410,9 @@ export default function VendedorRegistroWorkspace({
               </h1>
 
               <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                {registroEditando
+                {registroEditandoConvertido
+                  ? "Corrige datos basicos del cliente y del tramite sin alterar la venta, el inventario ni los valores ya procesados."
+                  : registroEditando
                   ? "Actualiza la informacion del tramite, las financieras, la validacion del cliente y la entrega del equipo."
                   : "Captura digital del tramite, las financieras, la validacion del cliente y la entrega del equipo en un solo registro."}
               </p>
@@ -1411,6 +1464,12 @@ export default function VendedorRegistroWorkspace({
                     ? "Cargando datos del registro..."
                     : `Estas editando el registro #${registroEditando?.id ?? ""} de ${registroEditando?.clienteNombre ?? "cliente"}.`}
                 </p>
+                {registroEditandoConvertido && (
+                  <p className="mt-2 text-sm font-semibold text-amber-800">
+                    Este registro ya esta convertido en venta: quedan bloqueados
+                    IMEI, sede, financieras, ingresos, jalador y evidencia.
+                  </p>
+                )}
               </div>
 
               {registroEditando && puedeBuscarRegistros && (
@@ -1449,8 +1508,9 @@ export default function VendedorRegistroWorkspace({
                   Ciudad
                   <input
                     value={form.ciudad}
+                    disabled={registroEditandoConvertido}
                     onChange={(event) => setField("ciudad", event.target.value)}
-                    className={inputClass()}
+                    className={inputClass(registroEditandoConvertido)}
                     placeholder="Ciudad"
                   />
                 </label>
@@ -1459,8 +1519,9 @@ export default function VendedorRegistroWorkspace({
                   Punto de venta
                   <select
                     value={form.puntoVenta}
+                    disabled={registroEditandoConvertido}
                     onChange={(event) => setField("puntoVenta", event.target.value)}
-                    className={inputClass()}
+                    className={inputClass(registroEditandoConvertido)}
                   >
                     {puntosVenta.map((item) => (
                       <option key={item} value={item}>
@@ -1482,12 +1543,13 @@ export default function VendedorRegistroWorkspace({
                         <button
                           key={option.value}
                           type="button"
+                          disabled={registroEditandoConvertido}
                           onClick={() => seleccionarServicio(option.value)}
                           className={`rounded-2xl border px-4 py-4 text-left text-sm font-black transition ${
                             active
                               ? "border-slate-950 bg-slate-950 text-white shadow-sm"
                               : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
-                          }`}
+                          } disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500`}
                         >
                           {option.label}
                         </button>
@@ -1539,6 +1601,7 @@ export default function VendedorRegistroWorkspace({
                       IMEI
                       <input
                         value={form.serialImei}
+                        disabled={registroEditandoConvertido}
                         onChange={(event) => {
                           setField(
                             "serialImei",
@@ -1547,11 +1610,11 @@ export default function VendedorRegistroWorkspace({
                           setImeiDetalle("");
                         }}
                         onBlur={() => {
-                          if (form.serialImei.length === 15) {
+                          if (!registroEditandoConvertido && form.serialImei.length === 15) {
                             void buscarImei();
                           }
                         }}
-                        className={inputClass()}
+                        className={inputClass(registroEditandoConvertido)}
                         placeholder="15 digitos"
                       />
                     </label>
@@ -1559,7 +1622,11 @@ export default function VendedorRegistroWorkspace({
                     <button
                       type="button"
                       onClick={() => void buscarImei()}
-                      disabled={buscandoImei || form.serialImei.length !== 15}
+                      disabled={
+                        registroEditandoConvertido ||
+                        buscandoImei ||
+                        form.serialImei.length !== 15
+                      }
                       className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
                       {buscandoImei ? "Consultando..." : "Buscar IMEI"}
@@ -1578,10 +1645,11 @@ export default function VendedorRegistroWorkspace({
                       Referencia
                       <input
                         value={form.referenciaEquipo}
+                        disabled={registroEditandoConvertido}
                         onChange={(event) =>
                           setField("referenciaEquipo", event.target.value)
                         }
-                        className={inputClass()}
+                        className={inputClass(registroEditandoConvertido)}
                         placeholder="Se completa desde el IMEI"
                       />
                     </label>
@@ -1590,10 +1658,11 @@ export default function VendedorRegistroWorkspace({
                       Almacenamiento
                       <input
                         value={form.almacenamiento}
+                        disabled={registroEditandoConvertido}
                         onChange={(event) =>
                           setField("almacenamiento", event.target.value)
                         }
-                        className={inputClass()}
+                        className={inputClass(registroEditandoConvertido)}
                         placeholder="128 GB"
                       />
                     </label>
@@ -1602,8 +1671,9 @@ export default function VendedorRegistroWorkspace({
                       Color
                       <input
                         value={form.color}
+                        disabled={registroEditandoConvertido}
                         onChange={(event) => setField("color", event.target.value)}
-                        className={inputClass()}
+                        className={inputClass(registroEditandoConvertido)}
                         placeholder="Color"
                       />
                     </label>
@@ -1612,10 +1682,11 @@ export default function VendedorRegistroWorkspace({
                       Tipo de equipo
                       <select
                         value={form.tipoEquipo}
+                        disabled={registroEditandoConvertido}
                         onChange={(event) =>
                           setField("tipoEquipo", event.target.value)
                         }
-                        className={inputClass()}
+                        className={inputClass(registroEditandoConvertido)}
                       >
                         <option value="">Selecciona una opcion</option>
                         {TIPO_EQUIPO_OPTIONS.map((item) => (
@@ -1630,7 +1701,7 @@ export default function VendedorRegistroWorkspace({
               </div>
             </section>
 
-            {esServicioFinanciera(form.servicio) && (
+            {esServicioFinanciera(form.servicio) && !registroEditandoConvertido && (
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                 Financieras del tramite
@@ -1952,7 +2023,7 @@ export default function VendedorRegistroWorkspace({
             </section>
             )}
 
-            {esServicioContado(form.servicio) && (
+            {esServicioContado(form.servicio) && !registroEditandoConvertido && (
               <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
                 <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                   Ingresos del contado
@@ -2240,6 +2311,7 @@ export default function VendedorRegistroWorkspace({
               </div>
             </section>
 
+            {!registroEditandoConvertido && (
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                 {esServicioFinanciera(form.servicio)
@@ -2370,6 +2442,7 @@ export default function VendedorRegistroWorkspace({
                 </div>
               </div>
             </section>
+            )}
 
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
@@ -2387,8 +2460,9 @@ export default function VendedorRegistroWorkspace({
                     Jalador
                     <select
                       value={form.jaladorNombre}
+                      disabled={registroEditandoConvertido}
                       onChange={(event) => setField("jaladorNombre", event.target.value)}
-                      className={inputClass()}
+                      className={inputClass(registroEditandoConvertido)}
                     >
                       <option value="">Selecciona un jalador</option>
                       {jaladores.map((item) => (
@@ -2403,8 +2477,9 @@ export default function VendedorRegistroWorkspace({
                     Jalador
                     <input
                       value={form.jaladorNombre}
+                      disabled={registroEditandoConvertido}
                       onChange={(event) => setField("jaladorNombre", event.target.value)}
-                      className={inputClass()}
+                      className={inputClass(registroEditandoConvertido)}
                       placeholder="Nombre del jalador"
                     />
                   </label>
