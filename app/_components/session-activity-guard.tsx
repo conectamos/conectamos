@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
-const INACTIVITY_LIMIT_MS = 20 * 60 * 1000;
+const INACTIVITY_LIMIT_MS = 60 * 60 * 1000;
 const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 const CHECK_INTERVAL_MS = 30 * 1000;
 

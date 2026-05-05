@@ -4,7 +4,7 @@ export const SESSION_COOKIE_NAME = "session";
 export const PENDING_PROFILE_COOKIE_NAME = "pending_profile_session";
 export const PENDING_PIN_CHANGE_COOKIE_NAME = "pending_profile_pin_change";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
-export const SESSION_IDLE_TIMEOUT_SECONDS = 60 * 20;
+export const SESSION_IDLE_TIMEOUT_SECONDS = 60 * 60;
 
 type SessionPayload = {
   exp: number;
