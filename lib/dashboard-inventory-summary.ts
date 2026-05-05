@@ -26,6 +26,7 @@ const MARCAS_RADAR = [
   "SAMSUNG",
   "INFINIX",
   "MOTOROLA",
+  "OPPO",
   "TECNO",
   "XIAOMI",
   "ZTE",
