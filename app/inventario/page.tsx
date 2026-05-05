@@ -179,6 +179,11 @@ export default function InventarioPage() {
     estadoFinanciero: "PAGO",
     deboA: "",
   });
+  const [mostrarModalCambio, setMostrarModalCambio] = useState(false);
+  const [itemCambio, setItemCambio] = useState<InventarioItem | null>(null);
+  const [imeiCambio, setImeiCambio] = useState("");
+  const [estadoRetornoCambio, setEstadoRetornoCambio] = useState("BODEGA");
+  const [observacionCambio, setObservacionCambio] = useState("");
 
   const esAdmin = String(user?.rolNombre || "").toUpperCase() === "ADMIN";
 
@@ -541,6 +546,73 @@ export default function InventarioPage() {
     }
   };
 
+  const abrirCambioEquipo = (item: InventarioItem) => {
+    setItemCambio(item);
+    setImeiCambio("");
+    setEstadoRetornoCambio("BODEGA");
+    setObservacionCambio("");
+    setMostrarModalCambio(true);
+  };
+
+  const cerrarCambioEquipo = () => {
+    setMostrarModalCambio(false);
+    setItemCambio(null);
+    setImeiCambio("");
+    setEstadoRetornoCambio("BODEGA");
+    setObservacionCambio("");
+  };
+
+  const ejecutarCambioEquipo = async () => {
+    if (!itemCambio) return;
+
+    const estado = String(itemCambio.estadoActual || "").toUpperCase();
+    const esReemplazoVendido = estado === "VENDIDO";
+    const imeiLimpio = imeiCambio.replace(/\D/g, "");
+
+    if (imeiLimpio.length !== 15) {
+      setMensaje(
+        esReemplazoVendido
+          ? "El IMEI nuevo debe tener exactamente 15 digitos."
+          : "El IMEI anterior debe tener exactamente 15 digitos."
+      );
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/inventario/cambio-equipo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: itemCambio.id,
+          imeiAnterior: esReemplazoVendido ? undefined : imeiLimpio,
+          imeiNuevo: esReemplazoVendido ? imeiLimpio : undefined,
+          estadoRetorno: estadoRetornoCambio,
+          observacion: observacionCambio,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "Error registrando cambio de equipo");
+        return;
+      }
+
+      setMensaje(data.mensaje || "Cambio de equipo registrado correctamente");
+      cerrarCambioEquipo();
+      await cargarInventario();
+    } catch {
+      setMensaje("Error registrando cambio de equipo");
+    } finally {
+      setCargando(false);
+    }
+  };
+
   const devolverABodega = async (item: InventarioItem) => {
     try {
       setCargando(true);
@@ -697,6 +769,13 @@ export default function InventarioPage() {
     if (esDeudaEntreSedes(deboA)) return false;
 
     return true;
+  };
+
+  const puedeRegistrarCambioEquipo = (item: InventarioItem) => {
+    if (!esAdmin) return false;
+
+    const estadoActual = String(item.estadoActual || "").trim().toUpperCase();
+    return estadoActual === "BODEGA" || estadoActual === "VENDIDO";
   };
 
   const itemsSeleccionados = useMemo(
@@ -1536,6 +1615,34 @@ export default function InventarioPage() {
                             </button>
                           )}
 
+                          {puedeRegistrarCambioEquipo(item) && (
+                            <button
+                              onClick={() => abrirCambioEquipo(item)}
+                              disabled={cargando}
+                              title={
+                                String(item.estadoActual || "").toUpperCase() === "VENDIDO"
+                                  ? "Reemplazar equipo vendido"
+                                  : "Registrar cambio"
+                              }
+                              className="rounded-xl bg-indigo-100 p-2.5 transition hover:bg-indigo-200 disabled:opacity-70"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-4 w-4 text-indigo-700"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M8 7h8m0 0-3-3m3 3-3 3M16 17H8m0 0 3 3m-3-3 3-3"
+                                />
+                              </svg>
+                            </button>
+                          )}
+
                           {esAdmin && (
                             <button
                               onClick={() => abrirEdicion(item)}
@@ -1798,6 +1905,92 @@ export default function InventarioPage() {
                   setMostrarModalPago(false);
                   setItemPago(null);
                 }}
+                className="flex-1 rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mostrarModalCambio && itemCambio && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900">
+              {String(itemCambio.estadoActual || "").toUpperCase() === "VENDIDO"
+                ? "Reemplazar equipo vendido"
+                : "Registrar cambio de equipo"}
+            </h3>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Equipo seleccionado
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-950">
+                IMEI: {itemCambio.imei}
+              </p>
+              <p className="text-sm text-slate-600">
+                {itemCambio.referencia} - {itemCambio.sede?.nombre || "Sede sin configurar"}
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  {String(itemCambio.estadoActual || "").toUpperCase() === "VENDIDO"
+                    ? "IMEI nuevo"
+                    : "IMEI anterior"}
+                </label>
+                <input
+                  value={imeiCambio}
+                  onChange={(e) =>
+                    setImeiCambio(e.target.value.replace(/\D/g, "").slice(0, 15))
+                  }
+                  placeholder="15 digitos"
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Estado del equipo anterior
+                </label>
+                <select
+                  value={estadoRetornoCambio}
+                  onChange={(e) => setEstadoRetornoCambio(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                >
+                  <option value="BODEGA">BODEGA</option>
+                  <option value="GARANTIA">GARANTIA</option>
+                  <option value="PENDIENTE">PENDIENTE</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
+                Observacion
+              </label>
+              <textarea
+                value={observacionCambio}
+                onChange={(e) => setObservacionCambio(e.target.value)}
+                rows={3}
+                className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+              />
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={ejecutarCambioEquipo}
+                disabled={cargando}
+                className="flex-1 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-70"
+              >
+                Guardar cambio
+              </button>
+
+              <button
+                onClick={cerrarCambioEquipo}
                 className="flex-1 rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 Cancelar

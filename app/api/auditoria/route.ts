@@ -121,8 +121,8 @@ const auditDefinitions: AuditDefinition[] = [
     categoria: "Ventas",
     titulo: "Inventario vendido sin venta",
     severity: "CRITICO",
-    descripcion: "Un equipo en estado VENDIDO debe tener una venta asociada.",
-    recomendacion: "Revisar si la venta fue eliminada o si el equipo debe volver a BODEGA.",
+    descripcion: "Un equipo en estado VENDIDO debe tener una venta asociada o un cambio autorizado.",
+    recomendacion: "Revisar si la venta fue eliminada, si el cambio fue autorizado o si el equipo debe volver a BODEGA.",
     rowsSql: `
       SELECT i.id, i.imei, i.referencia, i."sedeId", i."estadoActual", i."estadoFinanciero"
       FROM "InventarioSede" i
@@ -130,6 +130,12 @@ const auditDefinitions: AuditDefinition[] = [
         AND NOT EXISTS (
           SELECT 1 FROM "Venta" v
           WHERE v."inventarioSedeId" = i.id OR v.serial = i.imei
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM "MovimientoInventario" m
+          WHERE m.imei = i.imei
+            AND m."sedeId" = i."sedeId"
+            AND UPPER(COALESCE(m."tipoMovimiento", '')) = 'CAMBIO_EQUIPO_NUEVO'
         )
       ORDER BY i.id DESC
     `,
