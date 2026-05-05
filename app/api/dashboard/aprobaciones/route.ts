@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
-  esPerfilAdministrador,
+  esPerfilAdministrativo,
   esPerfilFacturador,
   esPerfilVendedor,
   esRolAdministrativo,
@@ -36,7 +36,7 @@ function normalizar(valor: unknown) {
 function esAccesoTotal(session: Awaited<ReturnType<typeof getSessionUser>>) {
   if (!session) return false;
 
-  return esPerfilAdministrador(session.perfilTipo) || esRolAdministrativo(session.rolNombre);
+  return esPerfilAdministrativo(session.perfilTipo) || esRolAdministrativo(session.rolNombre);
 }
 
 function estadoVentaAbierto(estadoVentaRegistro: unknown) {

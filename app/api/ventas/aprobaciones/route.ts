@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
   esPerfilFacturador,
-  esPerfilAdministrador,
+  esPerfilAdministrativo,
   esPerfilVendedor,
   esRolAdministrativo,
 } from "@/lib/access-control";
@@ -92,8 +92,8 @@ function buildScopeWhere(session: Awaited<ReturnType<typeof getSessionUser>>) {
   }
 
   if (
-    esPerfilAdministrador(session.perfilTipo) ||
-    (!session.perfilId && esRolAdministrativo(session.rolNombre))
+    esPerfilAdministrativo(session.perfilTipo) ||
+    esRolAdministrativo(session.rolNombre)
   ) {
     return {};
   }
