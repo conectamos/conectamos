@@ -1,7 +1,10 @@
 import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
-import { esPerfilAdministrador } from "@/lib/access-control";
+import {
+  esPerfilAdministrador,
+  esPerfilAuditor,
+} from "@/lib/access-control";
 import { etiquetaTipoPerfilVendedor } from "@/lib/vendor-profiles";
 import { isSessionIdle } from "@/lib/session-state";
 
@@ -68,7 +71,7 @@ export async function getSessionUser() {
         id: session.profileId,
         activo: true,
         OR: [
-          { tipo: "ADMINISTRADOR" },
+          { tipo: { in: ["ADMINISTRADOR", "AUDITOR"] } },
           {
             sedes: {
               some: {
@@ -102,7 +105,9 @@ export async function getSessionUser() {
 
   const rolNombre = esPerfilAdministrador(perfil?.tipo)
     ? "ADMIN"
-    : user.rol?.nombre ?? "";
+    : esPerfilAuditor(perfil?.tipo)
+      ? "AUDITOR"
+      : user.rol?.nombre ?? "";
 
   return {
     id: user.id,

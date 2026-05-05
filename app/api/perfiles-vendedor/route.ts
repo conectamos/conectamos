@@ -81,6 +81,7 @@ function validarPayloadPerfil(payload: {
 
   if (
     payload.tipo !== "ADMINISTRADOR" &&
+    payload.tipo !== "AUDITOR" &&
     payload.sedeIds.length === 0
   ) {
     return "Debes asignar al menos una sede para este perfil";

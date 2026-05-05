@@ -9,6 +9,7 @@ datasource db {
 
 enum TipoPerfilVendedor {
   ADMINISTRADOR
+  AUDITOR
   FACTURADOR
   SUPERVISOR_TIENDA
   VENDEDOR

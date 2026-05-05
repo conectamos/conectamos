@@ -26,6 +26,14 @@ export function esPerfilAdministrador(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "ADMINISTRADOR";
 }
 
+export function esPerfilAuditor(perfilTipo: unknown) {
+  return normalizarPerfilTipo(perfilTipo) === "AUDITOR";
+}
+
+export function esPerfilAdministrativo(perfilTipo: unknown) {
+  return esPerfilAdministrador(perfilTipo) || esPerfilAuditor(perfilTipo);
+}
+
 export function esPerfilSupervisor(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "SUPERVISOR_TIENDA";
 }
@@ -49,7 +57,7 @@ export function puedeAccederPanelVendedor(
   return (
     esPerfilVendedor(perfilTipo) ||
     esPerfilSupervisor(perfilTipo) ||
-    esPerfilAdministrador(perfilTipo) ||
+    esPerfilAdministrativo(perfilTipo) ||
     esRolAdministrativo(rolNombre)
   );
 }
@@ -60,7 +68,7 @@ export function puedeAccederPanelFacturador(
 ) {
   return (
     esPerfilFacturador(perfilTipo) ||
-    esPerfilAdministrador(perfilTipo) ||
+    esPerfilAdministrativo(perfilTipo) ||
     esRolAdministrativo(rolNombre)
   );
 }

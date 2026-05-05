@@ -31,7 +31,12 @@ type PerfilItem = {
   correo: string | null;
   avatarKey: AvatarPerfilKey;
   activo: boolean;
-  tipo: "ADMINISTRADOR" | "FACTURADOR" | "SUPERVISOR_TIENDA" | "VENDEDOR";
+  tipo:
+    | "ADMINISTRADOR"
+    | "AUDITOR"
+    | "FACTURADOR"
+    | "SUPERVISOR_TIENDA"
+    | "VENDEDOR";
   tipoLabel: string;
   debeCambiarPin: boolean;
   sedeIds: number[];
@@ -61,6 +66,11 @@ const TIPOS_PERFIL: Array<{
     detail: "Acceso total al sistema.",
   },
   {
+    value: "AUDITOR",
+    label: "Auditor",
+    detail: "Acceso total al sistema, sin permisos para eliminar.",
+  },
+  {
     value: "FACTURADOR",
     label: "Facturador",
     detail: "Perfil reservado para el modulo futuro de facturacion.",
@@ -82,6 +92,7 @@ const COLUMNAS_PERFIL: Array<{
   titulo: string;
 }> = [
   { tipo: "ADMINISTRADOR", titulo: "Admin" },
+  { tipo: "AUDITOR", titulo: "Auditor" },
   { tipo: "SUPERVISOR_TIENDA", titulo: "Supervisor" },
   { tipo: "VENDEDOR", titulo: "Vendedor" },
   { tipo: "FACTURADOR", titulo: "Facturador" },
@@ -727,7 +738,7 @@ export default function PerfilesVendedorPage() {
                 Asignacion de sedes
               </h3>
               <p className="text-sm text-slate-500">
-                Para administradores puedes dejarlo sin sedes. Supervisores, facturadores y vendedores deben tener al menos una.
+                Para administradores y auditores puedes dejarlo sin sedes. Supervisores, facturadores y vendedores deben tener al menos una.
               </p>
             </div>
 
@@ -781,7 +792,7 @@ export default function PerfilesVendedorPage() {
             </p>
           </div>
 
-          <div className="mt-6 grid gap-5 xl:grid-cols-4">
+          <div className="mt-6 grid gap-5 xl:grid-cols-5">
             {perfilesPorColumna.map((columna) => (
               <section
                 key={columna.tipo}

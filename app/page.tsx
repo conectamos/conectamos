@@ -11,7 +11,12 @@ import {
 type PerfilAcceso = {
   id: number;
   nombre: string;
-  tipo: "ADMINISTRADOR" | "FACTURADOR" | "SUPERVISOR_TIENDA" | "VENDEDOR";
+  tipo:
+    | "ADMINISTRADOR"
+    | "AUDITOR"
+    | "FACTURADOR"
+    | "SUPERVISOR_TIENDA"
+    | "VENDEDOR";
   avatarKey: AvatarPerfilKey;
   tipoLabel: string;
   debeCambiarPin: boolean;
@@ -113,6 +118,13 @@ const AVATAR_PRESENTATIONS: Record<AvatarPerfilKey, AvatarPresentation> = {
     shapeClass: "rounded-[50%_50%_44%_56%/38%_40%_60%_62%]",
     toneClass:
       "border-[#f1e0b0] bg-[linear-gradient(180deg,#fff9e7_0%,#fff1d6_52%,#fff8ed_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_24px_56px_rgba(180,138,40,0.2)]",
+  },
+  AUDITOR_MUJER: {
+    src: "/profile-avatars/auditor-mujer-3d.png",
+    alt: "Avatar de auditor mujer",
+    shapeClass: "rounded-[50%_50%_46%_54%/38%_42%_58%_62%]",
+    toneClass:
+      "border-[#f4b5b5] bg-[linear-gradient(180deg,#fff6f4_0%,#ffe3de_52%,#fff8f5_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_24px_56px_rgba(185,28,28,0.16)]",
   },
 };
 

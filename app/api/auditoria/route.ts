@@ -327,7 +327,7 @@ const auditDefinitions: AuditDefinition[] = [
       SELECT p.id, p.nombre, p.tipo, p.activo
       FROM "PerfilVendedor" p
       WHERE p.activo = true
-        AND p.tipo <> 'ADMINISTRADOR'
+          AND p.tipo NOT IN ('ADMINISTRADOR', 'AUDITOR')
         AND NOT EXISTS (
           SELECT 1 FROM "PerfilVendedorSede" ps WHERE ps."perfilVendedorId" = p.id
         )

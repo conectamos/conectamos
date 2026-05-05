@@ -1,5 +1,6 @@
 export const TIPOS_PERFIL_VISUAL = [
   "ADMINISTRADOR",
+  "AUDITOR",
   "FACTURADOR",
   "SUPERVISOR_TIENDA",
   "VENDEDOR",
@@ -15,6 +16,7 @@ export const AVATAR_PERFIL_KEYS = [
   "VENDEDOR_MUJER",
   "ADMINISTRADOR_HOMBRE",
   "ADMINISTRADOR_MUJER",
+  "AUDITOR_MUJER",
 ] as const;
 
 export type AvatarPerfilKey = (typeof AVATAR_PERFIL_KEYS)[number];
@@ -29,6 +31,7 @@ const AVATAR_OPTIONS_BY_TIPO: Record<TipoPerfilVisual, AvatarOption[]> = {
     { value: "ADMINISTRADOR_HOMBRE", label: "Administrador hombre" },
     { value: "ADMINISTRADOR_MUJER", label: "Administrador mujer" },
   ],
+  AUDITOR: [{ value: "AUDITOR_MUJER", label: "Auditor mujer" }],
   FACTURADOR: [{ value: "FACTURADOR", label: "Facturador" }],
   SUPERVISOR_TIENDA: [
     { value: "SUPERVISOR", label: "Supervisor" },
@@ -63,6 +66,7 @@ export function normalizarAvatarPerfil(
 export function etiquetaAvatarPerfil(avatarKey: AvatarPerfilKey) {
   return (
     AVATAR_OPTIONS_BY_TIPO.ADMINISTRADOR.find((item) => item.value === avatarKey)?.label ||
+    AVATAR_OPTIONS_BY_TIPO.AUDITOR.find((item) => item.value === avatarKey)?.label ||
     AVATAR_OPTIONS_BY_TIPO.FACTURADOR.find((item) => item.value === avatarKey)?.label ||
     AVATAR_OPTIONS_BY_TIPO.SUPERVISOR_TIENDA.find((item) => item.value === avatarKey)?.label ||
     AVATAR_OPTIONS_BY_TIPO.VENDEDOR.find((item) => item.value === avatarKey)?.label ||

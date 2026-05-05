@@ -61,7 +61,7 @@ async function getPendingPinChangeContext() {
       id: pendingPinChange.profileId,
       activo: true,
       OR: [
-        { tipo: "ADMINISTRADOR" },
+        { tipo: { in: ["ADMINISTRADOR", "AUDITOR"] } },
         {
           sedes: {
             some: {

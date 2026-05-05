@@ -8,6 +8,7 @@ import {
 
 export const TIPOS_PERFIL_VENDEDOR = [
   "ADMINISTRADOR",
+  "AUDITOR",
   "FACTURADOR",
   "SUPERVISOR_TIENDA",
   "VENDEDOR",
@@ -77,6 +78,7 @@ export function normalizarAvatarPerfilVendedor(
 
 export function etiquetaTipoPerfilVendedor(tipo: TipoPerfilVendedor) {
   if (tipo === "ADMINISTRADOR") return "Administrador";
+  if (tipo === "AUDITOR") return "Auditor";
   if (tipo === "FACTURADOR") return "Facturador";
   if (tipo === "VENDEDOR") return "Vendedor";
   return "Supervisor de tienda";
@@ -222,7 +224,7 @@ export async function obtenerPerfilesAccesoPorSede(sedeId: number) {
     where: {
       activo: true,
       OR: [
-        { tipo: "ADMINISTRADOR" },
+        { tipo: { in: ["ADMINISTRADOR", "AUDITOR"] } },
         {
           sedes: {
             some: {
@@ -267,7 +269,7 @@ export async function validarPerfilAccesoPorSede(params: {
       id: params.perfilId,
       activo: true,
       OR: [
-        { tipo: "ADMINISTRADOR" },
+        { tipo: { in: ["ADMINISTRADOR", "AUDITOR"] } },
         {
           sedes: {
             some: {
