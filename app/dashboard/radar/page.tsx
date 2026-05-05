@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { esRolAdmin } from "@/lib/access-control";
+import { esRolAdministrativo } from "@/lib/access-control";
 import { requireSessionPage } from "@/lib/page-access";
 import {
   getAdminInventorySummary,
@@ -160,7 +160,7 @@ function InventoryRadar({ summary }: { summary: InventoryAdminSummary }) {
 export default async function DashboardRadarPage() {
   const session = await requireSessionPage();
 
-  if (!esRolAdmin(session.rolNombre)) {
+  if (!esRolAdministrativo(session.rolNombre)) {
     redirect("/dashboard");
   }
 

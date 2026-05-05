@@ -5,7 +5,7 @@ import {
   esPerfilSupervisor,
   esPerfilVendedor,
   puedeAccederPanelFacturador,
-  esRolAdmin,
+  esRolAdministrativo,
 } from "@/lib/access-control";
 import DashboardUtilityGate from "./_components/dashboard-utility-gate";
 import LogoutButton from "./_components/logout-button";
@@ -518,7 +518,7 @@ export default async function DashboardPage() {
     return <div className="p-10">No autenticado</div>;
   }
 
-  const esAdmin = esRolAdmin(session.rolNombre);
+  const esAdmin = esRolAdministrativo(session.rolNombre);
   const esFacturador = esPerfilFacturador(session.perfilTipo);
   const esVendedor = esPerfilVendedor(session.perfilTipo);
   const esSupervisor =

@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import {
   esPerfilFacturador,
   esPerfilVendedor,
-  esRolAdmin,
+  esRolAdministrativo,
 } from "@/lib/access-control";
 import { getMonthlyAnalyticSummary } from "@/lib/dashboard-analytics";
 import { getFinancialAccessState } from "@/lib/financial-access";
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const period = url.searchParams.get("period");
     const requestedSedeId = Number(url.searchParams.get("sedeId") || 0);
-    const esAdmin = esRolAdmin(user.rolNombre);
+    const esAdmin = esRolAdministrativo(user.rolNombre);
     const sedeId = esAdmin
       ? requestedSedeId > 0
         ? requestedSedeId

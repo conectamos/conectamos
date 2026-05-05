@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { esRolAdmin, esRolAdministrativo } from "@/lib/access-control";
 import {
   buscarRegistroPersonalVenta,
   claveNombrePersonalVenta,
@@ -12,7 +13,11 @@ import {
 } from "@/lib/ventas-personal";
 
 function esAdmin(rolNombre: string) {
-  return String(rolNombre || "").trim().toUpperCase() === "ADMIN";
+  return esRolAdministrativo(rolNombre);
+}
+
+function puedeEliminar(rolNombre: string) {
+  return esRolAdmin(rolNombre);
 }
 
 function etiquetaTipo(tipo: string) {
@@ -136,7 +141,7 @@ export async function DELETE(req: Request) {
       return session.response;
     }
 
-    if (!esAdmin(session.user.rolNombre)) {
+    if (!puedeEliminar(session.user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede gestionar este catalogo" },
         { status: 403 }

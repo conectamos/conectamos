@@ -184,7 +184,7 @@ export async function GET(req: Request) {
       );
     }
 
-    if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+    if (!["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase())) {
       return NextResponse.json(
         { error: "Solo el administrador puede generar este reporte" },
         { status: 403 }

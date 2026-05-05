@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     const valor = Number(body.valor ?? 0);
     const descripcion = String(body.descripcion ?? "").trim();
 
-    const esAdmin = user.rolNombre?.toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre?.toUpperCase() || "");
     const sedeId = esAdmin
       ? Number(body.sedeId ?? user.sedeId)
       : Number(user.sedeId);

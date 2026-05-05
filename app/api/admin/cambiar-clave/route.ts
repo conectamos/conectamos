@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { esRolAdmin } from "@/lib/access-control";
+import { esRolAdministrativo } from "@/lib/access-control";
 import { getSessionUser } from "@/lib/auth";
 import { clearFinancialAccessCookie } from "@/lib/financial-access";
 import { hashPassword, verifyPassword } from "@/lib/password";
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    if (!esRolAdmin(session.rolNombre) || session.perfilId) {
+    if (!esRolAdministrativo(session.rolNombre) || session.perfilId) {
       return NextResponse.json(
         { error: "Solo el administrador principal puede cambiar esta clave" },
         { status: 403 }

@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "ID invalido" }, { status: 400 });
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
     const item = await prisma.inventarioSede.findUnique({
       where: { id },

@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const esDestino = Number(user.sedeId) === Number(prestamo.sedeDestinoId);
     const sedeBodegaPrincipal = await prisma.sede.findFirst({
       where: {

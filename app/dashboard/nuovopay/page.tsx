@@ -293,7 +293,7 @@ export function NuovoPayWorkspace({
       }
     ) => Promise<void>
   >(async () => {});
-  const esAdmin = sessionUser?.rolNombre?.toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(sessionUser?.rolNombre?.toUpperCase() || "");
 
   const syncUrl = useCallback(
     (

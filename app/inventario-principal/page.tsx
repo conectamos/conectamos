@@ -82,6 +82,7 @@ export default function InventarioPrincipalPage() {
   const [referenciaEditada, setReferenciaEditada] = useState("");
   const [editandoReferenciaId, setEditandoReferenciaId] = useState<number | null>(null);
   const [mostrarCatalogoReferencias, setMostrarCatalogoReferencias] = useState(false);
+  const [puedeEliminar, setPuedeEliminar] = useState(false);
 
   const [mostrarModal, setMostrarModal] = useState(false);
   const [mostrarModalMasivo, setMostrarModalMasivo] = useState(false);
@@ -143,6 +144,7 @@ export default function InventarioPrincipalPage() {
       }
 
       setReferenciasCatalogo(Array.isArray(data.referencias) ? data.referencias : []);
+      setPuedeEliminar(Boolean(data.puedeEliminar));
     } catch {
       setMensaje("Error cargando catalogo de referencias");
     }
@@ -435,6 +437,11 @@ export default function InventarioPrincipalPage() {
   };
 
   const eliminarReferencia = async (item: ReferenciaCatalogo) => {
+    if (!puedeEliminar) {
+      setMensaje("Error: El rol actual no puede eliminar referencias");
+      return;
+    }
+
     const confirmado = window.confirm(
       `Eliminar "${item.nombre}" del catalogo? Los equipos ya registrados no se modifican.`
     );
@@ -471,6 +478,11 @@ export default function InventarioPrincipalPage() {
   };
 
   const eliminar = async (id: number) => {
+    if (!puedeEliminar) {
+      setMensaje("Error: El rol actual no puede eliminar equipos");
+      return;
+    }
+
     const confirmado = window.confirm(
       "Seguro que deseas eliminar este equipo de bodega principal? Si esta en PRESTAMO solo se eliminara si no tiene ventas, pagos ni movimientos posteriores."
     );
@@ -545,6 +557,11 @@ export default function InventarioPrincipalPage() {
   };
 
   const eliminarSeleccion = async () => {
+    if (!puedeEliminar) {
+      setMensaje("Error: El rol actual no puede eliminar equipos");
+      return;
+    }
+
     if (idsSeleccionados.length === 0) {
       setMensaje("Debes seleccionar al menos un equipo para eliminar");
       return;
@@ -1040,14 +1057,16 @@ export default function InventarioPrincipalPage() {
                                 >
                                   {item.activo ? "Ocultar" : "Activar"}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void eliminarReferencia(item)}
-                                  disabled={cargando}
-                                  className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
-                                >
-                                  Eliminar
-                                </button>
+                                {puedeEliminar && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void eliminarReferencia(item)}
+                                    disabled={cargando}
+                                    className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
+                                  >
+                                    Eliminar
+                                  </button>
+                                )}
                               </>
                             )}
                           </div>
@@ -1185,14 +1204,16 @@ export default function InventarioPrincipalPage() {
                     Volver a bodega
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => void eliminarSeleccion()}
-                    disabled={cargando}
-                    className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
-                  >
-                    Eliminar seleccion
-                  </button>
+                  {puedeEliminar && (
+                    <button
+                      type="button"
+                      onClick={() => void eliminarSeleccion()}
+                      disabled={cargando}
+                      className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
+                    >
+                      Eliminar seleccion
+                    </button>
+                  )}
 
                   <button
                     type="button"
@@ -1326,13 +1347,15 @@ export default function InventarioPrincipalPage() {
                               Volver a bodega
                             </button>
 
-                            <button
-                              onClick={() => eliminar(item.id)}
-                              disabled={cargando}
-                              className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-70"
-                            >
-                              Eliminar
-                            </button>
+                            {puedeEliminar && (
+                              <button
+                                onClick={() => eliminar(item.id)}
+                                disabled={cargando}
+                                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-70"
+                              >
+                                Eliminar
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

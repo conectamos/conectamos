@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import {
+  esRolAdmin,
+  puedeAccederModulosOperativos,
+} from "@/lib/access-control";
 import { requireFinancialAccess } from "@/lib/financial-access";
 import prisma from "@/lib/prisma";
 
@@ -199,7 +202,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const body = (await req.json()) as Record<string, unknown>;
 
     const valor = normalizarNumero(body.valor);
@@ -400,7 +403,7 @@ export async function DELETE(req: Request) {
       return access.response;
     }
 
-    if (!access.esAdmin) {
+    if (!esRolAdmin(access.user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede eliminar cartera" },
         { status: 403 }

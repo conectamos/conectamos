@@ -9,9 +9,13 @@ export default async function PayJoyFortySixtyPage() {
     redirect("/");
   }
 
-  if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+  if (!["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase())) {
     redirect("/dashboard");
   }
 
-  return <PayJoyFortySixtyWorkspace />;
+  return (
+    <PayJoyFortySixtyWorkspace
+      puedeEliminar={String(user.rolNombre || "").toUpperCase() === "ADMIN"}
+    />
+  );
 }

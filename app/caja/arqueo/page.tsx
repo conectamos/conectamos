@@ -129,7 +129,7 @@ export default function CajaArqueoPage() {
   const [guardando, setGuardando] = useState(false);
   const [cargando, setCargando] = useState(true);
 
-  const esAdmin = String(user?.rolNombre || "").toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user?.rolNombre || "").toUpperCase());
 
   const cargarUsuario = async () => {
     const res = await fetch("/api/session", { cache: "no-store" });
@@ -234,7 +234,7 @@ export default function CajaArqueoPage() {
       try {
         const session = await cargarUsuario();
 
-        if (String(session.rolNombre || "").toUpperCase() === "ADMIN") {
+        if (["ADMIN", "AUDITOR"].includes(String(session.rolNombre || "").toUpperCase())) {
           await cargarSedes();
         }
 

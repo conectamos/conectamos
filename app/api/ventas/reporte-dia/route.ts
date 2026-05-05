@@ -597,7 +597,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const requestUrl = new URL(request.url);
     const sedeIdParam = requestUrl.searchParams.get("sedeId")?.trim() || "";
     const fechaInicialParam = requestUrl.searchParams.get("fechaInicial")?.trim() || "";

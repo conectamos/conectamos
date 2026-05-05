@@ -404,7 +404,7 @@ export async function GET() {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+    if (!["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase())) {
       return NextResponse.json(
         { error: "Solo el administrador puede consultar la auditoria" },
         { status: 403 }

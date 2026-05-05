@@ -9,7 +9,7 @@ export default async function EqualityZeroTouchPage() {
     redirect("/");
   }
 
-  const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
   const esSupervisor =
     String(user.perfilTipo || "").toUpperCase() === "SUPERVISOR_TIENDA" ||
     String(user.rolNombre || "").toUpperCase() === "SUPERVISOR";

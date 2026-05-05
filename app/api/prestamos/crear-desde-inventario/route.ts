@@ -64,7 +64,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
     if (!esAdmin && inventario.sedeId !== user.sedeId) {
       return NextResponse.json(

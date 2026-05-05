@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { esRolAdmin } from "@/lib/access-control";
 import { requireFinancialAccess } from "@/lib/financial-access";
 import prisma from "@/lib/prisma";
 
@@ -334,7 +335,7 @@ export async function DELETE(req: Request) {
       return access.response;
     }
 
-    if (!access.esAdmin) {
+    if (!esRolAdmin(access.user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede eliminar abonos" },
         { status: 403 }

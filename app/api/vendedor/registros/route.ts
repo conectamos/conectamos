@@ -3,7 +3,8 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
   esPerfilVendedor,
-  esRolAdmin,
+  esRolAdministrativo,
+  esRolAuditor,
   puedeAccederPanelVendedor,
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
@@ -123,7 +124,7 @@ async function requireVendor() {
 
   if (
     !puedeAccederPanelVendedor(session.perfilTipo, session.rolNombre) ||
-    (!session.perfilId && !esRolAdmin(session.rolNombre))
+    (!session.perfilId && !esRolAdministrativo(session.rolNombre))
   ) {
     return {
       ok: false as const,
@@ -141,7 +142,7 @@ function puedeGestionarRegistrosConsultados(session: {
   perfilTipo?: unknown;
   rolNombre?: unknown;
 }) {
-  return !esPerfilVendedor(session.perfilTipo) || esRolAdmin(session.rolNombre);
+  return !esPerfilVendedor(session.perfilTipo) || esRolAdministrativo(session.rolNombre);
 }
 
 function construirScopeRegistros(session: {
@@ -154,7 +155,7 @@ function construirScopeRegistros(session: {
     };
   }
 
-  if (esRolAdmin(session.rolNombre)) {
+  if (esRolAdministrativo(session.rolNombre)) {
     return {};
   }
 
@@ -888,6 +889,13 @@ export async function PATCH(req: Request) {
     }
 
     if (modo === "ELIMINAR") {
+      if (esRolAuditor(access.session.rolNombre)) {
+        return NextResponse.json(
+          { error: "El rol AUDITOR no puede eliminar registros" },
+          { status: 403 }
+        );
+      }
+
       await prisma.registroVendedorVenta.update({
         where: { id },
         data: {

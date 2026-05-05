@@ -21,7 +21,7 @@ export async function GET() {
       );
     }
 
-    const esAdmin = user.rolNombre.toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
 
     const inventario = await prisma.inventarioSede.findMany({
       where: esAdmin ? {} : { sedeId: user.sedeId },

@@ -104,7 +104,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const { searchParams } = new URL(req.url);
 
     const queryType = normalizarQueryType(
@@ -179,7 +179,7 @@ export async function GET(req: Request) {
 
     const { localItems, localPrincipal } = await consultarContextoLocal(
       localLookupImei,
-      String(user.rolNombre || "").toUpperCase() === "ADMIN",
+      ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase()),
       user.sedeId
     );
 

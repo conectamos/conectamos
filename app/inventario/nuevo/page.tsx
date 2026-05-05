@@ -109,7 +109,7 @@ export default function NuevoInventarioPage() {
         .filter(Boolean).length,
     [imeisMasivos]
   );
-  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
   const esCargaMasiva = cantidadImeisMasivos > 0;
   const opcionesDistribuidor = esAdmin
     ? OPCIONES_PROVEEDOR_BODEGA

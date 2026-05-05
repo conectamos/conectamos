@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const esAdmin = user.rolNombre.toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
     const requestUrl = new URL(req.url);
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
 

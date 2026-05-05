@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
-import { esRolAdmin } from "@/lib/access-control";
+import { esRolAdministrativo } from "@/lib/access-control";
 import { requireSessionPage } from "@/lib/page-access";
 import SeguridadAdminWorkspace from "./workspace";
 
 export default async function SeguridadAdminPage() {
   const session = await requireSessionPage();
 
-  if (!esRolAdmin(session.rolNombre) || session.perfilId) {
+  if (!esRolAdministrativo(session.rolNombre) || session.perfilId) {
     redirect("/dashboard");
   }
 

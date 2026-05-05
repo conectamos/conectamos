@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { puedeEliminarRegistros } from "@/lib/access-control";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 
 const ESTADOS_PRESTAMO_ACTIVOS = [
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    const esAdmin = user.rolNombre.toUpperCase() === "ADMIN";
+    const esAdmin = puedeEliminarRegistros(user.rolNombre);
 
     if (!esAdmin) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });

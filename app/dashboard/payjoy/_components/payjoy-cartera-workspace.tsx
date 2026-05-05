@@ -598,7 +598,11 @@ const tableColInstallmentClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColDateClass = "w-[190px] min-w-[190px] px-4 py-4";
 const tableColStatusClass = "w-[170px] min-w-[170px] px-4 py-4";
 
-export default function PayJoyCarteraWorkspace() {
+export default function PayJoyCarteraWorkspace({
+  puedeEliminar,
+}: {
+  puedeEliminar: boolean;
+}) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const reloadSummaryRef = useRef<HTMLElement | null>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -1625,17 +1629,19 @@ export default function PayJoyCarteraWorkspace() {
                                   : "Guardar cambios"}
                               </button>
                             )}
-                            <button
-                              onClick={() =>
-                                void deleteStoredCut(cut.id, cut.recordName)
-                              }
-                              disabled={deletingCutId === cut.id}
-                              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
-                            >
-                              {deletingCutId === cut.id
-                                ? "Eliminando..."
-                                : "Eliminar corte"}
-                            </button>
+                            {puedeEliminar && (
+                              <button
+                                onClick={() =>
+                                  void deleteStoredCut(cut.id, cut.recordName)
+                                }
+                                disabled={deletingCutId === cut.id}
+                                className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                              >
+                                {deletingCutId === cut.id
+                                  ? "Eliminando..."
+                                  : "Eliminar corte"}
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>

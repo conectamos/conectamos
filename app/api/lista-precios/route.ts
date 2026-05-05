@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { esRolAdmin } from "@/lib/access-control";
+import { esRolAdmin, esRolAdministrativo } from "@/lib/access-control";
 import {
   actualizarListaPrecio,
   crearListaPrecio,
@@ -68,7 +68,8 @@ export async function GET() {
 
     return NextResponse.json({
       items: items.map(serializeItem),
-      puedeGestionar: esRolAdmin(session.user.rolNombre),
+      puedeGestionar: esRolAdministrativo(session.user.rolNombre),
+      puedeEliminar: esRolAdmin(session.user.rolNombre),
     });
   } catch (error) {
     console.error("ERROR GET LISTA PRECIOS:", error);
@@ -87,7 +88,7 @@ export async function POST(req: Request) {
       return session.response;
     }
 
-    if (!esRolAdmin(session.user.rolNombre)) {
+    if (!esRolAdministrativo(session.user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede gestionar la lista de precios" },
         { status: 403 }
@@ -126,7 +127,7 @@ export async function PATCH(req: Request) {
       return session.response;
     }
 
-    if (!esRolAdmin(session.user.rolNombre)) {
+    if (!esRolAdministrativo(session.user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede gestionar la lista de precios" },
         { status: 403 }

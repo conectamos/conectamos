@@ -10,6 +10,18 @@ export function esRolAdmin(rolNombre: unknown) {
   return normalizarRolNombre(rolNombre) === "ADMIN";
 }
 
+export function esRolAuditor(rolNombre: unknown) {
+  return normalizarRolNombre(rolNombre) === "AUDITOR";
+}
+
+export function esRolAdministrativo(rolNombre: unknown) {
+  return esRolAdmin(rolNombre) || esRolAuditor(rolNombre);
+}
+
+export function puedeEliminarRegistros(rolNombre: unknown) {
+  return esRolAdmin(rolNombre);
+}
+
 export function esPerfilAdministrador(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "ADMINISTRADOR";
 }
@@ -38,7 +50,7 @@ export function puedeAccederPanelVendedor(
     esPerfilVendedor(perfilTipo) ||
     esPerfilSupervisor(perfilTipo) ||
     esPerfilAdministrador(perfilTipo) ||
-    esRolAdmin(rolNombre)
+    esRolAdministrativo(rolNombre)
   );
 }
 
@@ -49,6 +61,6 @@ export function puedeAccederPanelFacturador(
   return (
     esPerfilFacturador(perfilTipo) ||
     esPerfilAdministrador(perfilTipo) ||
-    esRolAdmin(rolNombre)
+    esRolAdministrativo(rolNombre)
   );
 }

@@ -138,7 +138,11 @@ function buildProcessingSourceKey(selectedFile: File, selectedWeek: string) {
   ].join("::");
 }
 
-export default function PayJoyFortySixtyWorkspace() {
+export default function PayJoyFortySixtyWorkspace({
+  puedeEliminar,
+}: {
+  puedeEliminar: boolean;
+}) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [week, setWeek] = useState("");
@@ -1110,20 +1114,22 @@ export default function PayJoyFortySixtyWorkspace() {
                                         : "Actualizar"}
                                     </button>
                                   )}
-                                  <button
-                                    onClick={() =>
-                                      void deleteStoredRecord(
-                                        record.id,
-                                        record.recordName
-                                      )
-                                    }
-                                    disabled={deletingRecordId === record.id}
-                                    className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
-                                  >
-                                    {deletingRecordId === record.id
-                                      ? "Eliminando..."
-                                      : "Borrar"}
-                                  </button>
+                                  {puedeEliminar && (
+                                    <button
+                                      onClick={() =>
+                                        void deleteStoredRecord(
+                                          record.id,
+                                          record.recordName
+                                        )
+                                      }
+                                      disabled={deletingRecordId === record.id}
+                                      className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                                    >
+                                      {deletingRecordId === record.id
+                                        ? "Eliminando..."
+                                        : "Borrar"}
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>

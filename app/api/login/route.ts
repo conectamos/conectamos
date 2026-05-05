@@ -9,10 +9,11 @@ import {
   SESSION_COOKIE_NAME,
 } from "@/lib/session";
 import { createUserSession, ensureSessionStateSchema } from "@/lib/session-state";
+import { esRolAdministrativo } from "@/lib/access-control";
 import { obtenerPerfilesAccesoPorSede } from "@/lib/vendor-profiles";
 
 function esAdmin(rolNombre: string | null | undefined) {
-  return String(rolNombre || "").trim().toUpperCase() === "ADMIN";
+  return esRolAdministrativo(rolNombre);
 }
 
 export async function POST(req: Request) {

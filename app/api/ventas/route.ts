@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
   esPerfilAdministrador,
-  esRolAdmin,
+  esRolAdministrativo,
   puedeAccederModulosOperativos,
 } from "@/lib/access-control";
 import {
@@ -92,7 +92,7 @@ function puedeConvertirRegistrosDeTodasLasSedes(
     return false;
   }
 
-  return esPerfilAdministrador(session.perfilTipo) || esRolAdmin(session.rolNombre);
+  return esPerfilAdministrador(session.perfilTipo) || esRolAdministrativo(session.rolNombre);
 }
 
 function registroVentaScopeWhere(
@@ -462,6 +462,10 @@ async function requireSessionUser() {
 }
 
 function isAdminRole(roleName: string) {
+  return ["ADMIN", "AUDITOR"].includes(String(roleName || "").trim().toUpperCase());
+}
+
+function canDeleteRecords(roleName: string) {
   return String(roleName || "").trim().toUpperCase() === "ADMIN";
 }
 
@@ -989,7 +993,7 @@ export async function DELETE(req: Request) {
       );
     }
 
-    if (!isAdminRole(user.rolNombre)) {
+    if (!canDeleteRecords(user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede eliminar ventas" },
         { status: 403 }

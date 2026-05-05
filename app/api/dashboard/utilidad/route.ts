@@ -24,7 +24,7 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as Record<string, unknown>;
     const clave = String(body.clave ?? "").trim();
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
     if (!esAdmin && !clave) {
       return NextResponse.json(

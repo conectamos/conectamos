@@ -79,7 +79,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
     if (esAdmin) {
       return NextResponse.json({
@@ -160,7 +160,7 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
     if (!esAdmin) {
       return NextResponse.json(

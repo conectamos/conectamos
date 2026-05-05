@@ -2,7 +2,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import {
+  esRolAdministrativo,
+  puedeAccederModulosOperativos,
+} from "@/lib/access-control";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import prisma from "@/lib/prisma";
 import { getSessionCookieOptions } from "@/lib/session";
@@ -188,7 +191,7 @@ export async function getFinancialAccessState(options?: {
     };
   }
 
-  const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+  const esAdmin = esRolAdministrativo(user.rolNombre);
   const allowAdminBypass = options?.allowAdminBypass ?? true;
 
   if (esAdmin && allowAdminBypass) {

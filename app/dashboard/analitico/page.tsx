@@ -153,7 +153,7 @@ export default function PanelAnaliticoPage() {
     null
   );
 
-  const esAdmin = String(user?.rolNombre || "").toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user?.rolNombre || "").toUpperCase());
 
   const coberturaActual = useMemo(() => {
     if (!esAdmin) {
@@ -182,7 +182,7 @@ export default function PanelAnaliticoPage() {
 
       setUser(sessionData);
 
-      if (String(sessionData?.rolNombre || "").toUpperCase() === "ADMIN") {
+      if (["ADMIN", "AUDITOR"].includes(String(sessionData?.rolNombre || "").toUpperCase())) {
         const sedesRes = await fetch("/api/sedes", { cache: "no-store" });
         const sedesData = await sedesRes.json();
 

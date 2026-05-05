@@ -5,7 +5,7 @@ import {
   esPerfilFacturador,
   esPerfilAdministrador,
   esPerfilVendedor,
-  esRolAdmin,
+  esRolAdministrativo,
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
@@ -93,7 +93,7 @@ function buildScopeWhere(session: Awaited<ReturnType<typeof getSessionUser>>) {
 
   if (
     esPerfilAdministrador(session.perfilTipo) ||
-    (!session.perfilId && esRolAdmin(session.rolNombre))
+    (!session.perfilId && esRolAdministrativo(session.rolNombre))
   ) {
     return {};
   }

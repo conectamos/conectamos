@@ -81,7 +81,9 @@ export default function EquipoComercialPage() {
   const [guardando, setGuardando] = useState(false);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
 
-  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
+  const rolActual = user?.rolNombre?.toUpperCase() || "";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
+  const puedeEliminar = rolActual === "ADMIN";
 
   const cargarTodo = async () => {
     try {
@@ -260,14 +262,16 @@ export default function EquipoComercialPage() {
                       : "Sin intermediacion"}
                   </span>
                 )}
-                <button
-                  type="button"
-                  onClick={() => void eliminarRegistro(item.id)}
-                  disabled={eliminandoId === item.id}
-                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {eliminandoId === item.id ? "Eliminando..." : "Eliminar"}
-                </button>
+                {puedeEliminar && (
+                  <button
+                    type="button"
+                    onClick={() => void eliminarRegistro(item.id)}
+                    disabled={eliminandoId === item.id}
+                    className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {eliminandoId === item.id ? "Eliminando..." : "Eliminar"}
+                  </button>
+                )}
               </div>
             ))
           )}

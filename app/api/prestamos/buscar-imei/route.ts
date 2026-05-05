@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "IMEI requerido" }, { status: 400 });
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const sedeId = esAdmin ? Number(sedeOrigenId || 0) : user.sedeId;
 
     if (!sedeId || sedeId <= 0) {

@@ -123,7 +123,7 @@ function byMoneyDesc(a: number | null | undefined, b: number | null | undefined)
 }
 
 function isAdminUser(rolNombre: string | null | undefined) {
-  return String(rolNombre || "").toUpperCase() === "ADMIN";
+  return ["ADMIN", "AUDITOR"].includes(String(rolNombre || "").toUpperCase());
 }
 
 function isWithinMoraRange(

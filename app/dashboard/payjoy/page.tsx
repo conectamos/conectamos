@@ -9,9 +9,13 @@ export default async function PayJoyPage() {
     redirect("/");
   }
 
-  if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+  if (!["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase())) {
     redirect("/dashboard");
   }
 
-  return <PayJoyCarteraWorkspace />;
+  return (
+    <PayJoyCarteraWorkspace
+      puedeEliminar={String(user.rolNombre || "").toUpperCase() === "ADMIN"}
+    />
+  );
 }

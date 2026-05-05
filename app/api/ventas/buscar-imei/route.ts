@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import {
   esPerfilAdministrador,
-  esRolAdmin,
+  esRolAdministrativo,
   puedeAccederModulosOperativos,
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
@@ -13,7 +13,7 @@ function puedeVerTodasLasSedes(session: Awaited<ReturnType<typeof getSessionUser
     return false;
   }
 
-  return esPerfilAdministrador(session.perfilTipo) || esRolAdmin(session.rolNombre);
+  return esPerfilAdministrador(session.perfilTipo) || esRolAdministrativo(session.rolNombre);
 }
 
 function registroScopeWhere(

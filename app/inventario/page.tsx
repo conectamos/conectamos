@@ -185,7 +185,9 @@ export default function InventarioPage() {
   const [estadoRetornoCambio, setEstadoRetornoCambio] = useState("BODEGA");
   const [observacionCambio, setObservacionCambio] = useState("");
 
-  const esAdmin = String(user?.rolNombre || "").toUpperCase() === "ADMIN";
+  const rolActual = String(user?.rolNombre || "").toUpperCase();
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
+  const puedeEliminar = rolActual === "ADMIN";
 
   const cargarUsuario = useCallback(async () => {
     try {
@@ -859,6 +861,11 @@ export default function InventarioPage() {
   };
 
   const abrirEliminacion = (ids: number[]) => {
+    if (!puedeEliminar) {
+      setMensaje("El rol actual no puede eliminar registros");
+      return;
+    }
+
     setIdsEliminar(ids);
     setModalEliminar(true);
   };
@@ -1379,7 +1386,7 @@ export default function InventarioPage() {
                     </button>
                   )}
 
-                  {esAdmin && (
+                  {puedeEliminar && (
                     <button
                       type="button"
                       onClick={() => abrirEliminacion(idsSeleccionados)}
@@ -1667,7 +1674,7 @@ export default function InventarioPage() {
                             </button>
                           )}
 
-                          {esAdmin && (
+                          {puedeEliminar && (
                             <button
                               onClick={() => {
                                 abrirEliminacion([item.id]);

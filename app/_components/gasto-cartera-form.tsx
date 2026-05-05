@@ -66,7 +66,7 @@ export default function GastoCarteraForm({
           setSedeId(String(dataUser.sedeId || ""));
         }
 
-        if (String(dataUser?.rolNombre || "").toUpperCase() === "ADMIN") {
+        if (["ADMIN", "AUDITOR"].includes(String(dataUser?.rolNombre || "").toUpperCase())) {
           const resSedes = await fetch("/api/sedes", { cache: "no-store" });
           const dataSedes = await resSedes.json();
           if (resSedes.ok) {
@@ -81,7 +81,7 @@ export default function GastoCarteraForm({
     void init();
   }, []);
 
-  const esAdmin = String(user?.rolNombre || "").toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user?.rolNombre || "").toUpperCase());
 
   const guardar = async () => {
     try {

@@ -118,7 +118,9 @@ export default function DetalleCarteraPage() {
     [items]
   );
 
-  const esAdmin = String(user?.rolNombre || "").toUpperCase() === "ADMIN";
+  const rolActual = String(user?.rolNombre || "").toUpperCase();
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
+  const puedeEliminar = rolActual === "ADMIN";
 
   const cerrarEdicion = () => {
     setEditandoId(null);
@@ -356,14 +358,16 @@ export default function DetalleCarteraPage() {
                               Editar
                             </button>
 
-                            <button
-                              type="button"
-                              onClick={() => eliminarGasto(item.id)}
-                              disabled={procesando}
-                              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
-                            >
-                              Eliminar
-                            </button>
+                            {puedeEliminar && (
+                              <button
+                                type="button"
+                                onClick={() => eliminarGasto(item.id)}
+                                disabled={procesando}
+                                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                              >
+                                Eliminar
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}

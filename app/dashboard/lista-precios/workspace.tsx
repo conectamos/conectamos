@@ -48,6 +48,7 @@ export default function ListaPreciosAdminWorkspace() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
+  const [puedeEliminar, setPuedeEliminar] = useState(false);
 
   const cargarLista = async () => {
     try {
@@ -64,6 +65,7 @@ export default function ListaPreciosAdminWorkspace() {
       }
 
       setItems(Array.isArray(data.items) ? data.items : []);
+      setPuedeEliminar(Boolean(data.puedeEliminar));
     } catch {
       setMensaje("Error cargando lista de precios");
       setMensajeTipo("error");
@@ -158,6 +160,12 @@ export default function ListaPreciosAdminWorkspace() {
   };
 
   const eliminarPrecio = async (item: PriceListItem) => {
+    if (!puedeEliminar) {
+      setMensaje("El rol actual no puede eliminar precios");
+      setMensajeTipo("error");
+      return;
+    }
+
     const confirmado = window.confirm(
       `Eliminar ${item.marca} ${item.referencia} de la lista de precios?`
     );
@@ -379,14 +387,16 @@ export default function ListaPreciosAdminWorkspace() {
                       >
                         Editar
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void eliminarPrecio(item)}
-                        disabled={eliminandoId === item.id}
-                        className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {eliminandoId === item.id ? "..." : "Eliminar"}
-                      </button>
+                      {puedeEliminar && (
+                        <button
+                          type="button"
+                          onClick={() => void eliminarPrecio(item)}
+                          disabled={eliminandoId === item.id}
+                          className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {eliminandoId === item.id ? "..." : "Eliminar"}
+                        </button>
+                      )}
                     </span>
                   </div>
                 ))}

@@ -27,7 +27,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const esAdmin = user.rolNombre.toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
     const requestUrl = new URL(req.url);
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
 
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
     const estadoFinanciero = String(data.estadoFinanciero ?? "").trim().toUpperCase();
     const deboA = data.deboA ? String(data.deboA).trim() : null;
 
-    const esAdmin = user.rolNombre.toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
     const sedeId = esAdmin ? Number(data.sedeId ?? user.sedeId) : user.sedeId;
 
     if (imeis.length === 0) {

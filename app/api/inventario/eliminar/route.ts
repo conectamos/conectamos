@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { puedeEliminarRegistros } from "@/lib/access-control";
 import { esEstadoInventarioBloqueadoPorPrestamo } from "@/lib/prestamos";
 
 const ESTADOS_PRESTAMO_ACTIVOS = [
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = puedeEliminarRegistros(user.rolNombre);
 
     if (!esAdmin) {
       return NextResponse.json(

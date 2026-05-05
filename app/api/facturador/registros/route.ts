@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { puedeAccederPanelFacturador } from "@/lib/access-control";
+import {
+  esRolAuditor,
+  puedeAccederPanelFacturador,
+} from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
@@ -254,6 +257,13 @@ export async function PATCH(req: Request) {
     }
 
     if (modo === "ELIMINAR") {
+      if (esRolAuditor(access.session.rolNombre)) {
+        return NextResponse.json(
+          { error: "El rol AUDITOR no puede eliminar registros" },
+          { status: 403 }
+        );
+      }
+
       await prisma.registroVendedorVenta.update({
         where: { id },
         data: {

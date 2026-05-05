@@ -78,7 +78,7 @@ export default function NuevoPrestamoPage() {
   const [guardando, setGuardando] = useState(false);
   const [consultandoImei, setConsultandoImei] = useState(false);
 
-  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
   const mensajeEsOk = mensaje.startsWith("OK:");
 
   const inputClass =
@@ -104,7 +104,7 @@ export default function NuevoPrestamoPage() {
 
       setUser(data);
 
-      if (data.rolNombre?.toUpperCase() !== "ADMIN") {
+        if (!["ADMIN", "AUDITOR"].includes(data.rolNombre?.toUpperCase() || "")) {
         setSedeOrigenId(String(data.sedeId));
       }
     } catch {

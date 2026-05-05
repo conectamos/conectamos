@@ -42,6 +42,10 @@ type PayJoyReloadSummary = {
 };
 
 function isAdmin(roleName: string | null | undefined) {
+  return ["ADMIN", "AUDITOR"].includes(String(roleName || "").trim().toUpperCase());
+}
+
+function canDelete(roleName: string | null | undefined) {
   return String(roleName || "").trim().toUpperCase() === "ADMIN";
 }
 
@@ -622,6 +626,13 @@ export async function DELETE(req: Request) {
 
     if (user instanceof NextResponse) {
       return user;
+    }
+
+    if (!canDelete(user.rolNombre)) {
+      return NextResponse.json(
+        { error: "El rol AUDITOR no puede eliminar cortes" },
+        { status: 403 }
+      );
     }
 
     const { searchParams } = new URL(req.url);

@@ -23,7 +23,7 @@ function getUserScope(user: Awaited<ReturnType<typeof getSessionUser>>) {
 
   const rolNombre = String(user.rolNombre || "").toUpperCase();
   const perfilTipo = String(user.perfilTipo || "").toUpperCase();
-  const esAdmin = rolNombre === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(rolNombre);
   const esSupervisor =
     rolNombre === "SUPERVISOR" || perfilTipo === "SUPERVISOR_TIENDA";
 

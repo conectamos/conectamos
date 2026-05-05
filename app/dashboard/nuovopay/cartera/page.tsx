@@ -9,7 +9,7 @@ export default async function NuovoPayCarteraPage() {
     redirect("/");
   }
 
-  if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+  if (!["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase())) {
     redirect("/dashboard/nuovopay");
   }
 

@@ -43,7 +43,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const requestUrl = new URL(req.url);
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
     const sedeBodegaPrincipal = await prisma.sede.findFirst({
@@ -303,7 +303,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdminPost = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdminPost = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
     if (!esAdminPost && user.sedeId !== sedeOrigenId) {
       return NextResponse.json(

@@ -241,7 +241,7 @@ export default function EditarVentaPage() {
         const sessionRes = await fetch("/api/session", { cache: "no-store" });
         const sessionData = await sessionRes.json();
 
-        if (!sessionRes.ok || String(sessionData?.rolNombre || "").toUpperCase() !== "ADMIN") {
+        if (!sessionRes.ok || !["ADMIN", "AUDITOR"].includes(String(sessionData?.rolNombre || "").toUpperCase())) {
           setMensaje("Solo el administrador puede editar ventas");
           setCargando(false);
           return;

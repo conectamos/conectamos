@@ -67,7 +67,7 @@ export default function AlertasPrestamosPage() {
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
 
-  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
 
   const cargarUsuario = useCallback(async () => {

@@ -17,7 +17,7 @@ export async function GET() {
       );
     }
 
-    const esAdmin = user.rolNombre?.toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre?.toUpperCase() || "");
 
     if (!esAdmin) {
       return NextResponse.json(
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdmin = user.rolNombre?.toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre?.toUpperCase() || "");
 
     if (!esAdmin) {
       return NextResponse.json(

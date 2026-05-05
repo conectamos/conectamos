@@ -17,7 +17,7 @@ import {
 } from "@/lib/vendor-profiles";
 
 function esAdmin(rolNombre: string) {
-  return String(rolNombre || "").trim().toUpperCase() === "ADMIN";
+  return ["ADMIN", "AUDITOR"].includes(String(rolNombre || "").trim().toUpperCase());
 }
 
 function pinValido(pin: string) {

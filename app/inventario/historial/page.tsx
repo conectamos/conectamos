@@ -311,7 +311,7 @@ export default async function HistorialInventarioPage(props: {
 
   const searchParams = await props.searchParams;
   const imei = normalizarImei(searchParams?.imei);
-  const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
   const movimientos = imei
     ? await prisma.movimientoInventario.findMany({

@@ -4,7 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { hashPassword } from "@/lib/password";
 
 function esAdmin(rolNombre: string) {
-  return String(rolNombre || "").trim().toUpperCase() === "ADMIN";
+  return ["ADMIN", "AUDITOR"].includes(String(rolNombre || "").trim().toUpperCase());
 }
 
 function normalizarNombreSede(valor: unknown) {

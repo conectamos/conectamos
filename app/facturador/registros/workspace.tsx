@@ -286,8 +286,9 @@ export default function FacturadorRegistrosWorkspace({
   session: SessionProps;
 }) {
   const esAdmin =
-    String(session.rolNombre || "").trim().toUpperCase() === "ADMIN" ||
+    ["ADMIN", "AUDITOR"].includes(String(session.rolNombre || "").trim().toUpperCase()) ||
     String(session.perfilTipoLabel || "").trim().toUpperCase() === "ADMINISTRADOR";
+  const puedeEliminar = String(session.rolNombre || "").trim().toUpperCase() === "ADMIN";
   const [registros, setRegistros] = useState<RegistroFacturacion[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [mensaje, setMensaje] = useState("");
@@ -935,14 +936,16 @@ export default function FacturadorRegistrosWorkspace({
                               Modificar
                             </button>
 
-                            <button
-                              type="button"
-                              onClick={() => void eliminarRegistro(registro.id)}
-                              disabled={eliminandoId === registro.id}
-                              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                            >
-                              {eliminandoId === registro.id ? "Eliminando..." : "Eliminar"}
-                            </button>
+                            {puedeEliminar && (
+                              <button
+                                type="button"
+                                onClick={() => void eliminarRegistro(registro.id)}
+                                disabled={eliminandoId === registro.id}
+                                className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                              >
+                                {eliminandoId === registro.id ? "Eliminando..." : "Eliminar"}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

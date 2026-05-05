@@ -5,7 +5,7 @@ import {
   esPerfilAdministrador,
   esPerfilFacturador,
   esPerfilVendedor,
-  esRolAdmin,
+  esRolAdministrativo,
   puedeAccederModulosOperativos,
   puedeAccederPanelFacturador,
 } from "@/lib/access-control";
@@ -36,7 +36,7 @@ function normalizar(valor: unknown) {
 function esAccesoTotal(session: Awaited<ReturnType<typeof getSessionUser>>) {
   if (!session) return false;
 
-  return esPerfilAdministrador(session.perfilTipo) || esRolAdmin(session.rolNombre);
+  return esPerfilAdministrador(session.perfilTipo) || esRolAdministrativo(session.rolNombre);
 }
 
 function estadoVentaAbierto(estadoVentaRegistro: unknown) {
@@ -267,7 +267,7 @@ export async function GET() {
       detalle: `${registro.puntoVenta || "Sede sin nombre"} tiene facturacion pendiente.`,
       estado: String(registro.estadoFacturacion || "PENDIENTE"),
       fecha: serializarFecha(registro.createdAt),
-      href: esRolAdmin(session.rolNombre) ? "/dashboard/registros" : "/facturador/registros",
+          href: esRolAdministrativo(session.rolNombre) ? "/dashboard/registros" : "/facturador/registros",
       id: `facturacion-${registro.id}`,
       imei: registro.serialImei,
       prioridad: "normal",

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { esRolAdmin } from "@/lib/access-control";
+import { esRolAdministrativo } from "@/lib/access-control";
 
 const ESTADOS_RETORNO_VALIDOS = ["BODEGA", "GARANTIA", "PENDIENTE"];
 
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    if (!esRolAdmin(user.rolNombre)) {
+    if (!esRolAdministrativo(user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede registrar cambios de equipo" },
         { status: 403 }

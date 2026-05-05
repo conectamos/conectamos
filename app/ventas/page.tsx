@@ -93,7 +93,9 @@ export default function VentasPage() {
     getCurrentBogotaMonthInput()
   );
   const [descargandoPdfMensual, setDescargandoPdfMensual] = useState(false);
-  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
+  const rolActual = user?.rolNombre?.toUpperCase() || "";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
+  const puedeEliminar = rolActual === "ADMIN";
 
   const cargarUsuario = async () => {
     try {
@@ -480,7 +482,7 @@ export default function VentasPage() {
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200 md:text-base">
                 {user
-                  ? user.rolNombre.toUpperCase() === "ADMIN"
+                  ? ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase())
                     ? vistaSedeId === "TODAS"
                       ? "Vision operativa de todas las sedes, con foco en el corte del dia y el rendimiento comercial."
                       : `Vision comercial filtrada de ${vistaSedeNombre}.`
@@ -965,14 +967,16 @@ export default function VentasPage() {
                             >
                               Editar
                             </Link>
-                            <button
-                              type="button"
-                              onClick={() => void eliminarVenta(venta.id)}
-                              disabled={eliminandoVentaId === venta.id}
-                              className="inline-flex rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {eliminandoVentaId === venta.id ? "Eliminando..." : "Eliminar"}
-                            </button>
+                            {puedeEliminar && (
+                              <button
+                                type="button"
+                                onClick={() => void eliminarVenta(venta.id)}
+                                disabled={eliminandoVentaId === venta.id}
+                                className="inline-flex rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {eliminandoVentaId === venta.id ? "Eliminando..." : "Eliminar"}
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}

@@ -81,7 +81,7 @@ export default function CajaPage() {
   const [sedeEdicionId, setSedeEdicionId] = useState("");
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
-  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
 
   const cargarUsuario = async () => {
     try {

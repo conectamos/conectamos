@@ -119,7 +119,7 @@ export default function PerfilesVendedorPage() {
 
   const [ediciones, setEdiciones] = useState<Record<number, PerfilEdicion>>({});
 
-  const esAdmin = String(user?.rolNombre || "").toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user?.rolNombre || "").toUpperCase());
 
   const aplicarCarga = (data: {
     perfiles?: PerfilItem[];

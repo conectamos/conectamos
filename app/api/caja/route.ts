@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import {
+  puedeAccederModulosOperativos,
+  puedeEliminarRegistros,
+} from "@/lib/access-control";
 
 const CONCEPTOS_PROTEGIDOS = new Set([
   "GASTO CARTERA",
@@ -45,7 +48,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const esAdmin = user.rolNombre.toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
     const requestUrl = new URL(req.url);
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
 
@@ -95,7 +98,7 @@ export async function PUT(req: Request) {
       );
     }
 
-    if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+    if (!["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase())) {
       return NextResponse.json(
         { error: "Solo el administrador puede editar movimientos" },
         { status: 403 }
@@ -216,7 +219,7 @@ export async function DELETE(req: Request) {
       );
     }
 
-    if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+    if (!puedeEliminarRegistros(user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede eliminar movimientos" },
         { status: 403 }

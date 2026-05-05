@@ -505,7 +505,7 @@ export default function NuevaVentaPage() {
         }
 
         setEsAdminActual(
-          String(data.rolNombre || "").trim().toUpperCase() === "ADMIN" ||
+          ["ADMIN", "AUDITOR"].includes(String(data.rolNombre || "").trim().toUpperCase()) ||
             String(data.perfilTipo || "").trim().toUpperCase() === "ADMINISTRADOR"
         );
       } catch {}

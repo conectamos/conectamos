@@ -102,7 +102,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const url = new URL(req.url);
     const fecha = String(url.searchParams.get("fecha") || getTodayBogotaDateKey());
     const fechaCorte = getBogotaDayRangeFromInput(fecha);
@@ -190,7 +190,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const body = (await req.json()) as Record<string, unknown>;
     const fecha = String(body.fecha || getTodayBogotaDateKey());
     const fechaCorte = getBogotaDayRangeFromInput(fecha);

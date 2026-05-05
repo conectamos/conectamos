@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { esRolAdmin } from "@/lib/access-control";
+import { esRolAdmin, esRolAdministrativo } from "@/lib/access-control";
 import { getSessionUser } from "@/lib/auth";
 import {
   asegurarTablaCatalogoReferenciasInventario,
@@ -55,7 +55,8 @@ export async function GET() {
 
     return NextResponse.json({
       referencias,
-      puedeGestionar: esRolAdmin(session.user.rolNombre),
+      puedeGestionar: esRolAdministrativo(session.user.rolNombre),
+      puedeEliminar: esRolAdmin(session.user.rolNombre),
     });
   } catch (error) {
     console.error("ERROR GET REFERENCIAS INVENTARIO:", error);
@@ -74,7 +75,7 @@ export async function POST(req: Request) {
       return session.response;
     }
 
-    if (!esRolAdmin(session.user.rolNombre)) {
+    if (!esRolAdministrativo(session.user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede gestionar referencias" },
         { status: 403 }
@@ -147,7 +148,7 @@ export async function PATCH(req: Request) {
       return session.response;
     }
 
-    if (!esRolAdmin(session.user.rolNombre)) {
+    if (!esRolAdministrativo(session.user.rolNombre)) {
       return NextResponse.json(
         { error: "Solo el administrador puede gestionar referencias" },
         { status: 403 }

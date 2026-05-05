@@ -35,7 +35,7 @@ export default function CierreDiaPage() {
   const [sedeId, setSedeId] = useState("TODAS");
   const [mensaje, setMensaje] = useState("");
 
-  const esAdmin = String(user?.rolNombre || "").toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user?.rolNombre || "").toUpperCase());
 
   useEffect(() => {
     const init = async () => {
@@ -50,7 +50,7 @@ export default function CierreDiaPage() {
 
         setUser(sessionData);
 
-        if (String(sessionData?.rolNombre || "").toUpperCase() === "ADMIN") {
+        if (["ADMIN", "AUDITOR"].includes(String(sessionData?.rolNombre || "").toUpperCase())) {
           const sedesRes = await fetch("/api/sedes", { cache: "no-store" });
           const sedesData = await sedesRes.json();
 

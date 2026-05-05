@@ -1841,7 +1841,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const esAdmin = String(user.rolNombre || "").toUpperCase() === "ADMIN";
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const url = new URL(req.url);
     const vista = String(url.searchParams.get("vista") || "tabla").toLowerCase();
     const formato = String(url.searchParams.get("formato") || "pdf").toLowerCase();

@@ -60,7 +60,7 @@ export default function GestionSedesPage() {
     >
   >({});
 
-  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
 
   const cargarTodo = async () => {
     try {

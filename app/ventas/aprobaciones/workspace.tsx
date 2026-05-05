@@ -92,7 +92,7 @@ export default function VentasAprobacionesWorkspace({
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(true);
 
-  const esAdmin = String(session.rolNombre || "").trim().toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(String(session.rolNombre || "").trim().toUpperCase());
 
   const cargarRegistros = async (termino = "") => {
     try {

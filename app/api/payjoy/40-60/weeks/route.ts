@@ -15,7 +15,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    if (String(user.rolNombre || "").toUpperCase() !== "ADMIN") {
+    if (!["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase())) {
       return NextResponse.json(
         { error: "No autorizado para usar este modulo." },
         { status: 403 }

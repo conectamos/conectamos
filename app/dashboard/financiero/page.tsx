@@ -173,7 +173,7 @@ export default function PanelFinancieroPage() {
     null
   );
 
-  const esAdmin = user?.rolNombre?.toUpperCase() === "ADMIN";
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
 
   const cargarContexto = async () => {
     try {
@@ -186,7 +186,7 @@ export default function PanelFinancieroPage() {
 
       setUser(sessionData);
 
-      if (String(sessionData?.rolNombre || "").toUpperCase() === "ADMIN") {
+      if (["ADMIN", "AUDITOR"].includes(String(sessionData?.rolNombre || "").toUpperCase())) {
         const sedesRes = await fetch("/api/sedes", { cache: "no-store" });
         const sedesData = await sedesRes.json();
 
