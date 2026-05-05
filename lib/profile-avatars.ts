@@ -16,6 +16,7 @@ export const AVATAR_PERFIL_KEYS = [
   "VENDEDOR_MUJER",
   "ADMINISTRADOR_HOMBRE",
   "ADMINISTRADOR_MUJER",
+  "AUDITOR_HOMBRE",
   "AUDITOR_MUJER",
 ] as const;
 
@@ -31,7 +32,10 @@ const AVATAR_OPTIONS_BY_TIPO: Record<TipoPerfilVisual, AvatarOption[]> = {
     { value: "ADMINISTRADOR_HOMBRE", label: "Administrador hombre" },
     { value: "ADMINISTRADOR_MUJER", label: "Administrador mujer" },
   ],
-  AUDITOR: [{ value: "AUDITOR_MUJER", label: "Auditor mujer" }],
+  AUDITOR: [
+    { value: "AUDITOR_HOMBRE", label: "Auditor hombre" },
+    { value: "AUDITOR_MUJER", label: "Auditor mujer" },
+  ],
   FACTURADOR: [{ value: "FACTURADOR", label: "Facturador" }],
   SUPERVISOR_TIENDA: [
     { value: "SUPERVISOR", label: "Supervisor" },

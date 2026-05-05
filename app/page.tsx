@@ -119,6 +119,13 @@ const AVATAR_PRESENTATIONS: Record<AvatarPerfilKey, AvatarPresentation> = {
     toneClass:
       "border-[#f1e0b0] bg-[linear-gradient(180deg,#fff9e7_0%,#fff1d6_52%,#fff8ed_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_24px_56px_rgba(180,138,40,0.2)]",
   },
+  AUDITOR_HOMBRE: {
+    src: "/profile-avatars/auditor-hombre-3d.png",
+    alt: "Avatar de auditor hombre",
+    shapeClass: "rounded-[46%_54%_52%_48%/36%_40%_60%_64%]",
+    toneClass:
+      "border-[#d5d9e2] bg-[linear-gradient(180deg,#f8fafc_0%,#e8edf5_52%,#f7f8fb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_24px_56px_rgba(15,23,42,0.18)]",
+  },
   AUDITOR_MUJER: {
     src: "/profile-avatars/auditor-mujer-3d.png",
     alt: "Avatar de auditor mujer",
