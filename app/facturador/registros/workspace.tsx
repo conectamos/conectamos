@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   DOMINIOS_CORREO_REGISTRO_TEXTO,
+  TIPOS_DOCUMENTO_CLIENTE,
   esCorreoRegistroValido,
   esWhatsappRegistroValido,
   financieraRequiereInicial,
@@ -52,6 +53,8 @@ type RegistroFacturacion = {
   jaladorNombre: string | null;
   numeroFactura: string | null;
   estadoFacturacion: string | null;
+  estadoVentaRegistro: string | null;
+  ventaIdRelacionada: number | null;
   financierasDetalle: FinancieraRegistro[] | null;
 };
 
@@ -74,6 +77,7 @@ type EditDraft = {
   serialImei: string;
   numeroFactura: string;
   estadoFacturacion: string;
+  convertidoEnVenta: boolean;
   financierasDetalle: EditFinancieraState[];
 };
 
@@ -140,6 +144,14 @@ function formatMoneyInputFromStored(value: string | number | null | undefined) {
 
 function esRegistroContado(registro: RegistroFacturacion) {
   return String(registro.plataformaCredito || "").trim().toUpperCase() === "CONTADO";
+}
+
+function esRegistroConvertido(registro: RegistroFacturacion) {
+  return (
+    Boolean(registro.ventaIdRelacionada) ||
+    String(registro.estadoVentaRegistro || "").trim().toUpperCase() ===
+      "CONVERTIDO_EN_VENTA"
+  );
 }
 
 function resolvePagosContado(registro: RegistroFacturacion) {
@@ -268,6 +280,7 @@ function createEditDraft(registro: RegistroFacturacion): EditDraft {
     serialImei: registro.serialImei ?? "",
     numeroFactura: registro.numeroFactura ?? "",
     estadoFacturacion: registro.estadoFacturacion ?? (registro.numeroFactura ? "FACTURADO" : "PENDIENTE"),
+    convertidoEnVenta: esRegistroConvertido(registro),
     financierasDetalle: financieras.length > 0
       ? financieras
       : [
@@ -524,26 +537,34 @@ export default function FacturadorRegistrosWorkspace({
       setGuardandoEdicion(true);
       setMensaje("");
 
+      const payload: Record<string, unknown> = {
+        modo: "EDITAR",
+        id: editando.id,
+        tipoDocumento: editando.tipoDocumento,
+        documentoNumero: editando.documentoNumero,
+        clienteNombre: editando.clienteNombre,
+        correo: editando.correo,
+        whatsapp: editando.whatsapp,
+        direccion: editando.direccion,
+        barrio: editando.barrio,
+        numeroFactura: editando.numeroFactura,
+        estadoFacturacion: editando.estadoFacturacion,
+      };
+
+      if (!editando.convertidoEnVenta) {
+        Object.assign(payload, {
+          referenciaEquipo: editando.referenciaEquipo,
+          serialImei: editando.serialImei,
+          financierasDetalle: editando.financierasDetalle,
+        });
+      }
+
       const res = await fetch("/api/facturador/registros", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          modo: "EDITAR",
-          id: editando.id,
-          documentoNumero: editando.documentoNumero,
-          clienteNombre: editando.clienteNombre,
-          correo: editando.correo,
-          whatsapp: editando.whatsapp,
-          direccion: editando.direccion,
-          barrio: editando.barrio,
-          referenciaEquipo: editando.referenciaEquipo,
-          serialImei: editando.serialImei,
-          numeroFactura: editando.numeroFactura,
-          estadoFacturacion: editando.estadoFacturacion,
-          financierasDetalle: editando.financierasDetalle,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -623,6 +644,8 @@ export default function FacturadorRegistrosWorkspace({
       setEliminandoId(null);
     }
   };
+
+  const editandoConvertido = Boolean(editando?.convertidoEnVenta);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
@@ -790,6 +813,8 @@ export default function FacturadorRegistrosWorkspace({
                     const draft = facturasDraft[registro.id] ?? registro.numeroFactura ?? "";
                     const financieras = resolveFinancieras(registro);
                     const esContado = esRegistroContado(registro);
+                    const convertido = esRegistroConvertido(registro);
+                    const puedeModificarRegistro = esAdmin || !convertido;
                     const pagosContado = resolvePagosContado(registro);
                     const financierasConInicial = financieras.filter(
                       (item, index) =>
@@ -931,7 +956,8 @@ export default function FacturadorRegistrosWorkspace({
                             <button
                               type="button"
                               onClick={() => setEditando(createEditDraft(registro))}
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950"
+                              disabled={!puedeModificarRegistro}
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                             >
                               Modificar
                             </button>
@@ -970,8 +996,9 @@ export default function FacturadorRegistrosWorkspace({
                   Nota credito / ajuste de factura
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Puedes actualizar los datos visibles del registro y corregir la
-                  informacion de financieras antes de facturar.
+                  {editandoConvertido
+                    ? "Este registro ya esta convertido en venta. Como administrador puedes corregir datos basicos del cliente y facturacion."
+                    : "Puedes actualizar los datos visibles del registro y corregir la informacion de financieras antes de facturar."}
                 </p>
               </div>
 
@@ -984,14 +1011,37 @@ export default function FacturadorRegistrosWorkspace({
               </button>
             </div>
 
+            {editandoConvertido && (
+              <div className="mt-6 rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-semibold leading-6 text-amber-800">
+                Equipo, IMEI y financieras quedan bloqueados porque la venta ya
+                existe. Para cambios operativos usa el flujo correspondiente de
+                venta o inventario.
+              </div>
+            )}
+
             <div className="mt-6 grid gap-5 md:grid-cols-2">
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                 Tipo de identificacion
-                <input
-                  value={editando.tipoDocumento || "Sin tipo"}
-                  readOnly
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold uppercase text-slate-700 outline-none"
-                />
+                <select
+                  value={editando.tipoDocumento || "CC"}
+                  onChange={(event) =>
+                    setEditando((current) =>
+                      current
+                        ? {
+                            ...current,
+                            tipoDocumento: event.target.value,
+                          }
+                        : current
+                    )
+                  }
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold uppercase text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                >
+                  {TIPOS_DOCUMENTO_CLIENTE.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
@@ -1111,6 +1161,7 @@ export default function FacturadorRegistrosWorkspace({
                 Referencia
                 <input
                   value={editando.referenciaEquipo}
+                  disabled={editandoConvertido}
                   onChange={(event) =>
                     setEditando((current) =>
                       current
@@ -1121,7 +1172,7 @@ export default function FacturadorRegistrosWorkspace({
                         : current
                     )
                   }
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500"
                 />
               </label>
 
@@ -1129,6 +1180,7 @@ export default function FacturadorRegistrosWorkspace({
                 IMEI
                 <input
                   value={editando.serialImei}
+                  disabled={editandoConvertido}
                   onChange={(event) =>
                     setEditando((current) =>
                       current
@@ -1139,7 +1191,7 @@ export default function FacturadorRegistrosWorkspace({
                         : current
                     )
                   }
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500"
                 />
               </label>
 
@@ -1187,94 +1239,33 @@ export default function FacturadorRegistrosWorkspace({
               </label>
             </div>
 
-            <div className="mt-6 rounded-[28px] border border-slate-200 bg-slate-50 p-5">
-              <div className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Financieras
-              </div>
+            {!editandoConvertido && (
+              <div className="mt-6 rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+                <div className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Financieras
+                </div>
 
-              <div className="mt-5 space-y-4">
-                {editando.financierasDetalle.map((financiera, index) => (
-                  <div
-                    key={`edicion-financiera-${index}`}
-                    className="rounded-[26px] border border-slate-200 bg-white p-4"
-                  >
-                    <p className="text-sm font-bold text-slate-900">
-                      Financiera {index + 1}
-                    </p>
-
+                <div className="mt-5 space-y-4">
+                  {editando.financierasDetalle.map((financiera, index) => (
                     <div
-                      className={`mt-4 grid gap-4 ${
-                        financieraRequiereInicial(index)
-                          ? "md:grid-cols-3"
-                          : "md:grid-cols-2"
-                      }`}
+                      key={`edicion-financiera-${index}`}
+                      className="rounded-[26px] border border-slate-200 bg-white p-4"
                     >
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Financiera
-                        <select
-                          value={financiera.plataformaCredito}
-                          onChange={(event) =>
-                            setEditando((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    financierasDetalle: current.financierasDetalle.map(
-                                      (item, itemIndex) =>
-                                        itemIndex === index
-                                          ? {
-                                              ...item,
-                                              plataformaCredito: event.target.value,
-                                            }
-                                          : item
-                                    ),
-                                  }
-                                : current
-                            )
-                          }
-                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                        >
-                          <option value="">Selecciona una financiera</option>
-                          {financierasCatalogo.map((item) => (
-                            <option key={item.id} value={item.nombre}>
-                              {item.nombre}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <p className="text-sm font-bold text-slate-900">
+                        Financiera {index + 1}
+                      </p>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Credito autorizado
-                        <input
-                          value={financiera.creditoAutorizado}
-                          onChange={(event) =>
-                            setEditando((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    financierasDetalle: current.financierasDetalle.map(
-                                      (item, itemIndex) =>
-                                        itemIndex === index
-                                          ? {
-                                              ...item,
-                                              creditoAutorizado: formatearPesoInput(
-                                                event.target.value
-                                              ),
-                                            }
-                                          : item
-                                    ),
-                                  }
-                                : current
-                            )
-                          }
-                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                        />
-                      </label>
-
-                      {financieraRequiereInicial(index) && (
+                      <div
+                        className={`mt-4 grid gap-4 ${
+                          financieraRequiereInicial(index)
+                            ? "md:grid-cols-3"
+                            : "md:grid-cols-2"
+                        }`}
+                      >
                         <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                          Inicial
-                          <input
-                            value={financiera.cuotaInicial}
+                          Financiera
+                          <select
+                            value={financiera.plataformaCredito}
                             onChange={(event) =>
                               setEditando((current) =>
                                 current
@@ -1285,7 +1276,40 @@ export default function FacturadorRegistrosWorkspace({
                                           itemIndex === index
                                             ? {
                                                 ...item,
-                                                cuotaInicial: formatearPesoInput(
+                                                plataformaCredito: event.target.value,
+                                              }
+                                            : item
+                                      ),
+                                    }
+                                  : current
+                              )
+                            }
+                            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                          >
+                            <option value="">Selecciona una financiera</option>
+                            {financierasCatalogo.map((item) => (
+                              <option key={item.id} value={item.nombre}>
+                                {item.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                          Credito autorizado
+                          <input
+                            value={financiera.creditoAutorizado}
+                            onChange={(event) =>
+                              setEditando((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      financierasDetalle: current.financierasDetalle.map(
+                                        (item, itemIndex) =>
+                                          itemIndex === index
+                                            ? {
+                                                ...item,
+                                                creditoAutorizado: formatearPesoInput(
                                                   event.target.value
                                                 ),
                                               }
@@ -1298,12 +1322,42 @@ export default function FacturadorRegistrosWorkspace({
                             className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                           />
                         </label>
-                      )}
+
+                        {financieraRequiereInicial(index) && (
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Inicial
+                            <input
+                              value={financiera.cuotaInicial}
+                              onChange={(event) =>
+                                setEditando((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        financierasDetalle: current.financierasDetalle.map(
+                                          (item, itemIndex) =>
+                                            itemIndex === index
+                                              ? {
+                                                  ...item,
+                                                  cuotaInicial: formatearPesoInput(
+                                                    event.target.value
+                                                  ),
+                                                }
+                                              : item
+                                        ),
+                                      }
+                                    : current
+                                )
+                              }
+                              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                            />
+                          </label>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button

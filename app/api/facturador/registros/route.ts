@@ -3,6 +3,8 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
   esRolAuditor,
+  esRolAdministrativo,
+  esPerfilAdministrativo,
   puedeAccederPanelFacturador,
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
@@ -17,6 +19,7 @@ import {
   normalizarPlataformaCredito,
   normalizarTextoCorto,
   normalizarTextoLargo,
+  normalizarTipoDocumentoCliente,
   normalizarWhatsappRegistro,
 } from "@/lib/vendor-sale-records";
 
@@ -186,6 +189,8 @@ export async function GET() {
         jaladorNombre: true,
         numeroFactura: true,
         estadoFacturacion: true,
+        estadoVentaRegistro: true,
+        ventaIdRelacionada: true,
         financierasDetalle: true,
       },
       orderBy: {
@@ -243,6 +248,7 @@ export async function PATCH(req: Request) {
       select: {
         id: true,
         sedeId: true,
+        tipoDocumento: true,
         estadoVentaRegistro: true,
         ventaIdRelacionada: true,
         financierasDetalle: true,
@@ -279,11 +285,15 @@ export async function PATCH(req: Request) {
     }
 
     if (modo === "EDITAR") {
-      if (
+      const registroConvertido =
         existente.ventaIdRelacionada ||
         String(existente.estadoVentaRegistro || "").trim().toUpperCase() ===
-          "CONVERTIDO_EN_VENTA"
-      ) {
+          "CONVERTIDO_EN_VENTA";
+      const puedeEditarConvertido =
+        esRolAdministrativo(access.session.rolNombre) ||
+        esPerfilAdministrativo(access.session.perfilTipo);
+
+      if (registroConvertido && !puedeEditarConvertido) {
         return NextResponse.json(
           {
             error:
@@ -293,7 +303,9 @@ export async function PATCH(req: Request) {
         );
       }
 
-      const catalogo = await obtenerCatalogoPersonalVenta();
+      const tipoDocumento =
+        normalizarTipoDocumentoCliente(body.tipoDocumento) ||
+        normalizarTipoDocumentoCliente(existente.tipoDocumento);
       const documentoNumero = normalizarTextoCorto(body.documentoNumero);
       const clienteNombre = normalizarTextoCorto(body.clienteNombre);
       const correoTexto = normalizarTextoCorto(body.correo);
@@ -302,13 +314,14 @@ export async function PATCH(req: Request) {
       const whatsapp = normalizarWhatsappRegistro(body.whatsapp);
       const direccion = normalizarTextoLargo(body.direccion);
       const barrio = normalizarTextoCorto(body.barrio);
-      const referenciaEquipo = normalizarTextoCorto(body.referenciaEquipo);
-      const serialImei = normalizarImei(body.serialImei);
       const estadoFacturacion = normalizarEstadoFacturacion(body.estadoFacturacion);
-      const financierasDetalle = normalizarFinancierasEdicion(
-        body.financierasDetalle,
-        catalogo.financieras.map((item) => item.nombre)
-      );
+
+      if (!tipoDocumento) {
+        return NextResponse.json(
+          { error: "Debes seleccionar un tipo de identificacion valido" },
+          { status: 400 }
+        );
+      }
 
       if (!documentoNumero) {
         return NextResponse.json(
@@ -368,13 +381,6 @@ export async function PATCH(req: Request) {
         );
       }
 
-      if (!referenciaEquipo) {
-        return NextResponse.json(
-          { error: "Debes ingresar la referencia" },
-          { status: 400 }
-        );
-      }
-
       if (!estadoFacturacion) {
         return NextResponse.json(
           { error: "Debes seleccionar un estado valido" },
@@ -389,6 +395,72 @@ export async function PATCH(req: Request) {
       ) {
         return NextResponse.json(
           { error: "Debes conservar el numero de factura para ese estado" },
+          { status: 400 }
+        );
+      }
+
+      if (registroConvertido) {
+        const actualizado = await prisma.registroVendedorVenta.update({
+          where: { id },
+          data: {
+            tipoDocumento,
+            documentoNumero,
+            clienteNombre,
+            correo,
+            whatsapp,
+            direccion,
+            barrio,
+            numeroFactura: numeroFactura ?? null,
+            estadoFacturacion,
+          },
+          select: {
+            id: true,
+            createdAt: true,
+            puntoVenta: true,
+            clienteNombre: true,
+            tipoDocumento: true,
+            documentoNumero: true,
+            correo: true,
+            whatsapp: true,
+            direccion: true,
+            barrio: true,
+            plataformaCredito: true,
+            creditoAutorizado: true,
+            cuotaInicial: true,
+            medioPago1Tipo: true,
+            medioPago1Valor: true,
+            medioPago2Tipo: true,
+            medioPago2Valor: true,
+            referenciaEquipo: true,
+            serialImei: true,
+            tipoEquipo: true,
+            jaladorNombre: true,
+            numeroFactura: true,
+            estadoFacturacion: true,
+            estadoVentaRegistro: true,
+            ventaIdRelacionada: true,
+            financierasDetalle: true,
+          },
+        });
+
+        return NextResponse.json({
+          ok: true,
+          mensaje: "Datos basicos actualizados correctamente",
+          registro: serializarRegistro(actualizado),
+        });
+      }
+
+      const catalogo = await obtenerCatalogoPersonalVenta();
+      const referenciaEquipo = normalizarTextoCorto(body.referenciaEquipo);
+      const serialImei = normalizarImei(body.serialImei);
+      const financierasDetalle = normalizarFinancierasEdicion(
+        body.financierasDetalle,
+        catalogo.financieras.map((item) => item.nombre)
+      );
+
+      if (!referenciaEquipo) {
+        return NextResponse.json(
+          { error: "Debes ingresar la referencia" },
           { status: 400 }
         );
       }
@@ -444,6 +516,7 @@ export async function PATCH(req: Request) {
       const actualizado = await prisma.registroVendedorVenta.update({
         where: { id },
         data: {
+          tipoDocumento,
           documentoNumero,
           clienteNombre,
           correo,
@@ -487,6 +560,8 @@ export async function PATCH(req: Request) {
           jaladorNombre: true,
           numeroFactura: true,
           estadoFacturacion: true,
+          estadoVentaRegistro: true,
+          ventaIdRelacionada: true,
           financierasDetalle: true,
         },
       });
@@ -528,6 +603,8 @@ export async function PATCH(req: Request) {
         jaladorNombre: true,
         numeroFactura: true,
         estadoFacturacion: true,
+        estadoVentaRegistro: true,
+        ventaIdRelacionada: true,
         financierasDetalle: true,
       },
     });
