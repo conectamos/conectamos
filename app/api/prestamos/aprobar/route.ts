@@ -130,7 +130,8 @@ export async function POST(req: Request) {
     }
 
     const trasladaDeudaDePrincipal =
-      String(itemOrigen.origen || "").toUpperCase() === "PRINCIPAL" &&
+      (String(itemOrigen.origen || "").toUpperCase() === "PRINCIPAL" ||
+        !!itemOrigen.inventarioPrincipalId) &&
       esEstadoDeuda(itemOrigen.estadoFinanciero) &&
       esDeudaProveedor(itemOrigen.deboA);
     const prestamoPrincipalActivo = trasladaDeudaDePrincipal

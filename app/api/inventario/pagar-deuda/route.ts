@@ -111,6 +111,17 @@ export async function POST(req: Request) {
       },
     });
     const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
+    const inventarioPrincipalRelacionado = item.inventarioPrincipalId
+      ? await prisma.inventarioPrincipal.findUnique({
+          where: { id: item.inventarioPrincipalId },
+          select: { id: true },
+        })
+      : await prisma.inventarioPrincipal.findUnique({
+          where: { imei: item.imei },
+          select: { id: true },
+        });
+    const inventarioPrincipalRelacionadoId =
+      item.inventarioPrincipalId || inventarioPrincipalRelacionado?.id || null;
 
     const prestamosActivos = await prisma.prestamoSede.findMany({
       where: {
@@ -129,7 +140,7 @@ export async function POST(req: Request) {
 
     const deudaVieneDeBodegaPrincipal =
       (String(item.origen || "").trim().toUpperCase() === "PRINCIPAL" ||
-        !!item.inventarioPrincipalId) &&
+        !!inventarioPrincipalRelacionadoId) &&
       esDeudaProveedor(item.deboA);
     const prestamosDestinoActual = prestamosActivos.filter(
       (prestamo) => prestamo.sedeDestinoId === item.sedeId
@@ -143,18 +154,17 @@ export async function POST(req: Request) {
       : null;
 
     if (deudaVieneDeBodegaPrincipal) {
-      if (!prestamoBodegaPrincipal) {
+      if (sedeBodegaId <= 0) {
         return NextResponse.json(
           {
             error:
-              "No se encontro un prestamo activo de bodega principal para solicitar aprobacion del pago.",
+              "No se encontro Bodega Principal para solicitar aprobacion del pago.",
           },
           { status: 400 }
         );
       }
 
-      const sedeAcreedoraId =
-        sedeBodegaId > 0 ? sedeBodegaId : prestamoBodegaPrincipal.sedeOrigenId;
+      const sedeAcreedoraId = sedeBodegaId;
 
       if (sedeAcreedoraId === item.sedeId) {
         return NextResponse.json(
@@ -163,7 +173,7 @@ export async function POST(req: Request) {
         );
       }
 
-      if (prestamoBodegaPrincipal.estado === "PAGO_PENDIENTE_APROBACION") {
+      if (prestamoBodegaPrincipal?.estado === "PAGO_PENDIENTE_APROBACION") {
         return NextResponse.json(
           { error: "Este pago ya esta pendiente de aprobacion" },
           { status: 400 }
@@ -171,20 +181,54 @@ export async function POST(req: Request) {
       }
 
       await prisma.$transaction(async (tx) => {
-        await tx.prestamoSede.update({
-          where: { id: prestamoBodegaPrincipal.id },
-          data: {
-            sedeOrigenId: sedeAcreedoraId,
-            estado: "PAGO_PENDIENTE_APROBACION",
-            montoPago: item.costo,
-            fechaSolicitudPago: new Date(),
-            fechaAprobacionPago: null,
-          },
-        });
+        let prestamoPagoId = prestamoBodegaPrincipal?.id ?? null;
+
+        if (prestamoPagoId) {
+          await tx.prestamoSede.update({
+            where: { id: prestamoPagoId },
+            data: {
+              sedeOrigenId: sedeAcreedoraId,
+              sedeDestinoId: item.sedeId,
+              estado: "PAGO_PENDIENTE_APROBACION",
+              montoPago: item.costo,
+              fechaSolicitudPago: new Date(),
+              fechaAprobacionPago: null,
+            },
+          });
+        } else {
+          const prestamoCreado = await tx.prestamoSede.create({
+            data: {
+              imei: item.imei,
+              referencia: item.referencia,
+              color: item.color || null,
+              costo: item.costo,
+              sedeOrigenId: sedeAcreedoraId,
+              sedeDestinoId: item.sedeId,
+              estado: "PAGO_PENDIENTE_APROBACION",
+              montoPago: item.costo,
+              fechaSolicitudPago: new Date(),
+              fechaAprobacionPago: null,
+            },
+            select: {
+              id: true,
+            },
+          });
+
+          prestamoPagoId = prestamoCreado.id;
+        }
+
+        if (inventarioPrincipalRelacionadoId && !item.inventarioPrincipalId) {
+          await tx.inventarioSede.update({
+            where: { id: item.id },
+            data: {
+              inventarioPrincipalId: inventarioPrincipalRelacionadoId,
+            },
+          });
+        }
 
         const movimientoPendiente = await tx.movimientoCajaSede.findFirst({
           where: {
-            prestamoId: prestamoBodegaPrincipal.id,
+            prestamoId: prestamoPagoId,
           },
           select: {
             id: true,
@@ -208,7 +252,7 @@ export async function POST(req: Request) {
               tipo: "PENDIENTE_APROBACION",
               concepto: "PAGO PRESTAMO ENTRE SEDES",
               valor: item.costo,
-              prestamoId: prestamoBodegaPrincipal.id,
+              prestamoId: prestamoPagoId,
             },
           });
         }
@@ -224,7 +268,7 @@ export async function POST(req: Request) {
             deboA: item.deboA,
             estadoFinanciero: "DEUDA",
             origen: item.origen || "PRINCIPAL",
-            observacion: `${sedeItemNombre} solicita pagar deuda a bodega principal. Prestamo #${prestamoBodegaPrincipal.id}.`,
+            observacion: `${sedeItemNombre} solicita pagar deuda a bodega principal. Prestamo #${prestamoPagoId}.`,
           },
         });
       });

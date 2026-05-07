@@ -100,7 +100,8 @@ export async function POST(req: Request) {
     }
 
     const trasladaDeudaDePrincipal =
-      String(inventario.origen || "").toUpperCase() === "PRINCIPAL" &&
+      (String(inventario.origen || "").toUpperCase() === "PRINCIPAL" ||
+        !!inventario.inventarioPrincipalId) &&
       esEstadoDeuda(inventario.estadoFinanciero) &&
       esDeudaProveedor(inventario.deboA);
     const sedeOrigenNombre = etiquetaSedeAcreedora(
