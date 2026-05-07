@@ -6,6 +6,7 @@ import {
   ESTADO_INVENTARIO_PRESTAMO,
   NOMBRE_SEDE_BODEGA,
   etiquetaSedeAcreedora,
+  esDeudaEntreSedes,
   esDeudaProveedor,
   esEstadoDeuda,
   resolverFinanzasDestinoPrestamo,
@@ -134,7 +135,12 @@ export async function POST(req: Request) {
         !!itemOrigen.inventarioPrincipalId) &&
       esEstadoDeuda(itemOrigen.estadoFinanciero) &&
       esDeudaProveedor(itemOrigen.deboA);
-    const prestamoPrincipalActivo = trasladaDeudaDePrincipal
+    const trasladaDeudaEntreSedes =
+      esEstadoDeuda(itemOrigen.estadoFinanciero) &&
+      esDeudaEntreSedes(itemOrigen.deboA);
+    const trasladaDeudaExistente =
+      trasladaDeudaDePrincipal || trasladaDeudaEntreSedes;
+    const prestamoAcreedorActivo = trasladaDeudaExistente
       ? await prisma.prestamoSede.findFirst({
           where: {
             imei: prestamo.imei,
@@ -216,7 +222,7 @@ export async function POST(req: Request) {
         });
       }
 
-      if (trasladaDeudaDePrincipal) {
+      if (trasladaDeudaExistente) {
         await tx.inventarioSede.update({
           where: { id: itemOrigen.id },
           data: {
@@ -225,7 +231,9 @@ export async function POST(req: Request) {
             estadoFinanciero: "PAGO",
             deboA: null,
             fechaMovimiento: new Date(),
-            observacion: `Traslado aprobado hacia ${sedeDestinoNombre}. La deuda de bodega principal queda en la sede destino.`,
+            observacion: trasladaDeudaDePrincipal
+              ? `Traslado aprobado hacia ${sedeDestinoNombre}. La deuda de bodega principal queda en la sede destino.`
+              : `Traslado aprobado hacia ${sedeDestinoNombre}. La deuda original queda en la sede destino.`,
           },
         });
       } else {
@@ -245,7 +253,7 @@ export async function POST(req: Request) {
       await tx.prestamoSede.update({
         where: { id: prestamo.id },
         data: {
-          estado: trasladaDeudaDePrincipal ? "FINALIZADO" : "APROBADO",
+          estado: trasladaDeudaExistente ? "FINALIZADO" : "APROBADO",
         },
       });
 
@@ -276,26 +284,27 @@ export async function POST(req: Request) {
           });
         }
 
-        if (prestamoPrincipalActivo) {
-          await tx.prestamoSede.update({
-            where: {
-              id: prestamoPrincipalActivo.id,
-            },
-            data: {
-              sedeOrigenId:
-                prestamoPrincipalActivo.sedeOrigenId === sedeBodegaId
-                  ? prestamoPrincipalActivo.sedeOrigenId
-                  : sedeBodegaId > 0
-                    ? sedeBodegaId
-                    : prestamoPrincipalActivo.sedeOrigenId,
-              sedeDestinoId: prestamo.sedeDestinoId,
-              estado: "APROBADO",
-              montoPago: null,
-              fechaSolicitudPago: null,
-              fechaAprobacionPago: null,
-            },
-          });
-        }
+      }
+
+      if (prestamoAcreedorActivo) {
+        await tx.prestamoSede.update({
+          where: {
+            id: prestamoAcreedorActivo.id,
+          },
+          data: {
+            sedeOrigenId:
+              trasladaDeudaDePrincipal &&
+              prestamoAcreedorActivo.sedeOrigenId !== sedeBodegaId &&
+              sedeBodegaId > 0
+                ? sedeBodegaId
+                : prestamoAcreedorActivo.sedeOrigenId,
+            sedeDestinoId: prestamo.sedeDestinoId,
+            estado: "APROBADO",
+            montoPago: null,
+            fechaSolicitudPago: null,
+            fechaAprobacionPago: null,
+          },
+        });
       }
 
       await tx.movimientoInventario.create({

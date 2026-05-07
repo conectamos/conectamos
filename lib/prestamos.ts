@@ -117,9 +117,10 @@ export function resolverFinanzasDestinoPrestamo(params: {
     return {
       estadoFinanciero: "DEUDA",
       deboA:
-        params.trasladaDeudaDePrincipal && esDeudaProveedor(acreedorActual)
-          ? acreedorActual
-          : etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre),
+        esDeudaProveedor(acreedorActual) && !params.trasladaDeudaDePrincipal
+          ? etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre)
+          : acreedorActual ||
+            etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre),
     };
   }
 
