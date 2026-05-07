@@ -10,6 +10,8 @@ type Prestamo = {
   referencia: string;
   color: string | null;
   costo: number;
+  montoPago?: number | null;
+  fechaSolicitudPago?: string | null;
   sedeOrigenId: number;
   sedeDestinoId: number;
   sedeOrigenNombre?: string;
@@ -37,8 +39,32 @@ type Sede = {
   nombre: string;
 };
 
+type PagoPendienteLote = {
+  key: string;
+  origen: string;
+  destino: string;
+  fecha: string;
+  total: number;
+  items: Prestamo[];
+};
+
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
+}
+
+function claveFechaLote(fecha: string | null | undefined) {
+  if (!fecha) {
+    return "sin-fecha";
+  }
+
+  const fechaPago = new Date(fecha);
+
+  if (Number.isNaN(fechaPago.getTime())) {
+    return "sin-fecha";
+  }
+
+  fechaPago.setSeconds(0, 0);
+  return fechaPago.toISOString();
 }
 
 function MetricCard({
@@ -74,6 +100,7 @@ export default function PrestamosPage() {
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
+  const [lotesDetalleAbiertos, setLotesDetalleAbiertos] = useState<string[]>([]);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
@@ -304,6 +331,39 @@ export default function PrestamosPage() {
     }
   };
 
+  const aprobarPagoPrestamoLote = async (ids: number[]) => {
+    if (ids.length === 0) {
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/prestamos/aprobar-pago-lote", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prestamoIds: ids }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "Error aprobando pago por lote");
+        return;
+      }
+
+      setMensaje(data.mensaje || "Pago por lote aprobado correctamente");
+      await cargarPrestamos();
+    } catch {
+      setMensaje("Error de conexion al aprobar pago por lote");
+    } finally {
+      setCargando(false);
+    }
+  };
+
   const aprobarPrestamo = async (id: number) => {
     try {
       setCargando(true);
@@ -439,6 +499,14 @@ export default function PrestamosPage() {
     return prestamo.estado === "PAGO_PENDIENTE_APROBACION" && (esAdmin || origen);
   };
 
+  const alternarDetalleLote = (key: string) => {
+    setLotesDetalleAbiertos((actuales) =>
+      actuales.includes(key)
+        ? actuales.filter((item) => item !== key)
+        : [...actuales, key]
+    );
+  };
+
   const prestamosFiltrados = useMemo(() => {
     return prestamos
       .filter((prestamo) => {
@@ -463,6 +531,57 @@ export default function PrestamosPage() {
         );
       });
   }, [prestamos, filtroEstado, busqueda]);
+
+  const lotesPagoPendiente = useMemo(() => {
+    if (!user) {
+      return [];
+    }
+
+    const lotes = new Map<string, PagoPendienteLote>();
+
+    prestamos
+      .filter((prestamo) => {
+        if (prestamo.estado !== "PAGO_PENDIENTE_APROBACION") {
+          return false;
+        }
+
+        return esAdmin || user.sedeId === prestamo.sedeOrigenId;
+      })
+      .forEach((prestamo) => {
+        const origen = prestamo.sedeOrigenNombre ?? "Sede sin configurar";
+        const destino = prestamo.sedeDestinoNombre ?? "Sede sin configurar";
+        const fecha = claveFechaLote(prestamo.fechaSolicitudPago);
+        const key = `${prestamo.sedeOrigenId}:${prestamo.sedeDestinoId}:${fecha}`;
+        const loteActual = lotes.get(key);
+
+        if (loteActual) {
+          loteActual.items.push(prestamo);
+          loteActual.total += Number(prestamo.montoPago || prestamo.costo || 0);
+          return;
+        }
+
+        lotes.set(key, {
+          key,
+          origen,
+          destino,
+          fecha,
+          total: Number(prestamo.montoPago || prestamo.costo || 0),
+          items: [prestamo],
+        });
+      });
+
+    return Array.from(lotes.values()).sort((a, b) => b.total - a.total);
+  }, [esAdmin, prestamos, user]);
+
+  const idsEnLotesMultiples = useMemo(
+    () =>
+      new Set(
+        lotesPagoPendiente
+          .filter((lote) => lote.items.length > 1)
+          .flatMap((lote) => lote.items.map((item) => item.id))
+      ),
+    [lotesPagoPendiente]
+  );
 
   const totalPrestamos = prestamos.length;
   const totalDesdePrincipal = prestamos.filter((p) => p.prestamoDesdePrincipal).length;
@@ -780,6 +899,125 @@ export default function PrestamosPage() {
           </div>
         </section>
 
+        {lotesPagoPendiente.length > 0 && (
+          <section className="mt-6 rounded-[32px] border border-[#e2d9ca] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Pagos por aprobar
+                </div>
+                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                  Aprobacion por lote
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                  Cada lote agrupa equipos de la misma sede pagadora hacia el mismo acreedor. Al aprobarlo se crea un solo ingreso y un solo egreso en caja por el total.
+                </p>
+              </div>
+
+              <div className="rounded-3xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-right">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Total visible
+                </p>
+                <p className="mt-1 text-2xl font-black text-emerald-700">
+                  {formatoPesos(
+                    lotesPagoPendiente.reduce(
+                      (acumulado, lote) => acumulado + lote.total,
+                      0
+                    )
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              {lotesPagoPendiente.map((lote) => {
+                const detalleAbierto = lotesDetalleAbiertos.includes(lote.key);
+                const ids = lote.items.map((item) => item.id);
+
+                return (
+                  <article
+                    key={lote.key}
+                    className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf7_100%)] p-5 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          {lote.destino} paga a
+                        </p>
+                        <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">
+                          {lote.origen}
+                        </h3>
+                        <p className="mt-2 text-sm text-slate-500">
+                          {lote.items.length} equipo
+                          {lote.items.length === 1 ? "" : "s"} pendiente
+                          {lote.items.length === 1 ? "" : "s"} de aprobacion
+                        </p>
+                      </div>
+
+                      <div className="rounded-3xl border border-slate-200 bg-white px-5 py-4 text-right">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Total lote
+                        </p>
+                        <p className="mt-1 text-2xl font-black text-emerald-700">
+                          {formatoPesos(lote.total)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => alternarDetalleLote(lote.key)}
+                        className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+                      >
+                        {detalleAbierto ? "Ocultar detalle" : "Ver detalle"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => void aprobarPagoPrestamoLote(ids)}
+                        disabled={cargando}
+                        className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-70"
+                      >
+                        Aprobar lote
+                      </button>
+                    </div>
+
+                    {detalleAbierto && (
+                      <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                            <tr>
+                              <th className="px-4 py-3">IMEI</th>
+                              <th className="px-4 py-3">Referencia</th>
+                              <th className="px-4 py-3 text-right">Valor</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lote.items.map((item) => (
+                              <tr key={item.id} className="border-t border-slate-100">
+                                <td className="px-4 py-3 font-semibold text-slate-950">
+                                  {item.imei}
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  {item.referencia}
+                                </td>
+                                <td className="px-4 py-3 text-right font-bold text-slate-950">
+                                  {formatoPesos(Number(item.montoPago || item.costo || 0))}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e2d9ca] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.10)]">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -999,7 +1237,13 @@ export default function PrestamosPage() {
                             </button>
                           )}
 
-                          {puedeAprobarPago(item) && (
+                          {puedeAprobarPago(item) && idsEnLotesMultiples.has(item.id) && (
+                            <span className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700">
+                              Aprobar desde lote
+                            </span>
+                          )}
+
+                          {puedeAprobarPago(item) && !idsEnLotesMultiples.has(item.id) && (
                             <button
                               type="button"
                               onClick={() => void aprobarPagoPrestamo(item.id)}
