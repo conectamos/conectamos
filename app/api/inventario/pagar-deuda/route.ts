@@ -139,7 +139,10 @@ export async function POST(req: Request) {
     });
 
     const deudaProveedorDebeAprobarBodegaPrincipal =
-      esDeudaProveedor(item.deboA) && item.sedeId !== sedeBodegaId;
+      esDeudaProveedor(item.deboA) &&
+      item.sedeId !== sedeBodegaId &&
+      (String(item.origen || "").trim().toUpperCase() === "PRINCIPAL" ||
+        !!inventarioPrincipalRelacionadoId);
     const prestamosDestinoActual = prestamosActivos.filter(
       (prestamo) => prestamo.sedeDestinoId === item.sedeId
     );

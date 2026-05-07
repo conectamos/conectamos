@@ -199,8 +199,7 @@ export async function POST(req: Request) {
         esEstadoDeuda(equipoDestino?.estadoFinanciero) &&
         esDeudaProveedor(equipoDestino?.deboA);
       const prestamoDesdeBodegaPrincipal =
-        prestamo.sedeOrigenId === sedeBodegaId ||
-        (destinoMarcadoComoPrincipal && destinoTieneDeudaProveedor);
+        destinoMarcadoComoPrincipal && destinoTieneDeudaProveedor;
       const sedeAcreedoraId =
         prestamoDesdeBodegaPrincipal && sedeBodegaId > 0
           ? sedeBodegaId

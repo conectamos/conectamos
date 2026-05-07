@@ -34,6 +34,16 @@ type Sede = {
   nombre: string;
 };
 
+type PagoPendienteLote = {
+  key: string;
+  origen: string;
+  destino: string;
+  fecha: string;
+  total: number;
+  items: DeudaItem[];
+  ultimoTiempo: number | null;
+};
+
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
@@ -44,6 +54,20 @@ function formatoFecha(valor: string) {
   }
 
   return new Date(valor).toLocaleString("es-CO");
+}
+
+function tiempoSolicitudPago(fecha: string | null | undefined) {
+  if (!fecha) {
+    return null;
+  }
+
+  const fechaPago = new Date(fecha);
+
+  if (Number.isNaN(fechaPago.getTime())) {
+    return null;
+  }
+
+  return fechaPago.getTime();
 }
 
 function MetricCard({
@@ -78,6 +102,7 @@ export default function DeudaSedesPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
+  const [lotesDetalleAbiertos, setLotesDetalleAbiertos] = useState<string[]>([]);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
@@ -206,6 +231,53 @@ export default function DeudaSedesPage() {
     }
   };
 
+  const aprobarPagoLote = async (lote: PagoPendienteLote) => {
+    const confirmado = window.confirm(
+      `Confirmas aprobar ${lote.items.length} pago(s) de ${lote.destino} por ${formatoPesos(lote.total)}?`
+    );
+
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/prestamos/aprobar-pago-lote", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prestamoIds: lote.items.map((item) => item.prestamoId),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(`Error: ${data.error || "Error aprobando lote"}`);
+        return;
+      }
+
+      setMensaje(data.mensaje || "Pago por lote aprobado correctamente");
+      await cargar();
+    } catch {
+      setMensaje("Error aprobando lote");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const alternarDetalleLote = (key: string) => {
+    setLotesDetalleAbiertos((actuales) =>
+      actuales.includes(key)
+        ? actuales.filter((item) => item !== key)
+        : [...actuales, key]
+    );
+  };
+
   const totalSolicitudes = items.length;
   const promedioPendiente = useMemo(() => {
     if (!items.length) {
@@ -214,6 +286,72 @@ export default function DeudaSedesPage() {
 
     return totalPendiente / items.length;
   }, [items, totalPendiente]);
+
+  const lotesPagoPendiente = useMemo(() => {
+    const ventanaLoteMs = 5 * 60 * 1000;
+    const lotes: PagoPendienteLote[] = [];
+
+    items
+      .filter((item) => item.puedeAprobar)
+      .sort((a, b) => {
+        const tiempoA = tiempoSolicitudPago(a.fechaSolicitudPago) ?? 0;
+        const tiempoB = tiempoSolicitudPago(b.fechaSolicitudPago) ?? 0;
+
+        return tiempoA - tiempoB || a.prestamoId - b.prestamoId;
+      })
+      .forEach((item) => {
+        const tiempo = tiempoSolicitudPago(item.fechaSolicitudPago);
+        const loteActual = [...lotes].reverse().find((lote) => {
+          const primerItem = lote.items[0];
+
+          if (
+            !primerItem ||
+            primerItem.sedeOrigenId !== item.sedeOrigenId ||
+            primerItem.sedeDestinoId !== item.sedeDestinoId
+          ) {
+            return false;
+          }
+
+          if (lote.ultimoTiempo === null || tiempo === null) {
+            return lote.ultimoTiempo === tiempo;
+          }
+
+          return Math.abs(tiempo - lote.ultimoTiempo) <= ventanaLoteMs;
+        });
+
+        if (loteActual) {
+          loteActual.items.push(item);
+          loteActual.total += Number(item.valor || 0);
+          loteActual.ultimoTiempo = tiempo ?? loteActual.ultimoTiempo;
+          loteActual.key = loteActual.items
+            .map((loteItem) => loteItem.prestamoId)
+            .join("-");
+          return;
+        }
+
+        lotes.push({
+          key: String(item.prestamoId),
+          origen: item.sedeOrigenNombre,
+          destino: item.sedeDestinoNombre,
+          fecha: item.fechaSolicitudPago,
+          total: Number(item.valor || 0),
+          items: [item],
+          ultimoTiempo: tiempo,
+        });
+      });
+
+    return lotes.sort((a, b) => b.total - a.total);
+  }, [items]);
+
+  const idsEnLotesMultiples = useMemo(
+    () =>
+      new Set(
+        lotesPagoPendiente
+          .filter((lote) => lote.items.length > 1)
+          .flatMap((lote) => lote.items.map((item) => item.id))
+      ),
+    [lotesPagoPendiente]
+  );
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-4 py-8">
@@ -325,6 +463,128 @@ export default function DeudaSedesPage() {
           </div>
         </section>
 
+        {lotesPagoPendiente.length > 0 && (
+          <section className="mt-6 rounded-[32px] border border-[#e2d9ca] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Aprobacion consolidada
+                </div>
+                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                  Lotes listos para aprobar
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                  Agrupa pagos cercanos de la misma sede hacia el mismo origen para aprobarlos con un solo ingreso y un solo egreso de caja.
+                </p>
+              </div>
+
+              <div className="rounded-3xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-right">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Total en lotes
+                </p>
+                <p className="mt-1 text-2xl font-black text-emerald-700">
+                  {formatoPesos(
+                    lotesPagoPendiente.reduce(
+                      (acumulado, lote) => acumulado + lote.total,
+                      0
+                    )
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              {lotesPagoPendiente.map((lote) => {
+                const detalleAbierto = lotesDetalleAbiertos.includes(lote.key);
+
+                return (
+                  <article
+                    key={lote.key}
+                    className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf7_100%)] p-5 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          {lote.destino} paga a
+                        </p>
+                        <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">
+                          {lote.origen}
+                        </h3>
+                        <p className="mt-2 text-sm text-slate-500">
+                          {lote.items.length} equipo
+                          {lote.items.length === 1 ? "" : "s"} pendiente
+                          {lote.items.length === 1 ? "" : "s"} de aprobacion
+                        </p>
+                      </div>
+
+                      <div className="rounded-3xl border border-slate-200 bg-white px-5 py-4 text-right">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Total lote
+                        </p>
+                        <p className="mt-1 text-2xl font-black text-emerald-700">
+                          {formatoPesos(lote.total)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => alternarDetalleLote(lote.key)}
+                        className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+                      >
+                        {detalleAbierto ? "Ocultar detalle" : "Ver detalle"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => void aprobarPagoLote(lote)}
+                        disabled={cargando}
+                        className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Aprobar lote
+                      </button>
+                    </div>
+
+                    {detalleAbierto && (
+                      <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                            <tr>
+                              <th className="px-4 py-3">Prestamo</th>
+                              <th className="px-4 py-3">IMEI</th>
+                              <th className="px-4 py-3">Referencia</th>
+                              <th className="px-4 py-3 text-right">Valor</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lote.items.map((item) => (
+                              <tr key={item.id} className="border-t border-slate-100">
+                                <td className="px-4 py-3 font-bold text-slate-950">
+                                  #{item.prestamoId}
+                                </td>
+                                <td className="px-4 py-3 font-semibold text-slate-950">
+                                  {item.imei}
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  {item.referencia}
+                                </td>
+                                <td className="px-4 py-3 text-right font-bold text-slate-950">
+                                  {formatoPesos(item.valor)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e2d9ca] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.10)]">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -392,7 +652,11 @@ export default function DeudaSedesPage() {
                         {formatoFecha(item.fechaSolicitudPago)}
                       </td>
                       <td className="px-6 py-4">
-                        {item.puedeAprobar ? (
+                        {item.puedeAprobar && idsEnLotesMultiples.has(item.id) ? (
+                          <span className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700">
+                            Aprobar desde lote
+                          </span>
+                        ) : item.puedeAprobar ? (
                           <button
                             type="button"
                             onClick={() => void aprobarPago(item)}

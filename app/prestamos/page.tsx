@@ -46,25 +46,25 @@ type PagoPendienteLote = {
   fecha: string;
   total: number;
   items: Prestamo[];
+  ultimoTiempo: number | null;
 };
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
 
-function claveFechaLote(fecha: string | null | undefined) {
+function tiempoSolicitudPago(fecha: string | null | undefined) {
   if (!fecha) {
-    return "sin-fecha";
+    return null;
   }
 
   const fechaPago = new Date(fecha);
 
   if (Number.isNaN(fechaPago.getTime())) {
-    return "sin-fecha";
+    return null;
   }
 
-  fechaPago.setSeconds(0, 0);
-  return fechaPago.toISOString();
+  return fechaPago.getTime();
 }
 
 function MetricCard({
@@ -537,7 +537,8 @@ export default function PrestamosPage() {
       return [];
     }
 
-    const lotes = new Map<string, PagoPendienteLote>();
+    const ventanaLoteMs = 5 * 60 * 1000;
+    const lotes: PagoPendienteLote[] = [];
 
     prestamos
       .filter((prestamo) => {
@@ -547,30 +548,51 @@ export default function PrestamosPage() {
 
         return esAdmin || user.sedeId === prestamo.sedeOrigenId;
       })
+      .sort((a, b) => {
+        const tiempoA = tiempoSolicitudPago(a.fechaSolicitudPago) ?? 0;
+        const tiempoB = tiempoSolicitudPago(b.fechaSolicitudPago) ?? 0;
+
+        return tiempoA - tiempoB || a.id - b.id;
+      })
       .forEach((prestamo) => {
         const origen = prestamo.sedeOrigenNombre ?? "Sede sin configurar";
         const destino = prestamo.sedeDestinoNombre ?? "Sede sin configurar";
-        const fecha = claveFechaLote(prestamo.fechaSolicitudPago);
-        const key = `${prestamo.sedeOrigenId}:${prestamo.sedeDestinoId}:${fecha}`;
-        const loteActual = lotes.get(key);
+        const tiempo = tiempoSolicitudPago(prestamo.fechaSolicitudPago);
+        const loteActual = [...lotes].reverse().find((lote) => {
+          if (
+            lote.items[0]?.sedeOrigenId !== prestamo.sedeOrigenId ||
+            lote.items[0]?.sedeDestinoId !== prestamo.sedeDestinoId
+          ) {
+            return false;
+          }
+
+          if (lote.ultimoTiempo === null || tiempo === null) {
+            return lote.ultimoTiempo === tiempo;
+          }
+
+          return Math.abs(tiempo - lote.ultimoTiempo) <= ventanaLoteMs;
+        });
 
         if (loteActual) {
           loteActual.items.push(prestamo);
           loteActual.total += Number(prestamo.montoPago || prestamo.costo || 0);
+          loteActual.ultimoTiempo = tiempo ?? loteActual.ultimoTiempo;
+          loteActual.key = loteActual.items.map((item) => item.id).join("-");
           return;
         }
 
-        lotes.set(key, {
-          key,
+        lotes.push({
+          key: String(prestamo.id),
           origen,
           destino,
-          fecha,
+          fecha: prestamo.fechaSolicitudPago || "",
           total: Number(prestamo.montoPago || prestamo.costo || 0),
           items: [prestamo],
+          ultimoTiempo: tiempo,
         });
       });
 
-    return Array.from(lotes.values()).sort((a, b) => b.total - a.total);
+    return lotes.sort((a, b) => b.total - a.total);
   }, [esAdmin, prestamos, user]);
 
   const idsEnLotesMultiples = useMemo(
