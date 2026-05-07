@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   esDeudaEntreSedes,
   etiquetaEstadoInventario,
@@ -156,9 +156,12 @@ export default function InventarioPage() {
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
+  const [cargandoInventario, setCargandoInventario] = useState(false);
+  const [inventarioCargado, setInventarioCargado] = useState(false);
   const [filtroEstado, setFiltroEstado] = useState<EstadoFiltro>("TODOS");
   const [busqueda, setBusqueda] = useState("");
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
+  const inventarioRequestId = useRef(0);
 
   const [mostrarModalPrestamo, setMostrarModalPrestamo] = useState(false);
   const [mostrarModalPrestamoMasivo, setMostrarModalPrestamoMasivo] = useState(false);
@@ -209,8 +212,12 @@ export default function InventarioPage() {
   }, []);
 
   const cargarInventario = useCallback(async () => {
+    const requestId = inventarioRequestId.current + 1;
+    inventarioRequestId.current = requestId;
+
     try {
       setMensaje("");
+      setCargandoInventario(true);
       const params = new URLSearchParams();
 
       if (esAdmin && sedeFiltroId !== "TODAS") {
@@ -227,14 +234,25 @@ export default function InventarioPage() {
 
       const data = await res.json();
 
+      if (requestId !== inventarioRequestId.current) {
+        return;
+      }
+
       if (!res.ok) {
         setMensaje(data.error || "Error cargando inventario");
         return;
       }
 
       setItems(Array.isArray(data) ? data : []);
+      setInventarioCargado(true);
     } catch {
-      setMensaje("Error cargando inventario");
+      if (requestId === inventarioRequestId.current) {
+        setMensaje("Error cargando inventario");
+      }
+    } finally {
+      if (requestId === inventarioRequestId.current) {
+        setCargandoInventario(false);
+      }
     }
   }, [esAdmin, sedeFiltroId]);
 
@@ -309,10 +327,9 @@ export default function InventarioPage() {
 
   useLiveRefresh(
     async () => {
-      await cargarUsuario();
       await cargarInventario();
     },
-    { intervalMs: 10000 }
+    { enabled: Boolean(user), intervalMs: 60000 }
   );
 
   const sedeFiltroNombre = useMemo(() => {
@@ -1103,7 +1120,11 @@ export default function InventarioPage() {
                 </div>
                 <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
                   Equipos visibles:{" "}
-                  <span className="font-semibold text-white">{itemsFiltrados.length}</span>
+                  <span className="font-semibold text-white">
+                    {cargandoInventario && !inventarioCargado
+                      ? "Cargando..."
+                      : itemsFiltrados.length}
+                  </span>
                 </div>
               </div>
 
@@ -1289,7 +1310,11 @@ export default function InventarioPage() {
                 Equipos registrados
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                {itemsFiltrados.length} resultado{itemsFiltrados.length === 1 ? "" : "s"} visibles en esta vista.
+                {cargandoInventario
+                  ? "Actualizando inventario..."
+                  : `${itemsFiltrados.length} resultado${
+                      itemsFiltrados.length === 1 ? "" : "s"
+                    } visibles en esta vista.`}
               </p>
             </div>
 
@@ -1453,10 +1478,14 @@ export default function InventarioPage() {
                     >
                       <div className="mx-auto max-w-md">
                         <p className="text-base font-semibold text-slate-950">
-                          No hay equipos registrados
+                          {cargandoInventario && !inventarioCargado
+                            ? "Cargando inventario"
+                            : "No hay equipos registrados"}
                         </p>
                         <p className="mt-2 text-sm text-slate-500">
-                          Ajusta la cobertura, el filtro o la busqueda para explorar otros resultados.
+                          {cargandoInventario && !inventarioCargado
+                            ? "Estamos consultando la cobertura seleccionada."
+                            : "Ajusta la cobertura, el filtro o la busqueda para explorar otros resultados."}
                         </p>
                       </div>
                     </td>
