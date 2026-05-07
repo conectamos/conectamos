@@ -138,14 +138,12 @@ export async function POST(req: Request) {
       },
     });
 
-    const deudaVieneDeBodegaPrincipal =
-      (String(item.origen || "").trim().toUpperCase() === "PRINCIPAL" ||
-        !!inventarioPrincipalRelacionadoId) &&
-      esDeudaProveedor(item.deboA);
+    const deudaProveedorDebeAprobarBodegaPrincipal =
+      esDeudaProveedor(item.deboA) && item.sedeId !== sedeBodegaId;
     const prestamosDestinoActual = prestamosActivos.filter(
       (prestamo) => prestamo.sedeDestinoId === item.sedeId
     );
-    const prestamoBodegaPrincipal = deudaVieneDeBodegaPrincipal
+    const prestamoBodegaPrincipal = deudaProveedorDebeAprobarBodegaPrincipal
       ? prestamosDestinoActual.find(
           (prestamo) => prestamo.sedeOrigenId === sedeBodegaId
         ) ||
@@ -153,7 +151,7 @@ export async function POST(req: Request) {
         null
       : null;
 
-    if (deudaVieneDeBodegaPrincipal) {
+    if (deudaProveedorDebeAprobarBodegaPrincipal) {
       if (sedeBodegaId <= 0) {
         return NextResponse.json(
           {
