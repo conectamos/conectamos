@@ -8,6 +8,21 @@ type CatalogoPersonalResponse = {
   financieras: Array<{ nombre: string }>;
 };
 
+type Sede = {
+  id: number;
+  nombre: string;
+};
+
+type SessionUser = {
+  id: number;
+  nombre: string;
+  usuario: string;
+  sedeId: number;
+  sedeNombre: string;
+  rolId: number;
+  rolNombre: string;
+};
+
 function limpiarNumero(v: string) {
   return v.replace(/\D/g, "");
 }
@@ -20,12 +35,40 @@ function formatoPesos(v: string | number) {
 
 export default function AbonosFinancierosPage() {
   const [financieras, setFinancieras] = useState<string[]>([""]);
+  const [sedes, setSedes] = useState<Sede[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [tipo, setTipo] = useState("TRANSFERENCIA");
   const [entidad, setEntidad] = useState("");
+  const [sedeId, setSedeId] = useState("");
   const [valor, setValor] = useState("");
   const [observacion, setObservacion] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState("");
+
+  const rolActual = String(user?.rolNombre || "").toUpperCase();
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
+
+  const cargarUsuario = async () => {
+    try {
+      const res = await fetch("/api/session", { cache: "no-store" });
+      const data = await res.json();
+
+      if (res.ok) {
+        setUser(data);
+      }
+    } catch {}
+  };
+
+  const cargarSedes = async () => {
+    try {
+      const res = await fetch("/api/sedes", { cache: "no-store" });
+      const data = await res.json();
+
+      if (res.ok) {
+        setSedes(Array.isArray(data) ? data : []);
+      }
+    } catch {}
+  };
 
   const cargarFinancieras = async () => {
     try {
@@ -47,13 +90,23 @@ export default function AbonosFinancierosPage() {
   };
 
   useEffect(() => {
-    void cargarFinancieras();
+    void Promise.all([cargarUsuario(), cargarSedes(), cargarFinancieras()]);
   }, []);
 
   const guardar = async () => {
     try {
       setGuardando(true);
       setMensaje("");
+
+      if (!user) {
+        setMensaje("Cargando sesion, intenta nuevamente en un momento");
+        return;
+      }
+
+      if (esAdmin && !sedeId) {
+        setMensaje("Debes seleccionar la sede destino del abono");
+        return;
+      }
 
       const res = await fetch("/api/financiero/abonos", {
         method: "POST",
@@ -65,6 +118,7 @@ export default function AbonosFinancierosPage() {
           entidad: tipo === "FINANCIERA" ? entidad : null,
           valor: Number(valor || 0),
           observacion,
+          sedeId: esAdmin ? Number(sedeId) : undefined,
         }),
       });
 
@@ -114,6 +168,26 @@ export default function AbonosFinancierosPage() {
 
         <div className="rounded-[28px] bg-white p-6 shadow-xl ring-1 ring-slate-200">
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            {esAdmin && (
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Sede destino
+                </label>
+                <select
+                  value={sedeId}
+                  onChange={(e) => setSedeId(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                >
+                  <option value="">Seleccionar sede destino</option>
+                  {sedes.map((sede) => (
+                    <option key={sede.id} value={sede.id}>
+                      {sede.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Tipo
