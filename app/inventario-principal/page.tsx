@@ -37,7 +37,7 @@ const FILTROS_ESTADO: Array<{ value: FiltroEstado; label: string }> = [
   { value: "TODOS", label: "Todos" },
   { value: "BODEGA", label: "Bodega" },
   { value: "ENVIADOS", label: "Enviados a sede" },
-  { value: "COBRO_PENDIENTE", label: "Cobro pendiente" },
+  { value: "COBRO_PENDIENTE", label: "Deuda" },
   { value: "PAGADOS", label: "Pagados" },
 ];
 
