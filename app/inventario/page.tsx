@@ -48,6 +48,7 @@ type EstadoFiltro =
   | "PENDIENTE"
   | "GARANTIA"
   | "PRESTAMO"
+  | "TRASLADO"
   | "PRESTAMO_POR_ACEPTAR"
   | "PAGO"
   | "DEUDA";
@@ -77,6 +78,8 @@ function badgeClaseEstadoInventario(estado: string | null) {
       return "bg-emerald-100 text-emerald-700";
     case "PRESTAMO":
       return "bg-sky-100 text-sky-700";
+    case "TRASLADO":
+      return "bg-violet-100 text-violet-700";
     case "PRESTAMO_POR_ACEPTAR":
       return "bg-amber-100 text-amber-700";
     default:
@@ -1249,6 +1252,7 @@ export default function InventarioPage() {
                     "PENDIENTE",
                     "GARANTIA",
                     "PRESTAMO",
+                    "TRASLADO",
                     "PRESTAMO_POR_ACEPTAR",
                     "PAGO",
                     "DEUDA",

@@ -147,7 +147,9 @@ export async function GET(req: Request) {
 
       const prestamoDesdePrincipal =
         prestamo.sedeOrigenId === sedeBodegaId ||
-        (destinoVieneDePrincipal && !origenRepresentaPrestamoEntreSedesReal);
+        (esPrestamoActivo(prestamo.estado) &&
+          destinoVieneDePrincipal &&
+          !origenRepresentaPrestamoEntreSedesReal);
 
       return {
         ...prestamo,
@@ -414,7 +416,8 @@ export async function POST(req: Request) {
     }
 
     const trasladaDeudaDePrincipal =
-      String(inventarioOrigen.origen || "").toUpperCase() === "PRINCIPAL" &&
+      (String(inventarioOrigen.origen || "").toUpperCase() === "PRINCIPAL" ||
+        !!inventarioOrigen.inventarioPrincipalId) &&
       esEstadoDeuda(inventarioOrigen.estadoFinanciero) &&
       esDeudaProveedor(inventarioOrigen.deboA);
 

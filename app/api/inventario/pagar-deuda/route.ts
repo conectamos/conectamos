@@ -76,14 +76,21 @@ export async function POST(req: Request) {
     }
 
     const estadoActual = String(item.estadoActual || "").toUpperCase();
+    const deudaProveedor = esDeudaProveedor(item.deboA);
+    const equipoPrestadoConDeudaProveedor =
+      estadoActual === "PRESTAMO" && deudaProveedor;
     const equipoYaVendido = estadoActual === "VENDIDO";
     const sedeItemNombre = etiquetaSedeAcreedora(item.sedeId, item.sede?.nombre);
 
-    if (estadoActual !== "BODEGA" && estadoActual !== "VENDIDO") {
+    if (
+      estadoActual !== "BODEGA" &&
+      estadoActual !== "VENDIDO" &&
+      !equipoPrestadoConDeudaProveedor
+    ) {
       return NextResponse.json(
         {
           error:
-            "Solo se puede pagar deuda del equipo que esta en BODEGA o VENDIDO en la sede actual.",
+            "Solo se puede pagar deuda del equipo que esta en BODEGA, VENDIDO o PRESTAMO con deuda a proveedor.",
         },
         { status: 400 }
       );
@@ -284,6 +291,65 @@ export async function POST(req: Request) {
     const prestamosConPlaceholder = prestamosActivos.filter(
       (prestamo) => prestamo.sedeOrigenId !== item.sedeId
     );
+    const prestamosPorCobrarDesdeEstaSede = prestamosActivos.filter(
+      (prestamo) => prestamo.sedeOrigenId === item.sedeId
+    );
+
+    if (equipoPrestadoConDeudaProveedor) {
+      await prisma.$transaction(async (tx) => {
+        await tx.cajaMovimiento.create({
+          data: {
+            tipo: "EGRESO",
+            concepto: "PAGO DEUDA INVENTARIO",
+            valor: item.costo,
+            descripcion: `Pago de deuda del equipo prestado IMEI ${item.imei}${item.deboA ? ` a ${item.deboA}` : ""}`,
+            sedeId: item.sedeId,
+          },
+        });
+
+        if (prestamosPorCobrarDesdeEstaSede.length > 0) {
+          await tx.inventarioSede.update({
+            where: { id: item.id },
+            data: {
+              estadoFinanciero: "PAGO",
+              deboA: null,
+              estadoAnterior: item.estadoAnterior || item.estadoActual || null,
+              estadoActual: "PRESTAMO",
+              fechaMovimiento: new Date(),
+              observacion:
+                "Deuda pagada al proveedor. El equipo sigue prestado hasta que la sede destino pague.",
+            },
+          });
+        } else {
+          await tx.inventarioSede.delete({
+            where: { id: item.id },
+          });
+        }
+
+        await tx.movimientoInventario.create({
+          data: {
+            imei: item.imei,
+            tipoMovimiento: "PAGO_DEUDA_INVENTARIO",
+            referencia: item.referencia,
+            color: item.color || null,
+            costo: item.costo,
+            sedeId: item.sedeId,
+            deboA: null,
+            estadoFinanciero: "PAGO",
+            origen: item.origen || "INVENTARIO",
+            observacion:
+              prestamosPorCobrarDesdeEstaSede.length > 0
+                ? "Se pago la deuda al proveedor. Queda pendiente el cobro del prestamo a la sede destino."
+                : "Se pago la deuda al proveedor y se retiro el registro informativo del prestamo.",
+          },
+        });
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Deuda pagada correctamente",
+      });
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.cajaMovimiento.create({

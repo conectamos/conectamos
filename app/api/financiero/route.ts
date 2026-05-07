@@ -318,7 +318,7 @@ export async function GET(req: Request) {
       }
 
       const prestamoDesdePrincipal =
-        item.sedeOrigenId === sedeBodegaId ||
+        item.sedeOrigenId === sedeBodegaId &&
         ((String(inventarioDestino.origen || "").trim().toUpperCase() ===
           "PRINCIPAL" ||
           !!inventarioDestino.inventarioPrincipalId) &&

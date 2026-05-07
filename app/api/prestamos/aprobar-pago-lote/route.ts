@@ -173,6 +173,8 @@ export async function POST(req: Request) {
           id: true,
           imei: true,
           sedeId: true,
+          estadoFinanciero: true,
+          deboA: true,
         },
       }),
     ]);
@@ -420,9 +422,23 @@ export async function POST(req: Request) {
             });
           }
         } else if (contexto.equipoOrigen) {
-          await tx.inventarioSede.delete({
-            where: { id: contexto.equipoOrigen.id },
-          });
+          const origenConDeudaProveedor =
+            esEstadoDeuda(contexto.equipoOrigen.estadoFinanciero) &&
+            esDeudaProveedor(contexto.equipoOrigen.deboA);
+
+          if (origenConDeudaProveedor) {
+            await tx.inventarioSede.update({
+              where: { id: contexto.equipoOrigen.id },
+              data: {
+                fechaMovimiento: aprobacionEn,
+                observacion: `Prestamo pagado por ${sedeDestinoNombre}. La deuda con proveedor sigue pendiente.`,
+              },
+            });
+          } else {
+            await tx.inventarioSede.delete({
+              where: { id: contexto.equipoOrigen.id },
+            });
+          }
         }
 
         await tx.movimientoInventario.create({

@@ -119,6 +119,8 @@ export async function POST(req: Request) {
       },
       select: {
         id: true,
+        estadoFinanciero: true,
+        deboA: true,
       },
     });
 
@@ -313,9 +315,23 @@ export async function POST(req: Request) {
           });
         }
       } else if (equipoOrigen) {
-        await tx.inventarioSede.delete({
-          where: { id: equipoOrigen.id },
-        });
+        const origenConDeudaProveedor =
+          esEstadoDeuda(equipoOrigen.estadoFinanciero) &&
+          esDeudaProveedor(equipoOrigen.deboA);
+
+        if (origenConDeudaProveedor) {
+          await tx.inventarioSede.update({
+            where: { id: equipoOrigen.id },
+            data: {
+              fechaMovimiento: new Date(),
+              observacion: `Prestamo pagado por ${sedeDestinoNombre}. La deuda con proveedor sigue pendiente.`,
+            },
+          });
+        } else {
+          await tx.inventarioSede.delete({
+            where: { id: equipoOrigen.id },
+          });
+        }
       }
 
       await tx.movimientoInventario.create({

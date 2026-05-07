@@ -161,6 +161,7 @@ export async function POST(req: Request) {
       deboA: itemOrigen.deboA,
       sedeOrigenId: prestamo.sedeOrigenId,
       sedeOrigenNombre: itemOrigen.sede?.nombre,
+      trasladaDeudaDePrincipal,
     });
     const sedeOrigenNombre = etiquetaSedeAcreedora(
       prestamo.sedeOrigenId,
@@ -215,26 +216,36 @@ export async function POST(req: Request) {
         });
       }
 
-      await tx.inventarioSede.update({
-        where: { id: itemOrigen.id },
-        data: {
-          estadoAnterior: itemOrigen.estadoActual,
-          estadoActual: ESTADO_INVENTARIO_PRESTAMO,
-          fechaMovimiento: new Date(),
-          observacion: trasladaDeudaDePrincipal
-            ? `Prestamo aprobado hacia ${sedeDestinoNombre}. La deuda de principal queda trasladada a la sede destino.`
-            : `Prestamo aprobado hacia ${sedeDestinoNombre}`,
-          estadoFinanciero: trasladaDeudaDePrincipal
-            ? "PAGO"
-            : itemOrigen.estadoFinanciero,
-          deboA: trasladaDeudaDePrincipal ? null : itemOrigen.deboA,
-        },
-      });
+      if (trasladaDeudaDePrincipal) {
+        await tx.inventarioSede.update({
+          where: { id: itemOrigen.id },
+          data: {
+            estadoAnterior: itemOrigen.estadoActual,
+            estadoActual: "TRASLADO",
+            estadoFinanciero: "PAGO",
+            deboA: null,
+            fechaMovimiento: new Date(),
+            observacion: `Traslado aprobado hacia ${sedeDestinoNombre}. La deuda de bodega principal queda en la sede destino.`,
+          },
+        });
+      } else {
+        await tx.inventarioSede.update({
+          where: { id: itemOrigen.id },
+          data: {
+            estadoAnterior: itemOrigen.estadoActual,
+            estadoActual: ESTADO_INVENTARIO_PRESTAMO,
+            fechaMovimiento: new Date(),
+            observacion: `Prestamo aprobado hacia ${sedeDestinoNombre}`,
+            estadoFinanciero: itemOrigen.estadoFinanciero,
+            deboA: itemOrigen.deboA,
+          },
+        });
+      }
 
       await tx.prestamoSede.update({
         where: { id: prestamo.id },
         data: {
-          estado: "APROBADO",
+          estado: trasladaDeudaDePrincipal ? "FINALIZADO" : "APROBADO",
         },
       });
 

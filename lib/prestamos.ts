@@ -109,16 +109,17 @@ export function resolverFinanzasDestinoPrestamo(params: {
   deboA: string | null | undefined;
   sedeOrigenId: number;
   sedeOrigenNombre?: string | null | undefined;
+  trasladaDeudaDePrincipal?: boolean;
 }) {
   if (esEstadoDeuda(params.estadoFinanciero)) {
     const acreedorActual = String(params.deboA || "").trim();
 
     return {
       estadoFinanciero: "DEUDA",
-      deboA: esDeudaEntreSedes(acreedorActual)
-        ? etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre)
-        : acreedorActual ||
-          etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre),
+      deboA:
+        params.trasladaDeudaDePrincipal && esDeudaProveedor(acreedorActual)
+          ? acreedorActual
+          : etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre),
     };
   }
 
