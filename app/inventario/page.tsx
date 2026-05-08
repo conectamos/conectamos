@@ -1221,7 +1221,7 @@ export default function InventarioPage() {
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-2 py-8 sm:px-3 2xl:px-4">
-      <div className="mx-auto max-w-[1920px]">
+      <div className="mx-auto max-w-[1700px]">
         <section className="relative overflow-hidden rounded-[36px] border border-[#1f2430] bg-[linear-gradient(135deg,#111318_0%,#1c2330_58%,#7c2d12_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] md:px-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(199,154,87,0.18),transparent_28%)]" />
 
@@ -1693,7 +1693,7 @@ export default function InventarioPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1720px] table-fixed text-[12px] 2xl:text-[13px]">
+            <table className="w-full min-w-[1540px] table-fixed text-[12px] 2xl:text-[13px]">
               <colgroup>
                 <col className="w-[3%]" />
                 <col className="w-[4%]" />
@@ -1812,7 +1812,7 @@ export default function InventarioPage() {
                       <td className="break-words px-2 py-4">{item.origen ?? "-"}</td>
 
                       <td className="px-2 py-4">
-                        <div className="flex min-w-[220px] flex-nowrap items-center justify-center gap-1">
+                        <div className="flex min-w-[196px] flex-nowrap items-center justify-center gap-1">
                           {puedeDevolverABodega(item) && (
                             <button
                               onClick={() => devolverABodega(item)}
