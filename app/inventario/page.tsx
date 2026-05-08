@@ -1195,8 +1195,8 @@ export default function InventarioPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1500px]">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-3 py-8 sm:px-4 2xl:px-6">
+      <div className="mx-auto max-w-[1840px]">
         <section className="relative overflow-hidden rounded-[36px] border border-[#1f2430] bg-[linear-gradient(135deg,#111318_0%,#1c2330_58%,#7c2d12_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] md:px-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(199,154,87,0.18),transparent_28%)]" />
 
@@ -1634,10 +1634,26 @@ export default function InventarioPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1580px] text-sm">
+            <table className="w-full min-w-[1160px] table-fixed text-[12px] lg:min-w-0 2xl:text-[13px]">
+              <colgroup>
+                <col className="w-[3%]" />
+                <col className="w-[4%]" />
+                <col className="w-[10%]" />
+                <col className="w-[13%]" />
+                <col className="w-[6%]" />
+                <col className="w-[7%]" />
+                <col className="w-[10%]" />
+                {esAdmin && <col className="w-[6%]" />}
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
+                <col className="w-[7%]" />
+                <col className="w-[8%]" />
+                <col className="w-[5%]" />
+                <col className="w-[4%]" />
+              </colgroup>
               <thead className="sticky top-0 z-10 bg-[#f8f5ef]">
                 <tr className="text-left text-slate-600">
-                  <th className="px-4 py-4">
+                  <th className="px-2 py-4">
                     <input
                       type="checkbox"
                       checked={todosVisiblesSeleccionados}
@@ -1646,21 +1662,21 @@ export default function InventarioPage() {
                       className="h-4 w-4 rounded border-slate-300 text-slate-900"
                     />
                   </th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">ID</th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">IMEI</th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Referencia</th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Color</th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Costo</th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Distribuidor</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">ID</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">IMEI</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Referencia</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Color</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Costo</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Distribuidor</th>
                   {esAdmin && (
-                    <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Sede</th>
+                    <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Sede</th>
                   )}
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Deuda</th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Destino prestamo</th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Estado</th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Estado financiero</th>
-                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Origen</th>
-                  <th className="px-4 py-4 text-right font-semibold uppercase tracking-[0.12em]">Acciones</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Deuda</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Destino prestamo</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Estado</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Estado financiero</th>
+                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Origen</th>
+                  <th className="break-words px-2 py-4 text-right font-semibold uppercase leading-4 tracking-[0.08em]">Acciones</th>
                 </tr>
               </thead>
 
@@ -1691,7 +1707,7 @@ export default function InventarioPage() {
                       key={item.id}
                       className="border-t border-slate-200 text-slate-700 transition hover:bg-[#fcfaf6]"
                     >
-                      <td className="px-4 py-4">
+                      <td className="px-2 py-4">
                         <input
                           type="checkbox"
                           checked={idsSeleccionados.includes(item.id)}
@@ -1700,26 +1716,26 @@ export default function InventarioPage() {
                           className="h-4 w-4 rounded border-slate-300 text-slate-900"
                         />
                       </td>
-                      <td className="px-4 py-4 font-semibold text-slate-950">{item.id}</td>
-                      <td className="px-4 py-4 font-semibold text-slate-950">{item.imei}</td>
-                      <td className="px-4 py-4 font-semibold text-slate-950">{item.referencia}</td>
-                      <td className="px-4 py-4">{item.color ?? "-"}</td>
-                      <td className="px-4 py-4 font-semibold text-slate-950">
+                      <td className="px-2 py-4 font-semibold text-slate-950">{item.id}</td>
+                      <td className="break-all px-2 py-4 font-semibold text-slate-950">{item.imei}</td>
+                      <td className="break-words px-2 py-4 font-semibold text-slate-950">{item.referencia}</td>
+                      <td className="break-words px-2 py-4">{item.color ?? "-"}</td>
+                      <td className="break-words px-2 py-4 font-semibold text-slate-950">
                         {formatoPesos(item.costo)}
                       </td>
-                      <td className="px-4 py-4">{item.distribuidor ?? "-"}</td>
+                      <td className="break-words px-2 py-4">{item.distribuidor ?? "-"}</td>
                       {esAdmin && (
-                        <td className="px-4 py-4 font-semibold text-slate-900">
+                        <td className="break-words px-2 py-4 font-semibold text-slate-900">
                         {item.sede?.nombre ?? "Sede sin configurar"}
                         </td>
                       )}
-                      <td className="px-4 py-4">{item.deboA ?? "-"}</td>
-                      <td className="px-4 py-4">
+                      <td className="break-words px-2 py-4">{item.deboA ?? "-"}</td>
+                      <td className="break-words px-2 py-4">
                         <span className="font-semibold text-slate-900">
                           {etiquetaDestinoPrestamo(item)}
                         </span>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-2 py-4">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClaseEstadoInventario(
                             item.estadoActual
@@ -1728,7 +1744,7 @@ export default function InventarioPage() {
                           {etiquetaEstadoInventario(item.estadoActual)}
                         </span>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-2 py-4">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClaseEstadoFinanciero(
                             item.estadoFinanciero
@@ -1737,10 +1753,10 @@ export default function InventarioPage() {
                           {item.estadoFinanciero ?? "-"}
                         </span>
                       </td>
-                      <td className="px-4 py-4">{item.origen ?? "-"}</td>
+                      <td className="break-words px-2 py-4">{item.origen ?? "-"}</td>
 
-                      <td className="px-4 py-4">
-                        <div className="flex flex-wrap items-center justify-end gap-2">
+                      <td className="px-2 py-4">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
                           {puedeDevolverABodega(item) && (
                             <button
                               onClick={() => devolverABodega(item)}
