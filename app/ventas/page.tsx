@@ -8,7 +8,6 @@ import {
   financierasTexto,
   formatoFechaHoraVenta,
   formatoPesos,
-  getCurrentBogotaMonthInput,
   getBogotaDateKey,
   getTodayBogotaDateKey,
   isTodayBogota,
@@ -84,15 +83,7 @@ export default function VentasPage() {
   const [vista, setVista] = useState<VistaFiltro>("HOY");
   const [fechaFiltro, setFechaFiltro] = useState(() => getTodayBogotaDateKey());
   const [vistaSedeId, setVistaSedeId] = useState("TODAS");
-  const [descargandoPdf, setDescargandoPdf] = useState(false);
   const [eliminandoVentaId, setEliminandoVentaId] = useState<number | null>(null);
-  const [reporteFechaInicial, setReporteFechaInicial] = useState(() => getTodayBogotaDateKey());
-  const [reporteFechaFinal, setReporteFechaFinal] = useState(() => getTodayBogotaDateKey());
-  const [reporteSedeId, setReporteSedeId] = useState("TODAS");
-  const [reporteMesComercial, setReporteMesComercial] = useState(() =>
-    getCurrentBogotaMonthInput()
-  );
-  const [descargandoPdfMensual, setDescargandoPdfMensual] = useState(false);
   const rolActual = user?.rolNombre?.toUpperCase() || "";
   const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
   const puedeEliminar = rolActual === "ADMIN";
@@ -172,7 +163,6 @@ export default function VentasPage() {
   useEffect(() => {
     if (!esAdmin) {
       setSedesReporte([]);
-      setReporteSedeId("TODAS");
       setVistaSedeId("TODAS");
       return;
     }
@@ -284,152 +274,6 @@ export default function VentasPage() {
     });
   }, [busqueda, fechaFiltro, ventas, ventasHoy, vista]);
 
-  const descargarReportePdf = async () => {
-    try {
-      setDescargandoPdf(true);
-      setMensaje("");
-
-      const params = new URLSearchParams();
-
-      if (esAdmin) {
-        if (!reporteFechaInicial || !reporteFechaFinal) {
-          setMensaje("Debes seleccionar fecha inicial y fecha final para el reporte");
-          return;
-        }
-
-        if (reporteFechaInicial > reporteFechaFinal) {
-          setMensaje("La fecha inicial no puede ser mayor que la final");
-          return;
-        }
-
-        params.set("fechaInicial", reporteFechaInicial);
-        params.set("fechaFinal", reporteFechaFinal);
-
-        if (reporteSedeId && reporteSedeId !== "TODAS") {
-          params.set("sedeId", reporteSedeId);
-        }
-      }
-
-      const endpoint = params.size
-        ? `/api/ventas/reporte-dia?${params.toString()}`
-        : "/api/ventas/reporte-dia";
-
-      const res = await fetch(endpoint, {
-        method: "GET",
-        credentials: "same-origin",
-      });
-
-      if (!res.ok) {
-        let errorMessage = "Error generando reporte PDF del dia";
-
-        try {
-          const data = await res.json();
-          errorMessage = data.detail || data.error || errorMessage;
-        } catch {}
-
-        setMensaje(errorMessage);
-        return;
-      }
-
-      const blob = await res.blob();
-
-      if (!blob.size) {
-        setMensaje("El reporte PDF se genero vacio");
-        return;
-      }
-
-      const contentDisposition = res.headers.get("Content-Disposition") || "";
-      const match = contentDisposition.match(/filename=\"?([^"]+)\"?/i);
-      const fileName = match?.[1] || "ventas-dia.pdf";
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-
-      link.href = url;
-      link.download = fileName;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.click();
-
-      window.setTimeout(() => {
-        link.remove();
-        window.URL.revokeObjectURL(url);
-      }, 1500);
-    } catch {
-      setMensaje("Error generando reporte PDF");
-    } finally {
-      setDescargandoPdf(false);
-    }
-  };
-
-  const descargarReporteMensual = async () => {
-    try {
-      setDescargandoPdfMensual(true);
-      setMensaje("");
-
-      if (!reporteMesComercial) {
-        setMensaje("Debes seleccionar el mes comercial del reporte");
-        return;
-      }
-
-      const params = new URLSearchParams({
-        month: reporteMesComercial,
-      });
-
-      if (reporteSedeId && reporteSedeId !== "TODAS") {
-        params.set("sedeId", reporteSedeId);
-      }
-
-      const res = await fetch(`/api/ventas/reporte-mensual?${params.toString()}`, {
-        method: "GET",
-        credentials: "same-origin",
-      });
-
-      if (!res.ok) {
-        let errorMessage = "Error generando reporte mensual comercial";
-
-        try {
-          const data = await res.json();
-          errorMessage = data.detail || data.error || errorMessage;
-        } catch {}
-
-        setMensaje(errorMessage);
-        return;
-      }
-
-      const blob = await res.blob();
-
-      if (!blob.size) {
-        setMensaje("El reporte mensual se genero vacio");
-        return;
-      }
-
-      const contentDisposition = res.headers.get("Content-Disposition") || "";
-      const match = contentDisposition.match(/filename=\"?([^\"]+)\"?/i);
-      const fileName = match?.[1] || "reporte-comercial-mensual.pdf";
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-
-      link.href = url;
-      link.download = fileName;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.click();
-
-      window.setTimeout(() => {
-        link.remove();
-        window.URL.revokeObjectURL(url);
-      }, 1500);
-    } catch {
-      setMensaje("Error generando reporte mensual comercial");
-    } finally {
-      setDescargandoPdfMensual(false);
-    }
-  };
-
   const eliminarVenta = async (ventaId: number) => {
     const confirmado = window.confirm(
       "Esta venta se eliminara y el equipo volvera a BODEGA. Deseas continuar?"
@@ -534,19 +378,6 @@ export default function VentasPage() {
                 Aprobacion de ventas
               </Link>
 
-              <button
-                type="button"
-                onClick={() => void descargarReportePdf()}
-                disabled={descargandoPdf}
-                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-center text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {descargandoPdf
-                  ? "Generando PDF..."
-                  : esAdmin
-                    ? "PDF por rango y sede"
-                    : "PDF ventas del dia"}
-              </button>
-
               <Link
                 href="/ventas/nuevo"
                 className="rounded-2xl bg-red-600 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-red-700"
@@ -568,109 +399,6 @@ export default function VentasPage() {
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
             {mensaje}
           </div>
-        )}
-
-        {esAdmin && (
-          <section className="mt-6 rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Reporte PDF
-                </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                  Descarga por rango y cobertura
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm text-slate-500">
-                  El PDF del administrador puede salir por fechas, por una sede puntual o con todas las sedes consolidadas.
-                </p>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2 xl:gap-4 2xl:gap-5 xl:grid-cols-[minmax(190px,1fr)_minmax(190px,1fr)_minmax(220px,1.05fr)_minmax(220px,1.05fr)_minmax(340px,1.2fr)]">
-                <label className="flex min-w-[180px] flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Fecha inicial
-                  <input
-                    type="date"
-                    value={reporteFechaInicial}
-                    onChange={(event) => setReporteFechaInicial(event.target.value)}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                  />
-                </label>
-
-                <label className="flex min-w-[180px] flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Fecha final
-                  <input
-                    type="date"
-                    value={reporteFechaFinal}
-                    onChange={(event) => setReporteFechaFinal(event.target.value)}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                  />
-                </label>
-
-                <label className="flex min-w-[220px] flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Sede
-                  <select
-                    value={reporteSedeId}
-                    onChange={(event) => setReporteSedeId(event.target.value)}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                  >
-                    <option value="TODAS">Todas las sedes</option>
-                    {sedesReporte.map((sede) => (
-                      <option key={sede.id} value={String(sede.id)}>
-                        {sede.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex min-w-[180px] flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Mes comercial
-                  <input
-                    type="month"
-                    value={reporteMesComercial}
-                    onChange={(event) => setReporteMesComercial(event.target.value)}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                  />
-                </label>
-
-                <div className="flex min-w-[220px] flex-col justify-end rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Configuracion actual
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">
-                    {reporteFechaInicial} a {reporteFechaFinal}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {reporteSedeId === "TODAS"
-                      ? "Cobertura: todas las sedes"
-                      : `Sede filtrada: ${
-                          sedesReporte.find((sede) => String(sede.id) === reporteSedeId)?.nombre ||
-                          "Seleccionada"
-                        }`}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => void descargarReportePdf()}
-                  disabled={descargandoPdf}
-                  className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {descargandoPdf ? "Generando PDF..." : "PDF por rango y sede"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void descargarReporteMensual()}
-                  disabled={descargandoPdfMensual}
-                  className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {descargandoPdfMensual ? "Generando reporte..." : "PDF resumen mensual"}
-                </button>
-              </div>
-            </div>
-          </section>
         )}
 
         <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
