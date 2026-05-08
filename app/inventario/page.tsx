@@ -72,6 +72,26 @@ function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
 
+function normalizarAcreedorDeuda(valor: string | null | undefined) {
+  const acreedor = String(valor || "").trim();
+  return acreedor || "SIN ACREEDOR";
+}
+
+function coincideBusquedaInventario(item: InventarioItem, termino: string) {
+  if (!termino) return true;
+
+  return (
+    (item.imei || "").toLowerCase().includes(termino) ||
+    (item.referencia || "").toLowerCase().includes(termino) ||
+    (item.color || "").toLowerCase().includes(termino) ||
+    (item.distribuidor || "").toLowerCase().includes(termino) ||
+    (item.deboA || "").toLowerCase().includes(termino) ||
+    (item.origen || "").toLowerCase().includes(termino) ||
+    (item.prestamoDestino?.nombre || "").toLowerCase().includes(termino) ||
+    (item.sede?.nombre || "").toLowerCase().includes(termino)
+  );
+}
+
 function badgeClaseEstadoInventario(estado: string | null) {
   switch ((estado || "").toUpperCase()) {
     case "BODEGA":
@@ -187,6 +207,7 @@ export default function InventarioPage() {
   const [cargandoInventario, setCargandoInventario] = useState(false);
   const [inventarioCargado, setInventarioCargado] = useState(false);
   const [filtroEstado, setFiltroEstado] = useState<EstadoFiltro>("TODOS");
+  const [filtroAcreedorDeuda, setFiltroAcreedorDeuda] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
   const inventarioRequestId = useRef(0);
@@ -353,6 +374,12 @@ export default function InventarioPage() {
     );
   }, [items]);
 
+  useEffect(() => {
+    if (filtroEstado !== "DEUDA" && filtroAcreedorDeuda !== "TODOS") {
+      setFiltroAcreedorDeuda("TODOS");
+    }
+  }, [filtroAcreedorDeuda, filtroEstado]);
+
   useLiveRefresh(
     async () => {
       await cargarInventario();
@@ -427,6 +454,66 @@ export default function InventarioPage() {
     [items]
   );
 
+  const itemsDeudaConBusqueda = useMemo(() => {
+    const termino = busqueda.trim().toLowerCase();
+
+    return items
+      .filter((item) => (item.estadoFinanciero || "").toUpperCase() === "DEUDA")
+      .filter((item) => coincideBusquedaInventario(item, termino));
+  }, [busqueda, items]);
+
+  const resumenDeudaPorAcreedor = useMemo(() => {
+    const resumen = new Map<string, { acreedor: string; cantidad: number; valor: number }>();
+
+    for (const item of itemsDeudaConBusqueda) {
+      const acreedor = normalizarAcreedorDeuda(item.deboA);
+      const actual =
+        resumen.get(acreedor) || {
+          acreedor,
+          cantidad: 0,
+          valor: 0,
+        };
+
+      actual.cantidad += 1;
+      actual.valor += Number(item.costo || 0);
+      resumen.set(acreedor, actual);
+    }
+
+    return Array.from(resumen.values()).sort((a, b) => b.valor - a.valor);
+  }, [itemsDeudaConBusqueda]);
+
+  useEffect(() => {
+    if (
+      filtroAcreedorDeuda !== "TODOS" &&
+      !resumenDeudaPorAcreedor.some(
+        (item) => item.acreedor === filtroAcreedorDeuda
+      )
+    ) {
+      setFiltroAcreedorDeuda("TODOS");
+    }
+  }, [filtroAcreedorDeuda, resumenDeudaPorAcreedor]);
+
+  const totalDeudaVista = useMemo(
+    () =>
+      itemsDeudaConBusqueda.reduce(
+        (acc, item) => acc + Number(item.costo || 0),
+        0
+      ),
+    [itemsDeudaConBusqueda]
+  );
+
+  const totalDeudaAcreedorSeleccionado = useMemo(() => {
+    if (filtroAcreedorDeuda === "TODOS") {
+      return totalDeudaVista;
+    }
+
+    return (
+      resumenDeudaPorAcreedor.find(
+        (item) => item.acreedor === filtroAcreedorDeuda
+      )?.valor || 0
+    );
+  }, [filtroAcreedorDeuda, resumenDeudaPorAcreedor, totalDeudaVista]);
+
   const itemsFiltrados = useMemo(() => {
     return items
       .filter((item) => {
@@ -435,27 +522,22 @@ export default function InventarioPage() {
 
         if (filtroEstado === "TODOS") return true;
         if (filtroEstado === "PAGO") return estadoFinanciero === "PAGO";
-        if (filtroEstado === "DEUDA") return estadoFinanciero === "DEUDA";
+        if (filtroEstado === "DEUDA") {
+          const coincideAcreedor =
+            filtroAcreedorDeuda === "TODOS" ||
+            normalizarAcreedorDeuda(item.deboA) === filtroAcreedorDeuda;
+
+          return estadoFinanciero === "DEUDA" && coincideAcreedor;
+        }
 
         return estado === filtroEstado;
       })
       .filter((item) => {
         const termino = busqueda.trim().toLowerCase();
 
-        if (!termino) return true;
-
-        return (
-          (item.imei || "").toLowerCase().includes(termino) ||
-          (item.referencia || "").toLowerCase().includes(termino) ||
-          (item.color || "").toLowerCase().includes(termino) ||
-          (item.distribuidor || "").toLowerCase().includes(termino) ||
-          (item.deboA || "").toLowerCase().includes(termino) ||
-          (item.origen || "").toLowerCase().includes(termino) ||
-          (item.prestamoDestino?.nombre || "").toLowerCase().includes(termino) ||
-          (item.sede?.nombre || "").toLowerCase().includes(termino)
-        );
+        return coincideBusquedaInventario(item, termino);
       });
-  }, [busqueda, filtroEstado, items]);
+  }, [busqueda, filtroAcreedorDeuda, filtroEstado, items]);
 
   const eliminar = async (ids: number[]) => {
     try {
@@ -1327,6 +1409,89 @@ export default function InventarioPage() {
               </div>
             </div>
           </div>
+
+          {filtroEstado === "DEUDA" && (
+            <div className="mt-5 rounded-[26px] border border-amber-200 bg-[linear-gradient(180deg,#fffdf8_0%,#fff7e8_100%)] p-4">
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px_minmax(0,1fr)]">
+                <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">
+                    Total deuda
+                  </p>
+                  <p className="mt-2 text-2xl font-black text-amber-700">
+                    {formatoPesos(totalDeudaVista)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {itemsDeudaConBusqueda.length} equipo
+                    {itemsDeudaConBusqueda.length === 1 ? "" : "s"} con deuda en esta vista.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                    Debe a
+                  </label>
+                  <select
+                    value={filtroAcreedorDeuda}
+                    onChange={(event) => setFiltroAcreedorDeuda(event.target.value)}
+                    className="h-[54px] w-full rounded-2xl border border-amber-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-amber-100"
+                  >
+                    <option value="TODOS">Todos los acreedores</option>
+                    {resumenDeudaPorAcreedor.map((item) => (
+                      <option key={item.acreedor} value={item.acreedor}>
+                        {item.acreedor}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                    Valor filtrado
+                  </p>
+                  <p className="mt-2 text-2xl font-black text-slate-950">
+                    {formatoPesos(totalDeudaAcreedorSeleccionado)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {filtroAcreedorDeuda === "TODOS"
+                      ? "Incluye todos los acreedores visibles."
+                      : filtroAcreedorDeuda}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid max-h-72 gap-3 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
+                {resumenDeudaPorAcreedor.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-amber-200 bg-white px-4 py-4 text-sm font-semibold text-slate-500">
+                    No hay deuda visible con los filtros actuales.
+                  </div>
+                ) : (
+                  resumenDeudaPorAcreedor.map((item) => (
+                    <button
+                      key={item.acreedor}
+                      type="button"
+                      onClick={() => setFiltroAcreedorDeuda(item.acreedor)}
+                      className={[
+                        "rounded-2xl border px-4 py-3 text-left transition",
+                        filtroAcreedorDeuda === item.acreedor
+                          ? "border-slate-900 bg-slate-950 text-white shadow-sm"
+                          : "border-amber-100 bg-white text-slate-900 hover:border-amber-300",
+                      ].join(" ")}
+                    >
+                      <span className="block text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">
+                        {item.cantidad} equipo{item.cantidad === 1 ? "" : "s"}
+                      </span>
+                      <span className="mt-1 block text-sm font-black">
+                        {item.acreedor}
+                      </span>
+                      <span className="mt-2 block text-lg font-black">
+                        {formatoPesos(item.valor)}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e2d9ca] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.10)]">
