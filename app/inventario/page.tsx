@@ -1220,8 +1220,8 @@ export default function InventarioPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-3 py-8 sm:px-4 2xl:px-6">
-      <div className="mx-auto max-w-[1840px]">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-2 py-8 sm:px-3 2xl:px-4">
+      <div className="mx-auto max-w-[1920px]">
         <section className="relative overflow-hidden rounded-[36px] border border-[#1f2430] bg-[linear-gradient(135deg,#111318_0%,#1c2330_58%,#7c2d12_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] md:px-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(199,154,87,0.18),transparent_28%)]" />
 
@@ -1693,22 +1693,22 @@ export default function InventarioPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1160px] table-fixed text-[12px] lg:min-w-0 2xl:text-[13px]">
+            <table className="w-full min-w-[1320px] table-fixed text-[12px] xl:min-w-0 2xl:text-[13px]">
               <colgroup>
                 <col className="w-[3%]" />
                 <col className="w-[4%]" />
-                <col className="w-[10%]" />
-                <col className="w-[13%]" />
+                <col className="w-[9%]" />
+                <col className="w-[12%]" />
                 <col className="w-[6%]" />
                 <col className="w-[7%]" />
-                <col className="w-[10%]" />
+                <col className="w-[9%]" />
                 {esAdmin && <col className="w-[6%]" />}
                 <col className="w-[8%]" />
                 <col className="w-[9%]" />
                 <col className="w-[7%]" />
                 <col className="w-[8%]" />
                 <col className="w-[5%]" />
-                <col className="w-[4%]" />
+                <col className="w-[7%]" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-[#f8f5ef]">
                 <tr className="text-left text-slate-600">
@@ -1735,7 +1735,7 @@ export default function InventarioPage() {
                   <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Estado</th>
                   <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Estado financiero</th>
                   <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Origen</th>
-                  <th className="break-words px-2 py-4 text-right font-semibold uppercase leading-4 tracking-[0.08em]">Acciones</th>
+                  <th className="break-words px-2 py-4 text-center font-semibold uppercase leading-4 tracking-[0.08em]">Acciones</th>
                 </tr>
               </thead>
 
@@ -1815,7 +1815,7 @@ export default function InventarioPage() {
                       <td className="break-words px-2 py-4">{item.origen ?? "-"}</td>
 
                       <td className="px-2 py-4">
-                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <div className="flex flex-nowrap items-center justify-center gap-1.5">
                           {puedeDevolverABodega(item) && (
                             <button
                               onClick={() => devolverABodega(item)}
