@@ -70,6 +70,13 @@ function tiempoSolicitudPago(fecha: string | null | undefined) {
   return fechaPago.getTime();
 }
 
+function imeisResumenLote(items: DeudaItem[]) {
+  const visibles = items.slice(0, 10).map((item) => item.imei);
+  const restantes = Math.max(items.length - visibles.length, 0);
+
+  return { visibles, restantes };
+}
+
 function MetricCard({
   label,
   value,
@@ -468,13 +475,13 @@ export default function DeudaSedesPage() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Aprobacion consolidada
+                  Lotes por recibir
                 </div>
                 <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                  Lotes listos para aprobar
+                  Pagos agrupados para aprobar
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                  Agrupa pagos cercanos de la misma sede hacia el mismo origen para aprobarlos con un solo ingreso y un solo egreso de caja.
+                  Cada bloque resume la sede que paga, la sede que recibe, los IMEIs incluidos y el valor total antes de confirmar.
                 </p>
               </div>
 
@@ -496,6 +503,7 @@ export default function DeudaSedesPage() {
             <div className="mt-5 grid gap-4 xl:grid-cols-2">
               {lotesPagoPendiente.map((lote) => {
                 const detalleAbierto = lotesDetalleAbiertos.includes(lote.key);
+                const resumenImeis = imeisResumenLote(lote.items);
 
                 return (
                   <article
@@ -505,25 +513,74 @@ export default function DeudaSedesPage() {
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                       <div>
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          {lote.destino} paga a
+                          Lote de pago
                         </p>
                         <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                          {lote.origen}
+                          {lote.destino} paga a {lote.origen}
                         </h3>
                         <p className="mt-2 text-sm text-slate-500">
                           {lote.items.length} equipo
                           {lote.items.length === 1 ? "" : "s"} pendiente
                           {lote.items.length === 1 ? "" : "s"} de aprobacion
+                          {" "}- Solicitado: {formatoFecha(lote.fecha)}
                         </p>
                       </div>
 
-                      <div className="rounded-3xl border border-slate-200 bg-white px-5 py-4 text-right">
+                      <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Total lote
+                          Valor a recibir
                         </p>
                         <p className="mt-1 text-2xl font-black text-emerald-700">
                           {formatoPesos(lote.total)}
                         </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                          Recibe
+                        </p>
+                        <p className="mt-1 text-base font-black text-slate-950">
+                          {lote.origen}
+                        </p>
+                      </div>
+
+                      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                          Paga
+                        </p>
+                        <p className="mt-1 text-base font-black text-slate-950">
+                          {lote.destino}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 rounded-3xl border border-slate-200 bg-white px-4 py-4">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                          Resumen de IMEIs
+                        </p>
+                        <p className="text-xs font-semibold text-slate-500">
+                          {lote.items.length} serial
+                          {lote.items.length === 1 ? "" : "es"} en el lote
+                        </p>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {resumenImeis.visibles.map((imei) => (
+                          <span
+                            key={imei}
+                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-800"
+                          >
+                            {imei}
+                          </span>
+                        ))}
+                        {resumenImeis.restantes > 0 && (
+                          <span className="rounded-full border border-slate-200 bg-slate-900 px-3 py-1 text-xs font-bold text-white">
+                            +{resumenImeis.restantes} mas
+                          </span>
+                        )}
                       </div>
                     </div>
 
