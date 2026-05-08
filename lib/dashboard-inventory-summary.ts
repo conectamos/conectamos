@@ -39,10 +39,6 @@ function normalizeReference(value: string | null | undefined) {
     .toUpperCase();
 }
 
-function normalizeState(value: string | null | undefined) {
-  return String(value || "").trim().toUpperCase();
-}
-
 function resolveBrand(reference: string) {
   const words = reference.split(/[^A-Z0-9]+/).filter(Boolean);
   const brand = MARCAS_RADAR.find((item) => words.includes(item));
@@ -85,34 +81,32 @@ function sortReferences(items: InventoryBrandReferenceSummary[]) {
 export async function getAdminInventorySummary(): Promise<InventoryAdminSummary> {
   const [principalRows, sedeRows] = await Promise.all([
     prisma.inventarioPrincipal.findMany({
+      where: {
+        estado: "BODEGA",
+      },
       select: {
         referencia: true,
-        estado: true,
       },
     }),
     prisma.inventarioSede.findMany({
+      where: {
+        estadoActual: "BODEGA",
+      },
       select: {
         referencia: true,
-        estadoActual: true,
       },
     }),
   ]);
 
   const referencias = new Map<string, InventoryBrandReferenceSummary>();
-  const principalBodega = principalRows.filter(
-    (item) => normalizeState(item.estado || "BODEGA") === "BODEGA"
-  );
-  const sedesBodega = sedeRows.filter(
-    (item) => normalizeState(item.estadoActual) === "BODEGA"
-  );
 
-  for (const item of principalBodega) {
+  for (const item of principalRows) {
     const ref = ensureReference(referencias, item.referencia);
     ref.total += 1;
     ref.bodegaPrincipal += 1;
   }
 
-  for (const item of sedesBodega) {
+  for (const item of sedeRows) {
     const ref = ensureReference(referencias, item.referencia);
     ref.total += 1;
     ref.sedes += 1;
@@ -165,9 +159,9 @@ export async function getAdminInventorySummary(): Promise<InventoryAdminSummary>
     });
 
   return {
-    totalBodega: principalBodega.length + sedesBodega.length,
-    totalBodegaPrincipal: principalBodega.length,
-    totalSedes: sedesBodega.length,
+    totalBodega: principalRows.length + sedeRows.length,
+    totalBodegaPrincipal: principalRows.length,
+    totalSedes: sedeRows.length,
     referenciasEnBodega: referencias.size,
     marcas,
   };

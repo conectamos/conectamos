@@ -39,15 +39,25 @@ function MetricCard({
 
 function ReferenceRow({ item }: { item: InventoryBrandReferenceSummary }) {
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-t border-slate-100 px-4 py-3 first:border-t-0">
-      <p className="min-w-0 text-sm font-black uppercase leading-5 tracking-tight text-slate-950">
-        {item.referencia}
-      </p>
-      <div className="min-w-[74px] rounded-2xl bg-slate-950 px-3 py-2 text-center text-white">
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/60">
-          Cant.
+    <div className="grid gap-3 border-t border-slate-100 px-4 py-4 first:border-t-0 md:grid-cols-[1fr_auto] md:items-center">
+      <div className="min-w-0">
+        <p className="text-sm font-black uppercase leading-5 tracking-tight text-slate-950">
+          {item.referencia}
         </p>
-        <p className="text-lg font-black leading-none">
+        <div className="mt-2 flex flex-wrap gap-2">
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-emerald-700">
+            Principal: {formatoNumero(item.bodegaPrincipal)}
+          </span>
+          <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-sky-700">
+            Sedes: {formatoNumero(item.sedes)}
+          </span>
+        </div>
+      </div>
+      <div className="w-full rounded-2xl bg-slate-950 px-4 py-3 text-center text-white md:min-w-[92px] md:w-auto">
+        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/60">
+          Total
+        </p>
+        <p className="text-xl font-black leading-none">
           {formatoNumero(item.total)}
         </p>
       </div>
@@ -73,6 +83,9 @@ function BrandCard({ brand }: { brand: InventoryBrandSummary }) {
           </p>
           <p className="text-2xl font-black text-emerald-700">
             {formatoNumero(brand.total)}
+          </p>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700/70">
+            {formatoNumero(brand.referencias.length)} refs
           </p>
         </div>
       </div>
@@ -104,7 +117,8 @@ function InventoryRadar({ summary }: { summary: InventoryAdminSummary }) {
             Referencias disponibles por marca
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Solo se cuentan equipos cuyo estado actual es BODEGA.
+            Solo se cuentan equipos cuyo estado actual es BODEGA. No mezcla deuda,
+            prestamo, garantia, pendiente, traslado ni vendido.
           </p>
         </div>
 
