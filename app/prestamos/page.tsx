@@ -49,6 +49,14 @@ type PagoPendienteLote = {
   ultimoTiempo: number | null;
 };
 
+type SolicitudPagoLote = {
+  key: string;
+  origen: string;
+  destino: string;
+  total: number;
+  items: Prestamo[];
+};
+
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
@@ -65,6 +73,13 @@ function tiempoSolicitudPago(fecha: string | null | undefined) {
   }
 
   return fechaPago.getTime();
+}
+
+function imeisResumenLote(items: Prestamo[]) {
+  const visibles = items.slice(0, 10).map((item) => item.imei);
+  const restantes = Math.max(items.length - visibles.length, 0);
+
+  return { visibles, restantes };
 }
 
 function MetricCard({
@@ -101,6 +116,7 @@ export default function PrestamosPage() {
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
   const [lotesDetalleAbiertos, setLotesDetalleAbiertos] = useState<string[]>([]);
+  const [idsSolicitudPago, setIdsSolicitudPago] = useState<number[]>([]);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
@@ -297,6 +313,54 @@ export default function PrestamosPage() {
       await cargarPrestamos();
     } catch {
       setMensaje("Error de conexion al solicitar pago");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const solicitarPagoPrestamoLote = async (ids: number[]) => {
+    if (ids.length === 0) {
+      setMensaje("Selecciona al menos un prestamo pagable");
+      return;
+    }
+
+    const seleccionados = prestamos.filter((prestamo) => ids.includes(prestamo.id));
+    const total = seleccionados.reduce(
+      (acumulado, prestamo) => acumulado + Number(prestamo.costo || 0),
+      0
+    );
+    const confirmado = window.confirm(
+      `Confirmas enviar ${ids.length} equipo(s) a pagar por ${formatoPesos(total)}?`
+    );
+
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/prestamos/solicitar-pago-lote", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prestamoIds: ids }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensaje(data.error || "Error solicitando pago por lote");
+        return;
+      }
+
+      setMensaje(data.mensaje || "Solicitud de pago por lote enviada correctamente");
+      setIdsSolicitudPago([]);
+      await cargarPrestamos();
+    } catch {
+      setMensaje("Error de conexion al solicitar pago por lote");
     } finally {
       setCargando(false);
     }
@@ -531,6 +595,75 @@ export default function PrestamosPage() {
         );
       });
   }, [prestamos, filtroEstado, busqueda]);
+
+  const prestamosSeleccionablesPago = prestamosFiltrados.filter((prestamo) =>
+    puedeSolicitarPago(prestamo)
+  );
+  const idsSolicitudPagoValidos = new Set(
+    prestamosSeleccionablesPago.map((prestamo) => prestamo.id)
+  );
+  const prestamosSolicitudPagoSeleccionados = prestamos.filter(
+    (prestamo) =>
+      idsSolicitudPago.includes(prestamo.id) &&
+      idsSolicitudPagoValidos.has(prestamo.id)
+  );
+  const todosPagablesVisiblesSeleccionados =
+    prestamosSeleccionablesPago.length > 0 &&
+    prestamosSeleccionablesPago.every((prestamo) =>
+      idsSolicitudPago.includes(prestamo.id)
+    );
+  const totalSolicitudPagoSeleccionada =
+    prestamosSolicitudPagoSeleccionados.reduce(
+      (acumulado, prestamo) => acumulado + Number(prestamo.costo || 0),
+      0
+    );
+  const lotesSolicitudPago: SolicitudPagoLote[] = Array.from(
+    prestamosSolicitudPagoSeleccionados
+      .reduce((mapa, prestamo) => {
+        const origen = prestamo.sedeOrigenNombre ?? "Sede sin configurar";
+        const destino = prestamo.sedeDestinoNombre ?? "Sede sin configurar";
+        const key = `${prestamo.sedeOrigenId}:${prestamo.sedeDestinoId}`;
+        const actual =
+          mapa.get(key) || {
+            key,
+            origen,
+            destino,
+            total: 0,
+            items: [],
+          };
+
+        actual.total += Number(prestamo.costo || 0);
+        actual.items.push(prestamo);
+        mapa.set(key, actual);
+
+        return mapa;
+      }, new Map<string, SolicitudPagoLote>())
+      .values()
+  ).sort((a, b) => b.total - a.total);
+
+  const alternarSeleccionSolicitudPago = (id: number) => {
+    setIdsSolicitudPago((actuales) =>
+      actuales.includes(id)
+        ? actuales.filter((itemId) => itemId !== id)
+        : [...actuales, id]
+    );
+  };
+
+  const alternarSeleccionPagablesVisibles = () => {
+    const idsVisibles = prestamosSeleccionablesPago.map((prestamo) => prestamo.id);
+
+    setIdsSolicitudPago((actuales) => {
+      if (todosPagablesVisiblesSeleccionados) {
+        return actuales.filter((id) => !idsVisibles.includes(id));
+      }
+
+      return Array.from(new Set([...actuales, ...idsVisibles]));
+    });
+  };
+
+  const limpiarSeleccionSolicitudPago = () => {
+    setIdsSolicitudPago([]);
+  };
 
   const lotesPagoPendiente = useMemo(() => {
     if (!user) {
@@ -921,18 +1054,156 @@ export default function PrestamosPage() {
           </div>
         </section>
 
+        {prestamosSeleccionablesPago.length > 0 && (
+          <section className="mt-6 rounded-[32px] border border-[#e2d9ca] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                  Enviar a pagar
+                </div>
+                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                  Lote de pagos seleccionado
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                  Pagos de prestamos entre sedes filtrados en esta vista, agrupados por quien recibe el dinero.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={alternarSeleccionPagablesVisibles}
+                  disabled={cargando || prestamosSeleccionablesPago.length === 0}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {todosPagablesVisiblesSeleccionados
+                    ? "Quitar visibles"
+                    : "Seleccionar visibles"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={limpiarSeleccionSolicitudPago}
+                  disabled={cargando || idsSolicitudPago.length === 0}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Limpiar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void solicitarPagoPrestamoLote(
+                      prestamosSolicitudPagoSeleccionados.map((prestamo) => prestamo.id)
+                    )
+                  }
+                  disabled={cargando || prestamosSolicitudPagoSeleccionados.length === 0}
+                  className="rounded-2xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Enviar lote a pagar
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Pagables visibles
+                </p>
+                <p className="mt-2 text-3xl font-black text-slate-950">
+                  {prestamosSeleccionablesPago.length}
+                </p>
+              </div>
+
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                  Seleccionados
+                </p>
+                <p className="mt-2 text-3xl font-black text-amber-700">
+                  {prestamosSolicitudPagoSeleccionados.length}
+                </p>
+              </div>
+
+              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Total a enviar
+                </p>
+                <p className="mt-2 text-3xl font-black text-emerald-700">
+                  {formatoPesos(totalSolicitudPagoSeleccionada)}
+                </p>
+              </div>
+            </div>
+
+            {lotesSolicitudPago.length > 0 && (
+              <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                {lotesSolicitudPago.map((lote) => {
+                  const resumenImeis = imeisResumenLote(lote.items);
+
+                  return (
+                    <article
+                      key={lote.key}
+                      className="rounded-[28px] border border-amber-100 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf0_100%)] p-5 shadow-sm"
+                    >
+                      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            {lote.destino} envia pago a
+                          </p>
+                          <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">
+                            {lote.origen}
+                          </h3>
+                          <p className="mt-2 text-sm text-slate-500">
+                            {lote.items.length} equipo
+                            {lote.items.length === 1 ? "" : "s"} incluido
+                            {lote.items.length === 1 ? "" : "s"}
+                          </p>
+                        </div>
+
+                        <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                            Valor lote
+                          </p>
+                          <p className="mt-1 text-2xl font-black text-emerald-700">
+                            {formatoPesos(lote.total)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap gap-2">
+                        {resumenImeis.visibles.map((imei) => (
+                          <span
+                            key={imei}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-800"
+                          >
+                            {imei}
+                          </span>
+                        ))}
+                        {resumenImeis.restantes > 0 && (
+                          <span className="rounded-full border border-slate-900 bg-slate-900 px-3 py-1 text-xs font-bold text-white">
+                            +{resumenImeis.restantes} mas
+                          </span>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
         {lotesPagoPendiente.length > 0 && (
           <section className="mt-6 rounded-[32px] border border-[#e2d9ca] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Pagos por aprobar
+                  Lotes por recibir
                 </div>
                 <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                  Aprobacion por lote
+                  Pagos agrupados para aprobar
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                  Cada lote agrupa equipos de la misma sede pagadora hacia el mismo acreedor. Al aprobarlo se crea un solo ingreso y un solo egreso en caja por el total.
+                  Cada lote resume la sede que paga, la sede que recibe, los IMEIs incluidos y el valor total antes de confirmar.
                 </p>
               </div>
 
@@ -955,6 +1226,7 @@ export default function PrestamosPage() {
               {lotesPagoPendiente.map((lote) => {
                 const detalleAbierto = lotesDetalleAbiertos.includes(lote.key);
                 const ids = lote.items.map((item) => item.id);
+                const resumenImeis = imeisResumenLote(lote.items);
 
                 return (
                   <article
@@ -964,25 +1236,74 @@ export default function PrestamosPage() {
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                       <div>
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          {lote.destino} paga a
+                          Lote de pago
                         </p>
                         <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                          {lote.origen}
+                          {lote.destino} paga a {lote.origen}
                         </h3>
                         <p className="mt-2 text-sm text-slate-500">
                           {lote.items.length} equipo
                           {lote.items.length === 1 ? "" : "s"} pendiente
                           {lote.items.length === 1 ? "" : "s"} de aprobacion
+                          {" "}- Solicitado: {lote.fecha ? new Date(lote.fecha).toLocaleString("es-CO") : "-"}
                         </p>
                       </div>
 
-                      <div className="rounded-3xl border border-slate-200 bg-white px-5 py-4 text-right">
+                      <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Total lote
+                          Valor a recibir
                         </p>
                         <p className="mt-1 text-2xl font-black text-emerald-700">
                           {formatoPesos(lote.total)}
                         </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                          Recibe
+                        </p>
+                        <p className="mt-1 text-base font-black text-slate-950">
+                          {lote.origen}
+                        </p>
+                      </div>
+
+                      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                          Paga
+                        </p>
+                        <p className="mt-1 text-base font-black text-slate-950">
+                          {lote.destino}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 rounded-3xl border border-slate-200 bg-white px-4 py-4">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                          Resumen de IMEIs
+                        </p>
+                        <p className="text-xs font-semibold text-slate-500">
+                          {lote.items.length} serial
+                          {lote.items.length === 1 ? "" : "es"} en el lote
+                        </p>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {resumenImeis.visibles.map((imei) => (
+                          <span
+                            key={imei}
+                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-800"
+                          >
+                            {imei}
+                          </span>
+                        ))}
+                        {resumenImeis.restantes > 0 && (
+                          <span className="rounded-full border border-slate-200 bg-slate-900 px-3 py-1 text-xs font-bold text-white">
+                            +{resumenImeis.restantes} mas
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -1060,9 +1381,19 @@ export default function PrestamosPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1540px] text-sm">
+            <table className="min-w-[1620px] text-sm">
               <thead className="sticky top-0 bg-[#f8fafc]">
                 <tr className="border-b border-slate-200 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                  <th className="px-4 py-4">
+                    <input
+                      type="checkbox"
+                      checked={todosPagablesVisiblesSeleccionados}
+                      onChange={alternarSeleccionPagablesVisibles}
+                      disabled={prestamosSeleccionablesPago.length === 0}
+                      aria-label="Seleccionar prestamos pagables visibles"
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 disabled:opacity-40"
+                    />
+                  </th>
                   <th className="px-4 py-4">ID</th>
                   <th className="px-4 py-4">Equipo</th>
                   <th className="px-4 py-4">Tipo</th>
@@ -1077,7 +1408,7 @@ export default function PrestamosPage() {
               <tbody>
                 {prestamosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-16 text-center text-slate-500">
+                    <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
                       No hay prestamos registrados en esta vista.
                     </td>
                   </tr>
@@ -1092,6 +1423,16 @@ export default function PrestamosPage() {
                         key={item.id}
                         className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-[#faf7f1]"
                       >
+                        <td className="px-4 py-4">
+                          <input
+                            type="checkbox"
+                            checked={idsSolicitudPago.includes(item.id)}
+                            onChange={() => alternarSeleccionSolicitudPago(item.id)}
+                            disabled={!puedeSolicitarPago(item)}
+                            aria-label={`Seleccionar prestamo ${item.id}`}
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900 disabled:opacity-30"
+                          />
+                        </td>
                         <td className="px-4 py-4 font-bold text-slate-950">{item.id}</td>
                         <td className="px-4 py-4">
                           <div className="font-semibold text-slate-950">{item.imei}</div>
