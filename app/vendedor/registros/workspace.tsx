@@ -22,6 +22,7 @@ import {
   TEXTOS_VISIBLES_CLIENTE,
   TIPOS_DOCUMENTO_CLIENTE,
   formatearPesoInput,
+  validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
 import type { RegistroVendedorDetalle } from "./types";
 
@@ -1141,6 +1142,11 @@ export default function VendedorRegistroWorkspace({
       if (!esWhatsappRegistroValido(form.whatsapp)) {
         return "El WhatsApp debe tener 10 digitos";
       }
+      const errorDocumentoContacto = validarDocumentoDiferenteDeContactos(form);
+
+      if (errorDocumentoContacto) {
+        return errorDocumentoContacto;
+      }
       if (!isTextFilled(form.direccion)) return "La direccion es obligatoria";
 
       return null;
@@ -1228,6 +1234,18 @@ export default function VendedorRegistroWorkspace({
     if (!isTextFilled(form.whatsapp)) return "El WhatsApp es obligatorio";
     if (!esWhatsappRegistroValido(form.whatsapp)) {
       return "El WhatsApp debe tener 10 digitos";
+    }
+    const errorDocumentoContacto = validarDocumentoDiferenteDeContactos(
+      esServicioFinanciera(form.servicio)
+        ? form
+        : {
+            documentoNumero: form.documentoNumero,
+            whatsapp: form.whatsapp,
+          }
+    );
+
+    if (errorDocumentoContacto) {
+      return errorDocumentoContacto;
     }
     if (!isTextFilled(form.direccion)) return "La direccion es obligatoria";
     if (!isTextFilled(form.simCardRegistro1)) return "El registro SIM 1 es obligatorio";

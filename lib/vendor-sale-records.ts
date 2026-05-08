@@ -123,6 +123,44 @@ export function esWhatsappRegistroValido(valor: unknown) {
   return normalizarWhatsappRegistro(valor) !== null;
 }
 
+function soloDigitos(valor: unknown) {
+  return String(valor || "").replace(/\D/g, "").trim();
+}
+
+export function validarDocumentoDiferenteDeContactos(params: {
+  documentoNumero: unknown;
+  whatsapp?: unknown;
+  telefono?: unknown;
+  referenciaFamiliar1Telefono?: unknown;
+  referenciaFamiliar2Telefono?: unknown;
+}) {
+  const documento = soloDigitos(params.documentoNumero);
+
+  if (!documento) {
+    return null;
+  }
+
+  const coincidencia = [
+    { label: "WhatsApp", valor: params.whatsapp },
+    { label: "telefono principal", valor: params.telefono },
+    {
+      label: "telefono de la referencia familiar 1",
+      valor: params.referenciaFamiliar1Telefono,
+    },
+    {
+      label: "telefono de la referencia familiar 2",
+      valor: params.referenciaFamiliar2Telefono,
+    },
+  ].find((item) => {
+    const valor = soloDigitos(item.valor);
+    return Boolean(valor) && valor === documento;
+  });
+
+  return coincidencia
+    ? `El numero de documento no puede ser igual al ${coincidencia.label}. Verifica que no estes ingresando un celular como cedula.`
+    : null;
+}
+
 function resolverPlataformaPermitida(
   valor: unknown,
   plataformasPermitidas?: string[]

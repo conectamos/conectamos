@@ -24,6 +24,7 @@ import {
   normalizarTipoDocumentoCliente,
   normalizarTipoPagoRegistroVenta,
   normalizarWhatsappRegistro,
+  validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
 
 const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
@@ -382,6 +383,14 @@ function validarPayload(
   }
   if (!whatsappTexto) return { error: "El WhatsApp es obligatorio" };
   if (!whatsapp) return { error: "El WhatsApp debe tener 10 digitos" };
+  const errorDocumentoContacto = validarDocumentoDiferenteDeContactos({
+    documentoNumero,
+    whatsapp,
+  });
+
+  if (errorDocumentoContacto) {
+    return { error: errorDocumentoContacto };
+  }
   if (!direccion) return { error: "La direccion es obligatoria" };
   if (!simCardRegistro1) return { error: "El registro SIM 1 es obligatorio" };
   if (!asesorNombre) return { error: "El asesor es obligatorio" };
@@ -504,6 +513,18 @@ function validarPayload(
       error:
         "Debes registrar la segunda referencia familiar con nombre y telefono",
     };
+  }
+  const errorDocumentoContactosFinanciera =
+    validarDocumentoDiferenteDeContactos({
+      documentoNumero,
+      whatsapp,
+      telefono,
+      referenciaFamiliar1Telefono,
+      referenciaFamiliar2Telefono,
+    });
+
+  if (errorDocumentoContactosFinanciera) {
+    return { error: errorDocumentoContactosFinanciera };
   }
   if (
     !aceptaDeclaracionIntermediacion ||
@@ -648,6 +669,17 @@ function validarPayloadBasicoConvertido(body: Record<string, unknown>) {
   }
   if (!whatsappTexto) return { error: "El WhatsApp es obligatorio" };
   if (!whatsapp) return { error: "El WhatsApp debe tener 10 digitos" };
+  const errorDocumentoContacto = validarDocumentoDiferenteDeContactos({
+    documentoNumero,
+    whatsapp,
+    telefono,
+    referenciaFamiliar1Telefono,
+    referenciaFamiliar2Telefono,
+  });
+
+  if (errorDocumentoContacto) {
+    return { error: errorDocumentoContacto };
+  }
   if (!direccion) return { error: "La direccion es obligatoria" };
 
   return {
