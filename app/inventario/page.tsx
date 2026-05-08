@@ -422,7 +422,15 @@ export default function InventarioPage() {
 
   const totalPrestamo = useMemo(
     () =>
-      items.filter((item) => (item.estadoFinanciero || "").toUpperCase() === "DEUDA").length,
+      items.filter((item) => (item.estadoActual || "").toUpperCase() === "PRESTAMO").length,
+    [items]
+  );
+
+  const valorPrestamosPorCobrar = useMemo(
+    () =>
+      items
+        .filter((item) => (item.estadoActual || "").toUpperCase() === "PRESTAMO")
+        .reduce((acc, item) => acc + Number(item.costo || 0), 0),
     [items]
   );
 
@@ -461,6 +469,23 @@ export default function InventarioPage() {
       .filter((item) => (item.estadoFinanciero || "").toUpperCase() === "DEUDA")
       .filter((item) => coincideBusquedaInventario(item, termino));
   }, [busqueda, items]);
+
+  const itemsPrestamoConBusqueda = useMemo(() => {
+    const termino = busqueda.trim().toLowerCase();
+
+    return items
+      .filter((item) => (item.estadoActual || "").toUpperCase() === "PRESTAMO")
+      .filter((item) => coincideBusquedaInventario(item, termino));
+  }, [busqueda, items]);
+
+  const totalPrestamoVista = useMemo(
+    () =>
+      itemsPrestamoConBusqueda.reduce(
+        (acc, item) => acc + Number(item.costo || 0),
+        0
+      ),
+    [itemsPrestamoConBusqueda]
+  );
 
   const resumenDeudaPorAcreedor = useMemo(() => {
     const resumen = new Map<string, { acreedor: string; cantidad: number; valor: number }>();
@@ -1318,10 +1343,14 @@ export default function InventarioPage() {
               valueClass="text-fuchsia-600"
             />
             <TopMetricCard
-              label="En prestamo"
-              value={totalPrestamo}
-              detail="Casos ligados a deuda activa."
-              valueClass="text-red-600"
+              label="Prestamos por cobrar"
+              value={formatoPesos(valorPrestamosPorCobrar)}
+              detail={`${totalPrestamo} prestamo${
+                totalPrestamo === 1 ? "" : "s"
+              } activo${totalPrestamo === 1 ? "" : "s"} saliente${
+                totalPrestamo === 1 ? "" : "s"
+              } pendiente${totalPrestamo === 1 ? "" : "s"} por cierre o pago.`}
+              valueClass="text-amber-700"
             />
             <TopMetricCard
               label="Pagados"
@@ -1409,6 +1438,36 @@ export default function InventarioPage() {
               </div>
             </div>
           </div>
+
+          {filtroEstado === "PRESTAMO" && (
+            <div className="mt-5 rounded-[26px] border border-amber-200 bg-[linear-gradient(180deg,#fffdf8_0%,#fff7e8_100%)] p-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">
+                    Prestamos visibles
+                  </p>
+                  <p className="mt-2 text-2xl font-black text-amber-700">
+                    {itemsPrestamoConBusqueda.length}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Equipos salientes en estado PRESTAMO dentro de esta vista.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm md:col-span-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                    Valor por cobrar
+                  </p>
+                  <p className="mt-2 text-3xl font-black text-amber-700">
+                    {formatoPesos(totalPrestamoVista)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Suma de los costos de los prestamos visibles con los filtros actuales.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {filtroEstado === "DEUDA" && (
             <div className="mt-5 rounded-[26px] border border-amber-200 bg-[linear-gradient(180deg,#fffdf8_0%,#fff7e8_100%)] p-4">
