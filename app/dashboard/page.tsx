@@ -836,7 +836,7 @@ export default async function DashboardPage() {
             </div>
 
             <div className="flex shrink-0 flex-col gap-3 sm:flex-row lg:items-start">
-              {esAdmin && (
+              {(esAdmin || esSupervisor) && (
                 <Link
                   href="/dashboard/radar"
                   className="inline-flex min-w-[130px] items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-emerald-800 shadow-[0_16px_38px_rgba(15,23,42,0.12)] transition hover:bg-white"

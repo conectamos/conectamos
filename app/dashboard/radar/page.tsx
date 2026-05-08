@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { esRolAdministrativo } from "@/lib/access-control";
+import { esPerfilSupervisor, esRolAdministrativo } from "@/lib/access-control";
 import { requireSessionPage } from "@/lib/page-access";
 import {
   getAdminInventorySummary,
@@ -105,7 +105,13 @@ function BrandCard({ brand }: { brand: InventoryBrandSummary }) {
   );
 }
 
-function InventoryRadar({ summary }: { summary: InventoryAdminSummary }) {
+function InventoryRadar({
+  summary,
+  puedeVerBodegaPrincipal,
+}: {
+  summary: InventoryAdminSummary;
+  puedeVerBodegaPrincipal: boolean;
+}) {
   return (
     <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -123,12 +129,14 @@ function InventoryRadar({ summary }: { summary: InventoryAdminSummary }) {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Link
-            href="/inventario-principal"
-            className="inline-flex min-h-[42px] items-center justify-center rounded-2xl border border-[#e4ddd2] bg-[#fcfbf8] px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-white hover:text-slate-950"
-          >
-            Bodega principal
-          </Link>
+          {puedeVerBodegaPrincipal && (
+            <Link
+              href="/inventario-principal"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-2xl border border-[#e4ddd2] bg-[#fcfbf8] px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-white hover:text-slate-950"
+            >
+              Bodega principal
+            </Link>
+          )}
           <Link
             href="/inventario"
             className="inline-flex min-h-[42px] items-center justify-center rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
@@ -173,8 +181,12 @@ function InventoryRadar({ summary }: { summary: InventoryAdminSummary }) {
 
 export default async function DashboardRadarPage() {
   const session = await requireSessionPage();
+  const esAdmin = esRolAdministrativo(session.rolNombre);
+  const esSupervisor =
+    esPerfilSupervisor(session.perfilTipo) ||
+    String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
 
-  if (!esRolAdministrativo(session.rolNombre)) {
+  if (!esAdmin && !esSupervisor) {
     redirect("/dashboard");
   }
 
@@ -188,7 +200,7 @@ export default async function DashboardRadarPage() {
           <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/90">
-                Panel admin
+                {esAdmin ? "Panel admin" : "Panel supervisor"}
               </div>
               <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
                 RADAR
@@ -208,7 +220,10 @@ export default async function DashboardRadarPage() {
         </section>
 
         <div className="mt-6">
-          <InventoryRadar summary={summary} />
+          <InventoryRadar
+            summary={summary}
+            puedeVerBodegaPrincipal={esAdmin}
+          />
         </div>
       </main>
     </div>
