@@ -1698,16 +1698,15 @@ export default function InventarioPage() {
                 <col className="w-[3%]" />
                 <col className="w-[4%]" />
                 <col className="w-[9%]" />
-                <col className="w-[10%]" />
+                <col className="w-[11%]" />
                 <col className="w-[5%]" />
                 <col className="w-[7%]" />
-                <col className="w-[9%]" />
                 {esAdmin && <col className="w-[6%]" />}
                 <col className="w-[7%]" />
-                <col className="w-[8%]" />
+                <col className="w-[9%]" />
                 <col className="w-[7%]" />
                 <col className="w-[8%]" />
-                <col className="w-[4%]" />
+                <col className="w-[11%]" />
                 <col className="w-[13%]" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-[#f8f5ef]">
@@ -1726,7 +1725,6 @@ export default function InventarioPage() {
                   <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Referencia</th>
                   <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Color</th>
                   <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Costo</th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Distribuidor</th>
                   {esAdmin && (
                     <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Sede</th>
                   )}
@@ -1743,7 +1741,7 @@ export default function InventarioPage() {
                 {itemsFiltrados.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={esAdmin ? 14 : 13}
+                      colSpan={esAdmin ? 13 : 12}
                       className="px-6 py-16 text-center"
                     >
                       <div className="mx-auto max-w-md">
@@ -1782,7 +1780,6 @@ export default function InventarioPage() {
                       <td className="break-words px-2 py-4 font-semibold text-slate-950">
                         {formatoPesos(item.costo)}
                       </td>
-                      <td className="break-words px-2 py-4">{item.distribuidor ?? "-"}</td>
                       {esAdmin && (
                         <td className="break-words px-2 py-4 font-semibold text-slate-900">
                         {item.sede?.nombre ?? "Sede sin configurar"}
