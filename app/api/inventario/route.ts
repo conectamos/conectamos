@@ -59,7 +59,97 @@ export async function GET(req: Request) {
       },
     });
 
-    return NextResponse.json(inventario);
+    const imeis = [...new Set(inventario.map((item) => item.imei))];
+    const sedesOrigenIds = [...new Set(inventario.map((item) => item.sedeId))];
+
+    const prestamosRelacionados =
+      imeis.length > 0 && sedesOrigenIds.length > 0
+        ? await prisma.prestamoSede.findMany({
+            where: {
+              imei: {
+                in: imeis,
+              },
+              sedeOrigenId: {
+                in: sedesOrigenIds,
+              },
+              estado: {
+                in: [
+                  "PENDIENTE",
+                  "APROBADO",
+                  "PAGO_PENDIENTE_APROBACION",
+                  "DEVOLUCION_PENDIENTE",
+                  "PAGADO",
+                  "FINALIZADO",
+                ],
+              },
+            },
+            orderBy: {
+              id: "desc",
+            },
+            select: {
+              id: true,
+              imei: true,
+              estado: true,
+              sedeOrigenId: true,
+              sedeDestinoId: true,
+            },
+          })
+        : [];
+
+    const sedesDestinoIds = [
+      ...new Set(prestamosRelacionados.map((prestamo) => prestamo.sedeDestinoId)),
+    ];
+    const sedesDestino =
+      sedesDestinoIds.length > 0
+        ? await prisma.sede.findMany({
+            where: {
+              id: {
+                in: sedesDestinoIds,
+              },
+            },
+            select: {
+              id: true,
+              nombre: true,
+            },
+          })
+        : [];
+    const sedesDestinoPorId = new Map(
+      sedesDestino.map((sede) => [sede.id, sede])
+    );
+    const prestamosPorOrigen = new Map<
+      string,
+      (typeof prestamosRelacionados)[number]
+    >();
+
+    for (const prestamo of prestamosRelacionados) {
+      const key = `${prestamo.imei}|${prestamo.sedeOrigenId}`;
+
+      if (!prestamosPorOrigen.has(key)) {
+        prestamosPorOrigen.set(key, prestamo);
+      }
+    }
+
+    const inventarioConPrestamo = inventario.map((item) => {
+      const prestamo = prestamosPorOrigen.get(`${item.imei}|${item.sedeId}`);
+      const sedeDestino = prestamo
+        ? sedesDestinoPorId.get(prestamo.sedeDestinoId)
+        : null;
+
+      return {
+        ...item,
+        prestamoDestino:
+          prestamo && sedeDestino
+            ? {
+                id: sedeDestino.id,
+                nombre: sedeDestino.nombre,
+                prestamoId: prestamo.id,
+                estado: prestamo.estado,
+              }
+            : null,
+      };
+    });
+
+    return NextResponse.json(inventarioConPrestamo);
   } catch (error) {
     console.error("ERROR GET INVENTARIO:", error);
 

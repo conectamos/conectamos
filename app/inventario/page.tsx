@@ -25,6 +25,12 @@ type InventarioItem = {
     id: number;
     nombre: string;
   } | null;
+  prestamoDestino?: {
+    id: number;
+    nombre: string;
+    prestamoId: number;
+    estado: string;
+  } | null;
 };
 
 type SessionUser = {
@@ -98,6 +104,28 @@ function badgeClaseEstadoFinanciero(estado: string | null) {
     default:
       return "bg-slate-100 text-slate-700";
   }
+}
+
+function etiquetaDestinoPrestamo(item: InventarioItem) {
+  const destino = item.prestamoDestino?.nombre?.trim();
+  const estadoActual = String(item.estadoActual || "").trim().toUpperCase();
+  const estadoPrestamo = String(item.prestamoDestino?.estado || "")
+    .trim()
+    .toUpperCase();
+
+  if (!destino) {
+    return "-";
+  }
+
+  if (estadoActual === "PRESTAMO_POR_ACEPTAR" || estadoPrestamo === "PENDIENTE") {
+    return `Pendiente: ${destino}`;
+  }
+
+  if (estadoActual === "TRASLADO" || estadoPrestamo === "FINALIZADO") {
+    return `Trasladado a ${destino}`;
+  }
+
+  return destino;
 }
 
 function TopMetricCard({
@@ -423,6 +451,7 @@ export default function InventarioPage() {
           (item.distribuidor || "").toLowerCase().includes(termino) ||
           (item.deboA || "").toLowerCase().includes(termino) ||
           (item.origen || "").toLowerCase().includes(termino) ||
+          (item.prestamoDestino?.nombre || "").toLowerCase().includes(termino) ||
           (item.sede?.nombre || "").toLowerCase().includes(termino)
         );
       });
@@ -1440,7 +1469,7 @@ export default function InventarioPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1460px] text-sm">
+            <table className="min-w-[1580px] text-sm">
               <thead className="sticky top-0 z-10 bg-[#f8f5ef]">
                 <tr className="text-left text-slate-600">
                   <th className="px-4 py-4">
@@ -1462,6 +1491,7 @@ export default function InventarioPage() {
                     <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Sede</th>
                   )}
                   <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Deuda</th>
+                  <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Destino prestamo</th>
                   <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Estado</th>
                   <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Estado financiero</th>
                   <th className="px-4 py-4 font-semibold uppercase tracking-[0.12em]">Origen</th>
@@ -1473,7 +1503,7 @@ export default function InventarioPage() {
                 {itemsFiltrados.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={esAdmin ? 13 : 12}
+                      colSpan={esAdmin ? 14 : 13}
                       className="px-6 py-16 text-center"
                     >
                       <div className="mx-auto max-w-md">
@@ -1519,6 +1549,11 @@ export default function InventarioPage() {
                         </td>
                       )}
                       <td className="px-4 py-4">{item.deboA ?? "-"}</td>
+                      <td className="px-4 py-4">
+                        <span className="font-semibold text-slate-900">
+                          {etiquetaDestinoPrestamo(item)}
+                        </span>
+                      </td>
                       <td className="px-4 py-4">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClaseEstadoInventario(
