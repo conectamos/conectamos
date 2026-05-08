@@ -1693,22 +1693,22 @@ export default function InventarioPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1320px] table-fixed text-[12px] xl:min-w-0 2xl:text-[13px]">
+            <table className="w-full min-w-[1720px] table-fixed text-[12px] 2xl:text-[13px]">
               <colgroup>
                 <col className="w-[3%]" />
                 <col className="w-[4%]" />
                 <col className="w-[9%]" />
-                <col className="w-[12%]" />
-                <col className="w-[6%]" />
+                <col className="w-[10%]" />
+                <col className="w-[5%]" />
                 <col className="w-[7%]" />
                 <col className="w-[9%]" />
                 {esAdmin && <col className="w-[6%]" />}
-                <col className="w-[8%]" />
-                <col className="w-[9%]" />
                 <col className="w-[7%]" />
                 <col className="w-[8%]" />
-                <col className="w-[5%]" />
                 <col className="w-[7%]" />
+                <col className="w-[8%]" />
+                <col className="w-[4%]" />
+                <col className="w-[13%]" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-[#f8f5ef]">
                 <tr className="text-left text-slate-600">
@@ -1815,13 +1815,13 @@ export default function InventarioPage() {
                       <td className="break-words px-2 py-4">{item.origen ?? "-"}</td>
 
                       <td className="px-2 py-4">
-                        <div className="flex flex-nowrap items-center justify-center gap-1.5">
+                        <div className="flex min-w-[220px] flex-nowrap items-center justify-center gap-1">
                           {puedeDevolverABodega(item) && (
                             <button
                               onClick={() => devolverABodega(item)}
                               disabled={cargando}
                               title="Devolver a bodega"
-                              className="rounded-xl bg-amber-100 p-2.5 transition hover:bg-amber-200 disabled:opacity-70"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 transition hover:bg-amber-200 disabled:opacity-70"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -1845,7 +1845,7 @@ export default function InventarioPage() {
                               onClick={() => abrirPrestamo(item)}
                               disabled={cargando}
                               title="Enviar a sede"
-                              className="rounded-xl bg-slate-100 p-2.5 transition hover:bg-slate-200 disabled:opacity-70"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 transition hover:bg-slate-200 disabled:opacity-70"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -1863,7 +1863,7 @@ export default function InventarioPage() {
                               onClick={() => cambiarEstado(item, "PENDIENTE")}
                               disabled={cargando}
                               title="Marcar pendiente"
-                              className="rounded-xl bg-amber-100 p-2.5 transition hover:bg-amber-200 disabled:opacity-70"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 transition hover:bg-amber-200 disabled:opacity-70"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -1887,7 +1887,7 @@ export default function InventarioPage() {
                               onClick={() => cambiarEstado(item, "GARANTIA")}
                               disabled={cargando}
                               title="Marcar garantia"
-                              className="rounded-xl bg-fuchsia-100 p-2.5 transition hover:bg-fuchsia-200 disabled:opacity-70"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-fuchsia-100 transition hover:bg-fuchsia-200 disabled:opacity-70"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -1911,7 +1911,7 @@ export default function InventarioPage() {
                               onClick={() => abrirPagoDeuda(item)}
                               disabled={cargando}
                               title="Pagar deuda"
-                              className="rounded-xl bg-emerald-100 p-2.5 transition hover:bg-emerald-200 disabled:opacity-70"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 transition hover:bg-emerald-200 disabled:opacity-70"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -1939,7 +1939,7 @@ export default function InventarioPage() {
                                   ? "Reemplazar equipo vendido"
                                   : "Registrar cambio"
                               }
-                              className="rounded-xl bg-indigo-100 p-2.5 transition hover:bg-indigo-200 disabled:opacity-70"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-100 transition hover:bg-indigo-200 disabled:opacity-70"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -1963,7 +1963,7 @@ export default function InventarioPage() {
                               onClick={() => abrirEdicion(item)}
                               disabled={cargando}
                               title="Editar"
-                              className="rounded-xl bg-amber-100 p-2.5 transition hover:bg-amber-200 disabled:opacity-70"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 transition hover:bg-amber-200 disabled:opacity-70"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -1989,7 +1989,7 @@ export default function InventarioPage() {
                               }}
                               disabled={cargando}
                               title="Eliminar"
-                              className="rounded-xl bg-red-100 p-2.5 transition hover:bg-red-200 disabled:opacity-70"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-100 transition hover:bg-red-200 disabled:opacity-70"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
