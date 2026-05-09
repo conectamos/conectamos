@@ -235,6 +235,10 @@ function monedaIgual(a: unknown, b: unknown) {
   return left === right;
 }
 
+function textoNormalizado(value: unknown) {
+  return String(value || "").trim().toUpperCase();
+}
+
 function serializarFinancierasDetalle(valor: unknown) {
   if (!Array.isArray(valor)) {
     return null;
@@ -748,6 +752,9 @@ async function validarCreditoPayJoy(payload: {
   financierasDetalle: Array<{
     plataformaCredito: string;
     creditoAutorizado: string;
+    valorCuota: string;
+    numeroCuotas: number;
+    frecuenciaCuota: string;
   }>;
 }) {
   const financierasPayJoy = payload.financierasDetalle.filter((item) =>
@@ -784,6 +791,41 @@ async function validarCreditoPayJoy(payload: {
       return `El credito PAYJOY del IMEI ${payload.serialImei} debe ser ${formatMoneyValidation(
         creditoOficial.creditoAutorizado
       )}. No coincide con el valor digitado por el asesor.`;
+    }
+
+    const valorCuotaOficial = creditoOficial.valorCuota;
+    const cuotaDistinta =
+      valorCuotaOficial !== null &&
+      financierasPayJoy.find(
+        (item) => !monedaIgual(item.valorCuota, valorCuotaOficial)
+      );
+
+    if (cuotaDistinta) {
+      return `La cuota PAYJOY del IMEI ${payload.serialImei} debe ser ${formatMoneyValidation(
+        valorCuotaOficial
+      )}.`;
+    }
+
+    const plazoDistinto =
+      creditoOficial.numeroCuotas !== null &&
+      financierasPayJoy.find(
+        (item) => Number(item.numeroCuotas) !== creditoOficial.numeroCuotas
+      );
+
+    if (plazoDistinto) {
+      return `El plazo PAYJOY del IMEI ${payload.serialImei} debe ser ${creditoOficial.numeroCuotas} cuotas.`;
+    }
+
+    const frecuenciaDistinta =
+      creditoOficial.frecuenciaCuota !== null &&
+      financierasPayJoy.find(
+        (item) =>
+          textoNormalizado(item.frecuenciaCuota) !==
+          creditoOficial.frecuenciaCuota
+      );
+
+    if (frecuenciaDistinta) {
+      return `La frecuencia PAYJOY del IMEI ${payload.serialImei} debe ser ${creditoOficial.frecuenciaCuota}.`;
     }
 
     return null;

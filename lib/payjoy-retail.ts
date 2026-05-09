@@ -11,8 +11,11 @@ type PayJoyCustomerLookupResponse = {
     id?: string | number | null;
     financeAmount?: PayJoyAmount;
     downPayment?: PayJoyAmount;
+    monthlyCost?: PayJoyAmount;
+    months?: string | number | null;
     purchaseAmount?: PayJoyAmount;
     currency?: string | null;
+    weeklyCost?: PayJoyAmount;
   } | null;
   device?: {
     imei?: string | null;
@@ -31,7 +34,10 @@ type PayJoyTransactionResponse = {
       id?: string | number | null;
       financeAmount?: PayJoyAmount;
       downPayment?: PayJoyAmount;
+      monthlyCost?: PayJoyAmount;
+      months?: string | number | null;
       purchaseAmount?: PayJoyAmount;
+      weeklyCost?: PayJoyAmount;
     } | null;
     device?: {
       imei?: string | null;
@@ -45,6 +51,9 @@ export type PayJoyCreditoImei = {
   moneda: string | null;
   ordenId: string | null;
   enganche: number | null;
+  valorCuota: number | null;
+  numeroCuotas: number | null;
+  frecuenciaCuota: "SEMANAL" | "MENSUAL" | null;
   valorCompra: number | null;
   origen: "lookup-customer" | "list-transactions";
 };
@@ -95,17 +104,65 @@ function parseAmount(value: PayJoyAmount) {
     return Number.isFinite(value) ? value : null;
   }
 
-  const raw = String(value ?? "")
+  let raw = String(value ?? "")
     .replace(/[^\d.,-]/g, "")
-    .replace(/,/g, "")
     .trim();
 
   if (!raw) {
     return null;
   }
 
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(raw)) {
+    raw = raw.replace(/\./g, "");
+  } else if (/^-?\d{1,3}(,\d{3})+$/.test(raw)) {
+    raw = raw.replace(/,/g, "");
+  } else if (raw.includes(",") && raw.includes(".")) {
+    raw =
+      raw.lastIndexOf(",") > raw.lastIndexOf(".")
+        ? raw.replace(/\./g, "").replace(",", ".")
+        : raw.replace(/,/g, "");
+  } else if (raw.includes(",")) {
+    raw = raw.replace(",", ".");
+  }
+
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parsePositiveInteger(value: string | number | null | undefined) {
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function resolveInstallmentInfo(
+  financeOrder: PayJoyCustomerLookupResponse["financeOrder"]
+) {
+  const monthlyCost = parseAmount(financeOrder?.monthlyCost);
+  const weeklyCost = parseAmount(financeOrder?.weeklyCost);
+  const months = parsePositiveInteger(financeOrder?.months);
+
+  if (monthlyCost !== null) {
+    return {
+      valorCuota: monthlyCost,
+      numeroCuotas: months,
+      frecuenciaCuota: "MENSUAL" as const,
+    };
+  }
+
+  if (weeklyCost !== null) {
+    return {
+      valorCuota: weeklyCost,
+      numeroCuotas: null,
+      frecuenciaCuota: "SEMANAL" as const,
+    };
+  }
+
+  return {
+    valorCuota: null,
+    numeroCuotas: months,
+    frecuenciaCuota: null,
+  };
 }
 
 function getLookbackDays() {
@@ -167,6 +224,7 @@ function buildCreditoFromFinanceOrder(
   if (creditoAutorizado === null) {
     return null;
   }
+  const installment = resolveInstallmentInfo(financeOrder);
 
   return {
     imei,
@@ -177,6 +235,9 @@ function buildCreditoFromFinanceOrder(
         ? null
         : String(financeOrder.id),
     enganche: parseAmount(financeOrder?.downPayment),
+    valorCuota: installment.valorCuota,
+    numeroCuotas: installment.numeroCuotas,
+    frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(financeOrder?.purchaseAmount),
     origen: source,
   };
@@ -256,6 +317,9 @@ async function lookupTransactionFinanceByImei(imei: string) {
         ? null
         : String(transaction.financeOrder.id),
     enganche: parseAmount(transaction.financeOrder?.downPayment),
+    valorCuota: null,
+    numeroCuotas: null,
+    frecuenciaCuota: null,
     valorCompra: parseAmount(transaction.financeOrder?.purchaseAmount),
     origen: "list-transactions",
   } satisfies PayJoyCreditoImei;

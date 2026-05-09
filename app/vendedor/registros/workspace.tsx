@@ -149,6 +149,9 @@ type PayJoyCreditoResponse = {
     moneda: string | null;
     ordenId: string | null;
     enganche: number | null;
+    valorCuota: number | null;
+    numeroCuotas: number | null;
+    frecuenciaCuota: string | null;
     valorCompra: number | null;
     origen: string;
   };
@@ -279,6 +282,26 @@ function formatMoneyInputFromStored(value: string | number | null | undefined) {
   }
 
   return formatearPesoInput(normalized);
+}
+
+function applyPayJoyCreditoToFinancialState(
+  item: FinancialFormState,
+  credito: NonNullable<PayJoyCreditoResponse["credito"]>
+) {
+  return {
+    ...item,
+    plataformaCredito: "PAYJOY",
+    creditoAutorizado: formatearPesoInput(credito.creditoAutorizado),
+    valorCuota:
+      credito.valorCuota === null
+        ? item.valorCuota
+        : formatearPesoInput(credito.valorCuota),
+    numeroCuotas:
+      credito.numeroCuotas === null
+        ? item.numeroCuotas
+        : String(credito.numeroCuotas),
+    frecuenciaCuota: credito.frecuenciaCuota ?? item.frecuenciaCuota,
+  };
 }
 
 function formatDate(value: string) {
@@ -956,9 +979,11 @@ export default function VendedorRegistroWorkspace({
         return;
       }
 
+      const creditoPayJoy = data.credito;
+
       setPayjoyCreditos((current) => ({
         ...current,
-        [index]: data.credito,
+        [index]: creditoPayJoy,
       }));
       setForm((current) => {
         if (current.serialImei !== imei) {
@@ -969,12 +994,7 @@ export default function VendedorRegistroWorkspace({
           ...current,
           financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
             itemIndex === index
-              ? {
-                  ...item,
-                  creditoAutorizado: formatearPesoInput(
-                    data.credito?.creditoAutorizado ?? 0
-                  ),
-                }
+              ? applyPayJoyCreditoToFinancialState(item, creditoPayJoy)
               : item
           ),
         };
@@ -1010,11 +1030,7 @@ export default function VendedorRegistroWorkspace({
       medioPago2Valor: "",
       financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
         itemIndex === 0
-          ? {
-              ...item,
-              plataformaCredito: "PAYJOY",
-              creditoAutorizado: formatearPesoInput(credito.creditoAutorizado),
-            }
+          ? applyPayJoyCreditoToFinancialState(item, credito)
           : item
       ),
     }));
@@ -1084,6 +1100,9 @@ export default function VendedorRegistroWorkspace({
               ...item,
               plataformaCredito: value,
               creditoAutorizado: esPayjoy ? "" : item.creditoAutorizado,
+              valorCuota: esPayjoy ? "" : item.valorCuota,
+              numeroCuotas: esPayjoy ? "" : item.numeroCuotas,
+              frecuenciaCuota: esPayjoy ? "" : item.frecuenciaCuota,
             }
           : item
       ),
@@ -1858,6 +1877,9 @@ export default function VendedorRegistroWorkspace({
                                   ? {
                                       ...item,
                                       creditoAutorizado: "",
+                                      valorCuota: "",
+                                      numeroCuotas: "",
+                                      frecuenciaCuota: "",
                                     }
                                   : item
                             ),
@@ -1971,6 +1993,18 @@ export default function VendedorRegistroWorkspace({
                   if (!shouldShow) {
                     return null;
                   }
+                  const creditoPayJoy = payjoyCreditos[index];
+                  const bloqueaCuotaPayJoy =
+                    esPlataformaPayJoy(item.plataformaCredito) &&
+                    creditoPayJoy?.valorCuota !== null &&
+                    creditoPayJoy?.valorCuota !== undefined;
+                  const bloqueaPlazoPayJoy =
+                    esPlataformaPayJoy(item.plataformaCredito) &&
+                    creditoPayJoy?.numeroCuotas !== null &&
+                    creditoPayJoy?.numeroCuotas !== undefined;
+                  const bloqueaFrecuenciaPayJoy =
+                    esPlataformaPayJoy(item.plataformaCredito) &&
+                    Boolean(creditoPayJoy?.frecuenciaCuota);
 
                   return (
                     <div
@@ -2234,9 +2268,14 @@ export default function VendedorRegistroWorkspace({
                                     event.target.value
                                   )
                                 }
-                                className={inputClass()}
+                                readOnly={bloqueaCuotaPayJoy}
+                                className={inputClass(bloqueaCuotaPayJoy)}
                                 inputMode="numeric"
-                                placeholder="$ 0"
+                                placeholder={
+                                  bloqueaCuotaPayJoy
+                                    ? "Se completa desde PayJoy"
+                                    : "$ 0"
+                                }
                               />
                             </label>
 
@@ -2244,6 +2283,7 @@ export default function VendedorRegistroWorkspace({
                               Plazo
                               <select
                                 value={item.numeroCuotas}
+                                disabled={bloqueaPlazoPayJoy}
                                 onChange={(event) =>
                                   setFinancieraField(
                                     index,
@@ -2251,7 +2291,7 @@ export default function VendedorRegistroWorkspace({
                                     event.target.value
                                   )
                                 }
-                                className={inputClass()}
+                                className={inputClass(bloqueaPlazoPayJoy)}
                               >
                                 <option value="">1 a 48 cuotas</option>
                                 {PLAZO_OPTIONS.map((option) => (
@@ -2266,6 +2306,7 @@ export default function VendedorRegistroWorkspace({
                               Frecuencia de pago
                               <select
                                 value={item.frecuenciaCuota}
+                                disabled={bloqueaFrecuenciaPayJoy}
                                 onChange={(event) =>
                                   setFinancieraField(
                                     index,
@@ -2273,7 +2314,7 @@ export default function VendedorRegistroWorkspace({
                                     event.target.value
                                   )
                                 }
-                                className={inputClass()}
+                                className={inputClass(bloqueaFrecuenciaPayJoy)}
                               >
                                 <option value="">Selecciona una frecuencia</option>
                                 {FRECUENCIAS_CUOTA.map((option) => (
