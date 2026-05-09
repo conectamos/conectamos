@@ -11,6 +11,7 @@ import {
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import {
+  isPayJoyRetailConfigured,
   obtenerCreditoPayJoyPorImei,
   PayJoyRetailConfigError,
 } from "@/lib/payjoy-retail";
@@ -753,7 +754,7 @@ async function validarCreditoPayJoy(payload: {
     esPayJoy(item.plataformaCredito)
   );
 
-  if (!financierasPayJoy.length) {
+  if (!financierasPayJoy.length && !isPayJoyRetailConfigured()) {
     return null;
   }
 
@@ -761,7 +762,17 @@ async function validarCreditoPayJoy(payload: {
     const creditoOficial = await obtenerCreditoPayJoyPorImei(payload.serialImei);
 
     if (!creditoOficial) {
+      if (!financierasPayJoy.length) {
+        return null;
+      }
+
       return "No se encontro un credito PayJoy para este IMEI. Verifica el IMEI antes de guardar el registro.";
+    }
+
+    if (!financierasPayJoy.length) {
+      return `Este IMEI esta activo en PAYJOY con credito ${formatMoneyValidation(
+        creditoOficial.creditoAutorizado
+      )}. Debes registrar la venta con financiera PAYJOY.`;
     }
 
     const distinta = financierasPayJoy.find(

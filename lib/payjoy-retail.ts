@@ -64,17 +64,26 @@ export class PayJoyRetailLookupError extends Error {
 }
 
 function getApiKey() {
-  const key =
-    process.env.PAYJOY_RETAIL_API_KEY ||
-    process.env.PAYJOY_PARTNER_API_KEY ||
-    process.env.PAYJOY_API_KEY ||
-    "";
+  const key = getConfiguredApiKey();
 
-  if (!key.trim()) {
+  if (!key) {
     throw new PayJoyRetailConfigError();
   }
 
-  return key.trim();
+  return key;
+}
+
+export function getConfiguredApiKey() {
+  return (
+    process.env.PAYJOY_RETAIL_API_KEY ||
+    process.env.PAYJOY_PARTNER_API_KEY ||
+    process.env.PAYJOY_API_KEY ||
+    ""
+  ).trim();
+}
+
+export function isPayJoyRetailConfigured() {
+  return getConfiguredApiKey().length > 0;
 }
 
 function normalizeImei(value: unknown) {

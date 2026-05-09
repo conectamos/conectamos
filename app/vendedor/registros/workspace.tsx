@@ -989,6 +989,80 @@ export default function VendedorRegistroWorkspace({
     }
   };
 
+  const aplicarCreditoPayjoyPrincipal = (
+    credito: NonNullable<PayJoyCreditoResponse["credito"]>
+  ) => {
+    setFinancierasVisibles((current) => Math.max(current, 1));
+    setIngresoContado2Visible(false);
+    setPayjoyCreditos((current) => ({
+      ...current,
+      0: credito,
+    }));
+    setPayjoyErrores((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setForm((current) => ({
+      ...current,
+      servicio: "FINANCIERA",
+      medioPago2Tipo: "",
+      medioPago2Valor: "",
+      financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
+        itemIndex === 0
+          ? {
+              ...item,
+              plataformaCredito: "PAYJOY",
+              creditoAutorizado: formatearPesoInput(credito.creditoAutorizado),
+            }
+          : item
+      ),
+    }));
+  };
+
+  const detectarCreditoPayjoyPorImei = async (imeiValue: string) => {
+    const imei = onlyDigits(imeiValue, 15);
+
+    if (imei.length !== 15) {
+      return;
+    }
+
+    try {
+      setConsultandoPayjoyIndex(0);
+      const params = new URLSearchParams({ imei });
+      const response = await fetch(
+        `/api/vendedor/registros/payjoy-credito?${params.toString()}`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as PayJoyCreditoResponse;
+
+      if (!response.ok || !data.credito) {
+        if (response.status !== 404 && response.status !== 503) {
+          setPayjoyErrores((current) => ({
+            ...current,
+            0: data.error || "No se pudo validar si el IMEI pertenece a PayJoy",
+          }));
+        }
+        return;
+      }
+
+      aplicarCreditoPayjoyPrincipal(data.credito);
+      setFormMessage(
+        `Este IMEI esta activo en PAYJOY. Se selecciono PAYJOY automaticamente por ${formatMoney(
+          data.credito.creditoAutorizado
+        )}.`,
+        "success"
+      );
+    } catch {
+      setPayjoyErrores((current) => ({
+        ...current,
+        0: "No se pudo validar si el IMEI pertenece a PayJoy",
+      }));
+    } finally {
+      setConsultandoPayjoyIndex(null);
+    }
+  };
+
   const seleccionarPlataformaFinanciera = (index: number, value: string) => {
     const esPayjoy = esPlataformaPayJoy(value);
 
@@ -1082,13 +1156,18 @@ export default function VendedorRegistroWorkspace({
         `${equipo.referencia} | ${equipo.sedeNombre ?? "Sin ubicacion"} | ${equipo.estadoActual ?? "Sin estado"}`
       );
 
-      form.financierasDetalle
+      const financierasPayJoySeleccionadas = form.financierasDetalle
         .slice(0, financierasVisibles)
-        .forEach((item, index) => {
-          if (esPlataformaPayJoy(item.plataformaCredito)) {
-            void consultarCreditoPayjoy(index, equipo.imei);
-          }
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => esPlataformaPayJoy(item.plataformaCredito));
+
+      if (financierasPayJoySeleccionadas.length) {
+        financierasPayJoySeleccionadas.forEach(({ index }) => {
+          void consultarCreditoPayjoy(index, equipo.imei);
         });
+      } else {
+        void detectarCreditoPayjoyPorImei(equipo.imei);
+      }
     } catch {
       setImeiDetalle("");
       setFormMessage("Error consultando el IMEI", "error");
@@ -1924,13 +2003,14 @@ export default function VendedorRegistroWorkspace({
                           Plataforma de credito utilizada
                           <select
                             value={item.plataformaCredito}
+                            disabled={Boolean(index === 0 && payjoyCreditos[0])}
                             onChange={(event) =>
                               seleccionarPlataformaFinanciera(
                                 index,
                                 event.target.value
                               )
                             }
-                            className={inputClass()}
+                            className={inputClass(Boolean(index === 0 && payjoyCreditos[0]))}
                           >
                             <option value="">Selecciona una plataforma</option>
                             {financierasCatalogo.map((option) => (
