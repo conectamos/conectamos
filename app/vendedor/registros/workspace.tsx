@@ -1058,12 +1058,6 @@ export default function VendedorRegistroWorkspace({
       const data = (await response.json()) as PayJoyCreditoResponse;
 
       if (!response.ok || !data.credito) {
-        if (response.status !== 404 && response.status !== 503) {
-          setPayjoyErrores((current) => ({
-            ...current,
-            0: data.error || "No se pudo validar si el IMEI pertenece a PayJoy",
-          }));
-        }
         return;
       }
 
@@ -1075,10 +1069,7 @@ export default function VendedorRegistroWorkspace({
         "success"
       );
     } catch {
-      setPayjoyErrores((current) => ({
-        ...current,
-        0: "No se pudo validar si el IMEI pertenece a PayJoy",
-      }));
+      return;
     } finally {
       setConsultandoPayjoyIndex(null);
     }

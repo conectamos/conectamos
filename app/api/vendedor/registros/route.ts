@@ -760,8 +760,9 @@ async function validarCreditoPayJoy(payload: {
   const financierasPayJoy = payload.financierasDetalle.filter((item) =>
     esPayJoy(item.plataformaCredito)
   );
+  const validaPayJoySeleccionado = financierasPayJoy.length > 0;
 
-  if (!financierasPayJoy.length && !isPayJoyRetailConfigured()) {
+  if (!validaPayJoySeleccionado && !isPayJoyRetailConfigured()) {
     return null;
   }
 
@@ -769,14 +770,14 @@ async function validarCreditoPayJoy(payload: {
     const creditoOficial = await obtenerCreditoPayJoyPorImei(payload.serialImei);
 
     if (!creditoOficial) {
-      if (!financierasPayJoy.length) {
+      if (!validaPayJoySeleccionado) {
         return null;
       }
 
       return "No se encontro un credito PayJoy para este IMEI. Verifica el IMEI antes de guardar el registro.";
     }
 
-    if (!financierasPayJoy.length) {
+    if (!validaPayJoySeleccionado) {
       return `Este IMEI esta activo en PAYJOY con credito ${formatMoneyValidation(
         creditoOficial.creditoAutorizado
       )}. Debes registrar la venta con financiera PAYJOY.`;
@@ -830,6 +831,10 @@ async function validarCreditoPayJoy(payload: {
 
     return null;
   } catch (error) {
+    if (!validaPayJoySeleccionado) {
+      return null;
+    }
+
     if (error instanceof PayJoyRetailConfigError) {
       return "No se puede validar PAYJOY porque falta configurar la clave API de PayJoy en el servidor.";
     }
