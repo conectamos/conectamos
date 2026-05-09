@@ -737,6 +737,10 @@ export default function VendedorRegistroWorkspace({
     Record<number, PayJoyCreditoResponse["credito"]>
   >({});
   const [payjoyErrores, setPayjoyErrores] = useState<Record<number, string>>({});
+  const autoPayJoyConsultaRef = useRef<Record<number, string>>({});
+  const consultarPayJoyAutomaticoRef = useRef<
+    ((index: number, imeiValue?: string) => Promise<void>) | null
+  >(null);
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const [imeiDetalle, setImeiDetalle] = useState("");
   const [signaturePadKey, setSignaturePadKey] = useState(0);
@@ -1008,6 +1012,7 @@ export default function VendedorRegistroWorkspace({
       setConsultandoPayjoyIndex(null);
     }
   };
+  consultarPayJoyAutomaticoRef.current = consultarCreditoPayjoy;
 
   const aplicarCreditoPayjoyPrincipal = (
     credito: NonNullable<PayJoyCreditoResponse["credito"]>
@@ -1081,6 +1086,7 @@ export default function VendedorRegistroWorkspace({
 
   const seleccionarPlataformaFinanciera = (index: number, value: string) => {
     const esPayjoy = esPlataformaPayJoy(value);
+    delete autoPayJoyConsultaRef.current[index];
 
     setPayjoyCreditos((current) => {
       const next = { ...current };
@@ -1108,10 +1114,45 @@ export default function VendedorRegistroWorkspace({
       ),
     }));
 
-    if (esPayjoy && form.serialImei.length === 15) {
-      void consultarCreditoPayjoy(index, form.serialImei);
-    }
   };
+
+  useEffect(() => {
+    if (registroEditandoConvertido || form.serialImei.length !== 15) {
+      return;
+    }
+
+    form.financierasDetalle
+      .slice(0, financierasVisibles)
+      .forEach((item, index) => {
+        if (!esPlataformaPayJoy(item.plataformaCredito)) {
+          return;
+        }
+
+        const faltanDatosPayJoy =
+          !isTextFilled(item.creditoAutorizado) ||
+          !isTextFilled(item.valorCuota) ||
+          !isTextFilled(item.numeroCuotas) ||
+          !isTextFilled(item.frecuenciaCuota);
+
+        if (!faltanDatosPayJoy) {
+          return;
+        }
+
+        const consultaKey = `${form.serialImei}:${index}:${item.plataformaCredito}`;
+
+        if (autoPayJoyConsultaRef.current[index] === consultaKey) {
+          return;
+        }
+
+        autoPayJoyConsultaRef.current[index] = consultaKey;
+        void consultarPayJoyAutomaticoRef.current?.(index, form.serialImei);
+      });
+  }, [
+    form.financierasDetalle,
+    form.serialImei,
+    financierasVisibles,
+    registroEditandoConvertido,
+  ]);
 
   const resetFinanciera = (index: number) => {
     setForm((current) => ({
@@ -1868,6 +1909,7 @@ export default function VendedorRegistroWorkspace({
                         onChange={(event) => {
                           const nextImei = onlyDigits(event.target.value, 15);
 
+                          autoPayJoyConsultaRef.current = {};
                           setForm((current) => ({
                             ...current,
                             serialImei: nextImei,
