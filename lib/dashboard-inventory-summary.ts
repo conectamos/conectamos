@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { esSedeRetiradaParaSupervisor } from "@/lib/sedes";
 
 export type InventoryBrandReferenceSummary = {
   referencia: string;
@@ -78,7 +79,9 @@ function sortReferences(items: InventoryBrandReferenceSummary[]) {
   });
 }
 
-export async function getAdminInventorySummary(): Promise<InventoryAdminSummary> {
+export async function getAdminInventorySummary(options?: {
+  ocultarPuntosRetiradosSupervisor?: boolean;
+}): Promise<InventoryAdminSummary> {
   const [principalRows, sedeRows] = await Promise.all([
     prisma.inventarioPrincipal.findMany({
       where: {
@@ -94,9 +97,17 @@ export async function getAdminInventorySummary(): Promise<InventoryAdminSummary>
       },
       select: {
         referencia: true,
+        sede: {
+          select: {
+            nombre: true,
+          },
+        },
       },
     }),
   ]);
+  const sedeRowsVisibles = options?.ocultarPuntosRetiradosSupervisor
+    ? sedeRows.filter((item) => !esSedeRetiradaParaSupervisor(item.sede?.nombre))
+    : sedeRows;
 
   const referencias = new Map<string, InventoryBrandReferenceSummary>();
 
@@ -106,7 +117,7 @@ export async function getAdminInventorySummary(): Promise<InventoryAdminSummary>
     ref.bodegaPrincipal += 1;
   }
 
-  for (const item of sedeRows) {
+  for (const item of sedeRowsVisibles) {
     const ref = ensureReference(referencias, item.referencia);
     ref.total += 1;
     ref.sedes += 1;
@@ -159,9 +170,9 @@ export async function getAdminInventorySummary(): Promise<InventoryAdminSummary>
     });
 
   return {
-    totalBodega: principalRows.length + sedeRows.length,
+    totalBodega: principalRows.length + sedeRowsVisibles.length,
     totalBodegaPrincipal: principalRows.length,
-    totalSedes: sedeRows.length,
+    totalSedes: sedeRowsVisibles.length,
     referenciasEnBodega: referencias.size,
     marcas,
   };

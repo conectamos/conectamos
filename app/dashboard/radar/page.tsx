@@ -190,7 +190,9 @@ export default async function DashboardRadarPage() {
     redirect("/dashboard");
   }
 
-  const summary = await getAdminInventorySummary();
+  const summary = await getAdminInventorySummary({
+    ocultarPuntosRetiradosSupervisor: !esAdmin && esSupervisor,
+  });
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] text-slate-950">

@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
-import { esSedeVentas } from "@/lib/sedes";
+import {
+  esPerfilSupervisor,
+  puedeAccederModulosOperativos,
+} from "@/lib/access-control";
+import { esSedeRetiradaParaSupervisor, esSedeVentas } from "@/lib/sedes";
 
 function parseSedeId(value: string | null) {
   const sedeId = Number(value);
@@ -28,6 +31,9 @@ export async function GET(req: Request) {
     }
 
     const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
+    const esSupervisor =
+      esPerfilSupervisor(user.perfilTipo) ||
+      String(user.rolNombre || "").trim().toUpperCase() === "SUPERVISOR";
     const requestUrl = new URL(req.url);
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
 
@@ -58,9 +64,16 @@ export async function GET(req: Request) {
         },
       },
     });
+    const inventarioVisible = esSupervisor
+      ? inventario.filter(
+          (item) => !esSedeRetiradaParaSupervisor(item.sede?.nombre)
+        )
+      : inventario;
 
-    const imeis = [...new Set(inventario.map((item) => item.imei))];
-    const sedesOrigenIds = [...new Set(inventario.map((item) => item.sedeId))];
+    const imeis = [...new Set(inventarioVisible.map((item) => item.imei))];
+    const sedesOrigenIds = [
+      ...new Set(inventarioVisible.map((item) => item.sedeId)),
+    ];
 
     const prestamosRelacionados =
       imeis.length > 0 && sedesOrigenIds.length > 0
@@ -129,7 +142,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const inventarioConPrestamo = inventario.map((item) => {
+    const inventarioConPrestamo = inventarioVisible.map((item) => {
       const prestamo = prestamosPorOrigen.get(`${item.imei}|${item.sedeId}`);
       const sedeDestino = prestamo
         ? sedesDestinoPorId.get(prestamo.sedeDestinoId)

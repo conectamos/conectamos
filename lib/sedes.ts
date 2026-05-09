@@ -11,3 +11,9 @@ export function esSedeVentas(nombre: string | null | undefined) {
 export function esSedeOperativaInventario(nombre: string | null | undefined) {
   return !esSedeVentas(nombre);
 }
+
+export function esSedeRetiradaParaSupervisor(nombre: string | null | undefined) {
+  const sede = normalizarNombreSede(nombre);
+
+  return sede === "TROPAS" || sede === "SEDE 4" || sede.includes("STAND");
+}
