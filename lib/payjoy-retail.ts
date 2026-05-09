@@ -1,5 +1,4 @@
 import { getPayJoyPaymentSnapshot } from "@/lib/payjoy";
-import { getLatestPayJoyDeviceByImei } from "@/lib/payjoy-cortes-store";
 
 const PAYJOY_RETAIL_API_BASE_URL =
   process.env.PAYJOY_RETAIL_API_BASE_URL || "https://partner.payjoy.com/v1";
@@ -192,28 +191,73 @@ function getFinanceOrderInteger(
   return null;
 }
 
-function getDeviceTag(
-  device?: PayJoyDevice | null,
-  financeOrder?: PayJoyFinanceOrder | null
-) {
+function looksLikeDeviceTag(value: unknown) {
+  return /^D[A-Z0-9]{5,}$/.test(normalizeDeviceTag(value));
+}
+
+function findDeviceTagInPayload(value: unknown, seen = new Set<unknown>()): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const candidate = normalizeDeviceTag(value);
+    return looksLikeDeviceTag(candidate) ? candidate : null;
+  }
+
+  if (typeof value !== "object" || seen.has(value)) {
+    return null;
+  }
+
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const candidate = findDeviceTagInPayload(item, seen);
+
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
   const candidates = [
-    device?.deviceTag,
-    device?.device_tag,
-    device?.tag,
-    device?.deviceId,
-    device?.device_id,
-    financeOrder?.deviceTag,
-    financeOrder?.device_tag,
-    financeOrder?.tag,
-    financeOrder?.deviceId,
-    financeOrder?.device_id,
+    record.deviceTag,
+    record.device_tag,
+    record.tag,
+    record.device,
+    record.deviceId,
+    record.device_id,
   ];
 
   for (const candidate of candidates) {
     const deviceTag = normalizeDeviceTag(candidate);
 
-    if (deviceTag) {
+    if (looksLikeDeviceTag(deviceTag)) {
       return deviceTag;
+    }
+  }
+
+  for (const item of Object.values(record)) {
+    const candidate = findDeviceTagInPayload(item, seen);
+
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function getDeviceTag(...sources: unknown[]) {
+  for (const source of sources) {
+    const candidate = findDeviceTagInPayload(source);
+
+    if (candidate) {
+      return candidate;
     }
   }
 
@@ -362,45 +406,33 @@ async function fetchPayJoy<T>(
 
 async function completeWithPaymentSnapshot(
   credito: PayJoyCreditoImei,
-  deviceTag: string | null,
-  storedInstallmentAmount?: number | null
+  deviceTag: string | null
 ) {
-  const creditoWithStoredInstallment =
-    credito.valorCuota === null &&
-    storedInstallmentAmount !== null &&
-    storedInstallmentAmount !== undefined
-      ? {
-          ...credito,
-          valorCuota: storedInstallmentAmount,
-          frecuenciaCuota: "CATORCENAL" as const,
-        }
-      : credito;
-
   if (!deviceTag) {
-    return creditoWithStoredInstallment;
+    return credito;
   }
 
   if (
-    creditoWithStoredInstallment.valorCuota !== null &&
-    creditoWithStoredInstallment.numeroCuotas !== null
+    credito.valorCuota !== null &&
+    credito.numeroCuotas !== null
   ) {
-    return creditoWithStoredInstallment;
+    return credito;
   }
 
   try {
     const snapshot = await getPayJoyPaymentSnapshot(deviceTag);
 
     return {
-      ...creditoWithStoredInstallment,
+      ...credito,
       deviceTag,
-      valorCuota: snapshot.cost14 ?? creditoWithStoredInstallment.valorCuota,
+      valorCuota: snapshot.cost14 ?? credito.valorCuota,
       numeroCuotas:
-        creditoWithStoredInstallment.numeroCuotas ??
+        credito.numeroCuotas ??
         (snapshot.months === null ? null : snapshot.months * 2),
       frecuenciaCuota: "CATORCENAL" as const,
     };
   } catch {
-    return creditoWithStoredInstallment;
+    return credito;
   }
 }
 
@@ -410,7 +442,8 @@ async function buildCreditoFromFinanceOrder(
   source: PayJoyCreditoImei["origen"],
   currency?: string | null,
   paymentOptions?: PayJoyPaymentOption[] | null,
-  device?: PayJoyDevice | null
+  device?: PayJoyDevice | null,
+  ...deviceSources: unknown[]
 ): Promise<PayJoyCreditoImei | null> {
   const creditoAutorizado = parseAmount(financeOrder?.financeAmount);
 
@@ -418,8 +451,7 @@ async function buildCreditoFromFinanceOrder(
     return null;
   }
   const installment = resolveInstallmentInfo(financeOrder, paymentOptions);
-  const storedDevice = await getLatestPayJoyDeviceByImei(imei);
-  const deviceTag = getDeviceTag(device, financeOrder) ?? storedDevice?.deviceTag ?? null;
+  const deviceTag = getDeviceTag(device, financeOrder, ...deviceSources);
 
   return completeWithPaymentSnapshot({
     imei,
@@ -436,7 +468,7 @@ async function buildCreditoFromFinanceOrder(
     frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(financeOrder?.purchaseAmount),
     origen: source,
-  }, deviceTag, storedDevice?.installmentAmount);
+  }, deviceTag);
 }
 
 async function lookupCustomerFinanceByImei(imei: string) {
@@ -444,6 +476,7 @@ async function lookupCustomerFinanceByImei(imei: string) {
     "lookup-customer.php",
     {
       customerLocator: imei,
+      fields: "device.description",
     }
   );
 
@@ -457,7 +490,8 @@ async function lookupCustomerFinanceByImei(imei: string) {
     "lookup-customer",
     data.financeOrder.currency,
     data.paymentOptions,
-    data.device
+    data.device,
+    data
   );
 }
 
@@ -494,7 +528,8 @@ async function lookupTransactionFinanceByImei(imei: string) {
     "list-transactions",
     transaction.currency,
     null,
-    transaction.device
+    transaction.device,
+    transaction
   );
 
   if (fromFinanceOrder) {
@@ -507,11 +542,7 @@ async function lookupTransactionFinanceByImei(imei: string) {
     return null;
   }
   const installment = resolveInstallmentInfo(transaction.financeOrder);
-  const storedDevice = await getLatestPayJoyDeviceByImei(imei);
-  const deviceTag =
-    getDeviceTag(transaction.device, transaction.financeOrder) ??
-    storedDevice?.deviceTag ??
-    null;
+  const deviceTag = getDeviceTag(transaction.device, transaction.financeOrder, transaction);
 
   return completeWithPaymentSnapshot({
     imei,
@@ -529,7 +560,30 @@ async function lookupTransactionFinanceByImei(imei: string) {
     frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(transaction.financeOrder?.purchaseAmount),
     origen: "list-transactions",
-  } satisfies PayJoyCreditoImei, deviceTag, storedDevice?.installmentAmount);
+  } satisfies PayJoyCreditoImei, deviceTag);
+}
+
+function needsPaymentDetails(credito: PayJoyCreditoImei) {
+  return credito.valorCuota === null || credito.numeroCuotas === null;
+}
+
+function mergeCreditoDetails(
+  primary: PayJoyCreditoImei,
+  fallback: PayJoyCreditoImei | null
+) {
+  if (!fallback) {
+    return primary;
+  }
+
+  return {
+    ...primary,
+    deviceTag: primary.deviceTag ?? fallback.deviceTag,
+    enganche: primary.enganche ?? fallback.enganche,
+    valorCuota: primary.valorCuota ?? fallback.valorCuota,
+    numeroCuotas: primary.numeroCuotas ?? fallback.numeroCuotas,
+    frecuenciaCuota: primary.frecuenciaCuota ?? fallback.frecuenciaCuota,
+    valorCompra: primary.valorCompra ?? fallback.valorCompra,
+  };
 }
 
 export async function obtenerCreditoPayJoyPorImei(imeiValue: string) {
@@ -541,9 +595,21 @@ export async function obtenerCreditoPayJoyPorImei(imeiValue: string) {
 
   const customerResult = await lookupCustomerFinanceByImei(imei);
 
-  if (customerResult) {
+  if (customerResult && !needsPaymentDetails(customerResult)) {
     return customerResult;
   }
 
-  return lookupTransactionFinanceByImei(imei);
+  try {
+    const transactionResult = await lookupTransactionFinanceByImei(imei);
+
+    return customerResult
+      ? mergeCreditoDetails(customerResult, transactionResult)
+      : transactionResult;
+  } catch (error) {
+    if (customerResult) {
+      return customerResult;
+    }
+
+    throw error;
+  }
 }

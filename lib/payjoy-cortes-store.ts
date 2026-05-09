@@ -131,10 +131,6 @@ function normalizeDeviceTag(value: string | null | undefined) {
   return String(value || "").trim().toUpperCase();
 }
 
-function normalizeImei(value: string | null | undefined) {
-  return String(value || "").replace(/\D/g, "").trim();
-}
-
 function normalizeStoredRow(row: unknown): PayJoyStoredRow | null {
   if (!row || typeof row !== "object") {
     return null;
@@ -563,44 +559,4 @@ export async function getLatestNationalIdsByDeviceTags(deviceTags: string[]) {
   }
 
   return nationalIds;
-}
-
-export async function getLatestPayJoyDeviceByImei(imeiValue: string) {
-  await ensurePayJoyCutsTable();
-
-  const requestedImei = normalizeImei(imeiValue);
-
-  if (!requestedImei) {
-    return null;
-  }
-
-  const cuts = await prisma.$queryRawUnsafe<StoredRowsOnlyRecord[]>(`
-    SELECT rows_json AS "rows"
-    FROM payjoy_cortes_guardados
-    ORDER BY updated_at DESC, id DESC
-    LIMIT 120
-  `);
-
-  for (const cut of cuts) {
-    const rawRows = parseJsonColumn<unknown[]>(cut.rows, []);
-    const parsedRows = (Array.isArray(rawRows) ? rawRows : [])
-      .map(normalizeStoredRow)
-      .filter((candidate): candidate is PayJoyStoredRow => candidate !== null);
-
-    for (const row of parsedRows) {
-      const rowImei = normalizeImei(row.imei);
-      const deviceTag = normalizeDeviceTag(row.device);
-
-      if (rowImei !== requestedImei || !deviceTag.startsWith("D")) {
-        continue;
-      }
-
-      return {
-        deviceTag,
-        installmentAmount: row.installmentAmount,
-      };
-    }
-  }
-
-  return null;
 }
