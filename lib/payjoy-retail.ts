@@ -308,6 +308,7 @@ async function lookupTransactionFinanceByImei(imei: string) {
   if (amount === null) {
     return null;
   }
+  const installment = resolveInstallmentInfo(transaction.financeOrder);
 
   return {
     imei,
@@ -319,9 +320,9 @@ async function lookupTransactionFinanceByImei(imei: string) {
         ? null
         : String(transaction.financeOrder.id),
     enganche: parseAmount(transaction.financeOrder?.downPayment),
-    valorCuota: null,
-    numeroCuotas: null,
-    frecuenciaCuota: null,
+    valorCuota: installment.valorCuota,
+    numeroCuotas: installment.numeroCuotas,
+    frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(transaction.financeOrder?.purchaseAmount),
     origen: "list-transactions",
   } satisfies PayJoyCreditoImei;
