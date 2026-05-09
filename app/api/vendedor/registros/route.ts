@@ -10,6 +10,10 @@ import {
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
+import {
+  obtenerCreditoPayJoyPorImei,
+  PayJoyRetailConfigError,
+} from "@/lib/payjoy-retail";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
   DOMINIOS_CORREO_REGISTRO_TEXTO,
@@ -213,6 +217,21 @@ function monedaNumero(value: string | null) {
 
 function monedasSumanIgual(a: string | null, b: string | null, total: string | null) {
   return monedaNumero(a) + monedaNumero(b) === monedaNumero(total);
+}
+
+function esPayJoy(value: unknown) {
+  return String(value || "").trim().toUpperCase() === "PAYJOY";
+}
+
+function formatMoneyValidation(value: number) {
+  return `$ ${Math.round(value).toLocaleString("es-CO")}`;
+}
+
+function monedaIgual(a: unknown, b: unknown) {
+  const left = Math.round(monedaNumero(String(a ?? "")));
+  const right = Math.round(monedaNumero(String(b ?? "")));
+
+  return left === right;
 }
 
 function serializarFinancierasDetalle(valor: unknown) {
@@ -723,6 +742,51 @@ async function validarEquipoExistenteParaRegistro(params: {
   return { equipo };
 }
 
+async function validarCreditoPayJoy(payload: {
+  serialImei: string;
+  financierasDetalle: Array<{
+    plataformaCredito: string;
+    creditoAutorizado: string;
+  }>;
+}) {
+  const financierasPayJoy = payload.financierasDetalle.filter((item) =>
+    esPayJoy(item.plataformaCredito)
+  );
+
+  if (!financierasPayJoy.length) {
+    return null;
+  }
+
+  try {
+    const creditoOficial = await obtenerCreditoPayJoyPorImei(payload.serialImei);
+
+    if (!creditoOficial) {
+      return "No se encontro un credito PayJoy para este IMEI. Verifica el IMEI antes de guardar el registro.";
+    }
+
+    const distinta = financierasPayJoy.find(
+      (item) =>
+        !monedaIgual(item.creditoAutorizado, creditoOficial.creditoAutorizado)
+    );
+
+    if (distinta) {
+      return `El credito PAYJOY del IMEI ${payload.serialImei} debe ser ${formatMoneyValidation(
+        creditoOficial.creditoAutorizado
+      )}. No coincide con el valor digitado por el asesor.`;
+    }
+
+    return null;
+  } catch (error) {
+    if (error instanceof PayJoyRetailConfigError) {
+      return "No se puede validar PAYJOY porque falta configurar la clave API de PayJoy en el servidor.";
+    }
+
+    return error instanceof Error
+      ? error.message
+      : "No se pudo validar el credito PAYJOY del IMEI.";
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const access = await requireVendor();
@@ -893,6 +957,12 @@ export async function POST(req: Request) {
 
     if ("error" in equipoValidado) {
       return NextResponse.json({ error: equipoValidado.error }, { status: 400 });
+    }
+
+    const errorPayJoy = await validarCreditoPayJoy(payload.data);
+
+    if (errorPayJoy) {
+      return NextResponse.json({ error: errorPayJoy }, { status: 400 });
     }
 
     await prisma.registroVendedorVenta.create({
@@ -1087,6 +1157,12 @@ export async function PATCH(req: Request) {
 
     if ("error" in equipoValidado) {
       return NextResponse.json({ error: equipoValidado.error }, { status: 400 });
+    }
+
+    const errorPayJoy = await validarCreditoPayJoy(payload.data);
+
+    if (errorPayJoy) {
+      return NextResponse.json({ error: errorPayJoy }, { status: 400 });
     }
 
     const actualizado = await prisma.registroVendedorVenta.update({

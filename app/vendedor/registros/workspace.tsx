@@ -142,6 +142,19 @@ type ImeiLookupResponse = {
   };
 };
 
+type PayJoyCreditoResponse = {
+  credito?: {
+    imei: string;
+    creditoAutorizado: number;
+    moneda: string | null;
+    ordenId: string | null;
+    enganche: number | null;
+    valorCompra: number | null;
+    origen: string;
+  };
+  error?: string;
+};
+
 const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
 
 const PLAZO_OPTIONS = Array.from({ length: MAX_PLAZO_CUOTAS }, (_, index) =>
@@ -294,6 +307,10 @@ function esServicioContado(value: unknown) {
 
 function esServicioFinanciera(value: unknown) {
   return String(value || "").trim().toUpperCase() === "FINANCIERA";
+}
+
+function esPlataformaPayJoy(value: unknown) {
+  return String(value || "").trim().toUpperCase() === "PAYJOY";
 }
 
 function esRegistroConvertido(registro: RegistroVendedorDetalle | null) {
@@ -690,6 +707,13 @@ export default function VendedorRegistroWorkspace({
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [buscandoImei, setBuscandoImei] = useState(false);
+  const [consultandoPayjoyIndex, setConsultandoPayjoyIndex] = useState<
+    number | null
+  >(null);
+  const [payjoyCreditos, setPayjoyCreditos] = useState<
+    Record<number, PayJoyCreditoResponse["credito"]>
+  >({});
+  const [payjoyErrores, setPayjoyErrores] = useState<Record<number, string>>({});
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const [imeiDetalle, setImeiDetalle] = useState("");
   const [signaturePadKey, setSignaturePadKey] = useState(0);
@@ -851,6 +875,8 @@ export default function VendedorRegistroWorkspace({
         medioPago2Valor: "",
       };
     });
+    setPayjoyCreditos({});
+    setPayjoyErrores({});
     setFinancierasVisibles(1);
     setIngresoContado2Visible(false);
   };
@@ -878,7 +904,120 @@ export default function VendedorRegistroWorkspace({
     field: "creditoAutorizado" | "cuotaInicial" | "valorCuota",
     value: string
   ) => {
+    if (
+      field === "creditoAutorizado" &&
+      esPlataformaPayJoy(form.financierasDetalle[index]?.plataformaCredito)
+    ) {
+      return;
+    }
+
     setFinancieraField(index, field, formatearPesoInput(value));
+  };
+
+  const consultarCreditoPayjoy = async (index: number, imeiValue?: string) => {
+    const imei = onlyDigits(imeiValue || form.serialImei, 15);
+
+    if (imei.length !== 15) {
+      setPayjoyErrores((current) => ({
+        ...current,
+        [index]: "Busca primero un IMEI valido de 15 digitos",
+      }));
+      return;
+    }
+
+    try {
+      setConsultandoPayjoyIndex(index);
+      setPayjoyErrores((current) => {
+        const next = { ...current };
+        delete next[index];
+        return next;
+      });
+
+      const params = new URLSearchParams({ imei });
+      const response = await fetch(
+        `/api/vendedor/registros/payjoy-credito?${params.toString()}`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as PayJoyCreditoResponse;
+
+      if (!response.ok || !data.credito) {
+        setPayjoyCreditos((current) => {
+          const next = { ...current };
+          delete next[index];
+          return next;
+        });
+        setFinancieraField(index, "creditoAutorizado", "");
+        setPayjoyErrores((current) => ({
+          ...current,
+          [index]:
+            data.error ||
+            "No se encontro un credito PayJoy para este IMEI",
+        }));
+        return;
+      }
+
+      setPayjoyCreditos((current) => ({
+        ...current,
+        [index]: data.credito,
+      }));
+      setForm((current) => {
+        if (current.serialImei !== imei) {
+          return current;
+        }
+
+        return {
+          ...current,
+          financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
+            itemIndex === index
+              ? {
+                  ...item,
+                  creditoAutorizado: formatearPesoInput(
+                    data.credito?.creditoAutorizado ?? 0
+                  ),
+                }
+              : item
+          ),
+        };
+      });
+    } catch {
+      setPayjoyErrores((current) => ({
+        ...current,
+        [index]: "Error consultando el credito PayJoy",
+      }));
+    } finally {
+      setConsultandoPayjoyIndex(null);
+    }
+  };
+
+  const seleccionarPlataformaFinanciera = (index: number, value: string) => {
+    const esPayjoy = esPlataformaPayJoy(value);
+
+    setPayjoyCreditos((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setPayjoyErrores((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setForm((current) => ({
+      ...current,
+      financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              plataformaCredito: value,
+              creditoAutorizado: esPayjoy ? "" : item.creditoAutorizado,
+            }
+          : item
+      ),
+    }));
+
+    if (esPayjoy && form.serialImei.length === 15) {
+      void consultarCreditoPayjoy(index, form.serialImei);
+    }
   };
 
   const resetFinanciera = (index: number) => {
@@ -942,6 +1081,14 @@ export default function VendedorRegistroWorkspace({
       setImeiDetalle(
         `${equipo.referencia} | ${equipo.sedeNombre ?? "Sin ubicacion"} | ${equipo.estadoActual ?? "Sin estado"}`
       );
+
+      form.financierasDetalle
+        .slice(0, financierasVisibles)
+        .forEach((item, index) => {
+          if (esPlataformaPayJoy(item.plataformaCredito)) {
+            void consultarCreditoPayjoy(index, equipo.imei);
+          }
+        });
     } catch {
       setImeiDetalle("");
       setFormMessage("Error consultando el IMEI", "error");
@@ -1621,10 +1768,23 @@ export default function VendedorRegistroWorkspace({
                         value={form.serialImei}
                         disabled={registroEditandoConvertido}
                         onChange={(event) => {
-                          setField(
-                            "serialImei",
-                            onlyDigits(event.target.value, 15)
-                          );
+                          const nextImei = onlyDigits(event.target.value, 15);
+
+                          setForm((current) => ({
+                            ...current,
+                            serialImei: nextImei,
+                            financierasDetalle: current.financierasDetalle.map(
+                              (item) =>
+                                esPlataformaPayJoy(item.plataformaCredito)
+                                  ? {
+                                      ...item,
+                                      creditoAutorizado: "",
+                                    }
+                                  : item
+                            ),
+                          }));
+                          setPayjoyCreditos({});
+                          setPayjoyErrores({});
                           setImeiDetalle("");
                         }}
                         onBlur={() => {
@@ -1765,9 +1925,8 @@ export default function VendedorRegistroWorkspace({
                           <select
                             value={item.plataformaCredito}
                             onChange={(event) =>
-                              setFinancieraField(
+                              seleccionarPlataformaFinanciera(
                                 index,
-                                "plataformaCredito",
                                 event.target.value
                               )
                             }
@@ -1801,10 +1960,49 @@ export default function VendedorRegistroWorkspace({
                                     event.target.value
                                   )
                                 }
-                                className={inputClass()}
+                                readOnly={esPlataformaPayJoy(
+                                  item.plataformaCredito
+                                )}
+                                className={inputClass(
+                                  esPlataformaPayJoy(item.plataformaCredito)
+                                )}
                                 inputMode="numeric"
-                                placeholder="$ 0"
+                                placeholder={
+                                  esPlataformaPayJoy(item.plataformaCredito)
+                                    ? "Se completa desde PayJoy"
+                                    : "$ 0"
+                                }
                               />
+                              {esPlataformaPayJoy(item.plataformaCredito) && (
+                                <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span>
+                                      {consultandoPayjoyIndex === index
+                                        ? "Consultando credito PayJoy..."
+                                        : payjoyCreditos[index]
+                                          ? `Credito PayJoy: ${formatMoney(
+                                              payjoyCreditos[index]
+                                                ?.creditoAutorizado ?? null
+                                            )}`
+                                          : payjoyErrores[index] ||
+                                            "El valor se valida por IMEI en PayJoy."}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void consultarCreditoPayjoy(index)
+                                      }
+                                      disabled={
+                                        consultandoPayjoyIndex === index ||
+                                        form.serialImei.length !== 15
+                                      }
+                                      className="rounded-full border border-emerald-200 bg-white px-3 py-1 font-bold text-emerald-800 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Consultar
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </label>
 
                             {financieraMuestraInicial(index) && (
