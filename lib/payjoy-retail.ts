@@ -1,4 +1,5 @@
 import { getPayJoyPaymentSnapshot } from "@/lib/payjoy";
+import { getLatestPayJoyDeviceByImei } from "@/lib/payjoy-cortes-store";
 
 const PAYJOY_RETAIL_API_BASE_URL =
   process.env.PAYJOY_RETAIL_API_BASE_URL || "https://partner.payjoy.com/v1";
@@ -361,27 +362,45 @@ async function fetchPayJoy<T>(
 
 async function completeWithPaymentSnapshot(
   credito: PayJoyCreditoImei,
-  deviceTag: string | null
+  deviceTag: string | null,
+  storedInstallmentAmount?: number | null
 ) {
-  if (!deviceTag || credito.valorCuota !== null) {
-    return credito;
+  const creditoWithStoredInstallment =
+    credito.valorCuota === null &&
+    storedInstallmentAmount !== null &&
+    storedInstallmentAmount !== undefined
+      ? {
+          ...credito,
+          valorCuota: storedInstallmentAmount,
+          frecuenciaCuota: "CATORCENAL" as const,
+        }
+      : credito;
+
+  if (!deviceTag) {
+    return creditoWithStoredInstallment;
+  }
+
+  if (
+    creditoWithStoredInstallment.valorCuota !== null &&
+    creditoWithStoredInstallment.numeroCuotas !== null
+  ) {
+    return creditoWithStoredInstallment;
   }
 
   try {
     const snapshot = await getPayJoyPaymentSnapshot(deviceTag);
 
-    if (snapshot.cost14 === null) {
-      return credito;
-    }
-
     return {
-      ...credito,
+      ...creditoWithStoredInstallment,
       deviceTag,
-      valorCuota: snapshot.cost14,
+      valorCuota: snapshot.cost14 ?? creditoWithStoredInstallment.valorCuota,
+      numeroCuotas:
+        creditoWithStoredInstallment.numeroCuotas ??
+        (snapshot.months === null ? null : snapshot.months * 2),
       frecuenciaCuota: "CATORCENAL" as const,
     };
   } catch {
-    return credito;
+    return creditoWithStoredInstallment;
   }
 }
 
@@ -399,7 +418,8 @@ async function buildCreditoFromFinanceOrder(
     return null;
   }
   const installment = resolveInstallmentInfo(financeOrder, paymentOptions);
-  const deviceTag = getDeviceTag(device, financeOrder);
+  const storedDevice = await getLatestPayJoyDeviceByImei(imei);
+  const deviceTag = getDeviceTag(device, financeOrder) ?? storedDevice?.deviceTag ?? null;
 
   return completeWithPaymentSnapshot({
     imei,
@@ -416,7 +436,7 @@ async function buildCreditoFromFinanceOrder(
     frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(financeOrder?.purchaseAmount),
     origen: source,
-  }, deviceTag);
+  }, deviceTag, storedDevice?.installmentAmount);
 }
 
 async function lookupCustomerFinanceByImei(imei: string) {
@@ -487,7 +507,11 @@ async function lookupTransactionFinanceByImei(imei: string) {
     return null;
   }
   const installment = resolveInstallmentInfo(transaction.financeOrder);
-  const deviceTag = getDeviceTag(transaction.device, transaction.financeOrder);
+  const storedDevice = await getLatestPayJoyDeviceByImei(imei);
+  const deviceTag =
+    getDeviceTag(transaction.device, transaction.financeOrder) ??
+    storedDevice?.deviceTag ??
+    null;
 
   return completeWithPaymentSnapshot({
     imei,
@@ -505,7 +529,7 @@ async function lookupTransactionFinanceByImei(imei: string) {
     frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(transaction.financeOrder?.purchaseAmount),
     origen: "list-transactions",
-  } satisfies PayJoyCreditoImei, deviceTag);
+  } satisfies PayJoyCreditoImei, deviceTag, storedDevice?.installmentAmount);
 }
 
 export async function obtenerCreditoPayJoyPorImei(imeiValue: string) {

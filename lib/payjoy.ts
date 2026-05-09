@@ -14,6 +14,7 @@ type PayJoyPublicResponse = {
     validThrough?: string | number | null;
     cost7?: string | number | null;
     cost30?: string | number | null;
+    months?: string | number | null;
     feeSchema?: string | null;
   } | null;
 };
@@ -26,6 +27,7 @@ export type PayJoyPaymentSnapshot = {
   cost14: number | null;
   cost7: number | null;
   cost30: number | null;
+  months: number | null;
   paidInFull: boolean;
   message: string | null;
 };
@@ -56,6 +58,12 @@ function parseUnixDate(value: string | number | null | undefined) {
 
   const parsed = new Date(unixSeconds * 1000);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parsePositiveInteger(value: string | number | null | undefined) {
+  const parsed = parseNumber(value);
+
+  return parsed && Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function normalizeDeviceTag(value: string) {
@@ -170,6 +178,7 @@ export async function getPayJoyPaymentSnapshot(deviceTag: string) {
     cost14: resolveCost14(payload),
     cost7: parseNumber(payload.deviceDetails?.cost7),
     cost30: parseNumber(payload.deviceDetails?.cost30),
+    months: parsePositiveInteger(payload.deviceDetails?.months),
     paidInFull,
     message: payload.message || null,
   } satisfies PayJoyPaymentSnapshot;
