@@ -1826,6 +1826,67 @@ export default function VendedorRegistroWorkspace({
                   </select>
                 </label>
 
+                <div className="md:col-span-2 grid gap-3 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-end">
+                    <label className="flex-1 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      IMEI
+                      <input
+                        value={form.serialImei}
+                        disabled={registroEditandoConvertido}
+                        onChange={(event) => {
+                          const nextImei = onlyDigits(event.target.value, 15);
+
+                          autoPayJoyConsultaRef.current = {};
+                          setForm((current) => ({
+                            ...current,
+                            serialImei: nextImei,
+                            financierasDetalle: current.financierasDetalle.map(
+                              (item) =>
+                                esPlataformaPayJoy(item.plataformaCredito)
+                                  ? {
+                                      ...item,
+                                      creditoAutorizado: "",
+                                      valorCuota: "",
+                                      numeroCuotas: "",
+                                      frecuenciaCuota: "",
+                                    }
+                                  : item
+                            ),
+                          }));
+                          setPayjoyCreditos({});
+                          setPayjoyErrores({});
+                          setImeiDetalle("");
+                        }}
+                        onBlur={() => {
+                          if (!registroEditandoConvertido && form.serialImei.length === 15) {
+                            void buscarImei();
+                          }
+                        }}
+                        className={inputClass(registroEditandoConvertido)}
+                        placeholder="15 digitos"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => void buscarImei()}
+                      disabled={
+                        registroEditandoConvertido ||
+                        buscandoImei ||
+                        form.serialImei.length !== 15
+                      }
+                      className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {buscandoImei ? "Consultando..." : "Buscar IMEI"}
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600">
+                    {imeiDetalle ||
+                      "Cuando el IMEI exista en cualquier sede o en bodega principal, se completara la informacion disponible del equipo."}
+                  </div>
+                </div>
+
                 <div className="md:col-span-2">
                   <p className="mb-2 text-sm font-semibold text-slate-700">
                     Tipo de venta
@@ -1889,67 +1950,6 @@ export default function VendedorRegistroWorkspace({
                     placeholder="Documento"
                   />
                 </label>
-
-                <div className="md:col-span-2 grid gap-3 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex flex-col gap-2 md:flex-row md:items-end">
-                    <label className="flex-1 flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      IMEI
-                      <input
-                        value={form.serialImei}
-                        disabled={registroEditandoConvertido}
-                        onChange={(event) => {
-                          const nextImei = onlyDigits(event.target.value, 15);
-
-                          autoPayJoyConsultaRef.current = {};
-                          setForm((current) => ({
-                            ...current,
-                            serialImei: nextImei,
-                            financierasDetalle: current.financierasDetalle.map(
-                              (item) =>
-                                esPlataformaPayJoy(item.plataformaCredito)
-                                  ? {
-                                      ...item,
-                                      creditoAutorizado: "",
-                                      valorCuota: "",
-                                      numeroCuotas: "",
-                                      frecuenciaCuota: "",
-                                    }
-                                  : item
-                            ),
-                          }));
-                          setPayjoyCreditos({});
-                          setPayjoyErrores({});
-                          setImeiDetalle("");
-                        }}
-                        onBlur={() => {
-                          if (!registroEditandoConvertido && form.serialImei.length === 15) {
-                            void buscarImei();
-                          }
-                        }}
-                        className={inputClass(registroEditandoConvertido)}
-                        placeholder="15 digitos"
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => void buscarImei()}
-                      disabled={
-                        registroEditandoConvertido ||
-                        buscandoImei ||
-                        form.serialImei.length !== 15
-                      }
-                      className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                    >
-                      {buscandoImei ? "Consultando..." : "Buscar IMEI"}
-                    </button>
-                  </div>
-
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600">
-                    {imeiDetalle ||
-                      "Cuando el IMEI exista en cualquier sede o en bodega principal, se completara la informacion disponible del equipo."}
-                  </div>
-                </div>
 
                 {esServicioFinanciera(form.servicio) && (
                   <>
