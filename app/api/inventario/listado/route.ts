@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import {
-  esPerfilSupervisor,
-  puedeAccederModulosOperativos,
-} from "@/lib/access-control";
-import { esSedeRetiradaParaSupervisor } from "@/lib/sedes";
+import { puedeAccederModulosOperativos } from "@/lib/access-control";
 
 export async function GET() {
   try {
@@ -26,9 +22,6 @@ export async function GET() {
     }
 
     const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
-    const esSupervisor =
-      esPerfilSupervisor(user.perfilTipo) ||
-      String(user.rolNombre || "").trim().toUpperCase() === "SUPERVISOR";
 
     const inventario = await prisma.inventarioSede.findMany({
       where: esAdmin ? {} : { sedeId: user.sedeId },
@@ -55,13 +48,7 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json(
-      esSupervisor
-        ? inventario.filter(
-            (item) => !esSedeRetiradaParaSupervisor(item.sede?.nombre)
-          )
-        : inventario
-    );
+    return NextResponse.json(inventario);
   } catch (error) {
     console.error("ERROR LISTADO INVENTARIO:", error);
     return NextResponse.json(

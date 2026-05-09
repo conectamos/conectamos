@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { esPerfilSupervisor } from "@/lib/access-control";
-import { esSedeRetiradaParaSupervisor } from "@/lib/sedes";
 
 export async function GET() {
   try {
@@ -25,15 +23,7 @@ export async function GET() {
       },
     });
 
-    const esSupervisor =
-      esPerfilSupervisor(user.perfilTipo) ||
-      String(user.rolNombre || "").trim().toUpperCase() === "SUPERVISOR";
-
-    return NextResponse.json(
-      esSupervisor
-        ? sedes.filter((sede) => !esSedeRetiradaParaSupervisor(sede.nombre))
-        : sedes
-    );
+    return NextResponse.json(sedes);
   } catch (error) {
     console.error("ERROR LISTANDO SEDES:", error);
     return NextResponse.json(
