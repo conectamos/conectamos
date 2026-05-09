@@ -3,20 +3,28 @@ const PAYJOY_RETAIL_API_BASE_URL =
 const DEFAULT_LOOKBACK_DAYS = 450;
 
 type PayJoyAmount = string | number | null | undefined;
+type PayJoyFinanceOrder = {
+  id?: string | number | null;
+  financeAmount?: PayJoyAmount;
+  downPayment?: PayJoyAmount;
+  monthlyCost?: PayJoyAmount;
+  months?: string | number | null;
+  purchaseAmount?: PayJoyAmount;
+  currency?: string | null;
+  weeklyCost?: PayJoyAmount;
+  [key: string]: unknown;
+};
+type PayJoyPaymentOption = {
+  amount?: PayJoyAmount;
+  type?: string | null;
+  [key: string]: unknown;
+};
 
 type PayJoyCustomerLookupResponse = {
   valid?: boolean;
   message?: string;
-  financeOrder?: {
-    id?: string | number | null;
-    financeAmount?: PayJoyAmount;
-    downPayment?: PayJoyAmount;
-    monthlyCost?: PayJoyAmount;
-    months?: string | number | null;
-    purchaseAmount?: PayJoyAmount;
-    currency?: string | null;
-    weeklyCost?: PayJoyAmount;
-  } | null;
+  financeOrder?: PayJoyFinanceOrder | null;
+  paymentOptions?: PayJoyPaymentOption[] | null;
   device?: {
     imei?: string | null;
   } | null;
@@ -30,15 +38,7 @@ type PayJoyTransactionResponse = {
     time?: string | number | null;
     amount?: PayJoyAmount;
     currency?: string | null;
-    financeOrder?: {
-      id?: string | number | null;
-      financeAmount?: PayJoyAmount;
-      downPayment?: PayJoyAmount;
-      monthlyCost?: PayJoyAmount;
-      months?: string | number | null;
-      purchaseAmount?: PayJoyAmount;
-      weeklyCost?: PayJoyAmount;
-    } | null;
+    financeOrder?: PayJoyFinanceOrder | null;
     device?: {
       imei?: string | null;
     } | null;
@@ -130,7 +130,9 @@ function parseAmount(value: PayJoyAmount) {
 }
 
 function parsePositiveInteger(value: string | number | null | undefined) {
-  const parsed = Number(value);
+  const normalized =
+    typeof value === "string" ? value.match(/\d+/)?.[0] : value;
+  const parsed = Number(normalized);
 
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
@@ -139,23 +141,127 @@ function roundCurrency(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function resolveInstallmentInfo(
-  financeOrder: PayJoyCustomerLookupResponse["financeOrder"]
+function getFinanceOrderAmount(
+  financeOrder: PayJoyFinanceOrder | null | undefined,
+  keys: string[]
 ) {
-  const monthlyCost = parseAmount(financeOrder?.monthlyCost);
-  const weeklyCost = parseAmount(financeOrder?.weeklyCost);
-  const months = parsePositiveInteger(financeOrder?.months);
+  if (!financeOrder) {
+    return null;
+  }
+
+  for (const key of keys) {
+    const amount = parseAmount(financeOrder[key] as PayJoyAmount);
+
+    if (amount !== null) {
+      return amount;
+    }
+  }
+
+  return null;
+}
+
+function getFinanceOrderInteger(
+  financeOrder: PayJoyFinanceOrder | null | undefined,
+  keys: string[]
+) {
+  if (!financeOrder) {
+    return null;
+  }
+
+  for (const key of keys) {
+    const value = parsePositiveInteger(
+      financeOrder[key] as string | number | null | undefined
+    );
+
+    if (value !== null) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function getPaymentOptionAmount(
+  paymentOptions: PayJoyPaymentOption[] | null | undefined,
+  types: string[]
+) {
+  const normalizedTypes = types.map((item) => item.toLowerCase());
+  const option = paymentOptions?.find(
+    (item) =>
+      normalizedTypes.includes(String(item.type || "").trim().toLowerCase())
+  );
+
+  return (
+    parseAmount(option?.amount) ??
+    parseAmount(option?.cost as PayJoyAmount) ??
+    parseAmount(option?.payment as PayJoyAmount) ??
+    parseAmount(option?.price as PayJoyAmount)
+  );
+}
+
+function resolveInstallmentInfo(
+  financeOrder: PayJoyFinanceOrder | null | undefined,
+  paymentOptions?: PayJoyPaymentOption[] | null
+) {
+  const directCatorcenalCost = getFinanceOrderAmount(financeOrder, [
+    "biweeklyCost",
+    "biWeeklyCost",
+    "biweeklyPayment",
+    "biWeeklyPayment",
+    "fortnightlyCost",
+    "fortnightlyPayment",
+    "catorcenalCost",
+    "catorcenalPayment",
+  ]) ?? getPaymentOptionAmount(paymentOptions, [
+    "biweekly",
+    "bi-weekly",
+    "fortnightly",
+    "catorcenal",
+  ]);
+  const monthlyCost =
+    getFinanceOrderAmount(financeOrder, [
+      "monthlyCost",
+      "monthlyPayment",
+      "monthCost",
+      "monthPayment",
+    ]) ?? getPaymentOptionAmount(paymentOptions, ["month", "monthly"]);
+  const weeklyCost =
+    getFinanceOrderAmount(financeOrder, [
+      "weeklyCost",
+      "weeklyPayment",
+      "weekCost",
+      "weekPayment",
+    ]) ?? getPaymentOptionAmount(paymentOptions, ["week", "weekly"]);
+  const months = getFinanceOrderInteger(financeOrder, [
+    "months",
+    "termMonths",
+    "term_months",
+    "durationMonths",
+    "loanMonths",
+    "tenorMonths",
+    "plazoMeses",
+  ]);
+  const installments = getFinanceOrderInteger(financeOrder, [
+    "numberOfPayments",
+    "paymentCount",
+    "installments",
+    "installmentCount",
+    "cuotas",
+  ]);
   const catorcenalCost =
-    monthlyCost !== null && monthlyCost > 0
+    directCatorcenalCost !== null && directCatorcenalCost > 0
+      ? roundCurrency(directCatorcenalCost)
+      : monthlyCost !== null && monthlyCost > 0
       ? roundCurrency(monthlyCost / 2)
       : weeklyCost !== null && weeklyCost > 0
         ? roundCurrency(weeklyCost * 2)
         : null;
+  const numeroCuotas = months !== null ? months * 2 : installments;
 
-  if (catorcenalCost !== null || months !== null) {
+  if (financeOrder || catorcenalCost !== null || numeroCuotas !== null) {
     return {
       valorCuota: catorcenalCost,
-      numeroCuotas: months === null ? null : months * 2,
+      numeroCuotas,
       frecuenciaCuota: "CATORCENAL" as const,
     };
   }
@@ -219,14 +325,15 @@ function buildCreditoFromFinanceOrder(
   imei: string,
   financeOrder: PayJoyCustomerLookupResponse["financeOrder"],
   source: PayJoyCreditoImei["origen"],
-  currency?: string | null
+  currency?: string | null,
+  paymentOptions?: PayJoyPaymentOption[] | null
 ): PayJoyCreditoImei | null {
   const creditoAutorizado = parseAmount(financeOrder?.financeAmount);
 
   if (creditoAutorizado === null) {
     return null;
   }
-  const installment = resolveInstallmentInfo(financeOrder);
+  const installment = resolveInstallmentInfo(financeOrder, paymentOptions);
 
   return {
     imei,
@@ -261,7 +368,8 @@ async function lookupCustomerFinanceByImei(imei: string) {
     imei,
     data.financeOrder,
     "lookup-customer",
-    data.financeOrder.currency
+    data.financeOrder.currency,
+    data.paymentOptions
   );
 }
 
