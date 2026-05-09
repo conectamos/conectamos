@@ -1,3 +1,5 @@
+import { getPayJoyPaymentSnapshot } from "@/lib/payjoy";
+
 const PAYJOY_RETAIL_API_BASE_URL =
   process.env.PAYJOY_RETAIL_API_BASE_URL || "https://partner.payjoy.com/v1";
 const DEFAULT_LOOKBACK_DAYS = 450;
@@ -19,15 +21,18 @@ type PayJoyPaymentOption = {
   type?: string | null;
   [key: string]: unknown;
 };
+type PayJoyDevice = {
+  imei?: string | null;
+  deviceTag?: string | null;
+  [key: string]: unknown;
+};
 
 type PayJoyCustomerLookupResponse = {
   valid?: boolean;
   message?: string;
   financeOrder?: PayJoyFinanceOrder | null;
   paymentOptions?: PayJoyPaymentOption[] | null;
-  device?: {
-    imei?: string | null;
-  } | null;
+  device?: PayJoyDevice | null;
 };
 
 type PayJoyTransactionResponse = {
@@ -39,9 +44,7 @@ type PayJoyTransactionResponse = {
     amount?: PayJoyAmount;
     currency?: string | null;
     financeOrder?: PayJoyFinanceOrder | null;
-    device?: {
-      imei?: string | null;
-    } | null;
+    device?: PayJoyDevice | null;
   }>;
 };
 
@@ -50,6 +53,7 @@ export type PayJoyCreditoImei = {
   creditoAutorizado: number;
   moneda: string | null;
   ordenId: string | null;
+  deviceTag: string | null;
   enganche: number | null;
   valorCuota: number | null;
   numeroCuotas: number | null;
@@ -97,6 +101,12 @@ export function isPayJoyRetailConfigured() {
 
 function normalizeImei(value: unknown) {
   return String(value || "").replace(/\D/g, "").trim();
+}
+
+function normalizeDeviceTag(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
 }
 
 function parseAmount(value: PayJoyAmount) {
@@ -175,6 +185,34 @@ function getFinanceOrderInteger(
 
     if (value !== null) {
       return value;
+    }
+  }
+
+  return null;
+}
+
+function getDeviceTag(
+  device?: PayJoyDevice | null,
+  financeOrder?: PayJoyFinanceOrder | null
+) {
+  const candidates = [
+    device?.deviceTag,
+    device?.device_tag,
+    device?.tag,
+    device?.deviceId,
+    device?.device_id,
+    financeOrder?.deviceTag,
+    financeOrder?.device_tag,
+    financeOrder?.tag,
+    financeOrder?.deviceId,
+    financeOrder?.device_id,
+  ];
+
+  for (const candidate of candidates) {
+    const deviceTag = normalizeDeviceTag(candidate);
+
+    if (deviceTag) {
+      return deviceTag;
     }
   }
 
@@ -321,21 +359,49 @@ async function fetchPayJoy<T>(
   return data;
 }
 
-function buildCreditoFromFinanceOrder(
+async function completeWithPaymentSnapshot(
+  credito: PayJoyCreditoImei,
+  deviceTag: string | null
+) {
+  if (!deviceTag || credito.valorCuota !== null) {
+    return credito;
+  }
+
+  try {
+    const snapshot = await getPayJoyPaymentSnapshot(deviceTag);
+
+    if (snapshot.cost14 === null) {
+      return credito;
+    }
+
+    return {
+      ...credito,
+      deviceTag,
+      valorCuota: snapshot.cost14,
+      frecuenciaCuota: "CATORCENAL" as const,
+    };
+  } catch {
+    return credito;
+  }
+}
+
+async function buildCreditoFromFinanceOrder(
   imei: string,
   financeOrder: PayJoyCustomerLookupResponse["financeOrder"],
   source: PayJoyCreditoImei["origen"],
   currency?: string | null,
-  paymentOptions?: PayJoyPaymentOption[] | null
-): PayJoyCreditoImei | null {
+  paymentOptions?: PayJoyPaymentOption[] | null,
+  device?: PayJoyDevice | null
+): Promise<PayJoyCreditoImei | null> {
   const creditoAutorizado = parseAmount(financeOrder?.financeAmount);
 
   if (creditoAutorizado === null) {
     return null;
   }
   const installment = resolveInstallmentInfo(financeOrder, paymentOptions);
+  const deviceTag = getDeviceTag(device, financeOrder);
 
-  return {
+  return completeWithPaymentSnapshot({
     imei,
     creditoAutorizado,
     moneda: financeOrder?.currency || currency || null,
@@ -343,13 +409,14 @@ function buildCreditoFromFinanceOrder(
       financeOrder?.id === null || financeOrder?.id === undefined
         ? null
         : String(financeOrder.id),
+    deviceTag,
     enganche: parseAmount(financeOrder?.downPayment),
     valorCuota: installment.valorCuota,
     numeroCuotas: installment.numeroCuotas,
     frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(financeOrder?.purchaseAmount),
     origen: source,
-  };
+  }, deviceTag);
 }
 
 async function lookupCustomerFinanceByImei(imei: string) {
@@ -369,7 +436,8 @@ async function lookupCustomerFinanceByImei(imei: string) {
     data.financeOrder,
     "lookup-customer",
     data.financeOrder.currency,
-    data.paymentOptions
+    data.paymentOptions,
+    data.device
   );
 }
 
@@ -400,11 +468,13 @@ async function lookupTransactionFinanceByImei(imei: string) {
     return null;
   }
 
-  const fromFinanceOrder = buildCreditoFromFinanceOrder(
+  const fromFinanceOrder = await buildCreditoFromFinanceOrder(
     imei,
     transaction.financeOrder,
     "list-transactions",
-    transaction.currency
+    transaction.currency,
+    null,
+    transaction.device
   );
 
   if (fromFinanceOrder) {
@@ -417,8 +487,9 @@ async function lookupTransactionFinanceByImei(imei: string) {
     return null;
   }
   const installment = resolveInstallmentInfo(transaction.financeOrder);
+  const deviceTag = getDeviceTag(transaction.device, transaction.financeOrder);
 
-  return {
+  return completeWithPaymentSnapshot({
     imei,
     creditoAutorizado: amount,
     moneda: transaction.currency || null,
@@ -427,13 +498,14 @@ async function lookupTransactionFinanceByImei(imei: string) {
       transaction.financeOrder?.id === undefined
         ? null
         : String(transaction.financeOrder.id),
+    deviceTag,
     enganche: parseAmount(transaction.financeOrder?.downPayment),
     valorCuota: installment.valorCuota,
     numeroCuotas: installment.numeroCuotas,
     frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(transaction.financeOrder?.purchaseAmount),
     origen: "list-transactions",
-  } satisfies PayJoyCreditoImei;
+  } satisfies PayJoyCreditoImei, deviceTag);
 }
 
 export async function obtenerCreditoPayJoyPorImei(imeiValue: string) {

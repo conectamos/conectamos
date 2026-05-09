@@ -101,6 +101,17 @@ function parseCost14FromFeeSchema(value: string | null | undefined) {
   }
 }
 
+function resolveCost14(payload: PayJoyPublicResponse) {
+  const fromFeeSchema = parseCost14FromFeeSchema(payload.deviceDetails?.feeSchema);
+  const cost7 = parseNumber(payload.deviceDetails?.cost7);
+
+  if (fromFeeSchema !== null) {
+    return fromFeeSchema;
+  }
+
+  return cost7 === null ? null : cost7 * 2;
+}
+
 export async function getPayJoyPaymentSnapshot(deviceTag: string) {
   const normalizedDeviceTag = normalizeDeviceTag(deviceTag);
 
@@ -156,7 +167,7 @@ export async function getPayJoyPaymentSnapshot(deviceTag: string) {
     validThrough: parseUnixDate(payload.deviceDetails?.validThrough),
     remainingBalance,
     currency: payload.currency || null,
-    cost14: parseCost14FromFeeSchema(payload.deviceDetails?.feeSchema),
+    cost14: resolveCost14(payload),
     cost7: parseNumber(payload.deviceDetails?.cost7),
     cost30: parseNumber(payload.deviceDetails?.cost30),
     paidInFull,
