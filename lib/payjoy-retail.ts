@@ -53,7 +53,7 @@ export type PayJoyCreditoImei = {
   enganche: number | null;
   valorCuota: number | null;
   numeroCuotas: number | null;
-  frecuenciaCuota: "SEMANAL" | "MENSUAL" | null;
+  frecuenciaCuota: "CATORCENAL" | null;
   valorCompra: number | null;
   origen: "lookup-customer" | "list-transactions";
 };
@@ -135,32 +135,34 @@ function parsePositiveInteger(value: string | number | null | undefined) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function roundCurrency(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function resolveInstallmentInfo(
   financeOrder: PayJoyCustomerLookupResponse["financeOrder"]
 ) {
   const monthlyCost = parseAmount(financeOrder?.monthlyCost);
   const weeklyCost = parseAmount(financeOrder?.weeklyCost);
   const months = parsePositiveInteger(financeOrder?.months);
+  const catorcenalCost =
+    monthlyCost !== null && monthlyCost > 0
+      ? roundCurrency(monthlyCost / 2)
+      : weeklyCost !== null && weeklyCost > 0
+        ? roundCurrency(weeklyCost * 2)
+        : null;
 
-  if (monthlyCost !== null) {
+  if (catorcenalCost !== null || months !== null) {
     return {
-      valorCuota: monthlyCost,
-      numeroCuotas: months,
-      frecuenciaCuota: "MENSUAL" as const,
-    };
-  }
-
-  if (weeklyCost !== null) {
-    return {
-      valorCuota: weeklyCost,
-      numeroCuotas: null,
-      frecuenciaCuota: "SEMANAL" as const,
+      valorCuota: catorcenalCost,
+      numeroCuotas: months === null ? null : months * 2,
+      frecuenciaCuota: "CATORCENAL" as const,
     };
   }
 
   return {
     valorCuota: null,
-    numeroCuotas: months,
+    numeroCuotas: null,
     frecuenciaCuota: null,
   };
 }
