@@ -811,6 +811,7 @@ export default async function HistorialInventarioPage(props: {
   const estadosInventarioNoDisponibles = new Set([
     "PRESTAMO",
     "PRESTAMO_POR_ACEPTAR",
+    "TRASLADO",
     "VENDIDO",
   ]);
   const inventariosOperativos = inventariosSede.filter(
