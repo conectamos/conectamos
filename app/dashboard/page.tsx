@@ -122,15 +122,15 @@ function CommercialRankingPanel({
   accent,
   items,
   countLabel,
-  showAmount = false,
   showCommissionToggle = false,
+  showAmountToggle = false,
 }: {
   title: string;
   accent: string;
   items: CommercialRankingItem[];
   countLabel: string;
-  showAmount?: boolean;
   showCommissionToggle?: boolean;
+  showAmountToggle?: boolean;
 }) {
   const countText = (total: number) => {
     if (countLabel === "uso") {
@@ -160,17 +160,6 @@ function CommercialRankingPanel({
             </p>
           </div>
         </div>
-
-        {showAmount && (
-          <div className="shrink-0 text-right">
-            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">
-              Monto
-            </p>
-            <p className="mt-1 text-sm font-black text-slate-950">
-              {formatoPesos(item.monto)}
-            </p>
-          </div>
-        )}
       </div>
     ));
 
@@ -205,6 +194,39 @@ function CommercialRankingPanel({
                           {item.nombre}
                         </span>
                         <span className="shrink-0 text-xs font-black text-emerald-700">
+                          {formatoPesos(item.monto)}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </details>
+          )}
+          {showAmountToggle && (
+            <details className="relative">
+              <summary className="flex cursor-pointer list-none items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-amber-700 transition hover:bg-amber-100 [&::-webkit-details-marker]:hidden">
+                Montos
+              </summary>
+              <div className="absolute right-0 z-20 mt-2 max-h-80 w-72 overflow-auto rounded-2xl border border-[#e6ddcf] bg-white p-3 shadow-[0_18px_55px_rgba(15,23,42,0.16)]">
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  Montos por financiera
+                </p>
+                <div className="space-y-2">
+                  {items.length === 0 ? (
+                    <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                      Sin montos registrados.
+                    </p>
+                  ) : (
+                    items.map((item) => (
+                      <div
+                        key={`monto-${item.nombre}`}
+                        className="flex items-center justify-between gap-3 rounded-xl bg-[#fcfbf8] px-3 py-2"
+                      >
+                        <span className="truncate text-xs font-bold text-slate-800">
+                          {item.nombre}
+                        </span>
+                        <span className="shrink-0 text-xs font-black text-amber-700">
                           {formatoPesos(item.monto)}
                         </span>
                       </div>
@@ -323,7 +345,7 @@ function CommercialRankingSection({
           accent="bg-amber-500"
           items={topFinancieras}
           countLabel="uso"
-          showAmount
+          showAmountToggle
         />
       </div>
     </section>
