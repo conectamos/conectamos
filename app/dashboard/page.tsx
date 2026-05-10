@@ -254,6 +254,7 @@ function CommercialRankingSection({
   periodLabel,
   coverageLabel,
   topSedesJalador,
+  topVentasSede,
   topJaladores,
   topCerradores,
   topFinancieras,
@@ -261,6 +262,7 @@ function CommercialRankingSection({
   periodLabel: string;
   coverageLabel: string;
   topSedesJalador: CommercialRankingItem[];
+  topVentasSede: CommercialRankingItem[];
   topJaladores: CommercialRankingItem[];
   topCerradores: CommercialRankingItem[];
   topFinancieras: CommercialRankingItem[];
@@ -290,11 +292,17 @@ function CommercialRankingSection({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
         <CommercialRankingPanel
-          title="Ventas SEDE"
+          title="Ventas de Oficina"
           accent="bg-sky-500"
           items={topSedesJalador}
+          countLabel="venta"
+        />
+        <CommercialRankingPanel
+          title="Ventas Sede"
+          accent="bg-emerald-500"
+          items={topVentasSede}
           countLabel="venta"
         />
         <CommercialRankingPanel
@@ -938,6 +946,7 @@ export default async function DashboardPage() {
               periodLabel={mesActual.label}
               coverageLabel={esAdmin ? "Todas las sedes" : sedeLabel}
               topSedesJalador={resumenComercialMensual.topSedesJalador}
+              topVentasSede={resumenComercialMensual.topVentasSede}
               topJaladores={resumenComercialMensual.topJaladores}
               topCerradores={resumenComercialMensual.topCerradores}
               topFinancieras={resumenComercialMensual.topFinancieras}

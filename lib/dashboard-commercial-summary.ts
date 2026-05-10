@@ -110,6 +110,11 @@ export async function getMonthlyCommercialSummary(options?: {
         jalador: true,
         cerrador: true,
         comision: true,
+        sede: {
+          select: {
+            nombre: true,
+          },
+        },
         financierasDetalle: true,
         alcanos: true,
         payjoy: true,
@@ -162,11 +167,16 @@ export async function getMonthlyCommercialSummary(options?: {
   const cajaVentas = n(ventas._sum.cajaOficina);
   const cajaOperativa = n(ingresosCaja._sum.valor) - n(egresosCaja._sum.valor);
   const sedesJalador = new Map<string, CommercialRankingItem>();
+  const ventasSede = new Map<string, CommercialRankingItem>();
   const jaladores = new Map<string, CommercialRankingItem>();
   const cerradores = new Map<string, CommercialRankingItem>();
   const financieras = new Map<string, CommercialRankingItem>();
 
   for (const venta of ventasDetalle) {
+    if (venta.sede?.nombre) {
+      pushRanking(ventasSede, venta.sede.nombre);
+    }
+
     if (venta.jalador) {
       if (isSedeJalador(venta.jalador)) {
         pushRanking(sedesJalador, venta.jalador);
@@ -197,6 +207,7 @@ export async function getMonthlyCommercialSummary(options?: {
     cajaVentas,
     cajaOperativa,
     topSedesJalador: sortedRanking(sedesJalador),
+    topVentasSede: sortedRanking(ventasSede),
     topJaladores: sortedRanking(jaladores),
     topCerradores: sortedRanking(cerradores),
     topFinancieras: sortedRanking(financieras),
