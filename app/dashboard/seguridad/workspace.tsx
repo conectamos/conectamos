@@ -125,6 +125,21 @@ export default function SeguridadAdminWorkspace({ usuario }: Props) {
                   {usuario.usuario}
                 </p>
               </div>
+
+              <Link
+                href="/dashboard/seguridad/mensaje-vendedor"
+                className="block rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 transition hover:border-emerald-300 hover:bg-emerald-100"
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Vendedores
+                </p>
+                <p className="mt-1 text-lg font-black text-slate-950">
+                  Editar mensaje de bienvenida
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Actualiza el texto que aparece al iniciar sesion.
+                </p>
+              </Link>
             </div>
           </div>
 

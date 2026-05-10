@@ -118,6 +118,7 @@ export async function getSessionUser() {
     sedeNombre: user.sede?.nombre ?? "Sede sin configurar",
     rolId: user.rolId,
     rolNombre,
+    sessionKey: session.sessionKey ?? null,
     perfilId: perfil?.id ?? null,
     perfilNombre: perfil?.nombre ?? null,
     perfilTipo: perfil?.tipo ?? null,

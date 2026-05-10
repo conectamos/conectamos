@@ -11,6 +11,7 @@ import DashboardUtilityGate from "./_components/dashboard-utility-gate";
 import LogoutButton from "./_components/logout-button";
 import VendorWelcomeModal from "./_components/vendor-welcome-modal";
 import { getCurrentBogotaMonthRange } from "@/lib/ventas-utils";
+import { getVendorWelcomeMessage } from "@/lib/vendor-welcome-message";
 import {
   getMonthlyCommercialSummary,
   type CommercialRankingItem,
@@ -581,6 +582,9 @@ export default async function DashboardPage() {
       : await getMonthlyCommercialSummary({
           sedeId: esAdmin ? null : session.sedeId ?? null,
         });
+  const mensajeBienvenidaVendedor = esVendedor
+    ? await getVendorWelcomeMessage()
+    : null;
   const financieraDestacada =
     resumenComercialMensual?.topFinancieras[0] ?? null;
 
@@ -724,6 +728,7 @@ export default async function DashboardPage() {
         { href: "/ventas/equipo-comercial", label: "Catalogos de ventas", tone: "secondary" },
         { href: "/dashboard/lista-precios", label: "Lista de precios", tone: "secondary" },
         { href: "/dashboard/auditoria", label: "Auditoria", tone: "secondary" },
+        { href: "/dashboard/seguridad/mensaje-vendedor", label: "Mensaje vendedores", tone: "secondary" },
         { href: "/dashboard/seguridad", label: "Seguridad", tone: "danger" },
       ],
       tone: "slate",
@@ -847,7 +852,12 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] text-slate-950">
-      {esVendedor && <VendorWelcomeModal />}
+      {esVendedor && mensajeBienvenidaVendedor && (
+        <VendorWelcomeModal
+          mensaje={mensajeBienvenidaVendedor}
+          sessionKey={session.sessionKey ?? `${session.id}-${session.perfilId ?? "usuario"}`}
+        />
+      )}
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <section className="relative overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#172033_48%,#0f766e_100%)] px-6 py-6 shadow-[0_26px_85px_rgba(15,23,42,0.2)] sm:px-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_28%)]" />
