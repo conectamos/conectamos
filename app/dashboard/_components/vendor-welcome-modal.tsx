@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { VendorWelcomeMessage } from "@/lib/vendor-welcome-message";
+import VendorMessageBody from "./vendor-message-body";
 
 const STORAGE_PREFIX = "conectamos:vendedor-bienvenida-cerrada";
 
@@ -59,16 +60,11 @@ export default function VendorWelcomeModal({
             {mensaje.title}
           </h2>
 
-          <div className="mt-5 space-y-4 text-sm leading-7 text-slate-600 sm:text-base">
-            {mensaje.body.map((paragraph, index) => (
-              <p
-                key={`${paragraph}-${index}`}
-                className={index === mensaje.body.length - 1 ? "font-black text-slate-950" : ""}
-              >
-                {paragraph}
-              </p>
-            ))}
-          </div>
+          <VendorMessageBody
+            blocks={mensaje.bodyBlocks}
+            className="mt-5"
+            fontFamily={mensaje.fontFamily}
+          />
 
           <div className="mt-7 flex justify-end">
             <button

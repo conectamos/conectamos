@@ -4,29 +4,51 @@ const CONFIG_KEY = "vendor_welcome_message";
 
 export type VendorWelcomeMessage = {
   body: string[];
+  bodyBlocks: VendorWelcomeBlock[];
   buttonLabel: string;
   eyebrow: string;
+  fontFamily: VendorWelcomeFontFamily;
   title: string;
   updatedBy?: string | null;
   version: string;
 };
 
+export type VendorWelcomeTextAlign = "left" | "center" | "right";
+export type VendorWelcomeTextSize = "normal" | "large";
+export type VendorWelcomeFontFamily = "system" | "serif";
+
+export type VendorWelcomeBlock = {
+  align: VendorWelcomeTextAlign;
+  size: VendorWelcomeTextSize;
+  text: string;
+};
+
 export type VendorWelcomeMessageInput = {
   body?: unknown;
+  bodyBlocks?: unknown;
   buttonLabel?: unknown;
   eyebrow?: unknown;
+  fontFamily?: unknown;
   title?: unknown;
 };
 
+const DEFAULT_BODY = [
+  "En CONECTAMOS, creemos que la calidad del servicio comienza con una excelente actitud. Por eso, una de nuestras reglas principales es atender a cada cliente con respeto, amabilidad, disposici\u00f3n y compromiso.",
+  "Este software ha sido dise\u00f1ado para facilitar tu trabajo, mejorar la comunicaci\u00f3n y brindar una experiencia m\u00e1s \u00e1gil, clara y eficiente. Te invitamos a usarlo con responsabilidad, entusiasmo y siempre con la mejor actitud de servicio.",
+  "Recuerda: cada interacci\u00f3n es una oportunidad para conectar, ayudar y dejar una impresi\u00f3n positiva.",
+  "\u00a1Gracias por ser parte de CONECTAMOS!",
+];
+
 const DEFAULT_MESSAGE = {
-  body: [
-    "En CONECTAMOS, creemos que la calidad del servicio comienza con una excelente actitud. Por eso, una de nuestras reglas principales es atender a cada cliente con respeto, amabilidad, disposici\u00f3n y compromiso.",
-    "Este software ha sido dise\u00f1ado para facilitar tu trabajo, mejorar la comunicaci\u00f3n y brindar una experiencia m\u00e1s \u00e1gil, clara y eficiente. Te invitamos a usarlo con responsabilidad, entusiasmo y siempre con la mejor actitud de servicio.",
-    "Recuerda: cada interacci\u00f3n es una oportunidad para conectar, ayudar y dejar una impresi\u00f3n positiva.",
-    "\u00a1Gracias por ser parte de CONECTAMOS!",
-  ],
+  body: DEFAULT_BODY,
+  bodyBlocks: DEFAULT_BODY.map((text) => ({
+    align: "left" as const,
+    size: "normal" as const,
+    text,
+  })),
   buttonLabel: "Entendido",
   eyebrow: "CONECTAMOS",
+  fontFamily: "system" as const,
   title: "\u00a1Bienvenido/a al software de CONECTAMOS!",
 };
 
@@ -54,6 +76,53 @@ function cleanBody(value: unknown) {
   return items.length ? items : DEFAULT_MESSAGE.body;
 }
 
+function cleanAlign(value: unknown): VendorWelcomeTextAlign {
+  return value === "center" || value === "right" ? value : "left";
+}
+
+function cleanSize(value: unknown): VendorWelcomeTextSize {
+  return value === "large" ? "large" : "normal";
+}
+
+function cleanFontFamily(value: unknown): VendorWelcomeFontFamily {
+  return value === "serif" ? "serif" : "system";
+}
+
+function cleanBodyBlocks(value: unknown, fallbackBody?: unknown) {
+  if (Array.isArray(value)) {
+    const blocks = value
+      .map((item) => {
+        const source: Record<string, unknown> =
+          item && typeof item === "object"
+            ? (item as Record<string, unknown>)
+            : { text: item };
+        const text = cleanText(source.text, "", 900);
+
+        if (!text) {
+          return null;
+        }
+
+        return {
+          align: cleanAlign(source.align),
+          size: cleanSize(source.size),
+          text,
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 8) as VendorWelcomeBlock[];
+
+    if (blocks.length) {
+      return blocks;
+    }
+  }
+
+  return cleanBody(fallbackBody ?? value).map((text) => ({
+    align: "left" as const,
+    size: "normal" as const,
+    text,
+  }));
+}
+
 function normalizeStoredMessage(
   value: unknown,
   metadata?: { updatedAt?: Date | string | null; updatedBy?: string | null }
@@ -65,15 +134,18 @@ function normalizeStoredMessage(
   const updatedAt = metadata?.updatedAt
     ? new Date(metadata.updatedAt).toISOString()
     : "default";
+  const bodyBlocks = cleanBodyBlocks(source.bodyBlocks, source.body);
 
   return {
-    body: cleanBody(source.body),
+    body: bodyBlocks.map((block) => block.text),
+    bodyBlocks,
     buttonLabel: cleanText(
       source.buttonLabel,
       DEFAULT_MESSAGE.buttonLabel,
       40
     ),
     eyebrow: cleanText(source.eyebrow, DEFAULT_MESSAGE.eyebrow, 40),
+    fontFamily: cleanFontFamily(source.fontFamily),
     title: cleanText(source.title, DEFAULT_MESSAGE.title, 140),
     updatedBy: metadata?.updatedBy ?? null,
     version: updatedAt,
@@ -83,14 +155,18 @@ function normalizeStoredMessage(
 export function normalizeVendorWelcomeMessageInput(
   input: VendorWelcomeMessageInput
 ) {
+  const bodyBlocks = cleanBodyBlocks(input.bodyBlocks, input.body);
+
   return {
-    body: cleanBody(input.body),
+    body: bodyBlocks.map((block) => block.text),
+    bodyBlocks,
     buttonLabel: cleanText(
       input.buttonLabel,
       DEFAULT_MESSAGE.buttonLabel,
       40
     ),
     eyebrow: cleanText(input.eyebrow, DEFAULT_MESSAGE.eyebrow, 40),
+    fontFamily: cleanFontFamily(input.fontFamily),
     title: cleanText(input.title, DEFAULT_MESSAGE.title, 140),
   };
 }

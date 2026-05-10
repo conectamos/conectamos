@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import type { VendorWelcomeMessage } from "@/lib/vendor-welcome-message";
+import { useRef, useState } from "react";
+import type {
+  VendorWelcomeBlock,
+  VendorWelcomeFontFamily,
+  VendorWelcomeMessage,
+} from "@/lib/vendor-welcome-message";
+import VendorMessageBody from "../../_components/vendor-message-body";
 
 type Props = {
   mensajeInicial: VendorWelcomeMessage;
@@ -12,18 +17,80 @@ function inputClass() {
   return "w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
 }
 
-function textareaBody(message: VendorWelcomeMessage) {
-  return message.body.join("\n\n");
+function formatButtonClass(active: boolean) {
+  return [
+    "rounded-xl border px-3 py-2 text-xs font-black uppercase tracking-[0.12em] transition",
+    active
+      ? "border-slate-950 bg-slate-950 text-white"
+      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+  ].join(" ");
+}
+
+function normalizeBlocks(blocks: VendorWelcomeBlock[]) {
+  return blocks.length
+    ? blocks
+    : [{ align: "left" as const, size: "normal" as const, text: "" }];
 }
 
 export default function MensajeVendedorWorkspace({ mensajeInicial }: Props) {
+  const textareaRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
   const [eyebrow, setEyebrow] = useState(mensajeInicial.eyebrow);
   const [title, setTitle] = useState(mensajeInicial.title);
-  const [body, setBody] = useState(textareaBody(mensajeInicial));
+  const [bodyBlocks, setBodyBlocks] = useState(
+    normalizeBlocks(mensajeInicial.bodyBlocks)
+  );
+  const [fontFamily, setFontFamily] = useState<VendorWelcomeFontFamily>(
+    mensajeInicial.fontFamily
+  );
   const [buttonLabel, setButtonLabel] = useState(mensajeInicial.buttonLabel);
   const [mensaje, setMensaje] = useState("");
   const [mensajeTipo, setMensajeTipo] = useState<"success" | "error">("success");
   const [guardando, setGuardando] = useState(false);
+
+  const actualizarBloque = (
+    index: number,
+    changes: Partial<VendorWelcomeBlock>
+  ) => {
+    setBodyBlocks((current) =>
+      current.map((block, blockIndex) =>
+        blockIndex === index ? { ...block, ...changes } : block
+      )
+    );
+  };
+
+  const agregarParrafo = () => {
+    setBodyBlocks((current) => [
+      ...current,
+      { align: "left", size: "normal", text: "" },
+    ]);
+  };
+
+  const quitarParrafo = (index: number) => {
+    setBodyBlocks((current) =>
+      normalizeBlocks(current.filter((_, blockIndex) => blockIndex !== index))
+    );
+  };
+
+  const aplicarNegrita = (index: number) => {
+    const input = textareaRefs.current[index];
+    const block = bodyBlocks[index];
+
+    if (!block) {
+      return;
+    }
+
+    const start = input?.selectionStart ?? block.text.length;
+    const end = input?.selectionEnd ?? block.text.length;
+    const selected = block.text.slice(start, end) || "texto en negrita";
+    const updatedText = `${block.text.slice(0, start)}**${selected}**${block.text.slice(end)}`;
+
+    actualizarBloque(index, { text: updatedText });
+
+    window.setTimeout(() => {
+      input?.focus();
+      input?.setSelectionRange(start + 2, start + 2 + selected.length);
+    }, 0);
+  };
 
   const guardar = async () => {
     try {
@@ -32,9 +99,10 @@ export default function MensajeVendedorWorkspace({ mensajeInicial }: Props) {
 
       const res = await fetch("/api/admin/mensaje-vendedor", {
         body: JSON.stringify({
-          body,
+          bodyBlocks,
           buttonLabel,
           eyebrow,
+          fontFamily,
           title,
         }),
         headers: {
@@ -55,7 +123,8 @@ export default function MensajeVendedorWorkspace({ mensajeInicial }: Props) {
       if (actualizado) {
         setEyebrow(actualizado.eyebrow);
         setTitle(actualizado.title);
-        setBody(textareaBody(actualizado));
+        setBodyBlocks(normalizeBlocks(actualizado.bodyBlocks));
+        setFontFamily(actualizado.fontFamily);
         setButtonLabel(actualizado.buttonLabel);
       }
 
@@ -69,10 +138,9 @@ export default function MensajeVendedorWorkspace({ mensajeInicial }: Props) {
     }
   };
 
-  const previewParagraphs = body
-    .split(/\n\s*\n/g)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const previewBlocks = bodyBlocks
+    .map((block) => ({ ...block, text: block.text.trim() }))
+    .filter((block) => block.text);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
@@ -140,18 +208,105 @@ export default function MensajeVendedorWorkspace({ mensajeInicial }: Props) {
                 />
               </label>
 
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Mensaje
-                <textarea
-                  value={body}
-                  onChange={(event) => setBody(event.target.value)}
-                  className={`${inputClass()} min-h-72 resize-y leading-7`}
-                  placeholder="Escribe el mensaje. Separa los parrafos con una linea en blanco."
-                />
-                <span className="text-xs font-medium text-slate-500">
-                  Separa los parrafos con una linea en blanco.
-                </span>
-              </label>
+              <div className="grid gap-3">
+                <div className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Fuente del mensaje
+                  <select
+                    value={fontFamily}
+                    onChange={(event) =>
+                      setFontFamily(event.target.value as VendorWelcomeFontFamily)
+                    }
+                    className={inputClass()}
+                  >
+                    <option value="system">Moderna</option>
+                    <option value="serif">Elegante</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-700">Mensaje</p>
+                  <button
+                    type="button"
+                    onClick={agregarParrafo}
+                    className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-emerald-700 transition hover:bg-emerald-100"
+                  >
+                    Agregar parrafo
+                  </button>
+                </div>
+
+                <div className="grid gap-3">
+                  {bodyBlocks.map((block, index) => (
+                    <div
+                      key={`bloque-${index}`}
+                      className="rounded-3xl border border-slate-200 bg-slate-50 p-3"
+                    >
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => aplicarNegrita(index)}
+                          className={formatButtonClass(false)}
+                        >
+                          B
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => actualizarBloque(index, { align: "left" })}
+                          className={formatButtonClass(block.align === "left")}
+                        >
+                          Izquierda
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => actualizarBloque(index, { align: "center" })}
+                          className={formatButtonClass(block.align === "center")}
+                        >
+                          Centro
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => actualizarBloque(index, { align: "right" })}
+                          className={formatButtonClass(block.align === "right")}
+                        >
+                          Derecha
+                        </button>
+                        <select
+                          value={block.size}
+                          onChange={(event) =>
+                            actualizarBloque(index, {
+                              size: event.target.value as VendorWelcomeBlock["size"],
+                            })
+                          }
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-700 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="large">Grande</option>
+                        </select>
+                        {bodyBlocks.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => quitarParrafo(index)}
+                            className="ml-auto rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-rose-700 transition hover:bg-rose-100"
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
+
+                      <textarea
+                        ref={(element) => {
+                          textareaRefs.current[index] = element;
+                        }}
+                        value={block.text}
+                        onChange={(event) =>
+                          actualizarBloque(index, { text: event.target.value })
+                        }
+                        className={`${inputClass()} min-h-32 resize-y leading-7`}
+                        placeholder="Escribe este parrafo..."
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                 Texto del boton
@@ -190,13 +345,15 @@ export default function MensajeVendedorWorkspace({ mensajeInicial }: Props) {
                   {title || "Titulo del mensaje"}
                 </h2>
 
-                <div className="mt-5 space-y-4 text-sm leading-7 text-slate-600">
-                  {(previewParagraphs.length ? previewParagraphs : ["Mensaje pendiente."]).map(
-                    (paragraph) => (
-                      <p key={paragraph}>{paragraph}</p>
-                    )
-                  )}
-                </div>
+                <VendorMessageBody
+                  blocks={
+                    previewBlocks.length
+                      ? previewBlocks
+                      : [{ align: "left", size: "normal", text: "Mensaje pendiente." }]
+                  }
+                  className="mt-5"
+                  fontFamily={fontFamily}
+                />
 
                 <div className="mt-7 flex justify-end">
                   <span className="rounded-2xl bg-slate-950 px-6 py-3 text-sm font-black uppercase tracking-[0.12em] text-white">
