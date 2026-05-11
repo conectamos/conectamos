@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 
 export type ListaNegraTipoReporte = "FRAUDE";
-export type ListaNegraObservacion = "PRESTA_NOMBRE" | "DEUDA_FINANCIERAS";
+export type ListaNegraObservacion = "PRESTA_NOMBRE";
 
 export type ListaNegraDocumento = {
   activo: boolean;
@@ -37,24 +37,8 @@ function normalizarMotivo(value: unknown) {
 export function normalizarObservacionListaNegra(
   value: unknown
 ): ListaNegraObservacion {
-  const tipo = String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toUpperCase();
-
-  if (tipo === "DEUDA FINANCIERAS" || tipo === "DEUDA FINANCIERA") {
-    return "DEUDA_FINANCIERAS";
-  }
-
+  void value;
   return "PRESTA_NOMBRE";
-}
-
-function normalizarFinancieraDeuda(value: unknown) {
-  const financiera = String(value || "").replace(/\s+/g, " ").trim();
-  return financiera ? financiera.slice(0, 120) : null;
 }
 
 function serializeRow(row: {
@@ -251,14 +235,10 @@ export async function guardarDocumentoListaNegra({
 }) {
   const documentoNumero = normalizarDocumentoListaNegra(documento);
   const observacion = normalizarObservacionListaNegra(tipoObservacion);
-  const financiera = normalizarFinancieraDeuda(financieraDeuda);
+  void financieraDeuda;
 
   if (!documentoNumero) {
     return { error: "La cedula debe tener entre 5 y 15 digitos" } as const;
-  }
-
-  if (observacion === "DEUDA_FINANCIERAS" && !financiera) {
-    return { error: "Selecciona la financiera donde tiene deuda" } as const;
   }
 
   await ensureListaNegraSchema();
@@ -321,7 +301,7 @@ export async function guardarDocumentoListaNegra({
     `,
     documentoNumero,
     observacion,
-    observacion === "DEUDA_FINANCIERAS" ? financiera : null,
+    null,
     normalizarMotivo(motivo),
     reportadoPorPerfilId ?? null,
     reportadoPorNombre ?? null,
@@ -352,7 +332,7 @@ export async function actualizarDocumentoListaNegra({
   const registroId = Number(id);
   const documentoNumero = normalizarDocumentoListaNegra(documento);
   const observacion = normalizarObservacionListaNegra(tipoObservacion);
-  const financiera = normalizarFinancieraDeuda(financieraDeuda);
+  void financieraDeuda;
 
   if (!Number.isInteger(registroId) || registroId <= 0) {
     return { error: "Registro invalido" } as const;
@@ -360,10 +340,6 @@ export async function actualizarDocumentoListaNegra({
 
   if (!documentoNumero) {
     return { error: "La cedula debe tener entre 5 y 15 digitos" } as const;
-  }
-
-  if (observacion === "DEUDA_FINANCIERAS" && !financiera) {
-    return { error: "Selecciona la financiera donde tiene deuda" } as const;
   }
 
   await ensureListaNegraSchema();
@@ -425,7 +401,7 @@ export async function actualizarDocumentoListaNegra({
     `,
     documentoNumero,
     observacion,
-    observacion === "DEUDA_FINANCIERAS" ? financiera : null,
+    null,
     normalizarMotivo(motivo),
     registroId
   );

@@ -7,15 +7,10 @@ import {
 } from "@/lib/access-control";
 import { getSessionUser } from "@/lib/auth";
 import {
-  claveNombrePersonalVenta,
-  obtenerCatalogoPersonalVenta,
-} from "@/lib/ventas-personal";
-import {
   actualizarDocumentoListaNegra,
   desactivarDocumentoListaNegra,
   guardarDocumentoListaNegra,
   listarDocumentosListaNegra,
-  normalizarObservacionListaNegra,
 } from "@/lib/vendor-blacklist";
 
 async function requireVendor() {
@@ -49,34 +44,6 @@ function canManageBlacklist(session: {
   rolNombre?: string | null;
 }) {
   return esRolAdmin(session.rolNombre) || esPerfilAdministrador(session.perfilTipo);
-}
-
-async function resolverObservacionFraude(
-  tipoObservacion: unknown,
-  financieraDeuda: unknown
-) {
-  const observacion = normalizarObservacionListaNegra(tipoObservacion);
-
-  if (observacion !== "DEUDA_FINANCIERAS") {
-    return { observacion, financiera: null } as const;
-  }
-
-  const key = claveNombrePersonalVenta(financieraDeuda);
-
-  if (!key) {
-    return { error: "Selecciona la financiera donde tiene deuda" } as const;
-  }
-
-  const catalogo = await obtenerCatalogoPersonalVenta();
-  const financiera = catalogo.financieras.find(
-    (item) => claveNombrePersonalVenta(item.nombre) === key
-  );
-
-  if (!financiera) {
-    return { error: "Selecciona una financiera valida del catalogo" } as const;
-  }
-
-  return { observacion, financiera: financiera.nombre } as const;
 }
 
 export async function GET(req: NextRequest) {
@@ -113,18 +80,9 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as Record<string, unknown>;
-    const observacion = await resolverObservacionFraude(
-      body.tipoObservacion,
-      body.financieraDeuda
-    );
-
-    if ("error" in observacion) {
-      return NextResponse.json({ error: observacion.error }, { status: 400 });
-    }
-
     const resultado = await guardarDocumentoListaNegra({
       documento: body.documentoNumero,
-      financieraDeuda: observacion.financiera,
+      financieraDeuda: null,
       motivo: body.motivo,
       reportadoPorNombre:
         access.session.perfilNombre ??
@@ -134,7 +92,7 @@ export async function POST(req: Request) {
       reportadoPorPerfilId: access.session.perfilId ?? null,
       sedeId: access.session.sedeId ?? null,
       sedeNombre: access.session.sedeNombre ?? null,
-      tipoObservacion: observacion.observacion,
+      tipoObservacion: "PRESTA_NOMBRE",
     });
 
     if ("error" in resultado) {
@@ -171,21 +129,12 @@ export async function PATCH(req: Request) {
     }
 
     const body = (await req.json()) as Record<string, unknown>;
-    const observacion = await resolverObservacionFraude(
-      body.tipoObservacion,
-      body.financieraDeuda
-    );
-
-    if ("error" in observacion) {
-      return NextResponse.json({ error: observacion.error }, { status: 400 });
-    }
-
     const resultado = await actualizarDocumentoListaNegra({
       id: body.id,
       documento: body.documentoNumero,
-      financieraDeuda: observacion.financiera,
+      financieraDeuda: null,
       motivo: body.motivo,
-      tipoObservacion: observacion.observacion,
+      tipoObservacion: "PRESTA_NOMBRE",
     });
 
     if ("error" in resultado) {

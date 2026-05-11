@@ -20,12 +20,7 @@ type ListaNegraItem = {
   updatedAt: string;
 };
 
-type ObservacionFraude = "PRESTA_NOMBRE" | "DEUDA_FINANCIERAS";
-
-type FinancieraOption = {
-  id: number;
-  nombre: string;
-};
+type ObservacionFraude = "PRESTA_NOMBRE";
 
 function onlyDigits(value: string, maxLength = 15) {
   return value.replace(/\D/g, "").slice(0, maxLength);
@@ -54,7 +49,8 @@ function inputClass() {
 }
 
 function observacionLabel(value: ObservacionFraude | string | null | undefined) {
-  return value === "DEUDA_FINANCIERAS" ? "DEUDA FINANCIERAS" : "PRESTA NOMBRE";
+  void value;
+  return "PRESTA NOMBRE";
 }
 
 export default function ListaNegraWorkspace({
@@ -65,18 +61,11 @@ export default function ListaNegraWorkspace({
   session: SessionProps;
 }) {
   const [documentoNumero, setDocumentoNumero] = useState("");
-  const [tipoObservacion, setTipoObservacion] =
-    useState<ObservacionFraude>("PRESTA_NOMBRE");
-  const [financieraDeuda, setFinancieraDeuda] = useState("");
   const [motivo, setMotivo] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [registros, setRegistros] = useState<ListaNegraItem[]>([]);
-  const [financieras, setFinancieras] = useState<FinancieraOption[]>([]);
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [editDocumentoNumero, setEditDocumentoNumero] = useState("");
-  const [editTipoObservacion, setEditTipoObservacion] =
-    useState<ObservacionFraude>("PRESTA_NOMBRE");
-  const [editFinancieraDeuda, setEditFinancieraDeuda] = useState("");
   const [editMotivo, setEditMotivo] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [mensajeTipo, setMensajeTipo] = useState<"success" | "error">("success");
@@ -108,24 +97,8 @@ export default function ListaNegraWorkspace({
     }
   };
 
-  const cargarFinancieras = async () => {
-    try {
-      const res = await fetch("/api/ventas/catalogo-personal", {
-        cache: "no-store",
-      });
-      const data = await res.json();
-
-      if (res.ok) {
-        setFinancieras(Array.isArray(data.financieras) ? data.financieras : []);
-      }
-    } catch {
-      setFinancieras([]);
-    }
-  };
-
   useEffect(() => {
     void cargarLista();
-    void cargarFinancieras();
   }, []);
 
   const guardar = async () => {
@@ -136,10 +109,7 @@ export default function ListaNegraWorkspace({
       const res = await fetch("/api/vendedor/lista-negra", {
         body: JSON.stringify({
           documentoNumero,
-          financieraDeuda:
-            tipoObservacion === "DEUDA_FINANCIERAS" ? financieraDeuda : null,
           motivo,
-          tipoObservacion,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -157,8 +127,6 @@ export default function ListaNegraWorkspace({
       setMensajeTipo("success");
       setMensaje(data.mensaje || "Cedula agregada a lista negra");
       setDocumentoNumero("");
-      setTipoObservacion("PRESTA_NOMBRE");
-      setFinancieraDeuda("");
       setMotivo("");
       await cargarLista();
     } catch {
@@ -172,8 +140,6 @@ export default function ListaNegraWorkspace({
   const iniciarEdicion = (item: ListaNegraItem) => {
     setEditandoId(item.id);
     setEditDocumentoNumero(item.documentoNumero);
-    setEditTipoObservacion(item.tipoObservacion || "PRESTA_NOMBRE");
-    setEditFinancieraDeuda(item.financieraDeuda ?? "");
     setEditMotivo(item.motivo ?? "");
     setMensaje("");
   };
@@ -191,12 +157,7 @@ export default function ListaNegraWorkspace({
         body: JSON.stringify({
           id,
           documentoNumero: editDocumentoNumero,
-          financieraDeuda:
-            editTipoObservacion === "DEUDA_FINANCIERAS"
-              ? editFinancieraDeuda
-              : null,
           motivo: editMotivo,
-          tipoObservacion: editTipoObservacion,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -272,7 +233,7 @@ export default function ListaNegraWorkspace({
 
     return registros.filter((item) =>
       normalizeSearch(
-        `${item.documentoNumero} ${observacionLabel(item.tipoObservacion)} ${item.financieraDeuda ?? ""} ${item.motivo ?? ""} ${item.sedeNombre ?? ""} ${item.reportadoPorNombre ?? ""}`
+        `${item.documentoNumero} ${observacionLabel(item.tipoObservacion)} ${item.motivo ?? ""} ${item.sedeNombre ?? ""} ${item.reportadoPorNombre ?? ""}`
       ).includes(filtro)
     );
   }, [busqueda, registros]);
@@ -365,43 +326,7 @@ export default function ListaNegraWorkspace({
               </label>
 
               <label className="flex flex-col gap-2 text-sm font-black text-slate-700">
-                Observacion
-                <select
-                  value={tipoObservacion}
-                  onChange={(event) => {
-                    const value = event.target.value as ObservacionFraude;
-                    setTipoObservacion(value);
-                    if (value !== "DEUDA_FINANCIERAS") {
-                      setFinancieraDeuda("");
-                    }
-                  }}
-                  className={inputClass()}
-                >
-                  <option value="PRESTA_NOMBRE">PRESTA NOMBRE</option>
-                  <option value="DEUDA_FINANCIERAS">DEUDA FINANCIERAS</option>
-                </select>
-              </label>
-
-              {tipoObservacion === "DEUDA_FINANCIERAS" && (
-                <label className="flex flex-col gap-2 text-sm font-black text-slate-700">
-                  Financiera donde tiene deuda
-                  <select
-                    value={financieraDeuda}
-                    onChange={(event) => setFinancieraDeuda(event.target.value)}
-                    className={inputClass()}
-                  >
-                    <option value="">Selecciona una financiera</option>
-                    {financieras.map((item) => (
-                      <option key={item.id} value={item.nombre}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              <label className="flex flex-col gap-2 text-sm font-black text-slate-700">
-                Detalle adicional
+                Observacion: PRESTA NOMBRE
                 <textarea
                   value={motivo}
                   onChange={(event) => setMotivo(event.target.value)}
@@ -474,11 +399,6 @@ export default function ListaNegraWorkspace({
                           <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-red-700">
                             {observacionLabel(item.tipoObservacion)}
                           </span>
-                          {item.financieraDeuda && (
-                            <span className="ml-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-amber-700">
-                              {item.financieraDeuda}
-                            </span>
-                          )}
                           {item.motivo && (
                             <span className="mt-2 block text-sm font-semibold text-slate-700">
                               {item.motivo}
@@ -519,7 +439,7 @@ export default function ListaNegraWorkspace({
 
                       {editandoId === item.id && (
                         <div className="border-t border-slate-100 bg-slate-50 px-4 py-4">
-                          <div className="grid gap-3 md:grid-cols-[150px_190px_1fr_auto] md:items-start">
+                          <div className="grid gap-3 md:grid-cols-[170px_1fr_auto] md:items-start">
                             <input
                               value={editDocumentoNumero}
                               onChange={(event) =>
@@ -531,45 +451,6 @@ export default function ListaNegraWorkspace({
                               inputMode="numeric"
                               placeholder="Cedula"
                             />
-                            <div className="grid gap-2">
-                              <select
-                                value={editTipoObservacion}
-                                onChange={(event) => {
-                                  const value = event.target.value as ObservacionFraude;
-                                  setEditTipoObservacion(value);
-                                  if (value !== "DEUDA_FINANCIERAS") {
-                                    setEditFinancieraDeuda("");
-                                  }
-                                }}
-                                className={inputClass()}
-                              >
-                                <option value="PRESTA_NOMBRE">
-                                  PRESTA NOMBRE
-                                </option>
-                                <option value="DEUDA_FINANCIERAS">
-                                  DEUDA FINANCIERAS
-                                </option>
-                              </select>
-                              {editTipoObservacion === "DEUDA_FINANCIERAS" && (
-                                <select
-                                  value={editFinancieraDeuda}
-                                  onChange={(event) =>
-                                    setEditFinancieraDeuda(event.target.value)
-                                  }
-                                  className={inputClass()}
-                                >
-                                  <option value="">Financiera</option>
-                                  {financieras.map((financiera) => (
-                                    <option
-                                      key={financiera.id}
-                                      value={financiera.nombre}
-                                    >
-                                      {financiera.nombre}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                            </div>
                             <textarea
                               value={editMotivo}
                               onChange={(event) => setEditMotivo(event.target.value)}
