@@ -1439,13 +1439,14 @@ export default function VendedorRegistroWorkspace({
       return "El IMEI debe tener 15 digitos";
     }
 
+    if (!isTextFilled(form.referenciaEquipo)) {
+      return "La referencia del equipo es obligatoria";
+    }
+    if (!isTextFilled(form.almacenamiento)) return "El almacenamiento es obligatorio";
+    if (!isTextFilled(form.color)) return "El color es obligatorio";
+    if (!isTextFilled(form.tipoEquipo)) return "Debes seleccionar el tipo de equipo";
+
     if (esServicioFinanciera(form.servicio)) {
-      if (!isTextFilled(form.referenciaEquipo)) {
-        return "La referencia del equipo es obligatoria";
-      }
-      if (!isTextFilled(form.almacenamiento)) return "El almacenamiento es obligatorio";
-      if (!isTextFilled(form.color)) return "El color es obligatorio";
-      if (!isTextFilled(form.tipoEquipo)) return "Debes seleccionar el tipo de equipo";
       if (financierasCatalogo.length === 0) {
         return "No hay financieras creadas en el catalogo comercial";
       }
@@ -1525,17 +1526,23 @@ export default function VendedorRegistroWorkspace({
       return errorDocumentoContacto;
     }
     if (!isTextFilled(form.direccion)) return "La direccion es obligatoria";
+    if (!isTextFilled(form.fechaNacimiento)) {
+      return "La fecha de nacimiento es obligatoria";
+    }
+    if (!isTextFilled(form.fechaExpedicion)) {
+      return "La fecha de expedicion es obligatoria";
+    }
     if (!isTextFilled(form.simCardRegistro1)) return "El registro SIM 1 es obligatorio";
+    if (!form.aceptaDeclaracionIntermediacion) {
+      return "Debes confirmar el texto de intermediacion visible al cliente";
+    }
+    if (!form.aceptaPoliticaGarantia) {
+      return "Debes confirmar la politica de garantia visible al cliente";
+    }
 
     if (esServicioFinanciera(form.servicio)) {
       if (!isTextFilled(form.telefono)) return "El telefono es obligatorio";
       if (!isTextFilled(form.barrio)) return "El barrio es obligatorio";
-      if (!isTextFilled(form.fechaNacimiento)) {
-        return "La fecha de nacimiento es obligatoria";
-      }
-      if (!isTextFilled(form.fechaExpedicion)) {
-        return "La fecha de expedicion es obligatoria";
-      }
       if (!isTextFilled(form.referenciaFamiliar1Nombre)) {
         return "La referencia familiar 1 es obligatoria";
       }
@@ -1548,14 +1555,8 @@ export default function VendedorRegistroWorkspace({
       if (!isTextFilled(form.referenciaFamiliar2Telefono)) {
         return "El telefono de la referencia familiar 2 es obligatorio";
       }
-      if (!form.aceptaDeclaracionIntermediacion) {
-        return "Debes confirmar el primer texto visible del formato";
-      }
-      if (!form.aceptaPoliticaGarantia) {
-        return "Debes confirmar el segundo texto visible del formato";
-      }
       if (!form.aceptaCondicionesCredito) {
-        return "Debes confirmar el tercer texto visible del formato";
+        return "Debes confirmar las condiciones de credito visibles del formato";
       }
     }
     if (!isTextFilled(form.jaladorNombre)) return "Debes seleccionar el jalador";
@@ -1951,7 +1952,8 @@ export default function VendedorRegistroWorkspace({
                   />
                 </label>
 
-                {esServicioFinanciera(form.servicio) && (
+                {(esServicioFinanciera(form.servicio) ||
+                  esServicioContado(form.servicio)) && (
                   <>
                     <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                       Referencia
@@ -2553,32 +2555,32 @@ export default function VendedorRegistroWorkspace({
                         placeholder="Barrio"
                       />
                     </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Fecha de nacimiento
-                      <input
-                        type="date"
-                        value={form.fechaNacimiento}
-                        onChange={(event) =>
-                          setField("fechaNacimiento", event.target.value)
-                        }
-                        className={inputClass()}
-                      />
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Fecha de expedicion
-                      <input
-                        type="date"
-                        value={form.fechaExpedicion}
-                        onChange={(event) =>
-                          setField("fechaExpedicion", event.target.value)
-                        }
-                        className={inputClass()}
-                      />
-                    </label>
                   </>
                 )}
+
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Fecha de nacimiento
+                  <input
+                    type="date"
+                    value={form.fechaNacimiento}
+                    onChange={(event) =>
+                      setField("fechaNacimiento", event.target.value)
+                    }
+                    className={inputClass()}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Fecha de expedicion
+                  <input
+                    type="date"
+                    value={form.fechaExpedicion}
+                    onChange={(event) =>
+                      setField("fechaExpedicion", event.target.value)
+                    }
+                    className={inputClass()}
+                  />
+                </label>
 
                 <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Direccion
@@ -2684,14 +2686,15 @@ export default function VendedorRegistroWorkspace({
             {!registroEditandoConvertido && (
             <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                {esServicioFinanciera(form.servicio)
-                  ? "Texto visible al cliente"
-                  : "Firma y entrega"}
+                Texto visible al cliente
               </div>
 
-              {esServicioFinanciera(form.servicio) && (
+              {(esServicioFinanciera(form.servicio) ||
+                esServicioContado(form.servicio)) && (
                 <div className="mt-6 space-y-4">
-                  {TEXTOS_VISIBLES_CLIENTE.map((texto, index) => {
+                  {TEXTOS_VISIBLES_CLIENTE.filter(
+                    (_, index) => esServicioFinanciera(form.servicio) || index < 2
+                  ).map((texto, index) => {
                     const field: ConsentField =
                       index === 0
                         ? "aceptaDeclaracionIntermediacion"

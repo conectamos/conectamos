@@ -417,6 +417,19 @@ function validarPayload(
   }
   if (!direccion) return { error: "La direccion es obligatoria" };
   if (!simCardRegistro1) return { error: "El registro SIM 1 es obligatorio" };
+  if (!tipoEquipo) {
+    return { error: "Debes seleccionar un tipo de equipo valido" };
+  }
+  if (!referenciaEquipo) return { error: "La referencia del equipo es obligatoria" };
+  if (!almacenamiento) return { error: "El almacenamiento es obligatorio" };
+  if (!color) return { error: "El color es obligatorio" };
+  if (!fechaNacimiento) return { error: "La fecha de nacimiento es obligatoria" };
+  if (!fechaExpedicion) return { error: "La fecha de expedicion es obligatoria" };
+  if (!aceptaDeclaracionIntermediacion || !aceptaPoliticaGarantia) {
+    return {
+      error: "Debes confirmar la intermediacion y la politica de garantia",
+    };
+  }
   if (!asesorNombre) return { error: "El asesor es obligatorio" };
   if (!jaladorNombre) return { error: "Debes seleccionar el jalador" };
   if (!firmaClienteDataUrl) {
@@ -458,8 +471,8 @@ function validarPayload(
         documentoNumero,
         plataformaCredito: "CONTADO",
         financierasDetalle: [],
-        aceptaDeclaracionIntermediacion: false,
-        aceptaPoliticaGarantia: false,
+        aceptaDeclaracionIntermediacion: true,
+        aceptaPoliticaGarantia: true,
         aceptaCondicionesCredito: false,
         dobleCredito: false,
         observacion,
@@ -467,7 +480,7 @@ function validarPayload(
         almacenamiento,
         color,
         serialImei,
-        tipoEquipo: null,
+        tipoEquipo,
         creditoAutorizado: null,
         cuotaInicial: null,
         valorCuota: null,
@@ -475,8 +488,8 @@ function validarPayload(
         frecuenciaCuota: null,
         correo,
         whatsapp,
-        fechaNacimiento: null,
-        fechaExpedicion: null,
+        fechaNacimiento,
+        fechaExpedicion,
         direccion,
         barrio: null,
         referenciaFamiliar1Nombre: null,
@@ -516,14 +529,6 @@ function validarPayload(
   if (financierasDetalleResult.data.length === 0) {
     return { error: "Debes registrar al menos una financiera" };
   }
-  if (!tipoEquipo) {
-    return { error: "Debes seleccionar un tipo de equipo valido" };
-  }
-  if (!referenciaEquipo) return { error: "La referencia del equipo es obligatoria" };
-  if (!almacenamiento) return { error: "El almacenamiento es obligatorio" };
-  if (!color) return { error: "El color es obligatorio" };
-  if (!fechaNacimiento) return { error: "La fecha de nacimiento es obligatoria" };
-  if (!fechaExpedicion) return { error: "La fecha de expedicion es obligatoria" };
   if (!barrio) return { error: "El barrio es obligatorio" };
   if (!telefono) return { error: "El telefono es obligatorio" };
   if (!referenciaFamiliar1Nombre || !referenciaFamiliar1Telefono) {
@@ -550,12 +555,8 @@ function validarPayload(
   if (errorDocumentoContactosFinanciera) {
     return { error: errorDocumentoContactosFinanciera };
   }
-  if (
-    !aceptaDeclaracionIntermediacion ||
-    !aceptaPoliticaGarantia ||
-    !aceptaCondicionesCredito
-  ) {
-    return { error: "Debes confirmar los textos visibles del formato" };
+  if (!aceptaCondicionesCredito) {
+    return { error: "Debes confirmar las condiciones de credito visibles del formato" };
   }
 
   const primeraFinanciera = financierasDetalleResult.data[0];
