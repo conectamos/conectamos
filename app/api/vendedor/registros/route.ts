@@ -10,6 +10,7 @@ import {
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
+import { buscarDocumentoListaNegra } from "@/lib/vendor-blacklist";
 import {
   isPayJoyRetailConfigured,
   obtenerCreditoPayJoyPorImei,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/vendor-sale-records";
 
 const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
+const LISTA_NEGRA_ERROR = "CEDULA REPORTADA POR FRAUDE";
 
 const REGISTRO_RESUMEN_SELECT = {
   id: true,
@@ -748,6 +750,19 @@ async function validarEquipoExistenteParaRegistro(params: {
   return { equipo };
 }
 
+async function validarDocumentoNoReportado(documentoNumero: string) {
+  const registroListaNegra = await buscarDocumentoListaNegra(documentoNumero);
+
+  if (!registroListaNegra) {
+    return null;
+  }
+
+  return {
+    error: LISTA_NEGRA_ERROR,
+    listaNegra: registroListaNegra,
+  };
+}
+
 async function validarCreditoPayJoy(payload: {
   serialImei: string;
   financierasDetalle: Array<{
@@ -989,6 +1004,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: payload.error }, { status: 400 });
     }
 
+    const errorListaNegra = await validarDocumentoNoReportado(
+      payload.data.documentoNumero
+    );
+
+    if (errorListaNegra) {
+      return NextResponse.json(errorListaNegra, { status: 400 });
+    }
+
     const sedeRegistro = await prisma.sede.findFirst({
       where: {
         nombre: {
@@ -1187,6 +1210,14 @@ export async function PATCH(req: Request) {
 
     if ("error" in payload) {
       return NextResponse.json({ error: payload.error }, { status: 400 });
+    }
+
+    const errorListaNegra = await validarDocumentoNoReportado(
+      payload.data.documentoNumero
+    );
+
+    if (errorListaNegra) {
+      return NextResponse.json(errorListaNegra, { status: 400 });
     }
 
     const sedeRegistro = await prisma.sede.findFirst({

@@ -68,6 +68,13 @@ type SedeOption = {
   nombre: string;
 };
 
+type ListaNegraAlerta = {
+  motivo: string | null;
+  reportadoPorNombre: string | null;
+  sedeNombre: string | null;
+  updatedAt: string;
+};
+
 type CatalogoPersonalResponse = {
   jaladores: JaladorOption[];
   financieras: FinancieraCatalogoOption[];
@@ -743,6 +750,9 @@ export default function VendedorRegistroWorkspace({
   >(null);
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const [imeiDetalle, setImeiDetalle] = useState("");
+  const [listaNegraAlerta, setListaNegraAlerta] =
+    useState<ListaNegraAlerta | null>(null);
+  const [verificandoListaNegra, setVerificandoListaNegra] = useState(false);
   const [signaturePadKey, setSignaturePadKey] = useState(0);
   const [financierasVisibles, setFinancierasVisibles] = useState(1);
   const [ingresoContado2Visible, setIngresoContado2Visible] = useState(false);
@@ -777,6 +787,7 @@ export default function VendedorRegistroWorkspace({
 
   const limpiarFormulario = (preservarContexto = false) => {
     setImeiDetalle("");
+    setListaNegraAlerta(null);
     setSignaturePadKey((current) => current + 1);
     setFinancierasVisibles(1);
     setIngresoContado2Visible(false);
@@ -872,6 +883,57 @@ export default function VendedorRegistroWorkspace({
       cancelled = true;
     };
   }, [session.sedeNombre]);
+
+  useEffect(() => {
+    const documento = onlyDigits(form.documentoNumero, 15);
+
+    if (documento.length < 5) {
+      setListaNegraAlerta(null);
+      setVerificandoListaNegra(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        setVerificandoListaNegra(true);
+        const res = await fetch(
+          `/api/vendedor/lista-negra/verificar?documento=${encodeURIComponent(documento)}`,
+          { cache: "no-store" }
+        );
+        const data = await res.json();
+
+        if (cancelled) {
+          return;
+        }
+
+        if (res.ok && data?.reportado && data?.registro) {
+          setListaNegraAlerta({
+            motivo: data.registro.motivo ?? null,
+            reportadoPorNombre: data.registro.reportadoPorNombre ?? null,
+            sedeNombre: data.registro.sedeNombre ?? null,
+            updatedAt: data.registro.updatedAt ?? "",
+          });
+          return;
+        }
+
+        setListaNegraAlerta(null);
+      } catch {
+        if (!cancelled) {
+          setListaNegraAlerta(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setVerificandoListaNegra(false);
+        }
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.documentoNumero]);
 
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((current) => ({
@@ -1434,6 +1496,7 @@ export default function VendedorRegistroWorkspace({
     if (!isTextFilled(form.clienteNombre)) return "El nombre del cliente es obligatorio";
     if (!isTextFilled(form.tipoDocumento)) return "Debes seleccionar el tipo de documento";
     if (!isTextFilled(form.documentoNumero)) return "El documento del cliente es obligatorio";
+    if (listaNegraAlerta) return "CEDULA REPORTADA POR FRAUDE";
     if (!isTextFilled(form.servicio)) return "Selecciona CONTADO o FINANCIERA";
     if (!isTextFilled(form.serialImei) || form.serialImei.length !== 15) {
       return "El IMEI debe tener 15 digitos";
@@ -1641,6 +1704,14 @@ export default function VendedorRegistroWorkspace({
       const data = await res.json();
 
       if (!res.ok) {
+        if (data?.listaNegra) {
+          setListaNegraAlerta({
+            motivo: data.listaNegra.motivo ?? null,
+            reportadoPorNombre: data.listaNegra.reportadoPorNombre ?? null,
+            sedeNombre: data.listaNegra.sedeNombre ?? null,
+            updatedAt: data.listaNegra.updatedAt ?? "",
+          });
+        }
         setFormMessage(data.error || "No se pudo guardar el registro", "error");
         return;
       }
@@ -1721,6 +1792,12 @@ export default function VendedorRegistroWorkspace({
               >
                 LISTA DE PRECIOS
               </Link>
+              <Link
+                href="/vendedor/lista-negra"
+                className="rounded-2xl border border-red-200 bg-red-600 px-5 py-3 text-center text-sm font-black text-white shadow-[0_12px_34px_rgba(185,28,28,0.28)] transition hover:bg-red-700"
+              >
+                LISTA NEGRA
+              </Link>
               {puedeBuscarRegistros && (
                 <Link
                   href="/vendedor/registros/buscar"
@@ -1747,6 +1824,40 @@ export default function VendedorRegistroWorkspace({
             </div>
           </div>
         </section>
+
+        {listaNegraAlerta && (
+          <section className="mt-6 rounded-[30px] border-2 border-red-300 bg-red-50 px-6 py-6 shadow-[0_20px_60px_rgba(185,28,28,0.16)]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="inline-flex rounded-full border border-red-200 bg-white px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-red-700">
+                  Alerta critica
+                </div>
+                <h2 className="mt-3 text-3xl font-black tracking-tight text-red-700 md:text-4xl">
+                  CEDULA REPORTADA POR FRAUDE
+                </h2>
+                <p className="mt-2 text-sm font-semibold leading-6 text-red-900">
+                  No se puede guardar una venta con este documento. Verifica la
+                  informacion antes de continuar.
+                </p>
+                {(listaNegraAlerta.sedeNombre ||
+                  listaNegraAlerta.reportadoPorNombre ||
+                  listaNegraAlerta.motivo) && (
+                  <p className="mt-3 text-sm leading-6 text-red-900/80">
+                    {listaNegraAlerta.sedeNombre
+                      ? `Reportada por ${listaNegraAlerta.sedeNombre}. `
+                      : ""}
+                    {listaNegraAlerta.reportadoPorNombre
+                      ? `Asesor: ${listaNegraAlerta.reportadoPorNombre}. `
+                      : ""}
+                    {listaNegraAlerta.motivo
+                      ? `Observacion: ${listaNegraAlerta.motivo}`
+                      : ""}
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         {(registroEditando || cargandoEdicion) && (
           <section className="mt-6 rounded-[30px] border border-emerald-200 bg-emerald-50 px-5 py-4 shadow-sm">
@@ -1950,6 +2061,11 @@ export default function VendedorRegistroWorkspace({
                     className={inputClass()}
                     placeholder="Documento"
                   />
+                  {verificandoListaNegra && (
+                    <span className="text-xs font-semibold text-slate-500">
+                      Verificando lista negra...
+                    </span>
+                  )}
                 </label>
 
                 {(esServicioFinanciera(form.servicio) ||
