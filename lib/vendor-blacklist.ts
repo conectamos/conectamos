@@ -1,13 +1,19 @@
 import prisma from "@/lib/prisma";
 
+export type ListaNegraTipoReporte = "FRAUDE";
+export type ListaNegraObservacion = "PRESTA_NOMBRE" | "DEUDA_FINANCIERAS";
+
 export type ListaNegraDocumento = {
   activo: boolean;
   createdAt: string;
   documentoNumero: string;
+  financieraDeuda: string | null;
   id: number;
   motivo: string | null;
   reportadoPorNombre: string | null;
   sedeNombre: string | null;
+  tipoObservacion: ListaNegraObservacion;
+  tipoReporte: ListaNegraTipoReporte;
   updatedAt: string;
 };
 
@@ -28,24 +34,53 @@ function normalizarMotivo(value: unknown) {
   return motivo ? motivo.slice(0, 500) : null;
 }
 
+export function normalizarObservacionListaNegra(
+  value: unknown
+): ListaNegraObservacion {
+  const tipo = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+
+  if (tipo === "DEUDA FINANCIERAS" || tipo === "DEUDA FINANCIERA") {
+    return "DEUDA_FINANCIERAS";
+  }
+
+  return "PRESTA_NOMBRE";
+}
+
+function normalizarFinancieraDeuda(value: unknown) {
+  const financiera = String(value || "").replace(/\s+/g, " ").trim();
+  return financiera ? financiera.slice(0, 120) : null;
+}
+
 function serializeRow(row: {
   activo: boolean;
   createdAt: Date | string;
   documentoNumero: string;
+  financieraDeuda: string | null;
   id: number;
   motivo: string | null;
   reportadoPorNombre: string | null;
   sedeNombre: string | null;
+  tipoObservacion: string | null;
+  tipoReporte: string | null;
   updatedAt: Date | string;
 }): ListaNegraDocumento {
   return {
     activo: Boolean(row.activo),
     createdAt: new Date(row.createdAt).toISOString(),
     documentoNumero: row.documentoNumero,
+    financieraDeuda: row.financieraDeuda,
     id: Number(row.id),
     motivo: row.motivo,
     reportadoPorNombre: row.reportadoPorNombre,
     sedeNombre: row.sedeNombre,
+    tipoObservacion: normalizarObservacionListaNegra(row.tipoObservacion),
+    tipoReporte: "FRAUDE",
     updatedAt: new Date(row.updatedAt).toISOString(),
   };
 }
@@ -76,6 +111,21 @@ async function runEnsureListaNegraSchema() {
     CREATE INDEX IF NOT EXISTS "ListaNegraDocumento_activo_updatedAt_idx"
     ON "ListaNegraDocumento"("activo", "updatedAt");
   `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "ListaNegraDocumento"
+    ADD COLUMN IF NOT EXISTS "tipoReporte" TEXT NOT NULL DEFAULT 'FRAUDE';
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "ListaNegraDocumento"
+    ADD COLUMN IF NOT EXISTS "tipoObservacion" TEXT NOT NULL DEFAULT 'PRESTA_NOMBRE';
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "ListaNegraDocumento"
+    ADD COLUMN IF NOT EXISTS "financieraDeuda" TEXT;
+  `);
 }
 
 export async function ensureListaNegraSchema() {
@@ -103,10 +153,13 @@ export async function buscarDocumentoListaNegra(value: unknown) {
       activo: boolean;
       createdAt: Date;
       documentoNumero: string;
+      financieraDeuda: string | null;
       id: number;
       motivo: string | null;
       reportadoPorNombre: string | null;
       sedeNombre: string | null;
+      tipoObservacion: string | null;
+      tipoReporte: string | null;
       updatedAt: Date;
     }>
   >(
@@ -114,6 +167,9 @@ export async function buscarDocumentoListaNegra(value: unknown) {
       SELECT
         "id",
         "documentoNumero",
+        "tipoReporte",
+        "tipoObservacion",
+        "financieraDeuda",
         "motivo",
         "reportadoPorNombre",
         "sedeNombre",
@@ -140,10 +196,13 @@ export async function listarDocumentosListaNegra(limit = 80) {
       activo: boolean;
       createdAt: Date;
       documentoNumero: string;
+      financieraDeuda: string | null;
       id: number;
       motivo: string | null;
       reportadoPorNombre: string | null;
       sedeNombre: string | null;
+      tipoObservacion: string | null;
+      tipoReporte: string | null;
       updatedAt: Date;
     }>
   >(
@@ -151,6 +210,9 @@ export async function listarDocumentosListaNegra(limit = 80) {
       SELECT
         "id",
         "documentoNumero",
+        "tipoReporte",
+        "tipoObservacion",
+        "financieraDeuda",
         "motivo",
         "reportadoPorNombre",
         "sedeNombre",
@@ -170,23 +232,33 @@ export async function listarDocumentosListaNegra(limit = 80) {
 
 export async function guardarDocumentoListaNegra({
   documento,
+  financieraDeuda,
   motivo,
   reportadoPorNombre,
   reportadoPorPerfilId,
   sedeId,
   sedeNombre,
+  tipoObservacion,
 }: {
   documento: unknown;
+  financieraDeuda?: unknown;
   motivo?: unknown;
   reportadoPorNombre?: string | null;
   reportadoPorPerfilId?: number | null;
   sedeId?: number | null;
   sedeNombre?: string | null;
+  tipoObservacion?: unknown;
 }) {
   const documentoNumero = normalizarDocumentoListaNegra(documento);
+  const observacion = normalizarObservacionListaNegra(tipoObservacion);
+  const financiera = normalizarFinancieraDeuda(financieraDeuda);
 
   if (!documentoNumero) {
     return { error: "La cedula debe tener entre 5 y 15 digitos" } as const;
+  }
+
+  if (observacion === "DEUDA_FINANCIERAS" && !financiera) {
+    return { error: "Selecciona la financiera donde tiene deuda" } as const;
   }
 
   await ensureListaNegraSchema();
@@ -196,16 +268,22 @@ export async function guardarDocumentoListaNegra({
       activo: boolean;
       createdAt: Date;
       documentoNumero: string;
+      financieraDeuda: string | null;
       id: number;
       motivo: string | null;
       reportadoPorNombre: string | null;
       sedeNombre: string | null;
+      tipoObservacion: string | null;
+      tipoReporte: string | null;
       updatedAt: Date;
     }>
   >(
     `
       INSERT INTO "ListaNegraDocumento" (
         "documentoNumero",
+        "tipoReporte",
+        "tipoObservacion",
+        "financieraDeuda",
         "motivo",
         "reportadoPorPerfilId",
         "reportadoPorNombre",
@@ -215,8 +293,11 @@ export async function guardarDocumentoListaNegra({
         "createdAt",
         "updatedAt"
       )
-      VALUES ($1, $2, $3, $4, $5, $6, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, 'FRAUDE', $2, $3, $4, $5, $6, $7, $8, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       ON CONFLICT ("documentoNumero") DO UPDATE SET
+        "tipoReporte" = 'FRAUDE',
+        "tipoObservacion" = EXCLUDED."tipoObservacion",
+        "financieraDeuda" = EXCLUDED."financieraDeuda",
         "motivo" = EXCLUDED."motivo",
         "reportadoPorPerfilId" = EXCLUDED."reportadoPorPerfilId",
         "reportadoPorNombre" = EXCLUDED."reportadoPorNombre",
@@ -224,9 +305,13 @@ export async function guardarDocumentoListaNegra({
         "sedeNombre" = EXCLUDED."sedeNombre",
         "activo" = true,
         "updatedAt" = CURRENT_TIMESTAMP
+      WHERE "ListaNegraDocumento"."activo" = false
       RETURNING
         "id",
         "documentoNumero",
+        "tipoReporte",
+        "tipoObservacion",
+        "financieraDeuda",
         "motivo",
         "reportadoPorNombre",
         "sedeNombre",
@@ -235,12 +320,173 @@ export async function guardarDocumentoListaNegra({
         "updatedAt"
     `,
     documentoNumero,
+    observacion,
+    observacion === "DEUDA_FINANCIERAS" ? financiera : null,
     normalizarMotivo(motivo),
     reportadoPorPerfilId ?? null,
     reportadoPorNombre ?? null,
     sedeId ?? null,
     sedeNombre ?? null
   );
+
+  if (!rows[0]) {
+    return { error: "Esta cedula ya esta en lista negra" } as const;
+  }
+
+  return { data: serializeRow(rows[0]) } as const;
+}
+
+export async function actualizarDocumentoListaNegra({
+  documento,
+  financieraDeuda,
+  id,
+  motivo,
+  tipoObservacion,
+}: {
+  documento: unknown;
+  financieraDeuda?: unknown;
+  id: unknown;
+  motivo?: unknown;
+  tipoObservacion?: unknown;
+}) {
+  const registroId = Number(id);
+  const documentoNumero = normalizarDocumentoListaNegra(documento);
+  const observacion = normalizarObservacionListaNegra(tipoObservacion);
+  const financiera = normalizarFinancieraDeuda(financieraDeuda);
+
+  if (!Number.isInteger(registroId) || registroId <= 0) {
+    return { error: "Registro invalido" } as const;
+  }
+
+  if (!documentoNumero) {
+    return { error: "La cedula debe tener entre 5 y 15 digitos" } as const;
+  }
+
+  if (observacion === "DEUDA_FINANCIERAS" && !financiera) {
+    return { error: "Selecciona la financiera donde tiene deuda" } as const;
+  }
+
+  await ensureListaNegraSchema();
+
+  const conflicts = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
+    `
+      SELECT "id"
+      FROM "ListaNegraDocumento"
+      WHERE "documentoNumero" = $1
+        AND "id" <> $2
+      LIMIT 1
+    `,
+    documentoNumero,
+    registroId
+  );
+
+  if (conflicts.length > 0) {
+    return { error: "Ya existe otro reporte con esa cedula" } as const;
+  }
+
+  const rows = await prisma.$queryRawUnsafe<
+    Array<{
+      activo: boolean;
+      createdAt: Date;
+      documentoNumero: string;
+      financieraDeuda: string | null;
+      id: number;
+      motivo: string | null;
+      reportadoPorNombre: string | null;
+      sedeNombre: string | null;
+      tipoObservacion: string | null;
+      tipoReporte: string | null;
+      updatedAt: Date;
+    }>
+  >(
+    `
+      UPDATE "ListaNegraDocumento"
+      SET
+        "documentoNumero" = $1,
+        "tipoReporte" = 'FRAUDE',
+        "tipoObservacion" = $2,
+        "financieraDeuda" = $3,
+        "motivo" = $4,
+        "activo" = true,
+        "updatedAt" = CURRENT_TIMESTAMP
+      WHERE "id" = $5
+      RETURNING
+        "id",
+        "documentoNumero",
+        "tipoReporte",
+        "tipoObservacion",
+        "financieraDeuda",
+        "motivo",
+        "reportadoPorNombre",
+        "sedeNombre",
+        "activo",
+        "createdAt",
+        "updatedAt"
+    `,
+    documentoNumero,
+    observacion,
+    observacion === "DEUDA_FINANCIERAS" ? financiera : null,
+    normalizarMotivo(motivo),
+    registroId
+  );
+
+  if (!rows[0]) {
+    return { error: "Registro no encontrado" } as const;
+  }
+
+  return { data: serializeRow(rows[0]) } as const;
+}
+
+export async function desactivarDocumentoListaNegra(id: unknown) {
+  const registroId = Number(id);
+
+  if (!Number.isInteger(registroId) || registroId <= 0) {
+    return { error: "Registro invalido" } as const;
+  }
+
+  await ensureListaNegraSchema();
+
+  const rows = await prisma.$queryRawUnsafe<
+    Array<{
+      activo: boolean;
+      createdAt: Date;
+      documentoNumero: string;
+      financieraDeuda: string | null;
+      id: number;
+      motivo: string | null;
+      reportadoPorNombre: string | null;
+      sedeNombre: string | null;
+      tipoObservacion: string | null;
+      tipoReporte: string | null;
+      updatedAt: Date;
+    }>
+  >(
+    `
+      UPDATE "ListaNegraDocumento"
+      SET
+        "activo" = false,
+        "updatedAt" = CURRENT_TIMESTAMP
+      WHERE "id" = $1
+        AND "activo" = true
+      RETURNING
+        "id",
+        "documentoNumero",
+        "tipoReporte",
+        "tipoObservacion",
+        "financieraDeuda",
+        "motivo",
+        "reportadoPorNombre",
+        "sedeNombre",
+        "activo",
+        "createdAt",
+        "updatedAt"
+    `,
+    registroId
+  );
+
+  if (!rows[0]) {
+    return { error: "Registro no encontrado" } as const;
+  }
 
   return { data: serializeRow(rows[0]) } as const;
 }

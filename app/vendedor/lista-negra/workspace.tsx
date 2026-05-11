@@ -11,11 +11,20 @@ type SessionProps = {
 type ListaNegraItem = {
   createdAt: string;
   documentoNumero: string;
+  financieraDeuda: string | null;
   id: number;
   motivo: string | null;
   reportadoPorNombre: string | null;
   sedeNombre: string | null;
+  tipoObservacion: ObservacionFraude;
   updatedAt: string;
+};
+
+type ObservacionFraude = "PRESTA_NOMBRE" | "DEUDA_FINANCIERAS";
+
+type FinancieraOption = {
+  id: number;
+  nombre: string;
 };
 
 function onlyDigits(value: string, maxLength = 15) {
@@ -44,15 +53,37 @@ function inputClass() {
   return "w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-100";
 }
 
-export default function ListaNegraWorkspace({ session }: { session: SessionProps }) {
+function observacionLabel(value: ObservacionFraude | string | null | undefined) {
+  return value === "DEUDA_FINANCIERAS" ? "DEUDA FINANCIERAS" : "PRESTA NOMBRE";
+}
+
+export default function ListaNegraWorkspace({
+  puedeAdministrar,
+  session,
+}: {
+  puedeAdministrar: boolean;
+  session: SessionProps;
+}) {
   const [documentoNumero, setDocumentoNumero] = useState("");
+  const [tipoObservacion, setTipoObservacion] =
+    useState<ObservacionFraude>("PRESTA_NOMBRE");
+  const [financieraDeuda, setFinancieraDeuda] = useState("");
   const [motivo, setMotivo] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [registros, setRegistros] = useState<ListaNegraItem[]>([]);
+  const [financieras, setFinancieras] = useState<FinancieraOption[]>([]);
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [editDocumentoNumero, setEditDocumentoNumero] = useState("");
+  const [editTipoObservacion, setEditTipoObservacion] =
+    useState<ObservacionFraude>("PRESTA_NOMBRE");
+  const [editFinancieraDeuda, setEditFinancieraDeuda] = useState("");
+  const [editMotivo, setEditMotivo] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [mensajeTipo, setMensajeTipo] = useState<"success" | "error">("success");
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const [actualizandoId, setActualizandoId] = useState<number | null>(null);
+  const [eliminandoId, setEliminandoId] = useState<number | null>(null);
 
   const cargarLista = async () => {
     try {
@@ -77,8 +108,24 @@ export default function ListaNegraWorkspace({ session }: { session: SessionProps
     }
   };
 
+  const cargarFinancieras = async () => {
+    try {
+      const res = await fetch("/api/ventas/catalogo-personal", {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setFinancieras(Array.isArray(data.financieras) ? data.financieras : []);
+      }
+    } catch {
+      setFinancieras([]);
+    }
+  };
+
   useEffect(() => {
     void cargarLista();
+    void cargarFinancieras();
   }, []);
 
   const guardar = async () => {
@@ -89,7 +136,10 @@ export default function ListaNegraWorkspace({ session }: { session: SessionProps
       const res = await fetch("/api/vendedor/lista-negra", {
         body: JSON.stringify({
           documentoNumero,
+          financieraDeuda:
+            tipoObservacion === "DEUDA_FINANCIERAS" ? financieraDeuda : null,
           motivo,
+          tipoObservacion,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -107,6 +157,8 @@ export default function ListaNegraWorkspace({ session }: { session: SessionProps
       setMensajeTipo("success");
       setMensaje(data.mensaje || "Cedula agregada a lista negra");
       setDocumentoNumero("");
+      setTipoObservacion("PRESTA_NOMBRE");
+      setFinancieraDeuda("");
       setMotivo("");
       await cargarLista();
     } catch {
@@ -114,6 +166,100 @@ export default function ListaNegraWorkspace({ session }: { session: SessionProps
       setMensaje("Error guardando la cedula");
     } finally {
       setGuardando(false);
+    }
+  };
+
+  const iniciarEdicion = (item: ListaNegraItem) => {
+    setEditandoId(item.id);
+    setEditDocumentoNumero(item.documentoNumero);
+    setEditTipoObservacion(item.tipoObservacion || "PRESTA_NOMBRE");
+    setEditFinancieraDeuda(item.financieraDeuda ?? "");
+    setEditMotivo(item.motivo ?? "");
+    setMensaje("");
+  };
+
+  const guardarEdicion = async (id: number) => {
+    if (!puedeAdministrar) {
+      return;
+    }
+
+    try {
+      setActualizandoId(id);
+      setMensaje("");
+
+      const res = await fetch("/api/vendedor/lista-negra", {
+        body: JSON.stringify({
+          id,
+          documentoNumero: editDocumentoNumero,
+          financieraDeuda:
+            editTipoObservacion === "DEUDA_FINANCIERAS"
+              ? editFinancieraDeuda
+              : null,
+          motivo: editMotivo,
+          tipoObservacion: editTipoObservacion,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudo actualizar el registro");
+        return;
+      }
+
+      setMensajeTipo("success");
+      setMensaje(data.mensaje || "Registro actualizado");
+      setEditandoId(null);
+      await cargarLista();
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error actualizando el registro");
+    } finally {
+      setActualizandoId(null);
+    }
+  };
+
+  const eliminarRegistro = async (id: number) => {
+    if (!puedeAdministrar) {
+      return;
+    }
+
+    const confirmar = window.confirm(
+      "Este registro se ocultara de la lista negra activa. El historial interno se conserva."
+    );
+
+    if (!confirmar) {
+      return;
+    }
+
+    try {
+      setEliminandoId(id);
+      setMensaje("");
+
+      const res = await fetch(`/api/vendedor/lista-negra?id=${id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudo eliminar el registro");
+        return;
+      }
+
+      setMensajeTipo("success");
+      setMensaje(data.mensaje || "Registro eliminado de lista negra");
+      setEditandoId((current) => (current === id ? null : current));
+      await cargarLista();
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error eliminando el registro");
+    } finally {
+      setEliminandoId(null);
     }
   };
 
@@ -126,10 +272,14 @@ export default function ListaNegraWorkspace({ session }: { session: SessionProps
 
     return registros.filter((item) =>
       normalizeSearch(
-        `${item.documentoNumero} ${item.motivo ?? ""} ${item.sedeNombre ?? ""} ${item.reportadoPorNombre ?? ""}`
+        `${item.documentoNumero} ${observacionLabel(item.tipoObservacion)} ${item.financieraDeuda ?? ""} ${item.motivo ?? ""} ${item.sedeNombre ?? ""} ${item.reportadoPorNombre ?? ""}`
       ).includes(filtro)
     );
   }, [busqueda, registros]);
+
+  const rowGridClass = puedeAdministrar
+    ? "min-w-[1080px] grid-cols-[150px_1fr_150px_150px_170px]"
+    : "min-w-[840px] grid-cols-[150px_1fr_150px_150px]";
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
@@ -157,6 +307,11 @@ export default function ListaNegraWorkspace({ session }: { session: SessionProps
                 <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/90">
                   Reporta: {session.perfilNombre}
                 </span>
+                {puedeAdministrar && (
+                  <span className="rounded-full border border-emerald-200/30 bg-emerald-300/15 px-3 py-1 text-xs font-semibold text-emerald-50">
+                    Admin: editar y eliminar
+                  </span>
+                )}
               </div>
             </div>
 
@@ -211,6 +366,42 @@ export default function ListaNegraWorkspace({ session }: { session: SessionProps
 
               <label className="flex flex-col gap-2 text-sm font-black text-slate-700">
                 Observacion
+                <select
+                  value={tipoObservacion}
+                  onChange={(event) => {
+                    const value = event.target.value as ObservacionFraude;
+                    setTipoObservacion(value);
+                    if (value !== "DEUDA_FINANCIERAS") {
+                      setFinancieraDeuda("");
+                    }
+                  }}
+                  className={inputClass()}
+                >
+                  <option value="PRESTA_NOMBRE">PRESTA NOMBRE</option>
+                  <option value="DEUDA_FINANCIERAS">DEUDA FINANCIERAS</option>
+                </select>
+              </label>
+
+              {tipoObservacion === "DEUDA_FINANCIERAS" && (
+                <label className="flex flex-col gap-2 text-sm font-black text-slate-700">
+                  Financiera donde tiene deuda
+                  <select
+                    value={financieraDeuda}
+                    onChange={(event) => setFinancieraDeuda(event.target.value)}
+                    className={inputClass()}
+                  >
+                    <option value="">Selecciona una financiera</option>
+                    {financieras.map((item) => (
+                      <option key={item.id} value={item.nombre}>
+                        {item.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label className="flex flex-col gap-2 text-sm font-black text-slate-700">
+                Detalle adicional
                 <textarea
                   value={motivo}
                   onChange={(event) => setMotivo(event.target.value)}
@@ -250,11 +441,14 @@ export default function ListaNegraWorkspace({ session }: { session: SessionProps
             </div>
 
             <div className="mt-6 overflow-hidden rounded-[24px] border border-slate-200">
-              <div className="grid min-w-[780px] grid-cols-[150px_1fr_150px_150px] bg-slate-950 px-4 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white">
+              <div
+                className={`grid ${rowGridClass} bg-slate-950 px-4 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white`}
+              >
                 <span>Cedula</span>
                 <span>Observacion</span>
                 <span>Sede</span>
                 <span>Fecha</span>
+                {puedeAdministrar && <span>Acciones</span>}
               </div>
 
               {cargando ? (
@@ -270,25 +464,140 @@ export default function ListaNegraWorkspace({ session }: { session: SessionProps
                   {registrosFiltrados.map((item) => (
                     <div
                       key={item.id}
-                      className="grid min-w-[780px] grid-cols-[150px_1fr_150px_150px] gap-3 px-4 py-4 text-sm"
+                      className={puedeAdministrar ? "min-w-[1080px]" : "min-w-[840px]"}
                     >
-                      <span className="font-black text-red-700">
-                        {item.documentoNumero}
-                      </span>
-                      <span className="min-w-0 font-semibold text-slate-700">
-                        {item.motivo || "Sin observacion"}
-                        {item.reportadoPorNombre && (
-                          <span className="mt-1 block text-xs font-bold text-slate-400">
-                            Reportado por {item.reportadoPorNombre}
+                      <div className={`grid ${rowGridClass} gap-3 px-4 py-4 text-sm`}>
+                        <span className="font-black text-red-700">
+                          {item.documentoNumero}
+                        </span>
+                        <span className="min-w-0 font-semibold text-slate-700">
+                          <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-red-700">
+                            {observacionLabel(item.tipoObservacion)}
+                          </span>
+                          {item.financieraDeuda && (
+                            <span className="ml-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-amber-700">
+                              {item.financieraDeuda}
+                            </span>
+                          )}
+                          {item.motivo && (
+                            <span className="mt-2 block text-sm font-semibold text-slate-700">
+                              {item.motivo}
+                            </span>
+                          )}
+                          {item.reportadoPorNombre && (
+                            <span className="mt-1 block text-xs font-bold text-slate-400">
+                              Reportado por {item.reportadoPorNombre}
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-bold text-slate-700">
+                          {item.sedeNombre || "Sin sede"}
+                        </span>
+                        <span className="text-xs font-semibold leading-5 text-slate-500">
+                          {formatDate(item.updatedAt)}
+                        </span>
+                        {puedeAdministrar && (
+                          <span className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => iniciarEdicion(item)}
+                              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-slate-50"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void eliminarRegistro(item.id)}
+                              disabled={eliminandoId === item.id}
+                              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {eliminandoId === item.id ? "Eliminando" : "Eliminar"}
+                            </button>
                           </span>
                         )}
-                      </span>
-                      <span className="font-bold text-slate-700">
-                        {item.sedeNombre || "Sin sede"}
-                      </span>
-                      <span className="text-xs font-semibold leading-5 text-slate-500">
-                        {formatDate(item.updatedAt)}
-                      </span>
+                      </div>
+
+                      {editandoId === item.id && (
+                        <div className="border-t border-slate-100 bg-slate-50 px-4 py-4">
+                          <div className="grid gap-3 md:grid-cols-[150px_190px_1fr_auto] md:items-start">
+                            <input
+                              value={editDocumentoNumero}
+                              onChange={(event) =>
+                                setEditDocumentoNumero(
+                                  onlyDigits(event.target.value)
+                                )
+                              }
+                              className={inputClass()}
+                              inputMode="numeric"
+                              placeholder="Cedula"
+                            />
+                            <div className="grid gap-2">
+                              <select
+                                value={editTipoObservacion}
+                                onChange={(event) => {
+                                  const value = event.target.value as ObservacionFraude;
+                                  setEditTipoObservacion(value);
+                                  if (value !== "DEUDA_FINANCIERAS") {
+                                    setEditFinancieraDeuda("");
+                                  }
+                                }}
+                                className={inputClass()}
+                              >
+                                <option value="PRESTA_NOMBRE">
+                                  PRESTA NOMBRE
+                                </option>
+                                <option value="DEUDA_FINANCIERAS">
+                                  DEUDA FINANCIERAS
+                                </option>
+                              </select>
+                              {editTipoObservacion === "DEUDA_FINANCIERAS" && (
+                                <select
+                                  value={editFinancieraDeuda}
+                                  onChange={(event) =>
+                                    setEditFinancieraDeuda(event.target.value)
+                                  }
+                                  className={inputClass()}
+                                >
+                                  <option value="">Financiera</option>
+                                  {financieras.map((financiera) => (
+                                    <option
+                                      key={financiera.id}
+                                      value={financiera.nombre}
+                                    >
+                                      {financiera.nombre}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                            <textarea
+                              value={editMotivo}
+                              onChange={(event) => setEditMotivo(event.target.value)}
+                              className={`${inputClass()} min-h-20 resize-y leading-6`}
+                              placeholder="Observacion..."
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void guardarEdicion(item.id)}
+                                disabled={actualizandoId === item.id}
+                                className="rounded-xl bg-slate-950 px-4 py-3 text-xs font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                              >
+                                {actualizandoId === item.id
+                                  ? "Guardando"
+                                  : "Guardar"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditandoId(null)}
+                                className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

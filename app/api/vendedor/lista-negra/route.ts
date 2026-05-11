@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  esPerfilAdministrador,
   esRolAdministrativo,
+  esRolAdmin,
   puedeAccederPanelVendedor,
 } from "@/lib/access-control";
 import { getSessionUser } from "@/lib/auth";
 import {
+  claveNombrePersonalVenta,
+  obtenerCatalogoPersonalVenta,
+} from "@/lib/ventas-personal";
+import {
+  actualizarDocumentoListaNegra,
+  desactivarDocumentoListaNegra,
   guardarDocumentoListaNegra,
   listarDocumentosListaNegra,
+  normalizarObservacionListaNegra,
 } from "@/lib/vendor-blacklist";
 
 async function requireVendor() {
@@ -33,6 +42,41 @@ async function requireVendor() {
   }
 
   return { ok: true as const, session };
+}
+
+function canManageBlacklist(session: {
+  perfilTipo?: string | null;
+  rolNombre?: string | null;
+}) {
+  return esRolAdmin(session.rolNombre) || esPerfilAdministrador(session.perfilTipo);
+}
+
+async function resolverObservacionFraude(
+  tipoObservacion: unknown,
+  financieraDeuda: unknown
+) {
+  const observacion = normalizarObservacionListaNegra(tipoObservacion);
+
+  if (observacion !== "DEUDA_FINANCIERAS") {
+    return { observacion, financiera: null } as const;
+  }
+
+  const key = claveNombrePersonalVenta(financieraDeuda);
+
+  if (!key) {
+    return { error: "Selecciona la financiera donde tiene deuda" } as const;
+  }
+
+  const catalogo = await obtenerCatalogoPersonalVenta();
+  const financiera = catalogo.financieras.find(
+    (item) => claveNombrePersonalVenta(item.nombre) === key
+  );
+
+  if (!financiera) {
+    return { error: "Selecciona una financiera valida del catalogo" } as const;
+  }
+
+  return { observacion, financiera: financiera.nombre } as const;
 }
 
 export async function GET(req: NextRequest) {
@@ -69,8 +113,18 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as Record<string, unknown>;
+    const observacion = await resolverObservacionFraude(
+      body.tipoObservacion,
+      body.financieraDeuda
+    );
+
+    if ("error" in observacion) {
+      return NextResponse.json({ error: observacion.error }, { status: 400 });
+    }
+
     const resultado = await guardarDocumentoListaNegra({
       documento: body.documentoNumero,
+      financieraDeuda: observacion.financiera,
       motivo: body.motivo,
       reportadoPorNombre:
         access.session.perfilNombre ??
@@ -80,6 +134,7 @@ export async function POST(req: Request) {
       reportadoPorPerfilId: access.session.perfilId ?? null,
       sedeId: access.session.sedeId ?? null,
       sedeNombre: access.session.sedeNombre ?? null,
+      tipoObservacion: observacion.observacion,
     });
 
     if ("error" in resultado) {
@@ -95,6 +150,93 @@ export async function POST(req: Request) {
     console.error("ERROR GUARDANDO LISTA NEGRA:", error);
     return NextResponse.json(
       { error: "Error guardando en lista negra" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const access = await requireVendor();
+
+    if (!access.ok) {
+      return access.response;
+    }
+
+    if (!canManageBlacklist(access.session)) {
+      return NextResponse.json(
+        { error: "Solo el administrador puede editar lista negra" },
+        { status: 403 }
+      );
+    }
+
+    const body = (await req.json()) as Record<string, unknown>;
+    const observacion = await resolverObservacionFraude(
+      body.tipoObservacion,
+      body.financieraDeuda
+    );
+
+    if ("error" in observacion) {
+      return NextResponse.json({ error: observacion.error }, { status: 400 });
+    }
+
+    const resultado = await actualizarDocumentoListaNegra({
+      id: body.id,
+      documento: body.documentoNumero,
+      financieraDeuda: observacion.financiera,
+      motivo: body.motivo,
+      tipoObservacion: observacion.observacion,
+    });
+
+    if ("error" in resultado) {
+      return NextResponse.json({ error: resultado.error }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      mensaje: "Registro actualizado",
+      registro: resultado.data,
+    });
+  } catch (error) {
+    console.error("ERROR EDITANDO LISTA NEGRA:", error);
+    return NextResponse.json(
+      { error: "Error editando lista negra" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const access = await requireVendor();
+
+    if (!access.ok) {
+      return access.response;
+    }
+
+    if (!canManageBlacklist(access.session)) {
+      return NextResponse.json(
+        { error: "Solo el administrador puede eliminar lista negra" },
+        { status: 403 }
+      );
+    }
+
+    const url = new URL(req.url);
+    const resultado = await desactivarDocumentoListaNegra(url.searchParams.get("id"));
+
+    if ("error" in resultado) {
+      return NextResponse.json({ error: resultado.error }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      mensaje: "Registro eliminado de lista negra",
+      registro: resultado.data,
+    });
+  } catch (error) {
+    console.error("ERROR ELIMINANDO LISTA NEGRA:", error);
+    return NextResponse.json(
+      { error: "Error eliminando lista negra" },
       { status: 500 }
     );
   }
