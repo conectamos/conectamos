@@ -686,6 +686,7 @@ export default async function DashboardPage() {
         : "Digitaliza la hoja de plataforma y registra el tramite completo desde este modulo.",
       actions: [
         { href: "/vendedor/registros", label: "Registrar venta", tone: "primary" },
+        { href: "/vendedor/lista-negra", label: "LISTA NEGRA", tone: "danger" },
         ...(!esAdmin
           ? ([
               {

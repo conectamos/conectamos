@@ -894,12 +894,14 @@ export default function VendedorRegistroWorkspace({
     }
 
     let cancelled = false;
-    const timer = window.setTimeout(async () => {
+    const controller = new AbortController();
+
+    const verificar = async () => {
       try {
         setVerificandoListaNegra(true);
         const res = await fetch(
           `/api/vendedor/lista-negra/verificar?documento=${encodeURIComponent(documento)}`,
-          { cache: "no-store" }
+          { cache: "no-store", signal: controller.signal }
         );
         const data = await res.json();
 
@@ -919,7 +921,7 @@ export default function VendedorRegistroWorkspace({
 
         setListaNegraAlerta(null);
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !controller.signal.aborted) {
           setListaNegraAlerta(null);
         }
       } finally {
@@ -927,11 +929,13 @@ export default function VendedorRegistroWorkspace({
           setVerificandoListaNegra(false);
         }
       }
-    }, 400);
+    };
+
+    void verificar();
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      controller.abort();
     };
   }, [form.documentoNumero]);
 
@@ -1791,12 +1795,6 @@ export default function VendedorRegistroWorkspace({
                 className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-center text-sm font-black text-slate-900 transition hover:bg-slate-100"
               >
                 LISTA DE PRECIOS
-              </Link>
-              <Link
-                href="/vendedor/lista-negra"
-                className="rounded-2xl border border-red-200 bg-red-600 px-5 py-3 text-center text-sm font-black text-white shadow-[0_12px_34px_rgba(185,28,28,0.28)] transition hover:bg-red-700"
-              >
-                LISTA NEGRA
               </Link>
               {puedeBuscarRegistros && (
                 <Link
