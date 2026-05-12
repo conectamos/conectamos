@@ -2869,15 +2869,14 @@ export default function VendedorRegistroWorkspace({
                       ref={fotoInputRef}
                       type="file"
                       accept="image/*"
-                      capture="environment"
                       onChange={(event) => void cargarFotoEntrega(event)}
                       className="hidden"
                     />
                   </div>
 
                   <p className="mt-3 text-xs text-slate-500">
-                    En celular intentara abrir la camara trasera. En computador,
-                    abrira la camara del navegador si esta disponible.
+                    Abrir camara usa la camara del dispositivo. Subir imagen
+                    permite seleccionar una foto guardada en el equipo.
                   </p>
 
                   {errorCamara && (
