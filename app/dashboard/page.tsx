@@ -14,6 +14,7 @@ import { getCurrentBogotaMonthRange } from "@/lib/ventas-utils";
 import { getVendorWelcomeMessage } from "@/lib/vendor-welcome-message";
 import {
   getMonthlyCommercialSummary,
+  type CommercialBrandRankingItem,
   type CommercialRankingItem,
 } from "@/lib/dashboard-commercial-summary";
 
@@ -62,6 +63,12 @@ type SessionBadge = {
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
+}
+
+function formatoPorcentaje(valor: number) {
+  return `${Number(valor || 0).toLocaleString("es-CO", {
+    maximumFractionDigits: 1,
+  })}%`;
 }
 
 function BrandBadge() {
@@ -115,6 +122,91 @@ function MetricCard({
         {value}
       </p>
       <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+const BRAND_CHART_COLORS = [
+  "bg-emerald-600",
+  "bg-sky-600",
+  "bg-amber-500",
+  "bg-rose-500",
+  "bg-violet-600",
+  "bg-cyan-600",
+  "bg-slate-700",
+  "bg-stone-500",
+];
+
+function BrandSalesChartPanel({
+  items,
+}: {
+  items: CommercialBrandRankingItem[];
+}) {
+  const total = items.reduce((acc, item) => acc + item.total, 0);
+  const visibleItems = items.slice(0, 8);
+
+  return (
+    <div
+      id="top-marcas-vendidas"
+      className="scroll-mt-6 rounded-[26px] border border-[#ebe4d7] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)] md:col-span-2 2xl:col-span-5"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-black tracking-tight text-slate-950">
+            Top marcas vendidas
+          </p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Participacion por marca sobre las ventas del mes.
+          </p>
+        </div>
+        <div className="w-max rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+          Total: {total} {total === 1 ? "venta" : "ventas"}
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-3">
+        {visibleItems.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#e6ddcf] bg-[#fcfaf6] px-4 py-4 text-sm text-slate-500">
+            Sin marcas registradas en este periodo.
+          </div>
+        ) : (
+          visibleItems.map((item, index) => {
+            const barWidth = `${Math.min(
+              100,
+              Math.max(item.porcentaje, item.total > 0 ? 2 : 0)
+            )}%`;
+            const colorClass =
+              BRAND_CHART_COLORS[index % BRAND_CHART_COLORS.length];
+
+            return (
+              <div
+                key={`marca-${item.nombre}`}
+                className="grid gap-2 rounded-2xl border border-[#eee6da] bg-[#fcfbf8] px-4 py-3 sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)_72px] sm:items-center"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-slate-950">
+                    {index + 1}. {item.nombre}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {item.total} {item.total === 1 ? "venta" : "ventas"}
+                  </p>
+                </div>
+
+                <div className="h-4 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={["h-full rounded-full", colorClass].join(" ")}
+                    style={{ width: barWidth }}
+                  />
+                </div>
+
+                <p className="text-left text-sm font-black text-slate-950 sm:text-right">
+                  {formatoPorcentaje(item.porcentaje)}
+                </p>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -282,6 +374,7 @@ function CommercialRankingSection({
   topJaladores,
   topCerradores,
   topFinancieras,
+  topMarcasVendidas,
 }: {
   periodLabel: string;
   coverageLabel: string;
@@ -290,6 +383,7 @@ function CommercialRankingSection({
   topJaladores: CommercialRankingItem[];
   topCerradores: CommercialRankingItem[];
   topFinancieras: CommercialRankingItem[];
+  topMarcasVendidas: CommercialBrandRankingItem[];
 }) {
   return (
     <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
@@ -317,6 +411,7 @@ function CommercialRankingSection({
       </div>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
+        <BrandSalesChartPanel items={topMarcasVendidas} />
         <CommercialRankingPanel
           title="Ventas de Oficina"
           accent="bg-sky-500"
@@ -728,6 +823,7 @@ export default async function DashboardPage() {
         { href: "/ventas/perfiles", label: "Perfiles vendedores", tone: "secondary" },
         { href: "/ventas/equipo-comercial", label: "Catalogos de ventas", tone: "secondary" },
         { href: "/dashboard/lista-precios", label: "Lista de precios", tone: "secondary" },
+        { href: "/dashboard#top-marcas-vendidas", label: "Top marcas vendidas", tone: "secondary" },
         { href: "/dashboard/auditoria", label: "Auditoria", tone: "secondary" },
         { href: "/dashboard/seguridad/mensaje-vendedor", label: "Mensaje vendedores", tone: "secondary" },
         { href: "/dashboard/seguridad", label: "Seguridad", tone: "danger" },
@@ -985,6 +1081,7 @@ export default async function DashboardPage() {
               topJaladores={resumenComercialMensual.topJaladores}
               topCerradores={resumenComercialMensual.topCerradores}
               topFinancieras={resumenComercialMensual.topFinancieras}
+              topMarcasVendidas={resumenComercialMensual.topMarcasVendidas}
             />
           </div>
         )}

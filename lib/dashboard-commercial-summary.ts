@@ -3,11 +3,25 @@ import { getCurrentBogotaMonthRange } from "@/lib/ventas-utils";
 import { extraerFinancierasDetalle } from "@/lib/ventas-financieras";
 
 const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
+const MARCAS_VENDIDAS = [
+  "INFINIX",
+  "TECNO",
+  "MOTOROLA",
+  "SAMSUNG",
+  "XIAOMI",
+  "OPPO",
+  "HONOR",
+];
+const OTRAS_MARCAS = "OTRAS MARCAS";
 
 export type CommercialRankingItem = {
   nombre: string;
   total: number;
   monto: number;
+};
+
+export type CommercialBrandRankingItem = CommercialRankingItem & {
+  porcentaje: number;
 };
 
 function n(value: unknown) {
@@ -26,6 +40,24 @@ function normalizeLabel(value: string) {
 
 function normalizeKey(value: string) {
   return normalizeLabel(value).toUpperCase();
+}
+
+function normalizeReference(value: string | null | undefined) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function resolveBrand(value: string | null | undefined) {
+  const reference = normalizeReference(value);
+
+  if (!reference) {
+    return OTRAS_MARCAS;
+  }
+
+  const words = reference.split(/[^A-Z0-9]+/).filter(Boolean);
+  return MARCAS_VENDIDAS.find((marca) => words.includes(marca)) || OTRAS_MARCAS;
 }
 
 function pushRanking(
@@ -74,6 +106,45 @@ function sortedRanking(map: Map<string, CommercialRankingItem>) {
     });
 }
 
+function brandOrder(nombre: string) {
+  const index = MARCAS_VENDIDAS.indexOf(nombre);
+  return index >= 0 ? index : MARCAS_VENDIDAS.length;
+}
+
+function sortedBrandRanking(
+  map: Map<string, CommercialRankingItem>
+): CommercialBrandRankingItem[] {
+  const totalVentasMarca = Array.from(map.values()).reduce(
+    (acc, item) => acc + item.total,
+    0
+  );
+
+  if (totalVentasMarca === 0) {
+    return [];
+  }
+
+  return Array.from(map.values())
+    .filter((item) => item.total > 0)
+    .sort((a, b) => {
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+
+      const orderA = brandOrder(a.nombre);
+      const orderB = brandOrder(b.nombre);
+
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+
+      return a.nombre.localeCompare(b.nombre, "es");
+    })
+    .map((item) => ({
+      ...item,
+      porcentaje: (item.total / totalVentasMarca) * 100,
+    }));
+}
+
 export async function getMonthlyCommercialSummary(options?: {
   sedeId?: number | null;
 }) {
@@ -107,9 +178,15 @@ export async function getMonthlyCommercialSummary(options?: {
         ...scope,
       },
       select: {
+        descripcion: true,
         jalador: true,
         cerrador: true,
         comision: true,
+        inventarioSede: {
+          select: {
+            referencia: true,
+          },
+        },
         sede: {
           select: {
             nombre: true,
@@ -171,8 +248,14 @@ export async function getMonthlyCommercialSummary(options?: {
   const jaladores = new Map<string, CommercialRankingItem>();
   const cerradores = new Map<string, CommercialRankingItem>();
   const financieras = new Map<string, CommercialRankingItem>();
+  const marcasVendidas = new Map<string, CommercialRankingItem>();
 
   for (const venta of ventasDetalle) {
+    const marca = resolveBrand(
+      venta.inventarioSede?.referencia || venta.descripcion
+    );
+    pushRanking(marcasVendidas, marca);
+
     if (venta.sede?.nombre) {
       pushRanking(ventasSede, venta.sede.nombre);
     }
@@ -211,5 +294,6 @@ export async function getMonthlyCommercialSummary(options?: {
     topJaladores: sortedRanking(jaladores),
     topCerradores: sortedRanking(cerradores),
     topFinancieras: sortedRanking(financieras),
+    topMarcasVendidas: sortedBrandRanking(marcasVendidas),
   };
 }

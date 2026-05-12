@@ -8,6 +8,10 @@ type RankingItem = {
   monto: number;
 };
 
+type BrandRankingItem = RankingItem & {
+  porcentaje: number;
+};
+
 type UtilitySummary = {
   periodo: string;
   cobertura: string;
@@ -18,6 +22,7 @@ type UtilitySummary = {
   topJaladores: RankingItem[];
   topCerradores: RankingItem[];
   topFinancieras: RankingItem[];
+  topMarcasVendidas: BrandRankingItem[];
 };
 
 function formatoPesos(valor: number) {
