@@ -78,6 +78,7 @@ export async function POST(req: Request) {
         topCerradores: resumenMensual.topCerradores,
         topFinancieras: resumenMensual.topFinancieras,
         topMarcasVendidas: resumenMensual.topMarcasVendidas,
+        topReferenciasVendidas: resumenMensual.topReferenciasVendidas,
       },
     });
   } catch (error) {

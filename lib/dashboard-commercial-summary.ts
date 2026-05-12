@@ -24,6 +24,10 @@ export type CommercialBrandRankingItem = CommercialRankingItem & {
   porcentaje: number;
 };
 
+export type CommercialReferenceRankingItem = CommercialRankingItem & {
+  porcentaje: number;
+};
+
 function n(value: unknown) {
   if (!value) return 0;
 
@@ -145,6 +149,24 @@ function sortedBrandRanking(
     }));
 }
 
+function sortedReferenceRanking(
+  map: Map<string, CommercialRankingItem>
+): CommercialReferenceRankingItem[] {
+  const totalVentasReferencia = Array.from(map.values()).reduce(
+    (acc, item) => acc + item.total,
+    0
+  );
+
+  if (totalVentasReferencia === 0) {
+    return [];
+  }
+
+  return sortedRanking(map).map((item) => ({
+    ...item,
+    porcentaje: (item.total / totalVentasReferencia) * 100,
+  }));
+}
+
 export async function getMonthlyCommercialSummary(options?: {
   sedeId?: number | null;
 }) {
@@ -249,12 +271,15 @@ export async function getMonthlyCommercialSummary(options?: {
   const cerradores = new Map<string, CommercialRankingItem>();
   const financieras = new Map<string, CommercialRankingItem>();
   const marcasVendidas = new Map<string, CommercialRankingItem>();
+  const referenciasVendidas = new Map<string, CommercialRankingItem>();
 
   for (const venta of ventasDetalle) {
-    const marca = resolveBrand(
+    const referencia = normalizeReference(
       venta.inventarioSede?.referencia || venta.descripcion
-    );
+    ) || "SIN REFERENCIA";
+    const marca = resolveBrand(referencia);
     pushRanking(marcasVendidas, marca);
+    pushRanking(referenciasVendidas, referencia);
 
     if (venta.sede?.nombre) {
       pushRanking(ventasSede, venta.sede.nombre);
@@ -295,5 +320,6 @@ export async function getMonthlyCommercialSummary(options?: {
     topCerradores: sortedRanking(cerradores),
     topFinancieras: sortedRanking(financieras),
     topMarcasVendidas: sortedBrandRanking(marcasVendidas),
+    topReferenciasVendidas: sortedReferenceRanking(referenciasVendidas).slice(0, 10),
   };
 }
