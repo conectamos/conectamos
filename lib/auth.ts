@@ -38,6 +38,7 @@ export async function getSessionUser() {
         select: {
           id: true,
           nombre: true,
+          soloInventarioPorCobrar: true,
         },
       },
     },
@@ -116,6 +117,7 @@ export async function getSessionUser() {
     activo: user.activo,
     sedeId: user.sedeId,
     sedeNombre: user.sede?.nombre ?? "Sede sin configurar",
+    sedeSoloInventarioPorCobrar: Boolean(user.sede?.soloInventarioPorCobrar),
     rolId: user.rolId,
     rolNombre,
     sessionKey: session.sessionKey ?? null,

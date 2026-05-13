@@ -556,7 +556,8 @@ export default async function DashboardPage() {
   const esSupervisor =
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
-  const puedeVerEquality = esAdmin || esSupervisor;
+  const esSedeSoloInventario = !esAdmin && Boolean(session.sedeSoloInventarioPorCobrar);
+  const puedeVerEquality = !esSedeSoloInventario && (esAdmin || esSupervisor);
   const puedeVerFacturacion = puedeAccederPanelFacturador(
     session.perfilTipo,
     session.rolNombre
@@ -577,7 +578,7 @@ export default async function DashboardPage() {
 
   const mesActual = getCurrentBogotaMonthRange();
   const resumenComercialMensual =
-    esVendedor || esFacturador
+    esVendedor || esFacturador || esSedeSoloInventario
       ? null
       : await getMonthlyCommercialSummary({
           sedeId: esAdmin ? null : session.sedeId ?? null,
@@ -592,6 +593,9 @@ export default async function DashboardPage() {
     { label: "Usuario", value: nombreUsuario },
     { label: "Rol", value: rolUsuario },
     { label: "Cobertura", value: sedeLabel },
+    ...(esSedeSoloInventario
+      ? ([{ label: "Modo", value: "Solo inventario" }] as SessionBadge[])
+      : []),
     ...(session.perfilNombre
       ? ([{ label: "Perfil", value: session.perfilNombre }] as SessionBadge[])
       : []),
@@ -833,6 +837,8 @@ export default async function DashboardPage() {
         "nuovo",
         "equality",
       ]
+    : esSedeSoloInventario
+      ? ["inventario", "prestamos"]
     : esSupervisor
       ? [
           "aprobaciones",
@@ -880,7 +886,7 @@ export default async function DashboardPage() {
             </div>
 
             <div className="flex shrink-0 flex-col gap-3 sm:flex-row lg:items-start">
-              {(esAdmin || esSupervisor) && (
+              {(esAdmin || (esSupervisor && !esSedeSoloInventario)) && (
                 <Link
                   href="/dashboard/radar"
                   className="inline-flex min-w-[130px] items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-emerald-800 shadow-[0_16px_38px_rgba(15,23,42,0.12)] transition hover:bg-white"
@@ -888,7 +894,7 @@ export default async function DashboardPage() {
                   RADAR
                 </Link>
               )}
-              {!esVendedor && !esFacturador && (
+              {!esSedeSoloInventario && !esVendedor && !esFacturador && (
                 <Link
                   href="/dashboard/analitico"
                   className="inline-flex min-w-[170px] items-center justify-center rounded-2xl border border-white/12 bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-950 shadow-[0_16px_38px_rgba(15,23,42,0.18)] transition hover:bg-slate-100"
@@ -929,7 +935,7 @@ export default async function DashboardPage() {
               }
             />
           </section>
-        ) : esVendedor || esFacturador ? null : (
+        ) : esVendedor || esFacturador || esSedeSoloInventario ? null : (
           <div className="mt-6">
             <DashboardUtilityGate coverageLabel={sedeLabel} requiereClave={!esAdmin} />
           </div>
@@ -947,6 +953,8 @@ export default async function DashboardPage() {
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 {esAdmin
                   ? "Vista organizada por areas para encontrar rapido cada control del sistema."
+                  : esSedeSoloInventario
+                    ? "Vista limitada para consultar inventario y gestionar prestamos pendientes."
                   : "Vista simplificada del dashboard para entrar directo a cada modulo principal."}
               </p>
             </div>
@@ -976,7 +984,7 @@ export default async function DashboardPage() {
           )}
         </section>
 
-        {!esVendedor && !esFacturador && resumenComercialMensual && (
+        {!esSedeSoloInventario && !esVendedor && !esFacturador && resumenComercialMensual && (
           <div className="mt-6">
             <CommercialRankingSection
               periodLabel={mesActual.label}
