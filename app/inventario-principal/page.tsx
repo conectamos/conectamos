@@ -521,7 +521,7 @@ export default function InventarioPrincipalPage() {
 
   const restaurarBodega = async (id: number) => {
     const confirmado = window.confirm(
-      "Volver este equipo a Bodega Principal? Solo aplica si el envio sigue limpio: sin venta, sin pago y sin otro prestamo posterior."
+      "Volver este equipo directamente a Bodega Principal? Esta accion no requiere aprobacion de sede. Se bloqueara si ya tiene venta o movimientos de caja."
     );
 
     if (!confirmado) {
@@ -620,7 +620,7 @@ export default function InventarioPrincipalPage() {
     }
 
     const confirmado = window.confirm(
-      `Volver ${itemsSeleccionadosEnPrestamo.length} equipo(s) a Bodega Principal? Solo se procesaran envios limpios sin ventas, pagos ni movimientos posteriores.`
+      `Volver ${itemsSeleccionadosEnPrestamo.length} equipo(s) directamente a Bodega Principal? Esta accion no requiere aprobacion de sede. Se bloquearan los que ya tengan venta o movimientos de caja.`
     );
 
     if (!confirmado) {

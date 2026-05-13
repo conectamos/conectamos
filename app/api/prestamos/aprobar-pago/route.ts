@@ -158,9 +158,14 @@ export async function POST(req: Request) {
       select: {
         id: true,
         nombre: true,
+        soloInventarioPorCobrar: true,
       },
     });
     const nombresSede = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
+    const sedeDestinoSoloInventario = Boolean(
+      sedes.find((sede) => sede.id === prestamo.sedeDestinoId)
+        ?.soloInventarioPorCobrar
+    );
     const sedeDestinoNombre = etiquetaSedeAcreedora(
       prestamo.sedeDestinoId,
       nombresSede.get(prestamo.sedeDestinoId)
@@ -281,17 +286,23 @@ export async function POST(req: Request) {
         },
       });
 
-      await tx.inventarioSede.update({
-        where: { id: equipoDestino.id },
-        data: {
-          estadoFinanciero: "PAGO",
-          deboA: null,
-          fechaMovimiento: new Date(),
-          observacion: prestamoDesdeBodegaPrincipal
-            ? "Pago aprobado a bodega principal"
-            : `Pago aprobado a ${sedeAcreedoraNombre}`,
-        },
-      });
+      if (sedeDestinoSoloInventario) {
+        await tx.inventarioSede.delete({
+          where: { id: equipoDestino.id },
+        });
+      } else {
+        await tx.inventarioSede.update({
+          where: { id: equipoDestino.id },
+          data: {
+            estadoFinanciero: "PAGO",
+            deboA: null,
+            fechaMovimiento: new Date(),
+            observacion: prestamoDesdeBodegaPrincipal
+              ? "Pago aprobado a bodega principal"
+              : `Pago aprobado a ${sedeAcreedoraNombre}`,
+          },
+        });
+      }
 
       if (prestamoDesdeBodegaPrincipal) {
         if (equipoDestino.inventarioPrincipalId) {
@@ -334,6 +345,10 @@ export async function POST(req: Request) {
         }
       }
 
+      const observacionPagoPrincipal = sedeDestinoSoloInventario
+        ? `Pago total aprobado a bodega principal. Sede destino: ${sedeDestinoNombre}. Inventario del stand retirado por pago.`
+        : `Pago total aprobado a bodega principal. Sede destino: ${sedeDestinoNombre}.`;
+
       await tx.movimientoInventario.create({
         data: {
           imei: prestamo.imei,
@@ -348,7 +363,7 @@ export async function POST(req: Request) {
             ? "PAGO_BODEGA_PRINCIPAL"
             : "PRESTAMO_SEDE",
           observacion: prestamoDesdeBodegaPrincipal
-            ? `Pago total aprobado a bodega principal. Sede destino: ${sedeDestinoNombre}.`
+            ? observacionPagoPrincipal
             : `Pago total aprobado del prestamo. Sede origen: ${sedeAcreedoraNombre}. Sede destino: ${sedeDestinoNombre}.`,
         },
       });

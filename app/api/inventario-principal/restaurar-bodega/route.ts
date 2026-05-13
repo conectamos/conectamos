@@ -135,8 +135,8 @@ export async function POST(req: Request) {
 
     const restaurables: Array<{
       item: (typeof items)[number];
-      inventarioSedeId: number;
-      prestamoId: number;
+      inventarioSedeIds: number[];
+      prestamoIds: number[];
     }> = [];
     const bloqueados: string[] = [];
 
@@ -160,16 +160,14 @@ export async function POST(req: Request) {
         continue;
       }
 
-      if (relacionados.length !== 1) {
-        bloqueados.push(`${item.imei}: tiene trazabilidad de sede multiple o incompleta`);
-        continue;
-      }
+      const inventariosVendidos = relacionados.filter(
+        (inventario) =>
+          inventario.ventas.length > 0 ||
+          String(inventario.estadoActual || "").toUpperCase() === "VENDIDO"
+      );
 
-      const inventarioSede = relacionados[0];
-      const estadoSede = String(inventarioSede.estadoActual || "").toUpperCase();
-
-      if (estadoSede !== "BODEGA" || inventarioSede.ventas.length > 0) {
-        bloqueados.push(`${item.imei}: ya fue movido o vendido en la sede`);
+      if (inventariosVendidos.length > 0) {
+        bloqueados.push(`${item.imei}: ya tiene venta registrada en sede`);
         continue;
       }
 
@@ -178,27 +176,19 @@ export async function POST(req: Request) {
         continue;
       }
 
-      if (prestamosItem.length !== 1) {
-        bloqueados.push(`${item.imei}: tiene prestamos activos adicionales`);
-        continue;
-      }
+      const prestamosConCaja = prestamosItem.filter(
+        (prestamo) => prestamo.movimientosCaja.length > 0
+      );
 
-      const prestamo = prestamosItem[0];
-
-      if (
-        prestamo.estado !== "APROBADO" ||
-        prestamo.sedeOrigenId !== sedeBodega.id ||
-        prestamo.sedeDestinoId !== inventarioSede.sedeId ||
-        prestamo.movimientosCaja.length > 0
-      ) {
-        bloqueados.push(`${item.imei}: el prestamo ya no esta limpio para correccion`);
+      if (prestamosConCaja.length > 0) {
+        bloqueados.push(`${item.imei}: ya tiene movimientos de caja asociados`);
         continue;
       }
 
       restaurables.push({
         item,
-        inventarioSedeId: inventarioSede.id,
-        prestamoId: prestamo.id,
+        inventarioSedeIds: relacionados.map((inventario) => inventario.id),
+        prestamoIds: prestamosItem.map((prestamo) => prestamo.id),
       });
     }
 
@@ -213,23 +203,32 @@ export async function POST(req: Request) {
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.inventarioSede.deleteMany({
-        where: {
-          id: { in: restaurables.map((item) => item.inventarioSedeId) },
-        },
-      });
+      const inventarioSedeIds = restaurables.flatMap(
+        (item) => item.inventarioSedeIds
+      );
+      const prestamoIds = restaurables.flatMap((item) => item.prestamoIds);
 
-      await tx.prestamoSede.updateMany({
-        where: {
-          id: { in: restaurables.map((item) => item.prestamoId) },
-        },
-        data: {
-          estado: "CANCELADO",
-          montoPago: null,
-          fechaSolicitudPago: null,
-          fechaAprobacionPago: null,
-        },
-      });
+      if (inventarioSedeIds.length > 0) {
+        await tx.inventarioSede.deleteMany({
+          where: {
+            id: { in: inventarioSedeIds },
+          },
+        });
+      }
+
+      if (prestamoIds.length > 0) {
+        await tx.prestamoSede.updateMany({
+          where: {
+            id: { in: prestamoIds },
+          },
+          data: {
+            estado: "CANCELADO",
+            montoPago: null,
+            fechaSolicitudPago: null,
+            fechaAprobacionPago: null,
+          },
+        });
+      }
 
       await tx.inventarioPrincipal.updateMany({
         where: {
@@ -240,7 +239,7 @@ export async function POST(req: Request) {
           sedeDestinoId: null,
           estadoCobro: null,
           fechaEnvio: null,
-          observacion: `Envio revertido por admin ${user.usuario}. Equipo vuelve a bodega principal.`,
+          observacion: `Devolucion administrativa por ${user.usuario}. Equipo vuelve directo a bodega principal.`,
         },
       });
 
@@ -254,7 +253,7 @@ export async function POST(req: Request) {
           sedeId: sedeBodega.id,
           estadoFinanciero: "PAGO",
           origen: "ADMIN",
-          observacion: `Admin ${user.usuario} revirtio envio desde bodega principal. Equipo vuelve a BODEGA.`,
+          observacion: `Admin ${user.usuario} devolvio el equipo directamente a BODEGA desde inventario principal.`,
         })),
       });
     });

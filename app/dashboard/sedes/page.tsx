@@ -18,12 +18,21 @@ type SedeAdminItem = {
   nombre: string;
   codigo: string | null;
   activa: boolean;
+  soloInventarioPorCobrar: boolean;
   acceso: {
     id: number;
     nombre: string;
     usuario: string;
     activo: boolean;
   } | null;
+};
+
+type SedeEdicion = {
+  nombre: string;
+  codigo: string;
+  usuario: string;
+  clave: string;
+  soloInventarioPorCobrar: boolean;
 };
 
 function slugUsuarioSede(valor: string) {
@@ -47,18 +56,10 @@ export default function GestionSedesPage() {
   const [nuevaSedeCodigo, setNuevaSedeCodigo] = useState("");
   const [nuevoUsuario, setNuevoUsuario] = useState("");
   const [nuevaClave, setNuevaClave] = useState("");
+  const [nuevaSoloInventarioPorCobrar, setNuevaSoloInventarioPorCobrar] =
+    useState(false);
 
-  const [ediciones, setEdiciones] = useState<
-    Record<
-      number,
-      {
-        nombre: string;
-        codigo: string;
-        usuario: string;
-        clave: string;
-      }
-    >
-  >({});
+  const [ediciones, setEdiciones] = useState<Record<number, SedeEdicion>>({});
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
 
@@ -81,12 +82,13 @@ export default function GestionSedesPage() {
         setSedes(items);
         setEdiciones(
           items.reduce(
-            (acc: Record<number, { nombre: string; codigo: string; usuario: string; clave: string }>, sede: SedeAdminItem) => {
+            (acc: Record<number, SedeEdicion>, sede: SedeAdminItem) => {
               acc[sede.id] = {
                 nombre: sede.nombre,
                 codigo: sede.codigo || "",
                 usuario: sede.acceso?.usuario || "",
                 clave: "",
+                soloInventarioPorCobrar: Boolean(sede.soloInventarioPorCobrar),
               };
               return acc;
             },
@@ -113,10 +115,10 @@ export default function GestionSedesPage() {
     }
   }, [nuevaSedeNombre, nuevoUsuario]);
 
-  const actualizarEdicion = (
+  const actualizarEdicion = <Campo extends keyof SedeEdicion>(
     sedeId: number,
-    campo: "nombre" | "codigo" | "usuario" | "clave",
-    valor: string
+    campo: Campo,
+    valor: SedeEdicion[Campo]
   ) => {
     setEdiciones((actual) => ({
       ...actual,
@@ -142,6 +144,7 @@ export default function GestionSedesPage() {
           codigo: nuevaSedeCodigo,
           usuario: nuevoUsuario,
           clave: nuevaClave,
+          soloInventarioPorCobrar: nuevaSoloInventarioPorCobrar,
         }),
       });
 
@@ -157,6 +160,7 @@ export default function GestionSedesPage() {
       setNuevaSedeCodigo("");
       setNuevoUsuario("");
       setNuevaClave("");
+      setNuevaSoloInventarioPorCobrar(false);
       await cargarTodo();
     } catch {
       setMensaje("Error creando la sede");
@@ -183,6 +187,7 @@ export default function GestionSedesPage() {
           codigo: payload?.codigo,
           usuario: payload?.usuario,
           clave: payload?.clave,
+          soloInventarioPorCobrar: Boolean(payload?.soloInventarioPorCobrar),
         }),
       });
 
@@ -294,7 +299,7 @@ export default function GestionSedesPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.6fr_0.9fr_0.9fr_180px]">
+          <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.6fr_0.9fr_0.9fr_1fr_180px]">
             <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
               Nombre de sede
               <input
@@ -336,6 +341,23 @@ export default function GestionSedesPage() {
               />
             </label>
 
+            <label className="flex min-h-[76px] items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              <input
+                type="checkbox"
+                checked={nuevaSoloInventarioPorCobrar}
+                onChange={(event) =>
+                  setNuevaSoloInventarioPorCobrar(event.target.checked)
+                }
+                className="h-4 w-4 rounded border-amber-300 text-amber-700"
+              />
+              <span>
+                Solo inventario por cobrar
+                <span className="mt-1 block text-xs font-medium leading-5 text-amber-700">
+                  Al pagar, el equipo se oculta del stand.
+                </span>
+              </span>
+            </label>
+
             <div className="flex flex-col justify-end">
               <button
                 type="button"
@@ -369,6 +391,7 @@ export default function GestionSedesPage() {
                 codigo: sede.codigo || "",
                 usuario: sede.acceso?.usuario || "",
                 clave: "",
+                soloInventarioPorCobrar: Boolean(sede.soloInventarioPorCobrar),
               };
 
               return (
@@ -398,6 +421,11 @@ export default function GestionSedesPage() {
                       <p className="mt-1 text-slate-500">
                         {sede.codigo ? `Codigo: ${sede.codigo}` : "Sin codigo"}
                       </p>
+                      {sede.soloInventarioPorCobrar && (
+                        <p className="mt-1 font-semibold text-amber-700">
+                          Solo inventario por cobrar
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -456,6 +484,27 @@ export default function GestionSedesPage() {
                       />
                     </label>
                   </div>
+
+                  <label className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(edicion.soloInventarioPorCobrar)}
+                      onChange={(event) =>
+                        actualizarEdicion(
+                          sede.id,
+                          "soloInventarioPorCobrar",
+                          event.target.checked
+                        )
+                      }
+                      className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-700"
+                    />
+                    <span>
+                      Solo inventario por cobrar
+                      <span className="mt-1 block text-xs font-medium leading-5 text-amber-700">
+                        Para stands que no operan ventas ni caja propia de inventario. Al aprobar el pago, el IMEI se borra de la vista del stand.
+                      </span>
+                    </span>
+                  </label>
 
                   <div className="mt-5 flex justify-end">
                     <button

@@ -68,6 +68,7 @@ async function obtenerSedesAdmin() {
       nombre: true,
       codigo: true,
       activa: true,
+      soloInventarioPorCobrar: true,
       usuarios: {
         select: {
           id: true,
@@ -100,6 +101,7 @@ async function obtenerSedesAdmin() {
       nombre: sede.nombre,
       codigo: sede.codigo,
       activa: sede.activa,
+      soloInventarioPorCobrar: sede.soloInventarioPorCobrar,
       acceso: acceso
         ? {
             id: acceso.id,
@@ -145,6 +147,7 @@ export async function POST(req: Request) {
     const codigo = normalizarCodigoSede(body.codigo);
     const usuarioAcceso = normalizarUsuarioAcceso(body.usuario);
     const clave = String(body.clave || "").trim();
+    const soloInventarioPorCobrar = Boolean(body.soloInventarioPorCobrar);
 
     if (!nombre) {
       return NextResponse.json(
@@ -221,6 +224,7 @@ export async function POST(req: Request) {
           nombre,
           codigo,
           activa: true,
+          soloInventarioPorCobrar,
         },
         select: {
           id: true,
@@ -269,6 +273,7 @@ export async function PATCH(req: Request) {
     const codigo = normalizarCodigoSede(body.codigo);
     const usuarioAcceso = normalizarUsuarioAcceso(body.usuario);
     const clave = String(body.clave || "").trim();
+    const soloInventarioPorCobrar = Boolean(body.soloInventarioPorCobrar);
 
     if (!Number.isInteger(sedeId) || sedeId <= 0) {
       return NextResponse.json({ error: "Sede invalida" }, { status: 400 });
@@ -393,6 +398,7 @@ export async function PATCH(req: Request) {
         data: {
           nombre,
           codigo,
+          soloInventarioPorCobrar,
         },
       });
 

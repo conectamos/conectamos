@@ -289,9 +289,13 @@ export async function POST(req: Request) {
       select: {
         id: true,
         nombre: true,
+        soloInventarioPorCobrar: true,
       },
     });
     const nombresSede = new Map(sedes.map((sede) => [sede.id, sede.nombre]));
+    const sedesSoloInventario = new Map(
+      sedes.map((sede) => [sede.id, sede.soloInventarioPorCobrar])
+    );
     const sedeDestinoNombre = etiquetaSedeAcreedora(
       primerContexto.prestamo.sedeDestinoId,
       nombresSede.get(primerContexto.prestamo.sedeDestinoId)
@@ -337,6 +341,9 @@ export async function POST(req: Request) {
       for (const contexto of contextos) {
         const prestamo = contexto.prestamo;
         const equipoDestino = contexto.equipoDestino!;
+        const destinoSoloInventario = Boolean(
+          sedesSoloInventario.get(prestamo.sedeDestinoId)
+        );
 
         await tx.prestamoSede.update({
           where: { id: prestamo.id },
@@ -388,17 +395,23 @@ export async function POST(req: Request) {
           },
         });
 
-        await tx.inventarioSede.update({
-          where: { id: equipoDestino.id },
-          data: {
-            estadoFinanciero: "PAGO",
-            deboA: null,
-            fechaMovimiento: aprobacionEn,
-            observacion: contexto.prestamoDesdeBodegaPrincipal
-              ? "Pago aprobado a bodega principal en lote"
-              : `Pago aprobado a ${sedeAcreedoraNombre} en lote`,
-          },
-        });
+        if (destinoSoloInventario) {
+          await tx.inventarioSede.delete({
+            where: { id: equipoDestino.id },
+          });
+        } else {
+          await tx.inventarioSede.update({
+            where: { id: equipoDestino.id },
+            data: {
+              estadoFinanciero: "PAGO",
+              deboA: null,
+              fechaMovimiento: aprobacionEn,
+              observacion: contexto.prestamoDesdeBodegaPrincipal
+                ? "Pago aprobado a bodega principal en lote"
+                : `Pago aprobado a ${sedeAcreedoraNombre} en lote`,
+            },
+          });
+        }
 
         if (contexto.prestamoDesdeBodegaPrincipal) {
           if (equipoDestino.inventarioPrincipalId) {
@@ -454,7 +467,9 @@ export async function POST(req: Request) {
             origen: contexto.prestamoDesdeBodegaPrincipal
               ? "PAGO_BODEGA_PRINCIPAL"
               : "PRESTAMO_SEDE",
-            observacion: `Pago aprobado en lote por ${sedeAcreedoraNombre}. Total lote: ${total}.`,
+            observacion: destinoSoloInventario
+              ? `Pago aprobado en lote por ${sedeAcreedoraNombre}. Total lote: ${total}. Inventario del stand retirado por pago.`
+              : `Pago aprobado en lote por ${sedeAcreedoraNombre}. Total lote: ${total}.`,
           },
         });
       }

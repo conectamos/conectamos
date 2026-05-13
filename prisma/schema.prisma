@@ -29,6 +29,7 @@ model Sede {
   nombre              String               @unique
   codigo              String?              @unique
   activa              Boolean              @default(true)
+  soloInventarioPorCobrar Boolean          @default(false)
   clavePanelFinancieroHash String?
   usuarios            Usuario[]
   inventario          Inventario[]

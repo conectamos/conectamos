@@ -9,25 +9,26 @@ SET
   "descripcion" = EXCLUDED."descripcion",
   "updatedAt" = NOW();
 
-INSERT INTO "Sede" ("nombre", "codigo", "activa", "clavePanelFinancieroHash", "createdAt", "updatedAt")
+INSERT INTO "Sede" ("nombre", "codigo", "activa", "soloInventarioPorCobrar", "clavePanelFinancieroHash", "createdAt", "updatedAt")
 VALUES
-  ('BODEGA PRINCIPAL', 'BODEGA-PRINCIPAL', true, NULL, NOW(), NOW()),
-  ('SEDE 1', 'SEDE-1', true, NULL, NOW(), NOW()),
-  ('SEDE 2', 'SEDE-2', true, NULL, NOW(), NOW()),
-  ('SEDE 3', 'SEDE-3', true, NULL, NOW(), NOW()),
-  ('SEDE 4', 'SEDE-4', true, NULL, NOW(), NOW()),
-  ('SEDE 5', 'SEDE-5', true, NULL, NOW(), NOW()),
-  ('SEDE 6', 'SEDE-6', true, NULL, NOW(), NOW()),
-  ('SEDE 7', 'SEDE-7', true, NULL, NOW(), NOW()),
-  ('ONLINE', 'ONLINE', true, NULL, NOW(), NOW()),
-  ('TROPAS', 'TROPAS', true, NULL, NOW(), NOW()),
-  ('Stand PuntoNet', 'STAND-PUNTONET', true, NULL, NOW(), NOW()),
-  ('Stand Monky', 'STAND-MONKY', true, NULL, NOW(), NOW()),
-  ('Stand Solutions', 'STAND-SOLUTIONS', true, NULL, NOW(), NOW())
+  ('BODEGA PRINCIPAL', 'BODEGA-PRINCIPAL', true, false, NULL, NOW(), NOW()),
+  ('SEDE 1', 'SEDE-1', true, false, NULL, NOW(), NOW()),
+  ('SEDE 2', 'SEDE-2', true, false, NULL, NOW(), NOW()),
+  ('SEDE 3', 'SEDE-3', true, false, NULL, NOW(), NOW()),
+  ('SEDE 4', 'SEDE-4', true, false, NULL, NOW(), NOW()),
+  ('SEDE 5', 'SEDE-5', true, false, NULL, NOW(), NOW()),
+  ('SEDE 6', 'SEDE-6', true, false, NULL, NOW(), NOW()),
+  ('SEDE 7', 'SEDE-7', true, false, NULL, NOW(), NOW()),
+  ('ONLINE', 'ONLINE', true, false, NULL, NOW(), NOW()),
+  ('TROPAS', 'TROPAS', true, false, NULL, NOW(), NOW()),
+  ('Stand PuntoNet', 'STAND-PUNTONET', true, true, NULL, NOW(), NOW()),
+  ('Stand Monky', 'STAND-MONKY', true, true, NULL, NOW(), NOW()),
+  ('Stand Solutions', 'STAND-SOLUTIONS', true, false, NULL, NOW(), NOW())
 ON CONFLICT ("nombre") DO UPDATE
 SET
   "codigo" = EXCLUDED."codigo",
   "activa" = EXCLUDED."activa",
+  "soloInventarioPorCobrar" = EXCLUDED."soloInventarioPorCobrar",
   "updatedAt" = NOW();
 
 INSERT INTO "Usuario" ("nombre", "usuario", "claveHash", "activo", "rolId", "sedeId", "createdAt", "updatedAt")
