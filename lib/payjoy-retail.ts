@@ -111,7 +111,7 @@ function normalizeDeviceTag(value: unknown) {
 
 function parseAmount(value: PayJoyAmount) {
   if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
+    return Number.isFinite(value) ? roundCurrency(value) : null;
   }
 
   let raw = String(value ?? "")
@@ -136,7 +136,7 @@ function parseAmount(value: PayJoyAmount) {
   }
 
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
+  return Number.isFinite(parsed) ? roundCurrency(parsed) : null;
 }
 
 function parsePositiveInteger(value: string | number | null | undefined) {
@@ -148,7 +148,7 @@ function parsePositiveInteger(value: string | number | null | undefined) {
 }
 
 function roundCurrency(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  return Math.round(value);
 }
 
 function getFinanceOrderAmount(
