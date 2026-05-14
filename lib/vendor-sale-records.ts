@@ -287,6 +287,14 @@ export function normalizarMoneda(valor: unknown) {
 }
 
 export function formatearPesoInput(valor: unknown) {
+  if (typeof valor === "number") {
+    if (!Number.isFinite(valor) || valor <= 0) {
+      return "";
+    }
+
+    return `$ ${Math.round(valor).toLocaleString("es-CO")}`;
+  }
+
   const digits = String(valor || "").replace(/\D/g, "");
 
   if (!digits) {

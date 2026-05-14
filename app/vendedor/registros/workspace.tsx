@@ -261,7 +261,7 @@ function formatMoney(value: number | null) {
     return "Sin valor";
   }
 
-  return `$ ${value.toLocaleString("es-CO")}`;
+  return `$ ${Math.round(value).toLocaleString("es-CO")}`;
 }
 
 function moneyInputToNumber(value: string) {
