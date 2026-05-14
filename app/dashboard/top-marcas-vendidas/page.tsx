@@ -10,18 +10,23 @@ type PercentageRankingItem = {
   porcentaje: number;
 };
 
-const BAR_COLORS = [
-  "bg-emerald-600",
-  "bg-sky-600",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-violet-600",
-  "bg-cyan-600",
-  "bg-slate-700",
-  "bg-stone-500",
-  "bg-teal-600",
-  "bg-indigo-600",
+const BRAND_BAR_COLORS = [
+  { marca: "INFINIX", className: "bg-emerald-600" },
+  { marca: "XIAOMI", className: "bg-orange-500" },
+  { marca: "SAMSUNG", className: "bg-blue-900" },
+  { marca: "HONOR", className: "bg-sky-400" },
+  { marca: "TECNO", className: "bg-orange-300" },
+  { marca: "OPPO", className: "bg-green-600" },
+  { marca: "MOTOROLA", className: "bg-slate-950" },
 ];
+
+function colorMarca(nombre: string) {
+  const marcaNormalizada = String(nombre || "").trim().toUpperCase();
+  return (
+    BRAND_BAR_COLORS.find(({ marca }) => marcaNormalizada.includes(marca))
+      ?.className ?? "bg-violet-600"
+  );
+}
 
 function formatoNumero(valor: number) {
   return Number(valor || 0).toLocaleString("es-CO");
@@ -66,7 +71,7 @@ function RankingBar({
     100,
     Math.max(item.porcentaje, item.total > 0 ? 2 : 0)
   )}%`;
-  const colorClass = BAR_COLORS[index % BAR_COLORS.length];
+  const colorClass = colorMarca(item.nombre);
 
   return (
     <div className="grid gap-2 rounded-2xl border border-[#eee6da] bg-[#fcfbf8] px-4 py-3 sm:grid-cols-[minmax(150px,220px)_minmax(0,1fr)_84px] sm:items-center">
