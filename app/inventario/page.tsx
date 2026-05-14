@@ -896,6 +896,10 @@ export default function InventarioPage() {
     const vieneDeBodegaPrincipal =
       String(item.origen || "").trim().toUpperCase() === "PRINCIPAL";
 
+    if (esAdmin && (estado === "PENDIENTE" || estado === "GARANTIA")) {
+      return true;
+    }
+
     return !vieneDeBodegaPrincipal && (estado === "PENDIENTE" || estado === "GARANTIA");
   };
 
