@@ -130,15 +130,27 @@ export async function GET(req: Request) {
     }
 
     const inventarioConPrestamo = inventario.map((item) => {
-      const prestamo = prestamosPorOrigen.get(`${item.imei}|${item.sedeId}`);
+      const estadoInventario = String(item.estadoActual || "")
+        .trim()
+        .toUpperCase();
+      const debeMostrarDestinoPrestamo = [
+        "PRESTAMO",
+        "PRESTAMO_POR_ACEPTAR",
+        "TRASLADO",
+      ].includes(estadoInventario);
+      const prestamo = debeMostrarDestinoPrestamo
+        ? prestamosPorOrigen.get(`${item.imei}|${item.sedeId}`)
+        : null;
       const sedeDestino = prestamo
         ? sedesDestinoPorId.get(prestamo.sedeDestinoId)
         : null;
+      const destinoEsLaMismaSede =
+        prestamo && prestamo.sedeDestinoId === item.sedeId;
 
       return {
         ...item,
         prestamoDestino:
-          prestamo && sedeDestino
+          prestamo && sedeDestino && !destinoEsLaMismaSede
             ? {
                 id: sedeDestino.id,
                 nombre: sedeDestino.nombre,

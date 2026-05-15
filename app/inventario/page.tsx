@@ -132,8 +132,14 @@ function etiquetaDestinoPrestamo(item: InventarioItem) {
   const estadoPrestamo = String(item.prestamoDestino?.estado || "")
     .trim()
     .toUpperCase();
+  const destinoEsLaMismaSede = item.prestamoDestino?.id === item.sedeId;
+  const estadoPermiteDestino = [
+    "PRESTAMO",
+    "PRESTAMO_POR_ACEPTAR",
+    "TRASLADO",
+  ].includes(estadoActual);
 
-  if (!destino) {
+  if (!destino || destinoEsLaMismaSede || !estadoPermiteDestino) {
     return "-";
   }
 
