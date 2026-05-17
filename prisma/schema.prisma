@@ -222,6 +222,10 @@ model RegistroVendedorVenta {
   eliminadoPor                    String?
   firmaClienteDataUrl             String?
   fotoEntregaDataUrl              String?
+  facturaFotoDataUrl              String?
+  cedulaFrenteDataUrl             String?
+  cedulaReversoDataUrl            String?
+  clienteSinCedulaFisica          Boolean         @default(false)
   confirmacionCliente             Boolean         @default(false)
   createdAt                       DateTime        @default(now())
   updatedAt                       DateTime        @updatedAt
@@ -231,6 +235,7 @@ model RegistroVendedorVenta {
 
   @@index([perfilVendedorId, createdAt])
   @@index([sedeId, createdAt])
+  @@index([documentoNumero, serialImei, eliminadoEn])
   @@index([serialImei, estadoVentaRegistro, createdAt])
   @@index([ventaIdRelacionada])
 }

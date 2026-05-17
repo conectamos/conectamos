@@ -61,6 +61,10 @@ export type RegistroVendedorDetalle = {
   ventaIdRelacionada: number | null;
   firmaClienteDataUrl: string | null;
   fotoEntregaDataUrl: string | null;
+  facturaFotoDataUrl: string | null;
+  cedulaFrenteDataUrl: string | null;
+  cedulaReversoDataUrl: string | null;
+  clienteSinCedulaFisica: boolean;
   confirmacionCliente: boolean;
   perfilVendedorNombre: string | null;
   perfilVendedorTipo: string | null;

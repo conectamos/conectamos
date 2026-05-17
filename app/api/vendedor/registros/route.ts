@@ -35,6 +35,8 @@ import {
 
 const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
 const LISTA_NEGRA_ERROR = "CEDULA REPORTADA POR FRAUDE";
+const REGISTRO_DUPLICADO_ERROR =
+  "REGISTRO DUPLICADO: esta cedula e IMEI ya aparecen en el sistema. Revisa antes de crear otra venta.";
 
 const REGISTRO_RESUMEN_SELECT = {
   id: true,
@@ -108,6 +110,10 @@ const REGISTRO_DETALLE_SELECT = {
   ventaIdRelacionada: true,
   firmaClienteDataUrl: true,
   fotoEntregaDataUrl: true,
+  facturaFotoDataUrl: true,
+  cedulaFrenteDataUrl: true,
+  cedulaReversoDataUrl: true,
+  clienteSinCedulaFisica: true,
   confirmacionCliente: true,
   perfilVendedor: {
     select: {
@@ -336,6 +342,88 @@ function serializarRegistroDetalle(
   };
 }
 
+const REGISTRO_DUPLICADO_SELECT = {
+  id: true,
+  clienteNombre: true,
+  documentoNumero: true,
+  serialImei: true,
+  plataformaCredito: true,
+  puntoVenta: true,
+  estadoVentaRegistro: true,
+  createdAt: true,
+  perfilVendedor: {
+    select: {
+      nombre: true,
+    },
+  },
+  sede: {
+    select: {
+      nombre: true,
+    },
+  },
+} as const;
+
+function serializarRegistroDuplicado(registro: {
+  id: number;
+  clienteNombre: string;
+  documentoNumero: string;
+  serialImei: string | null;
+  plataformaCredito: string;
+  puntoVenta: string | null;
+  estadoVentaRegistro: string;
+  createdAt: Date;
+  perfilVendedor?: { nombre: string } | null;
+  sede?: { nombre: string } | null;
+}) {
+  return {
+    id: registro.id,
+    clienteNombre: registro.clienteNombre,
+    documentoNumero: registro.documentoNumero,
+    serialImei: registro.serialImei,
+    plataformaCredito: registro.plataformaCredito,
+    puntoVenta: registro.puntoVenta,
+    estadoVentaRegistro: registro.estadoVentaRegistro,
+    createdAt: registro.createdAt.toISOString(),
+    perfilVendedorNombre: registro.perfilVendedor?.nombre ?? null,
+    sedeNombre: registro.sede?.nombre ?? null,
+  };
+}
+
+async function buscarRegistroDuplicado(params: {
+  documentoNumero: string | null;
+  serialImei: string | null;
+  excluirId?: number | null;
+}) {
+  if (!params.documentoNumero || !params.serialImei) {
+    return null;
+  }
+
+  return await prisma.registroVendedorVenta.findFirst({
+    where: {
+      documentoNumero: params.documentoNumero,
+      serialImei: params.serialImei,
+      eliminadoEn: null,
+      ...(params.excluirId ? { id: { not: params.excluirId } } : {}),
+    },
+    select: REGISTRO_DUPLICADO_SELECT,
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+}
+
+function responderRegistroDuplicado(
+  registro: Awaited<ReturnType<typeof buscarRegistroDuplicado>>
+) {
+  return NextResponse.json(
+    {
+      error: REGISTRO_DUPLICADO_ERROR,
+      duplicado: registro ? serializarRegistroDuplicado(registro) : null,
+    },
+    { status: 409 }
+  );
+}
+
 function validarPayload(
   body: Record<string, unknown>,
   plataformasPermitidas: string[]
@@ -387,6 +475,10 @@ function validarPayload(
   const jaladorNombre = normalizarTextoCorto(body.jaladorNombre);
   const firmaClienteDataUrl = normalizarTextoLargo(body.firmaClienteDataUrl);
   const fotoEntregaDataUrl = normalizarTextoLargo(body.fotoEntregaDataUrl);
+  const facturaFotoDataUrl = normalizarTextoLargo(body.facturaFotoDataUrl);
+  const cedulaFrenteDataUrl = normalizarTextoLargo(body.cedulaFrenteDataUrl);
+  const cedulaReversoDataUrl = normalizarTextoLargo(body.cedulaReversoDataUrl);
+  const clienteSinCedulaFisica = Boolean(body.clienteSinCedulaFisica);
   const esContado = servicio === "CONTADO";
 
   if (!ciudad) return { error: "La ciudad es obligatoria" };
@@ -463,6 +555,9 @@ function validarPayload(
     if (intentoSegundoPago && !monedaMayorQueCero(medioPago2Valor)) {
       return { error: "Registra el valor del segundo ingreso contado" };
     }
+    if (!facturaFotoDataUrl) {
+      return { error: "Debes adjuntar la foto de la factura" };
+    }
 
     return {
       data: {
@@ -509,6 +604,10 @@ function validarPayload(
         jaladorNombre,
         firmaClienteDataUrl,
         fotoEntregaDataUrl,
+        facturaFotoDataUrl,
+        cedulaFrenteDataUrl: null,
+        cedulaReversoDataUrl: null,
+        clienteSinCedulaFisica: false,
         confirmacionCliente: true,
       },
     };
@@ -559,6 +658,15 @@ function validarPayload(
   }
   if (!aceptaCondicionesCredito) {
     return { error: "Debes confirmar las condiciones de credito visibles del formato" };
+  }
+  if (
+    !clienteSinCedulaFisica &&
+    (!cedulaFrenteDataUrl || !cedulaReversoDataUrl)
+  ) {
+    return {
+      error:
+        "Debes adjuntar la foto de la cedula por ambos lados o marcar que el cliente no trae cedula",
+    };
   }
 
   const primeraFinanciera = financierasDetalleResult.data[0];
@@ -651,6 +759,12 @@ function validarPayload(
       jaladorNombre,
       firmaClienteDataUrl,
       fotoEntregaDataUrl,
+      facturaFotoDataUrl: null,
+      cedulaFrenteDataUrl: clienteSinCedulaFisica ? null : cedulaFrenteDataUrl,
+      cedulaReversoDataUrl: clienteSinCedulaFisica
+        ? null
+        : cedulaReversoDataUrl,
+      clienteSinCedulaFisica,
       confirmacionCliente: true,
     },
   };
@@ -1012,6 +1126,15 @@ export async function POST(req: Request) {
       return NextResponse.json(errorListaNegra, { status: 400 });
     }
 
+    const registroDuplicado = await buscarRegistroDuplicado({
+      documentoNumero: payload.data.documentoNumero,
+      serialImei: payload.data.serialImei,
+    });
+
+    if (registroDuplicado) {
+      return responderRegistroDuplicado(registroDuplicado);
+    }
+
     const sedeRegistro = await prisma.sede.findFirst({
       where: {
         nombre: {
@@ -1116,6 +1239,7 @@ export async function PATCH(req: Request) {
       select: {
         id: true,
         asesorNombre: true,
+        serialImei: true,
         estadoVentaRegistro: true,
         ventaIdRelacionada: true,
       },
@@ -1189,6 +1313,16 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ error: payloadBasico.error }, { status: 400 });
       }
 
+      const registroDuplicado = await buscarRegistroDuplicado({
+        documentoNumero: payloadBasico.data.documentoNumero,
+        serialImei: existente.serialImei,
+        excluirId: id,
+      });
+
+      if (registroDuplicado) {
+        return responderRegistroDuplicado(registroDuplicado);
+      }
+
       const actualizado = await prisma.registroVendedorVenta.update({
         where: { id },
         data: payloadBasico.data,
@@ -1218,6 +1352,16 @@ export async function PATCH(req: Request) {
 
     if (errorListaNegra) {
       return NextResponse.json(errorListaNegra, { status: 400 });
+    }
+
+    const registroDuplicado = await buscarRegistroDuplicado({
+      documentoNumero: payload.data.documentoNumero,
+      serialImei: payload.data.serialImei,
+      excluirId: id,
+    });
+
+    if (registroDuplicado) {
+      return responderRegistroDuplicado(registroDuplicado);
     }
 
     const sedeRegistro = await prisma.sede.findFirst({

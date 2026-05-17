@@ -75,6 +75,19 @@ type ListaNegraAlerta = {
   updatedAt: string;
 };
 
+type RegistroDuplicadoAlerta = {
+  id: number;
+  clienteNombre: string;
+  documentoNumero: string;
+  serialImei: string | null;
+  plataformaCredito: string;
+  puntoVenta: string | null;
+  estadoVentaRegistro: string;
+  createdAt: string;
+  perfilVendedorNombre: string | null;
+  sedeNombre: string | null;
+};
+
 type CatalogoPersonalResponse = {
   jaladores: JaladorOption[];
   financieras: FinancieraCatalogoOption[];
@@ -132,9 +145,19 @@ type FormState = {
   jaladorNombre: string;
   firmaClienteDataUrl: string;
   fotoEntregaDataUrl: string;
+  facturaFotoDataUrl: string;
+  cedulaFrenteDataUrl: string;
+  cedulaReversoDataUrl: string;
+  clienteSinCedulaFisica: boolean;
   confirmacionCliente: boolean;
   financierasDetalle: FinancialFormState[];
 };
+
+type ImageFormField =
+  | "fotoEntregaDataUrl"
+  | "facturaFotoDataUrl"
+  | "cedulaFrenteDataUrl"
+  | "cedulaReversoDataUrl";
 
 type ImeiLookupResponse = {
   equipo: {
@@ -235,6 +258,10 @@ function createInitialState(session: SessionProps): FormState {
     jaladorNombre: "",
     firmaClienteDataUrl: "",
     fotoEntregaDataUrl: "",
+    facturaFotoDataUrl: "",
+    cedulaFrenteDataUrl: "",
+    cedulaReversoDataUrl: "",
+    clienteSinCedulaFisica: false,
     confirmacionCliente: false,
     financierasDetalle: Array.from(
       { length: MAX_FINANCIERAS_REGISTRO },
@@ -503,6 +530,10 @@ function mapRegistroToForm(
       jaladorNombre: registro.jaladorNombre ?? "",
       firmaClienteDataUrl: registro.firmaClienteDataUrl ?? "",
       fotoEntregaDataUrl: registro.fotoEntregaDataUrl ?? "",
+      facturaFotoDataUrl: registro.facturaFotoDataUrl ?? "",
+      cedulaFrenteDataUrl: registro.cedulaFrenteDataUrl ?? "",
+      cedulaReversoDataUrl: registro.cedulaReversoDataUrl ?? "",
+      clienteSinCedulaFisica: registro.clienteSinCedulaFisica,
       confirmacionCliente: registro.confirmacionCliente,
       financierasDetalle,
     },
@@ -752,7 +783,11 @@ export default function VendedorRegistroWorkspace({
   const [imeiDetalle, setImeiDetalle] = useState("");
   const [listaNegraAlerta, setListaNegraAlerta] =
     useState<ListaNegraAlerta | null>(null);
+  const [registroDuplicadoAlerta, setRegistroDuplicadoAlerta] =
+    useState<RegistroDuplicadoAlerta | null>(null);
+  const [duplicadoModalCerrado, setDuplicadoModalCerrado] = useState(false);
   const [verificandoListaNegra, setVerificandoListaNegra] = useState(false);
+  const [verificandoDuplicado, setVerificandoDuplicado] = useState(false);
   const [signaturePadKey, setSignaturePadKey] = useState(0);
   const [financierasVisibles, setFinancierasVisibles] = useState(1);
   const [ingresoContado2Visible, setIngresoContado2Visible] = useState(false);
@@ -764,6 +799,9 @@ export default function VendedorRegistroWorkspace({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
+  const facturaInputRef = useRef<HTMLInputElement | null>(null);
+  const cedulaFrenteInputRef = useRef<HTMLInputElement | null>(null);
+  const cedulaReversoInputRef = useRef<HTMLInputElement | null>(null);
   const registroEditandoConvertido = esRegistroConvertido(registroEditando);
 
   const setFormMessage = (texto: string, tipo: "success" | "error") => {
@@ -788,6 +826,8 @@ export default function VendedorRegistroWorkspace({
   const limpiarFormulario = (preservarContexto = false) => {
     setImeiDetalle("");
     setListaNegraAlerta(null);
+    setRegistroDuplicadoAlerta(null);
+    setDuplicadoModalCerrado(false);
     setSignaturePadKey((current) => current + 1);
     setFinancierasVisibles(1);
     setIngresoContado2Visible(false);
@@ -939,6 +979,71 @@ export default function VendedorRegistroWorkspace({
     };
   }, [form.documentoNumero]);
 
+  useEffect(() => {
+    const documento = onlyDigits(form.documentoNumero, 15);
+    const imei = onlyDigits(form.serialImei, 15);
+
+    if (documento.length < 5 || imei.length !== 15) {
+      setRegistroDuplicadoAlerta(null);
+      setDuplicadoModalCerrado(false);
+      setVerificandoDuplicado(false);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      const verificar = async () => {
+        try {
+          setVerificandoDuplicado(true);
+          const params = new URLSearchParams({
+            documento,
+            imei,
+          });
+
+          if (registroEditando?.id) {
+            params.set("excluirId", String(registroEditando.id));
+          }
+
+          const res = await fetch(
+            `/api/vendedor/registros/duplicado?${params.toString()}`,
+            { cache: "no-store", signal: controller.signal }
+          );
+          const data = await res.json();
+
+          if (cancelled) {
+            return;
+          }
+
+          if (res.ok && data?.duplicado) {
+            setRegistroDuplicadoAlerta(data.duplicado as RegistroDuplicadoAlerta);
+            setDuplicadoModalCerrado(false);
+            return;
+          }
+
+          setRegistroDuplicadoAlerta(null);
+          setDuplicadoModalCerrado(false);
+        } catch {
+          if (!cancelled && !controller.signal.aborted) {
+            setRegistroDuplicadoAlerta(null);
+          }
+        } finally {
+          if (!cancelled) {
+            setVerificandoDuplicado(false);
+          }
+        }
+      };
+
+      void verificar();
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [form.documentoNumero, form.serialImei, registroEditando?.id]);
+
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((current) => ({
       ...current,
@@ -952,6 +1057,9 @@ export default function VendedorRegistroWorkspace({
         return {
           ...current,
           servicio,
+          cedulaFrenteDataUrl: "",
+          cedulaReversoDataUrl: "",
+          clienteSinCedulaFisica: false,
           financierasDetalle: Array.from(
             { length: MAX_FINANCIERAS_REGISTRO },
             createEmptyFinanciera
@@ -962,6 +1070,7 @@ export default function VendedorRegistroWorkspace({
       return {
         ...current,
         servicio,
+        facturaFotoDataUrl: "",
         medioPago1Tipo: "EFECTIVO",
         medioPago1Valor: "",
         medioPago2Tipo: "",
@@ -1293,7 +1402,11 @@ export default function VendedorRegistroWorkspace({
     }
   };
 
-  const cargarFotoEntrega = async (event: ChangeEvent<HTMLInputElement>) => {
+  const cargarImagenCampo = async (
+    event: ChangeEvent<HTMLInputElement>,
+    field: ImageFormField,
+    label: string
+  ) => {
     const file = event.target.files?.[0];
 
     if (!file) {
@@ -1303,13 +1416,17 @@ export default function VendedorRegistroWorkspace({
     try {
       setCargandoFoto(true);
       const dataUrl = await compressImageToDataUrl(file);
-      setField("fotoEntregaDataUrl", dataUrl);
+      setField(field, dataUrl);
     } catch {
-      setFormMessage("No se pudo procesar la foto de entrega", "error");
+      setFormMessage(`No se pudo procesar ${label}`, "error");
     } finally {
       setCargandoFoto(false);
       event.target.value = "";
     }
+  };
+
+  const cargarFotoEntrega = async (event: ChangeEvent<HTMLInputElement>) => {
+    await cargarImagenCampo(event, "fotoEntregaDataUrl", "la foto de entrega");
   };
 
   const detenerCamara = () => {
@@ -1501,6 +1618,9 @@ export default function VendedorRegistroWorkspace({
     if (!isTextFilled(form.tipoDocumento)) return "Debes seleccionar el tipo de documento";
     if (!isTextFilled(form.documentoNumero)) return "El documento del cliente es obligatorio";
     if (listaNegraAlerta) return "CEDULA REPORTADA POR FRAUDE";
+    if (registroDuplicadoAlerta) {
+      return "REGISTRO DUPLICADO: esta cedula e IMEI ya aparecen en el sistema";
+    }
     if (!isTextFilled(form.servicio)) return "Selecciona CONTADO o FINANCIERA";
     if (!isTextFilled(form.serialImei) || form.serialImei.length !== 15) {
       return "El IMEI debe tener 15 digitos";
@@ -1570,6 +1690,9 @@ export default function VendedorRegistroWorkspace({
           return "Registra el valor del segundo ingreso contado";
         }
       }
+      if (!form.facturaFotoDataUrl) {
+        return "Debes adjuntar la foto de la factura";
+      }
     }
 
     if (!isTextFilled(form.correo)) return "El correo es obligatorio";
@@ -1624,6 +1747,12 @@ export default function VendedorRegistroWorkspace({
       }
       if (!form.aceptaCondicionesCredito) {
         return "Debes confirmar las condiciones de credito visibles del formato";
+      }
+      if (
+        !form.clienteSinCedulaFisica &&
+        (!form.cedulaFrenteDataUrl || !form.cedulaReversoDataUrl)
+      ) {
+        return "Debes adjuntar foto de cedula por ambos lados o marcar que el cliente no trae cedula";
       }
     }
     if (!isTextFilled(form.jaladorNombre)) return "Debes seleccionar el jalador";
@@ -1716,6 +1845,10 @@ export default function VendedorRegistroWorkspace({
             updatedAt: data.listaNegra.updatedAt ?? "",
           });
         }
+        if (data?.duplicado) {
+          setRegistroDuplicadoAlerta(data.duplicado as RegistroDuplicadoAlerta);
+          setDuplicadoModalCerrado(false);
+        }
         setFormMessage(data.error || "No se pudo guardar el registro", "error");
         return;
       }
@@ -1768,6 +1901,86 @@ export default function VendedorRegistroWorkspace({
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
+      {registroDuplicadoAlerta && !duplicadoModalCerrado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6 backdrop-blur-sm">
+          <section
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-2xl overflow-hidden rounded-[32px] border-2 border-red-300 bg-white shadow-[0_30px_90px_rgba(127,29,29,0.35)]"
+          >
+            <div className="bg-red-600 px-6 py-5 text-white">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-red-100">
+                    Alerta de duplicado
+                  </p>
+                  <h2 className="mt-2 text-3xl font-black tracking-tight">
+                    REGISTRO YA APARECE EN SISTEMA
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDuplicadoModalCerrado(true)}
+                  className="h-10 w-10 rounded-full border border-white/30 bg-white/10 text-xl font-black leading-none text-white transition hover:bg-white/20"
+                  aria-label="Cerrar alerta"
+                >
+                  x
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-5 px-6 py-6">
+              <p className="text-base font-semibold leading-7 text-red-950">
+                La cedula y el IMEI coinciden con otro registro. Revisa antes de
+                crear otra venta para evitar duplicar la operacion.
+              </p>
+
+              <div className="grid gap-3 rounded-[26px] border border-red-100 bg-red-50 p-4 text-sm text-red-950 sm:grid-cols-2">
+                <div>
+                  <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-red-700">
+                    Registro
+                  </span>
+                  <strong className="mt-1 block">#{registroDuplicadoAlerta.id}</strong>
+                </div>
+                <div>
+                  <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-red-700">
+                    Cliente
+                  </span>
+                  <strong className="mt-1 block">
+                    {registroDuplicadoAlerta.clienteNombre}
+                  </strong>
+                </div>
+                <div>
+                  <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-red-700">
+                    Punto
+                  </span>
+                  <strong className="mt-1 block">
+                    {registroDuplicadoAlerta.puntoVenta ||
+                      registroDuplicadoAlerta.sedeNombre ||
+                      "Sin punto"}
+                  </strong>
+                </div>
+                <div>
+                  <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-red-700">
+                    Asesor
+                  </span>
+                  <strong className="mt-1 block">
+                    {registroDuplicadoAlerta.perfilVendedorNombre || "Sin asesor"}
+                  </strong>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setDuplicadoModalCerrado(true)}
+                className="w-full rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white transition hover:bg-slate-800"
+              >
+                Entendido, voy a revisar
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <div className="mx-auto max-w-7xl">
         <section className="overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#1f2937_52%,#0f766e_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -1995,6 +2208,12 @@ export default function VendedorRegistroWorkspace({
                     {imeiDetalle ||
                       "Cuando el IMEI exista en cualquier sede o en bodega principal, se completara la informacion disponible del equipo."}
                   </div>
+                  {verificandoDuplicado && (
+                    <p className="text-xs font-semibold text-amber-700">
+                      Verificando si esta cedula e IMEI ya existen en el
+                      sistema...
+                    </p>
+                  )}
                 </div>
 
                 <div className="md:col-span-2">
@@ -2927,6 +3146,168 @@ export default function VendedorRegistroWorkspace({
                   )}
                 </div>
               </div>
+
+              {esServicioContado(form.servicio) && (
+                <div className="mt-5 rounded-[28px] border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-black text-emerald-950">
+                        Foto de la factura
+                      </p>
+                      <p className="mt-1 text-xs text-emerald-800">
+                        Obligatoria para ventas de contado.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => facturaInputRef.current?.click()}
+                      className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                      {cargandoFoto ? "Procesando..." : "Subir factura"}
+                    </button>
+                    <input
+                      ref={facturaInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) =>
+                        void cargarImagenCampo(
+                          event,
+                          "facturaFotoDataUrl",
+                          "la foto de la factura"
+                        )
+                      }
+                      className="hidden"
+                    />
+                  </div>
+
+                  {form.facturaFotoDataUrl && (
+                    <div className="mt-4 rounded-3xl border border-emerald-100 bg-white p-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={form.facturaFotoDataUrl}
+                        alt="Foto de factura"
+                        className="h-64 w-full rounded-2xl object-cover"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {esServicioFinanciera(form.servicio) && (
+                <div className="mt-5 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-sm font-black text-slate-950">
+                        Cedula del cliente
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Sube ambos lados de la cedula. Si el cliente no la trae
+                        fisicamente, marca la excepcion.
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                      <input
+                        type="checkbox"
+                        checked={form.clienteSinCedulaFisica}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            clienteSinCedulaFisica: event.target.checked,
+                            cedulaFrenteDataUrl: event.target.checked
+                              ? ""
+                              : current.cedulaFrenteDataUrl,
+                            cedulaReversoDataUrl: event.target.checked
+                              ? ""
+                              : current.cedulaReversoDataUrl,
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                      Cliente no trae cedula
+                    </label>
+                  </div>
+
+                  {!form.clienteSinCedulaFisica && (
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-700">
+                            Frente
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => cedulaFrenteInputRef.current?.click()}
+                            className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-black text-slate-700 transition hover:border-slate-500"
+                          >
+                            Subir frente
+                          </button>
+                          <input
+                            ref={cedulaFrenteInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={(event) =>
+                              void cargarImagenCampo(
+                                event,
+                                "cedulaFrenteDataUrl",
+                                "la foto frontal de la cedula"
+                              )
+                            }
+                            className="hidden"
+                          />
+                        </div>
+                        {form.cedulaFrenteDataUrl && (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={form.cedulaFrenteDataUrl}
+                            alt="Cedula frente"
+                            className="mt-4 h-44 w-full rounded-2xl object-cover"
+                          />
+                          </>
+                        )}
+                      </div>
+
+                      <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-700">
+                            Reverso
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => cedulaReversoInputRef.current?.click()}
+                            className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-black text-slate-700 transition hover:border-slate-500"
+                          >
+                            Subir reverso
+                          </button>
+                          <input
+                            ref={cedulaReversoInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={(event) =>
+                              void cargarImagenCampo(
+                                event,
+                                "cedulaReversoDataUrl",
+                                "la foto posterior de la cedula"
+                              )
+                            }
+                            className="hidden"
+                          />
+                        </div>
+                        {form.cedulaReversoDataUrl && (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={form.cedulaReversoDataUrl}
+                            alt="Cedula reverso"
+                            className="mt-4 h-44 w-full rounded-2xl object-cover"
+                          />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
             )}
 

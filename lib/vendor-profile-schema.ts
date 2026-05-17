@@ -122,6 +122,10 @@ async function runEnsureVendorProfilesSchema() {
       "eliminadoPor" TEXT,
       "firmaClienteDataUrl" TEXT,
       "fotoEntregaDataUrl" TEXT,
+      "facturaFotoDataUrl" TEXT,
+      "cedulaFrenteDataUrl" TEXT,
+      "cedulaReversoDataUrl" TEXT,
+      "clienteSinCedulaFisica" BOOLEAN NOT NULL DEFAULT false,
       "confirmacionCliente" BOOLEAN NOT NULL DEFAULT false,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -146,7 +150,11 @@ async function runEnsureVendorProfilesSchema() {
       ADD COLUMN IF NOT EXISTS "eliminadoEn" TIMESTAMP(3),
       ADD COLUMN IF NOT EXISTS "eliminadoPor" TEXT,
       ADD COLUMN IF NOT EXISTS "firmaClienteDataUrl" TEXT,
-      ADD COLUMN IF NOT EXISTS "fotoEntregaDataUrl" TEXT;
+      ADD COLUMN IF NOT EXISTS "fotoEntregaDataUrl" TEXT,
+      ADD COLUMN IF NOT EXISTS "facturaFotoDataUrl" TEXT,
+      ADD COLUMN IF NOT EXISTS "cedulaFrenteDataUrl" TEXT,
+      ADD COLUMN IF NOT EXISTS "cedulaReversoDataUrl" TEXT,
+      ADD COLUMN IF NOT EXISTS "clienteSinCedulaFisica" BOOLEAN NOT NULL DEFAULT false;
   `);
 
   await prisma.$executeRawUnsafe(`
@@ -214,6 +222,18 @@ async function runEnsureVendorProfilesSchema() {
     BEGIN
       CREATE INDEX "RegistroVendedorVenta_sedeId_createdAt_idx"
       ON "RegistroVendedorVenta"("sedeId", "createdAt");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      CREATE INDEX "RegistroVendedorVenta_documentoNumero_serialImei_eliminadoEn_idx"
+      ON "RegistroVendedorVenta"("documentoNumero", "serialImei", "eliminadoEn");
     EXCEPTION
       WHEN duplicate_table THEN NULL;
       WHEN duplicate_object THEN NULL;

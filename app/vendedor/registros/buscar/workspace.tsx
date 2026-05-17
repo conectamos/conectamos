@@ -74,6 +74,10 @@ function resolveFinancieras(registro: RegistroVendedorDetalle) {
   ].filter((item) => item.plataformaCredito || item.creditoAutorizado !== null);
 }
 
+function esServicioContado(value: unknown) {
+  return String(value || "").trim().toUpperCase() === "CONTADO";
+}
+
 function Field({
   label,
   value,
@@ -582,6 +586,80 @@ export default function BuscarRegistroWorkspace({
                           </p>
                         )}
                       </div>
+
+                      {esServicioContado(registro.plataformaCredito) && (
+                        <div className="rounded-[26px] border border-emerald-200 bg-emerald-50 p-4">
+                          <p className="text-sm font-semibold text-emerald-900">
+                            Foto de factura
+                          </p>
+                          {registro.facturaFotoDataUrl ? (
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={registro.facturaFotoDataUrl}
+                                alt="Foto de factura"
+                                className="mt-4 h-36 w-full rounded-2xl border border-emerald-100 bg-white object-cover"
+                              />
+                            </>
+                          ) : (
+                            <p className="mt-4 text-sm text-emerald-800">
+                              Sin factura cargada.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {!esServicioContado(registro.plataformaCredito) && (
+                        <>
+                          <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-4">
+                            <p className="text-sm font-semibold text-slate-700">
+                              Cedula frente
+                            </p>
+                            {registro.clienteSinCedulaFisica ? (
+                              <p className="mt-4 text-sm text-amber-700">
+                                Cliente reportado sin cedula fisica.
+                              </p>
+                            ) : registro.cedulaFrenteDataUrl ? (
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={registro.cedulaFrenteDataUrl}
+                                  alt="Cedula frente"
+                                  className="mt-4 h-36 w-full rounded-2xl border border-slate-200 bg-white object-cover"
+                                />
+                              </>
+                            ) : (
+                              <p className="mt-4 text-sm text-slate-500">
+                                Sin foto frontal cargada.
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-4">
+                            <p className="text-sm font-semibold text-slate-700">
+                              Cedula reverso
+                            </p>
+                            {registro.clienteSinCedulaFisica ? (
+                              <p className="mt-4 text-sm text-amber-700">
+                                Cliente reportado sin cedula fisica.
+                              </p>
+                            ) : registro.cedulaReversoDataUrl ? (
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={registro.cedulaReversoDataUrl}
+                                  alt="Cedula reverso"
+                                  className="mt-4 h-36 w-full rounded-2xl border border-slate-200 bg-white object-cover"
+                                />
+                              </>
+                            ) : (
+                              <p className="mt-4 text-sm text-slate-500">
+                                Sin foto posterior cargada.
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </section>
                 </div>
