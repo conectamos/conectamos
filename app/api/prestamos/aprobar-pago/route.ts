@@ -334,8 +334,9 @@ export async function POST(req: Request) {
           await tx.inventarioSede.update({
             where: { id: equipoOrigen.id },
             data: {
+              estadoActual: "TRASLADO",
               fechaMovimiento: new Date(),
-              observacion: `Prestamo pagado por ${sedeDestinoNombre}. La deuda con proveedor sigue pendiente.`,
+              observacion: `Prestamo pagado por ${sedeDestinoNombre}. Queda como traslado operativo y la deuda con proveedor sigue pendiente.`,
             },
           });
         } else {
