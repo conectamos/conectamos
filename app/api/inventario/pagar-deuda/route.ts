@@ -81,6 +81,8 @@ export async function POST(req: Request) {
       estadoActual === "PRESTAMO" && deudaProveedor;
     const equipoTrasladadoConDeudaProveedor =
       estadoActual === "TRASLADO" && deudaProveedor;
+    const equipoPrestamoPagoConDeudaProveedor =
+      estadoActual === "PRESTAMO_PAGO" && deudaProveedor;
     const equipoYaVendido = estadoActual === "VENDIDO";
     const sedeItemNombre = etiquetaSedeAcreedora(item.sedeId, item.sede?.nombre);
 
@@ -88,12 +90,13 @@ export async function POST(req: Request) {
       estadoActual !== "BODEGA" &&
       estadoActual !== "VENDIDO" &&
       !equipoPrestadoConDeudaProveedor &&
-      !equipoTrasladadoConDeudaProveedor
+      !equipoTrasladadoConDeudaProveedor &&
+      !equipoPrestamoPagoConDeudaProveedor
     ) {
       return NextResponse.json(
         {
           error:
-            "Solo se puede pagar deuda del equipo que esta en BODEGA, VENDIDO, PRESTAMO o TRASLADO con deuda a proveedor.",
+            "Solo se puede pagar deuda del equipo que esta en BODEGA, VENDIDO, PRESTAMO, PRESTAMO PAGO o TRASLADO con deuda a proveedor.",
         },
         { status: 400 }
       );
@@ -354,7 +357,7 @@ export async function POST(req: Request) {
       });
     }
 
-    if (equipoTrasladadoConDeudaProveedor) {
+    if (equipoTrasladadoConDeudaProveedor || equipoPrestamoPagoConDeudaProveedor) {
       await prisma.$transaction(async (tx) => {
         await tx.cajaMovimiento.create({
           data: {
@@ -372,10 +375,12 @@ export async function POST(req: Request) {
             estadoFinanciero: "PAGO",
             deboA: null,
             estadoAnterior: item.estadoAnterior || item.estadoActual || null,
-            estadoActual: "TRASLADO",
+            estadoActual: estadoActual === "PRESTAMO_PAGO" ? "PRESTAMO_PAGO" : "TRASLADO",
             fechaMovimiento: new Date(),
             observacion:
-              "Deuda pagada al proveedor. El registro queda como traslado operativo.",
+              estadoActual === "PRESTAMO_PAGO"
+                ? "Deuda pagada al proveedor. El registro queda como prestamo pago."
+                : "Deuda pagada al proveedor. El registro queda como traslado operativo.",
           },
         });
 
@@ -389,9 +394,11 @@ export async function POST(req: Request) {
             sedeId: item.sedeId,
             deboA: null,
             estadoFinanciero: "PAGO",
-            origen: item.origen || "TRASLADO",
+            origen: item.origen || estadoActual,
             observacion:
-              "Se pago la deuda al proveedor de un equipo ya trasladado.",
+              estadoActual === "PRESTAMO_PAGO"
+                ? "Se pago la deuda al proveedor de un prestamo ya pagado por la sede destino."
+                : "Se pago la deuda al proveedor de un equipo ya trasladado.",
           },
         });
       });

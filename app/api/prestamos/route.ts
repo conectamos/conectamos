@@ -8,6 +8,7 @@ import {
   esDeudaEntreSedes,
   esDeudaProveedor,
   esEstadoDeuda,
+  esProveedorFinser,
   esEstadoInventarioPrestamo,
   etiquetaSedeAcreedora,
   NOMBRE_SEDE_BODEGA,
@@ -416,10 +417,8 @@ export async function POST(req: Request) {
     }
 
     const trasladaDeudaDePrincipal =
-      (String(inventarioOrigen.origen || "").toUpperCase() === "PRINCIPAL" ||
-        !!inventarioOrigen.inventarioPrincipalId) &&
       esEstadoDeuda(inventarioOrigen.estadoFinanciero) &&
-      esDeudaProveedor(inventarioOrigen.deboA);
+      esProveedorFinser(inventarioOrigen.deboA);
 
     const nuevo = await prisma.$transaction(async (tx) => {
       const prestamo = await tx.prestamoSede.create({
@@ -441,7 +440,7 @@ export async function POST(req: Request) {
           estadoActual: ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
           fechaMovimiento: new Date(),
           observacion: trasladaDeudaDePrincipal
-            ? `Solicitud enviada a ${sedeDestino.nombre}. La deuda de principal solo se trasladara cuando la sede destino apruebe el prestamo.`
+            ? `Solicitud enviada a ${sedeDestino.nombre}. La deuda FINSER solo se trasladara cuando la sede destino apruebe el prestamo.`
             : `Solicitud enviada a ${sedeDestino.nombre}. Pendiente por aprobacion en sede destino.`,
         },
       });
@@ -458,7 +457,7 @@ export async function POST(req: Request) {
           estadoFinanciero: inventarioOrigen.estadoFinanciero,
           origen: ESTADO_INVENTARIO_PRESTAMO,
           observacion: trasladaDeudaDePrincipal
-            ? `Solicitud de prestamo enviada desde ${sedeOrigen.nombre} hacia ${sedeDestino.nombre}. La deuda del proveedor se trasladara cuando el destino apruebe.`
+            ? `Solicitud de prestamo enviada desde ${sedeOrigen.nombre} hacia ${sedeDestino.nombre}. La deuda FINSER se trasladara cuando el destino apruebe.`
             : `Solicitud de prestamo enviada desde ${sedeOrigen.nombre} hacia ${sedeDestino.nombre}. Pendiente por aprobacion.`,
         },
       });

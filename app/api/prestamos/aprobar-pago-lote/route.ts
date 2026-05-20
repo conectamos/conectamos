@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   NOMBRE_SEDE_BODEGA,
+  ESTADO_INVENTARIO_PRESTAMO_PAGO,
   etiquetaSedeAcreedora,
   esDeudaEntreSedes,
   esDeudaProveedor,
@@ -443,9 +444,9 @@ export async function POST(req: Request) {
             await tx.inventarioSede.update({
               where: { id: contexto.equipoOrigen.id },
               data: {
-                estadoActual: "TRASLADO",
+                estadoActual: ESTADO_INVENTARIO_PRESTAMO_PAGO,
                 fechaMovimiento: aprobacionEn,
-                observacion: `Prestamo pagado por ${sedeDestinoNombre}. Queda como traslado operativo y la deuda con proveedor sigue pendiente.`,
+                observacion: `Prestamo pagado por ${sedeDestinoNombre}. Queda cerrado como prestamo pago y la deuda con proveedor sigue pendiente.`,
               },
             });
           } else {

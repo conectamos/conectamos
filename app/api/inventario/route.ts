@@ -135,6 +135,7 @@ export async function GET(req: Request) {
         .toUpperCase();
       const debeMostrarDestinoPrestamo = [
         "PRESTAMO",
+        "PRESTAMO_PAGO",
         "PRESTAMO_POR_ACEPTAR",
         "TRASLADO",
       ].includes(estadoInventario);

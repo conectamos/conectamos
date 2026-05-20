@@ -7,7 +7,7 @@ import {
   ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
   etiquetaSedeAcreedora,
   esEstadoDeuda,
-  esDeudaProveedor,
+  esProveedorFinser,
 } from "@/lib/prestamos";
 import { esSedeVentas } from "@/lib/sedes";
 
@@ -100,10 +100,8 @@ export async function POST(req: Request) {
     }
 
     const trasladaDeudaDePrincipal =
-      (String(inventario.origen || "").toUpperCase() === "PRINCIPAL" ||
-        !!inventario.inventarioPrincipalId) &&
       esEstadoDeuda(inventario.estadoFinanciero) &&
-      esDeudaProveedor(inventario.deboA);
+      esProveedorFinser(inventario.deboA);
     const sedeOrigenNombre = etiquetaSedeAcreedora(
       inventario.sedeId,
       inventario.sede?.nombre
@@ -184,7 +182,7 @@ export async function POST(req: Request) {
           estadoActual: ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
           fechaMovimiento: new Date(),
           observacion: trasladaDeudaDePrincipal
-            ? `Solicitud enviada a ${sedeDestino.nombre}. La deuda de principal solo se trasladara cuando la sede destino apruebe el prestamo.`
+            ? `Solicitud enviada a ${sedeDestino.nombre}. La deuda FINSER solo se trasladara cuando la sede destino apruebe el prestamo.`
             : `Solicitud enviada a ${sedeDestino.nombre}. Pendiente por aprobacion en sede destino.`,
         },
       });
@@ -201,7 +199,7 @@ export async function POST(req: Request) {
           estadoFinanciero: inventario.estadoFinanciero,
           origen: ESTADO_INVENTARIO_PRESTAMO,
           observacion: trasladaDeudaDePrincipal
-            ? `Solicitud de prestamo enviada desde ${sedeOrigenNombre} hacia ${sedeDestino.nombre}. La deuda del proveedor se trasladara cuando el destino apruebe.`
+            ? `Solicitud de prestamo enviada desde ${sedeOrigenNombre} hacia ${sedeDestino.nombre}. La deuda FINSER se trasladara cuando el destino apruebe.`
             : `Solicitud de prestamo enviada desde ${sedeOrigenNombre} hacia ${sedeDestino.nombre}. Pendiente por aprobacion.`,
         },
       });

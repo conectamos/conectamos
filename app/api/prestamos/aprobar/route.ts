@@ -7,8 +7,8 @@ import {
   NOMBRE_SEDE_BODEGA,
   etiquetaSedeAcreedora,
   esDeudaEntreSedes,
-  esDeudaProveedor,
   esEstadoDeuda,
+  esProveedorFinser,
   resolverFinanzasDestinoPrestamo,
 } from "@/lib/prestamos";
 import { esSedeVentas } from "@/lib/sedes";
@@ -134,12 +134,17 @@ export async function POST(req: Request) {
       (String(itemOrigen.origen || "").toUpperCase() === "PRINCIPAL" ||
         !!itemOrigen.inventarioPrincipalId) &&
       esEstadoDeuda(itemOrigen.estadoFinanciero) &&
-      esDeudaProveedor(itemOrigen.deboA);
+      esProveedorFinser(itemOrigen.deboA);
+    const trasladaDeudaProveedorFinser =
+      esEstadoDeuda(itemOrigen.estadoFinanciero) &&
+      esProveedorFinser(itemOrigen.deboA);
     const trasladaDeudaEntreSedes =
       esEstadoDeuda(itemOrigen.estadoFinanciero) &&
       esDeudaEntreSedes(itemOrigen.deboA);
+    const trasladaDeudaProveedor =
+      trasladaDeudaDePrincipal || trasladaDeudaProveedorFinser;
     const trasladaDeudaExistente =
-      trasladaDeudaDePrincipal || trasladaDeudaEntreSedes;
+      trasladaDeudaProveedor || trasladaDeudaEntreSedes;
     const prestamoAcreedorActivo = trasladaDeudaExistente
       ? await prisma.prestamoSede.findFirst({
           where: {
@@ -167,7 +172,7 @@ export async function POST(req: Request) {
       deboA: itemOrigen.deboA,
       sedeOrigenId: prestamo.sedeOrigenId,
       sedeOrigenNombre: itemOrigen.sede?.nombre,
-      trasladaDeudaDePrincipal,
+      trasladaDeudaProveedor,
     });
     const sedeOrigenNombre = etiquetaSedeAcreedora(
       prestamo.sedeOrigenId,
@@ -231,8 +236,8 @@ export async function POST(req: Request) {
             estadoFinanciero: "PAGO",
             deboA: null,
             fechaMovimiento: new Date(),
-            observacion: trasladaDeudaDePrincipal
-              ? `Traslado aprobado hacia ${sedeDestinoNombre}. La deuda de bodega principal queda en la sede destino.`
+            observacion: trasladaDeudaProveedor
+              ? `Traslado aprobado hacia ${sedeDestinoNombre}. La deuda del proveedor queda en la sede destino.`
               : `Traslado aprobado hacia ${sedeDestinoNombre}. La deuda original queda en la sede destino.`,
           },
         });
@@ -318,7 +323,7 @@ export async function POST(req: Request) {
           deboA: finanzasDestino.deboA,
           estadoFinanciero: finanzasDestino.estadoFinanciero,
           origen: ESTADO_INVENTARIO_PRESTAMO,
-          observacion: trasladaDeudaDePrincipal
+          observacion: trasladaDeudaProveedor
             ? `Prestamo aprobado desde ${sedeOrigenNombre}. La deuda del proveedor queda ahora en la sede destino.`
             : `Prestamo aprobado y recibido desde ${sedeOrigenNombre}.`,
         },

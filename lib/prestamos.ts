@@ -1,6 +1,7 @@
 export const NOMBRE_SEDE_BODEGA = "BODEGA PRINCIPAL";
 export const PROVEEDOR_FINSER = "Proveedor Finser";
 export const ESTADO_INVENTARIO_PRESTAMO = "PRESTAMO";
+export const ESTADO_INVENTARIO_PRESTAMO_PAGO = "PRESTAMO_PAGO";
 export const ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR =
   "PRESTAMO_POR_ACEPTAR";
 const PROVEEDOR_KEYWORDS = [
@@ -69,6 +70,10 @@ export function etiquetaEstadoInventario(
     return "PRESTAMO POR ACEPTAR";
   }
 
+  if (normalizado === ESTADO_INVENTARIO_PRESTAMO_PAGO) {
+    return "PRESTAMO PAGO";
+  }
+
   return normalizado || "-";
 }
 
@@ -104,12 +109,16 @@ export function esDeudaProveedor(deboA: string | null | undefined) {
   return PROVEEDOR_KEYWORDS.some((keyword) => acreedor.includes(keyword));
 }
 
+export function esProveedorFinser(deboA: string | null | undefined) {
+  return normalizarTexto(deboA).includes("FINSER");
+}
+
 export function resolverFinanzasDestinoPrestamo(params: {
   estadoFinanciero: string | null | undefined;
   deboA: string | null | undefined;
   sedeOrigenId: number;
   sedeOrigenNombre?: string | null | undefined;
-  trasladaDeudaDePrincipal?: boolean;
+  trasladaDeudaProveedor?: boolean;
 }) {
   if (esEstadoDeuda(params.estadoFinanciero)) {
     const acreedorActual = String(params.deboA || "").trim();
@@ -117,7 +126,7 @@ export function resolverFinanzasDestinoPrestamo(params: {
     return {
       estadoFinanciero: "DEUDA",
       deboA:
-        esDeudaProveedor(acreedorActual) && !params.trasladaDeudaDePrincipal
+        esDeudaProveedor(acreedorActual) && !params.trasladaDeudaProveedor
           ? etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre)
           : acreedorActual ||
             etiquetaSedeAcreedora(params.sedeOrigenId, params.sedeOrigenNombre),

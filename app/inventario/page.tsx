@@ -54,6 +54,7 @@ type EstadoFiltro =
   | "PENDIENTE"
   | "GARANTIA"
   | "PRESTAMO"
+  | "PRESTAMO_PAGO"
   | "TRASLADO"
   | "PRESTAMO_POR_ACEPTAR"
   | "PAGO"
@@ -104,6 +105,8 @@ function badgeClaseEstadoInventario(estado: string | null) {
       return "bg-emerald-100 text-emerald-700";
     case "PRESTAMO":
       return "bg-sky-100 text-sky-700";
+    case "PRESTAMO_PAGO":
+      return "bg-emerald-100 text-emerald-700";
     case "TRASLADO":
       return "bg-violet-100 text-violet-700";
     case "PRESTAMO_POR_ACEPTAR":
@@ -135,6 +138,7 @@ function etiquetaDestinoPrestamo(item: InventarioItem) {
   const destinoEsLaMismaSede = item.prestamoDestino?.id === item.sedeId;
   const estadoPermiteDestino = [
     "PRESTAMO",
+    "PRESTAMO_PAGO",
     "PRESTAMO_POR_ACEPTAR",
     "TRASLADO",
   ].includes(estadoActual);
@@ -145,6 +149,10 @@ function etiquetaDestinoPrestamo(item: InventarioItem) {
 
   if (estadoActual === "PRESTAMO_POR_ACEPTAR" || estadoPrestamo === "PENDIENTE") {
     return `Pendiente: ${destino}`;
+  }
+
+  if (estadoActual === "PRESTAMO_PAGO") {
+    return `Pagado por ${destino}`;
   }
 
   if (estadoActual === "TRASLADO" || estadoPrestamo === "FINALIZADO") {
@@ -936,6 +944,7 @@ export default function InventarioPage() {
       "BODEGA",
       "VENDIDO",
       "PRESTAMO",
+      "PRESTAMO_PAGO",
       "TRASLADO",
     ].includes(estadoActual);
 
@@ -1429,6 +1438,7 @@ export default function InventarioPage() {
                     "PENDIENTE",
                     "GARANTIA",
                     "PRESTAMO",
+                    "PRESTAMO_PAGO",
                     "TRASLADO",
                     "PRESTAMO_POR_ACEPTAR",
                     "PAGO",
