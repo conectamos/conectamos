@@ -931,12 +931,18 @@ export default function InventarioPage() {
     const estado = String(item.estadoFinanciero || "").trim().toUpperCase();
     const deboA = String(item.deboA || "").trim().toUpperCase();
     const estadoActual = String(item.estadoActual || "").trim().toUpperCase();
+    const deudaProveedor = !esDeudaEntreSedes(deboA);
+    const estadoPermitePagoProveedor = [
+      "BODEGA",
+      "VENDIDO",
+      "PRESTAMO",
+      "TRASLADO",
+    ].includes(estadoActual);
 
     if (estado !== "DEUDA") return false;
-    if (estadoActual !== "BODEGA" && estadoActual !== "VENDIDO") return false;
     if (esDeudaEntreSedes(deboA)) return false;
 
-    return true;
+    return deudaProveedor && estadoPermitePagoProveedor;
   };
 
   const puedeRegistrarCambioEquipo = (item: InventarioItem) => {

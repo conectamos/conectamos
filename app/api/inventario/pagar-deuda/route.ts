@@ -79,18 +79,21 @@ export async function POST(req: Request) {
     const deudaProveedor = esDeudaProveedor(item.deboA);
     const equipoPrestadoConDeudaProveedor =
       estadoActual === "PRESTAMO" && deudaProveedor;
+    const equipoTrasladadoConDeudaProveedor =
+      estadoActual === "TRASLADO" && deudaProveedor;
     const equipoYaVendido = estadoActual === "VENDIDO";
     const sedeItemNombre = etiquetaSedeAcreedora(item.sedeId, item.sede?.nombre);
 
     if (
       estadoActual !== "BODEGA" &&
       estadoActual !== "VENDIDO" &&
-      !equipoPrestadoConDeudaProveedor
+      !equipoPrestadoConDeudaProveedor &&
+      !equipoTrasladadoConDeudaProveedor
     ) {
       return NextResponse.json(
         {
           error:
-            "Solo se puede pagar deuda del equipo que esta en BODEGA, VENDIDO o PRESTAMO con deuda a proveedor.",
+            "Solo se puede pagar deuda del equipo que esta en BODEGA, VENDIDO, PRESTAMO o TRASLADO con deuda a proveedor.",
         },
         { status: 400 }
       );
@@ -341,6 +344,54 @@ export async function POST(req: Request) {
               prestamosPorCobrarDesdeEstaSede.length > 0
                 ? "Se pago la deuda al proveedor. Queda pendiente el cobro del prestamo a la sede destino."
                 : "Se pago la deuda al proveedor y se retiro el registro informativo del prestamo.",
+          },
+        });
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Deuda pagada correctamente",
+      });
+    }
+
+    if (equipoTrasladadoConDeudaProveedor) {
+      await prisma.$transaction(async (tx) => {
+        await tx.cajaMovimiento.create({
+          data: {
+            tipo: "EGRESO",
+            concepto: "PAGO DEUDA INVENTARIO",
+            valor: item.costo,
+            descripcion: `Pago de deuda del equipo trasladado IMEI ${item.imei}${item.deboA ? ` a ${item.deboA}` : ""}`,
+            sedeId: item.sedeId,
+          },
+        });
+
+        await tx.inventarioSede.update({
+          where: { id: item.id },
+          data: {
+            estadoFinanciero: "PAGO",
+            deboA: null,
+            estadoAnterior: item.estadoAnterior || item.estadoActual || null,
+            estadoActual: "TRASLADO",
+            fechaMovimiento: new Date(),
+            observacion:
+              "Deuda pagada al proveedor. El registro queda como traslado operativo.",
+          },
+        });
+
+        await tx.movimientoInventario.create({
+          data: {
+            imei: item.imei,
+            tipoMovimiento: "PAGO_DEUDA_INVENTARIO",
+            referencia: item.referencia,
+            color: item.color || null,
+            costo: item.costo,
+            sedeId: item.sedeId,
+            deboA: null,
+            estadoFinanciero: "PAGO",
+            origen: item.origen || "TRASLADO",
+            observacion:
+              "Se pago la deuda al proveedor de un equipo ya trasladado.",
           },
         });
       });
