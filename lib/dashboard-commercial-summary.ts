@@ -322,7 +322,7 @@ export async function getMonthlyCommercialSummary(options?: {
     topCerradores: sortedRanking(cerradores),
     topFinancieras: sortedRanking(financieras),
     topMarcasVendidas: sortedBrandRanking(marcasVendidas),
-    topReferenciasVendidas: referenciasRanking.slice(0, 100),
+    topReferenciasVendidas: referenciasRanking.slice(0, 10),
     referenciasVendidas: referenciasRanking,
   };
 }

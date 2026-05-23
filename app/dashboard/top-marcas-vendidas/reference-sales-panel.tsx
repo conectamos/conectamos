@@ -8,6 +8,11 @@ type ReferenceRankingItem = {
   porcentaje: number;
 };
 
+type RankedReferenceMatch = {
+  item: ReferenceRankingItem;
+  puesto: number;
+};
+
 const BRAND_BAR_COLORS = [
   { marca: "INFINIX", className: "bg-emerald-600" },
   { marca: "XIAOMI", className: "bg-orange-500" },
@@ -90,26 +95,30 @@ export default function ReferenceSalesPanel({
 }) {
   const [busqueda, setBusqueda] = useState("");
   const termino = normalizarBusqueda(busqueda);
+  const rankedItems = useMemo<RankedReferenceMatch[]>(
+    () => allItems.map((item, index) => ({ item, puesto: index + 1 })),
+    [allItems]
+  );
   const matches = useMemo(() => {
     if (!termino) {
       return [];
     }
 
-    return allItems
-      .filter((item) => normalizarBusqueda(item.nombre).includes(termino))
+    return rankedItems
+      .filter(({ item }) => normalizarBusqueda(item.nombre).includes(termino))
       .slice(0, 20);
-  }, [allItems, termino]);
+  }, [rankedItems, termino]);
   const exactMatch = useMemo(() => {
     if (!termino) {
       return null;
     }
 
     return (
-      allItems.find((item) => normalizarBusqueda(item.nombre) === termino) ??
+      rankedItems.find(({ item }) => normalizarBusqueda(item.nombre) === termino) ??
       matches[0] ??
       null
     );
-  }, [allItems, matches, termino]);
+  }, [rankedItems, matches, termino]);
 
   return (
     <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
@@ -119,11 +128,11 @@ export default function ReferenceSalesPanel({
             Referencias
           </div>
           <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-            Top 100 referencias vendidas
+            Top 10 referencias vendidas
           </h2>
         </div>
         <div className="w-max rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-          {topItems.length} visibles
+          {topItems.length} registros
         </div>
       </div>
 
@@ -140,10 +149,10 @@ export default function ReferenceSalesPanel({
 
         {termino ? (
           exactMatch ? (
-            <div className="mt-4 grid gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+            <div className="mt-4 grid gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
               <div className="min-w-0">
                 <p className="truncate text-sm font-black text-emerald-950">
-                  {exactMatch.nombre}
+                  {exactMatch.item.nombre}
                 </p>
                 <p className="mt-1 text-xs font-semibold text-emerald-700">
                   Coincidencia en el listado mensual completo
@@ -151,10 +160,18 @@ export default function ReferenceSalesPanel({
               </div>
               <div className="rounded-2xl bg-white px-4 py-2 text-center">
                 <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700">
+                  Puesto
+                </p>
+                <p className="text-xl font-black text-emerald-900">
+                  #{formatoNumero(exactMatch.puesto)}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-2 text-center">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700">
                   Ventas
                 </p>
                 <p className="text-xl font-black text-emerald-900">
-                  {formatoNumero(exactMatch.total)}
+                  {formatoNumero(exactMatch.item.total)}
                 </p>
               </div>
               <div className="rounded-2xl bg-white px-4 py-2 text-center">
@@ -162,7 +179,7 @@ export default function ReferenceSalesPanel({
                   Participacion
                 </p>
                 <p className="text-xl font-black text-emerald-900">
-                  {formatoPorcentaje(exactMatch.porcentaje)}
+                  {formatoPorcentaje(exactMatch.item.porcentaje)}
                 </p>
               </div>
             </div>
@@ -173,7 +190,7 @@ export default function ReferenceSalesPanel({
           )
         ) : (
           <div className="mt-4 rounded-2xl border border-dashed border-[#e6ddcf] bg-white px-4 py-4 text-sm text-slate-500">
-            Escribe cualquier referencia para consultar ventas y porcentaje, aunque no este en el top 100.
+            Escribe cualquier referencia para consultar puesto, ventas y porcentaje, aunque no este en el top 10.
           </div>
         )}
 
@@ -182,7 +199,7 @@ export default function ReferenceSalesPanel({
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
               Coincidencias
             </p>
-            {matches.map((item) => (
+            {matches.map(({ item, puesto }) => (
               <button
                 key={`match-${item.nombre}`}
                 type="button"
@@ -191,7 +208,8 @@ export default function ReferenceSalesPanel({
               >
                 <span className="truncate">{item.nombre}</span>
                 <span className="shrink-0 text-slate-500">
-                  {formatoNumero(item.total)} | {formatoPorcentaje(item.porcentaje)}
+                  #{formatoNumero(puesto)} | {formatoNumero(item.total)} |{" "}
+                  {formatoPorcentaje(item.porcentaje)}
                 </span>
               </button>
             ))}
