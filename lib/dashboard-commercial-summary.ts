@@ -95,6 +95,10 @@ function isSedeJalador(value: string) {
   return /^SEDE\s*\d+$/i.test(normalizeLabel(value));
 }
 
+function isJaladorPersonal(value: string) {
+  return /^JALADOR\b/i.test(normalizeLabel(value));
+}
+
 function sortedRanking(map: Map<string, CommercialRankingItem>) {
   return Array.from(map.values())
     .sort((a, b) => {
@@ -288,7 +292,7 @@ export async function getMonthlyCommercialSummary(options?: {
     if (venta.jalador) {
       if (isSedeJalador(venta.jalador)) {
         pushRanking(sedesJalador, venta.jalador);
-      } else {
+      } else if (isJaladorPersonal(venta.jalador)) {
         pushRanking(jaladores, venta.jalador, n(venta.comision));
       }
     }
