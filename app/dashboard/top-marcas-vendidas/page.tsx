@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { esRolAdministrativo } from "@/lib/access-control";
 import { getMonthlyCommercialSummary } from "@/lib/dashboard-commercial-summary";
 import { requireSessionPage } from "@/lib/page-access";
+import ReferenceSalesPanel from "./reference-sales-panel";
 
 type PercentageRankingItem = {
   nombre: string;
@@ -212,11 +213,9 @@ export default async function TopMarcasVendidasPage() {
             items={resumen.topMarcasVendidas}
             emptyText="Sin marcas registradas en este periodo."
           />
-          <RankingPanel
-            title="Top 10 referencias vendidas"
-            eyebrow="Referencias"
-            items={resumen.topReferenciasVendidas}
-            emptyText="Sin referencias registradas en este periodo."
+          <ReferenceSalesPanel
+            topItems={resumen.topReferenciasVendidas}
+            allItems={resumen.referenciasVendidas}
           />
         </div>
       </main>

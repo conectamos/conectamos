@@ -306,6 +306,8 @@ export async function getMonthlyCommercialSummary(options?: {
     }
   }
 
+  const referenciasRanking = sortedReferenceRanking(referenciasVendidas);
+
   return {
     periodo,
     utilidad: n(ventas._sum.utilidad),
@@ -320,6 +322,7 @@ export async function getMonthlyCommercialSummary(options?: {
     topCerradores: sortedRanking(cerradores),
     topFinancieras: sortedRanking(financieras),
     topMarcasVendidas: sortedBrandRanking(marcasVendidas),
-    topReferenciasVendidas: sortedReferenceRanking(referenciasVendidas).slice(0, 10),
+    topReferenciasVendidas: referenciasRanking.slice(0, 100),
+    referenciasVendidas: referenciasRanking,
   };
 }
