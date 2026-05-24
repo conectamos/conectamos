@@ -752,17 +752,15 @@ export default function Home() {
         >
           <div className="absolute inset-y-0 right-0 hidden w-px bg-white/15 lg:block" />
 
-          <div className="relative w-full max-w-[680px] rounded-[2.25rem] bg-white p-3 shadow-[0_34px_90px_rgba(0,0,0,0.28)] sm:p-5">
-            <div className="overflow-hidden rounded-[1.75rem] bg-white">
-              <Image
-                src="/branding/conectamos-mascota.png"
-                alt="CONECTAMOS"
-                width={1254}
-                height={1254}
-                priority
-                className="mx-auto h-auto max-h-[390px] w-full max-w-[360px] object-contain sm:max-h-[560px] sm:max-w-[620px] lg:max-h-[760px] lg:max-w-[680px]"
-              />
-            </div>
+          <div className="relative flex w-full max-w-[620px] justify-center">
+            <Image
+              src="/branding/conectamos-mascota.png"
+              alt="CONECTAMOS"
+              width={1024}
+              height={1536}
+              priority
+              className="h-auto max-h-[340px] w-auto max-w-full rounded-[1.75rem] object-contain shadow-[0_34px_90px_rgba(0,0,0,0.34)] sm:max-h-[680px] lg:max-h-[760px]"
+            />
           </div>
         </section>
 
