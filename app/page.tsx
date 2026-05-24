@@ -741,22 +741,38 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f3f7fb] text-slate-950">
+    <main className="min-h-screen overflow-x-hidden bg-[#eef4fb] text-slate-950">
       <div className="mx-auto grid min-h-screen max-w-[1500px] grid-cols-1 lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
-        <section className="flex items-center justify-center bg-white px-3 py-6 sm:px-5 sm:py-8 lg:min-h-screen lg:px-14 lg:py-12">
-          <div className="relative w-full max-w-[720px]">
-            <Image
-              src="/branding/conectamos-mascota.png"
-              alt="CONECTAMOS"
-              width={1254}
-              height={1254}
-              priority
-              className="mx-auto h-auto max-h-[390px] w-full max-w-[360px] object-contain sm:max-h-[560px] sm:max-w-[620px] lg:max-h-[760px] lg:max-w-[720px]"
-            />
+        <section
+          className="relative flex items-center justify-center overflow-hidden px-4 py-8 sm:px-8 lg:min-h-screen lg:px-14 lg:py-12"
+          style={{
+            background:
+              "linear-gradient(145deg, #111827 0%, #182436 38%, #5f1b25 72%, #9f1118 100%)",
+          }}
+        >
+          <div className="absolute inset-y-0 right-0 hidden w-px bg-white/15 lg:block" />
+
+          <div className="relative w-full max-w-[680px] rounded-[2.25rem] bg-white p-3 shadow-[0_34px_90px_rgba(0,0,0,0.28)] sm:p-5">
+            <div className="overflow-hidden rounded-[1.75rem] bg-white">
+              <Image
+                src="/branding/conectamos-mascota.png"
+                alt="CONECTAMOS"
+                width={1254}
+                height={1254}
+                priority
+                className="mx-auto h-auto max-h-[390px] w-full max-w-[360px] object-contain sm:max-h-[560px] sm:max-w-[620px] lg:max-h-[760px] lg:max-w-[680px]"
+              />
+            </div>
           </div>
         </section>
 
-        <section className="flex min-w-0 items-center justify-center px-4 py-10 sm:px-6 lg:min-h-screen lg:bg-[#edf4fb] lg:px-16">
+        <section
+          className="flex min-w-0 items-center justify-center px-4 py-10 sm:px-6 lg:min-h-screen lg:px-16"
+          style={{
+            background:
+              "linear-gradient(180deg, #f8fbff 0%, #e7f0f8 100%)",
+          }}
+        >
           <div className="w-full min-w-0 max-w-[460px]">
             <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(30,41,59,0.12)] sm:p-8">
               <p className="text-sm font-bold uppercase text-slate-500">
