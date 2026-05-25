@@ -745,21 +745,15 @@ export default function Home() {
       <div className="mx-auto grid min-h-screen max-w-[1500px] grid-cols-1 lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
         <section
           className="relative flex items-center justify-center overflow-hidden px-4 py-8 sm:px-8 lg:min-h-screen lg:px-14 lg:py-12"
-          style={{
-            background:
-              "linear-gradient(145deg, #111827 0%, #182436 38%, #5f1b25 72%, #9f1118 100%)",
-          }}
         >
-          <div className="absolute inset-y-0 right-0 hidden w-px bg-white/15 lg:block" />
-
-          <div className="relative flex w-full max-w-[620px] justify-center">
+          <div className="relative flex w-full max-w-[700px] justify-center">
             <Image
-              src="/branding/conectamos-mascota.png"
+              src="/branding/conectamos-mascota-login.png"
               alt="CONECTAMOS"
-              width={1024}
-              height={1536}
+              width={1254}
+              height={1254}
               priority
-              className="h-auto max-h-[340px] w-auto max-w-full rounded-[1.75rem] object-contain shadow-[0_34px_90px_rgba(0,0,0,0.34)] sm:max-h-[680px] lg:max-h-[760px]"
+              className="h-auto max-h-[420px] w-auto max-w-full object-contain sm:max-h-[700px] lg:max-h-[780px]"
             />
           </div>
         </section>
