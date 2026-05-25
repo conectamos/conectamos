@@ -10,6 +10,7 @@ import {
   esEstadoDeuda,
   esProveedorFinser,
   esEstadoInventarioPrestamo,
+  esRegistroDestinoBloqueanteParaPrestamo,
   etiquetaSedeAcreedora,
   NOMBRE_SEDE_BODEGA,
 } from "@/lib/prestamos";
@@ -388,12 +389,20 @@ export async function POST(req: Request) {
         imei,
         sedeId: sedeDestinoId,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        estadoActual: true,
+      },
     });
 
-    if (existeEnDestino) {
+    if (
+      existeEnDestino &&
+      esRegistroDestinoBloqueanteParaPrestamo(existeEnDestino.estadoActual)
+    ) {
       return NextResponse.json(
-        { error: "Ese IMEI ya existe en la sede destino" },
+        {
+          error: `Ese IMEI ya existe activo en la sede destino. Estado actual: ${existeEnDestino.estadoActual || "SIN ESTADO"}`,
+        },
         { status: 400 }
       );
     }

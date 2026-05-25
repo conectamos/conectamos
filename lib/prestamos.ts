@@ -61,6 +61,23 @@ export function esEstadoInventarioBloqueadoPorPrestamo(
   );
 }
 
+export function esEstadoInventarioSoloTrazabilidad(
+  estado: string | null | undefined
+) {
+  const normalizado = normalizarEstadoInventario(estado);
+
+  return (
+    normalizado === "TRASLADO" ||
+    normalizado === ESTADO_INVENTARIO_PRESTAMO_PAGO
+  );
+}
+
+export function esRegistroDestinoBloqueanteParaPrestamo(
+  estado: string | null | undefined
+) {
+  return !esEstadoInventarioSoloTrazabilidad(estado);
+}
+
 export function etiquetaEstadoInventario(
   estado: string | null | undefined
 ) {
