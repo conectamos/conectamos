@@ -783,6 +783,7 @@ export default function VendedorRegistroWorkspace({
   const [imeiDetalle, setImeiDetalle] = useState("");
   const [listaNegraAlerta, setListaNegraAlerta] =
     useState<ListaNegraAlerta | null>(null);
+  const [listaNegraModalCerrado, setListaNegraModalCerrado] = useState(false);
   const [registroDuplicadoAlerta, setRegistroDuplicadoAlerta] =
     useState<RegistroDuplicadoAlerta | null>(null);
   const [duplicadoModalCerrado, setDuplicadoModalCerrado] = useState(false);
@@ -826,6 +827,7 @@ export default function VendedorRegistroWorkspace({
   const limpiarFormulario = (preservarContexto = false) => {
     setImeiDetalle("");
     setListaNegraAlerta(null);
+    setListaNegraModalCerrado(false);
     setRegistroDuplicadoAlerta(null);
     setDuplicadoModalCerrado(false);
     setSignaturePadKey((current) => current + 1);
@@ -929,6 +931,7 @@ export default function VendedorRegistroWorkspace({
 
     if (documento.length < 5) {
       setListaNegraAlerta(null);
+      setListaNegraModalCerrado(false);
       setVerificandoListaNegra(false);
       return;
     }
@@ -956,13 +959,16 @@ export default function VendedorRegistroWorkspace({
             sedeNombre: data.registro.sedeNombre ?? null,
             updatedAt: data.registro.updatedAt ?? "",
           });
+          setListaNegraModalCerrado(false);
           return;
         }
 
         setListaNegraAlerta(null);
+        setListaNegraModalCerrado(false);
       } catch {
         if (!cancelled && !controller.signal.aborted) {
           setListaNegraAlerta(null);
+          setListaNegraModalCerrado(false);
         }
       } finally {
         if (!cancelled) {
@@ -1771,6 +1777,9 @@ export default function VendedorRegistroWorkspace({
     const errorValidacion = validarFormularioVisible();
 
     if (errorValidacion) {
+      if (errorValidacion === "CEDULA REPORTADA POR FRAUDE") {
+        setListaNegraModalCerrado(false);
+      }
       setFormMessage(errorValidacion, "error");
       return;
     }
@@ -1844,6 +1853,7 @@ export default function VendedorRegistroWorkspace({
             sedeNombre: data.listaNegra.sedeNombre ?? null,
             updatedAt: data.listaNegra.updatedAt ?? "",
           });
+          setListaNegraModalCerrado(false);
         }
         if (data?.duplicado) {
           setRegistroDuplicadoAlerta(data.duplicado as RegistroDuplicadoAlerta);
@@ -1981,6 +1991,76 @@ export default function VendedorRegistroWorkspace({
           </section>
         </div>
       )}
+      {listaNegraAlerta && !listaNegraModalCerrado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            className="w-full max-w-2xl overflow-hidden rounded-[32px] border-2 border-red-300 bg-white shadow-[0_30px_90px_rgba(127,29,29,0.45)]"
+          >
+            <div className="bg-[linear-gradient(135deg,#7f1d1d_0%,#dc2626_100%)] px-6 py-6 text-white">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-red-100">
+                    Alerta critica
+                  </p>
+                  <h2 className="mt-3 text-3xl font-black leading-tight tracking-tight sm:text-4xl">
+                    CEDULA REPORTADA POR FRAUDE
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setListaNegraModalCerrado(true)}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/10 text-xl font-black leading-none text-white transition hover:bg-white/20"
+                  aria-label="Cerrar alerta"
+                >
+                  x
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-5 px-6 py-6">
+              <p className="text-base font-semibold leading-7 text-red-950">
+                No se puede guardar una venta con este documento. Verifica la
+                informacion antes de continuar.
+              </p>
+
+              {(listaNegraAlerta.sedeNombre ||
+                listaNegraAlerta.reportadoPorNombre ||
+                listaNegraAlerta.motivo) && (
+                <div className="rounded-[26px] border border-red-100 bg-red-50 p-4 text-sm leading-6 text-red-950">
+                  {listaNegraAlerta.sedeNombre && (
+                    <p>
+                      <span className="font-black">Reportada por: </span>
+                      {listaNegraAlerta.sedeNombre}
+                    </p>
+                  )}
+                  {listaNegraAlerta.reportadoPorNombre && (
+                    <p>
+                      <span className="font-black">Asesor: </span>
+                      {listaNegraAlerta.reportadoPorNombre}
+                    </p>
+                  )}
+                  {listaNegraAlerta.motivo && (
+                    <p>
+                      <span className="font-black">Observacion: </span>
+                      {listaNegraAlerta.motivo}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setListaNegraModalCerrado(true)}
+                className="w-full rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
+              >
+                Entendido
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <div className="mx-auto max-w-7xl">
         <section className="overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#1f2937_52%,#0f766e_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -2035,40 +2115,6 @@ export default function VendedorRegistroWorkspace({
             </div>
           </div>
         </section>
-
-        {listaNegraAlerta && (
-          <section className="mt-6 rounded-[30px] border-2 border-red-300 bg-red-50 px-6 py-6 shadow-[0_20px_60px_rgba(185,28,28,0.16)]">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="inline-flex rounded-full border border-red-200 bg-white px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-red-700">
-                  Alerta critica
-                </div>
-                <h2 className="mt-3 text-3xl font-black tracking-tight text-red-700 md:text-4xl">
-                  CEDULA REPORTADA POR FRAUDE
-                </h2>
-                <p className="mt-2 text-sm font-semibold leading-6 text-red-900">
-                  No se puede guardar una venta con este documento. Verifica la
-                  informacion antes de continuar.
-                </p>
-                {(listaNegraAlerta.sedeNombre ||
-                  listaNegraAlerta.reportadoPorNombre ||
-                  listaNegraAlerta.motivo) && (
-                  <p className="mt-3 text-sm leading-6 text-red-900/80">
-                    {listaNegraAlerta.sedeNombre
-                      ? `Reportada por ${listaNegraAlerta.sedeNombre}. `
-                      : ""}
-                    {listaNegraAlerta.reportadoPorNombre
-                      ? `Asesor: ${listaNegraAlerta.reportadoPorNombre}. `
-                      : ""}
-                    {listaNegraAlerta.motivo
-                      ? `Observacion: ${listaNegraAlerta.motivo}`
-                      : ""}
-                  </p>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
 
         {(registroEditando || cargandoEdicion) && (
           <section className="mt-6 rounded-[30px] border border-emerald-200 bg-emerald-50 px-5 py-4 shadow-sm">
