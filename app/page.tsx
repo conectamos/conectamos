@@ -748,7 +748,7 @@ export default function Home() {
         >
           <div className="relative flex w-full max-w-[700px] justify-center">
             <Image
-              src="/branding/conectamos-mascota-login.png"
+              src="/branding/conectamos-mascota-login-clean.png"
               alt="CONECTAMOS"
               width={1254}
               height={1254}
