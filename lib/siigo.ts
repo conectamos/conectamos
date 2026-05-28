@@ -960,8 +960,8 @@ function buildInvoicePayload(
   return {
     document: {
       id: config.documentId,
-      ...(documentNumber ? { number: documentNumber } : {}),
     },
+    ...(documentNumber ? { number: documentNumber } : {}),
     date: formatBogotaDate(today),
     customer: buildInvoiceCustomerPayload(registro, customer),
     ...(config.costCenterId ? { cost_center: config.costCenterId } : {}),
