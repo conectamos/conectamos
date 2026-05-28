@@ -294,7 +294,12 @@ function buscarProductoExento(items: Record<string, unknown>[]) {
 function esCatalogoActivo(item: Record<string, unknown>) {
   const active = item.active;
 
-  return active === undefined || active === null || active === true || String(active) === "true";
+  return (
+    active === undefined ||
+    active === null ||
+    active === true ||
+    String(active) === "true"
+  );
 }
 
 function buscarCentroCostoPrincipal(items: Record<string, unknown>[]) {
@@ -316,7 +321,9 @@ function buscarCentroCostoPrincipal(items: Record<string, unknown>[]) {
     return texto.includes("PRINCIPAL") || texto.includes("GENERAL");
   });
 
-  return principal ? textoCatalogo(principal, ["id"]) : "";
+  return principal
+    ? textoCatalogo(principal, ["id"])
+    : textoCatalogo(candidatos[0] || {}, ["id"]);
 }
 
 function tituloCentroCostoSiigo(item: Record<string, unknown>) {
