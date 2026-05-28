@@ -5,6 +5,7 @@ type SiigoConfig = {
   accessKey: string;
   partnerId: string;
   documentId: number;
+  alternateDocumentId: number | null;
   sellerId: number;
   paymentTypeId: number;
   itemCode: string | null;
@@ -79,6 +80,7 @@ export type RegistroSiigoInput = {
   sede?: {
     id: number;
     nombre: string;
+    codigo?: string | null;
     siigoEnabled: boolean;
     siigoInvoiceDocumentId?: number | null;
     siigoSellerId?: number | null;
@@ -237,6 +239,44 @@ function requireConfigText(value: unknown, label: string, missing: string[]) {
   return text;
 }
 
+function normalizeText(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function inferDocumentCodeFromSede(
+  sede: RegistroSiigoInput["sede"]
+): number | null {
+  if (!sede) {
+    return null;
+  }
+
+  const nombre = normalizeText(sede.nombre);
+  const codigo = normalizeText(sede.codigo);
+  const text = `${nombre} ${codigo}`;
+
+  if (
+    nombre === "ONLINE" ||
+    codigo === "ONLINE" ||
+    nombre.startsWith("STAND") ||
+    codigo.startsWith("STAND-")
+  ) {
+    return 8;
+  }
+
+  if (text.includes("TROP")) {
+    return 9;
+  }
+
+  const match = text.match(/\bSEDE[-\s#]*(\d+)\b/);
+  const number = match ? Number(match[1]) : 0;
+
+  return number >= 1 && number <= 7 ? number : null;
+}
+
 function getSiigoAuthConfig(): SiigoAuthConfig {
   const missing: string[] = [];
   const rawApiBaseUrl =
@@ -302,6 +342,7 @@ function getSiigoConfig(registro: RegistroSiigoInput): SiigoConfig {
   return {
     ...authConfig,
     documentId,
+    alternateDocumentId: inferDocumentCodeFromSede(sede),
     sellerId,
     paymentTypeId,
     itemCode:
@@ -395,6 +436,30 @@ function stringifySiigoDetails(details: unknown) {
   } catch {
     return String(details);
   }
+}
+
+function hasSiigoErrorCode(error: unknown, code: string) {
+  if (!(error instanceof SiigoApiError)) {
+    return false;
+  }
+
+  const details = error.details;
+
+  if (!details || typeof details !== "object") {
+    return false;
+  }
+
+  const errors = (details as Record<string, unknown>).Errors;
+
+  return (
+    Array.isArray(errors) &&
+    errors.some(
+      (item) =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        String((item as Record<string, unknown>).Code || "") === code
+    )
+  );
 }
 
 async function authenticate(config: SiigoAuthConfig) {
@@ -997,18 +1062,48 @@ export async function createSiigoInvoiceForRegistro(
 
   const customer = await ensureCustomerForInvoice(config, registro);
   const payload = buildInvoicePayload(registro, config, customer);
+  const idempotencyKey = `CONECTAMOS${registro.id}`.slice(0, 30);
 
-  return siigoFetch<SiigoInvoiceResponse>(
-    config,
-    "/invoices",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    {
-      idempotencyKey: `CONECTAMOS${registro.id}`.slice(0, 30),
+  try {
+    return await siigoFetch<SiigoInvoiceResponse>(
+      config,
+      "/invoices",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      {
+        idempotencyKey,
+      }
+    );
+  } catch (error) {
+    if (
+      hasSiigoErrorCode(error, "invalid_dian_resolution") &&
+      config.alternateDocumentId &&
+      config.alternateDocumentId !== config.documentId
+    ) {
+      const fallbackPayload = {
+        ...payload,
+        document: {
+          id: config.alternateDocumentId,
+        },
+      };
+
+      return siigoFetch<SiigoInvoiceResponse>(
+        config,
+        "/invoices",
+        {
+          method: "POST",
+          body: JSON.stringify(fallbackPayload),
+        },
+        {
+          idempotencyKey: `${idempotencyKey}ALT`.slice(0, 30),
+        }
+      );
     }
-  );
+
+    throw error;
+  }
 }
 
 export async function getSiigoSetupCatalogs() {
