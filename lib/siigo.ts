@@ -134,6 +134,22 @@ function cleanBaseUrl(value: string) {
   return value.replace(/\/+$/, "");
 }
 
+function normalizeSiigoApiBaseUrl(value: string) {
+  let url = cleanBaseUrl(value);
+
+  if (url.endsWith("/v1/auth")) {
+    url = url.slice(0, -"/auth".length);
+  } else if (url.endsWith("/auth")) {
+    url = url.slice(0, -"/auth".length);
+  }
+
+  if (!url.endsWith("/v1")) {
+    url = `${url}/v1`;
+  }
+
+  return url;
+}
+
 function readRequiredText(name: string, missing: string[]) {
   const value = process.env[name]?.trim();
 
@@ -209,7 +225,7 @@ function getSiigoAuthConfig(): SiigoAuthConfig {
   }
 
   return {
-    apiBaseUrl: cleanBaseUrl(apiBaseUrl),
+    apiBaseUrl: normalizeSiigoApiBaseUrl(apiBaseUrl),
     username,
     accessKey,
     partnerId,

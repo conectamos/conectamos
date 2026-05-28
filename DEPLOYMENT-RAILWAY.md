@@ -48,7 +48,7 @@ La resolucion/documento, vendedor, forma de pago, ciudad y opciones de envio se 
 - `SIIGO_USERNAME`: usuario API generado en Siigo Nube.
 - `SIIGO_ACCESS_KEY`: access key generado en Siigo Nube.
 - `SIIGO_PARTNER_ID`: nombre de la app, por ejemplo `CONECTAMOSAPP`.
-- `SIIGO_API_BASE_URL`: por defecto `https://api.siigo.com/v1`.
+- `SIIGO_API_BASE_URL`: opcional; si no se define usa `https://api.siigo.com/v1`. Tambien acepta `https://api.siigo.com`, `https://api.siigo.com/v1` o una URL pegada con `/auth`.
 - `SIIGO_ITEM_CODE`: codigo fijo opcional del producto en Siigo. Cada sede puede tener su propio codigo.
 - `SIIGO_DEFAULT_COUNTRY_CODE`: por defecto `CO`.
 - `SIIGO_DEFAULT_STATE_CODE`: respaldo opcional si una sede no tiene codigo de departamento.
