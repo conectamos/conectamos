@@ -17,7 +17,7 @@ export const PLATAFORMAS_CREDITO = [
   "GORA",
 ] as const;
 
-export const TIPOS_DOCUMENTO_CLIENTE = ["CC", "CE", "PPT"] as const;
+export const TIPOS_DOCUMENTO_CLIENTE = ["CC", "CE", "PPT", "NIT"] as const;
 export const FRECUENCIAS_CUOTA = ["SEMANAL", "CATORCENAL", "MENSUAL"] as const;
 export const DOMINIOS_CORREO_REGISTRO = [
   "outlook.com",

@@ -198,6 +198,7 @@ const TIPO_EQUIPO_OPTIONS = [
   { value: "CPO", label: "CPO" },
   { value: "EXHIBICION", label: "EXHIBICION" },
 ] as const;
+const TIPO_DOCUMENTO_CONTADO = "NIT";
 
 const SERVICIO_REGISTRO_OPTIONS = [
   { value: "CONTADO", label: "CONTADO" },
@@ -1076,6 +1077,10 @@ export default function VendedorRegistroWorkspace({
       return {
         ...current,
         servicio,
+        tipoDocumento:
+          current.tipoDocumento === TIPO_DOCUMENTO_CONTADO
+            ? "CC"
+            : current.tipoDocumento,
         facturaFotoDataUrl: "",
         medioPago1Tipo: "EFECTIVO",
         medioPago1Valor: "",
@@ -2306,7 +2311,11 @@ export default function VendedorRegistroWorkspace({
                     onChange={(event) => setField("tipoDocumento", event.target.value)}
                     className={inputClass()}
                   >
-                    {TIPOS_DOCUMENTO_CLIENTE.map((item) => (
+                    {TIPOS_DOCUMENTO_CLIENTE.filter(
+                      (item) =>
+                        esServicioContado(form.servicio) ||
+                        item !== TIPO_DOCUMENTO_CONTADO
+                    ).map((item) => (
                       <option key={item} value={item}>
                         {item}
                       </option>
