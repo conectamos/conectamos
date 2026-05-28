@@ -138,6 +138,26 @@ function usaResolucionOnline(sede: {
   );
 }
 
+function describirConfiguracionSiigo(sede: {
+  nombre?: string | null;
+  codigo?: string | null;
+  siigoInvoiceDocumentId?: number | null;
+} | null) {
+  if (!sede) {
+    return "";
+  }
+
+  const partes = [
+    `sede ${String(sede.nombre || "-").trim()}`,
+    sede.codigo ? `codigo ${sede.codigo}` : null,
+    sede.siigoInvoiceDocumentId
+      ? `document.id ${sede.siigoInvoiceDocumentId}`
+      : "sin document.id",
+  ].filter(Boolean);
+
+  return partes.join(" / ");
+}
+
 async function aplicarResolucionOnlineParaStands<
   T extends { sede: null | { nombre?: string | null; codigo?: string | null } },
 >(registro: T): Promise<T> {
@@ -179,6 +199,7 @@ async function aplicarResolucionOnlineParaStands<
 
 export async function POST(req: Request) {
   let registroId: number | null = null;
+  let contextoSiigo = "";
 
   try {
     const access = await requireFacturador();
@@ -232,6 +253,7 @@ export async function POST(req: Request) {
     }
 
     const registroParaSiigo = await aplicarResolucionOnlineParaStands(registro);
+    contextoSiigo = describirConfiguracionSiigo(registroParaSiigo.sede);
     const invoice = await createSiigoInvoiceForRegistro(registroParaSiigo);
     const invoiceLabel = getSiigoInvoiceLabel(invoice);
 
@@ -269,7 +291,10 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    const message = getSiigoErrorMessage(error);
+    const baseMessage = getSiigoErrorMessage(error);
+    const message = contextoSiigo
+      ? `${baseMessage} Configuracion enviada: ${contextoSiigo}.`
+      : baseMessage;
     let registroConError: unknown = null;
 
     console.error("ERROR POST FACTURADOR SIIGO:", error);
