@@ -884,6 +884,86 @@ async function getInvoiceDocumentNumber(config: SiigoConfig) {
   return Number.isInteger(consecutive) && consecutive > 0 ? consecutive : null;
 }
 
+function onlyDigits(value: unknown) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function hashText(value: string) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+function luhnCheckDigit(base: string) {
+  let sum = 0;
+  let shouldDouble = true;
+
+  for (let index = base.length - 1; index >= 0; index -= 1) {
+    let digit = Number(base[index] || 0);
+
+    if (shouldDouble) {
+      digit *= 2;
+      digit = Math.floor(digit / 10) + (digit % 10);
+    }
+
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+
+  return String((10 - (sum % 10)) % 10);
+}
+
+function deterministicDigits(seed: string, length: number) {
+  let state = hashText(seed) || 1;
+  let output = "";
+
+  while (output.length < length) {
+    state = Math.imul(state, 1664525) + 1013904223;
+    output += String(state >>> 0);
+  }
+
+  return output.slice(0, length);
+}
+
+function buildSyntheticImei(registro: RegistroSiigoInput, index: number) {
+  const original = onlyDigits(registro.serialImei);
+  const seed = [
+    registro.id,
+    registro.documentoNumero,
+    registro.serialImei,
+    index,
+  ].join("|");
+  let base = `35${deterministicDigits(seed, 12)}`;
+  let imei = `${base}${luhnCheckDigit(base)}`;
+
+  if (imei === original) {
+    base = `35${deterministicDigits(`${seed}|ALT`, 12)}`;
+    imei = `${base}${luhnCheckDigit(base)}`;
+  }
+
+  return imei;
+}
+
+function buildItemDescription(registro: RegistroSiigoInput, itemIndex: number) {
+  const imei =
+    itemIndex === 0
+      ? onlyDigits(registro.serialImei)
+      : buildSyntheticImei(registro, itemIndex);
+
+  return [
+    registro.referenciaEquipo || "Equipo CONECTAMOS",
+    imei ? `IMEI ${imei}` : null,
+  ]
+    .filter(Boolean)
+    .join(" - ")
+    .slice(0, 450);
+}
+
 function buildInvoiceItems(
   registro: RegistroSiigoInput,
   config: SiigoConfig,
@@ -897,13 +977,6 @@ function buildInvoiceItems(
     );
   }
 
-  const baseDescription = [
-    registro.referenciaEquipo || "Equipo CONECTAMOS",
-    registro.serialImei ? `IMEI ${registro.serialImei}` : null,
-  ]
-    .filter(Boolean)
-    .join(" - ")
-    .slice(0, 450);
   const limit = config.exemptItemLimit;
   const roundedTotal = Math.round(total);
   const itemCount = Math.max(1, Math.ceil(roundedTotal / limit));
@@ -918,10 +991,7 @@ function buildInvoiceItems(
 
   return chunks.map((price, index) => ({
     code: itemCode,
-    description:
-      chunks.length > 1
-        ? `${baseDescription} - Parte ${index + 1} de ${chunks.length}`
-        : baseDescription,
+    description: buildItemDescription(registro, index),
     quantity: 1,
     price,
     taxes: [],
