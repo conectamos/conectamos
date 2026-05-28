@@ -26,9 +26,10 @@ export const DOMINIOS_CORREO_REGISTRO = [
   "icloud.com",
   "hotmail.com",
   "hotmail.es",
+  "mercacambios.com",
 ] as const;
 export const DOMINIOS_CORREO_REGISTRO_TEXTO =
-  "@outlook.com, @outlook.es, @gmail.com, @icloud.com, @hotmail.com o @hotmail.es";
+  "@outlook.com, @outlook.es, @gmail.com, @icloud.com, @hotmail.com, @hotmail.es o @mercacambios.com";
 export const MEDIOS_PAGO = [
   "EFECTIVO",
   "TRANSFERENCIA",
