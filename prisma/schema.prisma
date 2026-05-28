@@ -233,6 +233,12 @@ model RegistroVendedorVenta {
   siigoInvoiceUrl                 String?
   siigoInvoiceError               String?
   siigoInvoiceCreatedAt           DateTime?
+  siigoCreditNoteId               String?
+  siigoCreditNoteName             String?
+  siigoCreditNoteStatus           String?
+  siigoCreditNoteUrl              String?
+  siigoCreditNoteError            String?
+  siigoCreditNoteCreatedAt        DateTime?
   estadoVentaRegistro             String          @default("PENDIENTE")
   ventaIdRelacionada              Int?
   convertidoEn                    DateTime?
@@ -258,6 +264,7 @@ model RegistroVendedorVenta {
   @@index([serialImei, estadoVentaRegistro, createdAt])
   @@index([ventaIdRelacionada])
   @@index([siigoInvoiceId])
+  @@index([siigoCreditNoteId])
 }
 
 model CatalogoPersonalVenta {

@@ -62,6 +62,8 @@ export type SiigoInvoiceResponse = {
   [key: string]: unknown;
 };
 
+export type SiigoCreditNoteResponse = SiigoInvoiceResponse;
+
 export type RegistroSiigoInput = {
   id: number;
   createdAt: Date | string;
@@ -85,6 +87,8 @@ export type RegistroSiigoInput = {
   referenciaEquipo?: string | null;
   serialImei?: string | null;
   tipoEquipo?: string | null;
+  siigoCreditNoteId?: string | null;
+  siigoCreditNoteCreatedAt?: Date | string | null;
   sede?: {
     id: number;
     nombre: string;
@@ -884,6 +888,44 @@ async function getInvoiceDocumentNumber(config: SiigoConfig) {
   return Number.isInteger(consecutive) && consecutive > 0 ? consecutive : null;
 }
 
+async function resolveCreditNoteDocumentId(config: SiigoConfig) {
+  const explicitDocumentId = toPositiveInt(
+    process.env.SIIGO_CREDIT_NOTE_DOCUMENT_ID
+  );
+
+  if (explicitDocumentId !== null) {
+    return explicitDocumentId;
+  }
+
+  const response = await siigoFetch<unknown>(
+    config,
+    "/document-types?type=NC",
+    {
+      method: "GET",
+    }
+  );
+  const activeDocuments = extractCatalogItems(response).filter((item) => {
+    const id = Number(item.id);
+    return Number.isInteger(id) && id > 0 && item.active !== false;
+  });
+
+  if (activeDocuments.length === 1) {
+    return Number(activeDocuments[0].id);
+  }
+
+  throw new SiigoConfigurationError([
+    "SIIGO_CREDIT_NOTE_DOCUMENT_ID (document.id de nota credito Siigo)",
+  ]);
+}
+
+function resolveCreditNoteReason() {
+  return (
+    toPositiveInt(process.env.SIIGO_CREDIT_NOTE_REASON_ID) ??
+    toPositiveInt(process.env.SIIGO_CREDIT_NOTE_REASON) ??
+    2
+  );
+}
+
 function onlyDigits(value: unknown) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -1050,6 +1092,56 @@ function buildInvoicePayload(
   };
 }
 
+function buildCreditNotePayload(
+  registro: RegistroSiigoInput,
+  config: SiigoConfig,
+  invoiceId: string,
+  creditNoteDocumentId: number
+) {
+  const total = calculateInvoiceTotal(registro);
+  const today = new Date();
+
+  if (!invoiceId) {
+    throw new SiigoValidationError(
+      "El registro no tiene identificador de factura Siigo para anular"
+    );
+  }
+
+  if (total <= 0) {
+    throw new SiigoValidationError(
+      "No se pudo calcular un valor positivo para la nota credito"
+    );
+  }
+
+  return {
+    document: {
+      id: creditNoteDocumentId,
+    },
+    date: formatBogotaDate(today),
+    invoice: invoiceId,
+    reason: resolveCreditNoteReason(),
+    ...(config.costCenterId ? { cost_center: config.costCenterId } : {}),
+    seller: config.sellerId,
+    observations: [
+      `Nota credito por eliminacion de venta`,
+      buildObservations(registro),
+    ]
+      .filter(Boolean)
+      .join(" | ")
+      .slice(0, 4000),
+    items: buildInvoiceItems(registro, config, total),
+    payments: [
+      {
+        id: config.paymentTypeId,
+        value: total,
+        due_date: formatBogotaDate(today),
+      },
+    ],
+    ...(config.stampSend ? { stamp: { send: true } } : {}),
+    ...(config.mailSend ? { mail: { send: true } } : {}),
+  };
+}
+
 export function getSiigoInvoiceLabel(invoice: SiigoInvoiceResponse) {
   return (
     invoice.name ||
@@ -1062,6 +1154,8 @@ export function getSiigoInvoiceLabel(invoice: SiigoInvoiceResponse) {
     null
   );
 }
+
+export const getSiigoCreditNoteLabel = getSiigoInvoiceLabel;
 
 export function getSiigoErrorMessage(error: unknown) {
   if (error instanceof SiigoConfigurationError) {
@@ -1133,7 +1227,13 @@ export async function createSiigoInvoiceForRegistro(
     customer,
     documentNumber
   );
-  const idempotencyKey = `CONECTAMOS${registro.id}N2`.slice(0, 30);
+  const invoiceKeyVersion = registro.siigoCreditNoteId
+    ? `R${hashText(registro.siigoCreditNoteId).toString(36).slice(0, 8)}`
+    : "N2";
+  const idempotencyKey = `CONECTAMOS${registro.id}${invoiceKeyVersion}`.slice(
+    0,
+    30
+  );
 
   return siigoFetch<SiigoInvoiceResponse>(
     config,
@@ -1148,11 +1248,47 @@ export async function createSiigoInvoiceForRegistro(
   );
 }
 
+export async function createSiigoCreditNoteForRegistro(
+  registro: RegistroSiigoInput,
+  invoiceId: string
+) {
+  const config = getSiigoConfig(registro);
+  const creditNoteDocumentId = await resolveCreditNoteDocumentId(config);
+  const payload = buildCreditNotePayload(
+    registro,
+    config,
+    invoiceId,
+    creditNoteDocumentId
+  );
+  const idempotencyKey = `CONECTAMOSNC${registro.id}N1`.slice(0, 30);
+
+  return siigoFetch<SiigoCreditNoteResponse>(
+    config,
+    "/credit-notes",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    {
+      idempotencyKey,
+    }
+  );
+}
+
 export async function getSiigoSetupCatalogs() {
   const config = getSiigoAuthConfig();
 
-  const [documentTypes, users, paymentTypes, products] = await Promise.all([
+  const [
+    documentTypes,
+    creditNoteDocumentTypes,
+    users,
+    paymentTypes,
+    products,
+  ] = await Promise.all([
     siigoFetch<unknown>(config, "/document-types?type=FV", {
+      method: "GET",
+    }),
+    siigoFetch<unknown>(config, "/document-types?type=NC", {
       method: "GET",
     }),
     siigoFetch<unknown>(config, "/users", {
@@ -1168,6 +1304,7 @@ export async function getSiigoSetupCatalogs() {
 
   return {
     documentTypes,
+    creditNoteDocumentTypes,
     users,
     paymentTypes,
     products,

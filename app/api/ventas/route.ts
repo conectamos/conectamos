@@ -16,8 +16,11 @@ import {
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
+  createSiigoCreditNoteForRegistro,
   createSiigoInvoiceForRegistro,
+  getSiigoCreditNoteLabel,
   getSiigoErrorMessage,
+  getSiigoErrorStatus,
   getSiigoInvoiceLabel,
   SiigoConfigurationError,
 } from "@/lib/siigo";
@@ -96,6 +99,12 @@ const REGISTRO_SIIGO_AUTO_SELECT = {
   siigoInvoiceUrl: true,
   siigoInvoiceError: true,
   siigoInvoiceCreatedAt: true,
+  siigoCreditNoteId: true,
+  siigoCreditNoteName: true,
+  siigoCreditNoteStatus: true,
+  siigoCreditNoteUrl: true,
+  siigoCreditNoteError: true,
+  siigoCreditNoteCreatedAt: true,
   sede: {
     select: SIIGO_SEDE_SELECT,
   },
@@ -665,6 +674,108 @@ async function emitirFacturaSiigoAlConvertir(registroId: number) {
     return {
       ok: false as const,
       error: message,
+      status: getSiigoErrorStatus(error),
+    };
+  }
+}
+
+async function emitirNotaCreditoSiigoAlEliminarVenta(ventaId: number) {
+  let contextoSiigo = "";
+
+  try {
+    const registro = await prisma.registroVendedorVenta.findFirst({
+      where: {
+        ventaIdRelacionada: ventaId,
+        eliminadoEn: null,
+      },
+      select: REGISTRO_SIIGO_AUTO_SELECT,
+    });
+
+    if (!registro?.siigoInvoiceId) {
+      return {
+        ok: true as const,
+        skipped: true,
+        shouldReleaseInvoice: false,
+        reason: "sin_factura_siigo",
+      };
+    }
+
+    if (registro.siigoCreditNoteId) {
+      return {
+        ok: true as const,
+        skipped: true,
+        shouldReleaseInvoice: true,
+        reason: "nota_credito_existente",
+        creditNoteLabel: registro.siigoCreditNoteName || null,
+      };
+    }
+
+    const registroParaSiigo = await aplicarResolucionOnlineParaStands(registro);
+    contextoSiigo = describirConfiguracionSiigo(registroParaSiigo.sede);
+    const creditNote = await createSiigoCreditNoteForRegistro(
+      registroParaSiigo,
+      registro.siigoInvoiceId
+    );
+    const creditNoteLabel = getSiigoCreditNoteLabel(creditNote);
+
+    if (!creditNote.id || !creditNoteLabel) {
+      throw new Error(
+        "Siigo creo la nota credito, pero no retorno identificador suficiente"
+      );
+    }
+
+    await prisma.registroVendedorVenta.update({
+      where: { id: registro.id },
+      data: {
+        estadoFacturacion: "NOTA_CREDITO",
+        siigoCreditNoteId: creditNote.id,
+        siigoCreditNoteName: creditNoteLabel,
+        siigoCreditNoteStatus: creditNote.status ?? null,
+        siigoCreditNoteUrl: creditNote.public_url ?? null,
+        siigoCreditNoteError: null,
+        siigoCreditNoteCreatedAt: new Date(),
+        siigoInvoiceError: null,
+      },
+    });
+
+    return {
+      ok: true as const,
+      skipped: false,
+      shouldReleaseInvoice: true,
+      creditNoteLabel,
+      siigo: {
+        id: creditNote.id,
+        name: creditNoteLabel,
+        status: creditNote.status ?? null,
+        publicUrl: creditNote.public_url ?? null,
+      },
+    };
+  } catch (error) {
+    const baseMessage = getSiigoErrorMessage(error);
+    const message = contextoSiigo
+      ? `${baseMessage} Configuracion enviada: ${contextoSiigo}.`
+      : baseMessage;
+
+    console.error("ERROR SIIGO NOTA CREDITO AL ELIMINAR VENTA:", error);
+
+    try {
+      await prisma.registroVendedorVenta.updateMany({
+        where: {
+          ventaIdRelacionada: ventaId,
+          eliminadoEn: null,
+        },
+        data: {
+          siigoCreditNoteError: message.slice(0, 2000),
+        },
+      });
+    } catch (updateError) {
+      console.error("ERROR GUARDANDO ERROR NOTA CREDITO SIIGO:", updateError);
+    }
+
+    return {
+      ok: false as const,
+      error: message,
+      status: getSiigoErrorStatus(error),
     };
   }
 }
@@ -1288,6 +1399,38 @@ export async function DELETE(req: Request) {
 
     await ensureVendorProfilesSchema();
 
+    const notaCreditoSiigo = await emitirNotaCreditoSiigoAlEliminarVenta(ventaId);
+
+    if (!notaCreditoSiigo.ok) {
+      return NextResponse.json(
+        {
+          error:
+            "No se elimino la venta porque Siigo no pudo emitir la nota credito. " +
+            notaCreditoSiigo.error,
+        },
+        { status: notaCreditoSiigo.status }
+      );
+    }
+
+    const datosRegistroAlEliminar = {
+      estadoVentaRegistro: "PENDIENTE",
+      ventaIdRelacionada: null,
+      convertidoEn: null,
+      convertidoPor: null,
+      ...(notaCreditoSiigo.shouldReleaseInvoice
+        ? {
+            numeroFactura: null,
+            estadoFacturacion: "NOTA_CREDITO",
+            siigoInvoiceId: null,
+            siigoInvoiceName: null,
+            siigoInvoiceStatus: null,
+            siigoInvoiceUrl: null,
+            siigoInvoiceError: null,
+            siigoInvoiceCreatedAt: null,
+          }
+        : {}),
+    };
+
     await prisma.$transaction(async (tx) => {
       await tx.venta.delete({
         where: { id: ventaId },
@@ -1325,18 +1468,18 @@ export async function DELETE(req: Request) {
         where: {
           ventaIdRelacionada: ventaId,
         },
-        data: {
-          estadoVentaRegistro: "PENDIENTE",
-          ventaIdRelacionada: null,
-          convertidoEn: null,
-          convertidoPor: null,
-        },
+        data: datosRegistroAlEliminar,
       });
     });
 
+    const mensaje = notaCreditoSiigo.skipped
+      ? "Venta eliminada correctamente"
+      : "Venta eliminada correctamente y nota credito emitida en Siigo";
+
     return NextResponse.json({
       ok: true,
-      mensaje: "Venta eliminada correctamente",
+      mensaje,
+      ...(notaCreditoSiigo.skipped ? {} : { siigoCreditNote: notaCreditoSiigo.siigo }),
     });
   } catch (error) {
     console.error("ERROR DELETE VENTAS:", error);

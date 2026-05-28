@@ -63,6 +63,7 @@ type SedeEdicion = {
 
 type CatalogosSiigo = {
   documentTypes?: unknown;
+  creditNoteDocumentTypes?: unknown;
   users?: unknown;
   paymentTypes?: unknown;
   products?: unknown;
@@ -338,6 +339,9 @@ export default function GestionSedesPage() {
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
   const documentosSiigo = extraerItemsCatalogo(catalogosSiigo?.documentTypes);
+  const notasCreditoSiigo = extraerItemsCatalogo(
+    catalogosSiigo?.creditNoteDocumentTypes
+  );
   const usuariosSiigo = extraerItemsCatalogo(catalogosSiigo?.users);
   const pagosSiigo = extraerItemsCatalogo(catalogosSiigo?.paymentTypes);
   const productosSiigo = extraerItemsCatalogo(catalogosSiigo?.products);
@@ -739,7 +743,7 @@ export default function GestionSedesPage() {
           )}
 
           {catalogosSiigo && (
-            <div className="mt-5 grid gap-4 lg:grid-cols-4">
+            <div className="mt-5 grid gap-4 lg:grid-cols-5">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
                   Resoluciones
@@ -747,6 +751,26 @@ export default function GestionSedesPage() {
                 <div className="mt-3 space-y-2 text-sm">
                   {documentosSiigo.slice(0, 12).map((item, index) => (
                     <div key={`siigo-doc-${index}`}>
+                      <p className="font-semibold text-slate-800">
+                        {tituloDocumentoSiigo(item)}
+                      </p>
+                      {detalleDocumentoSiigo(item) && (
+                        <p className="mt-0.5 text-xs font-medium text-slate-500">
+                          {detalleDocumentoSiigo(item)}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  Notas credito
+                </p>
+                <div className="mt-3 space-y-2 text-sm">
+                  {notasCreditoSiigo.slice(0, 12).map((item, index) => (
+                    <div key={`siigo-credit-note-${index}`}>
                       <p className="font-semibold text-slate-800">
                         {tituloDocumentoSiigo(item)}
                       </p>

@@ -120,6 +120,12 @@ async function runEnsureVendorProfilesSchema() {
       "siigoInvoiceUrl" TEXT,
       "siigoInvoiceError" TEXT,
       "siigoInvoiceCreatedAt" TIMESTAMP(3),
+      "siigoCreditNoteId" TEXT,
+      "siigoCreditNoteName" TEXT,
+      "siigoCreditNoteStatus" TEXT,
+      "siigoCreditNoteUrl" TEXT,
+      "siigoCreditNoteError" TEXT,
+      "siigoCreditNoteCreatedAt" TIMESTAMP(3),
       "estadoVentaRegistro" TEXT NOT NULL DEFAULT 'PENDIENTE',
       "ventaIdRelacionada" INTEGER,
       "convertidoEn" TIMESTAMP(3),
@@ -155,6 +161,12 @@ async function runEnsureVendorProfilesSchema() {
       ADD COLUMN IF NOT EXISTS "siigoInvoiceUrl" TEXT,
       ADD COLUMN IF NOT EXISTS "siigoInvoiceError" TEXT,
       ADD COLUMN IF NOT EXISTS "siigoInvoiceCreatedAt" TIMESTAMP(3),
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteId" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteName" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteStatus" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteUrl" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteError" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteCreatedAt" TIMESTAMP(3),
       ADD COLUMN IF NOT EXISTS "estadoVentaRegistro" TEXT NOT NULL DEFAULT 'PENDIENTE',
       ADD COLUMN IF NOT EXISTS "ventaIdRelacionada" INTEGER,
       ADD COLUMN IF NOT EXISTS "convertidoEn" TIMESTAMP(3),
@@ -299,6 +311,18 @@ async function runEnsureVendorProfilesSchema() {
     BEGIN
       CREATE INDEX "RegistroVendedorVenta_ventaIdRelacionada_idx"
       ON "RegistroVendedorVenta"("ventaIdRelacionada");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      CREATE INDEX "RegistroVendedorVenta_siigoCreditNoteId_idx"
+      ON "RegistroVendedorVenta"("siigoCreditNoteId");
     EXCEPTION
       WHEN duplicate_table THEN NULL;
       WHEN duplicate_object THEN NULL;

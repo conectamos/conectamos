@@ -59,6 +59,12 @@ type RegistroFacturacion = {
   siigoInvoiceUrl: string | null;
   siigoInvoiceError: string | null;
   siigoInvoiceCreatedAt: string | null;
+  siigoCreditNoteId: string | null;
+  siigoCreditNoteName: string | null;
+  siigoCreditNoteStatus: string | null;
+  siigoCreditNoteUrl: string | null;
+  siigoCreditNoteError: string | null;
+  siigoCreditNoteCreatedAt: string | null;
   estadoVentaRegistro: string | null;
   ventaIdRelacionada: number | null;
   financierasDetalle: FinancieraRegistro[] | null;
@@ -411,6 +417,8 @@ export default function FacturadorRegistrosWorkspace({
         registro.numeroFactura,
         registro.siigoInvoiceName,
         registro.siigoInvoiceStatus,
+        registro.siigoCreditNoteName,
+        registro.siigoCreditNoteStatus,
       ]
         .filter(Boolean)
         .join(" ")
@@ -891,6 +899,9 @@ export default function FacturadorRegistrosWorkspace({
                     const facturaSiigoEmitida = Boolean(registro.siigoInvoiceId);
                     const facturaManualRegistrada =
                       Boolean(registro.numeroFactura) && !facturaSiigoEmitida;
+                    const notaCreditoSiigoEmitida = Boolean(
+                      registro.siigoCreditNoteId
+                    );
                     const puedeEmitirSiigo =
                       convertido && !facturaSiigoEmitida && !registro.numeroFactura;
                     const financierasConInicial = financieras.filter(
@@ -1031,11 +1042,58 @@ export default function FacturadorRegistrosWorkspace({
                                   Ver documento
                                 </Link>
                               )}
+                              {notaCreditoSiigoEmitida && (
+                                <div className="border-t border-emerald-100 pt-2">
+                                  <div className="font-bold text-amber-800">
+                                    NC {registro.siigoCreditNoteName || "Emitida"}
+                                  </div>
+                                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
+                                    {registro.siigoCreditNoteStatus || "Nota credito"}
+                                  </div>
+                                  {registro.siigoCreditNoteUrl && (
+                                    <Link
+                                      href={registro.siigoCreditNoteUrl}
+                                      target="_blank"
+                                      className="text-xs font-bold text-slate-700 underline decoration-slate-300 underline-offset-4 hover:text-slate-950"
+                                    >
+                                      Ver nota credito
+                                    </Link>
+                                  )}
+                                </div>
+                              )}
+                              {!notaCreditoSiigoEmitida &&
+                                registro.siigoCreditNoteError && (
+                                  <div className="border-t border-red-100 pt-2 text-xs leading-5 text-red-700">
+                                    {registro.siigoCreditNoteError}
+                                  </div>
+                                )}
+                            </div>
+                          ) : notaCreditoSiigoEmitida ? (
+                            <div className="min-w-48 space-y-2">
+                              <div className="font-bold text-amber-800">
+                                NC {registro.siigoCreditNoteName || "Emitida"}
+                              </div>
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
+                                {registro.siigoCreditNoteStatus || "Nota credito"}
+                              </div>
+                              {registro.siigoCreditNoteUrl && (
+                                <Link
+                                  href={registro.siigoCreditNoteUrl}
+                                  target="_blank"
+                                  className="text-xs font-bold text-slate-700 underline decoration-slate-300 underline-offset-4 hover:text-slate-950"
+                                >
+                                  Ver nota credito
+                                </Link>
+                              )}
                             </div>
                           ) : facturaManualRegistrada ? (
                             <span className="text-sm text-slate-500">
                               Factura manual
                             </span>
+                          ) : registro.siigoCreditNoteError ? (
+                            <div className="max-w-64 text-xs leading-5 text-red-700">
+                              {registro.siigoCreditNoteError}
+                            </div>
                           ) : registro.siigoInvoiceError ? (
                             <div className="max-w-64 text-xs leading-5 text-red-700">
                               {registro.siigoInvoiceError}
