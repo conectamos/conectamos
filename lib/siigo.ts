@@ -1,5 +1,6 @@
 type SiigoConfig = {
   apiBaseUrl: string;
+  authUrl: string;
   username: string;
   accessKey: string;
   partnerId: string;
@@ -21,7 +22,7 @@ type SiigoConfig = {
 
 type SiigoAuthConfig = Pick<
   SiigoConfig,
-  "apiBaseUrl" | "username" | "accessKey" | "partnerId"
+  "apiBaseUrl" | "authUrl" | "username" | "accessKey" | "partnerId"
 >;
 
 type SiigoCustomerLookupResponse = {
@@ -150,6 +151,30 @@ function normalizeSiigoApiBaseUrl(value: string) {
   return url;
 }
 
+function normalizeSiigoAuthUrl(rawBaseUrl: string, apiBaseUrl: string) {
+  const explicitAuthUrl = process.env.SIIGO_AUTH_URL?.trim();
+
+  if (explicitAuthUrl) {
+    return cleanBaseUrl(explicitAuthUrl);
+  }
+
+  const rawUrl = cleanBaseUrl(rawBaseUrl);
+
+  if (rawUrl.endsWith("/v1/auth")) {
+    return `${rawUrl.slice(0, -"/v1/auth".length)}/auth`;
+  }
+
+  if (rawUrl.endsWith("/auth")) {
+    return rawUrl;
+  }
+
+  const rootUrl = apiBaseUrl.endsWith("/v1")
+    ? apiBaseUrl.slice(0, -"/v1".length)
+    : apiBaseUrl;
+
+  return `${rootUrl}/auth`;
+}
+
 function readRequiredText(name: string, missing: string[]) {
   const value = process.env[name]?.trim();
 
@@ -214,8 +239,9 @@ function requireConfigText(value: unknown, label: string, missing: string[]) {
 
 function getSiigoAuthConfig(): SiigoAuthConfig {
   const missing: string[] = [];
-  const apiBaseUrl =
+  const rawApiBaseUrl =
     process.env.SIIGO_API_BASE_URL?.trim() || "https://api.siigo.com/v1";
+  const apiBaseUrl = normalizeSiigoApiBaseUrl(rawApiBaseUrl);
   const username = readRequiredText("SIIGO_USERNAME", missing);
   const accessKey = readRequiredText("SIIGO_ACCESS_KEY", missing);
   const partnerId = readRequiredText("SIIGO_PARTNER_ID", missing);
@@ -225,7 +251,8 @@ function getSiigoAuthConfig(): SiigoAuthConfig {
   }
 
   return {
-    apiBaseUrl: normalizeSiigoApiBaseUrl(apiBaseUrl),
+    apiBaseUrl,
+    authUrl: normalizeSiigoAuthUrl(rawApiBaseUrl, apiBaseUrl),
     username,
     accessKey,
     partnerId,
@@ -348,7 +375,7 @@ async function authenticate(config: SiigoAuthConfig) {
     return tokenCache.token;
   }
 
-  const response = await fetch(`${config.apiBaseUrl}/auth`, {
+  const response = await fetch(config.authUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
