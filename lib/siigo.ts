@@ -5,7 +5,7 @@ type SiigoConfig = {
   accessKey: string;
   partnerId: string;
   documentId: number;
-  alternateDocumentId: number | null;
+  sendDocumentNumber: boolean;
   sellerId: number;
   paymentTypeId: number;
   itemCode: string | null;
@@ -36,6 +36,14 @@ type SiigoCustomerLookupResponse = {
 };
 
 type SiigoCustomer = NonNullable<SiigoCustomerLookupResponse["results"]>[number];
+
+type SiigoDocumentType = {
+  id?: number;
+  code?: string;
+  consecutive?: number;
+  automatic_number?: boolean;
+  active?: boolean;
+};
 
 export type SiigoInvoiceResponse = {
   id?: string;
@@ -239,44 +247,6 @@ function requireConfigText(value: unknown, label: string, missing: string[]) {
   return text;
 }
 
-function normalizeText(value: unknown) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toUpperCase();
-}
-
-function inferDocumentCodeFromSede(
-  sede: RegistroSiigoInput["sede"]
-): number | null {
-  if (!sede) {
-    return null;
-  }
-
-  const nombre = normalizeText(sede.nombre);
-  const codigo = normalizeText(sede.codigo);
-  const text = `${nombre} ${codigo}`;
-
-  if (
-    nombre === "ONLINE" ||
-    codigo === "ONLINE" ||
-    nombre.startsWith("STAND") ||
-    codigo.startsWith("STAND-")
-  ) {
-    return 8;
-  }
-
-  if (text.includes("TROP")) {
-    return 9;
-  }
-
-  const match = text.match(/\bSEDE[-\s#]*(\d+)\b/);
-  const number = match ? Number(match[1]) : 0;
-
-  return number >= 1 && number <= 7 ? number : null;
-}
-
 function getSiigoAuthConfig(): SiigoAuthConfig {
   const missing: string[] = [];
   const rawApiBaseUrl =
@@ -342,7 +312,8 @@ function getSiigoConfig(registro: RegistroSiigoInput): SiigoConfig {
   return {
     ...authConfig,
     documentId,
-    alternateDocumentId: inferDocumentCodeFromSede(sede),
+    sendDocumentNumber:
+      process.env.SIIGO_SEND_DOCUMENT_NUMBER?.trim().toLowerCase() !== "false",
     sellerId,
     paymentTypeId,
     itemCode:
@@ -436,30 +407,6 @@ function stringifySiigoDetails(details: unknown) {
   } catch {
     return String(details);
   }
-}
-
-function hasSiigoErrorCode(error: unknown, code: string) {
-  if (!(error instanceof SiigoApiError)) {
-    return false;
-  }
-
-  const details = error.details;
-
-  if (!details || typeof details !== "object") {
-    return false;
-  }
-
-  const errors = (details as Record<string, unknown>).Errors;
-
-  return (
-    Array.isArray(errors) &&
-    errors.some(
-      (item) =>
-        Boolean(item) &&
-        typeof item === "object" &&
-        String((item as Record<string, unknown>).Code || "") === code
-    )
-  );
 }
 
 async function authenticate(config: SiigoAuthConfig) {
@@ -891,6 +838,52 @@ function resolveItemCode(registro: RegistroSiigoInput, config: SiigoConfig) {
   );
 }
 
+function extractCatalogItems(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === "object"
+    );
+  }
+
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+
+  for (const key of ["results", "data", "items"]) {
+    if (Array.isArray(record[key])) {
+      return record[key].filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === "object"
+      );
+    }
+  }
+
+  return [];
+}
+
+async function getInvoiceDocumentNumber(config: SiigoConfig) {
+  if (!config.sendDocumentNumber) {
+    return null;
+  }
+
+  const response = await siigoFetch<unknown>(
+    config,
+    "/document-types?type=FV",
+    {
+      method: "GET",
+    }
+  );
+  const documentType = extractCatalogItems(response).find(
+    (item) => Number(item.id) === config.documentId
+  ) as SiigoDocumentType | undefined;
+  const consecutive = Number(documentType?.consecutive);
+
+  return Number.isInteger(consecutive) && consecutive > 0 ? consecutive : null;
+}
+
 function buildInvoiceItems(
   registro: RegistroSiigoInput,
   config: SiigoConfig,
@@ -938,7 +931,8 @@ function buildInvoiceItems(
 function buildInvoicePayload(
   registro: RegistroSiigoInput,
   config: SiigoConfig,
-  customer: SiigoCustomer
+  customer: SiigoCustomer,
+  documentNumber: number | null
 ) {
   const identification = getSiigoIdentificationData(
     registro.tipoDocumento,
@@ -966,6 +960,7 @@ function buildInvoicePayload(
   return {
     document: {
       id: config.documentId,
+      ...(documentNumber ? { number: documentNumber } : {}),
     },
     date: formatBogotaDate(today),
     customer: buildInvoiceCustomerPayload(registro, customer),
@@ -1061,49 +1056,26 @@ export async function createSiigoInvoiceForRegistro(
   }
 
   const customer = await ensureCustomerForInvoice(config, registro);
-  const payload = buildInvoicePayload(registro, config, customer);
+  const documentNumber = await getInvoiceDocumentNumber(config);
+  const payload = buildInvoicePayload(
+    registro,
+    config,
+    customer,
+    documentNumber
+  );
   const idempotencyKey = `CONECTAMOS${registro.id}`.slice(0, 30);
 
-  try {
-    return await siigoFetch<SiigoInvoiceResponse>(
-      config,
-      "/invoices",
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-      {
-        idempotencyKey,
-      }
-    );
-  } catch (error) {
-    if (
-      hasSiigoErrorCode(error, "invalid_dian_resolution") &&
-      config.alternateDocumentId &&
-      config.alternateDocumentId !== config.documentId
-    ) {
-      const fallbackPayload = {
-        ...payload,
-        document: {
-          id: config.alternateDocumentId,
-        },
-      };
-
-      return siigoFetch<SiigoInvoiceResponse>(
-        config,
-        "/invoices",
-        {
-          method: "POST",
-          body: JSON.stringify(fallbackPayload),
-        },
-        {
-          idempotencyKey: `${idempotencyKey}ALT`.slice(0, 30),
-        }
-      );
+  return siigoFetch<SiigoInvoiceResponse>(
+    config,
+    "/invoices",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    {
+      idempotencyKey,
     }
-
-    throw error;
-  }
+  );
 }
 
 export async function getSiigoSetupCatalogs() {
