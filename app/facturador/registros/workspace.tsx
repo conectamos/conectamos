@@ -395,6 +395,7 @@ export default function FacturadorRegistrosWorkspace({
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
   const [modoSoporteSiigo, setModoSoporteSiigo] = useState(false);
   const [filtroActivo, setFiltroActivo] = useState<FiltroRegistro>("TODOS");
+  const [facturandoPendientes, setFacturandoPendientes] = useState(false);
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
   const [editando, setEditando] = useState<EditDraft | null>(null);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
@@ -618,6 +619,73 @@ export default function FacturadorRegistrosWorkspace({
       setMensaje("Error enviando factura a Siigo");
     } finally {
       setEmitiendoSiigoId(null);
+    }
+  };
+
+  const facturarPendientesSiigo = async () => {
+    const confirmar = window.confirm(
+      "Se emitiran en Siigo hasta 20 ventas ya convertidas que siguen pendientes. Las que superen el tope o tengan error quedaran marcadas. Deseas continuar?"
+    );
+
+    if (!confirmar) {
+      return;
+    }
+
+    try {
+      setFacturandoPendientes(true);
+      setMensaje("");
+
+      const res = await fetch("/api/facturador/siigo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          modo: "FACTURAR_PENDIENTES",
+          limit: 20,
+        }),
+      });
+
+      const data = await res.json();
+      const registrosActualizados = Array.isArray(data.registros)
+        ? (data.registros as RegistroFacturacion[])
+        : [];
+
+      if (registrosActualizados.length > 0) {
+        setRegistros((current) => {
+          const actualizadosPorId = new Map(
+            registrosActualizados.map((item) => [item.id, item])
+          );
+
+          return current.map((item) => actualizadosPorId.get(item.id) ?? item);
+        });
+        setFacturasDraft((current) => {
+          const next = { ...current };
+
+          for (const item of registrosActualizados) {
+            next[item.id] = item.numeroFactura ?? "";
+          }
+
+          return next;
+        });
+      }
+
+      if (!res.ok) {
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudieron facturar pendientes en Siigo");
+        return;
+      }
+
+      const totalErrores = Number(data.resumen?.errores || 0);
+
+      setMensajeTipo(totalErrores > 0 ? "error" : "success");
+      setMensaje(data.mensaje || "Pendientes procesados en Siigo");
+      await cargarRegistros();
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error facturando pendientes en Siigo");
+    } finally {
+      setFacturandoPendientes(false);
     }
   };
 
@@ -1089,6 +1157,18 @@ export default function FacturadorRegistrosWorkspace({
                 </button>
               );
             })}
+            {esAdmin && (
+              <button
+                type="button"
+                onClick={() => void facturarPendientesSiigo()}
+                disabled={facturandoPendientes}
+                className="rounded-2xl border border-emerald-200 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-300"
+              >
+                {facturandoPendientes
+                  ? "Facturando..."
+                  : "Facturar pendientes Siigo"}
+              </button>
+            )}
           </div>
 
           <div className="mt-6 overflow-x-auto">
@@ -1362,6 +1442,11 @@ export default function FacturadorRegistrosWorkspace({
                             <span className="text-sm text-slate-500">
                               Factura manual
                             </span>
+                          ) : superaTopeSiigo ? (
+                            <div className="max-w-64 text-xs leading-5 text-amber-700">
+                              Supera tope Siigo: {formatMoney(totalSiigo)}. Maximo{" "}
+                              {formatMoney(SIIGO_MAX_FACTURA_TOTAL)}.
+                            </div>
                           ) : registro.siigoCreditNoteError ? (
                             <div className="max-w-64 text-xs leading-5 text-red-700">
                               {registro.siigoCreditNoteError}
@@ -1369,11 +1454,6 @@ export default function FacturadorRegistrosWorkspace({
                           ) : registro.siigoInvoiceError ? (
                             <div className="max-w-64 text-xs leading-5 text-red-700">
                               {registro.siigoInvoiceError}
-                            </div>
-                          ) : superaTopeSiigo ? (
-                            <div className="max-w-64 text-xs leading-5 text-amber-700">
-                              Supera tope Siigo: {formatMoney(totalSiigo)}. Maximo{" "}
-                              {formatMoney(SIIGO_MAX_FACTURA_TOTAL)}.
                             </div>
                           ) : !convertido ? (
                             <span className="text-sm text-slate-500">

@@ -180,6 +180,70 @@ function esRegistroConvertidoParaFacturar(registro: {
   );
 }
 
+function toNumberMoneda(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+
+  const parsed = Number(String(value).replace(/[^\d.-]/g, ""));
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function readSiigoMaxInvoiceTotal() {
+  const parsed = Number(
+    String(process.env.SIIGO_MAX_INVOICE_TOTAL || "").replace(/[^\d.-]/g, "")
+  );
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 2300000;
+}
+
+function calcularTotalFacturableSiigo(registro: {
+  plataformaCredito?: string | null;
+  creditoAutorizado?: unknown;
+  cuotaInicial?: unknown;
+  medioPago1Valor?: unknown;
+  medioPago2Valor?: unknown;
+  financierasDetalle?: unknown;
+}) {
+  const pago1 = toNumberMoneda(registro.medioPago1Valor);
+  const pago2 = toNumberMoneda(registro.medioPago2Valor);
+
+  if (
+    String(registro.plataformaCredito || "").trim().toUpperCase().startsWith("CONTADO") &&
+    pago1 + pago2 > 0
+  ) {
+    return Math.round(pago1 + pago2);
+  }
+
+  const detalle = Array.isArray(registro.financierasDetalle)
+    ? registro.financierasDetalle
+    : [];
+  const totalDetalle = detalle.reduce((total, item) => {
+    if (!item || typeof item !== "object") {
+      return total;
+    }
+
+    const row = item as Record<string, unknown>;
+
+    return total + toNumberMoneda(row.creditoAutorizado) + toNumberMoneda(row.cuotaInicial);
+  }, 0);
+
+  if (totalDetalle > 0) {
+    return Math.round(totalDetalle);
+  }
+
+  const totalBase =
+    toNumberMoneda(registro.creditoAutorizado) +
+    toNumberMoneda(registro.cuotaInicial);
+
+  if (totalBase > 0) {
+    return Math.round(totalBase);
+  }
+
+  return Math.round(pago1 + pago2);
+}
+
 async function aplicarResolucionOnlineParaStands<
   T extends { sede: null | { nombre?: string | null; codigo?: string | null } },
 >(registro: T): Promise<T> {
@@ -219,6 +283,50 @@ async function aplicarResolucionOnlineParaStands<
   };
 }
 
+async function emitirFacturaParaRegistro(
+  registro: Parameters<typeof createSiigoInvoiceForRegistro>[0] & {
+    id: number;
+    sede: null | { nombre?: string | null; codigo?: string | null };
+  }
+) {
+  const registroParaSiigo = await aplicarResolucionOnlineParaStands(registro);
+  const invoice = await createSiigoInvoiceForRegistro(registroParaSiigo);
+  const invoiceLabel = getSiigoInvoiceLabel(invoice);
+
+  if (!invoice.id || !invoiceLabel) {
+    throw new Error(
+      "Siigo creo la factura, pero no retorno identificador suficiente"
+    );
+  }
+
+  const actualizado = await prisma.registroVendedorVenta.update({
+    where: { id: registro.id },
+    data: {
+      numeroFactura: invoiceLabel,
+      estadoFacturacion: "FACTURADO",
+      siigoInvoiceId: invoice.id,
+      siigoInvoiceName: invoiceLabel,
+      siigoInvoiceStatus: invoice.status ?? null,
+      siigoInvoiceUrl: invoice.public_url ?? null,
+      siigoInvoiceError: null,
+      siigoInvoiceCreatedAt: new Date(),
+      siigoCreditNoteId: null,
+      siigoCreditNoteName: null,
+      siigoCreditNoteStatus: null,
+      siigoCreditNoteUrl: null,
+      siigoCreditNoteError: null,
+      siigoCreditNoteCreatedAt: null,
+    },
+    select: REGISTRO_FACTURADOR_SELECT,
+  });
+
+  return {
+    actualizado,
+    invoice,
+    invoiceLabel,
+  };
+}
+
 export async function POST(req: Request) {
   let registroId: number | null = null;
   let contextoSiigo = "";
@@ -237,6 +345,121 @@ export async function POST(req: Request) {
     const id = Number(body.id);
     const modo = String(body.modo || "").trim().toUpperCase();
     modoOperacion = modo;
+
+    if (modo === "FACTURAR_PENDIENTES") {
+      const puedeFacturarPendientes =
+        esRolAdministrativo(access.session.rolNombre) ||
+        esPerfilAdministrativo(access.session.perfilTipo);
+
+      if (!puedeFacturarPendientes) {
+        return NextResponse.json(
+          { error: "Solo un administrador puede facturar pendientes en lote" },
+          { status: 403 }
+        );
+      }
+
+      const limit = Math.min(
+        Math.max(Number(body.limit) || 20, 1),
+        50
+      );
+      const pendientes = await prisma.registroVendedorVenta.findMany({
+        where: {
+          eliminadoEn: null,
+          numeroFactura: null,
+          siigoInvoiceId: null,
+          siigoInvoiceError: null,
+          siigoCreditNoteId: null,
+          OR: [
+            {
+              ventaIdRelacionada: {
+                not: null,
+              },
+            },
+            {
+              estadoVentaRegistro: "CONVERTIDO_EN_VENTA",
+            },
+          ],
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+        take: limit,
+        select: REGISTRO_FACTURADOR_SELECT,
+      });
+
+      const registrosActualizados: unknown[] = [];
+      const errores: Array<{ id: number; error: string }> = [];
+      let emitidas = 0;
+      let omitidasTope = 0;
+      const maxInvoiceTotal = readSiigoMaxInvoiceTotal();
+
+      for (const pendiente of pendientes) {
+        try {
+          const totalSiigo = calcularTotalFacturableSiigo(pendiente);
+
+          if (totalSiigo > maxInvoiceTotal) {
+            const message = `Supera tope Siigo: ${totalSiigo.toLocaleString(
+              "es-CO"
+            )}. Maximo ${maxInvoiceTotal.toLocaleString("es-CO")}.`;
+            const actualizado = await prisma.registroVendedorVenta.update({
+              where: { id: pendiente.id },
+              data: {
+                siigoInvoiceError: message.slice(0, 2000),
+              },
+              select: REGISTRO_FACTURADOR_SELECT,
+            });
+
+            registrosActualizados.push(serializarRegistro(actualizado));
+            errores.push({ id: pendiente.id, error: message });
+            omitidasTope += 1;
+            continue;
+          }
+
+          const { actualizado } = await emitirFacturaParaRegistro(pendiente);
+          registrosActualizados.push(serializarRegistro(actualizado));
+          emitidas += 1;
+        } catch (error) {
+          const contexto = describirConfiguracionSiigo(pendiente.sede);
+          const baseMessage = getSiigoErrorMessage(error);
+          const message = contexto
+            ? `${baseMessage} Configuracion enviada: ${contexto}.`
+            : baseMessage;
+
+          errores.push({ id: pendiente.id, error: message });
+
+          try {
+            const actualizado = await prisma.registroVendedorVenta.update({
+              where: { id: pendiente.id },
+              data: {
+                siigoInvoiceError: message.slice(0, 2000),
+              },
+              select: REGISTRO_FACTURADOR_SELECT,
+            });
+
+            registrosActualizados.push(serializarRegistro(actualizado));
+          } catch (updateError) {
+            console.error("ERROR GUARDANDO ERROR SIIGO LOTE:", updateError);
+          }
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        mensaje:
+          pendientes.length === 0
+            ? "No hay ventas convertidas pendientes para facturar en Siigo"
+            : `Lote Siigo procesado: ${emitidas} factura(s) emitida(s), ${errores.length} con error, ${omitidasTope} sobre tope.`,
+        registros: registrosActualizados,
+        resumen: {
+          procesadas: pendientes.length,
+          emitidas,
+          errores: errores.length,
+          omitidasTope,
+          limite: limit,
+        },
+        errores,
+      });
+    }
 
     if (!Number.isInteger(id) || id <= 0) {
       return NextResponse.json({ error: "Registro invalido" }, { status: 400 });
@@ -361,36 +584,8 @@ export async function POST(req: Request) {
 
     const registroParaSiigo = await aplicarResolucionOnlineParaStands(registro);
     contextoSiigo = describirConfiguracionSiigo(registroParaSiigo.sede);
-    const invoice = await createSiigoInvoiceForRegistro(registroParaSiigo);
-    const invoiceLabel = getSiigoInvoiceLabel(invoice);
-
-    if (!invoice.id || !invoiceLabel) {
-      return NextResponse.json(
-        { error: "Siigo creo la factura, pero no retorno identificador suficiente" },
-        { status: 502 }
-      );
-    }
-
-    const actualizado = await prisma.registroVendedorVenta.update({
-      where: { id },
-      data: {
-        numeroFactura: invoiceLabel,
-        estadoFacturacion: "FACTURADO",
-        siigoInvoiceId: invoice.id,
-        siigoInvoiceName: invoiceLabel,
-        siigoInvoiceStatus: invoice.status ?? null,
-        siigoInvoiceUrl: invoice.public_url ?? null,
-        siigoInvoiceError: null,
-        siigoInvoiceCreatedAt: new Date(),
-        siigoCreditNoteId: null,
-        siigoCreditNoteName: null,
-        siigoCreditNoteStatus: null,
-        siigoCreditNoteUrl: null,
-        siigoCreditNoteError: null,
-        siigoCreditNoteCreatedAt: null,
-      },
-      select: REGISTRO_FACTURADOR_SELECT,
-    });
+    const { actualizado, invoice, invoiceLabel } =
+      await emitirFacturaParaRegistro(registroParaSiigo);
 
     return NextResponse.json({
       ok: true,
