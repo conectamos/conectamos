@@ -321,6 +321,7 @@ export default function FacturadorRegistrosWorkspace({
   const [cargando, setCargando] = useState(true);
   const [guardandoId, setGuardandoId] = useState<number | null>(null);
   const [emitiendoSiigoId, setEmitiendoSiigoId] = useState<number | null>(null);
+  const [liberandoSiigoId, setLiberandoSiigoId] = useState<number | null>(null);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
   const [editando, setEditando] = useState<EditDraft | null>(null);
@@ -544,6 +545,59 @@ export default function FacturadorRegistrosWorkspace({
       setMensaje("Error enviando factura a Siigo");
     } finally {
       setEmitiendoSiigoId(null);
+    }
+  };
+
+  const liberarFacturaSiigo = async (registroId: number) => {
+    const confirmar = window.confirm(
+      "Usa esto solo si ya borraste el borrador en Siigo. Conectamos quitara la marca de factura emitida para poder facturar de nuevo. Deseas continuar?"
+    );
+
+    if (!confirmar) {
+      return;
+    }
+
+    try {
+      setLiberandoSiigoId(registroId);
+      setMensaje("");
+
+      const res = await fetch("/api/facturador/registros", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          modo: "LIBERAR_SIIGO",
+          id: registroId,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudo liberar la factura Siigo");
+        return;
+      }
+
+      const registroActualizado = data.registro as RegistroFacturacion;
+
+      setRegistros((current) =>
+        current.map((item) =>
+          item.id === registroActualizado.id ? registroActualizado : item
+        )
+      );
+      setFacturasDraft((current) => ({
+        ...current,
+        [registroActualizado.id]: registroActualizado.numeroFactura ?? "",
+      }));
+      setMensajeTipo("success");
+      setMensaje(data.mensaje || "Factura Siigo liberada en Conectamos");
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error liberando factura Siigo");
+    } finally {
+      setLiberandoSiigoId(null);
     }
   };
 
@@ -902,6 +956,8 @@ export default function FacturadorRegistrosWorkspace({
                     const notaCreditoSiigoEmitida = Boolean(
                       registro.siigoCreditNoteId
                     );
+                    const puedeLiberarFacturaSiigo =
+                      esAdmin && facturaSiigoEmitida && !notaCreditoSiigoEmitida;
                     const puedeEmitirSiigo =
                       convertido && !facturaSiigoEmitida && !registro.numeroFactura;
                     const financierasConInicial = financieras.filter(
@@ -1154,6 +1210,19 @@ export default function FacturadorRegistrosWorkspace({
                             >
                               Modificar
                             </button>
+
+                            {puedeLiberarFacturaSiigo && (
+                              <button
+                                type="button"
+                                onClick={() => void liberarFacturaSiigo(registro.id)}
+                                disabled={liberandoSiigoId === registro.id}
+                                className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                              >
+                                {liberandoSiigoId === registro.id
+                                  ? "Liberando..."
+                                  : "Liberar borrador"}
+                              </button>
+                            )}
 
                             {puedeEliminar && !convertido && (
                               <button

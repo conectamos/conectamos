@@ -256,7 +256,12 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Registro invalido" }, { status: 400 });
     }
 
-    if (modo !== "EDITAR" && modo !== "ELIMINAR" && !numeroFactura) {
+    if (
+      modo !== "EDITAR" &&
+      modo !== "ELIMINAR" &&
+      modo !== "LIBERAR_SIIGO" &&
+      !numeroFactura
+    ) {
       return NextResponse.json(
         { error: "Debes ingresar el numero de factura" },
         { status: 400 }
@@ -275,6 +280,8 @@ export async function PATCH(req: Request) {
         estadoVentaRegistro: true,
         ventaIdRelacionada: true,
         financierasDetalle: true,
+        siigoInvoiceId: true,
+        siigoCreditNoteId: true,
       },
     });
 
@@ -316,6 +323,110 @@ export async function PATCH(req: Request) {
       return NextResponse.json({
         ok: true,
         mensaje: "Registro eliminado correctamente",
+      });
+    }
+
+    if (modo === "LIBERAR_SIIGO") {
+      const puedeLiberar =
+        esRolAdministrativo(access.session.rolNombre) ||
+        esPerfilAdministrativo(access.session.perfilTipo);
+
+      if (!puedeLiberar) {
+        return NextResponse.json(
+          {
+            error:
+              "Solo un administrador puede liberar una factura Siigo borrada",
+          },
+          { status: 403 }
+        );
+      }
+
+      if (!registroConvertido) {
+        return NextResponse.json(
+          {
+            error:
+              "Solo se puede liberar Siigo en registros convertidos en venta",
+          },
+          { status: 400 }
+        );
+      }
+
+      if (!existente.siigoInvoiceId) {
+        return NextResponse.json(
+          { error: "Este registro no tiene factura Siigo para liberar" },
+          { status: 400 }
+        );
+      }
+
+      if (existente.siigoCreditNoteId) {
+        return NextResponse.json(
+          {
+            error:
+              "Este registro ya tiene nota credito en Siigo y no se puede liberar",
+          },
+          { status: 400 }
+        );
+      }
+
+      const actualizado = await prisma.registroVendedorVenta.update({
+        where: { id },
+        data: {
+          numeroFactura: null,
+          estadoFacturacion: "PENDIENTE",
+          siigoInvoiceId: null,
+          siigoInvoiceName: null,
+          siigoInvoiceStatus: null,
+          siigoInvoiceUrl: null,
+          siigoInvoiceError: null,
+          siigoInvoiceCreatedAt: null,
+          siigoCreditNoteError: null,
+        },
+        select: {
+          id: true,
+          createdAt: true,
+          puntoVenta: true,
+          clienteNombre: true,
+          tipoDocumento: true,
+          documentoNumero: true,
+          correo: true,
+          whatsapp: true,
+          direccion: true,
+          barrio: true,
+          plataformaCredito: true,
+          creditoAutorizado: true,
+          cuotaInicial: true,
+          medioPago1Tipo: true,
+          medioPago1Valor: true,
+          medioPago2Tipo: true,
+          medioPago2Valor: true,
+          referenciaEquipo: true,
+          serialImei: true,
+          tipoEquipo: true,
+          jaladorNombre: true,
+          numeroFactura: true,
+          estadoFacturacion: true,
+          siigoInvoiceId: true,
+          siigoInvoiceName: true,
+          siigoInvoiceStatus: true,
+          siigoInvoiceUrl: true,
+          siigoInvoiceError: true,
+          siigoInvoiceCreatedAt: true,
+          siigoCreditNoteId: true,
+          siigoCreditNoteName: true,
+          siigoCreditNoteStatus: true,
+          siigoCreditNoteUrl: true,
+          siigoCreditNoteError: true,
+          siigoCreditNoteCreatedAt: true,
+          estadoVentaRegistro: true,
+          ventaIdRelacionada: true,
+          financierasDetalle: true,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Factura Siigo liberada en Conectamos",
+        registro: serializarRegistro(actualizado),
       });
     }
 
