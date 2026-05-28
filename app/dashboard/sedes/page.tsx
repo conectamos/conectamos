@@ -222,16 +222,17 @@ function codigoDocumentoParaSede(sede: SedeAdminItem) {
   const codigo = normalizarTexto(sede.codigo);
   const texto = `${nombre} ${codigo}`;
 
-  if (nombre === "ONLINE" || codigo === "ONLINE") {
+  if (
+    nombre === "ONLINE" ||
+    codigo === "ONLINE" ||
+    nombre.startsWith("STAND") ||
+    codigo.startsWith("STAND-")
+  ) {
     return "8";
   }
 
   if (texto.includes("TROP")) {
     return "9";
-  }
-
-  if (nombre.startsWith("STAND") || codigo.startsWith("STAND-")) {
-    return "";
   }
 
   const match = texto.match(/\bSEDE[-\s#]*(\d+)\b/);
@@ -558,7 +559,7 @@ export default function GestionSedesPage() {
       setMensaje(
         [
           `Configuracion Siigo guardada para ${configuradas.length} sedes.`,
-          "Bodega y stands se dejan sin resolucion propia; los stands usan ONLINE.",
+          "Los stands quedan con la misma resolucion ONLINE.",
           faltantes.length > 0
             ? `No encontre resolucion para: ${faltantes.join(", ")}.`
             : "",
