@@ -209,6 +209,109 @@ function detalleDocumentoSiigo(item: Record<string, unknown>) {
     .join(" · ");
 }
 
+function normalizarTexto(valor: unknown) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function codigoDocumentoParaSede(sede: SedeAdminItem) {
+  const nombre = normalizarTexto(sede.nombre);
+  const codigo = normalizarTexto(sede.codigo);
+  const texto = `${nombre} ${codigo}`;
+
+  if (nombre === "ONLINE" || codigo === "ONLINE") {
+    return "8";
+  }
+
+  if (texto.includes("TROP")) {
+    return "9";
+  }
+
+  if (nombre.startsWith("STAND") || codigo.startsWith("STAND-")) {
+    return "";
+  }
+
+  const match = texto.match(/\bSEDE[-\s#]*(\d+)\b/);
+  const numero = match ? Number(match[1]) : 0;
+
+  return numero >= 1 && numero <= 7 ? String(numero) : "";
+}
+
+function buscarIdPorCodigo(
+  items: Record<string, unknown>[],
+  codigo: string
+) {
+  const item = items.find(
+    (catalogo) => textoCatalogo(catalogo, ["code"]) === codigo
+  );
+
+  return item ? textoCatalogo(item, ["id"]) : "";
+}
+
+function buscarUsuarioAndres(items: Record<string, unknown>[]) {
+  const item = items.find((catalogo) =>
+    normalizarTexto(
+      [
+        textoCatalogo(catalogo, ["name"]),
+        textoCatalogo(catalogo, ["full_name"]),
+        textoCatalogo(catalogo, ["username"]),
+        textoCatalogo(catalogo, ["email"]),
+        nombreUsuarioSiigo(catalogo),
+      ].join(" ")
+    ).includes("ANDRES03BK@GMAIL.COM")
+  );
+
+  return item ? textoCatalogo(item, ["id"]) : "103";
+}
+
+function buscarPagoEfectivo(items: Record<string, unknown>[]) {
+  const item = items.find((catalogo) =>
+    normalizarTexto(textoCatalogo(catalogo, ["name"])).includes("EFECTIVO")
+  );
+
+  return item ? textoCatalogo(item, ["id"]) : "910";
+}
+
+function buscarProductoExento(items: Record<string, unknown>[]) {
+  const porCodigo = items.find(
+    (catalogo) => textoCatalogo(catalogo, ["code"]) === "002"
+  );
+  const porNombre = items.find((catalogo) =>
+    normalizarTexto(textoCatalogo(catalogo, ["name", "description"])).includes(
+      "EXENT"
+    )
+  );
+
+  return textoCatalogo(porCodigo || porNombre || {}, ["code"]) || "002";
+}
+
+function payloadSedePatch(sedeId: number, payload?: SedeEdicion) {
+  return {
+    sedeId,
+    nombre: payload?.nombre,
+    codigo: payload?.codigo,
+    usuario: payload?.usuario,
+    clave: payload?.clave,
+    soloInventarioPorCobrar: Boolean(payload?.soloInventarioPorCobrar),
+    siigoEnabled: Boolean(payload?.siigoEnabled),
+    siigoInvoiceDocumentId: payload?.siigoInvoiceDocumentId,
+    siigoSellerId: payload?.siigoSellerId,
+    siigoPaymentTypeId: payload?.siigoPaymentTypeId,
+    siigoItemCode: payload?.siigoItemCode,
+    siigoCostCenterId: payload?.siigoCostCenterId,
+    siigoDefaultCountryCode: payload?.siigoDefaultCountryCode,
+    siigoDefaultStateCode: payload?.siigoDefaultStateCode,
+    siigoDefaultCityCode: payload?.siigoDefaultCityCode,
+    siigoDefaultPostalCode: payload?.siigoDefaultPostalCode,
+    siigoStampSend: Boolean(payload?.siigoStampSend),
+    siigoMailSend: Boolean(payload?.siigoMailSend),
+    siigoPaymentDueDays: payload?.siigoPaymentDueDays,
+  };
+}
+
 export default function GestionSedesPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<SedeAdminItem[]>([]);
@@ -217,6 +320,7 @@ export default function GestionSedesPage() {
   const [guardandoNueva, setGuardandoNueva] = useState(false);
   const [procesandoId, setProcesandoId] = useState<number | null>(null);
   const [cargandoCatalogosSiigo, setCargandoCatalogosSiigo] = useState(false);
+  const [guardandoSiigoMasivo, setGuardandoSiigoMasivo] = useState(false);
   const [catalogosSiigo, setCatalogosSiigo] = useState<CatalogosSiigo | null>(
     null
   );
@@ -360,6 +464,119 @@ export default function GestionSedesPage() {
     }
   };
 
+  const crearEdicionesSiigoSugeridas = () => {
+    const vendedorId = buscarUsuarioAndres(usuariosSiigo);
+    const pagoId = buscarPagoEfectivo(pagosSiigo);
+    const productoCodigo = buscarProductoExento(productosSiigo);
+    const siguientes: Record<number, SedeEdicion> = { ...ediciones };
+    const configuradas: SedeAdminItem[] = [];
+    const faltantes: string[] = [];
+
+    for (const sede of sedes) {
+      const codigoDocumento = codigoDocumentoParaSede(sede);
+
+      if (!codigoDocumento) {
+        continue;
+      }
+
+      const documentId = buscarIdPorCodigo(documentosSiigo, codigoDocumento);
+
+      if (!documentId) {
+        faltantes.push(sede.nombre);
+        continue;
+      }
+
+      const base = siguientes[sede.id] || crearEdicionDesdeSede(sede);
+
+      siguientes[sede.id] = {
+        ...base,
+        siigoEnabled: true,
+        siigoInvoiceDocumentId: documentId,
+        siigoSellerId: vendedorId,
+        siigoPaymentTypeId: pagoId,
+        siigoItemCode: productoCodigo,
+        siigoDefaultCountryCode: "CO",
+        siigoDefaultStateCode: "73",
+        siigoDefaultCityCode: "73001",
+        siigoStampSend: false,
+        siigoMailSend: false,
+        siigoPaymentDueDays: "0",
+      };
+      configuradas.push(sede);
+    }
+
+    return { configuradas, faltantes, siguientes };
+  };
+
+  const aplicarSiigoSugerido = () => {
+    const { configuradas, faltantes, siguientes } = crearEdicionesSiigoSugeridas();
+
+    setEdiciones(siguientes);
+    setMensaje(
+      [
+        `Configuracion Siigo aplicada en pantalla para ${configuradas.length} sedes.`,
+        faltantes.length > 0
+          ? `No encontre resolucion para: ${faltantes.join(", ")}.`
+          : "",
+        "Revisa y guarda los cambios.",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+  };
+
+  const guardarSiigoSugerido = async () => {
+    try {
+      setGuardandoSiigoMasivo(true);
+      setMensaje("");
+
+      const { configuradas, faltantes, siguientes } = crearEdicionesSiigoSugeridas();
+
+      if (configuradas.length === 0) {
+        setMensaje("No encontre sedes para configurar con los catalogos actuales.");
+        return;
+      }
+
+      setEdiciones(siguientes);
+
+      for (const sede of configuradas) {
+        const res = await fetch("/api/sedes/admin", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payloadSedePatch(sede.id, siguientes[sede.id])),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || `No se pudo guardar ${sede.nombre}`);
+        }
+      }
+
+      await cargarTodo();
+      setMensaje(
+        [
+          `Configuracion Siigo guardada para ${configuradas.length} sedes.`,
+          "Bodega y stands se dejan sin resolucion propia; los stands usan ONLINE.",
+          faltantes.length > 0
+            ? `No encontre resolucion para: ${faltantes.join(", ")}.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+    } catch (error) {
+      setMensaje(
+        error instanceof Error
+          ? error.message
+          : "Error guardando la configuracion Siigo"
+      );
+    } finally {
+      setGuardandoSiigoMasivo(false);
+    }
+  };
+
   const guardarSede = async (sedeId: number) => {
     try {
       setProcesandoId(sedeId);
@@ -372,27 +589,7 @@ export default function GestionSedesPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          sedeId,
-          nombre: payload?.nombre,
-          codigo: payload?.codigo,
-          usuario: payload?.usuario,
-          clave: payload?.clave,
-          soloInventarioPorCobrar: Boolean(payload?.soloInventarioPorCobrar),
-          siigoEnabled: Boolean(payload?.siigoEnabled),
-          siigoInvoiceDocumentId: payload?.siigoInvoiceDocumentId,
-          siigoSellerId: payload?.siigoSellerId,
-          siigoPaymentTypeId: payload?.siigoPaymentTypeId,
-          siigoItemCode: payload?.siigoItemCode,
-          siigoCostCenterId: payload?.siigoCostCenterId,
-          siigoDefaultCountryCode: payload?.siigoDefaultCountryCode,
-          siigoDefaultStateCode: payload?.siigoDefaultStateCode,
-          siigoDefaultCityCode: payload?.siigoDefaultCityCode,
-          siigoDefaultPostalCode: payload?.siigoDefaultPostalCode,
-          siigoStampSend: Boolean(payload?.siigoStampSend),
-          siigoMailSend: Boolean(payload?.siigoMailSend),
-          siigoPaymentDueDays: payload?.siigoPaymentDueDays,
-        }),
+        body: JSON.stringify(payloadSedePatch(sedeId, payload)),
       });
 
       const data = await res.json();
@@ -502,14 +699,36 @@ export default function GestionSedesPage() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => void cargarCatalogosSiigo()}
-              disabled={cargandoCatalogosSiigo}
-              className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              {cargandoCatalogosSiigo ? "Consultando..." : "Consultar catalogos"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void cargarCatalogosSiigo()}
+                disabled={cargandoCatalogosSiigo}
+                className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {cargandoCatalogosSiigo ? "Consultando..." : "Consultar catalogos"}
+              </button>
+              {catalogosSiigo && (
+                <>
+                  <button
+                    type="button"
+                    onClick={aplicarSiigoSugerido}
+                    disabled={guardandoSiigoMasivo}
+                    className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Autocompletar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void guardarSiigoSugerido()}
+                    disabled={guardandoSiigoMasivo}
+                    className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {guardandoSiigoMasivo ? "Guardando..." : "Guardar Siigo sugerido"}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {catalogosSiigoError && (
@@ -963,7 +1182,7 @@ export default function GestionSedesPage() {
                               soloDigitos(event.target.value)
                             )
                           }
-                          placeholder="Ej: 11"
+                          placeholder="Ej: 73"
                           className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
                         />
                       </label>
@@ -979,7 +1198,7 @@ export default function GestionSedesPage() {
                               soloDigitos(event.target.value)
                             )
                           }
-                          placeholder="Ej: 11001"
+                          placeholder="Ej: 73001"
                           className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
                         />
                       </label>
