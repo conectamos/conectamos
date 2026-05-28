@@ -8,6 +8,7 @@ import {
   SiigoConfigurationError,
   createSiigoCreditNoteForRegistro,
   createSiigoInvoiceForRegistro,
+  sendSiigoInvoiceEmailForRegistro,
 } from "@/lib/siigo";
 import {
   esPerfilAdministrativo,
@@ -554,6 +555,33 @@ export async function POST(req: Request) {
       });
     }
 
+    if (modo === "REENVIAR_CORREO") {
+      if (!registro.siigoInvoiceId) {
+        return NextResponse.json(
+          { error: "Este registro no tiene una factura Siigo para reenviar correo" },
+          { status: 400 }
+        );
+      }
+
+      const registroParaSiigo = await aplicarResolucionOnlineParaStands(registro);
+      contextoSiigo = describirConfiguracionSiigo(registroParaSiigo.sede);
+      const mailResponse = await sendSiigoInvoiceEmailForRegistro(registroParaSiigo);
+      const actualizado = await prisma.registroVendedorVenta.update({
+        where: { id },
+        data: {
+          siigoInvoiceError: null,
+        },
+        select: REGISTRO_FACTURADOR_SELECT,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Correo reenviado desde Siigo",
+        registro: serializarRegistro(actualizado),
+        siigo: mailResponse,
+      });
+    }
+
     if (registro.siigoInvoiceId) {
       return NextResponse.json({
         ok: true,
@@ -607,7 +635,7 @@ export async function POST(req: Request) {
 
     console.error("ERROR POST FACTURADOR SIIGO:", error);
 
-    if (registroId) {
+    if (registroId && modoOperacion !== "REENVIAR_CORREO") {
       try {
         registroConError = await prisma.registroVendedorVenta.update({
           where: { id: registroId },

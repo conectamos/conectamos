@@ -391,6 +391,7 @@ export default function FacturadorRegistrosWorkspace({
   const [guardandoId, setGuardandoId] = useState<number | null>(null);
   const [emitiendoSiigoId, setEmitiendoSiigoId] = useState<number | null>(null);
   const [emitiendoNcId, setEmitiendoNcId] = useState<number | null>(null);
+  const [reenviandoCorreoId, setReenviandoCorreoId] = useState<number | null>(null);
   const [limpiandoSiigoId, setLimpiandoSiigoId] = useState<number | null>(null);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
   const [modoSoporteSiigo, setModoSoporteSiigo] = useState(false);
@@ -619,6 +620,58 @@ export default function FacturadorRegistrosWorkspace({
       setMensaje("Error enviando factura a Siigo");
     } finally {
       setEmitiendoSiigoId(null);
+    }
+  };
+
+  const reenviarCorreoSiigo = async (registroId: number) => {
+    const confirmar = window.confirm(
+      "Se reenviara el correo desde Siigo para esta factura ya emitida. Deseas continuar?"
+    );
+
+    if (!confirmar) {
+      return;
+    }
+
+    try {
+      setReenviandoCorreoId(registroId);
+      setMensaje("");
+
+      const res = await fetch("/api/facturador/siigo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          modo: "REENVIAR_CORREO",
+          id: registroId,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudo reenviar el correo desde Siigo");
+        return;
+      }
+
+      if (data.registro) {
+        const registroActualizado = data.registro as RegistroFacturacion;
+
+        setRegistros((current) =>
+          current.map((item) =>
+            item.id === registroActualizado.id ? registroActualizado : item
+          )
+        );
+      }
+
+      setMensajeTipo("success");
+      setMensaje(data.mensaje || "Correo reenviado desde Siigo");
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error reenviando correo desde Siigo");
+    } finally {
+      setReenviandoCorreoId(null);
     }
   };
 
@@ -1506,6 +1559,19 @@ export default function FacturadorRegistrosWorkspace({
                                         ? "Pendiente venta"
                                       : "Enviar a Siigo"}
                                 </button>
+
+                                {facturaSiigoEmitida && !notaCreditoSiigoEmitida && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void reenviarCorreoSiigo(registro.id)}
+                                    disabled={reenviandoCorreoId === registro.id}
+                                    className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                  >
+                                    {reenviandoCorreoId === registro.id
+                                      ? "Reenviando..."
+                                      : "Reenviar correo"}
+                                  </button>
+                                )}
 
                                 <button
                                   type="button"

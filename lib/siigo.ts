@@ -1533,6 +1533,21 @@ export async function createSiigoInvoiceForRegistro(
   return invoice;
 }
 
+export async function sendSiigoInvoiceEmailForRegistro(
+  registro: RegistroSiigoInput & { siigoInvoiceId?: string | null }
+) {
+  const config = getSiigoConfig(registro);
+  const invoiceId = String(registro.siigoInvoiceId || "").trim();
+
+  if (!invoiceId) {
+    throw new SiigoValidationError(
+      "El registro no tiene identificador de factura Siigo para reenviar correo"
+    );
+  }
+
+  return sendSiigoInvoiceByEmail(config, invoiceId, registro.correo);
+}
+
 export async function createSiigoCreditNoteForRegistro(
   registro: RegistroSiigoInput,
   invoiceId: string,
