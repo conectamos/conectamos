@@ -295,6 +295,16 @@ export async function PATCH(req: Request) {
         );
       }
 
+      if (registroConvertido) {
+        return NextResponse.json(
+          {
+            error:
+              "Este registro ya fue convertido en venta. Elimina la venta para generar la nota credito cuando corresponda.",
+          },
+          { status: 400 }
+        );
+      }
+
       await prisma.registroVendedorVenta.update({
         where: { id },
         data: {

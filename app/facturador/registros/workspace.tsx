@@ -676,9 +676,13 @@ export default function FacturadorRegistrosWorkspace({
     }
   };
 
-  const eliminarRegistro = async (registroId: number) => {
+  const eliminarRegistro = async (registro: RegistroFacturacion) => {
+    const registroId = registro.id;
+    const ventaId = registro.ventaIdRelacionada;
     const confirmar = window.confirm(
-      "Este registro se eliminara del panel operativo, pero quedara trazabilidad interna. Deseas continuar?"
+      ventaId
+        ? "Esta venta se eliminara y, si tiene factura emitida en Siigo, primero se generara la nota credito. Deseas continuar?"
+        : "Este registro se eliminara del panel operativo, pero quedara trazabilidad interna. Deseas continuar?"
     );
 
     if (!confirmar) {
@@ -689,16 +693,20 @@ export default function FacturadorRegistrosWorkspace({
       setEliminandoId(registroId);
       setMensaje("");
 
-      const res = await fetch("/api/facturador/registros", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          modo: "ELIMINAR",
-          id: registroId,
-        }),
-      });
+      const res = ventaId
+        ? await fetch(`/api/ventas?id=${ventaId}`, {
+            method: "DELETE",
+          })
+        : await fetch("/api/facturador/registros", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              modo: "ELIMINAR",
+              id: registroId,
+            }),
+          });
 
       const data = await res.json();
 
@@ -708,12 +716,16 @@ export default function FacturadorRegistrosWorkspace({
         return;
       }
 
-      setRegistros((current) => current.filter((item) => item.id !== registroId));
-      setFacturasDraft((current) => {
-        const next = { ...current };
-        delete next[registroId];
-        return next;
-      });
+      if (ventaId) {
+        await cargarRegistros();
+      } else {
+        setRegistros((current) => current.filter((item) => item.id !== registroId));
+        setFacturasDraft((current) => {
+          const next = { ...current };
+          delete next[registroId];
+          return next;
+        });
+      }
       setMensajeTipo("success");
       setMensaje(data.mensaje || "Registro eliminado correctamente");
     } catch {
@@ -1158,7 +1170,7 @@ export default function FacturadorRegistrosWorkspace({
                             {puedeEliminar && (
                               <button
                                 type="button"
-                                onClick={() => void eliminarRegistro(registro.id)}
+                                onClick={() => void eliminarRegistro(registro)}
                                 disabled={eliminandoId === registro.id}
                                 className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                               >
