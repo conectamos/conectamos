@@ -522,8 +522,33 @@ function normalizeIdentification(value: unknown) {
     .trim();
 }
 
+function getSiigoIdentificationData(tipoDocumento: unknown, value: unknown) {
+  const tipo = String(tipoDocumento || "").trim().toUpperCase();
+  const raw = String(value || "").trim();
+
+  if (tipo === "NIT") {
+    const nitWithDv = raw.match(/^(.+)-([0-9])$/);
+
+    if (nitWithDv) {
+      return {
+        identification: normalizeIdentification(nitWithDv[1]),
+        checkDigit: nitWithDv[2],
+      };
+    }
+  }
+
+  return {
+    identification: normalizeIdentification(value),
+    checkDigit: "",
+  };
+}
+
 function resolveSiigoIdType(tipoDocumento: unknown) {
   const tipo = String(tipoDocumento || "").trim().toUpperCase();
+
+  if (tipo === "NIT") {
+    return "31";
+  }
 
   if (tipo === "CE") {
     return "22";
@@ -534,6 +559,12 @@ function resolveSiigoIdType(tipoDocumento: unknown) {
   }
 
   return "13";
+}
+
+function resolveSiigoPersonType(tipoDocumento: unknown) {
+  return String(tipoDocumento || "").trim().toUpperCase() === "NIT"
+    ? "Company"
+    : "Person";
 }
 
 function splitPersonName(value: unknown) {
@@ -572,21 +603,33 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
-function buildCustomerPayload(
+function buildInvoiceCustomerPayload(
   registro: RegistroSiigoInput,
-  config: SiigoConfig,
-  existingCustomer: SiigoCustomer | null
+  customer: SiigoCustomer
 ): Record<string, unknown> {
-  const identification = normalizeIdentification(registro.documentoNumero);
+  return {
+    identification: getSiigoIdentificationData(
+      registro.tipoDocumento,
+      registro.documentoNumero
+    ).identification,
+    branch_office: customer.branch_office ?? 0,
+  };
+}
 
-  if (existingCustomer) {
-    return {
-      identification,
-      branch_office: existingCustomer.branch_office ?? 0,
-    };
-  }
-
+function buildCustomerCreatePayload(
+  registro: RegistroSiigoInput,
+  config: SiigoConfig
+): Record<string, unknown> {
+  const { identification, checkDigit } = getSiigoIdentificationData(
+    registro.tipoDocumento,
+    registro.documentoNumero
+  );
+  const personType = resolveSiigoPersonType(registro.tipoDocumento);
   const [firstName, lastName] = splitPersonName(registro.clienteNombre);
+  const companyName = String(registro.clienteNombre || "Cliente Conectamos")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
   const phone = normalizeIdentification(registro.whatsapp).slice(0, 10);
   const email = String(registro.correo || "").trim().toLowerCase();
   const address = [registro.direccion, registro.barrio]
@@ -596,11 +639,12 @@ function buildCustomerPayload(
 
   return {
     type: "Customer",
-    person_type: "Person",
+    person_type: personType,
     id_type: resolveSiigoIdType(registro.tipoDocumento),
     identification,
+    ...(checkDigit ? { check_digit: checkDigit } : {}),
     branch_office: 0,
-    name: [firstName, lastName],
+    name: personType === "Company" ? [companyName] : [firstName, lastName],
     active: true,
     vat_responsible: false,
     fiscal_responsibilities: [
@@ -634,8 +678,9 @@ function buildCustomerPayload(
       ? {
           contacts: [
             {
-              first_name: firstName,
-              last_name: lastName,
+              first_name:
+                personType === "Company" ? companyName.slice(0, 50) : firstName,
+              last_name: personType === "Company" ? "" : lastName,
               email,
               ...(phone
                 ? {
@@ -688,6 +733,63 @@ async function findCustomerByIdentification(
   );
 
   return response.results?.[0] ?? null;
+}
+
+async function createCustomer(
+  config: SiigoConfig,
+  registro: RegistroSiigoInput
+) {
+  const payload = buildCustomerCreatePayload(registro, config);
+
+  return siigoFetch<SiigoCustomer>(config, "/customers", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function ensureCustomerForInvoice(
+  config: SiigoConfig,
+  registro: RegistroSiigoInput
+) {
+  const identification = getSiigoIdentificationData(
+    registro.tipoDocumento,
+    registro.documentoNumero
+  ).identification;
+
+  if (!identification) {
+    throw new SiigoValidationError("El registro no tiene identificacion valida");
+  }
+
+  const existingCustomer = await findCustomerByIdentification(
+    config,
+    identification
+  );
+
+  if (existingCustomer) {
+    return existingCustomer;
+  }
+
+  try {
+    const customer = await createCustomer(config, registro);
+    return {
+      ...customer,
+      identification: customer.identification || identification,
+      branch_office: customer.branch_office ?? 0,
+    };
+  } catch (error) {
+    if (error instanceof SiigoApiError && [400, 409].includes(error.status)) {
+      const customer = await findCustomerByIdentification(
+        config,
+        identification
+      );
+
+      if (customer) {
+        return customer;
+      }
+    }
+
+    throw error;
+  }
 }
 
 function resolveItemCode(registro: RegistroSiigoInput, config: SiigoConfig) {
@@ -744,9 +846,12 @@ function buildInvoiceItems(
 function buildInvoicePayload(
   registro: RegistroSiigoInput,
   config: SiigoConfig,
-  existingCustomer: SiigoCustomer | null
+  customer: SiigoCustomer
 ) {
-  const identification = normalizeIdentification(registro.documentoNumero);
+  const identification = getSiigoIdentificationData(
+    registro.tipoDocumento,
+    registro.documentoNumero
+  ).identification;
   const total = calculateInvoiceTotal(registro);
   const today = new Date();
 
@@ -771,7 +876,7 @@ function buildInvoicePayload(
       id: config.documentId,
     },
     date: formatBogotaDate(today),
-    customer: buildCustomerPayload(registro, config, existingCustomer),
+    customer: buildInvoiceCustomerPayload(registro, customer),
     ...(config.costCenterId ? { cost_center: config.costCenterId } : {}),
     seller: config.sellerId,
     observations: buildObservations(registro),
@@ -845,12 +950,30 @@ export async function createSiigoInvoiceForRegistro(
   registro: RegistroSiigoInput
 ) {
   const config = getSiigoConfig(registro);
-  const identification = normalizeIdentification(registro.documentoNumero);
-  const existingCustomer = await findCustomerByIdentification(
-    config,
-    identification
-  );
-  const payload = buildInvoicePayload(registro, config, existingCustomer);
+  const identification = getSiigoIdentificationData(
+    registro.tipoDocumento,
+    registro.documentoNumero
+  ).identification;
+  const total = calculateInvoiceTotal(registro);
+
+  if (!identification) {
+    throw new SiigoValidationError("El registro no tiene identificacion valida");
+  }
+
+  if (total <= 0) {
+    throw new SiigoValidationError(
+      "No se pudo calcular un valor positivo para la factura"
+    );
+  }
+
+  if (total > config.maxInvoiceTotal) {
+    throw new SiigoValidationError(
+      `La venta supera el valor maximo permitido para facturar en Siigo (${config.maxInvoiceTotal.toLocaleString("es-CO")})`
+    );
+  }
+
+  const customer = await ensureCustomerForInvoice(config, registro);
+  const payload = buildInvoicePayload(registro, config, customer);
 
   return siigoFetch<SiigoInvoiceResponse>(
     config,
