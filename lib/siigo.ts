@@ -40,12 +40,21 @@ type SiigoCustomer = NonNullable<SiigoCustomerLookupResponse["results"]>[number]
 type SiigoInvoiceLookupResponse = {
   results?: Array<{
     id?: string;
+    prefix?: string;
     name?: string;
     number?: number;
+    date?: string;
     document?: {
       id?: number;
       name?: string;
       number?: number;
+    };
+    stamp?: {
+      status?: string;
+      cufe?: string;
+      cude?: string;
+      observations?: string;
+      errors?: unknown;
     };
   }>;
 };
@@ -60,14 +69,23 @@ type SiigoDocumentType = {
 
 export type SiigoInvoiceResponse = {
   id?: string;
+  prefix?: string;
   name?: string;
   number?: number;
+  date?: string;
   status?: string;
   public_url?: string;
   document?: {
     id?: number;
     name?: string;
     number?: number;
+  };
+  stamp?: {
+    status?: string;
+    cufe?: string;
+    cude?: string;
+    observations?: string;
+    errors?: unknown;
   };
   metadata?: {
     created?: string;
@@ -945,7 +963,126 @@ function isUuid(value: unknown) {
   );
 }
 
-async function findInvoiceIdByName(config: SiigoConfig, invoiceName?: string | null) {
+function normalizeInvoiceLabel(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+}
+
+function invoiceHasElectronicStamp(invoice: SiigoInvoiceResponse) {
+  const stamp = invoice.stamp;
+  const cufe = String(stamp?.cufe || "").trim();
+  const cude = String(stamp?.cude || "").trim();
+
+  return Boolean(cufe || cude);
+}
+
+function describeInvoiceForCreditNote(invoice: SiigoInvoiceResponse) {
+  return (
+    invoice.name ||
+    (invoice.prefix && invoice.number
+      ? `${invoice.prefix}-${invoice.number}`
+      : null) ||
+    (typeof invoice.number === "number" ? String(invoice.number) : null) ||
+    invoice.id ||
+    "factura Siigo"
+  );
+}
+
+function describeInvoiceStamp(invoice: SiigoInvoiceResponse) {
+  const stamp = invoice.stamp;
+
+  if (!stamp) {
+    return "sin informacion DIAN en la consulta de Siigo";
+  }
+
+  return [
+    stamp.status ? `estado DIAN ${stamp.status}` : "",
+    stamp.cufe ? "con CUFE" : "",
+    stamp.cude ? "con CUDE" : "",
+  ]
+    .filter(Boolean)
+    .join(", ") || "sin CUFE/CUDE";
+}
+
+function assertInvoiceReadyForCreditNote(invoice: SiigoInvoiceResponse) {
+  const stamp = invoice.stamp;
+
+  if (!stamp) {
+    return;
+  }
+
+  if (invoiceHasElectronicStamp(invoice)) {
+    return;
+  }
+
+  const status = String(stamp.status || "").trim();
+  const detail = status ? ` Estado DIAN actual: ${status}.` : "";
+
+  throw new SiigoValidationError(
+    `Siigo encontro la factura ${describeInvoiceForCreditNote(invoice)}, pero aun no tiene CUFE/CUDE de DIAN.${detail} Primero envia esa factura electronicamente en Siigo y luego vuelve a eliminar la venta para generar la nota credito.`
+  );
+}
+
+function isInvalidDocumentSiigoError(error: unknown): error is SiigoApiError {
+  if (!(error instanceof SiigoApiError)) {
+    return false;
+  }
+
+  const details = error.details;
+
+  if (!details || typeof details !== "object") {
+    return false;
+  }
+
+  const errors = (details as Record<string, unknown>).Errors;
+
+  return (
+    Array.isArray(errors) &&
+    errors.some((item) => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+
+      return (
+        String((item as Record<string, unknown>).Code || "").trim() ===
+        "invalid_document"
+      );
+    })
+  );
+}
+
+async function fetchInvoiceById(
+  config: SiigoConfig,
+  invoiceId: string
+): Promise<SiigoInvoiceResponse | null> {
+  if (!isUuid(invoiceId)) {
+    return null;
+  }
+
+  try {
+    const invoice = await siigoFetch<SiigoInvoiceResponse>(
+      config,
+      `/invoices/${encodeURIComponent(invoiceId)}`,
+      {
+        method: "GET",
+      }
+    );
+
+    return invoice?.id ? invoice : null;
+  } catch (error) {
+    if (error instanceof SiigoApiError && [400, 404].includes(error.status)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+async function findInvoiceByName(
+  config: SiigoConfig,
+  invoiceName?: string | null
+): Promise<SiigoInvoiceResponse | null> {
   const name = String(invoiceName || "").trim();
 
   if (!name) {
@@ -966,26 +1103,39 @@ async function findInvoiceIdByName(config: SiigoConfig, invoiceName?: string | n
   );
   const invoices = response.results || [];
   const exactMatch = invoices.find(
-    (invoice) => String(invoice.name || "").trim() === name
+    (invoice) => normalizeInvoiceLabel(invoice.name) === normalizeInvoiceLabel(name)
   );
   const invoice = exactMatch || invoices[0];
 
-  return invoice?.id && isUuid(invoice.id) ? invoice.id : null;
+  if (!invoice?.id || !isUuid(invoice.id)) {
+    return null;
+  }
+
+  return (await fetchInvoiceById(config, invoice.id)) || invoice;
 }
 
-async function resolveInvoiceIdForCreditNote(
+async function resolveInvoiceForCreditNote(
   config: SiigoConfig,
   invoiceId: string,
   invoiceName?: string | null
 ) {
-  const invoiceIdFromName = await findInvoiceIdByName(config, invoiceName);
+  const invoiceFromId = await fetchInvoiceById(config, invoiceId);
 
-  if (invoiceIdFromName) {
-    return invoiceIdFromName;
+  if (invoiceFromId) {
+    return invoiceFromId;
+  }
+
+  const invoiceFromName = await findInvoiceByName(config, invoiceName);
+
+  if (invoiceFromName) {
+    return invoiceFromName;
   }
 
   if (isUuid(invoiceId)) {
-    return invoiceId;
+    return {
+      id: invoiceId,
+      name: invoiceName || undefined,
+    } satisfies SiigoInvoiceResponse;
   }
 
   throw new SiigoValidationError(
@@ -1163,7 +1313,8 @@ function buildCreditNotePayload(
   registro: RegistroSiigoInput,
   config: SiigoConfig,
   invoiceId: string,
-  creditNoteDocumentId: number
+  creditNoteDocumentId: number,
+  shouldSendStamp: boolean
 ) {
   const total = calculateInvoiceTotal(registro);
   const today = new Date();
@@ -1204,7 +1355,7 @@ function buildCreditNotePayload(
         due_date: formatBogotaDate(today),
       },
     ],
-    ...(config.stampSend ? { stamp: { send: true } } : {}),
+    ...(shouldSendStamp ? { stamp: { send: true } } : {}),
     ...(config.mailSend ? { mail: { send: true } } : {}),
   };
 }
@@ -1321,31 +1472,48 @@ export async function createSiigoCreditNoteForRegistro(
   invoiceName?: string | null
 ) {
   const config = getSiigoConfig(registro);
-  const resolvedInvoiceId = await resolveInvoiceIdForCreditNote(
+  const invoice = await resolveInvoiceForCreditNote(
     config,
     invoiceId,
     invoiceName
   );
+  const resolvedInvoiceId = String(invoice.id || "").trim();
+
+  assertInvoiceReadyForCreditNote(invoice);
+
   const creditNoteDocumentId = await resolveCreditNoteDocumentId(config);
   const payload = buildCreditNotePayload(
     registro,
     config,
     resolvedInvoiceId,
-    creditNoteDocumentId
+    creditNoteDocumentId,
+    config.stampSend || invoiceHasElectronicStamp(invoice)
   );
   const idempotencyKey = `CONECTAMOSNC${registro.id}N1`.slice(0, 30);
 
-  return siigoFetch<SiigoCreditNoteResponse>(
-    config,
-    "/credit-notes",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    {
-      idempotencyKey,
+  try {
+    return await siigoFetch<SiigoCreditNoteResponse>(
+      config,
+      "/credit-notes",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      {
+        idempotencyKey,
+      }
+    );
+  } catch (error) {
+    if (isInvalidDocumentSiigoError(error)) {
+      throw new SiigoApiError(
+        `${getSiigoErrorMessage(error)}. Factura enviada a la nota credito: ${describeInvoiceForCreditNote(invoice)} / invoice.id ${resolvedInvoiceId} / ${describeInvoiceStamp(invoice)}. Nota credito document.id ${creditNoteDocumentId}. Verifica en Siigo que la factura ya este enviada/aceptada por la DIAN y que el tipo de Nota Credito tenga la misma marcacion electronica que la factura.`,
+        error.status,
+        error.details
+      );
     }
-  );
+
+    throw error;
+  }
 }
 
 export async function getSiigoSetupCatalogs() {

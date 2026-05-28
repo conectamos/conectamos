@@ -469,6 +469,7 @@ export async function PATCH(req: Request) {
             numeroFactura: numeroFactura ?? null,
             estadoFacturacion,
             siigoInvoiceError: numeroFactura ? null : undefined,
+            siigoCreditNoteError: numeroFactura ? null : undefined,
           },
           select: {
             id: true,
@@ -597,6 +598,7 @@ export async function PATCH(req: Request) {
           numeroFactura: numeroFactura ?? null,
           estadoFacturacion,
           siigoInvoiceError: numeroFactura ? null : undefined,
+          siigoCreditNoteError: numeroFactura ? null : undefined,
           financierasDetalle: financierasActualizadas,
           plataformaCredito: String(primeraFinanciera?.plataformaCredito ?? ""),
           creditoAutorizado: String(primeraFinanciera?.creditoAutorizado ?? "0"),

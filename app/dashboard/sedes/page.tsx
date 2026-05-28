@@ -503,7 +503,7 @@ export default function GestionSedesPage() {
         siigoDefaultCountryCode: "CO",
         siigoDefaultStateCode: "73",
         siigoDefaultCityCode: "73001",
-        siigoStampSend: false,
+        siigoStampSend: true,
         siigoMailSend: false,
         siigoPaymentDueDays: "0",
       };
