@@ -101,6 +101,19 @@ const ESTADO_OPTIONS = [
 
 const SIIGO_MAX_FACTURA_TOTAL = 2300000;
 
+type FiltroRegistro = "TODOS" | "PENDIENTES" | "FACTURADOS" | "NC" | "SUPERA_TOPE";
+
+const FILTROS_REGISTROS: Array<{
+  value: FiltroRegistro;
+  label: string;
+}> = [
+  { value: "TODOS", label: "Todos" },
+  { value: "PENDIENTES", label: "Pendientes" },
+  { value: "FACTURADOS", label: "Facturados" },
+  { value: "NC", label: "NC" },
+  { value: "SUPERA_TOPE", label: "Supera tope" },
+];
+
 function formatDate(value: string) {
   try {
     return new Date(value).toLocaleString("es-CO", {
@@ -267,6 +280,29 @@ function totalFacturableSiigo(registro: RegistroFacturacion) {
   );
 }
 
+function filtroRegistro(registro: RegistroFacturacion): FiltroRegistro {
+  if (
+    String(registro.estadoFacturacion || "").trim().toUpperCase() ===
+      "NOTA_CREDITO" ||
+    registro.siigoCreditNoteId
+  ) {
+    return "NC";
+  }
+
+  if (
+    resolveEstadoBadge(registro.estadoFacturacion, registro.numeroFactura)
+      .label === "Facturado"
+  ) {
+    return "FACTURADOS";
+  }
+
+  if (totalFacturableSiigo(registro) > SIIGO_MAX_FACTURA_TOTAL) {
+    return "SUPERA_TOPE";
+  }
+
+  return "PENDIENTES";
+}
+
 function resolveEstadoBadge(estadoFacturacion: string | null, numeroFactura: string | null) {
   const estado = String(estadoFacturacion || "").trim().toUpperCase();
 
@@ -358,6 +394,7 @@ export default function FacturadorRegistrosWorkspace({
   const [limpiandoSiigoId, setLimpiandoSiigoId] = useState<number | null>(null);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
   const [modoSoporteSiigo, setModoSoporteSiigo] = useState(false);
+  const [filtroActivo, setFiltroActivo] = useState<FiltroRegistro>("TODOS");
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
   const [editando, setEditando] = useState<EditDraft | null>(null);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
@@ -414,36 +451,37 @@ export default function FacturadorRegistrosWorkspace({
     void cargarRegistros();
   }, []);
 
-  const pendientes = useMemo(
-    () =>
-      registros.filter(
-        (item) =>
-          resolveEstadoBadge(item.estadoFacturacion, item.numeroFactura).label ===
-          "Pendiente"
-      ).length,
-    [registros]
-  );
+  const conteosFiltro = useMemo(() => {
+    const conteos: Record<FiltroRegistro, number> = {
+      TODOS: registros.length,
+      PENDIENTES: 0,
+      FACTURADOS: 0,
+      NC: 0,
+      SUPERA_TOPE: 0,
+    };
 
-  const facturados = useMemo(
-    () =>
-      registros.filter(
-        (item) =>
-          resolveEstadoBadge(item.estadoFacturacion, item.numeroFactura).label ===
-          "Facturado"
-      ).length,
-    [registros]
-  );
+    for (const registro of registros) {
+      conteos[filtroRegistro(registro)] += 1;
+    }
+
+    return conteos;
+  }, [registros]);
 
   const registrosFiltrados = useMemo(() => {
     const criterio = busqueda.trim().toLowerCase();
 
+    const registrosPorEstado =
+      filtroActivo === "TODOS"
+        ? registros
+        : registros.filter((registro) => filtroRegistro(registro) === filtroActivo);
+
     if (!criterio) {
-      return registros;
+      return registrosPorEstado;
     }
 
     const digits = criterio.replace(/\D/g, "");
 
-    return registros.filter((registro) => {
+    return registrosPorEstado.filter((registro) => {
       const documento = String(registro.documentoNumero || "").replace(/\D/g, "");
       const imei = String(registro.serialImei || "").replace(/\D/g, "");
       const textoBase = [
@@ -466,7 +504,7 @@ export default function FacturadorRegistrosWorkspace({
           (documento.includes(digits) || imei.includes(digits)))
       );
     });
-  }, [busqueda, registros]);
+  }, [busqueda, filtroActivo, registros]);
 
   const guardarFactura = async (registroId: number) => {
     const numeroFactura = String(facturasDraft[registroId] || "").trim();
@@ -922,7 +960,7 @@ export default function FacturadorRegistrosWorkspace({
           </div>
         )}
 
-        <section className="mt-6 grid gap-4 md:grid-cols-3">
+        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
               Perfil
@@ -940,10 +978,10 @@ export default function FacturadorRegistrosWorkspace({
               Pendientes
             </p>
             <p className="mt-2 text-2xl font-black tracking-tight text-amber-600">
-              {pendientes}
+              {conteosFiltro.PENDIENTES}
             </p>
             <p className="mt-2 text-sm text-slate-500">
-              Registros globales sin numero de factura.
+              Sin factura y dentro del tope.
             </p>
           </div>
 
@@ -952,10 +990,34 @@ export default function FacturadorRegistrosWorkspace({
               Facturados
             </p>
             <p className="mt-2 text-2xl font-black tracking-tight text-emerald-600">
-              {facturados}
+              {conteosFiltro.FACTURADOS}
             </p>
             <p className="mt-2 text-sm text-slate-500">
               Filas globales en verde con numero de factura.
+            </p>
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Notas credito
+            </p>
+            <p className="mt-2 text-2xl font-black tracking-tight text-amber-700">
+              {conteosFiltro.NC}
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Facturas anuladas por NC.
+            </p>
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Supera tope
+            </p>
+            <p className="mt-2 text-2xl font-black tracking-tight text-rose-600">
+              {conteosFiltro.SUPERA_TOPE}
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              No se pueden facturar por Siigo.
             </p>
           </div>
         </section>
@@ -1005,8 +1067,29 @@ export default function FacturadorRegistrosWorkspace({
           <p className="mt-4 text-sm text-slate-500">
             {busqueda.trim()
               ? `${registrosFiltrados.length} registro(s) encontrados para la busqueda actual.`
-              : `${registros.length} registro(s) activos disponibles para gestion.`}
+              : `${registrosFiltrados.length} registro(s) visibles en el filtro actual.`}
           </p>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            {FILTROS_REGISTROS.map((filtro) => {
+              const activo = filtroActivo === filtro.value;
+
+              return (
+                <button
+                  key={filtro.value}
+                  type="button"
+                  onClick={() => setFiltroActivo(filtro.value)}
+                  className={`rounded-2xl border px-4 py-2 text-sm font-semibold transition ${
+                    activo
+                      ? "border-slate-950 bg-slate-950 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-950"
+                  }`}
+                >
+                  {filtro.label} ({conteosFiltro[filtro.value]})
+                </button>
+              );
+            })}
+          </div>
 
           <div className="mt-6 overflow-x-auto">
             <table className="min-w-[2700px] border-separate border-spacing-y-3">
