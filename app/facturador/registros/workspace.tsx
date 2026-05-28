@@ -1066,11 +1066,6 @@ export default function FacturadorRegistrosWorkspace({
                     const facturaSiigoEmitida = Boolean(registro.siigoInvoiceId);
                     const facturaManualRegistrada =
                       Boolean(registro.numeroFactura) && !facturaSiigoEmitida;
-                    const avisoCorreoSiigo =
-                      facturaSiigoEmitida &&
-                      String(registro.siigoInvoiceError || "")
-                        .toLowerCase()
-                        .includes("correo");
                     const notaCreditoSiigoEmitida = Boolean(
                       registro.siigoCreditNoteId
                     );
@@ -1235,11 +1230,6 @@ export default function FacturadorRegistrosWorkspace({
                                 >
                                   Ver documento
                                 </Link>
-                              )}
-                              {avisoCorreoSiigo && (
-                                <div className="border-t border-amber-100 pt-2 text-xs leading-5 text-amber-700">
-                                  {registro.siigoInvoiceError}
-                                </div>
                               )}
                               {notaCreditoSiigoEmitida && (
                                 <div className="border-t border-emerald-100 pt-2">

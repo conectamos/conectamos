@@ -1523,10 +1523,10 @@ export async function createSiigoInvoiceForRegistro(
     try {
       await sendSiigoInvoiceByEmail(config, invoice.id, registro.correo);
     } catch (error) {
-      return {
-        ...invoice,
-        mail_error: getSiigoErrorMessage(error),
-      };
+      console.warn(
+        "WARN SIIGO MAIL SEND:",
+        getSiigoErrorMessage(error)
+      );
     }
   }
 
