@@ -261,6 +261,7 @@ export async function PATCH(req: Request) {
       modo !== "EDITAR" &&
       modo !== "ELIMINAR" &&
       modo !== "LIBERAR_SIIGO" &&
+      modo !== "QUITAR_FACTURA_BORRADA" &&
       !numeroFactura
     ) {
       return NextResponse.json(
@@ -334,7 +335,7 @@ export async function PATCH(req: Request) {
       });
     }
 
-    if (modo === "LIBERAR_SIIGO") {
+    if (modo === "LIBERAR_SIIGO" || modo === "QUITAR_FACTURA_BORRADA") {
       const puedeLiberar =
         esRolAdministrativo(access.session.rolNombre) ||
         esPerfilAdministrativo(access.session.perfilTipo);
@@ -437,7 +438,7 @@ export async function PATCH(req: Request) {
 
       return NextResponse.json({
         ok: true,
-        mensaje: "Factura Siigo liberada en Conectamos",
+        mensaje: "Factura borrada quitada de Conectamos",
         registro: serializarRegistro(actualizado),
       });
     }

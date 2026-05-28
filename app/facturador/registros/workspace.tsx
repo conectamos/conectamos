@@ -355,6 +355,7 @@ export default function FacturadorRegistrosWorkspace({
   const [guardandoId, setGuardandoId] = useState<number | null>(null);
   const [emitiendoSiigoId, setEmitiendoSiigoId] = useState<number | null>(null);
   const [emitiendoNcId, setEmitiendoNcId] = useState<number | null>(null);
+  const [limpiandoSiigoId, setLimpiandoSiigoId] = useState<number | null>(null);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
   const [editando, setEditando] = useState<EditDraft | null>(null);
@@ -641,6 +642,59 @@ export default function FacturadorRegistrosWorkspace({
       setMensaje("Error emitiendo nota credito en Siigo");
     } finally {
       setEmitiendoNcId(null);
+    }
+  };
+
+  const quitarFacturaBorradaSiigo = async (registroId: number) => {
+    const confirmar = window.confirm(
+      "Usa esto solo si ya borraste esa factura/borrador en Siigo. Conectamos quitara la marca local de factura, sin tocar venta, inventario ni caja. Deseas continuar?"
+    );
+
+    if (!confirmar) {
+      return;
+    }
+
+    try {
+      setLimpiandoSiigoId(registroId);
+      setMensaje("");
+
+      const res = await fetch("/api/facturador/registros", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          modo: "QUITAR_FACTURA_BORRADA",
+          id: registroId,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudo quitar la factura borrada");
+        return;
+      }
+
+      const registroActualizado = data.registro as RegistroFacturacion;
+
+      setRegistros((current) =>
+        current.map((item) =>
+          item.id === registroActualizado.id ? registroActualizado : item
+        )
+      );
+      setFacturasDraft((current) => ({
+        ...current,
+        [registroActualizado.id]: registroActualizado.numeroFactura ?? "",
+      }));
+      setMensajeTipo("success");
+      setMensaje(data.mensaje || "Factura borrada quitada de Conectamos");
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error quitando la factura borrada");
+    } finally {
+      setLimpiandoSiigoId(null);
     }
   };
 
@@ -1012,6 +1066,8 @@ export default function FacturadorRegistrosWorkspace({
                       (esAdmin || !convertido) && !registroCerradoConNotaCredito;
                     const puedeEmitirNotaCreditoManual =
                       esAdmin && facturaSiigoEmitida && !notaCreditoSiigoEmitida;
+                    const puedeQuitarFacturaBorrada =
+                      esAdmin && facturaSiigoEmitida && !notaCreditoSiigoEmitida;
                     const puedeEmitirSiigo =
                       convertido &&
                       !facturaSiigoEmitida &&
@@ -1299,6 +1355,19 @@ export default function FacturadorRegistrosWorkspace({
                                 {emitiendoNcId === registro.id
                                   ? "Emitiendo NC..."
                                   : "Emitir NC"}
+                              </button>
+                            )}
+
+                            {puedeQuitarFacturaBorrada && (
+                              <button
+                                type="button"
+                                onClick={() => void quitarFacturaBorradaSiigo(registro.id)}
+                                disabled={limpiandoSiigoId === registro.id}
+                                className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                              >
+                                {limpiandoSiigoId === registro.id
+                                  ? "Quitando..."
+                                  : "Quitar factura borrada"}
                               </button>
                             )}
 
