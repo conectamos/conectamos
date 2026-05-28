@@ -101,7 +101,13 @@ const ESTADO_OPTIONS = [
 
 const SIIGO_MAX_FACTURA_TOTAL = 2300000;
 
-type FiltroRegistro = "TODOS" | "PENDIENTES" | "FACTURADOS" | "NC" | "SUPERA_TOPE";
+type FiltroRegistro =
+  | "TODOS"
+  | "PENDIENTES"
+  | "FACTURADOS"
+  | "NC"
+  | "ERRORES_SIIGO"
+  | "SUPERA_TOPE";
 
 const FILTROS_REGISTROS: Array<{
   value: FiltroRegistro;
@@ -111,6 +117,7 @@ const FILTROS_REGISTROS: Array<{
   { value: "PENDIENTES", label: "Pendientes" },
   { value: "FACTURADOS", label: "Facturados" },
   { value: "NC", label: "NC" },
+  { value: "ERRORES_SIIGO", label: "Errores Siigo" },
   { value: "SUPERA_TOPE", label: "Supera tope" },
 ];
 
@@ -300,6 +307,10 @@ function filtroRegistro(registro: RegistroFacturacion): FiltroRegistro {
     return "SUPERA_TOPE";
   }
 
+  if (registro.siigoInvoiceError || registro.siigoCreditNoteError) {
+    return "ERRORES_SIIGO";
+  }
+
   return "PENDIENTES";
 }
 
@@ -459,6 +470,7 @@ export default function FacturadorRegistrosWorkspace({
       PENDIENTES: 0,
       FACTURADOS: 0,
       NC: 0,
+      ERRORES_SIIGO: 0,
       SUPERA_TOPE: 0,
     };
 
@@ -1127,6 +1139,18 @@ export default function FacturadorRegistrosWorkspace({
             </p>
             <p className="mt-2 text-sm text-slate-500">
               Facturas anuladas por NC.
+            </p>
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Errores Siigo
+            </p>
+            <p className="mt-2 text-2xl font-black tracking-tight text-red-600">
+              {conteosFiltro.ERRORES_SIIGO}
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Requieren correccion antes de facturar.
             </p>
           </div>
 
