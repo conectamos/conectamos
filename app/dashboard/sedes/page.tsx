@@ -175,6 +175,40 @@ function nombreUsuarioSiigo(item: Record<string, unknown>) {
     .join(" ");
 }
 
+function valorDetalleCatalogo(
+  item: Record<string, unknown>,
+  label: string,
+  keys: string[]
+) {
+  const value = textoCatalogo(item, keys);
+
+  return value ? `${label}: ${value}` : "";
+}
+
+function tituloDocumentoSiigo(item: Record<string, unknown>) {
+  const id = textoCatalogo(item, ["id"]);
+  const prefix = textoCatalogo(item, ["prefix"]);
+  const code = textoCatalogo(item, ["code"]);
+  const name = textoCatalogo(item, ["name"]);
+  const mainLabel = prefix || code || name;
+
+  if (mainLabel && name && mainLabel !== name) {
+    return `${id} - ${mainLabel} (${name})`;
+  }
+
+  return [id, mainLabel].filter(Boolean).join(" - ");
+}
+
+function detalleDocumentoSiigo(item: Record<string, unknown>) {
+  return [
+    valorDetalleCatalogo(item, "Codigo", ["code"]),
+    valorDetalleCatalogo(item, "Consecutivo", ["consecutive"]),
+    valorDetalleCatalogo(item, "Descripcion", ["description"]),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export default function GestionSedesPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<SedeAdminItem[]>([]);
@@ -492,9 +526,16 @@ export default function GestionSedesPage() {
                 </p>
                 <div className="mt-3 space-y-2 text-sm">
                   {documentosSiigo.slice(0, 12).map((item, index) => (
-                    <p key={`siigo-doc-${index}`} className="font-semibold text-slate-800">
-                      {textoCatalogo(item, ["id"])} - {textoCatalogo(item, ["name"])}
-                    </p>
+                    <div key={`siigo-doc-${index}`}>
+                      <p className="font-semibold text-slate-800">
+                        {tituloDocumentoSiigo(item)}
+                      </p>
+                      {detalleDocumentoSiigo(item) && (
+                        <p className="mt-0.5 text-xs font-medium text-slate-500">
+                          {detalleDocumentoSiigo(item)}
+                        </p>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
