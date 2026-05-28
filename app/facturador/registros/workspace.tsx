@@ -503,6 +503,16 @@ export default function FacturadorRegistrosWorkspace({
       const data = await res.json();
 
       if (!res.ok) {
+        if (data.registro) {
+          const registroConError = data.registro as RegistroFacturacion;
+
+          setRegistros((current) =>
+            current.map((item) =>
+              item.id === registroId ? registroConError : item
+            )
+          );
+        }
+
         setMensajeTipo("error");
         setMensaje(data.error || "No se pudo emitir la factura en Siigo");
         return;

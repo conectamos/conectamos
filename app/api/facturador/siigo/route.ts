@@ -270,16 +270,18 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     const message = getSiigoErrorMessage(error);
+    let registroConError: unknown = null;
 
     console.error("ERROR POST FACTURADOR SIIGO:", error);
 
     if (registroId) {
       try {
-        await prisma.registroVendedorVenta.update({
+        registroConError = await prisma.registroVendedorVenta.update({
           where: { id: registroId },
           data: {
             siigoInvoiceError: message.slice(0, 2000),
           },
+          select: REGISTRO_FACTURADOR_SELECT,
         });
       } catch (updateError) {
         console.error("ERROR GUARDANDO ERROR SIIGO:", updateError);
@@ -287,7 +289,14 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { error: message },
+      {
+        error: message,
+        registro: registroConError
+          ? serializarRegistro(
+              registroConError as Parameters<typeof serializarRegistro>[0]
+            )
+          : null,
+      },
       { status: getSiigoErrorStatus(error) }
     );
   }
