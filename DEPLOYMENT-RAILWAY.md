@@ -41,6 +41,7 @@ Opcionales para Siigo:
 - `SIIGO_DEFAULT_POSTAL_CODE`
 - `SIIGO_EXEMPT_ITEM_LIMIT`
 - `SIIGO_MAX_INVOICE_TOTAL`
+- `SIIGO_SEND_DOCUMENT_NUMBER`
 
 La resolucion/documento, vendedor, forma de pago, ciudad y opciones de envio se configuran por sede en `Dashboard > Sedes`. Si faltan las variables de credenciales o la sede no esta configurada, la app no envia nada a Siigo y muestra el dato pendiente en el modulo de facturacion.
 
@@ -58,6 +59,7 @@ La resolucion/documento, vendedor, forma de pago, ciudad y opciones de envio se 
 - `SIIGO_DEFAULT_POSTAL_CODE`: codigo postal de respaldo.
 - `SIIGO_EXEMPT_ITEM_LIMIT`: tope por linea exenta. Por defecto `1150000`.
 - `SIIGO_MAX_INVOICE_TOTAL`: valor maximo que se permite facturar en Siigo. Por defecto `2300000`.
+- `SIIGO_SEND_DOCUMENT_NUMBER`: por defecto no se usa. Solo ponla en `true` si contabilidad confirma que esa resolucion exige enviar manualmente el consecutivo; normalmente Siigo debe asignar el numero.
 
 ### Parametros Siigo por sede
 

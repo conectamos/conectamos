@@ -368,7 +368,6 @@ export async function POST(req: Request) {
           eliminadoEn: null,
           numeroFactura: null,
           siigoInvoiceId: null,
-          siigoInvoiceError: null,
           siigoCreditNoteId: null,
           OR: [
             {
