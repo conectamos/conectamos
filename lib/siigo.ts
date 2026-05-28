@@ -1381,17 +1381,28 @@ async function sendSiigoInvoiceByEmail(
     );
   }
 
-  return siigoFetch<SiigoSendMailResponse>(
-    config,
-    `/invoices/${encodeURIComponent(invoiceId)}/mail`,
-    {
+  const path = `/invoices/${encodeURIComponent(invoiceId)}/mail`;
+  const body = JSON.stringify({
+    mail_to: mailTo,
+  });
+
+  try {
+    return await siigoFetch<SiigoSendMailResponse>(config, path, {
       method: "POST",
-      body: JSON.stringify({
-        guid: invoiceId,
-        mail_to: mailTo,
-      }),
+      body,
+    });
+  } catch (error) {
+    if (!isInvalidDocumentSiigoError(error)) {
+      throw error;
     }
-  );
+
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    return siigoFetch<SiigoSendMailResponse>(config, path, {
+      method: "POST",
+      body,
+    });
+  }
 }
 
 export function getSiigoInvoiceLabel(invoice: SiigoInvoiceResponse) {
