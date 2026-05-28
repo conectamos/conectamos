@@ -74,6 +74,7 @@ export type SiigoInvoiceResponse = {
   number?: number;
   date?: string;
   status?: string;
+  mail_error?: string;
   public_url?: string;
   document?: {
     id?: number;
@@ -94,6 +95,12 @@ export type SiigoInvoiceResponse = {
 };
 
 export type SiigoCreditNoteResponse = SiigoInvoiceResponse;
+
+type SiigoSendMailResponse = {
+  status?: string;
+  observations?: string;
+  [key: string]: unknown;
+};
 
 export type RegistroSiigoInput = {
   id: number;
@@ -1361,6 +1368,32 @@ function buildCreditNotePayload(
   };
 }
 
+async function sendSiigoInvoiceByEmail(
+  config: SiigoConfig,
+  invoiceId: string,
+  email?: string | null
+) {
+  const mailTo = String(email || "").trim();
+
+  if (!mailTo || !mailTo.includes("@")) {
+    throw new SiigoValidationError(
+      "La factura fue creada, pero el cliente no tiene un correo valido para enviar desde Siigo"
+    );
+  }
+
+  return siigoFetch<SiigoSendMailResponse>(
+    config,
+    `/invoices/${encodeURIComponent(invoiceId)}/mail`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        guid: invoiceId,
+        mail_to: mailTo,
+      }),
+    }
+  );
+}
+
 export function getSiigoInvoiceLabel(invoice: SiigoInvoiceResponse) {
   return (
     invoice.name ||
@@ -1455,7 +1488,7 @@ export async function createSiigoInvoiceForRegistro(
     30
   );
 
-  return siigoFetch<SiigoInvoiceResponse>(
+  const invoice = await siigoFetch<SiigoInvoiceResponse>(
     config,
     "/invoices",
     {
@@ -1466,6 +1499,19 @@ export async function createSiigoInvoiceForRegistro(
       idempotencyKey,
     }
   );
+
+  if (config.mailSend && invoice.id) {
+    try {
+      await sendSiigoInvoiceByEmail(config, invoice.id, registro.correo);
+    } catch (error) {
+      return {
+        ...invoice,
+        mail_error: getSiigoErrorMessage(error),
+      };
+    }
+  }
+
+  return invoice;
 }
 
 export async function createSiigoCreditNoteForRegistro(

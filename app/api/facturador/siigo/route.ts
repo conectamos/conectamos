@@ -301,7 +301,9 @@ export async function POST(req: Request) {
         siigoInvoiceName: invoiceLabel,
         siigoInvoiceStatus: invoice.status ?? null,
         siigoInvoiceUrl: invoice.public_url ?? null,
-        siigoInvoiceError: null,
+        siigoInvoiceError: invoice.mail_error
+          ? `Factura emitida en Siigo, pero no se pudo enviar correo: ${invoice.mail_error}`
+          : null,
         siigoInvoiceCreatedAt: new Date(),
       },
       select: REGISTRO_FACTURADOR_SELECT,
@@ -309,7 +311,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      mensaje: "Factura emitida correctamente en Siigo",
+      mensaje: invoice.mail_error
+        ? "Factura emitida en Siigo, pero no se pudo enviar el correo"
+        : "Factura emitida correctamente en Siigo",
       registro: serializarRegistro(actualizado),
       siigo: {
         id: invoice.id,

@@ -504,7 +504,7 @@ export default function GestionSedesPage() {
         siigoDefaultStateCode: "73",
         siigoDefaultCityCode: "73001",
         siigoStampSend: true,
-        siigoMailSend: false,
+        siigoMailSend: true,
         siigoPaymentDueDays: "0",
       };
       configuradas.push(sede);
