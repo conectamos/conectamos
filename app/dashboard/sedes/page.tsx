@@ -302,15 +302,29 @@ function esCatalogoActivo(item: Record<string, unknown>) {
   );
 }
 
-function buscarCentroCostoPrincipal(items: Record<string, unknown>[]) {
-  const disponibles = items.filter(esCatalogoActivo);
-  const candidatos = disponibles.length > 0 ? disponibles : items;
+function buscarCentroCostoParaSede(
+  items: Record<string, unknown>[],
+  sede: SedeAdminItem
+) {
+  const codigoSede = codigoDocumentoParaSede(sede);
 
-  if (candidatos.length === 1) {
-    return textoCatalogo(candidatos[0], ["id"]);
+  if (!codigoSede) {
+    return "";
   }
 
-  const principal = candidatos.find((catalogo) => {
+  const disponibles = items.filter(esCatalogoActivo);
+  const candidatos = disponibles.length > 0 ? disponibles : items;
+  const patrones = [`CC${codigoSede}-`, `SEDE ${codigoSede}`];
+
+  if (codigoSede === "8") {
+    patrones.push("ONLINE", "ONE LINE", "ON LINE");
+  }
+
+  if (codigoSede === "9") {
+    patrones.push("TROP", "TROPAS");
+  }
+
+  const item = candidatos.find((catalogo) => {
     const texto = normalizarTexto(
       [
         textoCatalogo(catalogo, ["code"]),
@@ -318,12 +332,10 @@ function buscarCentroCostoPrincipal(items: Record<string, unknown>[]) {
       ].join(" ")
     );
 
-    return texto.includes("PRINCIPAL") || texto.includes("GENERAL");
+    return patrones.some((patron) => texto.includes(patron));
   });
 
-  return principal
-    ? textoCatalogo(principal, ["id"])
-    : textoCatalogo(candidatos[0] || {}, ["id"]);
+  return item ? textoCatalogo(item, ["id"]) : "";
 }
 
 function tituloCentroCostoSiigo(item: Record<string, unknown>) {
@@ -520,7 +532,6 @@ export default function GestionSedesPage() {
     const vendedorId = buscarUsuarioAndres(usuariosSiigo);
     const pagoId = buscarPagoEfectivo(pagosSiigo);
     const productoCodigo = buscarProductoExento(productosSiigo);
-    const centroCostoId = buscarCentroCostoPrincipal(centrosCostoSiigo);
     const siguientes: Record<number, SedeEdicion> = { ...ediciones };
     const configuradas: SedeAdminItem[] = [];
     const faltantes: string[] = [];
@@ -533,6 +544,7 @@ export default function GestionSedesPage() {
       }
 
       const documentId = buscarIdPorCodigo(documentosSiigo, codigoDocumento);
+      const centroCostoId = buscarCentroCostoParaSede(centrosCostoSiigo, sede);
 
       if (!documentId) {
         faltantes.push(sede.nombre);
