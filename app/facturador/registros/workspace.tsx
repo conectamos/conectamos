@@ -321,6 +321,7 @@ export default function FacturadorRegistrosWorkspace({
   const [cargando, setCargando] = useState(true);
   const [guardandoId, setGuardandoId] = useState<number | null>(null);
   const [emitiendoSiigoId, setEmitiendoSiigoId] = useState<number | null>(null);
+  const [emitiendoNcId, setEmitiendoNcId] = useState<number | null>(null);
   const [liberandoSiigoId, setLiberandoSiigoId] = useState<number | null>(null);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
@@ -545,6 +546,69 @@ export default function FacturadorRegistrosWorkspace({
       setMensaje("Error enviando factura a Siigo");
     } finally {
       setEmitiendoSiigoId(null);
+    }
+  };
+
+  const emitirNotaCreditoSiigo = async (registroId: number) => {
+    const confirmar = window.confirm(
+      "Se emitira una nota credito en Siigo para esta factura. La venta NO se eliminara y el inventario/caja NO se moveran. Deseas continuar?"
+    );
+
+    if (!confirmar) {
+      return;
+    }
+
+    try {
+      setEmitiendoNcId(registroId);
+      setMensaje("");
+
+      const res = await fetch("/api/facturador/siigo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          modo: "NOTA_CREDITO",
+          id: registroId,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.registro) {
+          const registroConError = data.registro as RegistroFacturacion;
+
+          setRegistros((current) =>
+            current.map((item) =>
+              item.id === registroId ? registroConError : item
+            )
+          );
+        }
+
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudo emitir la nota credito en Siigo");
+        return;
+      }
+
+      const registroActualizado = data.registro as RegistroFacturacion;
+
+      setRegistros((current) =>
+        current.map((item) =>
+          item.id === registroActualizado.id ? registroActualizado : item
+        )
+      );
+      setFacturasDraft((current) => ({
+        ...current,
+        [registroActualizado.id]: registroActualizado.numeroFactura ?? "",
+      }));
+      setMensajeTipo("success");
+      setMensaje(data.mensaje || "Nota credito emitida en Siigo");
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error emitiendo nota credito en Siigo");
+    } finally {
+      setEmitiendoNcId(null);
     }
   };
 
@@ -961,6 +1025,8 @@ export default function FacturadorRegistrosWorkspace({
                     const notaCreditoSiigoEmitida = Boolean(
                       registro.siigoCreditNoteId
                     );
+                    const puedeEmitirNotaCreditoManual =
+                      esAdmin && facturaSiigoEmitida && !notaCreditoSiigoEmitida;
                     const puedeLiberarFacturaSiigo =
                       esAdmin && facturaSiigoEmitida && !notaCreditoSiigoEmitida;
                     const puedeEmitirSiigo =
@@ -1220,6 +1286,19 @@ export default function FacturadorRegistrosWorkspace({
                             >
                               Modificar
                             </button>
+
+                            {puedeEmitirNotaCreditoManual && (
+                              <button
+                                type="button"
+                                onClick={() => void emitirNotaCreditoSiigo(registro.id)}
+                                disabled={emitiendoNcId === registro.id}
+                                className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                              >
+                                {emitiendoNcId === registro.id
+                                  ? "Emitiendo NC..."
+                                  : "Emitir NC"}
+                              </button>
+                            )}
 
                             {puedeLiberarFacturaSiigo && (
                               <button

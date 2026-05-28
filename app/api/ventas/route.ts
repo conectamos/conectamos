@@ -641,6 +641,12 @@ async function emitirFacturaSiigoAlConvertir(registroId: number) {
           ? `Factura emitida en Siigo, pero no se pudo enviar correo: ${invoice.mail_error}`
           : null,
         siigoInvoiceCreatedAt: new Date(),
+        siigoCreditNoteId: null,
+        siigoCreditNoteName: null,
+        siigoCreditNoteStatus: null,
+        siigoCreditNoteUrl: null,
+        siigoCreditNoteError: null,
+        siigoCreditNoteCreatedAt: null,
       },
     });
 
@@ -703,7 +709,7 @@ async function emitirNotaCreditoSiigoAlEliminarVenta(ventaId: number) {
       };
     }
 
-    if (registro.siigoCreditNoteId) {
+    if (registro.siigoCreditNoteId && !registro.siigoInvoiceId) {
       return {
         ok: true as const,
         skipped: true,

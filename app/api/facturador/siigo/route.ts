@@ -3,11 +3,15 @@ import { getSessionUser } from "@/lib/auth";
 import {
   getSiigoErrorMessage,
   getSiigoErrorStatus,
+  getSiigoCreditNoteLabel,
   getSiigoInvoiceLabel,
   SiigoConfigurationError,
+  createSiigoCreditNoteForRegistro,
   createSiigoInvoiceForRegistro,
 } from "@/lib/siigo";
 import {
+  esPerfilAdministrativo,
+  esRolAdministrativo,
   puedeAccederPanelFacturador,
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
@@ -218,6 +222,7 @@ async function aplicarResolucionOnlineParaStands<
 export async function POST(req: Request) {
   let registroId: number | null = null;
   let contextoSiigo = "";
+  let modoOperacion = "";
 
   try {
     const access = await requireFacturador();
@@ -230,6 +235,8 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as Record<string, unknown>;
     const id = Number(body.id);
+    const modo = String(body.modo || "").trim().toUpperCase();
+    modoOperacion = modo;
 
     if (!Number.isInteger(id) || id <= 0) {
       return NextResponse.json({ error: "Registro invalido" }, { status: 400 });
@@ -250,6 +257,78 @@ export async function POST(req: Request) {
         { error: "Registro no encontrado" },
         { status: 404 }
       );
+    }
+
+    if (modo === "NOTA_CREDITO") {
+      const puedeEmitirNotaCredito =
+        esRolAdministrativo(access.session.rolNombre) ||
+        esPerfilAdministrativo(access.session.perfilTipo);
+
+      if (!puedeEmitirNotaCredito) {
+        return NextResponse.json(
+          { error: "Solo un administrador puede emitir nota credito manual" },
+          { status: 403 }
+        );
+      }
+
+      if (!registro.siigoInvoiceId) {
+        return NextResponse.json(
+          { error: "Este registro no tiene una factura Siigo vigente para anular" },
+          { status: 400 }
+        );
+      }
+
+      const registroParaSiigo = await aplicarResolucionOnlineParaStands(registro);
+      contextoSiigo = describirConfiguracionSiigo(registroParaSiigo.sede);
+      const creditNote = await createSiigoCreditNoteForRegistro(
+        registroParaSiigo,
+        registro.siigoInvoiceId,
+        registro.siigoInvoiceName || registro.numeroFactura
+      );
+      const creditNoteLabel = getSiigoCreditNoteLabel(creditNote);
+
+      if (!creditNote.id || !creditNoteLabel) {
+        return NextResponse.json(
+          {
+            error:
+              "Siigo creo la nota credito, pero no retorno identificador suficiente",
+          },
+          { status: 502 }
+        );
+      }
+
+      const actualizado = await prisma.registroVendedorVenta.update({
+        where: { id },
+        data: {
+          numeroFactura: null,
+          estadoFacturacion: "NOTA_CREDITO",
+          siigoInvoiceId: null,
+          siigoInvoiceName: null,
+          siigoInvoiceStatus: null,
+          siigoInvoiceUrl: null,
+          siigoInvoiceError: null,
+          siigoInvoiceCreatedAt: null,
+          siigoCreditNoteId: creditNote.id,
+          siigoCreditNoteName: creditNoteLabel,
+          siigoCreditNoteStatus: creditNote.status ?? null,
+          siigoCreditNoteUrl: creditNote.public_url ?? null,
+          siigoCreditNoteError: null,
+          siigoCreditNoteCreatedAt: new Date(),
+        },
+        select: REGISTRO_FACTURADOR_SELECT,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Nota credito emitida en Siigo sin eliminar la venta",
+        registro: serializarRegistro(actualizado),
+        siigo: {
+          id: creditNote.id,
+          name: creditNoteLabel,
+          status: creditNote.status ?? null,
+          publicUrl: creditNote.public_url ?? null,
+        },
+      });
     }
 
     if (registro.siigoInvoiceId) {
@@ -305,6 +384,12 @@ export async function POST(req: Request) {
           ? `Factura emitida en Siigo, pero no se pudo enviar correo: ${invoice.mail_error}`
           : null,
         siigoInvoiceCreatedAt: new Date(),
+        siigoCreditNoteId: null,
+        siigoCreditNoteName: null,
+        siigoCreditNoteStatus: null,
+        siigoCreditNoteUrl: null,
+        siigoCreditNoteError: null,
+        siigoCreditNoteCreatedAt: null,
       },
       select: REGISTRO_FACTURADOR_SELECT,
     });
@@ -336,7 +421,9 @@ export async function POST(req: Request) {
         registroConError = await prisma.registroVendedorVenta.update({
           where: { id: registroId },
           data: {
-            siigoInvoiceError: message.slice(0, 2000),
+            ...(modoOperacion === "NOTA_CREDITO"
+              ? { siigoCreditNoteError: message.slice(0, 2000) }
+              : { siigoInvoiceError: message.slice(0, 2000) }),
           },
           select: REGISTRO_FACTURADOR_SELECT,
         });
