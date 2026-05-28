@@ -370,13 +370,32 @@ export async function POST(req: Request) {
           siigoInvoiceId: null,
           siigoCreditNoteId: null,
           OR: [
+            { siigoInvoiceError: null },
             {
-              ventaIdRelacionada: {
-                not: null,
+              siigoInvoiceError: {
+                contains: "document_settings",
+                mode: "insensitive",
               },
             },
             {
-              estadoVentaRegistro: "CONVERTIDO_EN_VENTA",
+              siigoInvoiceError: {
+                contains: "number cannot be used",
+                mode: "insensitive",
+              },
+            },
+          ],
+          AND: [
+            {
+              OR: [
+                {
+                  ventaIdRelacionada: {
+                    not: null,
+                  },
+                },
+                {
+                  estadoVentaRegistro: "CONVERTIDO_EN_VENTA",
+                },
+              ],
             },
           ],
         },
