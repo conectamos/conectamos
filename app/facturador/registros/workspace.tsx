@@ -53,6 +53,12 @@ type RegistroFacturacion = {
   jaladorNombre: string | null;
   numeroFactura: string | null;
   estadoFacturacion: string | null;
+  siigoInvoiceId: string | null;
+  siigoInvoiceName: string | null;
+  siigoInvoiceStatus: string | null;
+  siigoInvoiceUrl: string | null;
+  siigoInvoiceError: string | null;
+  siigoInvoiceCreatedAt: string | null;
   estadoVentaRegistro: string | null;
   ventaIdRelacionada: number | null;
   financierasDetalle: FinancieraRegistro[] | null;
@@ -308,6 +314,7 @@ export default function FacturadorRegistrosWorkspace({
   const [mensajeTipo, setMensajeTipo] = useState<"success" | "error">("success");
   const [cargando, setCargando] = useState(true);
   const [guardandoId, setGuardandoId] = useState<number | null>(null);
+  const [emitiendoSiigoId, setEmitiendoSiigoId] = useState<number | null>(null);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
   const [editando, setEditando] = useState<EditDraft | null>(null);
@@ -402,6 +409,8 @@ export default function FacturadorRegistrosWorkspace({
         registro.puntoVenta,
         registro.referenciaEquipo,
         registro.numeroFactura,
+        registro.siigoInvoiceName,
+        registro.siigoInvoiceStatus,
       ]
         .filter(Boolean)
         .join(" ")
@@ -465,6 +474,58 @@ export default function FacturadorRegistrosWorkspace({
       setMensaje("Error guardando numero de factura");
     } finally {
       setGuardandoId(null);
+    }
+  };
+
+  const emitirFacturaSiigo = async (registroId: number) => {
+    const confirmar = window.confirm(
+      "Se creara una factura en Siigo para este registro. Deseas continuar?"
+    );
+
+    if (!confirmar) {
+      return;
+    }
+
+    try {
+      setEmitiendoSiigoId(registroId);
+      setMensaje("");
+
+      const res = await fetch("/api/facturador/siigo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: registroId,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudo emitir la factura en Siigo");
+        return;
+      }
+
+      const registroActualizado = data.registro as RegistroFacturacion;
+
+      setRegistros((current) =>
+        current.map((item) =>
+          item.id === registroId ? registroActualizado : item
+        )
+      );
+      setFacturasDraft((current) => ({
+        ...current,
+        [registroId]: registroActualizado.numeroFactura ?? "",
+      }));
+      setMensajeTipo("success");
+      setMensaje(data.mensaje || "Factura emitida correctamente en Siigo");
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error enviando factura a Siigo");
+    } finally {
+      setEmitiendoSiigoId(null);
     }
   };
 
@@ -765,7 +826,7 @@ export default function FacturadorRegistrosWorkspace({
           </p>
 
           <div className="mt-6 overflow-x-auto">
-            <table className="min-w-[2480px] border-separate border-spacing-y-3">
+            <table className="min-w-[2700px] border-separate border-spacing-y-3">
               <thead>
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   <th className="px-4 py-2">Fecha</th>
@@ -784,6 +845,7 @@ export default function FacturadorRegistrosWorkspace({
                     Creditos autorizados / financiera
                   </th>
                   <th className="px-4 py-2">Numero de factura</th>
+                  <th className="px-4 py-2">Siigo</th>
                   <th className="px-4 py-2">Estado</th>
                   <th className="px-4 py-2">Accion</th>
                 </tr>
@@ -792,13 +854,13 @@ export default function FacturadorRegistrosWorkspace({
               <tbody>
                 {cargando ? (
                   <tr>
-                    <td colSpan={16} className="px-4 py-8 text-sm text-slate-500">
+                    <td colSpan={17} className="px-4 py-8 text-sm text-slate-500">
                       Cargando registros...
                     </td>
                   </tr>
                 ) : registrosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={16} className="px-4 py-8 text-sm text-slate-500">
+                    <td colSpan={17} className="px-4 py-8 text-sm text-slate-500">
                       {busqueda.trim()
                         ? "No hay registros que coincidan con la cedula o IMEI consultado."
                         : "No hay registros guardados para facturar."}
@@ -816,6 +878,9 @@ export default function FacturadorRegistrosWorkspace({
                     const convertido = esRegistroConvertido(registro);
                     const puedeModificarRegistro = esAdmin || !convertido;
                     const pagosContado = resolvePagosContado(registro);
+                    const facturaSiigoEmitida = Boolean(registro.siigoInvoiceId);
+                    const puedeEmitirSiigo =
+                      !facturaSiigoEmitida && !registro.numeroFactura;
                     const financierasConInicial = financieras.filter(
                       (item, index) =>
                         financieraRequiereInicial(index) &&
@@ -925,15 +990,43 @@ export default function FacturadorRegistrosWorkspace({
                         <td className="border-y border-slate-200 px-4 py-4">
                           <input
                             value={draft}
+                            disabled={facturaSiigoEmitida}
                             onChange={(event) =>
                               setFacturasDraft((current) => ({
                                 ...current,
                                 [registro.id]: event.target.value,
                               }))
                             }
-                            className={`w-48 rounded-2xl border px-4 py-3 text-sm outline-none transition ${estado.inputClass}`}
+                            className={`w-48 rounded-2xl border px-4 py-3 text-sm outline-none transition disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 ${estado.inputClass}`}
                             placeholder="Factura"
                           />
+                        </td>
+                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
+                          {facturaSiigoEmitida ? (
+                            <div className="min-w-48 space-y-2">
+                              <div className="font-bold text-slate-950">
+                                {registro.siigoInvoiceName || "Emitida"}
+                              </div>
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                                {registro.siigoInvoiceStatus || "Siigo"}
+                              </div>
+                              {registro.siigoInvoiceUrl && (
+                                <Link
+                                  href={registro.siigoInvoiceUrl}
+                                  target="_blank"
+                                  className="text-xs font-bold text-slate-700 underline decoration-slate-300 underline-offset-4 hover:text-slate-950"
+                                >
+                                  Ver documento
+                                </Link>
+                              )}
+                            </div>
+                          ) : registro.siigoInvoiceError ? (
+                            <div className="max-w-64 text-xs leading-5 text-red-700">
+                              {registro.siigoInvoiceError}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-slate-500">Sin emitir</span>
+                          )}
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4">
                           <span
@@ -947,10 +1040,29 @@ export default function FacturadorRegistrosWorkspace({
                             <button
                               type="button"
                               onClick={() => void guardarFactura(registro.id)}
-                              disabled={guardandoId === registro.id || !String(draft).trim()}
+                              disabled={
+                                guardandoId === registro.id ||
+                                facturaSiigoEmitida ||
+                                !String(draft).trim()
+                              }
                               className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${estado.buttonClass} disabled:cursor-not-allowed disabled:bg-slate-300`}
                             >
                               {guardandoId === registro.id ? "Guardando..." : "Guardar"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => void emitirFacturaSiigo(registro.id)}
+                              disabled={
+                                emitiendoSiigoId === registro.id || !puedeEmitirSiigo
+                              }
+                              className="rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                            >
+                              {emitiendoSiigoId === registro.id
+                                ? "Enviando..."
+                                : facturaSiigoEmitida
+                                  ? "Emitida en Siigo"
+                                  : "Enviar a Siigo"}
                             </button>
 
                             <button

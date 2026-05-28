@@ -24,6 +24,61 @@ En Railway debes crear estas variables:
 - `SESSION_SECRET`
 - `NUOVOPAY_API_TOKEN`
 
+Para emitir facturas desde Siigo tambien agrega:
+
+- `SIIGO_USERNAME`
+- `SIIGO_ACCESS_KEY`
+- `SIIGO_PARTNER_ID`
+
+Opcionales para Siigo:
+
+- `SIIGO_ITEM_CODE`
+- `SIIGO_API_BASE_URL`
+- `SIIGO_DEFAULT_COUNTRY_CODE`
+- `SIIGO_DEFAULT_STATE_CODE`
+- `SIIGO_DEFAULT_CITY_CODE`
+- `SIIGO_DEFAULT_POSTAL_CODE`
+- `SIIGO_EXEMPT_ITEM_LIMIT`
+- `SIIGO_MAX_INVOICE_TOTAL`
+
+La resolucion/documento, vendedor, forma de pago, ciudad y opciones de envio se configuran por sede en `Dashboard > Sedes`. Si faltan las variables de credenciales o la sede no esta configurada, la app no envia nada a Siigo y muestra el dato pendiente en el modulo de facturacion.
+
+### Variables para facturacion con Siigo
+
+- `SIIGO_USERNAME`: usuario API generado en Siigo Nube.
+- `SIIGO_ACCESS_KEY`: access key generado en Siigo Nube.
+- `SIIGO_PARTNER_ID`: nombre de la app, por ejemplo `CONECTAMOSAPP`.
+- `SIIGO_API_BASE_URL`: por defecto `https://api.siigo.com/v1`.
+- `SIIGO_ITEM_CODE`: codigo fijo opcional del producto en Siigo. Cada sede puede tener su propio codigo.
+- `SIIGO_DEFAULT_COUNTRY_CODE`: por defecto `CO`.
+- `SIIGO_DEFAULT_STATE_CODE`: respaldo opcional si una sede no tiene codigo de departamento.
+- `SIIGO_DEFAULT_CITY_CODE`: respaldo opcional si una sede no tiene codigo de ciudad.
+- `SIIGO_DEFAULT_POSTAL_CODE`: codigo postal de respaldo.
+- `SIIGO_EXEMPT_ITEM_LIMIT`: tope por linea exenta. Por defecto `1150000`.
+- `SIIGO_MAX_INVOICE_TOTAL`: valor maximo que se permite facturar en Siigo. Por defecto `2500000`.
+
+### Parametros Siigo por sede
+
+En `Dashboard > Sedes`, cada sede puede activar Siigo y definir:
+
+- Documento/resolucion de factura de venta (`document-types?type=FV`).
+- Vendedor Siigo (`users`).
+- Forma de pago (`payment-types?document_type=FV`).
+- Codigo de producto, centro de costo, pais, departamento, ciudad y codigo postal.
+- Si envia a DIAN y/o por correo al crear la factura.
+
+Las facturas se envian a Siigo sin impuestos en los items. Si el valor del
+equipo supera `$1.150.000`, la app divide el producto en varias lineas enteras,
+repartidas lo mas parejo posible y de maximo ese valor. Si la venta supera
+`$2.500.000`, la app no permite emitir la factura en Siigo. Confirma con
+contabilidad que el producto usado en Siigo tambien este creado como exento o
+excluido de IVA.
+
+Los stands y la sede `ONLINE` facturan usando la configuracion Siigo de `ONLINE`.
+Para los stands no hace falta duplicar la resolucion: configura `ONLINE` y los registros
+guardados en sedes cuyo nombre empiece por `Stand` o codigo empiece por `STAND-`
+tomaran esa resolucion.
+
 ### Ejemplo de `SESSION_SECRET`
 
 Usa una cadena larga y dificil de adivinar, por ejemplo un texto de 32 a 64 caracteres.
@@ -72,6 +127,7 @@ Si no haces eso, Railway intentara construir desde la carpeta equivocada.
    - `DATABASE_URL`
    - `SESSION_SECRET`
    - `NUOVOPAY_API_TOKEN`
+   - variables `SIIGO_*` si ya vas a emitir facturas desde Siigo
 
 ## Paso 5. Comandos de build y arranque
 

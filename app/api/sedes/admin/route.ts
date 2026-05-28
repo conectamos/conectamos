@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { hashPassword } from "@/lib/password";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
 function esAdmin(rolNombre: string) {
   return ["ADMIN", "AUDITOR"].includes(String(rolNombre || "").trim().toUpperCase());
@@ -23,6 +24,51 @@ function normalizarUsuarioAcceso(valor: unknown) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "")
     .trim();
+}
+
+function normalizarTextoNullable(valor: unknown) {
+  const texto = String(valor || "").replace(/\s+/g, " ").trim();
+  return texto || null;
+}
+
+function normalizarEnteroPositivoNullable(valor: unknown) {
+  const numero = Number(valor);
+  return Number.isInteger(numero) && numero > 0 ? numero : null;
+}
+
+function normalizarEnteroNoNegativo(valor: unknown) {
+  const numero = Number(valor);
+  return Number.isInteger(numero) && numero >= 0 ? numero : 0;
+}
+
+function normalizarConfiguracionSiigo(body: Record<string, unknown>) {
+  return {
+    siigoEnabled: Boolean(body.siigoEnabled),
+    siigoInvoiceDocumentId: normalizarEnteroPositivoNullable(
+      body.siigoInvoiceDocumentId
+    ),
+    siigoSellerId: normalizarEnteroPositivoNullable(body.siigoSellerId),
+    siigoPaymentTypeId: normalizarEnteroPositivoNullable(
+      body.siigoPaymentTypeId
+    ),
+    siigoItemCode: normalizarTextoNullable(body.siigoItemCode),
+    siigoCostCenterId: normalizarEnteroPositivoNullable(
+      body.siigoCostCenterId
+    ),
+    siigoDefaultCountryCode:
+      normalizarTextoNullable(body.siigoDefaultCountryCode)?.toUpperCase() ||
+      "CO",
+    siigoDefaultStateCode: normalizarTextoNullable(body.siigoDefaultStateCode),
+    siigoDefaultCityCode: normalizarTextoNullable(body.siigoDefaultCityCode),
+    siigoDefaultPostalCode: normalizarTextoNullable(
+      body.siigoDefaultPostalCode
+    ),
+    siigoStampSend: Boolean(body.siigoStampSend),
+    siigoMailSend: Boolean(body.siigoMailSend),
+    siigoPaymentDueDays: normalizarEnteroNoNegativo(
+      body.siigoPaymentDueDays
+    ),
+  };
 }
 
 function nombreUsuarioSede(nombreSede: string) {
@@ -62,6 +108,8 @@ async function obtenerRolUsuarioId() {
 }
 
 async function obtenerSedesAdmin() {
+  await ensureVendorProfilesSchema();
+
   const sedes = await prisma.sede.findMany({
     select: {
       id: true,
@@ -69,6 +117,19 @@ async function obtenerSedesAdmin() {
       codigo: true,
       activa: true,
       soloInventarioPorCobrar: true,
+      siigoEnabled: true,
+      siigoInvoiceDocumentId: true,
+      siigoSellerId: true,
+      siigoPaymentTypeId: true,
+      siigoItemCode: true,
+      siigoCostCenterId: true,
+      siigoDefaultCountryCode: true,
+      siigoDefaultStateCode: true,
+      siigoDefaultCityCode: true,
+      siigoDefaultPostalCode: true,
+      siigoStampSend: true,
+      siigoMailSend: true,
+      siigoPaymentDueDays: true,
       usuarios: {
         select: {
           id: true,
@@ -102,6 +163,19 @@ async function obtenerSedesAdmin() {
       codigo: sede.codigo,
       activa: sede.activa,
       soloInventarioPorCobrar: sede.soloInventarioPorCobrar,
+      siigoEnabled: sede.siigoEnabled,
+      siigoInvoiceDocumentId: sede.siigoInvoiceDocumentId,
+      siigoSellerId: sede.siigoSellerId,
+      siigoPaymentTypeId: sede.siigoPaymentTypeId,
+      siigoItemCode: sede.siigoItemCode,
+      siigoCostCenterId: sede.siigoCostCenterId,
+      siigoDefaultCountryCode: sede.siigoDefaultCountryCode,
+      siigoDefaultStateCode: sede.siigoDefaultStateCode,
+      siigoDefaultCityCode: sede.siigoDefaultCityCode,
+      siigoDefaultPostalCode: sede.siigoDefaultPostalCode,
+      siigoStampSend: sede.siigoStampSend,
+      siigoMailSend: sede.siigoMailSend,
+      siigoPaymentDueDays: sede.siigoPaymentDueDays,
       acceso: acceso
         ? {
             id: acceso.id,
@@ -142,12 +216,15 @@ export async function POST(req: Request) {
       return session.response;
     }
 
+    await ensureVendorProfilesSchema();
+
     const body = (await req.json()) as Record<string, unknown>;
     const nombre = normalizarNombreSede(body.nombre);
     const codigo = normalizarCodigoSede(body.codigo);
     const usuarioAcceso = normalizarUsuarioAcceso(body.usuario);
     const clave = String(body.clave || "").trim();
     const soloInventarioPorCobrar = Boolean(body.soloInventarioPorCobrar);
+    const siigoConfig = normalizarConfiguracionSiigo(body);
 
     if (!nombre) {
       return NextResponse.json(
@@ -225,6 +302,7 @@ export async function POST(req: Request) {
           codigo,
           activa: true,
           soloInventarioPorCobrar,
+          ...siigoConfig,
         },
         select: {
           id: true,
@@ -267,6 +345,8 @@ export async function PATCH(req: Request) {
       return session.response;
     }
 
+    await ensureVendorProfilesSchema();
+
     const body = (await req.json()) as Record<string, unknown>;
     const sedeId = Number(body.sedeId || 0);
     const nombre = normalizarNombreSede(body.nombre);
@@ -274,6 +354,7 @@ export async function PATCH(req: Request) {
     const usuarioAcceso = normalizarUsuarioAcceso(body.usuario);
     const clave = String(body.clave || "").trim();
     const soloInventarioPorCobrar = Boolean(body.soloInventarioPorCobrar);
+    const siigoConfig = normalizarConfiguracionSiigo(body);
 
     if (!Number.isInteger(sedeId) || sedeId <= 0) {
       return NextResponse.json({ error: "Sede invalida" }, { status: 400 });
@@ -399,6 +480,7 @@ export async function PATCH(req: Request) {
           nombre,
           codigo,
           soloInventarioPorCobrar,
+          ...siigoConfig,
         },
       });
 

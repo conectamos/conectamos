@@ -19,6 +19,19 @@ type SedeAdminItem = {
   codigo: string | null;
   activa: boolean;
   soloInventarioPorCobrar: boolean;
+  siigoEnabled: boolean;
+  siigoInvoiceDocumentId: number | null;
+  siigoSellerId: number | null;
+  siigoPaymentTypeId: number | null;
+  siigoItemCode: string | null;
+  siigoCostCenterId: number | null;
+  siigoDefaultCountryCode: string | null;
+  siigoDefaultStateCode: string | null;
+  siigoDefaultCityCode: string | null;
+  siigoDefaultPostalCode: string | null;
+  siigoStampSend: boolean;
+  siigoMailSend: boolean;
+  siigoPaymentDueDays: number;
   acceso: {
     id: number;
     nombre: string;
@@ -33,6 +46,26 @@ type SedeEdicion = {
   usuario: string;
   clave: string;
   soloInventarioPorCobrar: boolean;
+  siigoEnabled: boolean;
+  siigoInvoiceDocumentId: string;
+  siigoSellerId: string;
+  siigoPaymentTypeId: string;
+  siigoItemCode: string;
+  siigoCostCenterId: string;
+  siigoDefaultCountryCode: string;
+  siigoDefaultStateCode: string;
+  siigoDefaultCityCode: string;
+  siigoDefaultPostalCode: string;
+  siigoStampSend: boolean;
+  siigoMailSend: boolean;
+  siigoPaymentDueDays: string;
+};
+
+type CatalogosSiigo = {
+  documentTypes?: unknown;
+  users?: unknown;
+  paymentTypes?: unknown;
+  products?: unknown;
 };
 
 function slugUsuarioSede(valor: string) {
@@ -44,6 +77,104 @@ function slugUsuarioSede(valor: string) {
     .trim();
 }
 
+function crearEdicionDesdeSede(sede: SedeAdminItem): SedeEdicion {
+  return {
+    nombre: sede.nombre,
+    codigo: sede.codigo || "",
+    usuario: sede.acceso?.usuario || "",
+    clave: "",
+    soloInventarioPorCobrar: Boolean(sede.soloInventarioPorCobrar),
+    siigoEnabled: Boolean(sede.siigoEnabled),
+    siigoInvoiceDocumentId: sede.siigoInvoiceDocumentId
+      ? String(sede.siigoInvoiceDocumentId)
+      : "",
+    siigoSellerId: sede.siigoSellerId ? String(sede.siigoSellerId) : "",
+    siigoPaymentTypeId: sede.siigoPaymentTypeId
+      ? String(sede.siigoPaymentTypeId)
+      : "",
+    siigoItemCode: sede.siigoItemCode || "",
+    siigoCostCenterId: sede.siigoCostCenterId
+      ? String(sede.siigoCostCenterId)
+      : "",
+    siigoDefaultCountryCode: sede.siigoDefaultCountryCode || "CO",
+    siigoDefaultStateCode: sede.siigoDefaultStateCode || "",
+    siigoDefaultCityCode: sede.siigoDefaultCityCode || "",
+    siigoDefaultPostalCode: sede.siigoDefaultPostalCode || "",
+    siigoStampSend: Boolean(sede.siigoStampSend),
+    siigoMailSend: Boolean(sede.siigoMailSend),
+    siigoPaymentDueDays: String(sede.siigoPaymentDueDays ?? 0),
+  };
+}
+
+function soloDigitos(valor: string) {
+  return valor.replace(/\D/g, "");
+}
+
+function esSedeOnline(sede: SedeAdminItem) {
+  return (
+    sede.nombre.trim().toUpperCase() === "ONLINE" ||
+    String(sede.codigo || "").trim().toUpperCase() === "ONLINE"
+  );
+}
+
+function usaResolucionOnline(sede: SedeAdminItem) {
+  const nombre = sede.nombre.trim().toUpperCase();
+  const codigo = String(sede.codigo || "").trim().toUpperCase();
+
+  return esSedeOnline(sede) || nombre.startsWith("STAND ") || codigo.startsWith("STAND-");
+}
+
+function extraerItemsCatalogo(valor: unknown) {
+  if (Array.isArray(valor)) {
+    return valor.filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === "object"
+    );
+  }
+
+  if (!valor || typeof valor !== "object") {
+    return [];
+  }
+
+  const record = valor as Record<string, unknown>;
+
+  for (const key of ["results", "data", "items"]) {
+    if (Array.isArray(record[key])) {
+      return record[key].filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === "object"
+      );
+    }
+  }
+
+  return [];
+}
+
+function textoCatalogo(item: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = item[key];
+
+    if (value !== null && value !== undefined && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+}
+
+function nombreUsuarioSiigo(item: Record<string, unknown>) {
+  const direct = textoCatalogo(item, ["name", "full_name", "username", "email"]);
+
+  if (direct) {
+    return direct;
+  }
+
+  return [item.first_name, item.last_name]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
 export default function GestionSedesPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<SedeAdminItem[]>([]);
@@ -51,6 +182,11 @@ export default function GestionSedesPage() {
   const [cargando, setCargando] = useState(true);
   const [guardandoNueva, setGuardandoNueva] = useState(false);
   const [procesandoId, setProcesandoId] = useState<number | null>(null);
+  const [cargandoCatalogosSiigo, setCargandoCatalogosSiigo] = useState(false);
+  const [catalogosSiigo, setCatalogosSiigo] = useState<CatalogosSiigo | null>(
+    null
+  );
+  const [catalogosSiigoError, setCatalogosSiigoError] = useState("");
 
   const [nuevaSedeNombre, setNuevaSedeNombre] = useState("");
   const [nuevaSedeCodigo, setNuevaSedeCodigo] = useState("");
@@ -62,6 +198,10 @@ export default function GestionSedesPage() {
   const [ediciones, setEdiciones] = useState<Record<number, SedeEdicion>>({});
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
+  const documentosSiigo = extraerItemsCatalogo(catalogosSiigo?.documentTypes);
+  const usuariosSiigo = extraerItemsCatalogo(catalogosSiigo?.users);
+  const pagosSiigo = extraerItemsCatalogo(catalogosSiigo?.paymentTypes);
+  const productosSiigo = extraerItemsCatalogo(catalogosSiigo?.products);
 
   const cargarTodo = async () => {
     try {
@@ -83,13 +223,7 @@ export default function GestionSedesPage() {
         setEdiciones(
           items.reduce(
             (acc: Record<number, SedeEdicion>, sede: SedeAdminItem) => {
-              acc[sede.id] = {
-                nombre: sede.nombre,
-                codigo: sede.codigo || "",
-                usuario: sede.acceso?.usuario || "",
-                clave: "",
-                soloInventarioPorCobrar: Boolean(sede.soloInventarioPorCobrar),
-              };
+              acc[sede.id] = crearEdicionDesdeSede(sede);
               return acc;
             },
             {}
@@ -169,6 +303,29 @@ export default function GestionSedesPage() {
     }
   };
 
+  const cargarCatalogosSiigo = async () => {
+    try {
+      setCargandoCatalogosSiigo(true);
+      setCatalogosSiigoError("");
+
+      const res = await fetch("/api/facturador/siigo/catalogos", {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setCatalogosSiigoError(data.error || "No se pudieron consultar los catalogos de Siigo");
+        return;
+      }
+
+      setCatalogosSiigo((data.catalogos || null) as CatalogosSiigo | null);
+    } catch {
+      setCatalogosSiigoError("Error consultando catalogos de Siigo");
+    } finally {
+      setCargandoCatalogosSiigo(false);
+    }
+  };
+
   const guardarSede = async (sedeId: number) => {
     try {
       setProcesandoId(sedeId);
@@ -188,6 +345,19 @@ export default function GestionSedesPage() {
           usuario: payload?.usuario,
           clave: payload?.clave,
           soloInventarioPorCobrar: Boolean(payload?.soloInventarioPorCobrar),
+          siigoEnabled: Boolean(payload?.siigoEnabled),
+          siigoInvoiceDocumentId: payload?.siigoInvoiceDocumentId,
+          siigoSellerId: payload?.siigoSellerId,
+          siigoPaymentTypeId: payload?.siigoPaymentTypeId,
+          siigoItemCode: payload?.siigoItemCode,
+          siigoCostCenterId: payload?.siigoCostCenterId,
+          siigoDefaultCountryCode: payload?.siigoDefaultCountryCode,
+          siigoDefaultStateCode: payload?.siigoDefaultStateCode,
+          siigoDefaultCityCode: payload?.siigoDefaultCityCode,
+          siigoDefaultPostalCode: payload?.siigoDefaultPostalCode,
+          siigoStampSend: Boolean(payload?.siigoStampSend),
+          siigoMailSend: Boolean(payload?.siigoMailSend),
+          siigoPaymentDueDays: payload?.siigoPaymentDueDays,
         }),
       });
 
@@ -283,6 +453,93 @@ export default function GestionSedesPage() {
             {mensaje}
           </div>
         )}
+
+        <section className="mt-6 rounded-[30px] bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                Siigo
+              </div>
+              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                Catalogos para configurar sedes
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Consulta resoluciones, vendedores, formas de pago y productos directamente desde Siigo.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void cargarCatalogosSiigo()}
+              disabled={cargandoCatalogosSiigo}
+              className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {cargandoCatalogosSiigo ? "Consultando..." : "Consultar catalogos"}
+            </button>
+          </div>
+
+          {catalogosSiigoError && (
+            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {catalogosSiigoError}
+            </div>
+          )}
+
+          {catalogosSiigo && (
+            <div className="mt-5 grid gap-4 lg:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  Resoluciones
+                </p>
+                <div className="mt-3 space-y-2 text-sm">
+                  {documentosSiigo.slice(0, 12).map((item, index) => (
+                    <p key={`siigo-doc-${index}`} className="font-semibold text-slate-800">
+                      {textoCatalogo(item, ["id"])} - {textoCatalogo(item, ["name"])}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  Vendedores
+                </p>
+                <div className="mt-3 space-y-2 text-sm">
+                  {usuariosSiigo.slice(0, 12).map((item, index) => (
+                    <p key={`siigo-user-${index}`} className="font-semibold text-slate-800">
+                      {textoCatalogo(item, ["id"])} - {nombreUsuarioSiigo(item)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  Formas de pago
+                </p>
+                <div className="mt-3 space-y-2 text-sm">
+                  {pagosSiigo.slice(0, 12).map((item, index) => (
+                    <p key={`siigo-payment-${index}`} className="font-semibold text-slate-800">
+                      {textoCatalogo(item, ["id"])} - {textoCatalogo(item, ["name"])}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  Productos
+                </p>
+                <div className="mt-3 space-y-2 text-sm">
+                  {productosSiigo.slice(0, 12).map((item, index) => (
+                    <p key={`siigo-product-${index}`} className="font-semibold text-slate-800">
+                      {textoCatalogo(item, ["code"])} - {textoCatalogo(item, ["name", "description"])}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
 
         <section className="mt-6 rounded-[30px] bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -386,13 +643,8 @@ export default function GestionSedesPage() {
 
           <div className="mt-6 grid gap-4 xl:grid-cols-2">
             {sedes.map((sede) => {
-              const edicion = ediciones[sede.id] || {
-                nombre: sede.nombre,
-                codigo: sede.codigo || "",
-                usuario: sede.acceso?.usuario || "",
-                clave: "",
-                soloInventarioPorCobrar: Boolean(sede.soloInventarioPorCobrar),
-              };
+              const edicion = ediciones[sede.id] || crearEdicionDesdeSede(sede);
+              const facturaComoOnline = usaResolucionOnline(sede) && !esSedeOnline(sede);
 
               return (
                 <section
@@ -424,6 +676,11 @@ export default function GestionSedesPage() {
                       {sede.soloInventarioPorCobrar && (
                         <p className="mt-1 font-semibold text-amber-700">
                           Solo inventario por cobrar
+                        </p>
+                      )}
+                      {sede.siigoEnabled && (
+                        <p className="mt-1 font-semibold text-emerald-700">
+                          Siigo activo
                         </p>
                       )}
                     </div>
@@ -505,6 +762,238 @@ export default function GestionSedesPage() {
                       </span>
                     </span>
                   </label>
+
+                  <div className="mt-6 border-t border-slate-200 pt-5">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-sm font-black uppercase tracking-[0.16em] text-slate-700">
+                          Siigo por sede
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                          {facturaComoOnline
+                            ? "Este stand factura usando la configuracion Siigo de ONLINE."
+                            : "Estos parametros determinan la resolucion y el comportamiento de facturacion de esta sede."}
+                        </p>
+                      </div>
+
+                      <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(edicion.siigoEnabled)}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoEnabled",
+                              event.target.checked
+                            )
+                          }
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                        />
+                        Activar Siigo
+                      </label>
+                    </div>
+
+                    <div className="mt-5 grid gap-4 md:grid-cols-3">
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Documento / resolucion
+                        <input
+                          inputMode="numeric"
+                          value={edicion.siigoInvoiceDocumentId}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoInvoiceDocumentId",
+                              soloDigitos(event.target.value)
+                            )
+                          }
+                          placeholder="ID document-types FV"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Vendedor Siigo
+                        <input
+                          inputMode="numeric"
+                          value={edicion.siigoSellerId}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoSellerId",
+                              soloDigitos(event.target.value)
+                            )
+                          }
+                          placeholder="ID users"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Forma de pago
+                        <input
+                          inputMode="numeric"
+                          value={edicion.siigoPaymentTypeId}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoPaymentTypeId",
+                              soloDigitos(event.target.value)
+                            )
+                          }
+                          placeholder="ID payment-types"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Codigo producto
+                        <input
+                          value={edicion.siigoItemCode}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoItemCode",
+                              event.target.value
+                            )
+                          }
+                          placeholder="Opcional"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Centro de costo
+                        <input
+                          inputMode="numeric"
+                          value={edicion.siigoCostCenterId}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoCostCenterId",
+                              soloDigitos(event.target.value)
+                            )
+                          }
+                          placeholder="Opcional"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Dias vencimiento
+                        <input
+                          inputMode="numeric"
+                          value={edicion.siigoPaymentDueDays}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoPaymentDueDays",
+                              soloDigitos(event.target.value)
+                            )
+                          }
+                          placeholder="0"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Pais
+                        <input
+                          value={edicion.siigoDefaultCountryCode}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoDefaultCountryCode",
+                              event.target.value.toUpperCase()
+                            )
+                          }
+                          placeholder="CO"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium uppercase text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Departamento
+                        <input
+                          value={edicion.siigoDefaultStateCode}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoDefaultStateCode",
+                              soloDigitos(event.target.value)
+                            )
+                          }
+                          placeholder="Ej: 11"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Ciudad
+                        <input
+                          value={edicion.siigoDefaultCityCode}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoDefaultCityCode",
+                              soloDigitos(event.target.value)
+                            )
+                          }
+                          placeholder="Ej: 11001"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Codigo postal
+                        <input
+                          value={edicion.siigoDefaultPostalCode}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoDefaultPostalCode",
+                              soloDigitos(event.target.value)
+                            )
+                          }
+                          placeholder="Opcional"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(edicion.siigoStampSend)}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoStampSend",
+                              event.target.checked
+                            )
+                          }
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                        />
+                        Enviar a DIAN al crear
+                      </label>
+
+                      <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(edicion.siigoMailSend)}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "siigoMailSend",
+                              event.target.checked
+                            )
+                          }
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                        />
+                        Enviar correo desde Siigo
+                      </label>
+                    </div>
+                  </div>
 
                   <div className="mt-5 flex justify-end">
                     <button

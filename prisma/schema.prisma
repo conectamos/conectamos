@@ -31,6 +31,19 @@ model Sede {
   activa              Boolean              @default(true)
   soloInventarioPorCobrar Boolean          @default(false)
   clavePanelFinancieroHash String?
+  siigoEnabled        Boolean              @default(false)
+  siigoInvoiceDocumentId Int?
+  siigoSellerId       Int?
+  siigoPaymentTypeId  Int?
+  siigoItemCode       String?
+  siigoCostCenterId   Int?
+  siigoDefaultCountryCode String?
+  siigoDefaultStateCode String?
+  siigoDefaultCityCode String?
+  siigoDefaultPostalCode String?
+  siigoStampSend      Boolean              @default(false)
+  siigoMailSend       Boolean              @default(false)
+  siigoPaymentDueDays Int                  @default(0)
   usuarios            Usuario[]
   inventario          Inventario[]
   ventas              Venta[]
@@ -214,6 +227,12 @@ model RegistroVendedorVenta {
   cerradorNombre                  String?
   numeroFactura                   String?
   estadoFacturacion               String          @default("PENDIENTE")
+  siigoInvoiceId                  String?
+  siigoInvoiceName                String?
+  siigoInvoiceStatus              String?
+  siigoInvoiceUrl                 String?
+  siigoInvoiceError               String?
+  siigoInvoiceCreatedAt           DateTime?
   estadoVentaRegistro             String          @default("PENDIENTE")
   ventaIdRelacionada              Int?
   convertidoEn                    DateTime?
@@ -238,6 +257,7 @@ model RegistroVendedorVenta {
   @@index([documentoNumero, serialImei, eliminadoEn])
   @@index([serialImei, estadoVentaRegistro, createdAt])
   @@index([ventaIdRelacionada])
+  @@index([siigoInvoiceId])
 }
 
 model CatalogoPersonalVenta {

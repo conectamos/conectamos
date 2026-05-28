@@ -114,6 +114,12 @@ async function runEnsureVendorProfilesSchema() {
       "cerradorNombre" TEXT,
       "numeroFactura" TEXT,
       "estadoFacturacion" TEXT NOT NULL DEFAULT 'PENDIENTE',
+      "siigoInvoiceId" TEXT,
+      "siigoInvoiceName" TEXT,
+      "siigoInvoiceStatus" TEXT,
+      "siigoInvoiceUrl" TEXT,
+      "siigoInvoiceError" TEXT,
+      "siigoInvoiceCreatedAt" TIMESTAMP(3),
       "estadoVentaRegistro" TEXT NOT NULL DEFAULT 'PENDIENTE',
       "ventaIdRelacionada" INTEGER,
       "convertidoEn" TIMESTAMP(3),
@@ -143,6 +149,12 @@ async function runEnsureVendorProfilesSchema() {
       ADD COLUMN IF NOT EXISTS "jaladorNombre" TEXT,
       ADD COLUMN IF NOT EXISTS "numeroFactura" TEXT,
       ADD COLUMN IF NOT EXISTS "estadoFacturacion" TEXT NOT NULL DEFAULT 'PENDIENTE',
+      ADD COLUMN IF NOT EXISTS "siigoInvoiceId" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoInvoiceName" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoInvoiceStatus" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoInvoiceUrl" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoInvoiceError" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoInvoiceCreatedAt" TIMESTAMP(3),
       ADD COLUMN IF NOT EXISTS "estadoVentaRegistro" TEXT NOT NULL DEFAULT 'PENDIENTE',
       ADD COLUMN IF NOT EXISTS "ventaIdRelacionada" INTEGER,
       ADD COLUMN IF NOT EXISTS "convertidoEn" TIMESTAMP(3),
@@ -155,6 +167,35 @@ async function runEnsureVendorProfilesSchema() {
       ADD COLUMN IF NOT EXISTS "cedulaFrenteDataUrl" TEXT,
       ADD COLUMN IF NOT EXISTS "cedulaReversoDataUrl" TEXT,
       ADD COLUMN IF NOT EXISTS "clienteSinCedulaFisica" BOOLEAN NOT NULL DEFAULT false;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "Sede"
+      ADD COLUMN IF NOT EXISTS "siigoEnabled" BOOLEAN NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "siigoInvoiceDocumentId" INTEGER,
+      ADD COLUMN IF NOT EXISTS "siigoSellerId" INTEGER,
+      ADD COLUMN IF NOT EXISTS "siigoPaymentTypeId" INTEGER,
+      ADD COLUMN IF NOT EXISTS "siigoItemCode" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCostCenterId" INTEGER,
+      ADD COLUMN IF NOT EXISTS "siigoDefaultCountryCode" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoDefaultStateCode" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoDefaultCityCode" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoDefaultPostalCode" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoStampSend" BOOLEAN NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "siigoMailSend" BOOLEAN NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "siigoPaymentDueDays" INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      CREATE INDEX "RegistroVendedorVenta_siigoInvoiceId_idx"
+      ON "RegistroVendedorVenta"("siigoInvoiceId");
+    EXCEPTION
+      WHEN duplicate_table THEN NULL;
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
   `);
 
   await prisma.$executeRawUnsafe(`
