@@ -303,7 +303,12 @@ export async function PATCH(req: Request) {
         );
       }
 
-      if (registroConvertido) {
+      const puedeEliminarSoloDelPanel =
+        registroConvertido &&
+        Boolean(existente.siigoCreditNoteId) &&
+        !existente.siigoInvoiceId;
+
+      if (registroConvertido && !puedeEliminarSoloDelPanel) {
         return NextResponse.json(
           {
             error:
@@ -323,7 +328,9 @@ export async function PATCH(req: Request) {
 
       return NextResponse.json({
         ok: true,
-        mensaje: "Registro eliminado correctamente",
+        mensaje: puedeEliminarSoloDelPanel
+          ? "Registro quitado del panel sin afectar la venta"
+          : "Registro eliminado correctamente",
       });
     }
 

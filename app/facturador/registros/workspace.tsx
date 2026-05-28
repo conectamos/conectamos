@@ -1012,7 +1012,6 @@ export default function FacturadorRegistrosWorkspace({
                     const financieras = resolveFinancieras(registro);
                     const esContado = esRegistroContado(registro);
                     const convertido = esRegistroConvertido(registro);
-                    const puedeModificarRegistro = esAdmin || !convertido;
                     const pagosContado = resolvePagosContado(registro);
                     const facturaSiigoEmitida = Boolean(registro.siigoInvoiceId);
                     const facturaManualRegistrada =
@@ -1025,12 +1024,19 @@ export default function FacturadorRegistrosWorkspace({
                     const notaCreditoSiigoEmitida = Boolean(
                       registro.siigoCreditNoteId
                     );
+                    const registroCerradoConNotaCredito =
+                      notaCreditoSiigoEmitida && !facturaSiigoEmitida;
+                    const puedeModificarRegistro =
+                      (esAdmin || !convertido) && !registroCerradoConNotaCredito;
                     const puedeEmitirNotaCreditoManual =
                       esAdmin && facturaSiigoEmitida && !notaCreditoSiigoEmitida;
                     const puedeLiberarFacturaSiigo =
                       esAdmin && facturaSiigoEmitida && !notaCreditoSiigoEmitida;
                     const puedeEmitirSiigo =
-                      convertido && !facturaSiigoEmitida && !registro.numeroFactura;
+                      convertido &&
+                      !facturaSiigoEmitida &&
+                      !notaCreditoSiigoEmitida &&
+                      !registro.numeroFactura;
                     const financierasConInicial = financieras.filter(
                       (item, index) =>
                         financieraRequiereInicial(index) &&
@@ -1140,7 +1146,11 @@ export default function FacturadorRegistrosWorkspace({
                         <td className="border-y border-slate-200 px-4 py-4">
                           <input
                             value={draft}
-                            disabled={facturaSiigoEmitida || !convertido}
+                            disabled={
+                              facturaSiigoEmitida ||
+                              !convertido ||
+                              registroCerradoConNotaCredito
+                            }
                             onChange={(event) =>
                               setFacturasDraft((current) => ({
                                 ...current,
@@ -1247,45 +1257,49 @@ export default function FacturadorRegistrosWorkspace({
                         </td>
                         <td className="rounded-r-[24px] border-y border-r border-slate-200 px-4 py-4">
                           <div className="flex min-w-44 flex-col gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void guardarFactura(registro.id)}
-                              disabled={
-                                guardandoId === registro.id ||
-                                facturaSiigoEmitida ||
-                                !convertido ||
-                                !String(draft).trim()
-                              }
-                              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${estado.buttonClass} disabled:cursor-not-allowed disabled:bg-slate-300`}
-                            >
-                              {guardandoId === registro.id ? "Guardando..." : "Guardar"}
-                            </button>
+                            {!registroCerradoConNotaCredito && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void guardarFactura(registro.id)}
+                                  disabled={
+                                    guardandoId === registro.id ||
+                                    facturaSiigoEmitida ||
+                                    !convertido ||
+                                    !String(draft).trim()
+                                  }
+                                  className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${estado.buttonClass} disabled:cursor-not-allowed disabled:bg-slate-300`}
+                                >
+                                  {guardandoId === registro.id ? "Guardando..." : "Guardar"}
+                                </button>
 
-                            <button
-                              type="button"
-                              onClick={() => void emitirFacturaSiigo(registro.id)}
-                              disabled={
-                                emitiendoSiigoId === registro.id || !puedeEmitirSiigo
-                              }
-                              className="rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                            >
-                              {emitiendoSiigoId === registro.id
-                                ? "Enviando..."
-                                : facturaSiigoEmitida
-                                  ? "Emitida en Siigo"
-                                  : !convertido
-                                    ? "Pendiente venta"
-                                  : "Enviar a Siigo"}
-                            </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void emitirFacturaSiigo(registro.id)}
+                                  disabled={
+                                    emitiendoSiigoId === registro.id || !puedeEmitirSiigo
+                                  }
+                                  className="rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                >
+                                  {emitiendoSiigoId === registro.id
+                                    ? "Enviando..."
+                                    : facturaSiigoEmitida
+                                      ? "Emitida en Siigo"
+                                      : !convertido
+                                        ? "Pendiente venta"
+                                      : "Enviar a Siigo"}
+                                </button>
 
-                            <button
-                              type="button"
-                              onClick={() => setEditando(createEditDraft(registro))}
-                              disabled={!puedeModificarRegistro}
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                            >
-                              Modificar
-                            </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditando(createEditDraft(registro))}
+                                  disabled={!puedeModificarRegistro}
+                                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                >
+                                  Modificar
+                                </button>
+                              </>
+                            )}
 
                             {puedeEmitirNotaCreditoManual && (
                               <button
@@ -1313,14 +1327,19 @@ export default function FacturadorRegistrosWorkspace({
                               </button>
                             )}
 
-                            {puedeEliminar && !convertido && (
+                            {puedeEliminar &&
+                              (!convertido || registroCerradoConNotaCredito) && (
                               <button
                                 type="button"
                                 onClick={() => void eliminarRegistro(registro.id)}
                                 disabled={eliminandoId === registro.id}
                                 className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                               >
-                                {eliminandoId === registro.id ? "Eliminando..." : "Eliminar"}
+                                {eliminandoId === registro.id
+                                  ? "Eliminando..."
+                                  : registroCerradoConNotaCredito
+                                    ? "Quitar del panel"
+                                    : "Eliminar"}
                               </button>
                             )}
                           </div>
