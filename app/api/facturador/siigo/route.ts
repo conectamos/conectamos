@@ -112,6 +112,7 @@ const REGISTRO_FACTURADOR_SELECT = {
   siigoInvoiceUrl: true,
   siigoInvoiceError: true,
   siigoInvoiceCreatedAt: true,
+  siigoInvoiceAttempt: true,
   siigoCreditNoteId: true,
   siigoCreditNoteName: true,
   siigoCreditNoteStatus: true,

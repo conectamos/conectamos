@@ -119,6 +119,7 @@ export type RegistroSiigoInput = {
   serialImei?: string | null;
   tipoEquipo?: string | null;
   siigoCreditNoteId?: string | null;
+  siigoInvoiceAttempt?: unknown;
   siigoCreditNoteCreatedAt?: Date | string | null;
   sede?: {
     id: number;
@@ -1445,9 +1446,10 @@ export async function createSiigoInvoiceForRegistro(
     customer,
     documentNumber
   );
+  const invoiceAttempt = toNonNegativeInt(registro.siigoInvoiceAttempt) ?? 0;
   const invoiceKeyVersion = registro.siigoCreditNoteId
     ? `R${hashText(registro.siigoCreditNoteId).toString(36).slice(0, 8)}`
-    : "N2";
+    : `N2A${invoiceAttempt}`;
   const idempotencyKey = `CONECTAMOS${registro.id}${invoiceKeyVersion}`.slice(
     0,
     30

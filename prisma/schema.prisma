@@ -233,6 +233,7 @@ model RegistroVendedorVenta {
   siigoInvoiceUrl                 String?
   siigoInvoiceError               String?
   siigoInvoiceCreatedAt           DateTime?
+  siigoInvoiceAttempt             Int             @default(0)
   siigoCreditNoteId               String?
   siigoCreditNoteName             String?
   siigoCreditNoteStatus           String?

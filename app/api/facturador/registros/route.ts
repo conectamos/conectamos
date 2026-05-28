@@ -206,6 +206,7 @@ export async function GET() {
         siigoInvoiceUrl: true,
         siigoInvoiceError: true,
         siigoInvoiceCreatedAt: true,
+        siigoInvoiceAttempt: true,
         siigoCreditNoteId: true,
         siigoCreditNoteName: true,
         siigoCreditNoteStatus: true,
@@ -379,6 +380,9 @@ export async function PATCH(req: Request) {
           siigoInvoiceUrl: null,
           siigoInvoiceError: null,
           siigoInvoiceCreatedAt: null,
+          siigoInvoiceAttempt: {
+            increment: 1,
+          },
           siigoCreditNoteError: null,
         },
         select: {
@@ -411,6 +415,7 @@ export async function PATCH(req: Request) {
           siigoInvoiceUrl: true,
           siigoInvoiceError: true,
           siigoInvoiceCreatedAt: true,
+          siigoInvoiceAttempt: true,
           siigoCreditNoteId: true,
           siigoCreditNoteName: true,
           siigoCreditNoteStatus: true,
