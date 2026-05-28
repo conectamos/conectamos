@@ -380,7 +380,7 @@ function getSiigoConfig(registro: RegistroSiigoInput): SiigoConfig {
     mailSend: Boolean(sede?.siigoMailSend),
     paymentDueDays: toNonNegativeInt(sede?.siigoPaymentDueDays) ?? 0,
     exemptItemLimit: readMoney("SIIGO_EXEMPT_ITEM_LIMIT", 1150000),
-    maxInvoiceTotal: readMoney("SIIGO_MAX_INVOICE_TOTAL", 2500000),
+    maxInvoiceTotal: readMoney("SIIGO_MAX_INVOICE_TOTAL", 2300000),
   };
 }
 

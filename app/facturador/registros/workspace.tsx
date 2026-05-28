@@ -99,6 +99,8 @@ const ESTADO_OPTIONS = [
   { value: "NOTA_CREDITO", label: "Nota credito" },
 ] as const;
 
+const SIIGO_MAX_FACTURA_TOTAL = 2300000;
+
 function formatDate(value: string) {
   try {
     return new Date(value).toLocaleString("es-CO", {
@@ -152,6 +154,27 @@ function formatMoneyInputFromStored(value: string | number | null | undefined) {
   }
 
   return formatearPesoInput(normalized);
+}
+
+function toMoneyNumber(value: string | number | null | undefined) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+
+  const raw = String(value).trim().replace(/[^\d.,-]/g, "");
+  const dots = raw.match(/\./g)?.length ?? 0;
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : dots > 1 || /^\d+\.\d{3}$/.test(raw)
+      ? raw.replace(/\./g, "")
+      : raw;
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function esRegistroContado(registro: RegistroFacturacion) {
@@ -232,6 +255,16 @@ function resolveFinancieras(registro: RegistroFacturacion) {
       cuotaInicial: registro.cuotaInicial,
     },
   ].filter((item) => item.plataformaCredito || item.creditoAutorizado !== null);
+}
+
+function totalFacturableSiigo(registro: RegistroFacturacion) {
+  return resolveFinancieras(registro).reduce(
+    (total, item) =>
+      total +
+      toMoneyNumber(item.creditoAutorizado) +
+      toMoneyNumber(item.cuotaInicial),
+    0
+  );
 }
 
 function resolveEstadoBadge(estadoFacturacion: string | null, numeroFactura: string | null) {
@@ -1010,6 +1043,9 @@ export default function FacturadorRegistrosWorkspace({
                     );
                     const draft = facturasDraft[registro.id] ?? registro.numeroFactura ?? "";
                     const financieras = resolveFinancieras(registro);
+                    const totalSiigo = totalFacturableSiigo(registro);
+                    const superaTopeSiigo =
+                      totalSiigo > SIIGO_MAX_FACTURA_TOTAL;
                     const esContado = esRegistroContado(registro);
                     const convertido = esRegistroConvertido(registro);
                     const pagosContado = resolvePagosContado(registro);
@@ -1036,6 +1072,7 @@ export default function FacturadorRegistrosWorkspace({
                       convertido &&
                       !facturaSiigoEmitida &&
                       !notaCreditoSiigoEmitida &&
+                      !superaTopeSiigo &&
                       !registro.numeroFactura;
                     const financierasConInicial = financieras.filter(
                       (item, index) =>
@@ -1240,6 +1277,11 @@ export default function FacturadorRegistrosWorkspace({
                             <div className="max-w-64 text-xs leading-5 text-red-700">
                               {registro.siigoInvoiceError}
                             </div>
+                          ) : superaTopeSiigo ? (
+                            <div className="max-w-64 text-xs leading-5 text-amber-700">
+                              Supera tope Siigo: {formatMoney(totalSiigo)}. Maximo{" "}
+                              {formatMoney(SIIGO_MAX_FACTURA_TOTAL)}.
+                            </div>
                           ) : !convertido ? (
                             <span className="text-sm text-slate-500">
                               Se emite al convertir
@@ -1285,6 +1327,8 @@ export default function FacturadorRegistrosWorkspace({
                                     ? "Enviando..."
                                     : facturaSiigoEmitida
                                       ? "Emitida en Siigo"
+                                      : superaTopeSiigo
+                                        ? "Supera tope"
                                       : !convertido
                                         ? "Pendiente venta"
                                       : "Enviar a Siigo"}

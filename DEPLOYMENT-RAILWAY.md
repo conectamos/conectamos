@@ -57,7 +57,7 @@ La resolucion/documento, vendedor, forma de pago, ciudad y opciones de envio se 
 - `SIIGO_DEFAULT_CITY_CODE`: respaldo opcional si una sede no tiene codigo de ciudad.
 - `SIIGO_DEFAULT_POSTAL_CODE`: codigo postal de respaldo.
 - `SIIGO_EXEMPT_ITEM_LIMIT`: tope por linea exenta. Por defecto `1150000`.
-- `SIIGO_MAX_INVOICE_TOTAL`: valor maximo que se permite facturar en Siigo. Por defecto `2500000`.
+- `SIIGO_MAX_INVOICE_TOTAL`: valor maximo que se permite facturar en Siigo. Por defecto `2300000`.
 
 ### Parametros Siigo por sede
 
@@ -72,7 +72,7 @@ En `Dashboard > Sedes`, cada sede puede activar Siigo y definir:
 Las facturas se envian a Siigo sin impuestos en los items. Si el valor del
 equipo supera `$1.150.000`, la app divide el producto en varias lineas enteras,
 repartidas lo mas parejo posible y de maximo ese valor. Si la venta supera
-`$2.500.000`, la app no permite emitir la factura en Siigo. Confirma con
+`$2.300.000`, la app no permite emitir la factura en Siigo. Confirma con
 contabilidad que el producto usado en Siigo tambien este creado como exento o
 excluido de IVA.
 
