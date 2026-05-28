@@ -1063,7 +1063,7 @@ export async function createSiigoInvoiceForRegistro(
     customer,
     documentNumber
   );
-  const idempotencyKey = `CONECTAMOS${registro.id}`.slice(0, 30);
+  const idempotencyKey = `CONECTAMOS${registro.id}N2`.slice(0, 30);
 
   return siigoFetch<SiigoInvoiceResponse>(
     config,

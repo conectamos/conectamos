@@ -539,6 +539,7 @@ export async function PATCH(req: Request) {
           serialImei,
           numeroFactura: numeroFactura ?? null,
           estadoFacturacion,
+          siigoInvoiceError: numeroFactura ? null : undefined,
           financierasDetalle: financierasActualizadas,
           plataformaCredito: String(primeraFinanciera?.plataformaCredito ?? ""),
           creditoAutorizado: String(primeraFinanciera?.creditoAutorizado ?? "0"),
@@ -596,6 +597,7 @@ export async function PATCH(req: Request) {
       data: {
         numeroFactura,
         estadoFacturacion: "FACTURADO",
+        siigoInvoiceError: null,
       },
       select: {
         id: true,
