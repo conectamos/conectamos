@@ -915,12 +915,8 @@ function buildInvoicePayload(
         due_date: formatBogotaDate(addDays(today, config.paymentDueDays)),
       },
     ],
-    stamp: {
-      send: config.stampSend,
-    },
-    mail: {
-      send: config.mailSend,
-    },
+    ...(config.stampSend ? { stamp: { send: true } } : {}),
+    ...(config.mailSend ? { mail: { send: true } } : {}),
   };
 }
 
