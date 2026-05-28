@@ -357,6 +357,7 @@ export default function FacturadorRegistrosWorkspace({
   const [emitiendoNcId, setEmitiendoNcId] = useState<number | null>(null);
   const [limpiandoSiigoId, setLimpiandoSiigoId] = useState<number | null>(null);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
+  const [modoSoporteSiigo, setModoSoporteSiigo] = useState(false);
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
   const [editando, setEditando] = useState<EditDraft | null>(null);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
@@ -975,7 +976,7 @@ export default function FacturadorRegistrosWorkspace({
               </p>
             </div>
 
-            <div className="w-full max-w-md">
+            <div className="flex w-full max-w-md flex-col gap-3">
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                 Buscar por IMEI o cedula
                 <input
@@ -985,6 +986,19 @@ export default function FacturadorRegistrosWorkspace({
                   placeholder="Ej: 3551... o 1110..."
                 />
               </label>
+              {esAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setModoSoporteSiigo((current) => !current)}
+                  className={`self-start rounded-2xl border px-4 py-2 text-sm font-semibold transition ${
+                    modoSoporteSiigo
+                      ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-950"
+                  }`}
+                >
+                  {modoSoporteSiigo ? "Ocultar soporte Siigo" : "Soporte Siigo"}
+                </button>
+              )}
             </div>
           </div>
 
@@ -1065,9 +1079,15 @@ export default function FacturadorRegistrosWorkspace({
                     const puedeModificarRegistro =
                       (esAdmin || !convertido) && !registroCerradoConNotaCredito;
                     const puedeEmitirNotaCreditoManual =
-                      esAdmin && facturaSiigoEmitida && !notaCreditoSiigoEmitida;
+                      esAdmin &&
+                      modoSoporteSiigo &&
+                      facturaSiigoEmitida &&
+                      !notaCreditoSiigoEmitida;
                     const puedeQuitarFacturaBorrada =
-                      esAdmin && facturaSiigoEmitida && !notaCreditoSiigoEmitida;
+                      esAdmin &&
+                      modoSoporteSiigo &&
+                      facturaSiigoEmitida &&
+                      !notaCreditoSiigoEmitida;
                     const puedeEmitirSiigo =
                       convertido &&
                       !facturaSiigoEmitida &&
