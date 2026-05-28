@@ -352,6 +352,33 @@ function stringifySiigoDetails(details: unknown) {
 
   if (typeof details === "object") {
     const detailRecord = details as Record<string, unknown>;
+    const errors = detailRecord.Errors;
+
+    if (Array.isArray(errors)) {
+      const messages = errors
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return "";
+          }
+
+          const errorItem = item as Record<string, unknown>;
+          const code = String(errorItem.Code || "").trim();
+          const message = String(errorItem.Message || "").trim();
+          const detail = String(errorItem.Detail || "").trim();
+
+          if (code === "invalid_dian_resolution") {
+            return "La resolucion DIAN del documento de esta sede esta vencida o ya agoto el rango autorizado. Renueva la resolucion en Siigo/DIAN o configura otro documento vigente para la sede.";
+          }
+
+          return [code, message, detail].filter(Boolean).join(": ");
+        })
+        .filter(Boolean);
+
+      if (messages.length > 0) {
+        return messages.join(" | ");
+      }
+    }
+
     const directMessage =
       detailRecord.message ||
       detailRecord.error ||
