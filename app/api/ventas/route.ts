@@ -637,9 +637,7 @@ async function emitirFacturaSiigoAlConvertir(registroId: number) {
         siigoInvoiceName: invoiceLabel,
         siigoInvoiceStatus: invoice.status ?? null,
         siigoInvoiceUrl: invoice.public_url ?? null,
-        siigoInvoiceError: invoice.mail_error
-          ? `Factura emitida en Siigo, pero no se pudo enviar correo: ${invoice.mail_error}`
-          : null,
+        siigoInvoiceError: null,
         siigoInvoiceCreatedAt: new Date(),
         siigoCreditNoteId: null,
         siigoCreditNoteName: null,
