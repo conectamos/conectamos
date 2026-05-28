@@ -889,8 +889,10 @@ export default function FacturadorRegistrosWorkspace({
                     const puedeModificarRegistro = esAdmin || !convertido;
                     const pagosContado = resolvePagosContado(registro);
                     const facturaSiigoEmitida = Boolean(registro.siigoInvoiceId);
+                    const facturaManualRegistrada =
+                      Boolean(registro.numeroFactura) && !facturaSiigoEmitida;
                     const puedeEmitirSiigo =
-                      !facturaSiigoEmitida && !registro.numeroFactura;
+                      convertido && !facturaSiigoEmitida && !registro.numeroFactura;
                     const financierasConInicial = financieras.filter(
                       (item, index) =>
                         financieraRequiereInicial(index) &&
@@ -1000,7 +1002,7 @@ export default function FacturadorRegistrosWorkspace({
                         <td className="border-y border-slate-200 px-4 py-4">
                           <input
                             value={draft}
-                            disabled={facturaSiigoEmitida}
+                            disabled={facturaSiigoEmitida || !convertido}
                             onChange={(event) =>
                               setFacturasDraft((current) => ({
                                 ...current,
@@ -1030,10 +1032,18 @@ export default function FacturadorRegistrosWorkspace({
                                 </Link>
                               )}
                             </div>
+                          ) : facturaManualRegistrada ? (
+                            <span className="text-sm text-slate-500">
+                              Factura manual
+                            </span>
                           ) : registro.siigoInvoiceError ? (
                             <div className="max-w-64 text-xs leading-5 text-red-700">
                               {registro.siigoInvoiceError}
                             </div>
+                          ) : !convertido ? (
+                            <span className="text-sm text-slate-500">
+                              Se emite al convertir
+                            </span>
                           ) : (
                             <span className="text-sm text-slate-500">Sin emitir</span>
                           )}
@@ -1053,6 +1063,7 @@ export default function FacturadorRegistrosWorkspace({
                               disabled={
                                 guardandoId === registro.id ||
                                 facturaSiigoEmitida ||
+                                !convertido ||
                                 !String(draft).trim()
                               }
                               className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${estado.buttonClass} disabled:cursor-not-allowed disabled:bg-slate-300`}
@@ -1072,6 +1083,8 @@ export default function FacturadorRegistrosWorkspace({
                                 ? "Enviando..."
                                 : facturaSiigoEmitida
                                   ? "Emitida en Siigo"
+                                  : !convertido
+                                    ? "Pendiente venta"
                                   : "Enviar a Siigo"}
                             </button>
 

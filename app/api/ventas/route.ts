@@ -15,6 +15,12 @@ import {
 } from "@/lib/ventas-financieras";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import {
+  createSiigoInvoiceForRegistro,
+  getSiigoErrorMessage,
+  getSiigoInvoiceLabel,
+  SiigoConfigurationError,
+} from "@/lib/siigo";
 
 type VentaInput = {
   confirmoEfectivoRecibido: boolean;
@@ -36,6 +42,64 @@ type VentaInput = {
   tipoIngreso1: string;
   tipoIngreso2: string;
 };
+
+const SIIGO_SEDE_SELECT = {
+  id: true,
+  nombre: true,
+  codigo: true,
+  siigoEnabled: true,
+  siigoInvoiceDocumentId: true,
+  siigoSellerId: true,
+  siigoPaymentTypeId: true,
+  siigoItemCode: true,
+  siigoCostCenterId: true,
+  siigoDefaultCountryCode: true,
+  siigoDefaultStateCode: true,
+  siigoDefaultCityCode: true,
+  siigoDefaultPostalCode: true,
+  siigoStampSend: true,
+  siigoMailSend: true,
+  siigoPaymentDueDays: true,
+} as const;
+
+const REGISTRO_SIIGO_AUTO_SELECT = {
+  id: true,
+  createdAt: true,
+  ciudad: true,
+  puntoVenta: true,
+  clienteNombre: true,
+  tipoDocumento: true,
+  documentoNumero: true,
+  correo: true,
+  whatsapp: true,
+  direccion: true,
+  barrio: true,
+  plataformaCredito: true,
+  creditoAutorizado: true,
+  cuotaInicial: true,
+  medioPago1Tipo: true,
+  medioPago1Valor: true,
+  medioPago2Tipo: true,
+  medioPago2Valor: true,
+  referenciaEquipo: true,
+  serialImei: true,
+  tipoEquipo: true,
+  jaladorNombre: true,
+  numeroFactura: true,
+  estadoFacturacion: true,
+  estadoVentaRegistro: true,
+  ventaIdRelacionada: true,
+  financierasDetalle: true,
+  siigoInvoiceId: true,
+  siigoInvoiceName: true,
+  siigoInvoiceStatus: true,
+  siigoInvoiceUrl: true,
+  siigoInvoiceError: true,
+  siigoInvoiceCreatedAt: true,
+  sede: {
+    select: SIIGO_SEDE_SELECT,
+  },
+} as const;
 
 function toNumber(value: unknown): number {
   if (value === null || value === undefined || value === "") return 0;
@@ -410,6 +474,199 @@ function aplicarRegistroVendedorInput<
   }
 
   return next;
+}
+
+function esRegistroConvertidoParaFacturar(registro: {
+  estadoVentaRegistro?: string | null;
+  ventaIdRelacionada?: number | null;
+}) {
+  return (
+    Boolean(registro.ventaIdRelacionada) ||
+    String(registro.estadoVentaRegistro || "").trim().toUpperCase() ===
+      "CONVERTIDO_EN_VENTA"
+  );
+}
+
+function siigoAutoInvoiceOnSaleEnabled() {
+  return ["1", "true", "si", "yes", "on"].includes(
+    String(process.env.SIIGO_AUTO_INVOICE_ON_SALE || "").trim().toLowerCase()
+  );
+}
+
+function esSedeOnline(sede: { nombre?: string | null; codigo?: string | null }) {
+  const nombre = String(sede.nombre || "").trim().toUpperCase();
+  const codigo = String(sede.codigo || "").trim().toUpperCase();
+
+  return nombre === "ONLINE" || codigo === "ONLINE";
+}
+
+function usaResolucionOnline(sede: {
+  nombre?: string | null;
+  codigo?: string | null;
+}) {
+  const nombre = String(sede.nombre || "").trim().toUpperCase();
+  const codigo = String(sede.codigo || "").trim().toUpperCase();
+
+  return (
+    esSedeOnline(sede) ||
+    nombre.startsWith("STAND ") ||
+    codigo.startsWith("STAND-")
+  );
+}
+
+function describirConfiguracionSiigo(sede: {
+  nombre?: string | null;
+  codigo?: string | null;
+  siigoInvoiceDocumentId?: number | null;
+} | null) {
+  if (!sede) {
+    return "";
+  }
+
+  const partes = [
+    `sede ${String(sede.nombre || "-").trim()}`,
+    sede.codigo ? `codigo ${sede.codigo}` : null,
+    sede.siigoInvoiceDocumentId
+      ? `document.id ${sede.siigoInvoiceDocumentId}`
+      : "sin document.id",
+  ].filter(Boolean);
+
+  return partes.join(" / ");
+}
+
+async function aplicarResolucionOnlineParaStands<
+  T extends { sede: null | { nombre?: string | null; codigo?: string | null } },
+>(registro: T): Promise<T> {
+  if (!registro.sede || !usaResolucionOnline(registro.sede) || esSedeOnline(registro.sede)) {
+    return registro;
+  }
+
+  const sedeOnline = await prisma.sede.findFirst({
+    where: {
+      OR: [
+        {
+          nombre: {
+            equals: "ONLINE",
+            mode: "insensitive",
+          },
+        },
+        {
+          codigo: {
+            equals: "ONLINE",
+            mode: "insensitive",
+          },
+        },
+      ],
+    },
+    select: SIIGO_SEDE_SELECT,
+  });
+
+  if (!sedeOnline) {
+    throw new SiigoConfigurationError([
+      "crear o configurar la sede ONLINE para facturar stands",
+    ]);
+  }
+
+  return {
+    ...registro,
+    sede: sedeOnline,
+  };
+}
+
+async function emitirFacturaSiigoAlConvertir(registroId: number) {
+  let contextoSiigo = "";
+
+  try {
+    const registro = await prisma.registroVendedorVenta.findFirst({
+      where: {
+        id: registroId,
+        eliminadoEn: null,
+      },
+      select: REGISTRO_SIIGO_AUTO_SELECT,
+    });
+
+    if (!registro) {
+      return {
+        ok: false as const,
+        error: "Registro no encontrado para emitir la factura en Siigo",
+      };
+    }
+
+    if (!esRegistroConvertidoParaFacturar(registro)) {
+      return {
+        ok: false as const,
+        error: "El registro aun no esta convertido en venta",
+      };
+    }
+
+    if (registro.siigoInvoiceId || registro.numeroFactura) {
+      return {
+        ok: true as const,
+        skipped: true,
+        invoiceLabel: registro.numeroFactura || registro.siigoInvoiceName || null,
+      };
+    }
+
+    const registroParaSiigo = await aplicarResolucionOnlineParaStands(registro);
+    contextoSiigo = describirConfiguracionSiigo(registroParaSiigo.sede);
+    const invoice = await createSiigoInvoiceForRegistro(registroParaSiigo);
+    const invoiceLabel = getSiigoInvoiceLabel(invoice);
+
+    if (!invoice.id || !invoiceLabel) {
+      throw new Error(
+        "Siigo creo la factura, pero no retorno identificador suficiente"
+      );
+    }
+
+    await prisma.registroVendedorVenta.update({
+      where: { id: registro.id },
+      data: {
+        numeroFactura: invoiceLabel,
+        estadoFacturacion: "FACTURADO",
+        siigoInvoiceId: invoice.id,
+        siigoInvoiceName: invoiceLabel,
+        siigoInvoiceStatus: invoice.status ?? null,
+        siigoInvoiceUrl: invoice.public_url ?? null,
+        siigoInvoiceError: null,
+        siigoInvoiceCreatedAt: new Date(),
+      },
+    });
+
+    return {
+      ok: true as const,
+      skipped: false,
+      invoiceLabel,
+      siigo: {
+        id: invoice.id,
+        name: invoiceLabel,
+        status: invoice.status ?? null,
+        publicUrl: invoice.public_url ?? null,
+      },
+    };
+  } catch (error) {
+    const baseMessage = getSiigoErrorMessage(error);
+    const message = contextoSiigo
+      ? `${baseMessage} Configuracion enviada: ${contextoSiigo}.`
+      : baseMessage;
+
+    console.error("ERROR SIIGO AUTOMATICO AL CONVERTIR VENTA:", error);
+
+    try {
+      await prisma.registroVendedorVenta.update({
+        where: { id: registroId },
+        data: {
+          siigoInvoiceError: message.slice(0, 2000),
+        },
+      });
+    } catch (updateError) {
+      console.error("ERROR GUARDANDO ERROR SIIGO AUTOMATICO:", updateError);
+    }
+
+    return {
+      ok: false as const,
+      error: message,
+    };
+  }
 }
 
 function buildVentaData(
@@ -857,10 +1114,24 @@ export async function POST(req: Request) {
       return creada;
     });
 
+    const siigo =
+      registroVendedor && siigoAutoInvoiceOnSaleEnabled()
+        ? await emitirFacturaSiigoAlConvertir(registroVendedor.id)
+        : null;
+
+    const mensaje = siigo?.ok
+      ? siigo.skipped
+        ? "Venta registrada correctamente"
+        : "Venta registrada y factura emitida correctamente en Siigo"
+      : siigo
+        ? "Venta registrada correctamente, pero Siigo no pudo emitir la factura"
+        : "Venta registrada correctamente";
+
     return NextResponse.json({
       ok: true,
-      mensaje: "Venta registrada correctamente",
+      mensaje,
       venta,
+      ...(siigo ? { siigo } : {}),
     });
   } catch (error) {
     console.error("ERROR POST VENTAS:", error);

@@ -85,6 +85,17 @@ function normalizarEstadoFacturacion(valor: unknown) {
     : null;
 }
 
+function esRegistroConvertidoParaFacturar(registro: {
+  estadoVentaRegistro?: string | null;
+  ventaIdRelacionada?: number | null;
+}) {
+  return (
+    Boolean(registro.ventaIdRelacionada) ||
+    String(registro.estadoVentaRegistro || "").trim().toUpperCase() ===
+      "CONVERTIDO_EN_VENTA"
+  );
+}
+
 function normalizarFinancierasEdicion(
   valor: unknown,
   plataformasPermitidas: string[]
@@ -268,6 +279,8 @@ export async function PATCH(req: Request) {
       );
     }
 
+    const registroConvertido = esRegistroConvertidoParaFacturar(existente);
+
     if (modo === "ELIMINAR") {
       if (esRolAuditor(access.session.rolNombre)) {
         return NextResponse.json(
@@ -290,11 +303,17 @@ export async function PATCH(req: Request) {
       });
     }
 
+    if (modo !== "EDITAR" && !registroConvertido) {
+      return NextResponse.json(
+        {
+          error:
+            "Este registro aun no esta convertido en venta. No se puede facturar antes de convertirlo.",
+        },
+        { status: 400 }
+      );
+    }
+
     if (modo === "EDITAR") {
-      const registroConvertido =
-        existente.ventaIdRelacionada ||
-        String(existente.estadoVentaRegistro || "").trim().toUpperCase() ===
-          "CONVERTIDO_EN_VENTA";
       const puedeEditarConvertido =
         esRolAdministrativo(access.session.rolNombre) ||
         esPerfilAdministrativo(access.session.perfilTipo);
@@ -405,6 +424,21 @@ export async function PATCH(req: Request) {
         );
       }
 
+      if (
+        !registroConvertido &&
+        (numeroFactura ||
+          estadoFacturacion === "FACTURADO" ||
+          estadoFacturacion === "NOTA_CREDITO")
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Este registro aun no esta convertido en venta. No se puede facturar antes de convertirlo.",
+          },
+          { status: 400 }
+        );
+      }
+
       if (registroConvertido) {
         const actualizado = await prisma.registroVendedorVenta.update({
           where: { id },
@@ -418,6 +452,7 @@ export async function PATCH(req: Request) {
             barrio,
             numeroFactura: numeroFactura ?? null,
             estadoFacturacion,
+            siigoInvoiceError: numeroFactura ? null : undefined,
           },
           select: {
             id: true,

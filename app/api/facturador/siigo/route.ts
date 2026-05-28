@@ -158,6 +158,17 @@ function describirConfiguracionSiigo(sede: {
   return partes.join(" / ");
 }
 
+function esRegistroConvertidoParaFacturar(registro: {
+  estadoVentaRegistro?: string | null;
+  ventaIdRelacionada?: number | null;
+}) {
+  return (
+    Boolean(registro.ventaIdRelacionada) ||
+    String(registro.estadoVentaRegistro || "").trim().toUpperCase() ===
+      "CONVERTIDO_EN_VENTA"
+  );
+}
+
 async function aplicarResolucionOnlineParaStands<
   T extends { sede: null | { nombre?: string | null; codigo?: string | null } },
 >(registro: T): Promise<T> {
@@ -247,6 +258,16 @@ export async function POST(req: Request) {
         {
           error:
             "Este registro ya tiene numero de factura manual. Limpia o ajusta el registro antes de emitir en Siigo.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!esRegistroConvertidoParaFacturar(registro)) {
+      return NextResponse.json(
+        {
+          error:
+            "Este registro aun no esta convertido en venta. Se facturara automaticamente cuando se convierta.",
         },
         { status: 400 }
       );
