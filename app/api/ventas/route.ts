@@ -714,7 +714,8 @@ async function emitirNotaCreditoSiigoAlEliminarVenta(ventaId: number) {
     contextoSiigo = describirConfiguracionSiigo(registroParaSiigo.sede);
     const creditNote = await createSiigoCreditNoteForRegistro(
       registroParaSiigo,
-      registro.siigoInvoiceId
+      registro.siigoInvoiceId,
+      registro.siigoInvoiceName || registro.numeroFactura
     );
     const creditNoteLabel = getSiigoCreditNoteLabel(creditNote);
 

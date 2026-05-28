@@ -37,6 +37,19 @@ type SiigoCustomerLookupResponse = {
 
 type SiigoCustomer = NonNullable<SiigoCustomerLookupResponse["results"]>[number];
 
+type SiigoInvoiceLookupResponse = {
+  results?: Array<{
+    id?: string;
+    name?: string;
+    number?: number;
+    document?: {
+      id?: number;
+      name?: string;
+      number?: number;
+    };
+  }>;
+};
+
 type SiigoDocumentType = {
   id?: number;
   code?: string;
@@ -926,6 +939,60 @@ function resolveCreditNoteReason() {
   );
 }
 
+function isUuid(value: unknown) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim()
+  );
+}
+
+async function findInvoiceIdByName(config: SiigoConfig, invoiceName?: string | null) {
+  const name = String(invoiceName || "").trim();
+
+  if (!name) {
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    name,
+    page: "1",
+    page_size: "5",
+  });
+  const response = await siigoFetch<SiigoInvoiceLookupResponse>(
+    config,
+    `/invoices?${params.toString()}`,
+    {
+      method: "GET",
+    }
+  );
+  const invoices = response.results || [];
+  const exactMatch = invoices.find(
+    (invoice) => String(invoice.name || "").trim() === name
+  );
+  const invoice = exactMatch || invoices[0];
+
+  return invoice?.id && isUuid(invoice.id) ? invoice.id : null;
+}
+
+async function resolveInvoiceIdForCreditNote(
+  config: SiigoConfig,
+  invoiceId: string,
+  invoiceName?: string | null
+) {
+  const invoiceIdFromName = await findInvoiceIdByName(config, invoiceName);
+
+  if (invoiceIdFromName) {
+    return invoiceIdFromName;
+  }
+
+  if (isUuid(invoiceId)) {
+    return invoiceId;
+  }
+
+  throw new SiigoValidationError(
+    "No se encontro el GUID interno de la factura Siigo para generar la nota credito"
+  );
+}
+
 function onlyDigits(value: unknown) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -1250,14 +1317,20 @@ export async function createSiigoInvoiceForRegistro(
 
 export async function createSiigoCreditNoteForRegistro(
   registro: RegistroSiigoInput,
-  invoiceId: string
+  invoiceId: string,
+  invoiceName?: string | null
 ) {
   const config = getSiigoConfig(registro);
+  const resolvedInvoiceId = await resolveInvoiceIdForCreditNote(
+    config,
+    invoiceId,
+    invoiceName
+  );
   const creditNoteDocumentId = await resolveCreditNoteDocumentId(config);
   const payload = buildCreditNotePayload(
     registro,
     config,
-    invoiceId,
+    resolvedInvoiceId,
     creditNoteDocumentId
   );
   const idempotencyKey = `CONECTAMOSNC${registro.id}N1`.slice(0, 30);
