@@ -67,6 +67,7 @@ type CatalogosSiigo = {
   users?: unknown;
   paymentTypes?: unknown;
   products?: unknown;
+  costCenters?: unknown;
 };
 
 function slugUsuarioSede(valor: string) {
@@ -290,6 +291,44 @@ function buscarProductoExento(items: Record<string, unknown>[]) {
   return textoCatalogo(porCodigo || porNombre || {}, ["code"]) || "002";
 }
 
+function esCatalogoActivo(item: Record<string, unknown>) {
+  const active = item.active;
+
+  return active === undefined || active === null || active === true || String(active) === "true";
+}
+
+function buscarCentroCostoPrincipal(items: Record<string, unknown>[]) {
+  const disponibles = items.filter(esCatalogoActivo);
+  const candidatos = disponibles.length > 0 ? disponibles : items;
+
+  if (candidatos.length === 1) {
+    return textoCatalogo(candidatos[0], ["id"]);
+  }
+
+  const principal = candidatos.find((catalogo) => {
+    const texto = normalizarTexto(
+      [
+        textoCatalogo(catalogo, ["code"]),
+        textoCatalogo(catalogo, ["name", "description"]),
+      ].join(" ")
+    );
+
+    return texto.includes("PRINCIPAL") || texto.includes("GENERAL");
+  });
+
+  return principal ? textoCatalogo(principal, ["id"]) : "";
+}
+
+function tituloCentroCostoSiigo(item: Record<string, unknown>) {
+  return [
+    textoCatalogo(item, ["id"]),
+    textoCatalogo(item, ["code"]),
+    textoCatalogo(item, ["name", "description"]),
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
 function payloadSedePatch(sedeId: number, payload?: SedeEdicion) {
   return {
     sedeId,
@@ -345,6 +384,7 @@ export default function GestionSedesPage() {
   const usuariosSiigo = extraerItemsCatalogo(catalogosSiigo?.users);
   const pagosSiigo = extraerItemsCatalogo(catalogosSiigo?.paymentTypes);
   const productosSiigo = extraerItemsCatalogo(catalogosSiigo?.products);
+  const centrosCostoSiigo = extraerItemsCatalogo(catalogosSiigo?.costCenters);
 
   const cargarTodo = async () => {
     try {
@@ -473,6 +513,7 @@ export default function GestionSedesPage() {
     const vendedorId = buscarUsuarioAndres(usuariosSiigo);
     const pagoId = buscarPagoEfectivo(pagosSiigo);
     const productoCodigo = buscarProductoExento(productosSiigo);
+    const centroCostoId = buscarCentroCostoPrincipal(centrosCostoSiigo);
     const siguientes: Record<number, SedeEdicion> = { ...ediciones };
     const configuradas: SedeAdminItem[] = [];
     const faltantes: string[] = [];
@@ -500,6 +541,7 @@ export default function GestionSedesPage() {
         siigoSellerId: vendedorId,
         siigoPaymentTypeId: pagoId,
         siigoItemCode: productoCodigo,
+        siigoCostCenterId: centroCostoId || base.siigoCostCenterId,
         siigoDefaultCountryCode: "CO",
         siigoDefaultStateCode: "73",
         siigoDefaultCityCode: "73001",
@@ -700,7 +742,7 @@ export default function GestionSedesPage() {
                 Catalogos para configurar sedes
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Consulta resoluciones, vendedores, formas de pago y productos directamente desde Siigo.
+                Consulta resoluciones, vendedores, formas de pago, productos y centros de costo directamente desde Siigo.
               </p>
             </div>
 
@@ -743,7 +785,7 @@ export default function GestionSedesPage() {
           )}
 
           {catalogosSiigo && (
-            <div className="mt-5 grid gap-4 lg:grid-cols-5">
+            <div className="mt-5 grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
                   Resoluciones
@@ -818,6 +860,19 @@ export default function GestionSedesPage() {
                   {productosSiigo.slice(0, 12).map((item, index) => (
                     <p key={`siigo-product-${index}`} className="font-semibold text-slate-800">
                       {textoCatalogo(item, ["code"])} - {textoCatalogo(item, ["name", "description"])}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  Centros de costo
+                </p>
+                <div className="mt-3 space-y-2 text-sm">
+                  {centrosCostoSiigo.slice(0, 12).map((item, index) => (
+                    <p key={`siigo-cost-center-${index}`} className="font-semibold text-slate-800">
+                      {tituloCentroCostoSiigo(item)}
                     </p>
                   ))}
                 </div>

@@ -363,7 +363,9 @@ function getSiigoConfig(registro: RegistroSiigoInput): SiigoConfig {
       toNullableText(sede?.siigoItemCode) ||
       process.env.SIIGO_ITEM_CODE?.trim() ||
       null,
-    costCenterId: toPositiveInt(sede?.siigoCostCenterId),
+    costCenterId:
+      toPositiveInt(sede?.siigoCostCenterId) ??
+      toPositiveInt(process.env.SIIGO_COST_CENTER_ID),
     defaultCountryCode:
       toNullableText(sede?.siigoDefaultCountryCode) ||
       process.env.SIIGO_DEFAULT_COUNTRY_CODE?.trim() ||
@@ -1339,6 +1341,12 @@ function buildCreditNotePayload(
     );
   }
 
+  if (!config.costCenterId) {
+    throw new SiigoConfigurationError([
+      "centro de costo Siigo de la sede para emitir nota credito",
+    ]);
+  }
+
   return {
     document: {
       id: creditNoteDocumentId,
@@ -1346,7 +1354,7 @@ function buildCreditNotePayload(
     date: formatBogotaDate(today),
     invoice: invoiceId,
     reason: resolveCreditNoteReason(),
-    ...(config.costCenterId ? { cost_center: config.costCenterId } : {}),
+    cost_center: config.costCenterId,
     seller: config.sellerId,
     observations: [
       `Nota credito por eliminacion de venta`,
@@ -1584,6 +1592,7 @@ export async function getSiigoSetupCatalogs() {
     users,
     paymentTypes,
     products,
+    costCenters,
   ] = await Promise.all([
     siigoFetch<unknown>(config, "/document-types?type=FV", {
       method: "GET",
@@ -1600,6 +1609,9 @@ export async function getSiigoSetupCatalogs() {
     siigoFetch<unknown>(config, "/products?page=1&page_size=100", {
       method: "GET",
     }),
+    siigoFetch<unknown>(config, "/cost-centers", {
+      method: "GET",
+    }),
   ]);
 
   return {
@@ -1608,5 +1620,6 @@ export async function getSiigoSetupCatalogs() {
     users,
     paymentTypes,
     products,
+    costCenters,
   };
 }
