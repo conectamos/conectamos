@@ -1227,6 +1227,23 @@ function getCreditNoteInvoiceReference(document: SiigoReportDocument) {
   };
 }
 
+function hasReportDocumentStatusMarker(document: SiigoReportDocument) {
+  return [
+    document.status,
+    document.stamp?.status,
+    document.stamp?.cufe,
+    document.stamp?.cude,
+  ].some((item) => Boolean(toNullableText(item)));
+}
+
+function shouldIncludeCreditNoteInProductReport(document: SiigoReportDocument) {
+  if (!hasReportDocumentStatusMarker(document)) {
+    return true;
+  }
+
+  return isReportDocumentApproved(document);
+}
+
 function filterCreditNotesForProductReport(
   invoices: SiigoReportDocument[],
   creditNotes: SiigoReportDocument[]
@@ -1239,6 +1256,10 @@ function filterCreditNotesForProductReport(
   );
 
   return creditNotes.filter((creditNote) => {
+    if (!shouldIncludeCreditNoteInProductReport(creditNote)) {
+      return false;
+    }
+
     const invoiceReference = getCreditNoteInvoiceReference(creditNote);
 
     if (!invoiceReference.id && !invoiceReference.name) {
