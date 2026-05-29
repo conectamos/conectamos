@@ -944,11 +944,25 @@ type SiigoReportSummary = {
   valorAprobado: number;
 };
 
+type SiigoProductReportSummary = {
+  codigo: string;
+  nombre: string;
+  cantidad: number;
+  valorBruto: number;
+  descuento: number;
+  subtotal: number;
+  impuestoCargo: number;
+  impuestoRetencion: number;
+  total: number;
+};
+
 export type SiigoMonthlyReport = {
   desde: string;
   hasta: string;
   facturas: SiigoReportSummary;
   notasCredito: SiigoReportSummary;
+  productos: SiigoProductReportSummary[];
+  totalProductos: Omit<SiigoProductReportSummary, "codigo" | "nombre">;
   neto: number;
   netoAprobado: number;
 };
@@ -1000,6 +1014,201 @@ function getReportDocumentTotal(document: SiigoReportDocument) {
   }
 
   return sumDocumentItems(document.items);
+}
+
+function toObjectArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === "object"
+      )
+    : [];
+}
+
+function readNestedText(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const parts = key.split(".");
+    let current: unknown = record;
+
+    for (const part of parts) {
+      if (!current || typeof current !== "object") {
+        current = null;
+        break;
+      }
+
+      current = (current as Record<string, unknown>)[part];
+    }
+
+    const text = String(current || "").trim();
+
+    if (text) {
+      return text;
+    }
+  }
+
+  return "";
+}
+
+function sumPercentageOrValue(
+  values: unknown,
+  subtotal: number,
+  mode: "charge" | "retention"
+) {
+  return toObjectArray(values).reduce((total, item) => {
+    const label = [
+      item.name,
+      item.description,
+      item.type,
+      item.tax_type,
+      item.category,
+    ]
+      .map((value) => String(value || "").trim().toUpperCase())
+      .join(" ");
+    const isRetention =
+      label.includes("RET") ||
+      label.includes("RETE") ||
+      label.includes("RETENCION") ||
+      label.includes("RETENCIÓN");
+
+    if (mode === "retention" && !isRetention) {
+      return total;
+    }
+
+    if (mode === "charge" && isRetention) {
+      return total;
+    }
+
+    const explicitValue =
+      toNumber(item.value) ||
+      toNumber(item.amount) ||
+      toNumber(item.tax_value) ||
+      toNumber(item.total);
+
+    if (explicitValue > 0) {
+      return total + explicitValue;
+    }
+
+    const percentage =
+      toNumber(item.percentage) ||
+      toNumber(item.rate) ||
+      toNumber(item.percent);
+
+    return percentage > 0 ? total + (subtotal * percentage) / 100 : total;
+  }, 0);
+}
+
+function getProductLineValues(item: Record<string, unknown>, sign: number) {
+  const quantity = toNumber(item.quantity) || 1;
+  const price = toNumber(item.price);
+  const gross =
+    toNumber(item.gross_value) ||
+    toNumber(item.gross) ||
+    toNumber(item.value) ||
+    price * quantity;
+  const discount =
+    toNumber(item.discount) ||
+    toNumber((item.discount as Record<string, unknown> | undefined)?.value);
+  const subtotal =
+    toNumber(item.subtotal) ||
+    toNumber(item.net_value) ||
+    Math.max(gross - discount, 0);
+  const chargeTax = sumPercentageOrValue(item.taxes, subtotal, "charge");
+  const retentionTax =
+    sumPercentageOrValue(item.withholdings, subtotal, "retention") +
+    sumPercentageOrValue(item.retentions, subtotal, "retention") +
+    sumPercentageOrValue(item.taxes, subtotal, "retention");
+
+  return {
+    cantidad: quantity * sign,
+    valorBruto: gross * sign,
+    descuento: discount * sign,
+    subtotal: subtotal * sign,
+    impuestoCargo: chargeTax * sign,
+    impuestoRetencion: retentionTax * sign,
+    total: (subtotal + chargeTax - retentionTax) * sign,
+  };
+}
+
+function summarizeProductsFromDocuments(
+  invoices: SiigoReportDocument[],
+  creditNotes: SiigoReportDocument[]
+) {
+  const rows = new Map<string, SiigoProductReportSummary>();
+
+  const addDocuments = (documents: SiigoReportDocument[], sign: number) => {
+    for (const document of documents) {
+      for (const item of toObjectArray(document.items)) {
+        const codigo =
+          readNestedText(item, ["code", "item.code", "product.code"]) ||
+          "SIN CODIGO";
+        const nombre =
+          readNestedText(item, [
+            "description",
+            "name",
+            "item.name",
+            "product.name",
+          ]) || "Producto sin nombre";
+        const key = `${codigo}::${nombre}`;
+        const current =
+          rows.get(key) ||
+          ({
+            codigo,
+            nombre,
+            cantidad: 0,
+            valorBruto: 0,
+            descuento: 0,
+            subtotal: 0,
+            impuestoCargo: 0,
+            impuestoRetencion: 0,
+            total: 0,
+          } satisfies SiigoProductReportSummary);
+        const values = getProductLineValues(item, sign);
+
+        current.cantidad += values.cantidad;
+        current.valorBruto += values.valorBruto;
+        current.descuento += values.descuento;
+        current.subtotal += values.subtotal;
+        current.impuestoCargo += values.impuestoCargo;
+        current.impuestoRetencion += values.impuestoRetencion;
+        current.total += values.total;
+        rows.set(key, current);
+      }
+    }
+  };
+
+  addDocuments(invoices, 1);
+  addDocuments(creditNotes, -1);
+
+  const productos = Array.from(rows.values()).sort((a, b) =>
+    a.codigo.localeCompare(b.codigo, "es")
+  );
+  const totalProductos = productos.reduce(
+    (total, item) => {
+      total.cantidad += item.cantidad;
+      total.valorBruto += item.valorBruto;
+      total.descuento += item.descuento;
+      total.subtotal += item.subtotal;
+      total.impuestoCargo += item.impuestoCargo;
+      total.impuestoRetencion += item.impuestoRetencion;
+      total.total += item.total;
+
+      return total;
+    },
+    {
+      cantidad: 0,
+      valorBruto: 0,
+      descuento: 0,
+      subtotal: 0,
+      impuestoCargo: 0,
+      impuestoRetencion: 0,
+      total: 0,
+    }
+  );
+
+  return {
+    productos,
+    totalProductos,
+  };
 }
 
 function isReportDocumentApproved(document: SiigoReportDocument) {
@@ -1099,13 +1308,16 @@ export async function getSiigoMonthlyReport(
   ]);
   const facturas = summarizeReportDocuments(invoices);
   const notasCredito = summarizeReportDocuments(creditNotes);
+  const productReport = summarizeProductsFromDocuments(invoices, creditNotes);
 
   return {
     desde: dateStart,
     hasta: dateEnd,
     facturas,
     notasCredito,
-    neto: facturas.valor - notasCredito.valor,
+    productos: productReport.productos,
+    totalProductos: productReport.totalProductos,
+    neto: productReport.totalProductos.total || facturas.valor - notasCredito.valor,
     netoAprobado: facturas.valorAprobado - notasCredito.valorAprobado,
   };
 }

@@ -4,6 +4,7 @@ import {
   esPerfilFacturador,
   esPerfilSupervisor,
   esPerfilVendedor,
+  puedeConsultarReporteSiigo,
   puedeAccederPanelFacturador,
   esRolAdministrativo,
 } from "@/lib/access-control";
@@ -562,6 +563,11 @@ export default async function DashboardPage() {
     session.perfilTipo,
     session.rolNombre
   );
+  const puedeVerReporteSiigo = puedeConsultarReporteSiigo(
+    session.rolNombre,
+    session.perfilTipo,
+    session.perfilNombre
+  );
   const nombreUsuario = session.nombre ?? "Usuario";
   const rolUsuario = session.perfilTipoLabel ?? session.rolNombre ?? "USUARIO";
   const sedeLabel = esAdmin
@@ -718,6 +724,17 @@ export default async function DashboardPage() {
           label: "Abrir facturacion",
           tone: "primary",
         },
+        ...(puedeVerReporteSiigo
+          ? ([
+              {
+                href: esAdmin
+                  ? "/dashboard/registros#reporte-siigo"
+                  : "/facturador/registros#reporte-siigo",
+                label: "Reporte Siigo",
+                tone: "secondary",
+              },
+            ] as ModuleAction[])
+          : []),
       ],
       tone: "emerald",
     },

@@ -36,6 +36,15 @@ type SiigoReporteMensual = {
   hasta: string;
   facturas: SiigoReporteResumen;
   notasCredito: SiigoReporteResumen;
+  totalProductos?: {
+    cantidad: number;
+    valorBruto: number;
+    descuento: number;
+    subtotal: number;
+    impuestoCargo: number;
+    impuestoRetencion: number;
+    total: number;
+  };
   neto: number;
   netoAprobado: number;
 };
@@ -1229,7 +1238,10 @@ export default function FacturadorRegistrosWorkspace({
           </div>
 
           {puedeVerReporteSiigo && (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] xl:col-span-2">
+            <div
+              id="reporte-siigo"
+              className="scroll-mt-8 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] xl:col-span-2"
+            >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -1239,7 +1251,7 @@ export default function FacturadorRegistrosWorkspace({
                     {reporteSiigo ? formatMoney(reporteSiigo.neto) : "Consultar"}
                   </p>
                   <p className="mt-2 text-sm text-slate-500">
-                    Neto del mes consultado directo en Siigo.
+                    Total general por producto consultado en Siigo.
                   </p>
                 </div>
 
@@ -1283,10 +1295,10 @@ export default function FacturadorRegistrosWorkspace({
                   </div>
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Aprobado
+                      Impuestos
                     </p>
                     <p className="mt-1 font-black text-slate-950">
-                      {formatMoney(reporteSiigo.netoAprobado)}
+                      {formatMoney(reporteSiigo.totalProductos?.impuestoCargo ?? 0)}
                     </p>
                   </div>
                 </div>
