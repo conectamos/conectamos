@@ -105,6 +105,7 @@ type SiigoSendMailResponse = {
 export type RegistroSiigoInput = {
   id: number;
   createdAt: Date | string;
+  convertidoEn?: Date | string | null;
   ciudad?: string | null;
   puntoVenta?: string | null;
   clienteNombre: string;
@@ -684,6 +685,13 @@ function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
+}
+
+function resolveInvoiceDate(registro: RegistroSiigoInput) {
+  const rawDate = registro.convertidoEn || registro.createdAt;
+  const date = rawDate ? new Date(rawDate) : new Date();
+
+  return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
 function buildInvoiceCustomerPayload(
@@ -1277,7 +1285,7 @@ function buildInvoicePayload(
     registro.documentoNumero
   ).identification;
   const total = calculateInvoiceTotal(registro);
-  const today = new Date();
+  const invoiceDate = resolveInvoiceDate(registro);
 
   if (!identification) {
     throw new SiigoValidationError("El registro no tiene identificacion valida");
@@ -1300,7 +1308,7 @@ function buildInvoicePayload(
       id: config.documentId,
     },
     ...(documentNumber ? { number: documentNumber } : {}),
-    date: formatBogotaDate(today),
+    date: formatBogotaDate(invoiceDate),
     customer: buildInvoiceCustomerPayload(registro, customer),
     ...(config.costCenterId ? { cost_center: config.costCenterId } : {}),
     seller: config.sellerId,
@@ -1310,12 +1318,64 @@ function buildInvoicePayload(
       {
         id: config.paymentTypeId,
         value: total,
-        due_date: formatBogotaDate(addDays(today, config.paymentDueDays)),
+        due_date: formatBogotaDate(addDays(invoiceDate, config.paymentDueDays)),
       },
     ],
     ...(config.stampSend ? { stamp: { send: true } } : {}),
     ...(config.mailSend ? { mail: { send: true } } : {}),
   };
+}
+
+function summarizeInvoicePayloadForError(
+  payload: Record<string, unknown>,
+  idempotencyKey: string
+) {
+  const document = payload.document as { id?: unknown } | undefined;
+  const customer = payload.customer as
+    | { identification?: unknown; branch_office?: unknown }
+    | undefined;
+  const payments = Array.isArray(payload.payments)
+    ? payload.payments
+    : [];
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  const paymentSummary = payments
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return "";
+      }
+
+      const payment = item as Record<string, unknown>;
+      return `${payment.id || "-"}:${payment.value || 0}`;
+    })
+    .filter(Boolean)
+    .join(",");
+  const itemSummary = items
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return "";
+      }
+
+      const row = item as Record<string, unknown>;
+      const taxes = Array.isArray(row.taxes) ? row.taxes.length : 0;
+
+      return `${row.code || "-"}:${row.price || 0}:taxes${taxes}`;
+    })
+    .filter(Boolean)
+    .join(",");
+
+  return [
+    `date ${payload.date || "-"}`,
+    `document.id ${document?.id || "-"}`,
+    payload.number ? `number ${payload.number}` : "number auto",
+    `seller ${payload.seller || "-"}`,
+    `payment ${paymentSummary || "-"}`,
+    payload.cost_center ? `cost_center ${payload.cost_center}` : "sin cost_center",
+    `customer ${customer?.identification || "-"}:${customer?.branch_office ?? 0}`,
+    `items ${itemSummary || "-"}`,
+    payload.stamp ? "stamp si" : "stamp no",
+    payload.mail ? "mail si" : "mail no",
+    `key ${idempotencyKey}`,
+  ].join(" / ");
 }
 
 function buildCreditNotePayload(
@@ -1506,17 +1566,36 @@ export async function createSiigoInvoiceForRegistro(
     30
   );
 
-  const invoice = await siigoFetch<SiigoInvoiceResponse>(
-    config,
-    "/invoices",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    {
-      idempotencyKey,
+  let invoice: SiigoInvoiceResponse;
+
+  try {
+    invoice = await siigoFetch<SiigoInvoiceResponse>(
+      config,
+      "/invoices",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      {
+        idempotencyKey,
+      }
+    );
+  } catch (error) {
+    if (error instanceof SiigoApiError) {
+      const payloadSummary = summarizeInvoicePayloadForError(
+        payload,
+        idempotencyKey
+      );
+
+      throw new SiigoApiError(
+        `${error.message}. Payload factura: ${payloadSummary}.`,
+        error.status,
+        error.details
+      );
     }
-  );
+
+    throw error;
+  }
 
   if (config.mailSend && invoice.id) {
     try {

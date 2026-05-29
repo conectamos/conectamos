@@ -69,6 +69,7 @@ const SIIGO_SEDE_SELECT = {
 const REGISTRO_SIIGO_AUTO_SELECT = {
   id: true,
   createdAt: true,
+  convertidoEn: true,
   ciudad: true,
   puntoVenta: true,
   clienteNombre: true,
