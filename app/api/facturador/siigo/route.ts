@@ -10,6 +10,7 @@ import {
   createSiigoInvoiceForRegistro,
   sendSiigoInvoiceEmailForRegistro,
 } from "@/lib/siigo";
+import { avanzarIntentoFacturaSiigo } from "@/lib/siigo-attempt";
 import {
   esPerfilAdministrativo,
   esRolAdministrativo,
@@ -290,7 +291,10 @@ async function emitirFacturaParaRegistro(
     sede: null | { nombre?: string | null; codigo?: string | null };
   }
 ) {
-  const registroParaSiigo = await aplicarResolucionOnlineParaStands(registro);
+  const registroConIntento = await avanzarIntentoFacturaSiigo(registro);
+  const registroParaSiigo = await aplicarResolucionOnlineParaStands(
+    registroConIntento
+  );
   const invoice = await createSiigoInvoiceForRegistro(registroParaSiigo);
   const invoiceLabel = getSiigoInvoiceLabel(invoice);
 

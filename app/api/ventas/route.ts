@@ -24,6 +24,7 @@ import {
   getSiigoInvoiceLabel,
   SiigoConfigurationError,
 } from "@/lib/siigo";
+import { avanzarIntentoFacturaSiigo } from "@/lib/siigo-attempt";
 
 type VentaInput = {
   confirmoEfectivoRecibido: boolean;
@@ -617,7 +618,10 @@ async function emitirFacturaSiigoAlConvertir(registroId: number) {
       };
     }
 
-    const registroParaSiigo = await aplicarResolucionOnlineParaStands(registro);
+    const registroConIntento = await avanzarIntentoFacturaSiigo(registro);
+    const registroParaSiigo = await aplicarResolucionOnlineParaStands(
+      registroConIntento
+    );
     contextoSiigo = describirConfiguracionSiigo(registroParaSiigo.sede);
     const invoice = await createSiigoInvoiceForRegistro(registroParaSiigo);
     const invoiceLabel = getSiigoInvoiceLabel(invoice);
