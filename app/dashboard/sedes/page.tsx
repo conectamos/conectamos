@@ -1205,7 +1205,7 @@ export default function GestionSedesPage() {
                       </label>
 
                       <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Codigo producto
+                        Codigo producto telefonia
                         <input
                           value={edicion.siigoItemCode}
                           onChange={(event) =>
@@ -1218,6 +1218,9 @@ export default function GestionSedesPage() {
                           placeholder="Opcional"
                           className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
                         />
+                        <span className="text-xs font-medium leading-5 text-slate-500">
+                          Electrodomestico usa producto 001 gravado 19% desde Siigo global.
+                        </span>
                       </label>
 
                       <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
