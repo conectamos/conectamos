@@ -11,6 +11,7 @@ export default async function DashboardRegistrosPage() {
         sedeNombre: session.sedeNombre ?? "Tu sede",
         rolNombre: session.rolNombre ?? "USUARIO",
         perfilNombre: session.perfilNombre ?? session.nombre,
+        perfilTipo: session.perfilTipo ?? "",
         perfilTipoLabel:
           session.perfilTipoLabel ?? session.rolNombre ?? "Administrador",
       }}

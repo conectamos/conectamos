@@ -72,3 +72,19 @@ export function puedeAccederPanelFacturador(
     esRolAdministrativo(rolNombre)
   );
 }
+
+export function puedeConsultarReporteSiigo(
+  rolNombre: unknown,
+  perfilTipo: unknown,
+  perfilNombre?: unknown
+) {
+  const perfilNombreNormalizado = String(perfilNombre || "")
+    .trim()
+    .toUpperCase();
+
+  return (
+    esRolAdministrativo(rolNombre) ||
+    esPerfilAdministrativo(perfilTipo) ||
+    perfilNombreNormalizado.includes("CONTABILIDAD")
+  );
+}

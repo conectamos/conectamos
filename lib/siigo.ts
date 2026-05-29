@@ -38,12 +38,18 @@ type SiigoCustomerLookupResponse = {
 type SiigoCustomer = NonNullable<SiigoCustomerLookupResponse["results"]>[number];
 
 type SiigoInvoiceLookupResponse = {
+  pagination?: {
+    page?: number;
+    page_size?: number;
+    total_results?: number;
+  };
   results?: Array<{
     id?: string;
     prefix?: string;
     name?: string;
     number?: number;
     date?: string;
+    total?: number;
     document?: {
       id?: number;
       name?: string;
@@ -76,6 +82,7 @@ export type SiigoInvoiceResponse = {
   status?: string;
   mail_error?: string;
   public_url?: string;
+  total?: number;
   document?: {
     id?: number;
     name?: string;
@@ -914,6 +921,193 @@ function extractCatalogItems(value: unknown) {
   }
 
   return [];
+}
+
+type SiigoListResponse<T> = {
+  pagination?: {
+    page?: number;
+    page_size?: number;
+    total_results?: number;
+  };
+  results?: T[];
+};
+
+type SiigoReportDocument = SiigoInvoiceResponse & {
+  payments?: unknown;
+  items?: unknown;
+};
+
+type SiigoReportSummary = {
+  cantidad: number;
+  valor: number;
+  aprobadas: number;
+  valorAprobado: number;
+};
+
+export type SiigoMonthlyReport = {
+  desde: string;
+  hasta: string;
+  facturas: SiigoReportSummary;
+  notasCredito: SiigoReportSummary;
+  neto: number;
+  netoAprobado: number;
+};
+
+function sumDocumentItems(value: unknown) {
+  if (!Array.isArray(value)) {
+    return 0;
+  }
+
+  return value.reduce((total, item) => {
+    if (!item || typeof item !== "object") {
+      return total;
+    }
+
+    const row = item as Record<string, unknown>;
+    const quantity = toNumber(row.quantity) || 1;
+    const price = toNumber(row.price);
+    const totalValue = toNumber(row.total);
+
+    return total + (totalValue > 0 ? totalValue : quantity * price);
+  }, 0);
+}
+
+function sumDocumentPayments(value: unknown) {
+  if (!Array.isArray(value)) {
+    return 0;
+  }
+
+  return value.reduce((total, item) => {
+    if (!item || typeof item !== "object") {
+      return total;
+    }
+
+    return total + toNumber((item as Record<string, unknown>).value);
+  }, 0);
+}
+
+function getReportDocumentTotal(document: SiigoReportDocument) {
+  const directTotal = toNumber(document.total);
+
+  if (directTotal > 0) {
+    return directTotal;
+  }
+
+  const paymentTotal = sumDocumentPayments(document.payments);
+
+  if (paymentTotal > 0) {
+    return paymentTotal;
+  }
+
+  return sumDocumentItems(document.items);
+}
+
+function isReportDocumentApproved(document: SiigoReportDocument) {
+  const values = [
+    document.status,
+    document.stamp?.status,
+    document.stamp?.cufe,
+    document.stamp?.cude,
+  ]
+    .map((item) => String(item || "").trim().toUpperCase())
+    .filter(Boolean);
+
+  return values.some(
+    (value) =>
+      value.includes("APPROV") ||
+      value.includes("ACCEPT") ||
+      value.includes("APROB") ||
+      value.includes("ACEPT")
+  );
+}
+
+function summarizeReportDocuments(
+  documents: SiigoReportDocument[]
+): SiigoReportSummary {
+  return documents.reduce<SiigoReportSummary>(
+    (summary, document) => {
+      const value = getReportDocumentTotal(document);
+      const approved = isReportDocumentApproved(document);
+
+      summary.cantidad += 1;
+      summary.valor += value;
+
+      if (approved) {
+        summary.aprobadas += 1;
+        summary.valorAprobado += value;
+      }
+
+      return summary;
+    },
+    {
+      cantidad: 0,
+      valor: 0,
+      aprobadas: 0,
+      valorAprobado: 0,
+    }
+  );
+}
+
+async function fetchSiigoReportDocuments(
+  config: SiigoAuthConfig,
+  path: "/invoices" | "/credit-notes",
+  dateStart: string,
+  dateEnd: string
+) {
+  const pageSize = 100;
+  const documents: SiigoReportDocument[] = [];
+
+  for (let page = 1; page <= 100; page += 1) {
+    const params = new URLSearchParams({
+      date_start: dateStart,
+      date_end: dateEnd,
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    const response = await siigoFetch<SiigoListResponse<SiigoReportDocument>>(
+      config,
+      `${path}?${params.toString()}`,
+      {
+        method: "GET",
+      }
+    );
+    const results = Array.isArray(response.results) ? response.results : [];
+
+    documents.push(...results);
+
+    const totalResults = Number(response.pagination?.total_results || 0);
+
+    if (
+      results.length < pageSize ||
+      (totalResults > 0 && documents.length >= totalResults)
+    ) {
+      break;
+    }
+  }
+
+  return documents;
+}
+
+export async function getSiigoMonthlyReport(
+  dateStart: string,
+  dateEnd: string
+): Promise<SiigoMonthlyReport> {
+  const config = getSiigoAuthConfig();
+  const [invoices, creditNotes] = await Promise.all([
+    fetchSiigoReportDocuments(config, "/invoices", dateStart, dateEnd),
+    fetchSiigoReportDocuments(config, "/credit-notes", dateStart, dateEnd),
+  ]);
+  const facturas = summarizeReportDocuments(invoices);
+  const notasCredito = summarizeReportDocuments(creditNotes);
+
+  return {
+    desde: dateStart,
+    hasta: dateEnd,
+    facturas,
+    notasCredito,
+    neto: facturas.valor - notasCredito.valor,
+    netoAprobado: facturas.valorAprobado - notasCredito.valorAprobado,
+  };
 }
 
 async function getInvoiceDocumentNumber(config: SiigoConfig) {

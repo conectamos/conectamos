@@ -16,11 +16,28 @@ type SessionProps = {
   sedeNombre: string;
   rolNombre: string;
   perfilNombre: string;
+  perfilTipo: string;
   perfilTipoLabel: string;
 };
 
 type CatalogoPersonalResponse = {
   financieras: Array<{ id: number; nombre: string }>;
+};
+
+type SiigoReporteResumen = {
+  cantidad: number;
+  valor: number;
+  aprobadas: number;
+  valorAprobado: number;
+};
+
+type SiigoReporteMensual = {
+  desde: string;
+  hasta: string;
+  facturas: SiigoReporteResumen;
+  notasCredito: SiigoReporteResumen;
+  neto: number;
+  netoAprobado: number;
 };
 
 type FinancieraRegistro = {
@@ -152,6 +169,12 @@ function formatMoney(value: string | number | null | undefined) {
   }
 
   return `$ ${parsed.toLocaleString("es-CO")}`;
+}
+
+function defaultMonthInput() {
+  const now = new Date();
+
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function formatMoneyInputFromStored(value: string | number | null | undefined) {
@@ -393,6 +416,10 @@ export default function FacturadorRegistrosWorkspace({
   const esAdmin =
     ["ADMIN", "AUDITOR"].includes(String(session.rolNombre || "").trim().toUpperCase()) ||
     String(session.perfilTipoLabel || "").trim().toUpperCase() === "ADMINISTRADOR";
+  const puedeVerReporteSiigo =
+    esAdmin ||
+    String(session.perfilTipo || "").trim().toUpperCase() === "AUDITOR" ||
+    String(session.perfilNombre || "").trim().toUpperCase().includes("CONTABILIDAD");
   const puedeEliminar = String(session.rolNombre || "").trim().toUpperCase() === "ADMIN";
   const [registros, setRegistros] = useState<RegistroFacturacion[]>([]);
   const [busqueda, setBusqueda] = useState("");
@@ -408,6 +435,11 @@ export default function FacturadorRegistrosWorkspace({
   const [modoSoporteSiigo, setModoSoporteSiigo] = useState(false);
   const [filtroActivo, setFiltroActivo] = useState<FiltroRegistro>("TODOS");
   const [facturandoPendientes, setFacturandoPendientes] = useState(false);
+  const [reporteSiigoMes, setReporteSiigoMes] = useState(defaultMonthInput);
+  const [reporteSiigo, setReporteSiigo] = useState<SiigoReporteMensual | null>(
+    null
+  );
+  const [consultandoReporteSiigo, setConsultandoReporteSiigo] = useState(false);
   const [facturasDraft, setFacturasDraft] = useState<Record<number, string>>({});
   const [editando, setEditando] = useState<EditDraft | null>(null);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
@@ -751,6 +783,36 @@ export default function FacturadorRegistrosWorkspace({
       setMensaje("Error facturando pendientes en Siigo");
     } finally {
       setFacturandoPendientes(false);
+    }
+  };
+
+  const consultarReporteSiigo = async () => {
+    try {
+      setConsultandoReporteSiigo(true);
+      setMensaje("");
+
+      const params = new URLSearchParams({
+        month: reporteSiigoMes || defaultMonthInput(),
+      });
+      const res = await fetch(`/api/facturador/siigo/reporte?${params}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMensajeTipo("error");
+        setMensaje(data.error || "No se pudo consultar el reporte Siigo");
+        return;
+      }
+
+      setReporteSiigo(data.reporte as SiigoReporteMensual);
+      setMensajeTipo("success");
+      setMensaje("Reporte Siigo consultado correctamente");
+    } catch {
+      setMensajeTipo("error");
+      setMensaje("Error consultando el reporte Siigo");
+    } finally {
+      setConsultandoReporteSiigo(false);
     }
   };
 
@@ -1165,6 +1227,72 @@ export default function FacturadorRegistrosWorkspace({
               No se pueden facturar por Siigo.
             </p>
           </div>
+
+          {puedeVerReporteSiigo && (
+            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] xl:col-span-2">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Resumen Siigo
+                  </p>
+                  <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">
+                    {reporteSiigo ? formatMoney(reporteSiigo.neto) : "Consultar"}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Neto del mes consultado directo en Siigo.
+                  </p>
+                </div>
+
+                <div className="flex min-w-[210px] flex-col gap-2">
+                  <input
+                    type="month"
+                    value={reporteSiigoMes}
+                    onChange={(event) => setReporteSiigoMes(event.target.value)}
+                    className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void consultarReporteSiigo()}
+                    disabled={consultandoReporteSiigo}
+                    className="rounded-2xl border border-emerald-200 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-300"
+                  >
+                    {consultandoReporteSiigo ? "Consultando..." : "Reporte Siigo"}
+                  </button>
+                </div>
+              </div>
+
+              {reporteSiigo && (
+                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Facturas
+                    </p>
+                    <p className="mt-1 font-black text-emerald-700">
+                      {reporteSiigo.facturas.cantidad} /{" "}
+                      {formatMoney(reporteSiigo.facturas.valor)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      NC
+                    </p>
+                    <p className="mt-1 font-black text-amber-700">
+                      {reporteSiigo.notasCredito.cantidad} /{" "}
+                      {formatMoney(reporteSiigo.notasCredito.valor)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Aprobado
+                    </p>
+                    <p className="mt-1 font-black text-slate-950">
+                      {formatMoney(reporteSiigo.netoAprobado)}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="mt-6 rounded-[32px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
