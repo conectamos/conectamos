@@ -36,6 +36,14 @@ type SiigoReporteMensual = {
   hasta: string;
   facturas: SiigoReporteResumen;
   notasCredito: SiigoReporteResumen;
+  notasCreditoDetalle?: Array<{
+    nombre: string;
+    fecha: string | null;
+    estado: string;
+    factura: string;
+    valor: number;
+    incluida: boolean;
+  }>;
   totalProductos?: {
     cantidad: number;
     valorBruto: number;
@@ -1274,34 +1282,81 @@ export default function FacturadorRegistrosWorkspace({
               </div>
 
               {reporteSiigo && (
-                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Facturas
-                    </p>
-                    <p className="mt-1 font-black text-emerald-700">
-                      {reporteSiigo.facturas.cantidad} /{" "}
-                      {formatMoney(reporteSiigo.facturas.valor)}
-                    </p>
+                <>
+                  <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Facturas
+                      </p>
+                      <p className="mt-1 font-black text-emerald-700">
+                        {reporteSiigo.facturas.cantidad} /{" "}
+                        {formatMoney(reporteSiigo.facturas.valor)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        NC
+                      </p>
+                      <p className="mt-1 font-black text-amber-700">
+                        {reporteSiigo.notasCredito.cantidad} /{" "}
+                        {formatMoney(reporteSiigo.notasCredito.valor)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Impuestos
+                      </p>
+                      <p className="mt-1 font-black text-slate-950">
+                        {formatMoney(
+                          reporteSiigo.totalProductos?.impuestoCargo ?? 0
+                        )}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      NC
-                    </p>
-                    <p className="mt-1 font-black text-amber-700">
-                      {reporteSiigo.notasCredito.cantidad} /{" "}
-                      {formatMoney(reporteSiigo.notasCredito.valor)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Impuestos
-                    </p>
-                    <p className="mt-1 font-black text-slate-950">
-                      {formatMoney(reporteSiigo.totalProductos?.impuestoCargo ?? 0)}
-                    </p>
-                  </div>
-                </div>
+
+                  {reporteSiigo.notasCreditoDetalle?.length ? (
+                    <details className="mt-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-3 text-xs text-slate-700">
+                      <summary className="cursor-pointer font-black text-slate-900">
+                        Detalle NC del reporte
+                      </summary>
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="w-full min-w-[720px] text-left">
+                          <thead className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                            <tr>
+                              <th className="py-2 pr-3">NC</th>
+                              <th className="py-2 pr-3">Fecha</th>
+                              <th className="py-2 pr-3">Factura</th>
+                              <th className="py-2 pr-3">Estado</th>
+                              <th className="py-2 pr-3 text-right">Valor</th>
+                              <th className="py-2 text-right">Cuenta</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {reporteSiigo.notasCreditoDetalle.map((nota) => (
+                              <tr
+                                key={`${nota.nombre}-${nota.factura}-${nota.valor}`}
+                                className="border-t border-amber-100"
+                              >
+                                <td className="py-2 pr-3 font-bold">
+                                  {nota.nombre}
+                                </td>
+                                <td className="py-2 pr-3">{nota.fecha || "-"}</td>
+                                <td className="py-2 pr-3">{nota.factura}</td>
+                                <td className="py-2 pr-3">{nota.estado}</td>
+                                <td className="py-2 pr-3 text-right font-bold">
+                                  {formatMoney(nota.valor)}
+                                </td>
+                                <td className="py-2 text-right font-bold">
+                                  {nota.incluida ? "Si" : "No"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  ) : null}
+                </>
               )}
             </div>
           )}

@@ -956,11 +956,21 @@ type SiigoProductReportSummary = {
   total: number;
 };
 
+type SiigoReportDocumentDetail = {
+  nombre: string;
+  fecha: string | null;
+  estado: string;
+  factura: string;
+  valor: number;
+  incluida: boolean;
+};
+
 export type SiigoMonthlyReport = {
   desde: string;
   hasta: string;
   facturas: SiigoReportSummary;
   notasCredito: SiigoReportSummary;
+  notasCreditoDetalle: SiigoReportDocumentDetail[];
   productos: SiigoProductReportSummary[];
   totalProductos: Omit<SiigoProductReportSummary, "codigo" | "nombre">;
   neto: number;
@@ -1373,6 +1383,52 @@ function isReportDocumentInRange(
   return !date || (date >= dateStart && date <= dateEnd);
 }
 
+function getReportDocumentLabel(document: SiigoReportDocument) {
+  const name = toNullableText(document.name);
+
+  if (name) {
+    return name;
+  }
+
+  const prefix = toNullableText(document.prefix);
+  const number = toNullableText(document.number);
+
+  return [prefix, number].filter(Boolean).join("-") || "Sin numero";
+}
+
+function getReportDocumentStatusLabel(document: SiigoReportDocument) {
+  return [
+    document.status,
+    document.stamp?.status,
+    document.stamp?.cufe ? "CUFE/CUDE" : null,
+  ]
+    .map((item) => toNullableText(item))
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function buildCreditNoteReportDetails(
+  creditNotes: SiigoReportDocument[],
+  includedCreditNotes: SiigoReportDocument[]
+) {
+  const included = new Set(includedCreditNotes);
+
+  return creditNotes
+    .map((creditNote) => {
+      const invoiceReference = getCreditNoteInvoiceReference(creditNote);
+
+      return {
+        nombre: getReportDocumentLabel(creditNote),
+        fecha: getReportDocumentDate(creditNote),
+        estado: getReportDocumentStatusLabel(creditNote) || "Sin estado",
+        factura: invoiceReference.name || invoiceReference.id || "-",
+        valor: getReportDocumentTotal(creditNote),
+        incluida: included.has(creditNote),
+      };
+    })
+    .sort((a, b) => b.valor - a.valor);
+}
+
 async function fetchSiigoReportDocuments(
   config: SiigoAuthConfig,
   path: "/invoices" | "/credit-notes",
@@ -1438,12 +1494,17 @@ export async function getSiigoMonthlyReport(
     invoices,
     reportCreditNotes
   );
+  const notasCreditoDetalle = buildCreditNoteReportDetails(
+    creditNotes,
+    reportCreditNotes
+  );
 
   return {
     desde: dateStart,
     hasta: dateEnd,
     facturas,
     notasCredito,
+    notasCreditoDetalle,
     productos: productReport.productos,
     totalProductos: productReport.totalProductos,
     neto: productReport.totalProductos.total || facturas.valor - notasCredito.valor,
