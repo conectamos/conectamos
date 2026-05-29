@@ -1257,6 +1257,60 @@ function summarizeReportDocuments(
   );
 }
 
+function toSiigoReportDateStart(date: string) {
+  return `${date}T00:00:00Z`;
+}
+
+function toSiigoReportDateEnd(date: string) {
+  return `${date}T23:59:59Z`;
+}
+
+function extractDateOnly(value: unknown) {
+  const text = toNullableText(value);
+
+  if (!text) {
+    return null;
+  }
+
+  const directMatch = text.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+
+  if (directMatch) {
+    return `${directMatch[1]}-${directMatch[2]}-${directMatch[3]}`;
+  }
+
+  const parsed = new Date(text);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
+function getReportDocumentDate(document: SiigoReportDocument) {
+  const metadata =
+    document.metadata && typeof document.metadata === "object"
+      ? document.metadata
+      : {};
+
+  return (
+    extractDateOnly(document.date) ||
+    extractDateOnly(metadata.created) ||
+    extractDateOnly(document.created) ||
+    extractDateOnly(document.created_at)
+  );
+}
+
+function isReportDocumentInRange(
+  document: SiigoReportDocument,
+  dateStart: string,
+  dateEnd: string
+) {
+  const date = getReportDocumentDate(document);
+
+  return !date || (date >= dateStart && date <= dateEnd);
+}
+
 async function fetchSiigoReportDocuments(
   config: SiigoAuthConfig,
   path: "/invoices" | "/credit-notes",
@@ -1265,11 +1319,13 @@ async function fetchSiigoReportDocuments(
 ) {
   const pageSize = 100;
   const documents: SiigoReportDocument[] = [];
+  const dateStartParam = toSiigoReportDateStart(dateStart);
+  const dateEndParam = toSiigoReportDateEnd(dateEnd);
 
   for (let page = 1; page <= 100; page += 1) {
     const params = new URLSearchParams({
-      date_start: dateStart,
-      date_end: dateEnd,
+      date_start: dateStartParam,
+      date_end: dateEndParam,
       page: String(page),
       page_size: String(pageSize),
     });
@@ -1282,7 +1338,11 @@ async function fetchSiigoReportDocuments(
     );
     const results = Array.isArray(response.results) ? response.results : [];
 
-    documents.push(...results);
+    documents.push(
+      ...results.filter((document) =>
+        isReportDocumentInRange(document, dateStart, dateEnd)
+      )
+    );
 
     const totalResults = Number(response.pagination?.total_results || 0);
 
