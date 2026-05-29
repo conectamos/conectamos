@@ -22,7 +22,7 @@ type SiigoConfig = {
   exemptItemLimit: number;
   maxInvoiceTotal: number;
   applianceItemCode: string;
-  applianceTaxId: number;
+  applianceTaxId: number | null;
 };
 
 type SiigoAuthConfig = Pick<
@@ -74,6 +74,14 @@ type SiigoDocumentType = {
   code?: string;
   consecutive?: number;
   automatic_number?: boolean;
+  active?: boolean;
+};
+
+type SiigoTax = {
+  id?: number;
+  name?: string;
+  type?: string;
+  percentage?: number;
   active?: boolean;
 };
 
@@ -193,6 +201,13 @@ class SiigoValidationError extends Error {
 let tokenCache:
   | {
       token: string;
+      expiresAt: number;
+    }
+  | null = null;
+
+let taxesCache:
+  | {
+      taxes: SiigoTax[];
       expiresAt: number;
     }
   | null = null;
@@ -393,8 +408,8 @@ function getSiigoConfig(registro: RegistroSiigoInput): SiigoConfig {
     paymentDueDays: toNonNegativeInt(sede?.siigoPaymentDueDays) ?? 0,
     exemptItemLimit: readMoney("SIIGO_EXEMPT_ITEM_LIMIT", 1150000),
     maxInvoiceTotal: readMoney("SIIGO_MAX_INVOICE_TOTAL", 2300000),
-    applianceItemCode: process.env.SIIGO_APPLIANCE_ITEM_CODE?.trim() || "001",
-    applianceTaxId: toPositiveInt(process.env.SIIGO_VAT_19_TAX_ID) ?? 13156,
+    applianceItemCode: process.env.SIIGO_APPLIANCE_ITEM_CODE?.trim() || "002",
+    applianceTaxId: toPositiveInt(process.env.SIIGO_VAT_19_TAX_ID),
   };
 }
 
@@ -914,6 +929,82 @@ function isApplianceSale(registro: RegistroSiigoInput) {
 
 function getInvoiceProductType(registro: RegistroSiigoInput) {
   return normalizarTipoProducto(registro.tipoProducto);
+}
+
+function normalizeCatalogText(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+async function getSiigoTaxes(config: SiigoAuthConfig) {
+  if (taxesCache && taxesCache.expiresAt > Date.now()) {
+    return taxesCache.taxes;
+  }
+
+  const response = await siigoFetch<unknown>(config, "/taxes", {
+    method: "GET",
+  });
+  const taxes = extractCatalogItems(response).map((item) => ({
+    id: Number(item.id),
+    name: String(item.name || ""),
+    type: String(item.type || ""),
+    percentage: Number(item.percentage),
+    active: item.active !== false,
+  }));
+
+  taxesCache = {
+    taxes,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  };
+
+  return taxes;
+}
+
+async function resolveApplianceTaxId(config: SiigoConfig) {
+  if (config.applianceTaxId) {
+    return config.applianceTaxId;
+  }
+
+  const taxes = await getSiigoTaxes(config);
+  const tax = taxes.find((item) => {
+    const id = Number(item.id);
+    const percentage = Number(item.percentage);
+    const type = normalizeCatalogText(item.type);
+    const name = normalizeCatalogText(item.name);
+
+    return (
+      Number.isInteger(id) &&
+      id > 0 &&
+      item.active !== false &&
+      Math.abs(percentage - 19) < 0.0001 &&
+      (type.includes("IVA") || name.includes("IVA"))
+    );
+  });
+
+  if (!tax?.id) {
+    throw new SiigoConfigurationError([
+      "impuesto IVA 19 activo en Siigo (/taxes) o variable SIIGO_VAT_19_TAX_ID",
+    ]);
+  }
+
+  return tax.id;
+}
+
+async function prepareConfigForRegistro(
+  config: SiigoConfig,
+  registro: RegistroSiigoInput
+) {
+  if (!isApplianceSale(registro) || config.applianceTaxId) {
+    return config;
+  }
+
+  return {
+    ...config,
+    applianceTaxId: await resolveApplianceTaxId(config),
+  };
 }
 
 function extractCatalogItems(value: unknown) {
@@ -1883,6 +1974,12 @@ function buildInvoiceItems(
   }
 
   if (applianceSale) {
+    if (!config.applianceTaxId) {
+      throw new SiigoConfigurationError([
+        "impuesto IVA 19 activo en Siigo (/taxes) o variable SIIGO_VAT_19_TAX_ID",
+      ]);
+    }
+
     return [
       {
         code: itemCode,
@@ -2002,9 +2099,18 @@ function summarizeInvoicePayloadForError(
       }
 
       const row = item as Record<string, unknown>;
-      const taxes = Array.isArray(row.taxes) ? row.taxes.length : 0;
+      const taxes = Array.isArray(row.taxes)
+        ? row.taxes
+            .map((tax) =>
+              tax && typeof tax === "object"
+                ? String((tax as Record<string, unknown>).id || "")
+                : ""
+            )
+            .filter(Boolean)
+            .join("+")
+        : "";
 
-      return `${row.code || "-"}:${row.price || 0}:taxes${taxes}`;
+      return `${row.code || "-"}:${row.price || 0}:taxes${taxes || 0}`;
     })
     .filter(Boolean)
     .join(",");
@@ -2172,7 +2278,7 @@ export function getSiigoErrorStatus(error: unknown) {
 export async function createSiigoInvoiceForRegistro(
   registro: RegistroSiigoInput
 ) {
-  const config = getSiigoConfig(registro);
+  let config = getSiigoConfig(registro);
   const identification = getSiigoIdentificationData(
     registro.tipoDocumento,
     registro.documentoNumero
@@ -2194,6 +2300,8 @@ export async function createSiigoInvoiceForRegistro(
       `La venta supera el valor maximo permitido para facturar en Siigo (${config.maxInvoiceTotal.toLocaleString("es-CO")})`
     );
   }
+
+  config = await prepareConfigForRegistro(config, registro);
 
   const customer = await ensureCustomerForInvoice(config, registro);
   const documentNumber = await getInvoiceDocumentNumber(config);
@@ -2277,7 +2385,8 @@ export async function createSiigoCreditNoteForRegistro(
   invoiceId: string,
   invoiceName?: string | null
 ) {
-  const config = getSiigoConfig(registro);
+  let config = getSiigoConfig(registro);
+  config = await prepareConfigForRegistro(config, registro);
   const invoice = await resolveInvoiceForCreditNote(
     config,
     invoiceId,
