@@ -1211,6 +1211,47 @@ function summarizeProductsFromDocuments(
   };
 }
 
+function normalizeDocumentName(value: unknown) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function getCreditNoteInvoiceReference(document: SiigoReportDocument) {
+  const invoice =
+    document.invoice && typeof document.invoice === "object"
+      ? (document.invoice as Record<string, unknown>)
+      : null;
+
+  return {
+    id: String(invoice?.id || "").trim(),
+    name: normalizeDocumentName(invoice?.name),
+  };
+}
+
+function filterCreditNotesForProductReport(
+  invoices: SiigoReportDocument[],
+  creditNotes: SiigoReportDocument[]
+) {
+  const invoiceIds = new Set(
+    invoices.map((document) => String(document.id || "").trim()).filter(Boolean)
+  );
+  const invoiceNames = new Set(
+    invoices.map((document) => normalizeDocumentName(document.name)).filter(Boolean)
+  );
+
+  return creditNotes.filter((creditNote) => {
+    const invoiceReference = getCreditNoteInvoiceReference(creditNote);
+
+    if (!invoiceReference.id && !invoiceReference.name) {
+      return true;
+    }
+
+    return (
+      (invoiceReference.id && invoiceIds.has(invoiceReference.id)) ||
+      (invoiceReference.name && invoiceNames.has(invoiceReference.name))
+    );
+  });
+}
+
 function isReportDocumentApproved(document: SiigoReportDocument) {
   const values = [
     document.status,
@@ -1366,9 +1407,16 @@ export async function getSiigoMonthlyReport(
     fetchSiigoReportDocuments(config, "/invoices", dateStart, dateEnd),
     fetchSiigoReportDocuments(config, "/credit-notes", dateStart, dateEnd),
   ]);
+  const reportCreditNotes = filterCreditNotesForProductReport(
+    invoices,
+    creditNotes
+  );
   const facturas = summarizeReportDocuments(invoices);
-  const notasCredito = summarizeReportDocuments(creditNotes);
-  const productReport = summarizeProductsFromDocuments(invoices, creditNotes);
+  const notasCredito = summarizeReportDocuments(reportCreditNotes);
+  const productReport = summarizeProductsFromDocuments(
+    invoices,
+    reportCreditNotes
+  );
 
   return {
     desde: dateStart,
