@@ -1383,10 +1383,6 @@ export async function getSiigoMonthlyReport(
 }
 
 async function getInvoiceDocumentNumber(config: SiigoConfig) {
-  if (!config.sendDocumentNumber) {
-    return null;
-  }
-
   const response = await siigoFetch<unknown>(
     config,
     "/document-types?type=FV",
@@ -1397,9 +1393,26 @@ async function getInvoiceDocumentNumber(config: SiigoConfig) {
   const documentType = extractCatalogItems(response).find(
     (item) => Number(item.id) === config.documentId
   ) as SiigoDocumentType | undefined;
+
+  if (!documentType) {
+    throw new SiigoConfigurationError([
+      `document.id ${config.documentId} no existe en tipos de factura Siigo`,
+    ]);
+  }
+
+  if (documentType.automatic_number !== false) {
+    return null;
+  }
+
   const consecutive = Number(documentType?.consecutive);
 
-  return Number.isInteger(consecutive) && consecutive > 0 ? consecutive : null;
+  if (Number.isInteger(consecutive) && consecutive > 0) {
+    return consecutive;
+  }
+
+  throw new SiigoConfigurationError([
+    `consecutivo disponible para document.id ${config.documentId}`,
+  ]);
 }
 
 async function resolveCreditNoteDocumentId(config: SiigoConfig) {
