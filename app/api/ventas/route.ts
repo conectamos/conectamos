@@ -89,6 +89,7 @@ const REGISTRO_SIIGO_AUTO_SELECT = {
   referenciaEquipo: true,
   serialImei: true,
   tipoEquipo: true,
+  tipoProducto: true,
   jaladorNombre: true,
   numeroFactura: true,
   estadoFacturacion: true,

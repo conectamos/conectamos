@@ -24,6 +24,7 @@ import {
   formatearPesoInput,
   validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
+import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import type { RegistroVendedorDetalle } from "./types";
 
 type SessionProps = {
@@ -40,6 +41,7 @@ type RegistroResumen = {
   plataformaCredito: string;
   referenciaEquipo: string | null;
   serialImei: string | null;
+  tipoProducto: string | null;
   creditoAutorizado: number | null;
   cuotaInicial: number | null;
   valorCuota: number | null;
@@ -124,6 +126,7 @@ type FormState = {
   color: string;
   serialImei: string;
   tipoEquipo: string;
+  tipoProducto: string;
   correo: string;
   whatsapp: string;
   fechaNacimiento: string;
@@ -164,6 +167,7 @@ type ImeiLookupResponse = {
     imei: string;
     referencia: string;
     color: string | null;
+    tipoProducto: string;
     costo: number | null;
     origen: "SEDE" | "BODEGA_PRINCIPAL";
     sedeId: number | null;
@@ -198,6 +202,10 @@ const TIPO_EQUIPO_OPTIONS = [
   { value: "CPO", label: "CPO" },
   { value: "EXHIBICION", label: "EXHIBICION" },
 ] as const;
+const TIPO_PRODUCTO_OPTIONS = TIPOS_PRODUCTO.map((tipo) => ({
+  value: tipo,
+  label: tipo === "TELEFONIA" ? "TELEFONIA" : "ELECTRODOMESTICO",
+}));
 const TIPO_DOCUMENTO_CONTADO = "NIT";
 
 const SERVICIO_REGISTRO_OPTIONS = [
@@ -238,6 +246,7 @@ function createInitialState(session: SessionProps): FormState {
     color: "",
     serialImei: "",
     tipoEquipo: "",
+    tipoProducto: "TELEFONIA",
     correo: "",
     whatsapp: "",
     fechaNacimiento: "",
@@ -510,6 +519,7 @@ function mapRegistroToForm(
       color: registro.color ?? "",
       serialImei: registro.serialImei ?? "",
       tipoEquipo: registro.tipoEquipo ?? "",
+      tipoProducto: registro.tipoProducto ?? "TELEFONIA",
       correo: registro.correo ?? "",
       whatsapp: registro.whatsapp ?? "",
       fechaNacimiento: toDateInputValue(registro.fechaNacimiento),
@@ -1387,10 +1397,11 @@ export default function VendedorRegistroWorkspace({
         ...current,
         serialImei: equipo.imei,
         referenciaEquipo: equipo.referencia,
+        tipoProducto: equipo.tipoProducto,
         color: equipo.color ?? current.color,
       }));
       setImeiDetalle(
-        `${equipo.referencia} | ${equipo.sedeNombre ?? "Sin ubicacion"} | ${equipo.estadoActual ?? "Sin estado"}`
+        `${equipo.referencia} | ${equipo.tipoProducto} | ${equipo.sedeNombre ?? "Sin ubicacion"} | ${equipo.estadoActual ?? "Sin estado"}`
       );
 
       const financierasPayJoySeleccionadas = form.financierasDetalle
@@ -2392,6 +2403,24 @@ export default function VendedorRegistroWorkspace({
                       >
                         <option value="">Selecciona una opcion</option>
                         {TIPO_EQUIPO_OPTIONS.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      Tipo de producto
+                      <select
+                        value={form.tipoProducto}
+                        disabled={registroEditandoConvertido}
+                        onChange={(event) =>
+                          setField("tipoProducto", event.target.value)
+                        }
+                        className={inputClass(registroEditandoConvertido)}
+                      >
+                        {TIPO_PRODUCTO_OPTIONS.map((item) => (
                           <option key={item.value} value={item.value}>
                             {item.label}
                           </option>

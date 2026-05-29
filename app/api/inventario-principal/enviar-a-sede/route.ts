@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { NOMBRE_SEDE_BODEGA, PROVEEDOR_FINSER } from "@/lib/prestamos";
 import { esSedeVentas } from "@/lib/sedes";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +18,8 @@ export async function POST(req: Request) {
     if (!esAdmin) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
+
+    await ensureVendorProfilesSchema();
 
     const body = await req.json();
     const id = Number(body.id);
@@ -49,6 +52,7 @@ export async function POST(req: Request) {
         id: true,
         imei: true,
         referencia: true,
+        tipoProducto: true,
         color: true,
         costo: true,
         distribuidor: true,
@@ -146,6 +150,7 @@ export async function POST(req: Request) {
         data: {
           imei: item.imei,
           referencia: item.referencia,
+          tipoProducto: item.tipoProducto,
           color: item.color || null,
           costo: item.costo,
           sedeId: sedeDestinoId,

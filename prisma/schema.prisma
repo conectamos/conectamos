@@ -83,6 +83,7 @@ model Inventario {
   fechaIngreso     DateTime
   distribuidor     String?
   referencia       String
+  tipoProducto     String    @default("TELEFONIA")
   color            String?
   imei             String    @unique
   deboA            String?
@@ -199,6 +200,7 @@ model RegistroVendedorVenta {
   color                           String?
   serialImei                      String?
   tipoEquipo                      String?
+  tipoProducto                    String          @default("TELEFONIA")
   creditoAutorizado               Decimal?        @db.Decimal(12, 2)
   cuotaInicial                    Decimal?        @db.Decimal(12, 2)
   valorCuota                      Decimal?        @db.Decimal(12, 2)
@@ -295,6 +297,7 @@ model InventarioPrincipal {
   id              Int              @id @default(autoincrement())
   imei            String           @unique
   referencia      String
+  tipoProducto    String           @default("TELEFONIA")
   color           String?
   costo           Float
   numeroFactura   String?
@@ -317,6 +320,7 @@ model InventarioSede {
   id           Int     @id @default(autoincrement())
   imei         String
   referencia   String
+  tipoProducto String  @default("TELEFONIA")
   color        String?
   costo        Float
   distribuidor String?

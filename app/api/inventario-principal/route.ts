@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { normalizarTipoProducto } from "@/lib/product-types";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
   buscarReferenciaInventarioActiva,
   normalizarReferenciaInventario,
@@ -26,12 +28,15 @@ export async function GET() {
       );
     }
 
+    await ensureVendorProfilesSchema();
+
 const inventario = await prisma.inventarioPrincipal.findMany({
       orderBy: { id: "desc" },
       select: {
         id: true,
         imei: true,
         referencia: true,
+        tipoProducto: true,
         color: true,
         costo: true,
         numeroFactura: true,
@@ -75,9 +80,12 @@ export async function POST(req: Request) {
       );
     }
 
+    await ensureVendorProfilesSchema();
+
     const body = await req.json();
 
     const referencia = normalizarReferenciaInventario(body.referencia);
+    const tipoProducto = normalizarTipoProducto(body.tipoProducto);
     const color = String(body.color ?? "").trim();
     const costo = Number(body.costo ?? 0);
     const numeroFactura = String(body.numeroFactura ?? "").trim();
@@ -189,6 +197,7 @@ const imeis: string[] = imeisRawTyped
         data: imeisParaInsertar.map((item: string) => ({
           imei: item,
           referencia: referenciaGuardar,
+          tipoProducto,
           color: color || null,
           costo,
           numeroFactura,

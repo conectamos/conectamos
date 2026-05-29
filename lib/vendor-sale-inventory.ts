@@ -1,9 +1,11 @@
 import prisma from "@/lib/prisma";
+import { normalizarTipoProducto, type TipoProducto } from "@/lib/product-types";
 import { normalizarImei } from "@/lib/vendor-sale-records";
 
 export type EquipoRegistroVentaLookup = {
   imei: string;
   referencia: string;
+  tipoProducto: TipoProducto;
   color: string | null;
   costo: number | null;
   origen: "SEDE" | "BODEGA_PRINCIPAL";
@@ -28,6 +30,7 @@ export async function buscarEquipoRegistroVentaPorImei(
       id: true,
       imei: true,
       referencia: true,
+      tipoProducto: true,
       color: true,
       costo: true,
       estadoActual: true,
@@ -49,6 +52,7 @@ export async function buscarEquipoRegistroVentaPorImei(
     return {
       imei: item.imei,
       referencia: item.referencia,
+      tipoProducto: normalizarTipoProducto(item.tipoProducto),
       color: item.color ?? null,
       costo: Number.isFinite(item.costo) ? item.costo : null,
       origen: "SEDE" as const,
@@ -63,6 +67,7 @@ export async function buscarEquipoRegistroVentaPorImei(
     select: {
       imei: true,
       referencia: true,
+      tipoProducto: true,
       color: true,
       costo: true,
       estado: true,
@@ -76,6 +81,7 @@ export async function buscarEquipoRegistroVentaPorImei(
   return {
     imei: inventarioPrincipal.imei,
     referencia: inventarioPrincipal.referencia,
+    tipoProducto: normalizarTipoProducto(inventarioPrincipal.tipoProducto),
     color: inventarioPrincipal.color ?? null,
     costo: Number.isFinite(inventarioPrincipal.costo)
       ? inventarioPrincipal.costo

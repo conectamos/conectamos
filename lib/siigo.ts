@@ -1,3 +1,5 @@
+import { esElectrodomestico, normalizarTipoProducto } from "@/lib/product-types";
+
 type SiigoConfig = {
   apiBaseUrl: string;
   authUrl: string;
@@ -19,6 +21,8 @@ type SiigoConfig = {
   paymentDueDays: number;
   exemptItemLimit: number;
   maxInvoiceTotal: number;
+  applianceItemCode: string;
+  applianceTaxId: number;
 };
 
 type SiigoAuthConfig = Pick<
@@ -133,6 +137,7 @@ export type RegistroSiigoInput = {
   referenciaEquipo?: string | null;
   serialImei?: string | null;
   tipoEquipo?: string | null;
+  tipoProducto?: string | null;
   siigoCreditNoteId?: string | null;
   siigoInvoiceAttempt?: unknown;
   siigoCreditNoteCreatedAt?: Date | string | null;
@@ -388,6 +393,8 @@ function getSiigoConfig(registro: RegistroSiigoInput): SiigoConfig {
     paymentDueDays: toNonNegativeInt(sede?.siigoPaymentDueDays) ?? 0,
     exemptItemLimit: readMoney("SIIGO_EXEMPT_ITEM_LIMIT", 1150000),
     maxInvoiceTotal: readMoney("SIIGO_MAX_INVOICE_TOTAL", 2300000),
+    applianceItemCode: process.env.SIIGO_APPLIANCE_ITEM_CODE?.trim() || "001",
+    applianceTaxId: toPositiveInt(process.env.SIIGO_VAT_19_TAX_ID) ?? 13156,
   };
 }
 
@@ -891,10 +898,22 @@ async function ensureCustomerForInvoice(
 }
 
 function resolveItemCode(registro: RegistroSiigoInput, config: SiigoConfig) {
+  if (esElectrodomestico(registro.tipoProducto)) {
+    return config.applianceItemCode;
+  }
+
   return (
     config.itemCode ||
     String(registro.referenciaEquipo || registro.serialImei || "").trim()
   );
+}
+
+function isApplianceSale(registro: RegistroSiigoInput) {
+  return esElectrodomestico(registro.tipoProducto);
+}
+
+function getInvoiceProductType(registro: RegistroSiigoInput) {
+  return normalizarTipoProducto(registro.tipoProducto);
 }
 
 function extractCatalogItems(value: unknown) {
@@ -1855,11 +1874,24 @@ function buildInvoiceItems(
   total: number
 ) {
   const itemCode = resolveItemCode(registro, config);
+  const applianceSale = isApplianceSale(registro);
 
   if (!itemCode) {
     throw new SiigoValidationError(
       "No hay codigo de producto para Siigo. Configura SIIGO_ITEM_CODE o registra una referencia."
     );
+  }
+
+  if (applianceSale) {
+    return [
+      {
+        code: itemCode,
+        description: buildItemDescription(registro, 0),
+        quantity: 1,
+        price: roundMoney(total / 1.19),
+        taxes: [{ id: config.applianceTaxId }],
+      },
+    ];
   }
 
   const limit = config.exemptItemLimit;
@@ -1906,7 +1938,7 @@ function buildInvoicePayload(
     );
   }
 
-  if (total > config.maxInvoiceTotal) {
+  if (!isApplianceSale(registro) && total > config.maxInvoiceTotal) {
     throw new SiigoValidationError(
       `La venta supera el valor maximo permitido para facturar en Siigo (${config.maxInvoiceTotal.toLocaleString("es-CO")})`
     );
@@ -1921,7 +1953,12 @@ function buildInvoicePayload(
     customer: buildInvoiceCustomerPayload(registro, customer),
     ...(config.costCenterId ? { cost_center: config.costCenterId } : {}),
     seller: config.sellerId,
-    observations: buildObservations(registro),
+    observations: [
+      `Tipo de producto: ${getInvoiceProductType(registro)}`,
+      buildObservations(registro),
+    ]
+      .filter(Boolean)
+      .join(" | "),
     items: buildInvoiceItems(registro, config, total),
     payments: [
       {
@@ -2152,7 +2189,7 @@ export async function createSiigoInvoiceForRegistro(
     );
   }
 
-  if (total > config.maxInvoiceTotal) {
+  if (!isApplianceSale(registro) && total > config.maxInvoiceTotal) {
     throw new SiigoValidationError(
       `La venta supera el valor maximo permitido para facturar en Siigo (${config.maxInvoiceTotal.toLocaleString("es-CO")})`
     );

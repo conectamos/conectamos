@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { TIPOS_PRODUCTO } from "@/lib/product-types";
 
 const OPCIONES_PROVEEDOR_SEDE = [
   "Proveedor FINSER",
@@ -91,6 +92,7 @@ export default function NuevoInventarioPage() {
   const [imeisMasivos, setImeisMasivos] = useState("");
 
   const [referencia, setReferencia] = useState("");
+  const [tipoProducto, setTipoProducto] = useState("TELEFONIA");
   const [color, setColor] = useState("");
   const [costo, setCosto] = useState("");
   const [numeroFactura, setNumeroFactura] = useState("");
@@ -170,6 +172,7 @@ export default function NuevoInventarioPage() {
       const data = await res.json();
 
       setReferencia(data.referencia || "");
+      setTipoProducto(data.tipoProducto || "TELEFONIA");
       setColor(data.color || "");
       setCosto(data.costo ? String(data.costo) : "");
 
@@ -186,6 +189,7 @@ export default function NuevoInventarioPage() {
     setImei("");
     setImeisMasivos("");
     setReferencia("");
+    setTipoProducto("TELEFONIA");
     setColor("");
     setCosto("");
     setNumeroFactura("");
@@ -267,6 +271,7 @@ export default function NuevoInventarioPage() {
           body: JSON.stringify({
             imeis,
             referencia,
+            tipoProducto,
             color,
             costo: Number(costo),
             numeroFactura,
@@ -320,6 +325,7 @@ export default function NuevoInventarioPage() {
           imeis,
           imei: imeis[0],
           referencia,
+          tipoProducto,
           color,
           costo: Number(costo),
           distribuidor,
@@ -528,6 +534,21 @@ export default function NuevoInventarioPage() {
                       className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
                     />
                   )}
+                </div>
+
+                <div>
+                  <FieldLabel>Tipo de producto</FieldLabel>
+                  <select
+                    value={tipoProducto}
+                    onChange={(event) => setTipoProducto(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  >
+                    {TIPOS_PRODUCTO.map((tipo) => (
+                      <option key={tipo} value={tipo}>
+                        {tipo === "TELEFONIA" ? "TELEFONIA" : "ELECTRODOMESTICO"}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

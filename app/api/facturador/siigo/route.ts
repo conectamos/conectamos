@@ -18,6 +18,7 @@ import {
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import prisma from "@/lib/prisma";
+import { esElectrodomestico } from "@/lib/product-types";
 
 async function requireFacturador() {
   const session = await getSessionUser();
@@ -107,6 +108,7 @@ const REGISTRO_FACTURADOR_SELECT = {
   referenciaEquipo: true,
   serialImei: true,
   tipoEquipo: true,
+  tipoProducto: true,
   jaladorNombre: true,
   numeroFactura: true,
   estadoFacturacion: true,
@@ -437,7 +439,7 @@ export async function POST(req: Request) {
         try {
           const totalSiigo = calcularTotalFacturableSiigo(pendiente);
 
-          if (totalSiigo > maxInvoiceTotal) {
+          if (!esElectrodomestico(pendiente.tipoProducto) && totalSiigo > maxInvoiceTotal) {
             const message = `Supera tope Siigo: ${totalSiigo.toLocaleString(
               "es-CO"
             )}. Maximo ${maxInvoiceTotal.toLocaleString("es-CO")}.`;

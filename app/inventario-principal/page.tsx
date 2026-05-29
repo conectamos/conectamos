@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
+import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import { esSedeOperativaInventario } from "@/lib/sedes";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
@@ -10,6 +11,7 @@ type ItemPrincipal = {
   id: number;
   imei: string;
   referencia: string;
+  tipoProducto: string;
   color: string | null;
   costo: number;
   numeroFactura: string | null;
@@ -92,6 +94,7 @@ export default function InventarioPrincipalPage() {
   const [mostrarModalEdicion, setMostrarModalEdicion] = useState(false);
   const [idsEdicion, setIdsEdicion] = useState<number[]>([]);
   const [edicionReferencia, setEdicionReferencia] = useState("");
+  const [edicionTipoProducto, setEdicionTipoProducto] = useState("");
   const [edicionColor, setEdicionColor] = useState("");
   const [edicionCosto, setEdicionCosto] = useState("");
   const [edicionFactura, setEdicionFactura] = useState("");
@@ -235,6 +238,7 @@ export default function InventarioPrincipalPage() {
       return [
         String(item.imei || ""),
         String(item.referencia || ""),
+        String(item.tipoProducto || ""),
         String(item.color || ""),
         String(item.distribuidor || ""),
         String(item.numeroFactura || ""),
@@ -322,6 +326,7 @@ export default function InventarioPrincipalPage() {
 
   const limpiarFormularioEdicion = () => {
     setEdicionReferencia("");
+    setEdicionTipoProducto("");
     setEdicionColor("");
     setEdicionCosto("");
     setEdicionFactura("");
@@ -674,6 +679,7 @@ export default function InventarioPrincipalPage() {
     const payload: Record<string, unknown> = { ids: idsEdicion };
 
     if (edicionReferencia) payload.referencia = edicionReferencia;
+    if (edicionTipoProducto) payload.tipoProducto = edicionTipoProducto;
     if (edicionColor.trim()) payload.color = edicionColor.trim();
     if (edicionCosto.trim()) payload.costo = Number(edicionCosto.replace(/\D/g, ""));
     if (edicionFactura.trim()) payload.numeroFactura = edicionFactura.trim();
@@ -1287,7 +1293,12 @@ export default function InventarioPrincipalPage() {
                         </td>
                         <td className="px-4 py-4 font-bold text-slate-950">{item.id}</td>
                         <td className="px-4 py-4 font-semibold text-slate-950">{item.imei}</td>
-                        <td className="px-4 py-4">{item.referencia}</td>
+                        <td className="px-4 py-4">
+                          <div>{item.referencia}</div>
+                          <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                            {item.tipoProducto || "TELEFONIA"}
+                          </span>
+                        </td>
                         <td className="px-4 py-4">{item.color ?? "-"}</td>
                         <td className="px-4 py-4 font-semibold text-slate-950">
                           {formatoPesos(item.costo)}
@@ -1397,6 +1408,24 @@ export default function InventarioPrincipalPage() {
                   {referenciasActivas.map((item) => (
                     <option key={item.id} value={item.nombre}>
                       {item.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[12px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                  Tipo de producto
+                </label>
+                <select
+                  value={edicionTipoProducto}
+                  onChange={(event) => setEdicionTipoProducto(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                >
+                  <option value="">Mantener tipo</option>
+                  {TIPOS_PRODUCTO.map((tipo) => (
+                    <option key={tipo} value={tipo}>
+                      {tipo}
                     </option>
                   ))}
                 </select>

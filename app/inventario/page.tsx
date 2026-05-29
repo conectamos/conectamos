@@ -8,11 +8,13 @@ import {
 } from "@/lib/prestamos";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 import { esSedeOperativaInventario } from "@/lib/sedes";
+import { TIPOS_PRODUCTO } from "@/lib/product-types";
 
 type InventarioItem = {
   id: number;
   imei: string;
   referencia: string;
+  tipoProducto: string;
   color: string | null;
   costo: number;
   distribuidor: string | null;
@@ -62,6 +64,7 @@ type EstadoFiltro =
 
 type EditarInventarioForm = {
   referencia: string;
+  tipoProducto: string;
   color: string;
   costo: string;
   distribuidor: string;
@@ -242,6 +245,7 @@ export default function InventarioPage() {
   const [itemEditar, setItemEditar] = useState<InventarioItem | null>(null);
   const [formularioEditar, setFormularioEditar] = useState<EditarInventarioForm>({
     referencia: "",
+    tipoProducto: "TELEFONIA",
     color: "",
     costo: "",
     distribuidor: "",
@@ -630,6 +634,7 @@ export default function InventarioPage() {
     setItemEditar(item);
     setFormularioEditar({
       referencia: item.referencia || "",
+      tipoProducto: item.tipoProducto || "TELEFONIA",
       color: item.color || "",
       costo: String(item.costo || ""),
       distribuidor: item.distribuidor || "",
@@ -644,6 +649,7 @@ export default function InventarioPage() {
     setItemEditar(null);
     setFormularioEditar({
       referencia: "",
+      tipoProducto: "TELEFONIA",
       color: "",
       costo: "",
       distribuidor: "",
@@ -690,6 +696,7 @@ export default function InventarioPage() {
         body: JSON.stringify({
           id: itemEditar.id,
           referencia: formularioEditar.referencia,
+          tipoProducto: formularioEditar.tipoProducto,
           color: formularioEditar.color,
           costo: Number(formularioEditar.costo),
           distribuidor: formularioEditar.distribuidor,
@@ -1801,7 +1808,12 @@ export default function InventarioPage() {
                       </td>
                       <td className="px-2 py-4 font-semibold text-slate-950">{item.id}</td>
                       <td className="break-all px-2 py-4 font-semibold text-slate-950">{item.imei}</td>
-                      <td className="break-words px-2 py-4 font-semibold text-slate-950">{item.referencia}</td>
+                      <td className="break-words px-2 py-4 font-semibold text-slate-950">
+                        <div>{item.referencia}</div>
+                        <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                          {item.tipoProducto || "TELEFONIA"}
+                        </span>
+                      </td>
                       <td className="break-words px-2 py-4">{item.color ?? "-"}</td>
                       <td className="break-words px-2 py-4 font-semibold text-slate-950">
                         {formatoPesos(item.costo)}
@@ -2380,6 +2392,28 @@ export default function InventarioPage() {
                   }
                   className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
                 />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Tipo de producto
+                </label>
+                <select
+                  value={formularioEditar.tipoProducto}
+                  onChange={(e) =>
+                    setFormularioEditar((actual) => ({
+                      ...actual,
+                      tipoProducto: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                >
+                  {TIPOS_PRODUCTO.map((tipo) => (
+                    <option key={tipo} value={tipo}>
+                      {tipo}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

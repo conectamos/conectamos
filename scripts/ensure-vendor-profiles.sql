@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS "RegistroVendedorVenta" (
   "color" TEXT,
   "serialImei" TEXT,
   "tipoEquipo" TEXT,
+  "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA',
   "creditoAutorizado" DECIMAL(12,2),
   "cuotaInicial" DECIMAL(12,2),
   "valorCuota" DECIMAL(12,2),
@@ -138,7 +139,17 @@ ALTER TABLE "RegistroVendedorVenta"
   ADD COLUMN IF NOT EXISTS "eliminadoEn" TIMESTAMP(3),
   ADD COLUMN IF NOT EXISTS "eliminadoPor" TEXT,
   ADD COLUMN IF NOT EXISTS "firmaClienteDataUrl" TEXT,
-  ADD COLUMN IF NOT EXISTS "fotoEntregaDataUrl" TEXT;
+  ADD COLUMN IF NOT EXISTS "fotoEntregaDataUrl" TEXT,
+  ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
+
+ALTER TABLE "Inventario"
+  ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
+
+ALTER TABLE "InventarioPrincipal"
+  ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
+
+ALTER TABLE "InventarioSede"
+  ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
 
 ALTER TABLE "Sede"
   ADD COLUMN IF NOT EXISTS "siigoEnabled" BOOLEAN NOT NULL DEFAULT false,

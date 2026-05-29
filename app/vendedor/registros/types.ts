@@ -30,6 +30,7 @@ export type RegistroVendedorDetalle = {
   color: string | null;
   serialImei: string | null;
   tipoEquipo: string | null;
+  tipoProducto: string | null;
   creditoAutorizado: number | null;
   cuotaInicial: number | null;
   valorCuota: number | null;

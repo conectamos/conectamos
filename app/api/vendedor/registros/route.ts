@@ -11,6 +11,7 @@ import {
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import { buscarDocumentoListaNegra } from "@/lib/vendor-blacklist";
+import { normalizarTipoProducto } from "@/lib/product-types";
 import {
   isPayJoyRetailConfigured,
   obtenerCreditoPayJoyPorImei,
@@ -46,6 +47,7 @@ const REGISTRO_RESUMEN_SELECT = {
   financierasDetalle: true,
   referenciaEquipo: true,
   serialImei: true,
+  tipoProducto: true,
   creditoAutorizado: true,
   cuotaInicial: true,
   valorCuota: true,
@@ -79,6 +81,7 @@ const REGISTRO_DETALLE_SELECT = {
   color: true,
   serialImei: true,
   tipoEquipo: true,
+  tipoProducto: true,
   creditoAutorizado: true,
   cuotaInicial: true,
   valorCuota: true,
@@ -448,6 +451,7 @@ function validarPayload(
   const color = normalizarTextoCorto(body.color);
   const serialImei = normalizarImei(body.serialImei);
   const tipoEquipo = normalizarTipoEquipoRegistro(body.tipoEquipo);
+  const tipoProducto = normalizarTipoProducto(body.tipoProducto);
   const correoTexto = normalizarTextoCorto(body.correo);
   const correo = normalizarCorreoRegistro(body.correo);
   const whatsappTexto = String(body.whatsapp || "").replace(/\D/g, "").trim();
@@ -578,6 +582,7 @@ function validarPayload(
         color,
         serialImei,
         tipoEquipo,
+        tipoProducto,
         creditoAutorizado: null,
         cuotaInicial: null,
         valorCuota: null,
@@ -727,6 +732,7 @@ function validarPayload(
       color,
       serialImei,
       tipoEquipo,
+      tipoProducto,
       creditoAutorizado: primeraFinanciera.creditoAutorizado,
       cuotaInicial: primeraFinanciera.cuotaInicial,
       valorCuota: primeraFinanciera.valorCuota,
@@ -1177,6 +1183,7 @@ export async function POST(req: Request) {
         ...payload.data,
         puntoVenta: sedeRegistro.nombre,
         referenciaEquipo: equipoValidado.equipo.referencia,
+        tipoProducto: equipoValidado.equipo.tipoProducto,
         color: equipoValidado.equipo.color ?? payload.data.color ?? null,
         asesorNombre:
           payload.data.asesorNombre ??
@@ -1406,6 +1413,7 @@ export async function PATCH(req: Request) {
         ...payload.data,
         puntoVenta: sedeRegistro.nombre,
         referenciaEquipo: equipoValidado.equipo.referencia,
+        tipoProducto: equipoValidado.equipo.tipoProducto,
         color: equipoValidado.equipo.color ?? payload.data.color ?? null,
         asesorNombre:
           payload.data.asesorNombre ??

@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { esSedeVentas } from "@/lib/sedes";
+import { normalizarTipoProducto } from "@/lib/product-types";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
 function parseSedeId(value: string | null) {
   const sedeId = Number(value);
@@ -27,6 +29,8 @@ export async function GET(req: Request) {
       );
     }
 
+    await ensureVendorProfilesSchema();
+
     const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
     const requestUrl = new URL(req.url);
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
@@ -42,6 +46,7 @@ export async function GET(req: Request) {
         id: true,
         imei: true,
         referencia: true,
+        tipoProducto: true,
         color: true,
         costo: true,
         distribuidor: true,
@@ -191,6 +196,8 @@ export async function POST(req: Request) {
       );
     }
 
+    await ensureVendorProfilesSchema();
+
     const data = await req.json();
 
     const imeisRaw = Array.isArray(data.imeis)
@@ -204,6 +211,7 @@ export async function POST(req: Request) {
       .filter((item) => item.length > 0);
 
     const referencia = String(data.referencia ?? "").trim();
+    const tipoProducto = normalizarTipoProducto(data.tipoProducto);
     const color = String(data.color ?? "").trim();
     const costo = Number(data.costo ?? 0);
     const distribuidor = String(data.distribuidor ?? "").trim();
@@ -369,6 +377,7 @@ export async function POST(req: Request) {
         data: imeisParaInsertar.map((item) => ({
           imei: item,
           referencia,
+          tipoProducto,
           color: color || null,
           costo,
           distribuidor,
@@ -408,6 +417,7 @@ export async function POST(req: Request) {
               id: true,
               imei: true,
               referencia: true,
+              tipoProducto: true,
               sedeId: true,
               estadoActual: true,
               estadoFinanciero: true,

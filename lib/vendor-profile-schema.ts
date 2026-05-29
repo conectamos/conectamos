@@ -86,6 +86,7 @@ async function runEnsureVendorProfilesSchema() {
       "color" TEXT,
       "serialImei" TEXT,
       "tipoEquipo" TEXT,
+      "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA',
       "creditoAutorizado" DECIMAL(12,2),
       "cuotaInicial" DECIMAL(12,2),
       "valorCuota" DECIMAL(12,2),
@@ -180,7 +181,23 @@ async function runEnsureVendorProfilesSchema() {
       ADD COLUMN IF NOT EXISTS "facturaFotoDataUrl" TEXT,
       ADD COLUMN IF NOT EXISTS "cedulaFrenteDataUrl" TEXT,
       ADD COLUMN IF NOT EXISTS "cedulaReversoDataUrl" TEXT,
-      ADD COLUMN IF NOT EXISTS "clienteSinCedulaFisica" BOOLEAN NOT NULL DEFAULT false;
+      ADD COLUMN IF NOT EXISTS "clienteSinCedulaFisica" BOOLEAN NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "Inventario"
+      ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "InventarioPrincipal"
+      ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "InventarioSede"
+      ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
   `);
 
   await prisma.$executeRawUnsafe(`

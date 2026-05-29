@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { esEstadoInventarioBloqueadoPorPrestamo } from "@/lib/prestamos";
+import { normalizarTipoProducto } from "@/lib/product-types";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
 const ESTADOS_PRESTAMO_ACTIVOS = [
   "PENDIENTE",
@@ -30,10 +32,13 @@ export async function POST(req: Request) {
       );
     }
 
+    await ensureVendorProfilesSchema();
+
     const body = await req.json();
 
     const id = Number(body.id);
     const referencia = String(body.referencia ?? "").trim();
+    const tipoProducto = normalizarTipoProducto(body.tipoProducto);
     const color = String(body.color ?? "").trim();
     const costo = Number(body.costo ?? 0);
     const distribuidor = String(body.distribuidor ?? "").trim();
@@ -88,6 +93,7 @@ export async function POST(req: Request) {
         id: true,
         imei: true,
         referencia: true,
+        tipoProducto: true,
         color: true,
         costo: true,
         sedeId: true,
@@ -139,6 +145,10 @@ export async function POST(req: Request) {
       cambios.push(`referencia: ${item.referencia} -> ${referencia}`);
     }
 
+    if (normalizarTipoProducto(item.tipoProducto) !== tipoProducto) {
+      cambios.push(`tipo producto: ${item.tipoProducto || "-"} -> ${tipoProducto}`);
+    }
+
     if ((item.color || "") !== color) {
       cambios.push(`color: ${item.color || "-"} -> ${color || "-"}`);
     }
@@ -165,6 +175,7 @@ export async function POST(req: Request) {
       where: { id },
       data: {
         referencia,
+        tipoProducto,
         color: color || null,
         costo,
         distribuidor,
@@ -179,6 +190,7 @@ export async function POST(req: Request) {
         id: true,
         imei: true,
         referencia: true,
+        tipoProducto: true,
         color: true,
         costo: true,
         distribuidor: true,
@@ -193,16 +205,18 @@ export async function POST(req: Request) {
         imei: item.imei,
         tipoMovimiento: "EDICION_ADMIN",
         referencia,
+        observacion: [
+          cambios.length > 0
+            ? `Admin ${user.usuario} actualizo: ${cambios.join(" | ")}`
+            : `Admin ${user.usuario} abrio y guardo la ficha sin cambios.`,
+          `Tipo producto: ${tipoProducto}`,
+        ].join(" | "),
         color: color || null,
         costo,
         sedeId: item.sedeId,
         deboA: estadoFinanciero === "DEUDA" ? deboA : null,
         estadoFinanciero,
         origen: "ADMIN",
-        observacion:
-          cambios.length > 0
-            ? `Admin ${user.usuario} actualizo: ${cambios.join(" | ")}`
-            : `Admin ${user.usuario} abrio y guardo la ficha sin cambios.`,
       },
     });
 

@@ -10,6 +10,7 @@ import {
   financieraRequiereInicial,
   formatearPesoInput,
 } from "@/lib/vendor-sale-records";
+import { esElectrodomestico } from "@/lib/product-types";
 
 type SessionProps = {
   nombre: string;
@@ -84,6 +85,7 @@ type RegistroFacturacion = {
   referenciaEquipo: string | null;
   serialImei: string | null;
   tipoEquipo: string | null;
+  tipoProducto: string | null;
   jaladorNombre: string | null;
   numeroFactura: string | null;
   estadoFacturacion: string | null;
@@ -343,7 +345,10 @@ function filtroRegistro(registro: RegistroFacturacion): FiltroRegistro {
     return "FACTURADOS";
   }
 
-  if (totalFacturableSiigo(registro) > SIIGO_MAX_FACTURA_TOTAL) {
+  if (
+    !esElectrodomestico(registro.tipoProducto) &&
+    totalFacturableSiigo(registro) > SIIGO_MAX_FACTURA_TOTAL
+  ) {
     return "SUPERA_TOPE";
   }
 
@@ -551,6 +556,7 @@ export default function FacturadorRegistrosWorkspace({
         registro.clienteNombre,
         registro.puntoVenta,
         registro.referenciaEquipo,
+        registro.tipoProducto,
         registro.numeroFactura,
         registro.siigoInvoiceName,
         registro.siigoInvoiceStatus,
@@ -1494,6 +1500,7 @@ export default function FacturadorRegistrosWorkspace({
                     const financieras = resolveFinancieras(registro);
                     const totalSiigo = totalFacturableSiigo(registro);
                     const superaTopeSiigo =
+                      !esElectrodomestico(registro.tipoProducto) &&
                       totalSiigo > SIIGO_MAX_FACTURA_TOTAL;
                     const esContado = esRegistroContado(registro);
                     const convertido = esRegistroConvertido(registro);
@@ -1565,7 +1572,10 @@ export default function FacturadorRegistrosWorkspace({
                           {registro.barrio || "Sin barrio"}
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          {registro.referenciaEquipo || "Sin referencia"}
+                          <div>{registro.referenciaEquipo || "Sin referencia"}</div>
+                          <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-white/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                            {registro.tipoProducto || "TELEFONIA"}
+                          </span>
                         </td>
                         <td className="border-y border-slate-200 px-4 py-4 text-sm">
                           {registro.serialImei || "Sin IMEI"}

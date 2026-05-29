@@ -5,11 +5,14 @@ import {
   buscarReferenciaInventarioActiva,
   normalizarReferenciaInventario,
 } from "@/lib/inventory-references";
+import { normalizarTipoProducto } from "@/lib/product-types";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import prisma from "@/lib/prisma";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 
 type UpdateData = {
   referencia?: string;
+  tipoProducto?: string;
   color?: string | null;
   costo?: number;
   numeroFactura?: string | null;
@@ -45,6 +48,8 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
+    await ensureVendorProfilesSchema();
+
     const body = (await req.json()) as Record<string, unknown>;
     const ids = parseIds(body.ids ?? body.id);
 
@@ -71,6 +76,10 @@ export async function PATCH(req: Request) {
 
     if ("color" in body && String(body.color ?? "").trim()) {
       data.color = normalizeNullableText(body.color);
+    }
+
+    if ("tipoProducto" in body && String(body.tipoProducto ?? "").trim()) {
+      data.tipoProducto = normalizarTipoProducto(body.tipoProducto);
     }
 
     if ("costo" in body && String(body.costo ?? "").trim()) {
@@ -107,6 +116,7 @@ export async function PATCH(req: Request) {
         id: true,
         imei: true,
         referencia: true,
+        tipoProducto: true,
         color: true,
         costo: true,
         numeroFactura: true,
@@ -139,12 +149,14 @@ export async function PATCH(req: Request) {
 
       const dataSede: {
         referencia?: string;
+        tipoProducto?: string;
         color?: string | null;
         costo?: number;
         distribuidor?: string | null;
       } = {};
 
       if (data.referencia !== undefined) dataSede.referencia = data.referencia;
+      if (data.tipoProducto !== undefined) dataSede.tipoProducto = data.tipoProducto;
       if (data.color !== undefined) dataSede.color = data.color;
       if (data.costo !== undefined) dataSede.costo = data.costo;
       if (data.distribuidor !== undefined) dataSede.distribuidor = data.distribuidor;
@@ -189,7 +201,12 @@ export async function PATCH(req: Request) {
           sedeId: null,
           origen: "PRINCIPAL",
           observacion:
-            "Edicion de inventario principal realizada por administrador",
+            [
+              "Edicion de inventario principal realizada por administrador",
+              data.tipoProducto ? `tipo producto: ${data.tipoProducto}` : null,
+            ]
+              .filter(Boolean)
+              .join(" | "),
         })),
       });
     });

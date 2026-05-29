@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 
 export async function POST(req: Request) {
   try {
@@ -9,6 +10,8 @@ export async function POST(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
+
+    await ensureVendorProfilesSchema();
 
     const body = await req.json();
     const imei = String(body.imei ?? "").replace(/\D/g, "").slice(0, 15);
@@ -21,6 +24,7 @@ export async function POST(req: Request) {
       where: { imei },
       select: {
         referencia: true,
+        tipoProducto: true,
         color: true,
         costo: true,
       },
