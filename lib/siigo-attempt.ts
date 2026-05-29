@@ -11,6 +11,7 @@ export async function avanzarIntentoFacturaSiigo<
   const actualizado = await prisma.registroVendedorVenta.update({
     where: { id: registro.id },
     data: {
+      siigoInvoiceError: null,
       siigoInvoiceAttempt: {
         increment: 1,
       },
