@@ -355,8 +355,7 @@ function getSiigoConfig(registro: RegistroSiigoInput): SiigoConfig {
   return {
     ...authConfig,
     documentId,
-    sendDocumentNumber:
-      process.env.SIIGO_SEND_DOCUMENT_NUMBER?.trim().toLowerCase() === "true",
+    sendDocumentNumber: false,
     sellerId,
     paymentTypeId,
     itemCode:

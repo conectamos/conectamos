@@ -387,6 +387,31 @@ export async function POST(req: Request) {
                 mode: "insensitive",
               },
             },
+            {
+              AND: [
+                {
+                  siigoInvoiceAttempt: {
+                    lt: 5,
+                  },
+                },
+                {
+                  OR: [
+                    {
+                      siigoInvoiceError: {
+                        contains: "invalid_dian_resolution",
+                        mode: "insensitive",
+                      },
+                    },
+                    {
+                      siigoInvoiceError: {
+                        contains: "resolucion DIAN",
+                        mode: "insensitive",
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
           ],
           AND: [
             {
