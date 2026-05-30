@@ -622,6 +622,10 @@ function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function isContado(value: unknown) {
   return String(value || "")
     .trim()
@@ -2358,35 +2362,49 @@ export async function createSiigoInvoiceForRegistro(
     30
   );
 
-  let invoice: SiigoInvoiceResponse;
+  let invoice: SiigoInvoiceResponse | null = null;
+  let lastError: unknown = null;
 
-  try {
-    invoice = await siigoFetch<SiigoInvoiceResponse>(
-      config,
-      "/invoices",
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-      {
-        idempotencyKey,
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      invoice = await siigoFetch<SiigoInvoiceResponse>(
+        config,
+        "/invoices",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+        {
+          idempotencyKey,
+        }
+      );
+      break;
+    } catch (error) {
+      lastError = error;
+
+      if (!isSiigoTemporaryUnavailableError(error) || attempt === 2) {
+        break;
       }
-    );
-  } catch (error) {
-    if (error instanceof SiigoApiError) {
+
+      await wait(2500 * (attempt + 1));
+    }
+  }
+
+  if (!invoice) {
+    if (lastError instanceof SiigoApiError) {
       const payloadSummary = summarizeInvoicePayloadForError(
         payload,
         idempotencyKey
       );
 
       throw new SiigoApiError(
-        `${error.message}. Payload factura: ${payloadSummary}.`,
-        error.status,
-        error.details
+        `${lastError.message}. Payload factura: ${payloadSummary}.`,
+        lastError.status,
+        lastError.details
       );
     }
 
-    throw error;
+    throw lastError || new Error("Siigo no retorno factura");
   }
 
   if (config.mailSend && invoice.id) {

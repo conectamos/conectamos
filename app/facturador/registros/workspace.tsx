@@ -1806,6 +1806,8 @@ export default function FacturadorRegistrosWorkspace({
                                         ? "Supera tope"
                                       : !convertido
                                         ? "Pendiente venta"
+                                        : registro.siigoInvoiceError
+                                          ? "Reintentar Siigo"
                                       : "Enviar a Siigo"}
                                 </button>
 
