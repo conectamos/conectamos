@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { esRolAdministrativo } from "@/lib/access-control";
+import prisma from "@/lib/prisma";
 import {
   getMonthlyCommercialSummary,
   type CommercialRankingItem,
@@ -217,7 +218,7 @@ function RankingPanel({
 export default async function ReportesDashboardPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ period?: string }>;
+  searchParams?: Promise<{ period?: string; sedeId?: string }>;
 }) {
   const session = await getSessionUser();
 
@@ -231,12 +232,28 @@ export default async function ReportesDashboardPage({
 
   const params = await searchParams;
   const periodoSeleccionado = params?.period || getCurrentBogotaMonthInput();
+  const sedes = await prisma.sede.findMany({
+    select: {
+      id: true,
+      nombre: true,
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+  const sedeIdSolicitada = Number(params?.sedeId || 0);
+  const sedeSeleccionada =
+    Number.isInteger(sedeIdSolicitada) && sedeIdSolicitada > 0
+      ? sedes.find((sede) => sede.id === sedeIdSolicitada) || null
+      : null;
+  const sedeSeleccionadaId = sedeSeleccionada?.id ?? null;
+  const coberturaLabel = sedeSeleccionada?.nombre || "Todas las sedes";
   const [resumen, financiero] = await Promise.all([
     getMonthlyCommercialSummary({
       period: periodoSeleccionado,
-      sedeId: null,
+      sedeId: sedeSeleccionadaId,
     }),
-    getFinancialDashboardSummary({ sedeId: null }),
+    getFinancialDashboardSummary({ sedeId: sedeSeleccionadaId }),
   ]);
   const financieraLider = resumen.topFinancieras[0] ?? null;
   const totalFinancieras = Object.values(financiero.financieras || {}).reduce(
@@ -272,7 +289,7 @@ export default async function ReportesDashboardPage({
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200 md:text-base">
                 Consulta mensual consolidada de utilidad, ventas, caja y
-                comportamiento comercial por ranking.
+                comportamiento comercial por ranking y cobertura.
               </p>
             </div>
 
@@ -285,6 +302,21 @@ export default async function ReportesDashboardPage({
                   defaultValue={resumen.periodo.key}
                   className="min-h-[46px] rounded-2xl border border-white/20 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none"
                 />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-semibold text-white">
+                Cobertura
+                <select
+                  name="sedeId"
+                  defaultValue={sedeSeleccionadaId ? String(sedeSeleccionadaId) : ""}
+                  className="min-h-[46px] rounded-2xl border border-white/20 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none"
+                >
+                  <option value="">Todas las sedes</option>
+                  {sedes.map((sede) => (
+                    <option key={sede.id} value={sede.id}>
+                      {sede.nombre}
+                    </option>
+                  ))}
+                </select>
               </label>
               <button className="min-h-[46px] rounded-2xl bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-950 transition hover:bg-slate-100">
                 Consultar
@@ -334,11 +366,12 @@ export default async function ReportesDashboardPage({
                 Centro financiero
               </div>
               <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-                Lectura financiera consolidada
+                Lectura financiera {sedeSeleccionada ? "por sede" : "consolidada"}
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 Misma lectura ejecutiva del panel financiero, incluida en el
-                reporte para consultar caja, activos, pasivos y riesgos.
+                reporte para consultar caja, activos, pasivos y riesgos de{" "}
+                <span className="font-bold text-slate-700">{coberturaLabel}</span>.
               </p>
             </div>
 
@@ -441,7 +474,7 @@ export default async function ReportesDashboardPage({
                 Periodo: {resumen.periodo.label}
               </div>
               <div className="rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Cobertura: todas las sedes
+                Cobertura: {coberturaLabel}
               </div>
             </div>
           </div>
