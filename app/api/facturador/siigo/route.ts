@@ -394,6 +394,28 @@ export async function POST(req: Request) {
               OR: [
                 {
                   siigoInvoiceError: {
+                    contains: "document_query_service",
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  siigoInvoiceError: {
+                    contains: "temporalmente no disponible",
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  siigoInvoiceError: {
+                    contains: "temporarily unavailable",
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            },
+            {
+              OR: [
+                {
+                  siigoInvoiceError: {
                     contains: "invalid_dian_resolution",
                     mode: "insensitive",
                   },

@@ -191,6 +191,40 @@ export class SiigoApiError extends Error {
   }
 }
 
+function stringifyForMatching(value: unknown) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value || "");
+  }
+}
+
+export function isSiigoTemporaryUnavailableError(error: unknown) {
+  if (!(error instanceof SiigoApiError)) {
+    return false;
+  }
+
+  if (![502, 503, 504].includes(error.status)) {
+    return false;
+  }
+
+  const text = `${error.message} ${stringifyForMatching(error.details)}`
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  return (
+    text.includes("document_query_service") ||
+    text.includes("temporarily unavailable") ||
+    text.includes("unavailable") ||
+    text.includes("try in a few minutes")
+  );
+}
+
 class SiigoValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -2245,6 +2279,10 @@ export function getSiigoErrorMessage(error: unknown) {
   }
 
   if (error instanceof SiigoApiError) {
+    if (isSiigoTemporaryUnavailableError(error)) {
+      return "Siigo esta temporalmente no disponible (servicio de documentos). Reintenta en unos minutos.";
+    }
+
     return error.message;
   }
 

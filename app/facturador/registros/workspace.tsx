@@ -190,6 +190,20 @@ function formatMoney(value: string | number | null | undefined) {
   return `$ ${parsed.toLocaleString("es-CO")}`;
 }
 
+function isSiigoTemporaryMessage(value: string | null | undefined) {
+  const text = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  return (
+    text.includes("document_query_service") ||
+    text.includes("temporalmente no disponible") ||
+    text.includes("temporarily unavailable") ||
+    text.includes("try in a few minutes")
+  );
+}
+
 function defaultMonthInput() {
   const now = new Date();
 
@@ -1734,7 +1748,13 @@ export default function FacturadorRegistrosWorkspace({
                               {registro.siigoCreditNoteError}
                             </div>
                           ) : registro.siigoInvoiceError ? (
-                            <div className="max-w-64 text-xs leading-5 text-red-700">
+                            <div
+                              className={`max-w-64 text-xs leading-5 ${
+                                isSiigoTemporaryMessage(registro.siigoInvoiceError)
+                                  ? "text-amber-700"
+                                  : "text-red-700"
+                              }`}
+                            >
                               {registro.siigoInvoiceError}
                             </div>
                           ) : !convertido ? (
