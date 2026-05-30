@@ -491,6 +491,13 @@ export default function PanelFinancieroPage() {
                   href="/dashboard/financiero/cartera/detalle"
                   label="Detalle cartera"
                 />
+                {esAdmin && (
+                  <ActionLink
+                    href="/dashboard/reportes"
+                    label="Reportes"
+                    primary
+                  />
+                )}
                 <ActionLink href="/dashboard" label="Volver" />
               </div>
             </div>
