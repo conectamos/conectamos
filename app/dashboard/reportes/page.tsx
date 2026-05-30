@@ -6,6 +6,7 @@ import {
   getMonthlyCommercialSummary,
   type CommercialRankingItem,
 } from "@/lib/dashboard-commercial-summary";
+import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
 import { getCurrentBogotaMonthInput } from "@/lib/ventas-utils";
 
 function formatoPesos(valor: number) {
@@ -43,6 +44,42 @@ function MetricCard({
         {value}
       </p>
       <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function FinancialMetricCard({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "neutral" | "positive" | "negative" | "warning";
+}) {
+  const toneClass = {
+    neutral: "border-[#e7e3da] bg-white text-slate-950",
+    positive: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    negative: "border-rose-200 bg-rose-50 text-rose-700",
+    warning: "border-amber-200 bg-amber-50 text-amber-700",
+  }[tone];
+
+  return (
+    <div
+      className={[
+        "rounded-[24px] border px-5 py-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]",
+        toneClass,
+      ].join(" ")}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-3 break-words text-2xl font-black tracking-tight">
+        {value}
+      </p>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{detail}</p>
     </div>
   );
 }
@@ -194,11 +231,30 @@ export default async function ReportesDashboardPage({
 
   const params = await searchParams;
   const periodoSeleccionado = params?.period || getCurrentBogotaMonthInput();
-  const resumen = await getMonthlyCommercialSummary({
-    period: periodoSeleccionado,
-    sedeId: null,
-  });
+  const [resumen, financiero] = await Promise.all([
+    getMonthlyCommercialSummary({
+      period: periodoSeleccionado,
+      sedeId: null,
+    }),
+    getFinancialDashboardSummary({ sedeId: null }),
+  ]);
   const financieraLider = resumen.topFinancieras[0] ?? null;
+  const totalFinancieras = Object.values(financiero.financieras || {}).reduce(
+    (acc, valor) => acc + Number(valor || 0),
+    0
+  );
+  const activos =
+    financiero.cajaDisponible +
+    financiero.saldoTransferencias +
+    financiero.prestamosPorCobrar +
+    financiero.valorBodega +
+    totalFinancieras;
+  const pasivos =
+    financiero.deudaEquipos +
+    financiero.valorPendiente +
+    financiero.valorGarantia +
+    financiero.totalGastosCartera;
+  const resultadoNeto = activos - pasivos;
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] px-4 py-8 text-slate-950">
@@ -269,6 +325,101 @@ export default async function ReportesDashboardPage({
                 : "Sin movimientos registrados."
             }
           />
+        </section>
+
+        <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                Centro financiero
+              </div>
+              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+                Lectura financiera consolidada
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Misma lectura ejecutiva del panel financiero, incluida en el
+                reporte para consultar caja, activos, pasivos y riesgos.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+              <FinancialMetricCard
+                label="Resultado neto"
+                value={formatoPesos(resultadoNeto)}
+                detail="Activos menos pasivos."
+                tone={resultadoNeto >= 0 ? "positive" : "negative"}
+              />
+              <FinancialMetricCard
+                label="Activos"
+                value={formatoPesos(activos)}
+                detail="Caja, cartera, bodega y prestamos por cobrar."
+                tone="positive"
+              />
+              <FinancialMetricCard
+                label="Pasivos"
+                value={formatoPesos(pasivos)}
+                detail="Deudas, pendientes, garantias y cartera."
+                tone="negative"
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <FinancialMetricCard
+              label="Caja disponible"
+              value={formatoPesos(financiero.cajaDisponible)}
+              detail="Ventas mas movimientos de caja."
+              tone="positive"
+            />
+            <FinancialMetricCard
+              label="Transferencias saldo"
+              value={formatoPesos(financiero.saldoTransferencias)}
+              detail="Transferencias menos abonos registrados."
+              tone="warning"
+            />
+            <FinancialMetricCard
+              label="Financieras saldo"
+              value={formatoPesos(totalFinancieras)}
+              detail="Pendiente neto por recaudar en financieras."
+              tone="warning"
+            />
+            <FinancialMetricCard
+              label="Prestamos por cobrar"
+              value={formatoPesos(financiero.prestamosPorCobrar)}
+              detail="Prestamos activos salientes pendientes de cierre o pago."
+              tone="warning"
+            />
+            <FinancialMetricCard
+              label="Deuda equipos"
+              value={formatoPesos(financiero.deudaEquipos)}
+              detail="Equipos con deuda financiera activa."
+              tone="negative"
+            />
+            <FinancialMetricCard
+              label="Pendiente"
+              value={formatoPesos(financiero.valorPendiente)}
+              detail="Inventario inmovilizado por estado pendiente."
+              tone="warning"
+            />
+            <FinancialMetricCard
+              label="Garantia"
+              value={formatoPesos(financiero.valorGarantia)}
+              detail="Valor comprometido en garantias."
+              tone="warning"
+            />
+            <FinancialMetricCard
+              label="Bodega"
+              value={formatoPesos(financiero.valorBodega)}
+              detail="Inventario disponible en estado bodega."
+              tone="neutral"
+            />
+            <FinancialMetricCard
+              label="Gasto cartera"
+              value={formatoPesos(financiero.totalGastosCartera)}
+              detail="Salidas registradas en cartera."
+              tone="negative"
+            />
+          </div>
         </section>
 
         <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
