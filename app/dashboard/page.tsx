@@ -912,12 +912,22 @@ export default async function DashboardPage() {
                 </Link>
               )}
               {!esSedeSoloInventario && !esVendedor && !esFacturador && (
-                <Link
-                  href="/dashboard/analitico"
-                  className="inline-flex min-w-[170px] items-center justify-center rounded-2xl border border-white/12 bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-950 shadow-[0_16px_38px_rgba(15,23,42,0.18)] transition hover:bg-slate-100"
-                >
-                  Panel analitico
-                </Link>
+                <>
+                  {esAdmin && (
+                    <Link
+                      href="/dashboard/reportes"
+                      className="inline-flex min-w-[140px] items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-amber-800 shadow-[0_16px_38px_rgba(15,23,42,0.12)] transition hover:bg-white"
+                    >
+                      Reportes
+                    </Link>
+                  )}
+                  <Link
+                    href="/dashboard/analitico"
+                    className="inline-flex min-w-[170px] items-center justify-center rounded-2xl border border-white/12 bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-950 shadow-[0_16px_38px_rgba(15,23,42,0.18)] transition hover:bg-slate-100"
+                  >
+                    Panel analitico
+                  </Link>
+                </>
               )}
               <LogoutButton className="min-w-[170px] border-white/12 bg-white/10 text-white shadow-[0_16px_38px_rgba(15,23,42,0.18)] hover:border-white/20 hover:bg-white/16" />
             </div>

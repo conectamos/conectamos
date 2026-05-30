@@ -1,5 +1,8 @@
 import prisma from "@/lib/prisma";
-import { getCurrentBogotaMonthRange } from "@/lib/ventas-utils";
+import {
+  getBogotaMonthRangeFromInput,
+  getCurrentBogotaMonthRange,
+} from "@/lib/ventas-utils";
 import { extraerFinancierasDetalle } from "@/lib/ventas-financieras";
 
 const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
@@ -172,9 +175,13 @@ function sortedReferenceRanking(
 }
 
 export async function getMonthlyCommercialSummary(options?: {
+  period?: string | null;
   sedeId?: number | null;
 }) {
-  const periodo = getCurrentBogotaMonthRange();
+  const periodo =
+    (options?.period
+      ? getBogotaMonthRangeFromInput(options.period)
+      : null) ?? getCurrentBogotaMonthRange();
   const scope = options?.sedeId ? { sedeId: options.sedeId } : {};
 
   const [ventas, ventasDetalle, ingresosCaja, egresosCaja] = await Promise.all([
