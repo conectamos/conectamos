@@ -755,10 +755,8 @@ function addDays(date: Date, days: number) {
 }
 
 function resolveInvoiceDate(registro: RegistroSiigoInput) {
-  const rawDate = registro.convertidoEn || registro.createdAt;
-  const date = rawDate ? new Date(rawDate) : new Date();
-
-  return Number.isNaN(date.getTime()) ? new Date() : date;
+  void registro;
+  return new Date();
 }
 
 function buildInvoiceCustomerPayload(
