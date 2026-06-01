@@ -121,6 +121,14 @@ type SiigoSendMailResponse = {
   [key: string]: unknown;
 };
 
+type SiigoInvoiceItemPayload = {
+  code: string;
+  description: string;
+  quantity: number;
+  price: number;
+  taxes: Array<{ id: number }>;
+};
+
 export type RegistroSiigoInput = {
   id: number;
   createdAt: Date | string;
@@ -2066,7 +2074,7 @@ function buildInvoiceItems(
   registro: RegistroSiigoInput,
   config: SiigoConfig,
   total: number
-) {
+): SiigoInvoiceItemPayload[] {
   const itemCode = resolveItemCode(registro, config);
   const applianceSale = isApplianceSale(registro);
 
@@ -2115,6 +2123,23 @@ function buildInvoiceItems(
   }));
 }
 
+function calculatePaymentValueFromItems(
+  items: SiigoInvoiceItemPayload[],
+  registro: RegistroSiigoInput
+) {
+  const taxRate = isApplianceSale(registro) ? 0.19 : 0;
+
+  return roundMoney(
+    items.reduce((total, item) => {
+      const subtotal = roundMoney(item.price * item.quantity);
+      const taxValue =
+        taxRate > 0 && item.taxes.length > 0 ? roundMoney(subtotal * taxRate) : 0;
+
+      return total + subtotal + taxValue;
+    }, 0)
+  );
+}
+
 function buildInvoicePayload(
   registro: RegistroSiigoInput,
   config: SiigoConfig,
@@ -2144,6 +2169,9 @@ function buildInvoicePayload(
     );
   }
 
+  const items = buildInvoiceItems(registro, config, total);
+  const paymentValue = calculatePaymentValueFromItems(items, registro);
+
   return {
     document: {
       id: config.documentId,
@@ -2159,11 +2187,11 @@ function buildInvoicePayload(
     ]
       .filter(Boolean)
       .join(" | "),
-    items: buildInvoiceItems(registro, config, total),
+    items,
     payments: [
       {
         id: config.paymentTypeId,
-        value: total,
+        value: paymentValue,
         due_date: formatBogotaDate(addDays(invoiceDate, config.paymentDueDays)),
       },
     ],
@@ -2261,6 +2289,9 @@ function buildCreditNotePayload(
     ]);
   }
 
+  const items = buildInvoiceItems(registro, config, total);
+  const paymentValue = calculatePaymentValueFromItems(items, registro);
+
   return {
     document: {
       id: creditNoteDocumentId,
@@ -2277,11 +2308,11 @@ function buildCreditNotePayload(
       .filter(Boolean)
       .join(" | ")
       .slice(0, 4000),
-    items: buildInvoiceItems(registro, config, total),
+    items,
     payments: [
       {
         id: config.paymentTypeId,
-        value: total,
+        value: paymentValue,
         due_date: formatBogotaDate(today),
       },
     ],
