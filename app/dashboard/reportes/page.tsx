@@ -408,19 +408,19 @@ export default async function ReportesDashboardPage({
               label="Transferencias saldo"
               value={formatoPesos(financiero.saldoTransferencias)}
               detail="Transferencias menos abonos registrados."
-              tone="warning"
+              tone="positive"
             />
             <FinancialMetricCard
               label="Financieras saldo"
               value={formatoPesos(totalFinancieras)}
               detail="Pendiente neto por recaudar en financieras."
-              tone="warning"
+              tone="positive"
             />
             <FinancialMetricCard
               label="Prestamos por cobrar"
               value={formatoPesos(financiero.prestamosPorCobrar)}
               detail="Prestamos activos salientes pendientes de cierre o pago."
-              tone="warning"
+              tone="positive"
             />
             <FinancialMetricCard
               label="Deuda equipos"
@@ -432,19 +432,19 @@ export default async function ReportesDashboardPage({
               label="Pendiente"
               value={formatoPesos(financiero.valorPendiente)}
               detail="Inventario inmovilizado por estado pendiente."
-              tone="warning"
+              tone="negative"
             />
             <FinancialMetricCard
               label="Garantia"
               value={formatoPesos(financiero.valorGarantia)}
               detail="Valor comprometido en garantias."
-              tone="warning"
+              tone="negative"
             />
             <FinancialMetricCard
               label="Bodega"
               value={formatoPesos(financiero.valorBodega)}
               detail="Inventario disponible en estado bodega."
-              tone="neutral"
+              tone="positive"
             />
             <FinancialMetricCard
               label="Gasto cartera"
