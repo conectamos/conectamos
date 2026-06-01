@@ -99,6 +99,7 @@ export default function InventarioPrincipalPage() {
   const [edicionCosto, setEdicionCosto] = useState("");
   const [edicionFactura, setEdicionFactura] = useState("");
   const [edicionDistribuidor, setEdicionDistribuidor] = useState("");
+  const [exportandoExcel, setExportandoExcel] = useState(false);
 
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
 
@@ -167,17 +168,17 @@ export default function InventarioPrincipalPage() {
     );
   }, [items]);
 
-  const totalValor = useMemo(
-    () => items.reduce((acc, item) => acc + Number(item.costo || 0), 0),
-    [items]
-  );
-
   const equiposDisponibles = useMemo(
     () =>
       items.filter(
         (item) => String(item.estado || "BODEGA").toUpperCase() === "BODEGA"
       ),
     [items]
+  );
+
+  const valorEnBodega = useMemo(
+    () => equiposDisponibles.reduce((acc, item) => acc + Number(item.costo || 0), 0),
+    [equiposDisponibles]
   );
 
   const equiposEnviados = useMemo(
@@ -299,6 +300,80 @@ export default function InventarioPrincipalPage() {
       ),
     [sedes]
   );
+
+  const exportarInventarioExcel = useCallback(async () => {
+    if (itemsFiltrados.length === 0) {
+      setMensaje("No hay equipos visibles para exportar");
+      return;
+    }
+
+    try {
+      setExportandoExcel(true);
+      setMensaje("");
+
+      const XLSX = await import("xlsx");
+      const nombreSedeDestino = (id?: number | null) =>
+        sedes.find((sede) => sede.id === id)?.nombre || "-";
+
+      const filas = itemsFiltrados.map((item) => ({
+        ID: item.id,
+        IMEI: String(item.imei || ""),
+        REFERENCIA: item.referencia || "",
+        TIPO: item.tipoProducto || "TELEFONIA",
+        COLOR: item.color || "",
+        COSTO: Number(item.costo || 0),
+        FACTURA: item.numeroFactura || "",
+        DISTRIBUIDOR: item.distribuidor || "",
+        ESTADO: String(item.estado || "BODEGA").toUpperCase(),
+        COBRO: item.estadoCobro || "-",
+        "SEDE DESTINO": item.sedeDestinoId ? nombreSedeDestino(item.sedeDestinoId) : "-",
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(filas);
+      itemsFiltrados.forEach((item, index) => {
+        const row = index + 2;
+        const imeiCell = worksheet[`B${row}`];
+        const costoCell = worksheet[`F${row}`];
+
+        if (imeiCell) {
+          imeiCell.t = "s";
+          imeiCell.z = "@";
+          imeiCell.v = String(item.imei || "");
+        }
+
+        if (costoCell) {
+          costoCell.t = "n";
+          costoCell.v = Number(item.costo || 0);
+          costoCell.z = '"$"#,##0';
+        }
+      });
+      worksheet["!cols"] = [
+        { wch: 8 },
+        { wch: 18 },
+        { wch: 34 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 24 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 22 },
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario principal");
+      const fecha = new Date().toISOString().slice(0, 10);
+      const filtro = filtroEstado.toLowerCase().replace(/_/g, "-");
+      XLSX.writeFile(workbook, `inventario-principal-${filtro}-${fecha}.xlsx`);
+
+      setMensaje(`Exportacion completada: ${itemsFiltrados.length} equipo(s) en Excel.`);
+    } catch {
+      setMensaje("Error: No fue posible exportar el inventario a Excel");
+    } finally {
+      setExportandoExcel(false);
+    }
+  }, [filtroEstado, itemsFiltrados, sedes]);
 
   const alternarSeleccion = (id: number) => {
     setIdsSeleccionados((actuales) =>
@@ -909,9 +984,10 @@ export default function InventarioPrincipalPage() {
             detail="Stock listo para enviar a sede."
           />
           <MetricCard
-            label="Valor disponible"
-            value={formatoPesos(totalValor)}
-            detail="Valor total del inventario principal."
+            label="Valor en bodega"
+            value={formatoPesos(valorEnBodega)}
+            detail="Suma solo equipos en estado BODEGA."
+            valueClass="text-emerald-700"
           />
           <MetricCard
             label="Enviados a sede"
@@ -1157,8 +1233,18 @@ export default function InventarioPrincipalPage() {
               </p>
             </div>
 
-            <div className="text-sm font-medium text-slate-500">
-              {itemsFiltrados.length} resultado(s)
+            <div className="flex flex-col items-start gap-2 sm:items-end">
+              <button
+                type="button"
+                onClick={() => void exportarInventarioExcel()}
+                disabled={exportandoExcel || itemsFiltrados.length === 0}
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {exportandoExcel ? "Exportando..." : "Exportar Excel"}
+              </button>
+              <div className="text-sm font-medium text-slate-500">
+                {itemsFiltrados.length} resultado(s)
+              </div>
             </div>
           </div>
 
