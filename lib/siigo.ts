@@ -225,6 +225,22 @@ export function isSiigoTemporaryUnavailableError(error: unknown) {
   );
 }
 
+function isSiigoCustomerDataError(error: unknown) {
+  if (!(error instanceof SiigoApiError) || error.status !== 400) {
+    return false;
+  }
+
+  const text = `${error.message} ${stringifyForMatching(error.details)}`
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  return (
+    text.includes("customers_service") ||
+    text.includes("data you submitted")
+  );
+}
+
 class SiigoValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -730,13 +746,30 @@ function splitPersonName(value: unknown) {
   }
 
   if (parts.length === 1) {
-    return [parts[0].slice(0, 100), ""];
+    return [parts[0].slice(0, 100), "Cliente"];
   }
 
   const firstName = parts.slice(0, Math.max(1, parts.length - 2)).join(" ");
   const lastName = parts.slice(Math.max(1, parts.length - 2)).join(" ");
 
   return [firstName.slice(0, 100), lastName.slice(0, 100)];
+}
+
+function cleanCustomerText(value: unknown, fallback: string, maxLength: number) {
+  const text = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s#.,-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return (text || fallback).slice(0, maxLength);
+}
+
+function normalizeCustomerEmail(value: unknown) {
+  const email = String(value || "").trim().toLowerCase();
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email.slice(0, 100) : "";
 }
 
 function formatBogotaDate(date = new Date()) {
@@ -774,7 +807,8 @@ function buildInvoiceCustomerPayload(
 
 function buildCustomerCreatePayload(
   registro: RegistroSiigoInput,
-  config: SiigoConfig
+  config: SiigoConfig,
+  options?: { minimal?: boolean }
 ): Record<string, unknown> {
   const { identification, checkDigit } = getSiigoIdentificationData(
     registro.tipoDocumento,
@@ -782,16 +816,20 @@ function buildCustomerCreatePayload(
   );
   const personType = resolveSiigoPersonType(registro.tipoDocumento);
   const [firstName, lastName] = splitPersonName(registro.clienteNombre);
-  const companyName = String(registro.clienteNombre || "Cliente Conectamos")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 100);
-  const phone = normalizeIdentification(registro.whatsapp).slice(0, 10);
-  const email = String(registro.correo || "").trim().toLowerCase();
+  const companyName = cleanCustomerText(
+    registro.clienteNombre,
+    "Cliente Conectamos",
+    100
+  );
+  const phone = normalizeIdentification(registro.whatsapp).slice(-10);
+  const validPhone = /^\d{10}$/.test(phone) ? phone : "";
+  const email = normalizeCustomerEmail(registro.correo);
   const address = [registro.direccion, registro.barrio]
-    .map((item) => String(item || "").trim())
+    .map((item) => cleanCustomerText(item, "", 120))
     .filter(Boolean)
     .join(" - ");
+  const includeContact = !options?.minimal && email;
+  const includePhone = !options?.minimal && validPhone;
 
   return {
     type: "Customer",
@@ -810,7 +848,11 @@ function buildCustomerCreatePayload(
       },
     ],
     address: {
-      address: (address || "Direccion no registrada").slice(0, 256),
+      address: (
+        options?.minimal
+          ? "Direccion no registrada"
+          : address || "Direccion no registrada"
+      ).slice(0, 256),
       city: {
         country_code: config.defaultCountryCode,
         state_code: config.defaultStateCode,
@@ -820,17 +862,17 @@ function buildCustomerCreatePayload(
         ? { postal_code: config.defaultPostalCode }
         : {}),
     },
-    ...(phone
+    ...(includePhone
       ? {
           phones: [
             {
               indicative: "57",
-              number: phone,
+              number: validPhone,
             },
           ],
         }
       : {}),
-    ...(email
+    ...(includeContact
       ? {
           contacts: [
             {
@@ -838,11 +880,11 @@ function buildCustomerCreatePayload(
                 personType === "Company" ? companyName.slice(0, 50) : firstName,
               last_name: personType === "Company" ? "" : lastName,
               email,
-              ...(phone
+              ...(includePhone
                 ? {
                     phone: {
                       indicative: "57",
-                      number: phone,
+                      number: validPhone,
                     },
                   }
                 : {}),
@@ -893,9 +935,10 @@ async function findCustomerByIdentification(
 
 async function createCustomer(
   config: SiigoConfig,
-  registro: RegistroSiigoInput
+  registro: RegistroSiigoInput,
+  options?: { minimal?: boolean }
 ) {
-  const payload = buildCustomerCreatePayload(registro, config);
+  const payload = buildCustomerCreatePayload(registro, config, options);
 
   return siigoFetch<SiigoCustomer>(config, "/customers", {
     method: "POST",
@@ -941,6 +984,30 @@ async function ensureCustomerForInvoice(
 
       if (customer) {
         return customer;
+      }
+
+      if (isSiigoCustomerDataError(error)) {
+        try {
+          const fallbackCustomer = await createCustomer(config, registro, {
+            minimal: true,
+          });
+          return {
+            ...fallbackCustomer,
+            identification: fallbackCustomer.identification || identification,
+            branch_office: fallbackCustomer.branch_office ?? 0,
+          };
+        } catch (fallbackError) {
+          const customerAfterFallback = await findCustomerByIdentification(
+            config,
+            identification
+          );
+
+          if (customerAfterFallback) {
+            return customerAfterFallback;
+          }
+
+          throw fallbackError;
+        }
       }
     }
 
@@ -2283,6 +2350,10 @@ export function getSiigoErrorMessage(error: unknown) {
   if (error instanceof SiigoApiError) {
     if (isSiigoTemporaryUnavailableError(error)) {
       return "Siigo esta temporalmente no disponible (servicio de documentos). Reintenta en unos minutos.";
+    }
+
+    if (isSiigoCustomerDataError(error)) {
+      return "Siigo no pudo crear o validar el tercero con los datos del cliente. Se intento con datos minimos; si persiste, revisa identificacion, nombre y ciudad del cliente.";
     }
 
     return error.message;
