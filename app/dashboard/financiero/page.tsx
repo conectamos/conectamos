@@ -328,7 +328,7 @@ export default function PanelFinancieroPage() {
         detail: `Tienes ${formatoPesos(
           Number(resumen?.valorPendiente || 0)
         )} comprometidos en estado pendiente.`,
-        tone: "accent",
+        tone: "negative",
       });
     }
 
@@ -338,7 +338,7 @@ export default function PanelFinancieroPage() {
         detail: `Hay ${formatoPesos(
           Number(resumen?.valorGarantia || 0)
         )} inmovilizados por garantia.`,
-        tone: "accent",
+        tone: "negative",
       });
     }
 
@@ -408,16 +408,11 @@ export default function PanelFinancieroPage() {
               </div>
             </div>
 
-            <div className="rounded-[30px] border border-white/10 bg-white/8 p-5 backdrop-blur">
+            <div className="rounded-[30px] border border-white/15 bg-[linear-gradient(135deg,#071122_0%,#111827_58%,#153f3c_100%)] p-5 shadow-[0_20px_55px_rgba(0,0,0,0.22)] backdrop-blur">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
                 Resultado neto
               </p>
-              <p
-                className={[
-                  "mt-3 text-5xl font-black tracking-tight",
-                  resumenGeneral >= 0 ? "text-emerald-300" : "text-rose-300",
-                ].join(" ")}
-              >
+              <p className="mt-3 text-5xl font-black tracking-tight text-white">
                 {formatoPesos(resumenGeneral)}
               </p>
 
@@ -528,19 +523,19 @@ export default function PanelFinancieroPage() {
                     label="Transferencias saldo"
                     value={resumen.saldoTransferencias}
                     detail="Transferencias menos abonos registrados."
-                    tone={resumen.saldoTransferencias >= 0 ? "accent" : "negative"}
+                    tone={resumen.saldoTransferencias >= 0 ? "positive" : "negative"}
                   />
                   <MetricCard
                     label="Financieras saldo"
                     value={totalFinancieras}
                     detail="Pendiente por recaudar en financieras."
-                    tone="accent"
+                    tone={totalFinancieras >= 0 ? "positive" : "negative"}
                   />
                   <MetricCard
                     label="Prestamos por cobrar"
                     value={resumen.prestamosPorCobrar}
                     detail="Prestamos activos salientes pendientes por cierre o pago."
-                    tone={resumen.prestamosPorCobrar > 0 ? "accent" : "neutral"}
+                    tone={resumen.prestamosPorCobrar >= 0 ? "positive" : "negative"}
                   />
                 </div>
               </section>
@@ -602,13 +597,13 @@ export default function PanelFinancieroPage() {
                     label="Pendiente"
                     value={resumen.valorPendiente}
                     detail="Inventario inmovilizado por pendiente."
-                    tone="accent"
+                    tone="negative"
                   />
                   <MetricCard
                     label="Garantia"
                     value={resumen.valorGarantia}
                     detail="Valor comprometido en garantias."
-                    tone={resumen.valorGarantia > 0 ? "accent" : "neutral"}
+                    tone="negative"
                   />
                 </div>
               </section>
@@ -621,14 +616,14 @@ export default function PanelFinancieroPage() {
                 />
 
                 <div className="mt-6">
-                  <div className="rounded-[28px] border border-[#d7c3a0] bg-[linear-gradient(135deg,#fffdf8_0%,#f8f2e8_100%)] p-6 shadow-sm">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  <div className="rounded-[28px] border border-emerald-200 bg-emerald-50/80 p-6 shadow-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-500">
                       Equipos en bodega
                     </p>
-                    <p className="mt-3 text-4xl font-black text-[#8f5b24]">
+                    <p className="mt-3 text-4xl font-black text-emerald-700">
                       {formatoPesos(resumen.valorBodega)}
                     </p>
-                    <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
+                    <p className="mt-3 max-w-md text-sm leading-6 text-emerald-600">
                       Este valor funciona como respaldo inmediato del panel, al
                       concentrar el inventario disponible para venta o rotacion.
                     </p>
