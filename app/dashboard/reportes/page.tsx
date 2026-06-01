@@ -58,29 +58,58 @@ function FinancialMetricCard({
   label: string;
   value: string;
   detail: string;
-  tone?: "neutral" | "positive" | "negative" | "warning";
+  tone?: "neutral" | "positive" | "negative" | "warning" | "principal";
 }) {
-  const toneClass = {
-    neutral: "border-[#e7e3da] bg-white text-slate-950",
-    positive: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    negative: "border-rose-200 bg-rose-50 text-rose-700",
-    warning: "border-amber-200 bg-amber-50 text-amber-700",
+  const toneClasses = {
+    neutral: {
+      wrapper: "border-[#e7e3da] bg-white text-slate-950",
+      label: "text-slate-400",
+      detail: "text-slate-600",
+    },
+    positive: {
+      wrapper: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      label: "text-emerald-500",
+      detail: "text-slate-600",
+    },
+    negative: {
+      wrapper: "border-rose-200 bg-rose-50 text-rose-700",
+      label: "text-rose-400",
+      detail: "text-slate-600",
+    },
+    warning: {
+      wrapper: "border-amber-200 bg-amber-50 text-amber-700",
+      label: "text-amber-500",
+      detail: "text-slate-600",
+    },
+    principal: {
+      wrapper:
+        "border-slate-900 bg-[linear-gradient(135deg,#071122_0%,#111827_58%,#153f3c_100%)] text-white shadow-[0_20px_55px_rgba(15,23,42,0.18)]",
+      label: "text-slate-300",
+      detail: "text-slate-100",
+    },
   }[tone];
 
   return (
     <div
       className={[
         "rounded-[24px] border px-5 py-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]",
-        toneClass,
+        toneClasses.wrapper,
       ].join(" ")}
     >
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+      <p
+        className={[
+          "text-[11px] font-semibold uppercase tracking-[0.22em]",
+          toneClasses.label,
+        ].join(" ")}
+      >
         {label}
       </p>
       <p className="mt-3 break-words text-2xl font-black tracking-tight">
         {value}
       </p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{detail}</p>
+      <p className={["mt-2 text-sm leading-6", toneClasses.detail].join(" ")}>
+        {detail}
+      </p>
     </div>
   );
 }
@@ -380,7 +409,7 @@ export default async function ReportesDashboardPage({
                 label="Resultado neto"
                 value={formatoPesos(resultadoNeto)}
                 detail="Activos menos pasivos."
-                tone={resultadoNeto >= 0 ? "positive" : "negative"}
+                tone="principal"
               />
               <FinancialMetricCard
                 label="Activos"
