@@ -479,7 +479,7 @@ export default async function ReportesDashboardPage({
               label="Gasto cartera"
               value={formatoPesos(financiero.totalGastosCartera)}
               detail="Salidas registradas en cartera."
-              tone="negative"
+              tone={financiero.totalGastosCartera <= 0 ? "positive" : "negative"}
             />
           </div>
         </section>

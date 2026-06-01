@@ -585,7 +585,9 @@ export default function PanelFinancieroPage() {
                     label="Gasto cartera"
                     value={resumen.totalGastosCartera}
                     detail="Salidas registradas en cartera."
-                    tone="negative"
+                    tone={
+                      resumen.totalGastosCartera <= 0 ? "positive" : "negative"
+                    }
                   />
                   <MetricCard
                     label="Deuda equipos"
