@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { verifyFinancialPasswordForSede } from "@/lib/financial-access";
 import { getMonthlyCommercialSummary } from "@/lib/dashboard-commercial-summary";
+import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
 
 export async function POST(req: Request) {
   try {
@@ -61,9 +62,15 @@ export async function POST(req: Request) {
       }
     }
 
-    const resumenMensual = await getMonthlyCommercialSummary({
-      sedeId: esAdmin ? null : user.sedeId,
-    });
+    const sedeIdResumen = esAdmin ? null : user.sedeId;
+    const [resumenMensual, resumenFinanciero] = await Promise.all([
+      getMonthlyCommercialSummary({
+        sedeId: sedeIdResumen,
+      }),
+      getFinancialDashboardSummary({
+        sedeId: sedeIdResumen,
+      }),
+    ]);
 
     return NextResponse.json({
       ok: true,
@@ -71,7 +78,7 @@ export async function POST(req: Request) {
         periodo: resumenMensual.periodo.label,
         cobertura: esAdmin ? "Todas las sedes" : user.sedeNombre,
         utilidad: resumenMensual.utilidad,
-        caja: resumenMensual.caja,
+        caja: resumenFinanciero.cajaDisponible,
         ingresos: resumenMensual.ingresos,
         ventas: resumenMensual.ventas,
         topJaladores: resumenMensual.topJaladores,

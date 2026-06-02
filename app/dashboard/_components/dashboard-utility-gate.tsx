@@ -127,8 +127,8 @@ export default function DashboardUtilityGate({
           ) : (
             <>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-                Acumulado de {resumen.periodo} para {resumen.cobertura}. Este
-                valor se reinicia automaticamente al comenzar un nuevo mes.
+                Utilidad y ventas de {resumen.periodo} para {resumen.cobertura}.
+                La caja se mantiene acumulada.
               </p>
 
               <div className="mt-5 flex flex-wrap gap-2">
@@ -161,7 +161,7 @@ export default function DashboardUtilityGate({
 
                 <div className="rounded-2xl border border-[#e6dece] bg-white/75 px-5 py-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    CAJA DEL MES
+                    CAJA ACUMULADA
                   </p>
                   <p className="mt-2 text-2xl font-black text-slate-950">
                     {formatoPesos(resumen.caja)}

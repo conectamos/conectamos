@@ -11,7 +11,6 @@ import {
 } from "@/lib/arqueo";
 import {
   getBogotaDayRangeFromInput,
-  getBogotaMonthRangeFromInput,
   getTodayBogotaDateKey,
 } from "@/lib/ventas-utils";
 
@@ -20,21 +19,11 @@ function parseSedeId(value: unknown) {
   return Number.isInteger(sedeId) && sedeId > 0 ? sedeId : null;
 }
 
-async function calcularCajaSistemaMensual(sedeId: number, fechaCorte: string) {
-  const rangoMes = getBogotaMonthRangeFromInput(fechaCorte.slice(0, 7));
-
-  if (!rangoMes) {
-    return 0;
-  }
-
+async function calcularCajaSistemaAcumulada(sedeId: number) {
   const [ventas, ingresosCaja, egresosCaja] = await Promise.all([
     prisma.venta.aggregate({
       where: {
         sedeId,
-        fecha: {
-          gte: rangoMes.start,
-          lt: rangoMes.end,
-        },
       },
       _sum: {
         cajaOficina: true,
@@ -44,10 +33,6 @@ async function calcularCajaSistemaMensual(sedeId: number, fechaCorte: string) {
       where: {
         sedeId,
         tipo: "INGRESO",
-        createdAt: {
-          gte: rangoMes.start,
-          lt: rangoMes.end,
-        },
       },
       _sum: {
         valor: true,
@@ -57,10 +42,6 @@ async function calcularCajaSistemaMensual(sedeId: number, fechaCorte: string) {
       where: {
         sedeId,
         tipo: "EGRESO",
-        createdAt: {
-          gte: rangoMes.start,
-          lt: rangoMes.end,
-        },
       },
       _sum: {
         valor: true,
@@ -152,7 +133,7 @@ export async function GET(req: Request) {
         },
         take: 10,
       }),
-      calcularCajaSistemaMensual(sedeId, fecha),
+      calcularCajaSistemaAcumulada(sedeId),
     ]);
 
     return NextResponse.json({
@@ -217,7 +198,7 @@ export async function POST(req: Request) {
       cheques,
     });
 
-    const cajaSistema = await calcularCajaSistemaMensual(sedeId, fecha);
+    const cajaSistema = await calcularCajaSistemaAcumulada(sedeId);
     const diferencia = totalContado - cajaSistema;
     const estado = clasificarArqueo(diferencia);
 

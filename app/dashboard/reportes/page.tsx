@@ -373,9 +373,9 @@ export default async function ReportesDashboardPage({
             detail="Registros comerciales del periodo."
           />
           <MetricCard
-            label="Caja del mes"
-            value={formatoPesos(resumen.caja)}
-            detail="Movimiento consolidado del periodo."
+            label="Caja acumulada"
+            value={formatoPesos(financiero.cajaDisponible)}
+            detail="Caja disponible acumulada."
           />
           <MetricCard
             label="Financiera lider"

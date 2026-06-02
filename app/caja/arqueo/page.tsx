@@ -427,13 +427,13 @@ export default function CajaArqueoPage() {
         <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-[30px] border border-emerald-200 bg-[linear-gradient(180deg,#ffffff_0%,#f2fbf6_100%)] px-5 py-5 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Caja del mes
+              Caja acumulada
             </p>
             <p className="mt-3 text-3xl font-black text-emerald-600">
               {formatoPesos(cajaSistema)}
             </p>
             <p className="mt-2 text-sm text-slate-500">
-              Base del sistema para cruzar el arqueo diario.
+              Base acumulada del sistema para cruzar el arqueo diario.
             </p>
           </div>
 
@@ -566,7 +566,7 @@ export default function CajaArqueoPage() {
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Caja del mes
+                    Caja acumulada
                   </p>
                   <p className="mt-2 text-2xl font-black text-slate-950">
                     {formatoPesos(cajaSistema)}

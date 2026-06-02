@@ -17,6 +17,7 @@ import {
   getMonthlyCommercialSummary,
   type CommercialRankingItem,
 } from "@/lib/dashboard-commercial-summary";
+import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
 
 type ModuleTone = "slate" | "emerald" | "sky" | "amber" | "violet" | "rose";
 type ActionTone = "primary" | "secondary" | "danger";
@@ -583,12 +584,17 @@ export default async function DashboardPage() {
   });
 
   const mesActual = getCurrentBogotaMonthRange();
-  const resumenComercialMensual =
+  const [resumenComercialMensual, resumenFinanciero] =
     esVendedor || esFacturador || esSedeSoloInventario
-      ? null
-      : await getMonthlyCommercialSummary({
-          sedeId: esAdmin ? null : session.sedeId ?? null,
-        });
+      ? ([null, null] as const)
+      : await Promise.all([
+          getMonthlyCommercialSummary({
+            sedeId: esAdmin ? null : session.sedeId ?? null,
+          }),
+          getFinancialDashboardSummary({
+            sedeId: esAdmin ? null : session.sedeId ?? null,
+          }),
+        ]);
   const mensajeBienvenidaVendedor = esVendedor
     ? await getVendorWelcomeMessage()
     : null;
@@ -948,9 +954,9 @@ export default async function DashboardPage() {
               detail="Registros comerciales del periodo."
             />
             <MetricCard
-              label="Caja del mes"
-              value={formatoPesos(Number(resumenComercialMensual.caja || 0))}
-              detail="Movimiento consolidado del periodo."
+              label="Caja acumulada"
+              value={formatoPesos(Number(resumenFinanciero?.cajaDisponible || 0))}
+              detail="Caja disponible acumulada."
             />
             <MetricCard
               label="Financiera lider"
