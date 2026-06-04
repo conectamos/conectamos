@@ -741,6 +741,15 @@ export default async function DashboardPage() {
               },
             ] as ModuleAction[])
           : []),
+        ...(esAdmin
+          ? ([
+              {
+                href: "/dashboard/facturacion/base-datos",
+                label: "BASE DE DATOS",
+                tone: "secondary",
+              },
+            ] as ModuleAction[])
+          : []),
       ],
       tone: "emerald",
     },
