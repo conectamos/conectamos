@@ -667,7 +667,19 @@ export default function VentasPage() {
 
                       <td className="px-5 py-5">
                         <p className="font-semibold text-emerald-700">
-                          Utilidad: {formatoPesos(venta.utilidad)}
+                          Utilidad:{" "}
+                          <span
+                            tabIndex={0}
+                            className="group inline-flex min-w-[78px] cursor-default rounded-md outline-none"
+                            aria-label="Utilidad protegida. Pasa el mouse para ver el valor."
+                          >
+                            <span className="group-hover:hidden group-focus:hidden">
+                              *****
+                            </span>
+                            <span className="hidden group-hover:inline group-focus:inline">
+                              {formatoPesos(venta.utilidad)}
+                            </span>
+                          </span>
                         </p>
                         <p className="mt-2 text-slate-700">
                           Caja: {formatoPesos(venta.cajaOficina)}
