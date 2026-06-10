@@ -853,6 +853,17 @@ export default function PrestamosPage() {
     }
 
     if (prestamo.estado === "DEVOLUCION_PENDIENTE") {
+      const estadoEquipo = String(prestamo.estadoActualActual || "").toUpperCase();
+
+      if (estadoEquipo === "VENDIDO") {
+        return {
+          detalle:
+            "El equipo ya fue vendido. La devolucion no aplica; rechaza para volver al cobro del prestamo.",
+          titulo: "Venta detectada",
+          tono: "border-rose-200 bg-rose-50 text-rose-800",
+        };
+      }
+
       return {
         detalle: `${origen} debe aprobar o rechazar la devolucion.`,
         titulo: "Aprueba origen",

@@ -1138,6 +1138,26 @@ export async function POST(req: Request) {
       );
     }
 
+    const devolucionPendiente = await prisma.prestamoSede.findFirst({
+      where: {
+        imei: inputVenta.serial,
+        estado: "DEVOLUCION_PENDIENTE",
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (devolucionPendiente) {
+      return NextResponse.json(
+        {
+          error:
+            "No se puede vender. Este IMEI tiene una devolucion pendiente por aprobar o rechazar.",
+        },
+        { status: 400 }
+      );
+    }
+
     const yaVendido = await prisma.venta.findFirst({
       where: {
         serial: inputVenta.serial,

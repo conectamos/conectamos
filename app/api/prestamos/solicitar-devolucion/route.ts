@@ -131,11 +131,24 @@ export async function POST(req: Request) {
       );
     }
 
-    await prisma.prestamoSede.update({
-      where: { id: prestamo.id },
-      data: {
-        estado: "DEVOLUCION_PENDIENTE",
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.prestamoSede.update({
+        where: { id: prestamo.id },
+        data: {
+          estado: "DEVOLUCION_PENDIENTE",
+        },
+      });
+
+      await tx.inventarioSede.update({
+        where: { id: equipoDestino.id },
+        data: {
+          estadoAnterior: equipoDestino.estadoActual || "BODEGA",
+          estadoActual: "DEVOLUCION_PENDIENTE",
+          fechaMovimiento: new Date(),
+          observacion:
+            "Devolucion solicitada. Equipo bloqueado hasta aprobacion o rechazo de la sede origen.",
+        },
+      });
     });
 
     return NextResponse.json({

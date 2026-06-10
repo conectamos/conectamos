@@ -159,11 +159,35 @@ export async function POST(req: Request) {
       );
     }
 
-    if (String(equipoDestino.estadoActual || "").toUpperCase() !== "BODEGA") {
+    const estadoDestinoActual = String(equipoDestino.estadoActual || "").toUpperCase();
+
+    if (
+      estadoDestinoActual !== "BODEGA" &&
+      estadoDestinoActual !== "DEVOLUCION_PENDIENTE"
+    ) {
       return NextResponse.json(
         {
           error:
             "Solo se puede devolver un prestamo cuando el equipo sigue en BODEGA en la sede destino. Si ya fue vendido, debes gestionar el pago.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const ventaExistente = await prisma.venta.findFirst({
+      where: {
+        serial: prestamo.imei,
+      },
+      select: {
+        idVenta: true,
+      },
+    });
+
+    if (ventaExistente) {
+      return NextResponse.json(
+        {
+          error:
+            "Este IMEI ya tiene una venta registrada. Rechaza la devolucion para que el prestamo vuelva a cobro.",
         },
         { status: 400 }
       );
