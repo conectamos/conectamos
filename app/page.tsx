@@ -744,16 +744,8 @@ export default function Home() {
     <main className="min-h-screen overflow-x-hidden bg-[#eef4fb] text-slate-950">
       <div className="mx-auto grid min-h-screen max-w-[1500px] grid-cols-1 lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
         <section className="relative flex min-h-[48vh] items-center justify-center overflow-hidden bg-[#151922] px-4 py-8 sm:px-8 lg:min-h-screen lg:px-12 lg:py-12">
-          <Image
-            src="/branding/conectamos-login-futbol.png"
-            alt=""
-            fill
-            priority
-            sizes="(min-width: 1024px) 55vw, 100vw"
-            className="object-cover opacity-45 blur-[6px] scale-110"
-            aria-hidden="true"
-          />
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(12,18,30,0.92)_0%,rgba(44,20,28,0.55)_48%,rgba(125,18,24,0.68)_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(145deg,#111827_0%,#231722_46%,#7f1018_100%)]" />
+          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[linear-gradient(180deg,transparent_0%,rgba(127,16,24,0.32)_100%)]" />
           <div className="relative z-10 flex w-full max-w-[860px] justify-center">
             <Image
               src="/branding/conectamos-login-futbol.png"
