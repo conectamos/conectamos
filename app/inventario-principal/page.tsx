@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import { esSedeOperativaInventario } from "@/lib/sedes";
@@ -68,6 +68,157 @@ function MetricCard({
       </p>
       <p className="mt-2 text-sm text-slate-500">{detail}</p>
     </div>
+  );
+}
+
+function IconoEditar() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M4 20h4.5L19 9.5 14.5 5 4 15.5V20Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M13.5 6 18 10.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function IconoEnviar() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M4 12h14"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+      <path
+        d="m13 6 6 6-6 6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function IconoVolver() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M9 10H5V6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M5.5 10A7 7 0 1 1 7.6 17"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function IconoEliminar() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M5 7h14"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M9 7V5h6v2"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M8 10v8m4-8v8m4-8v8"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M7 7l1 13h8l1-13"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function ActionIconButton({
+  label,
+  onClick,
+  disabled,
+  tone,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  tone: "neutral" | "dark" | "success" | "danger";
+  children: ReactNode;
+}) {
+  const toneClass = {
+    neutral:
+      "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+    dark: "border-slate-950 bg-slate-950 text-white hover:bg-slate-800",
+    success:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+    danger: "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
+  }[tone];
+
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-45",
+        toneClass,
+      ].join(" ")}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -1419,39 +1570,43 @@ export default function InventarioPrincipalPage() {
                         </td>
                         <td className="px-4 py-4">{item.sedeDestinoId ? sedeDestino : "-"}</td>
                         <td className="px-4 py-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
+                          <div className="flex min-w-[9.5rem] items-center justify-end gap-2">
+                            <ActionIconButton
+                              label="Editar"
                               onClick={() => abrirModalEdicion([item.id])}
                               disabled={cargando}
-                              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+                              tone="neutral"
                             >
-                              Editar
-                            </button>
+                              <IconoEditar />
+                            </ActionIconButton>
 
-                            <button
+                            <ActionIconButton
+                              label="Enviar a sede"
                               onClick={() => abrirModalEnvio(item)}
                               disabled={cargando || bloqueadoParaEnvio}
-                              className="rounded-xl bg-[#111318] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d2330] disabled:cursor-not-allowed disabled:opacity-50"
+                              tone="dark"
                             >
-                              Enviar a sede
-                            </button>
+                              <IconoEnviar />
+                            </ActionIconButton>
 
-                            <button
+                            <ActionIconButton
+                              label="Volver a bodega"
                               onClick={() => void restaurarBodega(item.id)}
                               disabled={cargando || estadoNormalizado !== "PRESTAMO"}
-                              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              tone="success"
                             >
-                              Volver a bodega
-                            </button>
+                              <IconoVolver />
+                            </ActionIconButton>
 
                             {puedeEliminar && (
-                              <button
+                              <ActionIconButton
+                                label="Eliminar"
                                 onClick={() => eliminar(item.id)}
                                 disabled={cargando}
-                                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-70"
+                                tone="danger"
                               >
-                                Eliminar
-                              </button>
+                                <IconoEliminar />
+                              </ActionIconButton>
                             )}
                           </div>
                         </td>
