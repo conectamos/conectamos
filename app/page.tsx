@@ -743,17 +743,25 @@ export default function Home() {
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#eef4fb] text-slate-950">
       <div className="mx-auto grid min-h-screen max-w-[1500px] grid-cols-1 lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
-        <section
-          className="relative flex items-center justify-center overflow-hidden px-4 py-8 sm:px-8 lg:min-h-screen lg:px-14 lg:py-12"
-        >
-          <div className="relative flex w-full max-w-[700px] justify-center">
+        <section className="relative flex min-h-[48vh] items-center justify-center overflow-hidden bg-[#151922] px-4 py-8 sm:px-8 lg:min-h-screen lg:px-12 lg:py-12">
+          <Image
+            src="/branding/conectamos-login-futbol.png"
+            alt=""
+            fill
+            priority
+            sizes="(min-width: 1024px) 55vw, 100vw"
+            className="object-cover opacity-45 blur-[6px] scale-110"
+            aria-hidden="true"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(12,18,30,0.92)_0%,rgba(44,20,28,0.55)_48%,rgba(125,18,24,0.68)_100%)]" />
+          <div className="relative z-10 flex w-full max-w-[860px] justify-center">
             <Image
-              src="/branding/conectamos-mascota-login-clean.png"
+              src="/branding/conectamos-login-futbol.png"
               alt="CONECTAMOS"
-              width={1254}
-              height={1254}
+              width={1536}
+              height={1024}
               priority
-              className="h-auto max-h-[420px] w-auto max-w-full object-contain sm:max-h-[700px] lg:max-h-[780px]"
+              className="h-auto max-h-[440px] w-full rounded-[1.8rem] border border-white/10 object-contain shadow-[0_32px_90px_rgba(0,0,0,0.35)] sm:max-h-[700px] lg:max-h-[760px]"
             />
           </div>
         </section>
