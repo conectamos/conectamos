@@ -8,7 +8,10 @@ import {
   type CommercialRankingItem,
 } from "@/lib/dashboard-commercial-summary";
 import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
-import { getCurrentBogotaMonthInput } from "@/lib/ventas-utils";
+import {
+  getBogotaMonthRangeFromInput,
+  getCurrentBogotaMonthInput,
+} from "@/lib/ventas-utils";
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO", {
@@ -261,6 +264,7 @@ export default async function ReportesDashboardPage({
 
   const params = await searchParams;
   const periodoSeleccionado = params?.period || getCurrentBogotaMonthInput();
+  const periodoCorte = getBogotaMonthRangeFromInput(periodoSeleccionado);
   const sedes = await prisma.sede.findMany({
     select: {
       id: true,
@@ -282,7 +286,10 @@ export default async function ReportesDashboardPage({
       period: periodoSeleccionado,
       sedeId: sedeSeleccionadaId,
     }),
-    getFinancialDashboardSummary({ sedeId: sedeSeleccionadaId }),
+    getFinancialDashboardSummary({
+      sedeId: sedeSeleccionadaId,
+      fechaCorte: periodoCorte?.end ?? null,
+    }),
   ]);
   const financieraLider = resumen.topFinancieras[0] ?? null;
   const totalFinancieras = Object.values(financiero.financieras || {}).reduce(
@@ -375,7 +382,7 @@ export default async function ReportesDashboardPage({
           <MetricCard
             label="Caja acumulada"
             value={formatoPesos(financiero.cajaDisponible)}
-            detail="Caja disponible acumulada."
+            detail={`Caja disponible al cierre de ${resumen.periodo.label}.`}
           />
           <MetricCard
             label="Financiera lider"
@@ -398,8 +405,12 @@ export default async function ReportesDashboardPage({
                 Lectura financiera {sedeSeleccionada ? "por sede" : "consolidada"}
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Misma lectura ejecutiva del panel financiero, incluida en el
-                reporte para consultar caja, activos, pasivos y riesgos de{" "}
+                Lectura ejecutiva acumulada al cierre de{" "}
+                <span className="font-bold text-slate-700">
+                  {resumen.periodo.label}
+                </span>
+                , incluida en el reporte para consultar caja, activos, pasivos
+                y riesgos de{" "}
                 <span className="font-bold text-slate-700">{coberturaLabel}</span>.
               </p>
             </div>

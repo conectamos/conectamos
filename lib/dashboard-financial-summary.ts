@@ -9,6 +9,11 @@ import {
 import { extraerFinancierasDetalle } from "@/lib/ventas-financieras";
 
 const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
+const MOVIMIENTOS_PAGO_FINANCIERO = [
+  "PAGO_DEUDA_INVENTARIO",
+  "PAGO_PRESTAMO_APROBADO",
+  "PAGO_PRESTAMO_APROBADO_LOTE",
+];
 
 function n(v: unknown) {
   if (!v) return 0;
@@ -35,10 +40,57 @@ function agregarFinancieraNeta(
   mapa[nombre] += valorNumero;
 }
 
+function estadoInventarioAlCorte(item: {
+  estadoActual?: string | null;
+  estadoAnterior?: string | null;
+  fechaMovimiento?: Date | null;
+}, fechaCorte: Date | null) {
+  const cambioDespuesDelCorte =
+    fechaCorte &&
+    item.fechaMovimiento &&
+    item.fechaMovimiento.getTime() >= fechaCorte.getTime();
+
+  return String(
+    cambioDespuesDelCorte && item.estadoAnterior
+      ? item.estadoAnterior
+      : item.estadoActual || ""
+  )
+    .trim()
+    .toUpperCase();
+}
+
+function estadoFinancieroAlCorte(
+  item: {
+    imei?: string | null;
+    sedeId?: number | null;
+    estadoFinanciero?: string | null;
+  },
+  pagosDespuesDelCorte: Set<string>
+) {
+  const estadoActual = String(item.estadoFinanciero || "").trim().toUpperCase();
+
+  if (
+    estadoActual === "PAGO" &&
+    item.imei &&
+    item.sedeId &&
+    pagosDespuesDelCorte.has(`${item.imei}:${item.sedeId}`)
+  ) {
+    return "DEUDA";
+  }
+
+  return estadoActual;
+}
+
 export async function getFinancialDashboardSummary(options?: {
   sedeId?: number | null;
+  fechaCorte?: Date | null;
 }) {
+  const fechaCorte = options?.fechaCorte ?? null;
   const whereSede = options?.sedeId ? { sedeId: options.sedeId } : {};
+  const whereFechaVenta = fechaCorte ? { fecha: { lt: fechaCorte } } : {};
+  const whereFechaCreacion = fechaCorte
+    ? { createdAt: { lt: fechaCorte } }
+    : {};
   const sedeCoberturaId = options?.sedeId ?? null;
   const sedeBodegaPrincipal = await prisma.sede.findFirst({
     where: {
@@ -53,18 +105,23 @@ export async function getFinancialDashboardSummary(options?: {
   });
   const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
 
-  const wherePrestamosPorCobrar = sedeCoberturaId
-    ? {
-        sedeOrigenId: sedeCoberturaId,
-        estado: {
-          in: ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
-        },
-      }
-    : {
-        estado: {
-          in: ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
-        },
-      };
+  const wherePrestamosPorCobrar = {
+    ...(sedeCoberturaId ? { sedeOrigenId: sedeCoberturaId } : {}),
+    estado: {
+      in: fechaCorte
+        ? ["APROBADO", "PAGO_PENDIENTE_APROBACION", "PAGADO"]
+        : ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
+    },
+    ...(fechaCorte
+      ? {
+          createdAt: { lt: fechaCorte },
+          OR: [
+            { fechaAprobacionPago: null },
+            { fechaAprobacionPago: { gte: fechaCorte } },
+          ],
+        }
+      : {}),
+  };
 
   const [
     ventas,
@@ -73,9 +130,13 @@ export async function getFinancialDashboardSummary(options?: {
     abonos,
     gastosCartera,
     prestamosActivosPorCobrar,
+    movimientosPagoDespuesDelCorte,
   ] = await Promise.all([
     prisma.venta.findMany({
-      where: whereSede,
+      where: {
+        ...whereSede,
+        ...whereFechaVenta,
+      },
       select: {
         cajaOficina: true,
         ingreso1: true,
@@ -100,6 +161,7 @@ export async function getFinancialDashboardSummary(options?: {
     prisma.cajaMovimiento.findMany({
       where: {
         ...whereSede,
+        ...whereFechaCreacion,
         NOT: {
           concepto: CONCEPTO_GASTO_CARTERA,
         },
@@ -110,15 +172,25 @@ export async function getFinancialDashboardSummary(options?: {
       },
     }),
     prisma.inventarioSede.findMany({
-      where: whereSede,
+      where: {
+        ...whereSede,
+        ...whereFechaCreacion,
+      },
       select: {
+        imei: true,
+        sedeId: true,
         costo: true,
         estadoActual: true,
+        estadoAnterior: true,
+        fechaMovimiento: true,
         estadoFinanciero: true,
       },
     }),
     prisma.abonoFinanciero.findMany({
-      where: whereSede,
+      where: {
+        ...whereSede,
+        ...whereFechaCreacion,
+      },
       select: {
         tipo: true,
         entidad: true,
@@ -126,7 +198,10 @@ export async function getFinancialDashboardSummary(options?: {
       },
     }),
     prisma.gastoCartera.findMany({
-      where: whereSede,
+      where: {
+        ...whereSede,
+        ...whereFechaCreacion,
+      },
       select: {
         valor: true,
       },
@@ -140,6 +215,23 @@ export async function getFinancialDashboardSummary(options?: {
         sedeDestinoId: true,
       },
     }),
+    fechaCorte
+      ? prisma.movimientoInventario.findMany({
+          where: {
+            ...(options?.sedeId ? { sedeId: options.sedeId } : {}),
+            createdAt: {
+              gte: fechaCorte,
+            },
+            tipoMovimiento: {
+              in: MOVIMIENTOS_PAGO_FINANCIERO,
+            },
+          },
+          select: {
+            imei: true,
+            sedeId: true,
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   const sedesOrigenPrestamos =
@@ -243,26 +335,25 @@ export async function getFinancialDashboardSummary(options?: {
     .reduce((acc, m) => acc + n(m.valor), 0);
 
   const saldoCaja = ingresosCaja - egresosCaja;
+  const pagosDespuesDelCorte = new Set(
+    movimientosPagoDespuesDelCorte
+      .filter((item) => item.imei && item.sedeId)
+      .map((item) => `${item.imei}:${item.sedeId}`)
+  );
   const deudaEquipos = inventarioSede
     .filter(
       (i) =>
-        String(i.estadoFinanciero || "").trim().toUpperCase() === "DEUDA"
+        estadoFinancieroAlCorte(i, pagosDespuesDelCorte) === "DEUDA"
     )
     .reduce((acc, i) => acc + n(i.costo), 0);
   const valorPendiente = inventarioSede
-    .filter(
-      (i) => String(i.estadoActual || "").trim().toUpperCase() === "PENDIENTE"
-    )
+    .filter((i) => estadoInventarioAlCorte(i, fechaCorte) === "PENDIENTE")
     .reduce((acc, i) => acc + n(i.costo), 0);
   const valorGarantia = inventarioSede
-    .filter(
-      (i) => String(i.estadoActual || "").trim().toUpperCase() === "GARANTIA"
-    )
+    .filter((i) => estadoInventarioAlCorte(i, fechaCorte) === "GARANTIA")
     .reduce((acc, i) => acc + n(i.costo), 0);
   const valorBodega = inventarioSede
-    .filter(
-      (i) => String(i.estadoActual || "").trim().toUpperCase() === "BODEGA"
-    )
+    .filter((i) => estadoInventarioAlCorte(i, fechaCorte) === "BODEGA")
     .reduce((acc, i) => acc + n(i.costo), 0);
   const totalGastosCartera = gastosCartera.reduce(
     (acc, item) => acc + n(item.valor),
@@ -276,41 +367,53 @@ export async function getFinancialDashboardSummary(options?: {
     sedesOrigenPrestamos.map((sede) => [sede.id, sede.nombre])
   );
 
-  const prestamosPorCobrar = prestamosActivosPorCobrar.reduce((acc, item) => {
-    const inventarioDestino = inventarioPrestadoPorDestino.get(
-      `${item.imei}:${item.sedeDestinoId}`
-    );
+  const prestamosPorCobrarHistorico = prestamosActivosPorCobrar.reduce(
+    (acc, item) => acc + n(item.costo),
+    0
+  );
 
-    if (!inventarioDestino || !esEstadoDeuda(inventarioDestino.estadoFinanciero)) {
-      return acc;
-    }
+  const prestamosPorCobrar = fechaCorte
+    ? prestamosPorCobrarHistorico
+    : prestamosActivosPorCobrar.reduce((acc, item) => {
+        const inventarioDestino = inventarioPrestadoPorDestino.get(
+          `${item.imei}:${item.sedeDestinoId}`
+        );
 
-    const prestamoDesdePrincipal =
-      item.sedeOrigenId === sedeBodegaId &&
-      ((String(inventarioDestino.origen || "").trim().toUpperCase() ===
-        "PRINCIPAL" ||
-        !!inventarioDestino.inventarioPrincipalId) &&
-        esDeudaProveedor(inventarioDestino.deboA));
+        if (
+          !inventarioDestino ||
+          !esEstadoDeuda(inventarioDestino.estadoFinanciero)
+        ) {
+          return acc;
+        }
 
-    if (prestamoDesdePrincipal) {
-      return esDeudaProveedor(inventarioDestino.deboA) ? acc + n(item.costo) : acc;
-    }
+        const prestamoDesdePrincipal =
+          item.sedeOrigenId === sedeBodegaId &&
+          ((String(inventarioDestino.origen || "").trim().toUpperCase() ===
+            "PRINCIPAL" ||
+            !!inventarioDestino.inventarioPrincipalId) &&
+            esDeudaProveedor(inventarioDestino.deboA));
 
-    if (
-      esDeudaEntreSedes(inventarioDestino.deboA) &&
-      String(inventarioDestino.deboA || "").trim().toUpperCase() ===
-        etiquetaSedeAcreedora(
-          item.sedeOrigenId,
-          sedesOrigenPorId.get(item.sedeOrigenId)
-        )
-          .trim()
-          .toUpperCase()
-    ) {
-      return acc + n(item.costo);
-    }
+        if (prestamoDesdePrincipal) {
+          return esDeudaProveedor(inventarioDestino.deboA)
+            ? acc + n(item.costo)
+            : acc;
+        }
 
-    return acc;
-  }, 0);
+        if (
+          esDeudaEntreSedes(inventarioDestino.deboA) &&
+          String(inventarioDestino.deboA || "").trim().toUpperCase() ===
+            etiquetaSedeAcreedora(
+              item.sedeOrigenId,
+              sedesOrigenPorId.get(item.sedeOrigenId)
+            )
+              .trim()
+              .toUpperCase()
+        ) {
+          return acc + n(item.costo);
+        }
+
+        return acc;
+      }, 0);
 
   return {
     cajaGeneralVentas,
