@@ -62,6 +62,9 @@ type AddiCandidate = {
   valorCuota: number | null;
   estado: string | null;
   ordenId: string | null;
+  transactionId: string | null;
+  loanId: string | null;
+  applicationId: string | null;
   sortTime: number;
 };
 
@@ -750,7 +753,12 @@ async function loginAddi(): Promise<AddiSession> {
   return exchangeAuth0TokenForAddiSession(accessToken, config);
 }
 
-async function getProtectedJson(baseUrl: string, session: AddiSession, path: string) {
+async function getProtectedJson(
+  baseUrl: string,
+  session: AddiSession,
+  path: string,
+  timeoutMs = 20000
+) {
   const url = new URL(path.replace(/^\/+/, ""), baseUrl).toString();
 
   return unwrapData(
@@ -763,7 +771,7 @@ async function getProtectedJson(baseUrl: string, session: AddiSession, path: str
           ...(session.authCookie ? { Cookie: session.authCookie } : {}),
         },
       },
-      { allowNotFound: true, timeoutMs: 20000 }
+      { allowNotFound: true, timeoutMs }
     )
   );
 }
@@ -896,6 +904,184 @@ function deepNumber(
   return null;
 }
 
+function isTermValue(value: number | null) {
+  return Boolean(
+    value !== null && Number.isFinite(value) && value >= 1 && value <= 60
+  );
+}
+
+function normalizeTerm(value: number | null) {
+  if (!isTermValue(value)) {
+    return null;
+  }
+
+  return Math.round(value as number);
+}
+
+function isInstallmentValue(value: number | null, amount?: number | null) {
+  if (value === null || !Number.isFinite(value) || value <= 0) {
+    return false;
+  }
+
+  if (amount && amount > 0 && value >= amount) {
+    return false;
+  }
+
+  return true;
+}
+
+function parseTermFromText(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const match = value.match(
+    /(?:^|[^\d])(\d{1,2})\s*(?:cuota|cuotas|mes|meses|month|months|installment|installments|payment|payments)(?:[^\d]|$)/i
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return normalizeTerm(Number(match[1]));
+}
+
+function findNumberByKey(
+  record: Record<string, unknown>,
+  keyMatcher: (normalizedKey: string) => boolean,
+  valueMatcher: (value: number | null) => boolean,
+  depth = 0
+): number | null {
+  if (depth > 7) {
+    return null;
+  }
+
+  for (const [key, value] of Object.entries(record)) {
+    const normalizedKey = normalizeKey(key);
+
+    if (keyMatcher(normalizedKey)) {
+      const number = toNumber(value);
+
+      if (valueMatcher(number)) {
+        return number;
+      }
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (!isRecord(item)) continue;
+        const found = findNumberByKey(
+          item,
+          keyMatcher,
+          valueMatcher,
+          depth + 1
+        );
+        if (found !== null) return found;
+      }
+      continue;
+    }
+
+    if (isRecord(value)) {
+      const found = findNumberByKey(
+        value,
+        keyMatcher,
+        valueMatcher,
+        depth + 1
+      );
+      if (found !== null) return found;
+    }
+  }
+
+  return null;
+}
+
+function findTermInText(record: Record<string, unknown>, depth = 0): number | null {
+  if (depth > 7) {
+    return null;
+  }
+
+  for (const value of Object.values(record)) {
+    const term = parseTermFromText(value);
+
+    if (term !== null) {
+      return term;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (!isRecord(item)) continue;
+        const found = findTermInText(item, depth + 1);
+        if (found !== null) return found;
+      }
+      continue;
+    }
+
+    if (isRecord(value)) {
+      const found = findTermInText(value, depth + 1);
+      if (found !== null) return found;
+    }
+  }
+
+  return null;
+}
+
+function isPlanArrayKey(normalizedKey: string) {
+  return (
+    normalizedKey.includes("PAYMENTPLAN") ||
+    normalizedKey.includes("REPAYMENT") ||
+    normalizedKey.includes("AMORTIZATION") ||
+    normalizedKey.includes("INSTALLMENT") ||
+    normalizedKey.includes("CUOTA")
+  );
+}
+
+function findPlanArrayInfo(
+  record: Record<string, unknown>,
+  amount: number,
+  depth = 0
+): { term: number | null; installment: number | null } | null {
+  if (depth > 7) {
+    return null;
+  }
+
+  for (const [key, value] of Object.entries(record)) {
+    const normalizedKey = normalizeKey(key);
+
+    if (
+      Array.isArray(value) &&
+      isPlanArrayKey(normalizedKey) &&
+      value.length >= 1 &&
+      value.length <= 60
+    ) {
+      const installment =
+        value
+          .map((item) => (isRecord(item) ? getInstallment(item, amount) : null))
+          .find((item) => isInstallmentValue(item, amount)) ?? null;
+
+      return {
+        term: value.length,
+        installment,
+      };
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (!isRecord(item)) continue;
+        const found = findPlanArrayInfo(item, amount, depth + 1);
+        if (found) return found;
+      }
+      continue;
+    }
+
+    if (isRecord(value)) {
+      const found = findPlanArrayInfo(value, amount, depth + 1);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
 function getDocument(record: Record<string, unknown>) {
   return normalizeDocumento(
     deepText(record, [
@@ -1019,8 +1205,8 @@ function getAmount(record: Record<string, unknown>) {
   ]);
 }
 
-function getInstallment(record: Record<string, unknown>) {
-  return deepNumber(record, [
+function getInstallment(record: Record<string, unknown>, amount?: number | null) {
+  const exact = deepNumber(record, [
     "installmentAmount",
     "installmentValue",
     "monthlyInstallment",
@@ -1034,10 +1220,27 @@ function getInstallment(record: Record<string, unknown>) {
     "monthlyPaymentAmount",
     "paymentAmount",
   ]);
+
+  if (isInstallmentValue(exact, amount)) {
+    return exact;
+  }
+
+  return findNumberByKey(
+    record,
+    (key) =>
+      key.includes("INSTALLMENT") ||
+      key.includes("CUOTA") ||
+      key.includes("MONTHLYPAYMENT") ||
+      key.includes("MONTHLYINSTALLMENT") ||
+      key.includes("PAYMENTAMOUNT") ||
+      key.includes("PAYMENTVALUE"),
+    (value) => isInstallmentValue(value, amount)
+  );
 }
 
-function getTerm(record: Record<string, unknown>) {
-  return deepNumber(record, [
+function getTerm(record: Record<string, unknown>, amount?: number | null) {
+  const exact = normalizeTerm(
+    deepNumber(record, [
     "installments",
     "installmentsNumber",
     "numberOfInstallments",
@@ -1050,7 +1253,37 @@ function getTerm(record: Record<string, unknown>) {
     "plazo",
     "numeroCuotas",
     "numCuotas",
-  ]);
+    ])
+  );
+
+  if (exact !== null) {
+    return exact;
+  }
+
+  const keyed = normalizeTerm(
+    findNumberByKey(
+      record,
+      (key) =>
+        key.includes("TERM") ||
+        key.includes("PLAZO") ||
+        key.includes("INSTALLMENT") ||
+        key.includes("CUOTA") ||
+        key.includes("MONTHS") ||
+        key.includes("TERMINMONTHS") ||
+        key.includes("NUMBEROFMONTHS") ||
+        key.includes("PAYMENTPLAN") ||
+        key.includes("PLANPAGO"),
+      isTermValue
+    )
+  );
+
+  if (keyed !== null) {
+    return keyed;
+  }
+
+  const plan = amount ? findPlanArrayInfo(record, amount) : null;
+
+  return plan?.term ?? findTermInText(record);
 }
 
 function inferMonthlyInstallment(amount: number, term: number | null) {
@@ -1079,6 +1312,23 @@ function getOrderId(record: Record<string, unknown>) {
     "transactionId",
     "id",
   ]);
+}
+
+function getTransactionId(record: Record<string, unknown>) {
+  return deepText(record, ["transactionId", "transactionID", "id"]);
+}
+
+function getLoanId(record: Record<string, unknown>) {
+  return deepText(record, [
+    "loanId",
+    "creditId",
+    "creditoId",
+    "numeroCredito",
+  ]);
+}
+
+function getApplicationId(record: Record<string, unknown>) {
+  return deepText(record, ["applicationId", "applicationID"]);
 }
 
 function getCreditDate(record: Record<string, unknown>) {
@@ -1232,6 +1482,142 @@ function isSuccessfulStatus(value: unknown) {
   );
 }
 
+function getAddiCandidateDetailIds(candidate: AddiCandidate) {
+  return Array.from(
+    new Set(
+      [
+        candidate.transactionId,
+        candidate.ordenId,
+        candidate.loanId,
+        candidate.applicationId,
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 3);
+}
+
+async function fetchAddiCandidateDetailPayloads(
+  session: AddiSession,
+  candidate: AddiCandidate
+) {
+  if (candidate.numeroCuotas && candidate.valorCuota) {
+    return [];
+  }
+
+  const payloads: AddiPayload[] = [];
+  const ids = getAddiCandidateDetailIds(candidate);
+
+  for (const id of ids) {
+    const encoded = encodeURIComponent(id);
+    const requests: Array<{
+      source: string;
+      baseUrl: string;
+      path: string;
+    }> = [
+      {
+        source: "ally-portal-transaction-detail",
+        baseUrl: ADDI_PORTAL_API_BASE_URL,
+        path: `/transactions/${encoded}`,
+      },
+      {
+        source: "ally-portal-external-transaction-detail",
+        baseUrl: ADDI_PORTAL_EXTERNAL_API_BASE_URL,
+        path: `/v1/transactions/${encoded}`,
+      },
+    ];
+
+    for (const request of requests) {
+      try {
+        const data = await getProtectedJson(
+          request.baseUrl,
+          session,
+          request.path,
+          7000
+        );
+
+        if (data) {
+          payloads.push({
+            source: request.source,
+            data,
+          });
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (payloads.length > 0) {
+      break;
+    }
+  }
+
+  return payloads;
+}
+
+function mergeCandidateDetails(
+  candidate: AddiCandidate,
+  payloads: AddiPayload[],
+  documento: string
+) {
+  if (payloads.length === 0) {
+    return candidate;
+  }
+
+  const allRecords = payloads.flatMap((payload) =>
+    collectRecords(payload.data, payload.source)
+  );
+  let merged = { ...candidate };
+
+  for (const { record } of allRecords) {
+    const recordDocument = getDocument(record);
+
+    if (recordDocument && recordDocument !== documento) {
+      continue;
+    }
+
+    const recordTransactionId = getTransactionId(record);
+    const recordOrderId = getOrderId(record);
+    const recordLoanId = getLoanId(record);
+    const recordApplicationId = getApplicationId(record);
+    const sharesId = [
+      recordTransactionId && recordTransactionId === candidate.transactionId,
+      recordOrderId && recordOrderId === candidate.ordenId,
+      recordLoanId && recordLoanId === candidate.loanId,
+      recordApplicationId && recordApplicationId === candidate.applicationId,
+    ].some(Boolean);
+
+    if (!recordDocument && !sharesId) {
+      continue;
+    }
+
+    const amount = getAmount(record) ?? candidate.creditoAutorizado;
+    const plan = findPlanArrayInfo(record, amount);
+    const numeroCuotas =
+      candidate.numeroCuotas ?? plan?.term ?? getTerm(record, amount);
+    const valorCuota =
+      candidate.valorCuota ??
+      plan?.installment ??
+      getInstallment(record, amount) ??
+      inferMonthlyInstallment(candidate.creditoAutorizado, numeroCuotas);
+
+    merged = {
+      ...merged,
+      clienteNombre: merged.clienteNombre ?? getClientName(record),
+      correoElectronico: merged.correoElectronico ?? getEmail(record),
+      telefonoCliente: merged.telefonoCliente ?? getPhone(record),
+      numeroCuotas,
+      valorCuota,
+    };
+
+    if (merged.numeroCuotas && merged.valorCuota) {
+      return merged;
+    }
+  }
+
+  return merged;
+}
+
 function buildCandidates(payloads: AddiPayload[], documento: string) {
   const candidates: AddiCandidate[] = [];
 
@@ -1253,9 +1639,9 @@ function buildCandidates(payloads: AddiPayload[], documento: string) {
 
       const fechaCreacionCredito = getCreditDate(record);
       const parsedDate = parseCreditDate(fechaCreacionCredito);
-      const numeroCuotas = getTerm(record);
+      const numeroCuotas = getTerm(record, creditoAutorizado);
       const valorCuota =
-        getInstallment(record) ??
+        getInstallment(record, creditoAutorizado) ??
         inferMonthlyInstallment(creditoAutorizado, numeroCuotas);
 
       candidates.push({
@@ -1271,6 +1657,9 @@ function buildCandidates(payloads: AddiPayload[], documento: string) {
         valorCuota,
         estado: getStatus(record),
         ordenId: getOrderId(record),
+        transactionId: getTransactionId(record),
+        loanId: getLoanId(record),
+        applicationId: getApplicationId(record),
         sortTime: parsedDate.sortTime,
       });
     }
@@ -1387,21 +1776,31 @@ export async function obtenerCreditoAddiPorCedula(
     return null;
   }
 
+  const detailPayloads = await fetchAddiCandidateDetailPayloads(
+    session,
+    selectedCandidate
+  );
+  const enrichedCandidate = mergeCandidateDetails(
+    selectedCandidate,
+    detailPayloads,
+    documento
+  );
+
   return {
     documento,
     financiera: "ADDI",
-    clienteNombre: selectedCandidate.clienteNombre,
-    correoElectronico: selectedCandidate.correoElectronico,
-    telefonoCliente: selectedCandidate.telefonoCliente,
-    fechaCreacionCredito: selectedCandidate.fechaCreacionCredito,
-    puntoCredito: selectedCandidate.puntoCredito,
-    creditoAutorizado: selectedCandidate.creditoAutorizado,
-    numeroCuotas: selectedCandidate.numeroCuotas,
-    valorCuota: selectedCandidate.valorCuota,
+    clienteNombre: enrichedCandidate.clienteNombre,
+    correoElectronico: enrichedCandidate.correoElectronico,
+    telefonoCliente: enrichedCandidate.telefonoCliente,
+    fechaCreacionCredito: enrichedCandidate.fechaCreacionCredito,
+    puntoCredito: enrichedCandidate.puntoCredito,
+    creditoAutorizado: enrichedCandidate.creditoAutorizado,
+    numeroCuotas: enrichedCandidate.numeroCuotas,
+    valorCuota: enrichedCandidate.valorCuota,
     frecuenciaCuota: "MENSUAL",
     encontradoEnAddi: true,
-    estado: selectedCandidate.estado,
-    ordenId: selectedCandidate.ordenId,
-    origen: selectedCandidate.source,
+    estado: enrichedCandidate.estado,
+    ordenId: enrichedCandidate.ordenId,
+    origen: enrichedCandidate.source,
   };
 }
