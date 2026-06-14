@@ -8,6 +8,7 @@ import {
 const SUMAS_SECRET_KEY = "cGFzc3dvcmRfc2VjcmV0X3N1bWFzX3BhcmFfdGk=";
 const DEFAULT_FRECUENCIA_CUOTA = "MENSUAL";
 const COLOMBIA_TIME_ZONE = "America/Bogota";
+const SUMAS_POINT_CREDIT_KEYWORD = "CONECTAMOS";
 
 export type SumasPayCreditoCedula = {
   documento: string;
@@ -18,6 +19,7 @@ export type SumasPayCreditoCedula = {
   fechaNacimiento: string | null;
   fechaExpedicion: string | null;
   fechaCreacionCredito: string | null;
+  puntoCredito: string | null;
   creditoAutorizado: number;
   numeroCuotas: number | null;
   valorCuota: number | null;
@@ -45,6 +47,7 @@ type Candidate = {
   numeroCuotas: number | null;
   valorCuota: number | null;
   fechaCreacionCredito: string | null;
+  puntoCredito: string | null;
   activeScore: number;
 };
 
@@ -1010,6 +1013,44 @@ function getCreditCreationDate(record: Record<string, unknown>) {
   ]);
 }
 
+function getPointCreditName(record: Record<string, unknown>) {
+  const text = deepString(record, [
+    "point_sale_name",
+    "pointSaleName",
+    "point_credit_name",
+    "pointCreditName",
+    "creditPointName",
+    "credit_point_name",
+    "pointOfCreditName",
+    "point_of_credit_name",
+    "puntoCredito",
+    "punto_credito",
+    "puntoDeCredito",
+    "punto_de_credito",
+    "puntoDeVenta",
+    "punto_de_venta",
+    "puntoVenta",
+    "pointOfSaleName",
+    "point_of_sale_name",
+    "storeName",
+    "store_name",
+    "branchName",
+    "branch_name",
+    "officeName",
+    "office_name",
+  ]);
+
+  if (!text || text === "[object Object]") {
+    return null;
+  }
+
+  return text;
+}
+
+function isConectamosPointCredit(puntoCredito: string | null) {
+  return normalizeText(puntoCredito).includes(SUMAS_POINT_CREDIT_KEYWORD);
+}
+
 function getDateInColombia(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: COLOMBIA_TIME_ZONE,
@@ -1064,6 +1105,23 @@ function getCreditCreationDateByLoanId(payloads: SumasPayload[]) {
   return datesByLoanId;
 }
 
+function getPointCreditNameByLoanId(payloads: SumasPayload[]) {
+  const pointCreditByLoanId = new Map<string, string>();
+
+  for (const payload of payloads) {
+    for (const { record } of collectRecords(payload.data, payload.source)) {
+      const loanId = getLoanIdFromRecord(record) || payload.loanId;
+      const puntoCredito = getPointCreditName(record);
+
+      if (loanId && puntoCredito && !pointCreditByLoanId.has(loanId)) {
+        pointCreditByLoanId.set(loanId, puntoCredito);
+      }
+    }
+  }
+
+  return pointCreditByLoanId;
+}
+
 function acceptsAmountOnlyCandidate(source: string) {
   return (
     source === "client-pos" ||
@@ -1075,6 +1133,7 @@ function acceptsAmountOnlyCandidate(source: string) {
 function buildCandidates(payloads: SumasPayload[]) {
   const candidates: Candidate[] = [];
   const creationDatesByLoanId = getCreditCreationDateByLoanId(payloads);
+  const pointCreditNamesByLoanId = getPointCreditNameByLoanId(payloads);
 
   for (const payload of payloads) {
     for (const { record, source } of collectRecords(payload.data, payload.source)) {
@@ -1090,6 +1149,9 @@ function buildCandidates(payloads: SumasPayload[]) {
       const fechaCreacionCredito =
         getCreditCreationDate(record) ||
         (loanId ? creationDatesByLoanId.get(loanId) || null : null);
+      const puntoCredito =
+        getPointCreditName(record) ||
+        (loanId ? pointCreditNamesByLoanId.get(loanId) || null : null);
 
       if (
         numeroCuotas === null &&
@@ -1106,6 +1168,7 @@ function buildCandidates(payloads: SumasPayload[]) {
         numeroCuotas,
         valorCuota,
         fechaCreacionCredito,
+        puntoCredito,
         activeScore: getStatusScore(record),
       });
     }
@@ -1483,19 +1546,22 @@ export async function obtenerCreditoSumasPayPorCedula(
   }
 
   const candidates = buildCandidates(payloads);
-  const recentCandidates = candidates.filter((candidate) =>
-    isRecentCreditCreationDate(candidate.fechaCreacionCredito)
+  const eligibleCandidates = candidates.filter(
+    (candidate) =>
+      isRecentCreditCreationDate(candidate.fechaCreacionCredito) &&
+      isConectamosPointCredit(candidate.puntoCredito)
   );
-  const selectedCandidate = recentCandidates[0];
+  const selectedCandidate = eligibleCandidates[0];
 
   if (!selectedCandidate) {
     if (candidates.length > 0) {
-      console.info("SUMASPAY consulta sin credito reciente", {
+      console.info("SUMASPAY consulta sin credito CONECTAMOS reciente", {
         documento: maskDocumento(documento),
         fechaActual: getDateInColombia(),
         candidatos: candidates.slice(0, 8).map((candidate) => ({
           source: candidate.source,
           fechaCreacionCredito: candidate.fechaCreacionCredito,
+          puntoCredito: candidate.puntoCredito,
         })),
       });
 
@@ -1533,6 +1599,7 @@ export async function obtenerCreditoSumasPayPorCedula(
     fechaNacimiento: getClientBirthDate(...clientPayloads),
     fechaExpedicion: getClientExpeditionDate(...clientPayloads),
     fechaCreacionCredito: candidate.fechaCreacionCredito,
+    puntoCredito: candidate.puntoCredito,
     creditoAutorizado: candidate.creditoAutorizado,
     numeroCuotas: candidate.numeroCuotas,
     valorCuota: candidate.valorCuota,
