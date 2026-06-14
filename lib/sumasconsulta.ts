@@ -7,8 +7,6 @@ import {
 
 const SUMAS_SECRET_KEY = "cGFzc3dvcmRfc2VjcmV0X3N1bWFzX3BhcmFfdGk=";
 const DEFAULT_FRECUENCIA_CUOTA = "MENSUAL";
-const CONECTAMOS_STORE_NAME = "CONECTAMOS";
-const CONECTAMOS_STORE_WILDCARD = "*CONECTAMOS*";
 
 export type SumasPayCreditoCedula = {
   documento: string;
@@ -18,7 +16,7 @@ export type SumasPayCreditoCedula = {
   numeroCuotas: number | null;
   valorCuota: number | null;
   frecuenciaCuota: "MENSUAL" | null;
-  creadoConConectamos: boolean;
+  encontradoEnSumasPay: boolean;
   origen: string;
 };
 
@@ -26,7 +24,6 @@ type SumasSession = {
   apiBaseUrl: string;
   accessToken: string;
   currentUser: unknown;
-  scopedToConectamos: boolean;
 };
 
 type SumasConfig = {
@@ -41,7 +38,6 @@ type Candidate = {
   creditoAutorizado: number;
   numeroCuotas: number | null;
   valorCuota: number | null;
-  creadoConConectamos: boolean;
   activeScore: number;
 };
 
@@ -348,15 +344,11 @@ async function loginSumas(): Promise<SumasSession> {
     accessToken,
     "service-user/users/me"
   );
-  const scopedToConectamos =
-    containsText(loginPayload, CONECTAMOS_STORE_NAME) ||
-    containsText(currentUser, CONECTAMOS_STORE_NAME);
 
   return {
     apiBaseUrl,
     accessToken,
     currentUser,
-    scopedToConectamos,
   };
 }
 
@@ -518,28 +510,6 @@ function deepString(value: unknown, keys: string[], depth = 0): string | null {
   return null;
 }
 
-function containsText(value: unknown, needle: string, depth = 0): boolean {
-  if (depth > 7) {
-    return false;
-  }
-
-  if (typeof value === "string" || typeof value === "number") {
-    return normalizeText(value).includes(needle);
-  }
-
-  if (Array.isArray(value)) {
-    return value.some((item) => containsText(item, needle, depth + 1));
-  }
-
-  if (isRecord(value)) {
-    return Object.values(value).some((item) =>
-      containsText(item, needle, depth + 1)
-    );
-  }
-
-  return false;
-}
-
 function getStatusScore(record: Record<string, unknown>) {
   const status = normalizeText(
     [
@@ -669,7 +639,7 @@ function getCreditAmount(record: Record<string, unknown>, source: string) {
   const sourceSpecificKeys =
     source === "list-credit-y2" ||
     source === "client-pos" ||
-    source.startsWith("client-credit-")
+    source.startsWith("client-credit")
       ? ["value", "ammount"]
       : [];
 
@@ -750,7 +720,7 @@ function acceptsAmountOnlyCandidate(source: string) {
   return (
     source === "client-pos" ||
     source === "list-credit-y2" ||
-    source.startsWith("client-credit-")
+    source.startsWith("client-credit")
   );
 }
 
@@ -782,17 +752,12 @@ function buildCandidates(payloads: SumasPayload[]) {
         creditoAutorizado,
         numeroCuotas,
         valorCuota,
-        creadoConConectamos: containsText(record, CONECTAMOS_STORE_NAME),
         activeScore: getStatusScore(record),
       });
     }
   }
 
   return candidates.sort((a, b) => {
-    if (b.creadoConConectamos !== a.creadoConConectamos) {
-      return Number(b.creadoConConectamos) - Number(a.creadoConConectamos);
-    }
-
     if (b.activeScore !== a.activeScore) {
       return b.activeScore - a.activeScore;
     }
@@ -943,38 +908,17 @@ export async function obtenerCreditoSumasPayPorCedula(
     payloads.push({ source: "client-pos", data: clientPos });
   }
 
-  const creditPointParams = new URLSearchParams({
+  const clientCreditParams = new URLSearchParams({
     identification: documento,
-    creditPoint: CONECTAMOS_STORE_WILDCARD,
   });
-  const creditsByConectamosPoint = await tryProtectedJson(
+  const clientCredit = await tryProtectedJson(
     session.apiBaseUrl,
     session.accessToken,
-    `service-credit/manage/core-bridge/client-credit?${creditPointParams.toString()}`
+    `service-credit/manage/core-bridge/client-credit?${clientCreditParams.toString()}`
   );
 
-  if (creditsByConectamosPoint) {
-    payloads.push({
-      source: "client-credit-point-conectamos",
-      data: creditsByConectamosPoint,
-    });
-  }
-
-  const companyParams = new URLSearchParams({
-    identification: documento,
-    company: CONECTAMOS_STORE_WILDCARD,
-  });
-  const creditsByConectamosCompany = await tryProtectedJson(
-    session.apiBaseUrl,
-    session.accessToken,
-    `service-credit/manage/core-bridge/client-credit?${companyParams.toString()}`
-  );
-
-  if (creditsByConectamosCompany) {
-    payloads.push({
-      source: "client-credit-company-conectamos",
-      data: creditsByConectamosCompany,
-    });
+  if (clientCredit) {
+    payloads.push({ source: "client-credit", data: clientCredit });
   }
 
   const clientSecure = await tryProtectedJson(
@@ -1037,21 +981,12 @@ export async function obtenerCreditoSumasPayPorCedula(
     return null;
   }
 
-  const currentUserConectamos =
-    session.scopedToConectamos ||
-    containsText(session.currentUser, CONECTAMOS_STORE_NAME);
-  const candidates = buildCandidates(payloads).map((candidate) => ({
-    ...candidate,
-    creadoConConectamos:
-      candidate.creadoConConectamos || currentUserConectamos,
-  }));
-  const selectedCandidate =
-    candidates.find((item) => item.creadoConConectamos) || candidates[0];
+  const candidates = buildCandidates(payloads);
+  const selectedCandidate = candidates[0];
 
   if (!selectedCandidate) {
     console.info("SUMASPAY consulta sin candidato", {
       documento: maskDocumento(documento),
-      currentUserConectamos,
       payloads: describePayloads(payloads),
     });
 
@@ -1078,7 +1013,7 @@ export async function obtenerCreditoSumasPayPorCedula(
     numeroCuotas: candidate.numeroCuotas,
     valorCuota: candidate.valorCuota,
     frecuenciaCuota: DEFAULT_FRECUENCIA_CUOTA,
-    creadoConConectamos: candidate.creadoConConectamos,
+    encontradoEnSumasPay: true,
     origen: candidate.source,
   };
 }

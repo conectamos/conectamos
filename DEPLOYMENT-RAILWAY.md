@@ -68,7 +68,7 @@ La resolucion/documento, vendedor, forma de pago, ciudad y opciones de envio se 
 ### Variables para consulta SUMASPAY
 
 - `SUMASCONSULTA_URL`: URL de SUMAS Consulta. Si se define como `https://sumasparati.mundosumas.com/auth/login`, la app usa automaticamente `https://sumasparati.mundosumas.com/api/` para consultar.
-- `SUMASCONSULTA_USUARIO`: usuario de SUMAS Consulta usado para leer creditos de CONECTAMOS.
+- `SUMASCONSULTA_USUARIO`: usuario de SUMAS Consulta usado para leer creditos SUMASPAY.
 - `SUMASCONSULTA_CLAVE`: clave de SUMAS Consulta.
 
 ### Parametros Siigo por sede

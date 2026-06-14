@@ -201,7 +201,7 @@ type SumasPayCreditoResponse = {
     numeroCuotas: number | null;
     valorCuota: number | null;
     frecuenciaCuota: string | null;
-    creadoConConectamos: boolean;
+    encontradoEnSumasPay: boolean;
     origen: string;
   };
   error?: string;
@@ -1457,7 +1457,7 @@ export default function VendedorRegistroWorkspace({
         setSumaspayCredito(null);
         const errorMessage =
           data.error ||
-          "No se encontro un credito SUMASPAY creado con CONECTAMOS";
+          "No se encontro un credito SUMASPAY para esta cedula";
         setSumaspayError(
           options?.silent && response.status !== 404
             ? "No se pudo consultar SUMASPAY. Usa Consultar para reintentar."
