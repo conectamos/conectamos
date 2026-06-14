@@ -916,24 +916,46 @@ function getDocument(record: Record<string, unknown>) {
 function getClientName(record: Record<string, unknown>) {
   return deepText(record, [
     "clientName",
+    "clientFullName",
     "customerName",
     "customerFullName",
+    "applicantName",
+    "borrowerName",
     "fullName",
     "nombreCliente",
+    "nombreCompleto",
   ]);
 }
 
 function getEmail(record: Record<string, unknown>) {
-  return deepText(record, ["email", "correo", "correoElectronico"]);
+  return deepText(record, [
+    "email",
+    "emailAddress",
+    "clientEmail",
+    "customerEmail",
+    "userEmail",
+    "correo",
+    "correoElectronico",
+  ]);
 }
 
 function getPhone(record: Record<string, unknown>) {
   return deepText(record, [
     "phone",
     "phoneNumber",
+    "clientPhone",
+    "clientPhoneNumber",
+    "customerPhone",
+    "customerPhoneNumber",
     "cellPhone",
     "cellPhoneNumber",
+    "clientCellPhone",
+    "customerCellPhone",
     "mobile",
+    "mobilePhone",
+    "mobilePhoneNumber",
+    "clientMobile",
+    "customerMobile",
     "telefono",
     "celular",
   ]);

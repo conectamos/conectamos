@@ -1454,13 +1454,15 @@ export default function VendedorRegistroWorkspace({
     }
 
     const creditosAplicables = creditos.slice(0, MAX_FINANCIERAS_REGISTRO);
-    const creditoContacto =
-      creditosAplicables.find(
-        (credito) =>
-          credito.clienteNombre ||
-          credito.correoElectronico ||
-          credito.telefonoCliente
-      ) || creditosAplicables[0];
+    const creditoNombre =
+      creditosAplicables.find((credito) => credito.clienteNombre) ||
+      creditosAplicables[0];
+    const creditoCorreo = creditosAplicables.find(
+      (credito) => credito.correoElectronico
+    );
+    const creditoTelefono = creditosAplicables.find(
+      (credito) => credito.telefonoCliente
+    );
     const creditosPorIndex = Object.fromEntries(
       creditosAplicables.map((credito, index) => [index, credito])
     ) as Record<number, CreditoFinancieraCedula>;
@@ -1472,9 +1474,9 @@ export default function VendedorRegistroWorkspace({
     setCreditosFinancierasCedula(creditosPorIndex);
     setCreditosCedulaError("");
     setForm((current) => {
-      const telefonoCredito = onlyDigits(creditoContacto?.telefonoCliente || "");
+      const telefonoCredito = onlyDigits(creditoTelefono?.telefonoCliente || "");
       const whatsappCredito = onlyDigits(
-        creditoContacto?.telefonoCliente || "",
+        creditoTelefono?.telefonoCliente || "",
         10
       );
 
@@ -1488,8 +1490,8 @@ export default function VendedorRegistroWorkspace({
       return {
         ...current,
         servicio: "FINANCIERA",
-        clienteNombre: creditoContacto?.clienteNombre || current.clienteNombre,
-        correo: creditoContacto?.correoElectronico || current.correo,
+        clienteNombre: creditoNombre?.clienteNombre || current.clienteNombre,
+        correo: creditoCorreo?.correoElectronico || current.correo,
         whatsapp:
           whatsappCredito.length === 10 ? whatsappCredito : current.whatsapp,
         telefono: telefonoCredito || current.telefono,
