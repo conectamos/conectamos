@@ -14,6 +14,8 @@ export type SumasPayCreditoCedula = {
   clienteNombre: string | null;
   correoElectronico: string | null;
   telefonoCliente: string | null;
+  fechaNacimiento: string | null;
+  fechaExpedicion: string | null;
   creditoAutorizado: number;
   numeroCuotas: number | null;
   valorCuota: number | null;
@@ -844,6 +846,138 @@ function getClientPhone(...values: unknown[]) {
   return null;
 }
 
+function formatDateParts(year: number, month: number, day: number) {
+  if (year < 1900 || year > 2100) {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return [
+    String(year).padStart(4, "0"),
+    String(month).padStart(2, "0"),
+    String(day).padStart(2, "0"),
+  ].join("-");
+}
+
+function normalizeDateInput(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  if (Array.isArray(value) && value.length >= 3) {
+    const [year, month, day] = value.map((item) => Number(item));
+
+    if (
+      Number.isInteger(year) &&
+      Number.isInteger(month) &&
+      Number.isInteger(day)
+    ) {
+      return formatDateParts(year, month, day);
+    }
+  }
+
+  const text = String(value).trim();
+
+  if (!text) {
+    return null;
+  }
+
+  const isoMatch = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    return formatDateParts(
+      Number(isoMatch[1]),
+      Number(isoMatch[2]),
+      Number(isoMatch[3])
+    );
+  }
+
+  const compactMatch = text.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compactMatch) {
+    return formatDateParts(
+      Number(compactMatch[1]),
+      Number(compactMatch[2]),
+      Number(compactMatch[3])
+    );
+  }
+
+  const localMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (localMatch) {
+    return formatDateParts(
+      Number(localMatch[3]),
+      Number(localMatch[2]),
+      Number(localMatch[1])
+    );
+  }
+
+  const arrayStringMatch = text.match(/^(\d{4}),(\d{1,2}),(\d{1,2})$/);
+  if (arrayStringMatch) {
+    return formatDateParts(
+      Number(arrayStringMatch[1]),
+      Number(arrayStringMatch[2]),
+      Number(arrayStringMatch[3])
+    );
+  }
+
+  return null;
+}
+
+function getClientDate(values: unknown[], keys: string[]) {
+  for (const value of values) {
+    const byKey = deepString(value, keys);
+    const date = normalizeDateInput(byKey);
+
+    if (date) {
+      return date;
+    }
+  }
+
+  return null;
+}
+
+function getClientBirthDate(...values: unknown[]) {
+  return getClientDate(values, [
+    "fechaNacimiento",
+    "fecha_nacimiento",
+    "dateOfBirth",
+    "date_of_birth",
+    "birthDate",
+    "birth_date",
+    "dateBirth",
+    "birthday",
+    "dob",
+  ]);
+}
+
+function getClientExpeditionDate(...values: unknown[]) {
+  return getClientDate(values, [
+    "fechaExpedicion",
+    "fecha_expedicion",
+    "expeditionDate",
+    "expedition_date",
+    "dateExpedition",
+    "date_expedition",
+    "documentExpeditionDate",
+    "document_expedition_date",
+    "issueDate",
+    "issue_date",
+    "issuedDate",
+    "issued_date",
+    "dateOfIssue",
+    "documentIssueDate",
+    "identificationExpeditionDate",
+    "idExpeditionDate",
+  ]);
+}
+
 function acceptsAmountOnlyCandidate(source: string) {
   return (
     source === "client-pos" ||
@@ -1288,6 +1422,8 @@ export async function obtenerCreditoSumasPayPorCedula(
     clienteNombre: getClientName(...clientPayloads),
     correoElectronico: getClientEmail(...clientPayloads),
     telefonoCliente: getClientPhone(...clientPayloads),
+    fechaNacimiento: getClientBirthDate(...clientPayloads),
+    fechaExpedicion: getClientExpeditionDate(...clientPayloads),
     creditoAutorizado: candidate.creditoAutorizado,
     numeroCuotas: candidate.numeroCuotas,
     valorCuota: candidate.valorCuota,
