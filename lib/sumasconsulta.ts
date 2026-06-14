@@ -97,6 +97,16 @@ function toNumber(value: unknown) {
     .replace(/\./g, "")
     .replace(",", ".")
     .replace(/[^\d.-]/g, "");
+
+  if (
+    !normalized ||
+    normalized === "-" ||
+    normalized === "." ||
+    normalized === "-."
+  ) {
+    return null;
+  }
+
   const parsed = Number(normalized);
 
   return Number.isFinite(parsed) ? parsed : null;
@@ -433,6 +443,23 @@ function directNumber(
   return null;
 }
 
+function directString(record: Record<string, unknown>, keys: string[]) {
+  const normalizedKeys = keys.map((key) => key.toLowerCase());
+
+  for (const [key, value] of Object.entries(record)) {
+    if (!normalizedKeys.includes(key.toLowerCase())) {
+      continue;
+    }
+
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (text) {
+      return text;
+    }
+  }
+
+  return null;
+}
+
 function deepNumber(value: unknown, keys: string[], depth = 0): number | null {
   if (depth > 4) {
     return null;
@@ -560,7 +587,9 @@ function getInstallmentValue(record: Record<string, unknown>) {
   const direct = directNumber(record, [
     "valorCuota",
     "valueQuota",
+    "value_quota",
     "quotaValue",
+    "quota_value",
     "installmentAmount",
     "periodicPayment",
     "monthlyPayment",
@@ -581,7 +610,9 @@ function getInstallmentValue(record: Record<string, unknown>) {
     return deepNumber(record, [
       "valorCuota",
       "valueQuota",
+      "value_quota",
       "quotaValue",
+      "quota_value",
       "installmentAmount",
       "totalDueForPeriod",
       "totalOriginalDueForPeriod",
@@ -594,6 +625,9 @@ function getInstallmentValue(record: Record<string, unknown>) {
     "totalOriginalDueForPeriod",
     "totalOutstandingForPeriod",
     "valueQuota",
+    "value_quota",
+    "quotaValue",
+    "quota_value",
     "valorCuota",
   ]);
 
@@ -617,8 +651,12 @@ function getTerm(record: Record<string, unknown>) {
     "numeroCuotas",
     "numberOfRepayments",
     "numberOfInstallments",
+    "numberInstallments",
+    "numberQuota",
+    "number_quota",
     "installments",
     "term",
+    "loanTerm",
     "quota",
     "loanTermFrequency",
   ];
@@ -636,11 +674,23 @@ function getTerm(record: Record<string, unknown>) {
 }
 
 function getCreditAmount(record: Record<string, unknown>, source: string) {
+  const reportAmountKeys = [
+    "loan_amount_initial",
+    "loanAmountInitial",
+    "capital",
+    "credit_value",
+    "creditValue",
+    "soldCapital",
+    "sold_capital",
+    "originalLoan",
+  ];
   const sourceSpecificKeys =
     source === "list-credit-y2" ||
     source === "client-pos" ||
-    source.startsWith("client-credit")
-      ? ["value", "ammount"]
+    source.startsWith("client-credit") ||
+    source === "credits-by-client" ||
+    source === "loan-detail"
+      ? ["value", "ammount", ...reportAmountKeys]
       : [];
 
   return (
@@ -654,6 +704,8 @@ function getCreditAmount(record: Record<string, unknown>, source: string) {
       "amountApproved",
       "principalDisbursed",
       "totalPrincipalDisbursed",
+      "principalPortion",
+      "principal_portion",
       "creditAmount",
       "valorCredito",
     ]) ??
@@ -664,6 +716,8 @@ function getCreditAmount(record: Record<string, unknown>, source: string) {
       "approvedAmount",
       "principalDisbursed",
       "totalPrincipalDisbursed",
+      "principalPortion",
+      "principal_portion",
       "creditAmount",
       "valorCredito",
     ])
@@ -675,6 +729,7 @@ function getClientName(...values: unknown[]) {
     const byKey = deepString(value, [
       "clienteNombre",
       "clientName",
+      "client_name",
       "displayName",
       "fullName",
       "fullname",
@@ -762,6 +817,15 @@ function buildCandidates(payloads: SumasPayload[]) {
       return b.activeScore - a.activeScore;
     }
 
+    const completenessA =
+      (a.numeroCuotas === null ? 0 : 1) + (a.valorCuota === null ? 0 : 1);
+    const completenessB =
+      (b.numeroCuotas === null ? 0 : 1) + (b.valorCuota === null ? 0 : 1);
+
+    if (completenessB !== completenessA) {
+      return completenessB - completenessA;
+    }
+
     return b.creditoAutorizado - a.creditoAutorizado;
   });
 }
@@ -808,9 +872,156 @@ function getStoreCode(value: unknown) {
     "pointOfSalesCode",
     "storeCode",
     "codigoTienda",
-    "codigo",
-    "code",
   ]);
+}
+
+function getCompanyNit(value: unknown) {
+  if (isRecord(value) && isRecord(value.company)) {
+    const direct = deepString(value.company, [
+      "nit",
+      "taxId",
+      "identification",
+      "document",
+      "documentNumber",
+    ]);
+
+    if (direct) {
+      return normalizeDocumento(direct) || direct;
+    }
+  }
+
+  const fallback = deepString(value, [
+    "companyNit",
+    "nitCompany",
+    "companyIdentification",
+    "companyDocument",
+  ]);
+
+  return fallback ? normalizeDocumento(fallback) || fallback : null;
+}
+
+function getClientCreditReportQueries(documento: string, currentUser: unknown) {
+  const queries: Array<{
+    source: string;
+    params: Record<string, string>;
+  }> = [];
+  const seen = new Set<string>();
+  const storeCode = getStoreCode(currentUser);
+  const companyNit = getCompanyNit(currentUser);
+  const add = (source: string, params: Record<string, string | null>) => {
+    const cleanParams = Object.entries(params).reduce<Record<string, string>>(
+      (acc, [key, value]) => {
+        const text = String(value || "").trim();
+        if (text) {
+          acc[key] = text;
+        }
+        return acc;
+      },
+      {}
+    );
+    const key = new URLSearchParams(cleanParams).toString();
+
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    queries.push({ source, params: cleanParams });
+  };
+
+  add("client-credit", { identification: documento });
+
+  if (storeCode) {
+    add("client-credit-store", {
+      identification: documento,
+      creditPoint: storeCode,
+    });
+  }
+
+  if (companyNit) {
+    add("client-credit-company", {
+      identification: documento,
+      company: companyNit,
+    });
+  }
+
+  return queries;
+}
+
+async function appendClientCreditReportPayloads(
+  session: SumasSession,
+  documento: string,
+  payloads: SumasPayload[]
+) {
+  for (const query of getClientCreditReportQueries(
+    documento,
+    session.currentUser
+  )) {
+    const params = new URLSearchParams(query.params);
+    const clientCredit = await tryProtectedJson(
+      session.apiBaseUrl,
+      session.accessToken,
+      `service-credit/manage/core-bridge/client-credit?${params.toString()}`
+    );
+
+    if (clientCredit) {
+      payloads.push({ source: query.source, data: clientCredit });
+    }
+  }
+}
+
+function getLoanIdFromRecord(record: Record<string, unknown>) {
+  const direct = directString(record, [
+    "account_no",
+    "accountNo",
+    "loanId",
+    "loan_id",
+    "loanNumber",
+    "loan_number",
+    "numberCredit",
+    "number_credit",
+    "num_credito",
+    "numeroCredito",
+  ]);
+
+  if (!direct || !/\d/.test(direct)) {
+    return null;
+  }
+
+  return direct.replace(/\s+/g, "").trim();
+}
+
+function collectLoanIds(payloads: SumasPayload[]) {
+  const ids = new Set<string>();
+
+  for (const payload of payloads) {
+    for (const { record } of collectRecords(payload.data, payload.source)) {
+      const loanId = getLoanIdFromRecord(record);
+
+      if (loanId) {
+        ids.add(loanId);
+      }
+    }
+  }
+
+  return Array.from(ids).slice(0, 8);
+}
+
+async function appendLoanDetailPayloads(
+  session: SumasSession,
+  payloads: SumasPayload[]
+) {
+  for (const loanId of collectLoanIds(payloads)) {
+    const loan = await tryProtectedJson(
+      session.apiBaseUrl,
+      session.accessToken,
+      `service-credit/manage/loan/${encodeURIComponent(loanId)}`
+    );
+
+    if (loan) {
+      payloads.push({ source: "loan-detail", data: loan });
+    }
+  }
 }
 
 async function enrichCandidateWithPlan(
@@ -908,18 +1119,7 @@ export async function obtenerCreditoSumasPayPorCedula(
     payloads.push({ source: "client-pos", data: clientPos });
   }
 
-  const clientCreditParams = new URLSearchParams({
-    identification: documento,
-  });
-  const clientCredit = await tryProtectedJson(
-    session.apiBaseUrl,
-    session.accessToken,
-    `service-credit/manage/core-bridge/client-credit?${clientCreditParams.toString()}`
-  );
-
-  if (clientCredit) {
-    payloads.push({ source: "client-credit", data: clientCredit });
-  }
+  await appendClientCreditReportPayloads(session, documento, payloads);
 
   const clientSecure = await tryProtectedJson(
     session.apiBaseUrl,
@@ -972,6 +1172,8 @@ export async function obtenerCreditoSumasPayPorCedula(
   if (allCredits) {
     payloads.push({ source: "credits-by-client", data: allCredits });
   }
+
+  await appendLoanDetailPayloads(session, payloads);
 
   if (payloads.length === 0) {
     console.info("SUMASPAY consulta sin payloads", {
