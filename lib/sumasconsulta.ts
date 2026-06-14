@@ -37,6 +37,8 @@ type Candidate = {
   activeScore: number;
 };
 
+type SumasPayload = { source: string; data: unknown };
+
 export class SumasConsultaConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -66,6 +68,14 @@ function normalizeText(value: unknown) {
     .replace(/\s+/g, " ")
     .trim()
     .toUpperCase();
+}
+
+function maskDocumento(documento: string) {
+  if (documento.length <= 4) {
+    return "****";
+  }
+
+  return `${"*".repeat(documento.length - 4)}${documento.slice(-4)}`;
 }
 
 function toNumber(value: unknown) {
@@ -615,9 +625,13 @@ function getTerm(record: Record<string, unknown>) {
   return periods.length > 0 ? periods.length : null;
 }
 
-function getCreditAmount(record: Record<string, unknown>) {
+function getCreditAmount(record: Record<string, unknown>, source: string) {
+  const sourceSpecificKeys =
+    source === "list-credit-y2" ? ["value", "ammount"] : [];
+
   return (
     directNumber(record, [
+      ...sourceSpecificKeys,
       "approvedPrincipal",
       "principal",
       "loanAmount",
@@ -630,6 +644,7 @@ function getCreditAmount(record: Record<string, unknown>) {
       "valorCredito",
     ]) ??
     deepNumber(record, [
+      ...sourceSpecificKeys,
       "approvedPrincipal",
       "loanAmount",
       "approvedAmount",
@@ -679,12 +694,12 @@ function getClientName(...values: unknown[]) {
   return null;
 }
 
-function buildCandidates(payloads: Array<{ source: string; data: unknown }>) {
+function buildCandidates(payloads: SumasPayload[]) {
   const candidates: Candidate[] = [];
 
   for (const payload of payloads) {
     for (const { record, source } of collectRecords(payload.data, payload.source)) {
-      const creditoAutorizado = getCreditAmount(record);
+      const creditoAutorizado = getCreditAmount(record, source);
 
       if (creditoAutorizado === null || creditoAutorizado <= 0) {
         continue;
@@ -722,6 +737,22 @@ function buildCandidates(payloads: Array<{ source: string; data: unknown }>) {
   });
 }
 
+function describePayloads(payloads: SumasPayload[]) {
+  return payloads.map((payload) => {
+    const data = payload.data;
+    const records = collectRecords(data, payload.source);
+    const topLevelKeys = isRecord(data) ? Object.keys(data).slice(0, 12) : [];
+
+    return {
+      source: payload.source,
+      type: Array.isArray(data) ? "array" : typeof data,
+      arrayLength: Array.isArray(data) ? data.length : undefined,
+      recordCount: records.length,
+      topLevelKeys,
+    };
+  });
+}
+
 function getId(value: unknown) {
   if (!isRecord(value)) {
     return null;
@@ -751,7 +782,17 @@ export async function obtenerCreditoSumasPayPorCedula(
   }
 
   const session = await loginSumas();
-  const payloads: Array<{ source: string; data: unknown }> = [];
+  const payloads: SumasPayload[] = [];
+
+  const listCreditY2 = await tryProtectedJson(
+    session.apiBaseUrl,
+    session.accessToken,
+    `service-credit/manage/list-credit/y2/${encodeURIComponent(documento)}`
+  );
+
+  if (listCreditY2) {
+    payloads.push({ source: "list-credit-y2", data: listCreditY2 });
+  }
 
   const clientSecure = await tryProtectedJson(
     session.apiBaseUrl,
@@ -802,6 +843,10 @@ export async function obtenerCreditoSumasPayPorCedula(
   }
 
   if (payloads.length === 0) {
+    console.info("SUMASPAY consulta sin payloads", {
+      documento: maskDocumento(documento),
+    });
+
     return null;
   }
 
@@ -817,6 +862,12 @@ export async function obtenerCreditoSumasPayPorCedula(
     candidates.find((item) => item.creadoConConectamos) || candidates[0];
 
   if (!candidate) {
+    console.info("SUMASPAY consulta sin candidato", {
+      documento: maskDocumento(documento),
+      currentUserConectamos,
+      payloads: describePayloads(payloads),
+    });
+
     return null;
   }
 
