@@ -27,6 +27,12 @@ type SumasSession = {
   scopedToConectamos: boolean;
 };
 
+type SumasConfig = {
+  apiBaseUrl: string;
+  origin: string;
+  refererUrl: string;
+};
+
 type Candidate = {
   record: Record<string, unknown>;
   source: string;
@@ -102,7 +108,7 @@ function joinUrl(baseUrl: string, path: string) {
   return new URL(path.replace(/^\/+/, ""), baseUrl).toString();
 }
 
-function getConfiguredApiBaseUrl() {
+function getConfiguredSumasConfig(): SumasConfig {
   const rawUrl = String(process.env.SUMASCONSULTA_URL || "").trim();
 
   if (!rawUrl) {
@@ -121,10 +127,30 @@ function getConfiguredApiBaseUrl() {
 
   if (apiIndex >= 0) {
     const apiPath = parsed.pathname.slice(0, apiIndex + 4).replace(/\/+$/, "");
-    return `${parsed.origin}${apiPath}/`;
+    return {
+      apiBaseUrl: `${parsed.origin}${apiPath}/`,
+      origin: parsed.origin,
+      refererUrl: `${parsed.origin}/auth/login`,
+    };
   }
 
-  return `${parsed.origin}/api/`;
+  return {
+    apiBaseUrl: `${parsed.origin}/api/`,
+    origin: parsed.origin,
+    refererUrl: rawUrl,
+  };
+}
+
+function getSumasBrowserHeaders() {
+  const config = getConfiguredSumasConfig();
+
+  return {
+    Origin: config.origin,
+    Referer: config.refererUrl,
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  };
 }
 
 function getCredentials() {
@@ -253,7 +279,7 @@ async function requestJson(
     cache: "no-store",
     headers: {
       Accept: "application/json",
-      "User-Agent": "Conectamos/1.0",
+      ...getSumasBrowserHeaders(),
       ...(init.headers || {}),
     },
   });
@@ -278,7 +304,7 @@ async function requestJson(
 }
 
 async function loginSumas(): Promise<SumasSession> {
-  const apiBaseUrl = getConfiguredApiBaseUrl();
+  const { apiBaseUrl } = getConfiguredSumasConfig();
   const { usuario, clave } = getCredentials();
   const body = new URLSearchParams();
 
