@@ -9,6 +9,7 @@ export const PLATAFORMAS_CREDITO = [
   "KAIOWA",
   "SISTECREDITO",
   "SUMAS+",
+  "SUMASPAY",
   "ESMIO",
   "PAYJOY",
   "ALCANOS",

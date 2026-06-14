@@ -192,6 +192,21 @@ type PayJoyCreditoResponse = {
   error?: string;
 };
 
+type SumasPayCreditoResponse = {
+  credito?: {
+    documento: string;
+    financiera: "SUMASPAY";
+    clienteNombre: string | null;
+    creditoAutorizado: number;
+    numeroCuotas: number | null;
+    valorCuota: number | null;
+    frecuenciaCuota: string | null;
+    creadoConConectamos: boolean;
+    origen: string;
+  };
+  error?: string;
+};
+
 const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
 
 const PLAZO_OPTIONS = Array.from({ length: MAX_PLAZO_CUOTAS }, (_, index) =>
@@ -335,6 +350,45 @@ function applyPayJoyCreditoToFinancialState(
   return {
     ...item,
     plataformaCredito: "PAYJOY",
+    creditoAutorizado: formatearPesoInput(credito.creditoAutorizado),
+    valorCuota:
+      credito.valorCuota === null
+        ? item.valorCuota
+        : formatearPesoInput(credito.valorCuota),
+    numeroCuotas:
+      credito.numeroCuotas === null
+        ? item.numeroCuotas
+        : String(credito.numeroCuotas),
+    frecuenciaCuota: credito.frecuenciaCuota ?? item.frecuenciaCuota,
+  };
+}
+
+function normalizePlatformKey(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/gi, "")
+    .toUpperCase();
+}
+
+function esPlataformaSumasPay(value: unknown) {
+  const key = normalizePlatformKey(value);
+  return key === "SUMASPAY" || key === "SUMAS";
+}
+
+function resolveSumasPayPlatformName(catalogo: FinancieraCatalogoOption[]) {
+  const option = catalogo.find((item) => esPlataformaSumasPay(item.nombre));
+  return option?.nombre ?? "SUMASPAY";
+}
+
+function applySumasPayCreditoToFinancialState(
+  item: FinancialFormState,
+  credito: NonNullable<SumasPayCreditoResponse["credito"]>,
+  plataformaCredito: string
+) {
+  return {
+    ...item,
+    plataformaCredito,
     creditoAutorizado: formatearPesoInput(credito.creditoAutorizado),
     valorCuota:
       credito.valorCuota === null
@@ -790,6 +844,18 @@ export default function VendedorRegistroWorkspace({
   const consultarPayJoyAutomaticoRef = useRef<
     ((index: number, imeiValue?: string) => Promise<void>) | null
   >(null);
+  const [consultandoSumaspay, setConsultandoSumaspay] = useState(false);
+  const [sumaspayCredito, setSumaspayCredito] =
+    useState<SumasPayCreditoResponse["credito"] | null>(null);
+  const [sumaspayError, setSumaspayError] = useState("");
+  const autoSumasPayConsultaRef = useRef("");
+  const documentoActualRef = useRef("");
+  const consultarSumasPayAutomaticoRef = useRef<
+    ((
+      documentoValue: string,
+      options?: { silent?: boolean }
+    ) => Promise<void>) | null
+  >(null);
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const [imeiDetalle, setImeiDetalle] = useState("");
   const [listaNegraAlerta, setListaNegraAlerta] =
@@ -815,6 +881,10 @@ export default function VendedorRegistroWorkspace({
   const cedulaFrenteInputRef = useRef<HTMLInputElement | null>(null);
   const cedulaReversoInputRef = useRef<HTMLInputElement | null>(null);
   const registroEditandoConvertido = esRegistroConvertido(registroEditando);
+
+  useEffect(() => {
+    documentoActualRef.current = onlyDigits(form.documentoNumero, 15);
+  }, [form.documentoNumero]);
 
   const setFormMessage = (texto: string, tipo: "success" | "error") => {
     setMensaje(texto);
@@ -845,6 +915,10 @@ export default function VendedorRegistroWorkspace({
     setFinancierasVisibles(1);
     setIngresoContado2Visible(false);
     setRegistroEditando(null);
+    setSumaspayCredito(null);
+    setSumaspayError("");
+    setConsultandoSumaspay(false);
+    autoSumasPayConsultaRef.current = "";
     setForm((current) => {
       if (preservarContexto) {
         return {
@@ -1061,6 +1135,39 @@ export default function VendedorRegistroWorkspace({
     };
   }, [form.documentoNumero, form.serialImei, registroEditando?.id]);
 
+  useEffect(() => {
+    const documento = onlyDigits(form.documentoNumero, 15);
+
+    if (
+      registroEditandoConvertido ||
+      esServicioContado(form.servicio) ||
+      documento.length < 5
+    ) {
+      setConsultandoSumaspay(false);
+      autoSumasPayConsultaRef.current = "";
+      if (documento.length < 5) {
+        setSumaspayCredito(null);
+        setSumaspayError("");
+      }
+      return;
+    }
+
+    const consultaKey = `${documento}:sumaspay`;
+
+    if (autoSumasPayConsultaRef.current === consultaKey) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      autoSumasPayConsultaRef.current = consultaKey;
+      void consultarSumasPayAutomaticoRef.current?.(documento, { silent: true });
+    }, 650);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [form.documentoNumero, form.servicio, registroEditandoConvertido]);
+
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((current) => ({
       ...current,
@@ -1100,6 +1207,9 @@ export default function VendedorRegistroWorkspace({
     });
     setPayjoyCreditos({});
     setPayjoyErrores({});
+    setSumaspayCredito(null);
+    setSumaspayError("");
+    autoSumasPayConsultaRef.current = "";
     setFinancierasVisibles(1);
     setIngresoContado2Visible(false);
   };
@@ -1128,8 +1238,12 @@ export default function VendedorRegistroWorkspace({
     value: string
   ) => {
     if (
-      field === "creditoAutorizado" &&
-      esPlataformaPayJoy(form.financierasDetalle[index]?.plataformaCredito)
+      (field === "creditoAutorizado" &&
+        esPlataformaPayJoy(form.financierasDetalle[index]?.plataformaCredito)) ||
+      (index === 0 &&
+        field !== "cuotaInicial" &&
+        Boolean(sumaspayCredito) &&
+        esPlataformaSumasPay(form.financierasDetalle[index]?.plataformaCredito))
     ) {
       return;
     }
@@ -1271,8 +1385,106 @@ export default function VendedorRegistroWorkspace({
     }
   };
 
+  const aplicarCreditoSumaspayPrincipal = (
+    credito: NonNullable<SumasPayCreditoResponse["credito"]>,
+    documentoEsperado?: string
+  ) => {
+    const plataformaCredito = resolveSumasPayPlatformName(financierasCatalogo);
+
+    if (
+      documentoEsperado &&
+      documentoActualRef.current &&
+      documentoActualRef.current !== documentoEsperado
+    ) {
+      return false;
+    }
+
+    setFinancierasVisibles((current) => Math.max(current, 1));
+    setIngresoContado2Visible(false);
+    setSumaspayCredito(credito);
+    setSumaspayError("");
+    setForm((current) => {
+      if (
+        documentoEsperado &&
+        onlyDigits(current.documentoNumero, 15) !== documentoEsperado
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        servicio: "FINANCIERA",
+        clienteNombre: credito.clienteNombre || current.clienteNombre,
+        medioPago2Tipo: "",
+        medioPago2Valor: "",
+        financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
+          itemIndex === 0
+            ? applySumasPayCreditoToFinancialState(
+                item,
+                credito,
+                plataformaCredito
+              )
+            : item
+        ),
+      };
+    });
+    return true;
+  };
+
+  const consultarCreditoSumaspay = async (
+    documentoValue?: string,
+    options?: { silent?: boolean }
+  ) => {
+    const documento = onlyDigits(documentoValue || form.documentoNumero, 15);
+
+    if (documento.length < 5) {
+      setSumaspayError("Ingresa una cedula valida para consultar SUMASPAY");
+      return;
+    }
+
+    try {
+      setConsultandoSumaspay(true);
+      setSumaspayError("");
+
+      const params = new URLSearchParams({ documento });
+      const response = await fetch(
+        `/api/vendedor/registros/sumaspay-credito?${params.toString()}`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as SumasPayCreditoResponse;
+
+      if (!response.ok || !data.credito) {
+        setSumaspayCredito(null);
+        if (!options?.silent) {
+          setSumaspayError(
+            data.error ||
+              "No se encontro un credito SUMASPAY creado con CONECTAMOS"
+          );
+        }
+        return;
+      }
+
+      const applied = aplicarCreditoSumaspayPrincipal(data.credito, documento);
+      if (!applied) {
+        return;
+      }
+      setFormMessage(
+        `Credito SUMASPAY encontrado para ${data.credito.clienteNombre || documento}: ${formatMoney(
+          data.credito.creditoAutorizado
+        )}.`,
+        "success"
+      );
+    } catch {
+      setSumaspayError("Error consultando el credito SUMASPAY");
+    } finally {
+      setConsultandoSumaspay(false);
+    }
+  };
+  consultarSumasPayAutomaticoRef.current = consultarCreditoSumaspay;
+
   const seleccionarPlataformaFinanciera = (index: number, value: string) => {
     const esPayjoy = esPlataformaPayJoy(value);
+    const esSumasPay = esPlataformaSumasPay(value);
     delete autoPayJoyConsultaRef.current[index];
 
     setPayjoyCreditos((current) => {
@@ -1285,6 +1497,11 @@ export default function VendedorRegistroWorkspace({
       delete next[index];
       return next;
     });
+    if (index === 0 && !esSumasPay) {
+      setSumaspayCredito(null);
+      setSumaspayError("");
+      autoSumasPayConsultaRef.current = "";
+    }
     setForm((current) => ({
       ...current,
       financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
@@ -1292,15 +1509,20 @@ export default function VendedorRegistroWorkspace({
           ? {
               ...item,
               plataformaCredito: value,
-              creditoAutorizado: esPayjoy ? "" : item.creditoAutorizado,
-              valorCuota: esPayjoy ? "" : item.valorCuota,
-              numeroCuotas: esPayjoy ? "" : item.numeroCuotas,
-              frecuenciaCuota: esPayjoy ? "" : item.frecuenciaCuota,
+              creditoAutorizado:
+                esPayjoy || esSumasPay ? "" : item.creditoAutorizado,
+              valorCuota: esPayjoy || esSumasPay ? "" : item.valorCuota,
+              numeroCuotas: esPayjoy || esSumasPay ? "" : item.numeroCuotas,
+              frecuenciaCuota:
+                esPayjoy || esSumasPay ? "" : item.frecuenciaCuota,
             }
           : item
       ),
     }));
 
+    if (index === 0 && esSumasPay && form.documentoNumero.length >= 5) {
+      void consultarCreditoSumaspay();
+    }
   };
 
   useEffect(() => {
@@ -2338,15 +2560,57 @@ export default function VendedorRegistroWorkspace({
                   Numero de documento
                   <input
                     value={form.documentoNumero}
-                    onChange={(event) =>
-                      setField("documentoNumero", onlyDigits(event.target.value))
-                    }
+                    onChange={(event) => {
+                      const documento = onlyDigits(event.target.value);
+
+                      setSumaspayCredito(null);
+                      setSumaspayError("");
+                      autoSumasPayConsultaRef.current = "";
+                      setForm((current) => ({
+                        ...current,
+                        documentoNumero: documento,
+                        financierasDetalle: current.financierasDetalle.map(
+                          (item, index) =>
+                            index === 0 &&
+                            esPlataformaSumasPay(item.plataformaCredito)
+                              ? {
+                                  ...item,
+                                  creditoAutorizado: "",
+                                  valorCuota: "",
+                                  numeroCuotas: "",
+                                  frecuenciaCuota: "",
+                                }
+                              : item
+                        ),
+                      }));
+                    }}
                     className={inputClass()}
                     placeholder="Documento"
                   />
                   {verificandoListaNegra && (
                     <span className="text-xs font-semibold text-slate-500">
                       Verificando lista negra...
+                    </span>
+                  )}
+                  {consultandoSumaspay && (
+                    <span className="text-xs font-semibold text-emerald-700">
+                      Consultando credito SUMASPAY...
+                    </span>
+                  )}
+                  {sumaspayCredito && (
+                    <span className="text-xs font-semibold text-emerald-700">
+                      SUMASPAY: {formatMoney(sumaspayCredito.creditoAutorizado)}
+                      {sumaspayCredito.numeroCuotas
+                        ? ` | ${sumaspayCredito.numeroCuotas} cuotas`
+                        : ""}
+                      {sumaspayCredito.valorCuota
+                        ? ` | cuota ${formatMoney(sumaspayCredito.valorCuota)}`
+                        : ""}
+                    </span>
+                  )}
+                  {sumaspayError && (
+                    <span className="text-xs font-semibold text-amber-700">
+                      {sumaspayError}
                     </span>
                   )}
                 </label>
@@ -2446,17 +2710,35 @@ export default function VendedorRegistroWorkspace({
                     return null;
                   }
                   const creditoPayJoy = payjoyCreditos[index];
+                  const creditoSumasPay =
+                    index === 0 &&
+                    sumaspayCredito &&
+                    esPlataformaSumasPay(item.plataformaCredito)
+                      ? sumaspayCredito
+                      : null;
+                  const bloqueaPlataforma =
+                    Boolean(index === 0 && payjoyCreditos[0]) ||
+                    Boolean(creditoSumasPay);
+                  const bloqueaCredito =
+                    esPlataformaPayJoy(item.plataformaCredito) ||
+                    Boolean(creditoSumasPay);
                   const bloqueaCuotaPayJoy =
                     esPlataformaPayJoy(item.plataformaCredito) &&
                     creditoPayJoy?.valorCuota !== null &&
                     creditoPayJoy?.valorCuota !== undefined;
+                  const bloqueaCuotaSumasPay =
+                    Boolean(creditoSumasPay?.valorCuota);
                   const bloqueaPlazoPayJoy =
                     esPlataformaPayJoy(item.plataformaCredito) &&
                     creditoPayJoy?.numeroCuotas !== null &&
                     creditoPayJoy?.numeroCuotas !== undefined;
+                  const bloqueaPlazoSumasPay =
+                    Boolean(creditoSumasPay?.numeroCuotas);
                   const bloqueaFrecuenciaPayJoy =
                     esPlataformaPayJoy(item.plataformaCredito) &&
                     Boolean(creditoPayJoy?.frecuenciaCuota);
+                  const bloqueaFrecuenciaSumasPay =
+                    Boolean(creditoSumasPay?.frecuenciaCuota);
 
                   return (
                     <div
@@ -2489,14 +2771,14 @@ export default function VendedorRegistroWorkspace({
                           Plataforma de credito utilizada
                           <select
                             value={item.plataformaCredito}
-                            disabled={Boolean(index === 0 && payjoyCreditos[0])}
+                            disabled={bloqueaPlataforma}
                             onChange={(event) =>
                               seleccionarPlataformaFinanciera(
                                 index,
                                 event.target.value
                               )
                             }
-                            className={inputClass(Boolean(index === 0 && payjoyCreditos[0]))}
+                            className={inputClass(bloqueaPlataforma)}
                           >
                             <option value="">Selecciona una plataforma</option>
                             {financierasCatalogo.map((option) => (
@@ -2528,14 +2810,14 @@ export default function VendedorRegistroWorkspace({
                                 }
                                 readOnly={esPlataformaPayJoy(
                                   item.plataformaCredito
-                                )}
-                                className={inputClass(
-                                  esPlataformaPayJoy(item.plataformaCredito)
-                                )}
+                                ) || Boolean(creditoSumasPay)}
+                                className={inputClass(bloqueaCredito)}
                                 inputMode="numeric"
                                 placeholder={
                                   esPlataformaPayJoy(item.plataformaCredito)
                                     ? "Se completa desde PayJoy"
+                                    : creditoSumasPay
+                                      ? "Se completa desde SUMASPAY"
                                     : "$ 0"
                                 }
                               />
@@ -2561,6 +2843,35 @@ export default function VendedorRegistroWorkspace({
                                       disabled={
                                         consultandoPayjoyIndex === index ||
                                         form.serialImei.length !== 15
+                                      }
+                                      className="rounded-full border border-emerald-200 bg-white px-3 py-1 font-bold text-emerald-800 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Consultar
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                              {esPlataformaSumasPay(item.plataformaCredito) && (
+                                <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span>
+                                      {consultandoSumaspay
+                                        ? "Consultando credito SUMASPAY..."
+                                        : creditoSumasPay
+                                          ? `Credito SUMASPAY: ${formatMoney(
+                                              creditoSumasPay.creditoAutorizado
+                                            )}`
+                                          : sumaspayError ||
+                                            "El valor se consulta por cedula en SUMASPAY."}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void consultarCreditoSumaspay()
+                                      }
+                                      disabled={
+                                        consultandoSumaspay ||
+                                        form.documentoNumero.length < 5
                                       }
                                       className="rounded-full border border-emerald-200 bg-white px-3 py-1 font-bold text-emerald-800 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
@@ -2720,12 +3031,18 @@ export default function VendedorRegistroWorkspace({
                                     event.target.value
                                   )
                                 }
-                                readOnly={bloqueaCuotaPayJoy}
-                                className={inputClass(bloqueaCuotaPayJoy)}
+                                className={inputClass(
+                                  bloqueaCuotaPayJoy || bloqueaCuotaSumasPay
+                                )}
+                                readOnly={
+                                  bloqueaCuotaPayJoy || bloqueaCuotaSumasPay
+                                }
                                 inputMode="numeric"
                                 placeholder={
                                   bloqueaCuotaPayJoy
                                     ? "Se completa desde PayJoy"
+                                    : bloqueaCuotaSumasPay
+                                      ? "Se completa desde SUMASPAY"
                                     : "$ 0"
                                 }
                               />
@@ -2735,7 +3052,9 @@ export default function VendedorRegistroWorkspace({
                               Plazo
                               <select
                                 value={item.numeroCuotas}
-                                disabled={bloqueaPlazoPayJoy}
+                                disabled={
+                                  bloqueaPlazoPayJoy || bloqueaPlazoSumasPay
+                                }
                                 onChange={(event) =>
                                   setFinancieraField(
                                     index,
@@ -2743,7 +3062,9 @@ export default function VendedorRegistroWorkspace({
                                     event.target.value
                                   )
                                 }
-                                className={inputClass(bloqueaPlazoPayJoy)}
+                                className={inputClass(
+                                  bloqueaPlazoPayJoy || bloqueaPlazoSumasPay
+                                )}
                               >
                                 <option value="">1 a 48 cuotas</option>
                                 {PLAZO_OPTIONS.map((option) => (
@@ -2758,7 +3079,10 @@ export default function VendedorRegistroWorkspace({
                               Frecuencia de pago
                               <select
                                 value={item.frecuenciaCuota}
-                                disabled={bloqueaFrecuenciaPayJoy}
+                                disabled={
+                                  bloqueaFrecuenciaPayJoy ||
+                                  bloqueaFrecuenciaSumasPay
+                                }
                                 onChange={(event) =>
                                   setFinancieraField(
                                     index,
@@ -2766,7 +3090,10 @@ export default function VendedorRegistroWorkspace({
                                     event.target.value
                                   )
                                 }
-                                className={inputClass(bloqueaFrecuenciaPayJoy)}
+                                className={inputClass(
+                                  bloqueaFrecuenciaPayJoy ||
+                                    bloqueaFrecuenciaSumasPay
+                                )}
                               >
                                 <option value="">Selecciona una frecuencia</option>
                                 {FRECUENCIAS_CUOTA.map((option) => (

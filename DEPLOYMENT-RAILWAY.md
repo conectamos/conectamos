@@ -30,6 +30,12 @@ Para emitir facturas desde Siigo tambien agrega:
 - `SIIGO_ACCESS_KEY`
 - `SIIGO_PARTNER_ID`
 
+Para consultar creditos SUMASPAY desde el registro del asesor tambien agrega:
+
+- `SUMASCONSULTA_URL`
+- `SUMASCONSULTA_USUARIO`
+- `SUMASCONSULTA_CLAVE`
+
 Opcionales para Siigo:
 
 - `SIIGO_ITEM_CODE`
@@ -58,6 +64,12 @@ La resolucion/documento, vendedor, forma de pago, ciudad y opciones de envio se 
 - `SIIGO_DEFAULT_POSTAL_CODE`: codigo postal de respaldo.
 - `SIIGO_EXEMPT_ITEM_LIMIT`: tope por linea exenta. Por defecto `1150000`.
 - `SIIGO_MAX_INVOICE_TOTAL`: valor maximo que se permite facturar en Siigo. Por defecto `2300000`.
+
+### Variables para consulta SUMASPAY
+
+- `SUMASCONSULTA_URL`: URL de SUMAS Consulta. Si se define como `https://sumasparati.mundosumas.com/auth/login`, la app usa automaticamente `https://sumasparati.mundosumas.com/api/` para consultar.
+- `SUMASCONSULTA_USUARIO`: usuario de SUMAS Consulta usado para leer creditos de CONECTAMOS.
+- `SUMASCONSULTA_CLAVE`: clave de SUMAS Consulta.
 
 ### Parametros Siigo por sede
 
