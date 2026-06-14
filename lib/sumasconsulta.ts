@@ -591,6 +591,46 @@ function getRepaymentPeriods(record: Record<string, unknown>) {
   return [];
 }
 
+function getPaymentPeriodNumber(period: Record<string, unknown>) {
+  const value = directNumber(period, [
+    "#",
+    "period",
+    "periodNumber",
+    "period_number",
+    "numeroCuota",
+    "numero_cuota",
+    "numero",
+    "number",
+    "no",
+    "num",
+    "installmentNumber",
+    "installment_number",
+    "quotaNumber",
+    "quota_number",
+  ]);
+
+  if (value === null) {
+    return null;
+  }
+
+  const rounded = Math.round(value);
+
+  return rounded > 0 ? rounded : null;
+}
+
+function getTermFromRepaymentPeriods(record: Record<string, unknown>) {
+  const periods = getRepaymentPeriods(record);
+  const periodNumbers = periods
+    .map(getPaymentPeriodNumber)
+    .filter((value): value is number => value !== null);
+
+  if (periodNumbers.length === 0) {
+    return null;
+  }
+
+  return Math.max(...periodNumbers);
+}
+
 function getInstallmentValue(record: Record<string, unknown>) {
   const direct = directNumber(record, [
     "valorCuota",
@@ -655,6 +695,12 @@ function getInstallmentValue(record: Record<string, unknown>) {
 }
 
 function getTerm(record: Record<string, unknown>) {
+  const termFromSchedule = getTermFromRepaymentPeriods(record);
+
+  if (termFromSchedule !== null) {
+    return termFromSchedule;
+  }
+
   const keys = [
     "numeroCuotas",
     "numberOfRepayments",
@@ -675,7 +721,7 @@ function getTerm(record: Record<string, unknown>) {
   }
 
   const periods = getRepaymentPeriods(record).filter(
-    (period) => toNumber(period.period) !== 0
+    (period) => getPaymentPeriodNumber(period) !== null
   );
 
   return periods.length > 0 ? periods.length : null;
