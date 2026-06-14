@@ -70,7 +70,10 @@ export async function GET(req: Request) {
       });
 
       return NextResponse.json(
-        { error: "No se encontro un credito SUMASPAY para esta cedula" },
+        {
+          error:
+            "No se encontro un credito SUMASPAY creado hoy o ayer para esta cedula",
+        },
         { status: 404 }
       );
     }

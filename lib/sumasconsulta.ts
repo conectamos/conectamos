@@ -7,6 +7,7 @@ import {
 
 const SUMAS_SECRET_KEY = "cGFzc3dvcmRfc2VjcmV0X3N1bWFzX3BhcmFfdGk=";
 const DEFAULT_FRECUENCIA_CUOTA = "MENSUAL";
+const COLOMBIA_TIME_ZONE = "America/Bogota";
 
 export type SumasPayCreditoCedula = {
   documento: string;
@@ -16,6 +17,7 @@ export type SumasPayCreditoCedula = {
   telefonoCliente: string | null;
   fechaNacimiento: string | null;
   fechaExpedicion: string | null;
+  fechaCreacionCredito: string | null;
   creditoAutorizado: number;
   numeroCuotas: number | null;
   valorCuota: number | null;
@@ -42,10 +44,11 @@ type Candidate = {
   creditoAutorizado: number;
   numeroCuotas: number | null;
   valorCuota: number | null;
+  fechaCreacionCredito: string | null;
   activeScore: number;
 };
 
-type SumasPayload = { source: string; data: unknown };
+type SumasPayload = { source: string; data: unknown; loanId?: string };
 
 export class SumasConsultaConfigError extends Error {
   constructor(message: string) {
@@ -978,6 +981,89 @@ function getClientExpeditionDate(...values: unknown[]) {
   ]);
 }
 
+function getCreditCreationDate(record: Record<string, unknown>) {
+  return getClientDate([record], [
+    "loan_date",
+    "loanDate",
+    "fechaCredito",
+    "fecha_credito",
+    "fechaCreacion",
+    "fecha_creacion",
+    "createdAt",
+    "created_at",
+    "createdOn",
+    "created_on",
+    "createdDate",
+    "created_date",
+    "creationDate",
+    "creation_date",
+    "dateCreated",
+    "date_created",
+    "dateStart",
+    "date_start",
+    "submittedOnDate",
+    "submitted_on_date",
+    "disbursedOnDate",
+    "disbursed_on_date",
+    "disbursementDate",
+    "disbursement_date",
+  ]);
+}
+
+function getDateInColombia(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: COLOMBIA_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const day = Number(parts.find((part) => part.type === "day")?.value);
+
+  return formatDateParts(year, month, day) || date.toISOString().slice(0, 10);
+}
+
+function shiftDateInput(value: string, days: number) {
+  const [year, month, day] = value.split("-").map((item) => Number(item));
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+
+  return formatDateParts(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    date.getUTCDate()
+  );
+}
+
+function isRecentCreditCreationDate(
+  fechaCreacionCredito: string | null,
+  today = getDateInColombia()
+) {
+  const yesterday = shiftDateInput(today, -1);
+
+  return (
+    Boolean(fechaCreacionCredito) &&
+    (fechaCreacionCredito === today || fechaCreacionCredito === yesterday)
+  );
+}
+
+function getCreditCreationDateByLoanId(payloads: SumasPayload[]) {
+  const datesByLoanId = new Map<string, string>();
+
+  for (const payload of payloads) {
+    for (const { record } of collectRecords(payload.data, payload.source)) {
+      const loanId = getLoanIdFromRecord(record) || payload.loanId;
+      const fechaCreacionCredito = getCreditCreationDate(record);
+
+      if (loanId && fechaCreacionCredito && !datesByLoanId.has(loanId)) {
+        datesByLoanId.set(loanId, fechaCreacionCredito);
+      }
+    }
+  }
+
+  return datesByLoanId;
+}
+
 function acceptsAmountOnlyCandidate(source: string) {
   return (
     source === "client-pos" ||
@@ -988,6 +1074,7 @@ function acceptsAmountOnlyCandidate(source: string) {
 
 function buildCandidates(payloads: SumasPayload[]) {
   const candidates: Candidate[] = [];
+  const creationDatesByLoanId = getCreditCreationDateByLoanId(payloads);
 
   for (const payload of payloads) {
     for (const { record, source } of collectRecords(payload.data, payload.source)) {
@@ -999,6 +1086,10 @@ function buildCandidates(payloads: SumasPayload[]) {
 
       const numeroCuotas = getTerm(record);
       const valorCuota = getInstallmentValue(record);
+      const loanId = getLoanIdFromRecord(record) || payload.loanId;
+      const fechaCreacionCredito =
+        getCreditCreationDate(record) ||
+        (loanId ? creationDatesByLoanId.get(loanId) || null : null);
 
       if (
         numeroCuotas === null &&
@@ -1014,6 +1105,7 @@ function buildCandidates(payloads: SumasPayload[]) {
         creditoAutorizado,
         numeroCuotas,
         valorCuota,
+        fechaCreacionCredito,
         activeScore: getStatusScore(record),
       });
     }
@@ -1226,7 +1318,7 @@ async function appendLoanDetailPayloads(
     );
 
     if (loan) {
-      payloads.push({ source: "loan-detail", data: loan });
+      payloads.push({ source: "loan-detail", data: loan, loanId });
     }
   }
 }
@@ -1391,9 +1483,25 @@ export async function obtenerCreditoSumasPayPorCedula(
   }
 
   const candidates = buildCandidates(payloads);
-  const selectedCandidate = candidates[0];
+  const recentCandidates = candidates.filter((candidate) =>
+    isRecentCreditCreationDate(candidate.fechaCreacionCredito)
+  );
+  const selectedCandidate = recentCandidates[0];
 
   if (!selectedCandidate) {
+    if (candidates.length > 0) {
+      console.info("SUMASPAY consulta sin credito reciente", {
+        documento: maskDocumento(documento),
+        fechaActual: getDateInColombia(),
+        candidatos: candidates.slice(0, 8).map((candidate) => ({
+          source: candidate.source,
+          fechaCreacionCredito: candidate.fechaCreacionCredito,
+        })),
+      });
+
+      return null;
+    }
+
     console.info("SUMASPAY consulta sin candidato", {
       documento: maskDocumento(documento),
       payloads: describePayloads(payloads),
@@ -1424,6 +1532,7 @@ export async function obtenerCreditoSumasPayPorCedula(
     telefonoCliente: getClientPhone(...clientPayloads),
     fechaNacimiento: getClientBirthDate(...clientPayloads),
     fechaExpedicion: getClientExpeditionDate(...clientPayloads),
+    fechaCreacionCredito: candidate.fechaCreacionCredito,
     creditoAutorizado: candidate.creditoAutorizado,
     numeroCuotas: candidate.numeroCuotas,
     valorCuota: candidate.valorCuota,

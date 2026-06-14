@@ -201,6 +201,7 @@ type SumasPayCreditoResponse = {
     telefonoCliente: string | null;
     fechaNacimiento: string | null;
     fechaExpedicion: string | null;
+    fechaCreacionCredito: string | null;
     creditoAutorizado: number;
     numeroCuotas: number | null;
     valorCuota: number | null;
@@ -1470,7 +1471,7 @@ export default function VendedorRegistroWorkspace({
         setSumaspayCredito(null);
         const errorMessage =
           data.error ||
-          "No se encontro un credito SUMASPAY para esta cedula";
+          "No se encontro un credito SUMASPAY creado hoy o ayer para esta cedula";
         setSumaspayError(
           options?.silent && response.status !== 404
             ? "No se pudo consultar SUMASPAY. Usa Consultar para reintentar."
