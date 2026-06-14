@@ -12,7 +12,8 @@ const ADDI_IDENTITY_MANAGEMENT_API_BASE_URL =
   "https://identity-management-sync-api.addi.com/";
 const COLOMBIA_TIME_ZONE = "America/Bogota";
 const ADDI_STORE_KEYWORD = "CONECTAMOS";
-const ADDI_PAYMENT_REPORT_PAGE_SIZE = 25;
+const ADDI_PAYMENT_LOOKUP_PAGE_SIZE = 50;
+const ADDI_PAYMENT_REPORT_PAGE_SIZE = 9999;
 
 export type AddiCreditoCedula = {
   documento: string;
@@ -669,9 +670,11 @@ async function exchangeAuth0TokenForAddiSession(
   }
 
   const authCookie =
-    getSetCookieHeaders(response.headers).find((cookie) =>
-      cookie.toLowerCase().startsWith("addiauth=")
-    ) || null;
+    getSetCookieHeaders(response.headers)
+      .find((cookie) =>
+        cookie.toLowerCase().startsWith("addiauth=")
+      )
+      ?.split(";")[0] || null;
 
   return { accessToken, authCookie };
 }
@@ -787,6 +790,7 @@ async function getProtectedJson(
       {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
+          "x-addi-token": session.accessToken,
           "Content-Type": "application/json",
           ...(session.authCookie ? { Cookie: session.authCookie } : {}),
         },
@@ -813,6 +817,7 @@ async function postProtectedJson(
         body: JSON.stringify(body),
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
+          "x-addi-token": session.accessToken,
           "Content-Type": "application/json",
           ...(session.authCookie ? { Cookie: session.authCookie } : {}),
         },
@@ -1139,8 +1144,20 @@ function getDocument(record: Record<string, unknown>) {
       "idNumber",
       "nationalIdNumber",
       "nationalIdentificationNumber",
+      "clientId",
+      "clientIdNumber",
+      "clientIDNumber",
+      "clientIdentificationNumber",
+      "clientDocumentNumber",
+      "clientNationalIdNumber",
       "clientDocument",
+      "customerId",
+      "customerIdNumber",
+      "customerIdentificationNumber",
+      "customerDocumentNumber",
       "customerDocument",
+      "borrowerIdNumber",
+      "userIdNumber",
     ])
   );
 }
@@ -1705,10 +1722,13 @@ function getCandidateAllySlug(candidate: AddiCandidate) {
   return candidate.allySlug || getAllySlug(candidate.record);
 }
 
-function buildAddiPaymentQuery(params: Record<string, string | null | undefined>) {
+function buildAddiPaymentQuery(
+  params: Record<string, string | null | undefined>,
+  size = ADDI_PAYMENT_LOOKUP_PAGE_SIZE
+) {
   const query = new URLSearchParams({
     page: "1",
-    size: String(ADDI_PAYMENT_REPORT_PAGE_SIZE),
+    size: String(size),
   });
 
   for (const [key, value] of Object.entries(params)) {
@@ -1749,16 +1769,22 @@ function getAddiPaymentLookupPaths(candidate: AddiCandidate, documento: string) 
   }
 
   paths.push(
-    `/allies/payments?${buildAddiPaymentQuery({
-      start,
-      end,
-      allyName: allySlug,
-    })}`,
-    `/allies/payments?${buildAddiPaymentQuery({
-      paymentStart: start,
-      paymentEnd: end,
-      allyName: allySlug,
-    })}`
+    `/allies/payments?${buildAddiPaymentQuery(
+      {
+        start,
+        end,
+        allyName: allySlug,
+      },
+      ADDI_PAYMENT_REPORT_PAGE_SIZE
+    )}`,
+    `/allies/payments?${buildAddiPaymentQuery(
+      {
+        paymentStart: start,
+        paymentEnd: end,
+        allyName: allySlug,
+      },
+      ADDI_PAYMENT_REPORT_PAGE_SIZE
+    )}`
   );
 
   return Array.from(new Set(paths)).slice(0, 8);
