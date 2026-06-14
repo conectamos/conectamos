@@ -401,6 +401,22 @@ async function tryProtectedJson(
   }
 }
 
+async function tryOptionalProtectedJson(
+  apiBaseUrl: string,
+  accessToken: string,
+  path: string
+) {
+  try {
+    return await tryProtectedJson(apiBaseUrl, accessToken, path);
+  } catch (error) {
+    if (error instanceof SumasConsultaConfigError) {
+      return null;
+    }
+
+    return null;
+  }
+}
+
 function collectRecords(
   value: unknown,
   source: string,
@@ -879,6 +895,22 @@ function normalizeDateInput(value: unknown) {
     return null;
   }
 
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value > 1000000000) {
+      const date = new Date(value > 9999999999 ? value : value * 1000);
+
+      if (!Number.isNaN(date.getTime())) {
+        return formatDateParts(
+          date.getUTCFullYear(),
+          date.getUTCMonth() + 1,
+          date.getUTCDate()
+        );
+      }
+    }
+
+    return normalizeDateInput(String(Math.round(value)));
+  }
+
   if (Array.isArray(value) && value.length >= 3) {
     const [year, month, day] = value.map((item) => Number(item));
 
@@ -888,6 +920,42 @@ function normalizeDateInput(value: unknown) {
       Number.isInteger(day)
     ) {
       return formatDateParts(year, month, day);
+    }
+  }
+
+  if (isRecord(value)) {
+    const year =
+      directNumber(value, ["year", "anio", "ano"]) ??
+      directNumber(value, ["years"]);
+    const month =
+      directNumber(value, ["month", "monthValue", "mes"]) ??
+      directNumber(value, ["months"]);
+    const day =
+      directNumber(value, ["day", "dayOfMonth", "dia"]) ??
+      directNumber(value, ["days"]);
+
+    if (
+      year !== null &&
+      month !== null &&
+      day !== null &&
+      Number.isInteger(year) &&
+      Number.isInteger(month) &&
+      Number.isInteger(day)
+    ) {
+      return formatDateParts(year, month, day);
+    }
+
+    const nested = directString(value, [
+      "date",
+      "value",
+      "fecha",
+      "fechaExpedicion",
+      "birth_date",
+      "date_create",
+    ]);
+
+    if (nested) {
+      return normalizeDateInput(nested);
     }
   }
 
@@ -936,13 +1004,52 @@ function normalizeDateInput(value: unknown) {
   return null;
 }
 
+function collectDeepValues(
+  value: unknown,
+  keys: string[],
+  out: unknown[] = [],
+  depth = 0
+) {
+  if (depth > 5) {
+    return out;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectDeepValues(item, keys, out, depth + 1);
+    }
+    return out;
+  }
+
+  if (!isRecord(value)) {
+    return out;
+  }
+
+  const normalizedKeys = keys.map((key) => key.toLowerCase());
+
+  for (const [key, child] of Object.entries(value)) {
+    if (normalizedKeys.includes(key.toLowerCase())) {
+      out.push(child);
+    }
+
+    if (Array.isArray(child) || isRecord(child)) {
+      collectDeepValues(child, keys, out, depth + 1);
+    }
+  }
+
+  return out;
+}
+
 function getClientDate(values: unknown[], keys: string[]) {
   for (const value of values) {
-    const byKey = deepString(value, keys);
-    const date = normalizeDateInput(byKey);
+    const dateValues = collectDeepValues(value, keys);
 
-    if (date) {
-      return date;
+    for (const dateValue of dateValues) {
+      const date = normalizeDateInput(dateValue);
+
+      if (date) {
+        return date;
+      }
     }
   }
 
@@ -957,7 +1064,14 @@ function getClientBirthDate(...values: unknown[]) {
     "date_of_birth",
     "birthDate",
     "birth_date",
+    "birthdate",
+    "birth",
+    "birthDay",
+    "birth_day",
     "dateBirth",
+    "date_birth",
+    "fechaDeNacimiento",
+    "fecha_de_nacimiento",
     "birthday",
     "dob",
   ]);
@@ -979,8 +1093,19 @@ function getClientExpeditionDate(...values: unknown[]) {
     "issued_date",
     "dateOfIssue",
     "documentIssueDate",
+    "document_issue_date",
+    "documentDateOfIssue",
+    "document_date_of_issue",
+    "fechaExpedicionDocumento",
+    "fecha_expedicion_documento",
+    "fechaDeExpedicion",
+    "fecha_de_expedicion",
     "identificationExpeditionDate",
     "idExpeditionDate",
+    "fechaExpedicionCedula",
+    "fecha_expedicion_cedula",
+    "date_create",
+    "dateCreate",
   ]);
 }
 
@@ -1332,6 +1457,53 @@ async function appendClientCreditReportPayloads(
   }
 }
 
+async function appendClientIdentityPayloads(
+  session: SumasSession,
+  documento: string,
+  payloads: SumasPayload[]
+) {
+  const endpoints = [
+    {
+      source: "frauds-client",
+      path: `service-frauds/frauds/manage/client/${encodeURIComponent(documento)}`,
+    },
+    {
+      source: "frauds-session-document",
+      path: `service-frauds/frauds/session/document/${encodeURIComponent(
+        documento
+      )}`,
+    },
+    {
+      source: "frauds-client-rcs",
+      path: `service-frauds/frauds/get-frauds-client-and-rcs/document/${encodeURIComponent(
+        documento
+      )}`,
+    },
+    {
+      source: "micuentasumas-client",
+      path: `service-core/micuentasumas/client/document/${encodeURIComponent(
+        documento
+      )}`,
+    },
+    {
+      source: "frauds-sac-client",
+      path: `service-frauds/frauds/sac/client/${encodeURIComponent(documento)}`,
+    },
+  ];
+
+  for (const endpoint of endpoints) {
+    const payload = await tryOptionalProtectedJson(
+      session.apiBaseUrl,
+      session.accessToken,
+      endpoint.path
+    );
+
+    if (payload) {
+      payloads.push({ source: endpoint.source, data: payload });
+    }
+  }
+}
+
 function getLoanIdFromRecord(record: Record<string, unknown>) {
   const direct = directString(record, [
     "account_no",
@@ -1504,6 +1676,8 @@ export async function obtenerCreditoSumasPayPorCedula(
   if (clientOnline && clientOnline !== clientSecure) {
     payloads.push({ source: "client-online", data: clientOnline });
   }
+
+  await appendClientIdentityPayloads(session, documento, payloads);
 
   const clientId =
     getId(clientSecure) ||
