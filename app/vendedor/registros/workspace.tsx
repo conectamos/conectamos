@@ -192,6 +192,26 @@ type PayJoyCreditoResponse = {
   error?: string;
 };
 
+type AloCreditoResponse = {
+  credito?: {
+    imei: string;
+    financiera: "ALO CREDIT";
+    clienteNombre: string | null;
+    documento: string | null;
+    correoElectronico: string | null;
+    telefonoCliente: string | null;
+    creditoAutorizado: number;
+    valorCuota: number | null;
+    numeroCuotas: number | null;
+    frecuenciaCuota: string | null;
+    valorAccesorios: number | null;
+    observacionAccesorios: string | null;
+    moneda: string | null;
+    origen: string;
+  };
+  error?: string;
+};
+
 type CreditoFinancieraCedula = {
   documento: string;
   financiera: "SUMASPAY" | "ADDI";
@@ -377,6 +397,26 @@ function applyPayJoyCreditoToFinancialState(
   };
 }
 
+function applyAloCreditoToFinancialState(
+  item: FinancialFormState,
+  credito: NonNullable<AloCreditoResponse["credito"]>
+) {
+  return {
+    ...item,
+    plataformaCredito: "ALO CREDIT",
+    creditoAutorizado: formatearPesoInput(credito.creditoAutorizado),
+    valorCuota:
+      credito.valorCuota === null
+        ? item.valorCuota
+        : formatearPesoInput(credito.valorCuota),
+    numeroCuotas:
+      credito.numeroCuotas === null
+        ? item.numeroCuotas
+        : String(credito.numeroCuotas),
+    frecuenciaCuota: credito.frecuenciaCuota ?? item.frecuenciaCuota,
+  };
+}
+
 function normalizePlatformKey(value: unknown) {
   return String(value || "")
     .normalize("NFD")
@@ -466,6 +506,24 @@ function isTextFilled(value: string) {
   return value.trim().length > 0;
 }
 
+function mergeObservacionAccesorios(
+  observacionActual: string,
+  observacionAccesorios: string | null | undefined
+) {
+  const actual = observacionActual.trim();
+  const accesorios = String(observacionAccesorios || "").trim();
+
+  if (!accesorios) {
+    return observacionActual;
+  }
+
+  if (actual.toUpperCase().includes(accesorios.toUpperCase())) {
+    return observacionActual;
+  }
+
+  return actual ? `${actual} | ${accesorios}` : accesorios;
+}
+
 function esServicioContado(value: unknown) {
   const servicio = String(value || "").trim().toUpperCase();
   return (
@@ -481,6 +539,15 @@ function esServicioFinanciera(value: unknown) {
 
 function esPlataformaPayJoy(value: unknown) {
   return String(value || "").trim().toUpperCase() === "PAYJOY";
+}
+
+function esPlataformaAloCredit(value: unknown) {
+  const key = normalizePlatformKey(value);
+  return key === "ALOCREDIT" || key === "ALOCREDITO";
+}
+
+function esPlataformaConsultaImei(value: unknown) {
+  return esPlataformaPayJoy(value) || esPlataformaAloCredit(value);
 }
 
 function esRegistroConvertido(registro: RegistroVendedorDetalle | null) {
@@ -889,8 +956,19 @@ export default function VendedorRegistroWorkspace({
     Record<number, PayJoyCreditoResponse["credito"]>
   >({});
   const [payjoyErrores, setPayjoyErrores] = useState<Record<number, string>>({});
+  const [consultandoAloIndex, setConsultandoAloIndex] = useState<
+    number | null
+  >(null);
+  const [aloCreditos, setAloCreditos] = useState<
+    Record<number, AloCreditoResponse["credito"]>
+  >({});
+  const [aloErrores, setAloErrores] = useState<Record<number, string>>({});
   const autoPayJoyConsultaRef = useRef<Record<number, string>>({});
+  const autoAloConsultaRef = useRef<Record<number, string>>({});
   const consultarPayJoyAutomaticoRef = useRef<
+    ((index: number, imeiValue?: string) => Promise<void>) | null
+  >(null);
+  const consultarAloAutomaticoRef = useRef<
     ((index: number, imeiValue?: string) => Promise<void>) | null
   >(null);
   const [consultandoCreditosCedula, setConsultandoCreditosCedula] =
@@ -969,6 +1047,14 @@ export default function VendedorRegistroWorkspace({
     setCreditosFinancierasCedula({});
     setCreditosCedulaError("");
     setConsultandoCreditosCedula(false);
+    setPayjoyCreditos({});
+    setPayjoyErrores({});
+    setConsultandoPayjoyIndex(null);
+    setAloCreditos({});
+    setAloErrores({});
+    setConsultandoAloIndex(null);
+    autoPayJoyConsultaRef.current = {};
+    autoAloConsultaRef.current = {};
     autoCreditosCedulaConsultaRef.current = "";
     setForm((current) => {
       if (preservarContexto) {
@@ -1297,6 +1383,8 @@ export default function VendedorRegistroWorkspace({
       (field === "creditoAutorizado" &&
         esPlataformaPayJoy(plataformaCredito)) ||
       (field === "creditoAutorizado" &&
+        esPlataformaAloCredit(plataformaCredito)) ||
+      (field === "creditoAutorizado" &&
         creditoCoincideConPlataforma(creditoCedula, plataformaCredito)) ||
       (field === "valorCuota" &&
         Boolean(creditoCedula?.valorCuota) &&
@@ -1381,11 +1469,113 @@ export default function VendedorRegistroWorkspace({
   };
   consultarPayJoyAutomaticoRef.current = consultarCreditoPayjoy;
 
+  const consultarCreditoAlo = async (index: number, imeiValue?: string) => {
+    const imei = onlyDigits(imeiValue || form.serialImei, 15);
+
+    if (imei.length !== 15) {
+      setAloErrores((current) => ({
+        ...current,
+        [index]: "Busca primero un IMEI valido de 15 digitos",
+      }));
+      return;
+    }
+
+    try {
+      setConsultandoAloIndex(index);
+      setAloErrores((current) => {
+        const next = { ...current };
+        delete next[index];
+        return next;
+      });
+
+      const params = new URLSearchParams({ imei });
+      const response = await fetch(
+        `/api/vendedor/registros/alo-credito?${params.toString()}`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as AloCreditoResponse;
+
+      if (!response.ok || !data.credito) {
+        setAloCreditos((current) => {
+          const next = { ...current };
+          delete next[index];
+          return next;
+        });
+        setFinancieraField(index, "creditoAutorizado", "");
+        setAloErrores((current) => ({
+          ...current,
+          [index]:
+            data.error ||
+            "No se encontro un credito ALO CREDIT para este IMEI",
+        }));
+        return;
+      }
+
+      const creditoAlo = data.credito;
+
+      setAloCreditos((current) => ({
+        ...current,
+        [index]: creditoAlo,
+      }));
+      setForm((current) => {
+        if (onlyDigits(current.serialImei, 15) !== imei) {
+          return current;
+        }
+
+        const telefonoCredito = onlyDigits(creditoAlo.telefonoCliente || "", 10);
+        const documentoCredito = onlyDigits(creditoAlo.documento || "", 15);
+        const whatsappCredito =
+          telefonoCredito.length === 10 ? telefonoCredito : "";
+
+        return {
+          ...current,
+          clienteNombre:
+            current.clienteNombre || creditoAlo.clienteNombre || current.clienteNombre,
+          documentoNumero:
+            current.documentoNumero || documentoCredito || current.documentoNumero,
+          correo: current.correo || creditoAlo.correoElectronico || current.correo,
+          whatsapp: current.whatsapp || whatsappCredito || current.whatsapp,
+          telefono: current.telefono || telefonoCredito || current.telefono,
+          observacion: mergeObservacionAccesorios(
+            current.observacion,
+            creditoAlo.observacionAccesorios
+          ),
+          servicio: "FINANCIERA",
+          medioPago2Tipo: "",
+          medioPago2Valor: "",
+          financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
+            itemIndex === index
+              ? applyAloCreditoToFinancialState(item, creditoAlo)
+              : item
+          ),
+        };
+      });
+    } catch {
+      setAloErrores((current) => ({
+        ...current,
+        [index]: "Error consultando el credito ALO CREDIT",
+      }));
+    } finally {
+      setConsultandoAloIndex(null);
+    }
+  };
+  consultarAloAutomaticoRef.current = consultarCreditoAlo;
+
   const aplicarCreditoPayjoyPrincipal = (
     credito: NonNullable<PayJoyCreditoResponse["credito"]>
   ) => {
     setFinancierasVisibles((current) => Math.max(current, 1));
     setIngresoContado2Visible(false);
+    setAloCreditos((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setAloErrores((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
     setPayjoyCreditos((current) => ({
       ...current,
       0: credito,
@@ -1406,6 +1596,59 @@ export default function VendedorRegistroWorkspace({
           : item
       ),
     }));
+  };
+
+  const aplicarCreditoAloPrincipal = (
+    credito: NonNullable<AloCreditoResponse["credito"]>
+  ) => {
+    setFinancierasVisibles((current) => Math.max(current, 1));
+    setIngresoContado2Visible(false);
+    setPayjoyCreditos((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setPayjoyErrores((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setAloCreditos((current) => ({
+      ...current,
+      0: credito,
+    }));
+    setAloErrores((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setForm((current) => {
+      const telefonoCredito = onlyDigits(credito.telefonoCliente || "", 10);
+      const documentoCredito = onlyDigits(credito.documento || "", 15);
+      const whatsappCredito =
+        telefonoCredito.length === 10 ? telefonoCredito : "";
+
+      return {
+        ...current,
+        servicio: "FINANCIERA",
+        clienteNombre:
+          current.clienteNombre || credito.clienteNombre || current.clienteNombre,
+        documentoNumero:
+          current.documentoNumero || documentoCredito || current.documentoNumero,
+        correo: current.correo || credito.correoElectronico || current.correo,
+        whatsapp: current.whatsapp || whatsappCredito || current.whatsapp,
+        telefono: current.telefono || telefonoCredito || current.telefono,
+        observacion: mergeObservacionAccesorios(
+          current.observacion,
+          credito.observacionAccesorios
+        ),
+        medioPago2Tipo: "",
+        medioPago2Valor: "",
+        financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
+          itemIndex === 0 ? applyAloCreditoToFinancialState(item, credito) : item
+        ),
+      };
+    });
   };
 
   const detectarCreditoPayjoyPorImei = async (imeiValue: string) => {
@@ -1435,10 +1678,36 @@ export default function VendedorRegistroWorkspace({
         )}.`,
         "success"
       );
+      return;
+    } catch {
+    } finally {
+      setConsultandoPayjoyIndex(null);
+    }
+
+    try {
+      setConsultandoAloIndex(0);
+      const params = new URLSearchParams({ imei });
+      const response = await fetch(
+        `/api/vendedor/registros/alo-credito?${params.toString()}`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as AloCreditoResponse;
+
+      if (!response.ok || !data.credito) {
+        return;
+      }
+
+      aplicarCreditoAloPrincipal(data.credito);
+      setFormMessage(
+        `Este IMEI esta activo en ALO CREDIT. Se selecciono ALO CREDIT automaticamente por ${formatMoney(
+          data.credito.creditoAutorizado
+        )}.`,
+        "success"
+      );
     } catch {
       return;
     } finally {
-      setConsultandoPayjoyIndex(null);
+      setConsultandoAloIndex(null);
     }
   };
 
@@ -1594,8 +1863,10 @@ export default function VendedorRegistroWorkspace({
 
   const seleccionarPlataformaFinanciera = (index: number, value: string) => {
     const esPayjoy = esPlataformaPayJoy(value);
+    const esAloCredit = esPlataformaAloCredit(value);
     const esConsultaCedula = esPlataformaConsultaCedula(value);
     delete autoPayJoyConsultaRef.current[index];
+    delete autoAloConsultaRef.current[index];
 
     setPayjoyCreditos((current) => {
       const next = { ...current };
@@ -1603,6 +1874,16 @@ export default function VendedorRegistroWorkspace({
       return next;
     });
     setPayjoyErrores((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setAloCreditos((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setAloErrores((current) => {
       const next = { ...current };
       delete next[index];
       return next;
@@ -1622,11 +1903,21 @@ export default function VendedorRegistroWorkspace({
               ...item,
               plataformaCredito: value,
               creditoAutorizado:
-                esPayjoy || esConsultaCedula ? "" : item.creditoAutorizado,
-              valorCuota: esPayjoy || esConsultaCedula ? "" : item.valorCuota,
-              numeroCuotas: esPayjoy || esConsultaCedula ? "" : item.numeroCuotas,
+                esPayjoy || esAloCredit || esConsultaCedula
+                  ? ""
+                  : item.creditoAutorizado,
+              valorCuota:
+                esPayjoy || esAloCredit || esConsultaCedula
+                  ? ""
+                  : item.valorCuota,
+              numeroCuotas:
+                esPayjoy || esAloCredit || esConsultaCedula
+                  ? ""
+                  : item.numeroCuotas,
               frecuenciaCuota:
-                esPayjoy || esConsultaCedula ? "" : item.frecuenciaCuota,
+                esPayjoy || esAloCredit || esConsultaCedula
+                  ? ""
+                  : item.frecuenciaCuota,
             }
           : item
       ),
@@ -1634,6 +1925,10 @@ export default function VendedorRegistroWorkspace({
 
     if (esConsultaCedula && form.documentoNumero.length >= 5) {
       void consultarCreditosFinancierasCedula();
+    }
+
+    if (esAloCredit && form.serialImei.length === 15) {
+      void consultarCreditoAlo(index);
     }
   };
 
@@ -1645,28 +1940,42 @@ export default function VendedorRegistroWorkspace({
     form.financierasDetalle
       .slice(0, financierasVisibles)
       .forEach((item, index) => {
-        if (!esPlataformaPayJoy(item.plataformaCredito)) {
+        const esPayjoy = esPlataformaPayJoy(item.plataformaCredito);
+        const esAloCredit = esPlataformaAloCredit(item.plataformaCredito);
+
+        if (!esPayjoy && !esAloCredit) {
           return;
         }
 
-        const faltanDatosPayJoy =
+        const faltanDatosConsultaImei =
           !isTextFilled(item.creditoAutorizado) ||
           !isTextFilled(item.valorCuota) ||
           !isTextFilled(item.numeroCuotas) ||
           !isTextFilled(item.frecuenciaCuota);
 
-        if (!faltanDatosPayJoy) {
+        if (!faltanDatosConsultaImei) {
           return;
         }
 
         const consultaKey = `${form.serialImei}:${index}:${item.plataformaCredito}`;
 
-        if (autoPayJoyConsultaRef.current[index] === consultaKey) {
-          return;
+        if (esPayjoy) {
+          if (autoPayJoyConsultaRef.current[index] === consultaKey) {
+            return;
+          }
+
+          autoPayJoyConsultaRef.current[index] = consultaKey;
+          void consultarPayJoyAutomaticoRef.current?.(index, form.serialImei);
         }
 
-        autoPayJoyConsultaRef.current[index] = consultaKey;
-        void consultarPayJoyAutomaticoRef.current?.(index, form.serialImei);
+        if (esAloCredit) {
+          if (autoAloConsultaRef.current[index] === consultaKey) {
+            return;
+          }
+
+          autoAloConsultaRef.current[index] = consultaKey;
+          void consultarAloAutomaticoRef.current?.(index, form.serialImei);
+        }
       });
   }, [
     form.financierasDetalle,
@@ -1676,6 +1985,28 @@ export default function VendedorRegistroWorkspace({
   ]);
 
   const resetFinanciera = (index: number) => {
+    delete autoPayJoyConsultaRef.current[index];
+    delete autoAloConsultaRef.current[index];
+    setPayjoyCreditos((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setPayjoyErrores((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setAloCreditos((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setAloErrores((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
     setCreditosFinancierasCedula((current) => {
       const next = { ...current };
       delete next[index];
@@ -1747,10 +2078,18 @@ export default function VendedorRegistroWorkspace({
         .slice(0, financierasVisibles)
         .map((item, index) => ({ item, index }))
         .filter(({ item }) => esPlataformaPayJoy(item.plataformaCredito));
+      const financierasAloSeleccionadas = form.financierasDetalle
+        .slice(0, financierasVisibles)
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => esPlataformaAloCredit(item.plataformaCredito));
 
       if (financierasPayJoySeleccionadas.length) {
         financierasPayJoySeleccionadas.forEach(({ index }) => {
           void consultarCreditoPayjoy(index, equipo.imei);
+        });
+      } else if (financierasAloSeleccionadas.length) {
+        financierasAloSeleccionadas.forEach(({ index }) => {
+          void consultarCreditoAlo(index, equipo.imei);
         });
       } else {
         void detectarCreditoPayjoyPorImei(equipo.imei);
@@ -2835,6 +3174,7 @@ export default function VendedorRegistroWorkspace({
                     return null;
                   }
                   const creditoPayJoy = payjoyCreditos[index];
+                  const creditoAlo = aloCreditos[index];
                   const creditoCedula =
                     creditoCoincideConPlataforma(
                       creditosFinancierasCedula[index],
@@ -2849,23 +3189,35 @@ export default function VendedorRegistroWorkspace({
                     : "ADDI";
                   const bloqueaPlataforma =
                     Boolean(index === 0 && payjoyCreditos[0]) ||
+                    Boolean(index === 0 && aloCreditos[0]) ||
                     Boolean(creditoCedula);
                   const bloqueaCredito =
-                    esPlataformaPayJoy(item.plataformaCredito) ||
+                    esPlataformaConsultaImei(item.plataformaCredito) ||
                     Boolean(creditoCedula);
                   const bloqueaCuotaPayJoy =
                     esPlataformaPayJoy(item.plataformaCredito) &&
                     creditoPayJoy?.valorCuota !== null &&
                     creditoPayJoy?.valorCuota !== undefined;
+                  const bloqueaCuotaAlo =
+                    esPlataformaAloCredit(item.plataformaCredito) &&
+                    creditoAlo?.valorCuota !== null &&
+                    creditoAlo?.valorCuota !== undefined;
                   const bloqueaCuotaCedula = Boolean(creditoCedula?.valorCuota);
                   const bloqueaPlazoPayJoy =
                     esPlataformaPayJoy(item.plataformaCredito) &&
                     creditoPayJoy?.numeroCuotas !== null &&
                     creditoPayJoy?.numeroCuotas !== undefined;
+                  const bloqueaPlazoAlo =
+                    esPlataformaAloCredit(item.plataformaCredito) &&
+                    creditoAlo?.numeroCuotas !== null &&
+                    creditoAlo?.numeroCuotas !== undefined;
                   const bloqueaPlazoCedula = Boolean(creditoCedula?.numeroCuotas);
                   const bloqueaFrecuenciaPayJoy =
                     esPlataformaPayJoy(item.plataformaCredito) &&
                     Boolean(creditoPayJoy?.frecuenciaCuota);
+                  const bloqueaFrecuenciaAlo =
+                    esPlataformaAloCredit(item.plataformaCredito) &&
+                    Boolean(creditoAlo?.frecuenciaCuota);
                   const bloqueaFrecuenciaCedula =
                     Boolean(creditoCedula?.frecuenciaCuota);
 
@@ -2939,13 +3291,17 @@ export default function VendedorRegistroWorkspace({
                                 }
                                 readOnly={esPlataformaPayJoy(
                                   item.plataformaCredito
+                                ) || esPlataformaAloCredit(
+                                  item.plataformaCredito
                                 ) || Boolean(creditoCedula)}
                                 className={inputClass(bloqueaCredito)}
                                 inputMode="numeric"
                                 placeholder={
                                   esPlataformaPayJoy(item.plataformaCredito)
                                     ? "Se completa desde PayJoy"
-                                    : creditoCedula
+                                    : esPlataformaAloCredit(item.plataformaCredito)
+                                      ? "Se completa desde ALO CREDIT"
+                                      : creditoCedula
                                       ? `Se completa desde ${creditoCedula.financiera}`
                                     : "$ 0"
                                 }
@@ -2971,6 +3327,36 @@ export default function VendedorRegistroWorkspace({
                                       }
                                       disabled={
                                         consultandoPayjoyIndex === index ||
+                                        form.serialImei.length !== 15
+                                      }
+                                      className="rounded-full border border-emerald-200 bg-white px-3 py-1 font-bold text-emerald-800 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Consultar
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                              {esPlataformaAloCredit(item.plataformaCredito) && (
+                                <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span>
+                                      {consultandoAloIndex === index
+                                        ? "Consultando credito ALO CREDIT..."
+                                        : aloCreditos[index]
+                                          ? `Credito ALO CREDIT: ${formatMoney(
+                                              aloCreditos[index]
+                                                ?.creditoAutorizado ?? null
+                                            )}`
+                                          : aloErrores[index] ||
+                                            "El valor se valida por IMEI en ALO CREDIT."}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void consultarCreditoAlo(index)
+                                      }
+                                      disabled={
+                                        consultandoAloIndex === index ||
                                         form.serialImei.length !== 15
                                       }
                                       className="rounded-full border border-emerald-200 bg-white px-3 py-1 font-bold text-emerald-800 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
@@ -3163,16 +3549,22 @@ export default function VendedorRegistroWorkspace({
                                   )
                                 }
                                 className={inputClass(
-                                  bloqueaCuotaPayJoy || bloqueaCuotaCedula
+                                  bloqueaCuotaPayJoy ||
+                                    bloqueaCuotaAlo ||
+                                    bloqueaCuotaCedula
                                 )}
                                 readOnly={
-                                  bloqueaCuotaPayJoy || bloqueaCuotaCedula
+                                  bloqueaCuotaPayJoy ||
+                                  bloqueaCuotaAlo ||
+                                  bloqueaCuotaCedula
                                 }
                                 inputMode="numeric"
                                 placeholder={
                                   bloqueaCuotaPayJoy
                                     ? "Se completa desde PayJoy"
-                                    : bloqueaCuotaCedula
+                                    : bloqueaCuotaAlo
+                                      ? "Se completa desde ALO CREDIT"
+                                      : bloqueaCuotaCedula
                                       ? `Se completa desde ${creditoCedula?.financiera}`
                                     : "$ 0"
                                 }
@@ -3184,7 +3576,9 @@ export default function VendedorRegistroWorkspace({
                               <select
                                 value={item.numeroCuotas}
                                 disabled={
-                                  bloqueaPlazoPayJoy || bloqueaPlazoCedula
+                                  bloqueaPlazoPayJoy ||
+                                  bloqueaPlazoAlo ||
+                                  bloqueaPlazoCedula
                                 }
                                 onChange={(event) =>
                                   setFinancieraField(
@@ -3194,7 +3588,9 @@ export default function VendedorRegistroWorkspace({
                                   )
                                 }
                                 className={inputClass(
-                                  bloqueaPlazoPayJoy || bloqueaPlazoCedula
+                                  bloqueaPlazoPayJoy ||
+                                    bloqueaPlazoAlo ||
+                                    bloqueaPlazoCedula
                                 )}
                               >
                                 <option value="">1 a 48 cuotas</option>
@@ -3212,6 +3608,7 @@ export default function VendedorRegistroWorkspace({
                                 value={item.frecuenciaCuota}
                                 disabled={
                                   bloqueaFrecuenciaPayJoy ||
+                                  bloqueaFrecuenciaAlo ||
                                   bloqueaFrecuenciaCedula
                                 }
                                 onChange={(event) =>
@@ -3223,6 +3620,7 @@ export default function VendedorRegistroWorkspace({
                                 }
                                 className={inputClass(
                                   bloqueaFrecuenciaPayJoy ||
+                                    bloqueaFrecuenciaAlo ||
                                     bloqueaFrecuenciaCedula
                                 )}
                               >
