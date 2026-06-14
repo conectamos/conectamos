@@ -121,12 +121,37 @@ function toNumber(value: unknown) {
     return Number.isFinite(value) ? value : null;
   }
 
-  const normalized = String(value)
+  const cleaned = String(value)
     .replace(/\$/g, "")
     .replace(/\s+/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .replace(/[^\d.-]/g, "");
+    .replace(/[^\d.,-]/g, "");
+  const lastDot = cleaned.lastIndexOf(".");
+  const lastComma = cleaned.lastIndexOf(",");
+  let normalized = cleaned;
+
+  if (lastDot >= 0 && lastComma >= 0) {
+    const decimalSeparator = lastDot > lastComma ? "." : ",";
+    const thousandsSeparator = decimalSeparator === "." ? "," : ".";
+    normalized = cleaned
+      .replace(new RegExp(`\\${thousandsSeparator}`, "g"), "")
+      .replace(decimalSeparator, ".");
+  } else if (lastComma >= 0) {
+    const commaCount = (cleaned.match(/,/g) || []).length;
+    const decimals = cleaned.length - lastComma - 1;
+
+    normalized =
+      commaCount === 1 && decimals > 0 && decimals <= 2
+        ? cleaned.replace(",", ".")
+        : cleaned.replace(/,/g, "");
+  } else if (lastDot >= 0) {
+    const dotCount = (cleaned.match(/\./g) || []).length;
+    const decimals = cleaned.length - lastDot - 1;
+
+    normalized =
+      dotCount === 1 && decimals > 0 && decimals <= 2
+        ? cleaned
+        : cleaned.replace(/\./g, "");
+  }
 
   if (
     !normalized ||
@@ -976,9 +1001,16 @@ function getInstallment(record: Record<string, unknown>) {
   return deepNumber(record, [
     "installmentAmount",
     "installmentValue",
+    "monthlyInstallment",
+    "monthlyInstallmentAmount",
     "valorCuota",
+    "valorDeCuota",
     "cuota",
+    "cuotaMensual",
+    "montoCuota",
     "monthlyPayment",
+    "monthlyPaymentAmount",
+    "paymentAmount",
   ]);
 }
 
@@ -987,10 +1019,24 @@ function getTerm(record: Record<string, unknown>) {
     "installments",
     "installmentsNumber",
     "numberOfInstallments",
+    "installmentCount",
+    "numberOfPayments",
     "term",
+    "loanTerm",
+    "termInMonths",
+    "months",
     "plazo",
     "numeroCuotas",
+    "numCuotas",
   ]);
+}
+
+function inferMonthlyInstallment(amount: number, term: number | null) {
+  if (!term || term <= 0 || term > 60) {
+    return null;
+  }
+
+  return Math.round(amount / term);
 }
 
 function getStatus(record: Record<string, unknown>) {
@@ -1185,6 +1231,10 @@ function buildCandidates(payloads: AddiPayload[], documento: string) {
 
       const fechaCreacionCredito = getCreditDate(record);
       const parsedDate = parseCreditDate(fechaCreacionCredito);
+      const numeroCuotas = getTerm(record);
+      const valorCuota =
+        getInstallment(record) ??
+        inferMonthlyInstallment(creditoAutorizado, numeroCuotas);
 
       candidates.push({
         record,
@@ -1195,8 +1245,8 @@ function buildCandidates(payloads: AddiPayload[], documento: string) {
         fechaCreacionCredito: parsedDate.dateKey || fechaCreacionCredito,
         puntoCredito: getStoreName(record),
         creditoAutorizado,
-        numeroCuotas: getTerm(record),
-        valorCuota: getInstallment(record),
+        numeroCuotas,
+        valorCuota,
         estado: getStatus(record),
         ordenId: getOrderId(record),
         sortTime: parsedDate.sortTime,
