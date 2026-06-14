@@ -16,8 +16,6 @@ export type SumasPayCreditoCedula = {
   clienteNombre: string | null;
   correoElectronico: string | null;
   telefonoCliente: string | null;
-  fechaNacimiento: string | null;
-  fechaExpedicion: string | null;
   fechaCreacionCredito: string | null;
   puntoCredito: string | null;
   creditoAutorizado: number;
@@ -395,22 +393,6 @@ async function tryProtectedJson(
   } catch (error) {
     if (error instanceof SumasConsultaConfigError) {
       throw error;
-    }
-
-    return null;
-  }
-}
-
-async function tryOptionalProtectedJson(
-  apiBaseUrl: string,
-  accessToken: string,
-  path: string
-) {
-  try {
-    return await tryProtectedJson(apiBaseUrl, accessToken, path);
-  } catch (error) {
-    if (error instanceof SumasConsultaConfigError) {
-      return null;
     }
 
     return null;
@@ -1056,59 +1038,6 @@ function getClientDate(values: unknown[], keys: string[]) {
   return null;
 }
 
-function getClientBirthDate(...values: unknown[]) {
-  return getClientDate(values, [
-    "fechaNacimiento",
-    "fecha_nacimiento",
-    "dateOfBirth",
-    "date_of_birth",
-    "birthDate",
-    "birth_date",
-    "birthdate",
-    "birth",
-    "birthDay",
-    "birth_day",
-    "dateBirth",
-    "date_birth",
-    "fechaDeNacimiento",
-    "fecha_de_nacimiento",
-    "birthday",
-    "dob",
-  ]);
-}
-
-function getClientExpeditionDate(...values: unknown[]) {
-  return getClientDate(values, [
-    "fechaExpedicion",
-    "fecha_expedicion",
-    "expeditionDate",
-    "expedition_date",
-    "dateExpedition",
-    "date_expedition",
-    "documentExpeditionDate",
-    "document_expedition_date",
-    "issueDate",
-    "issue_date",
-    "issuedDate",
-    "issued_date",
-    "dateOfIssue",
-    "documentIssueDate",
-    "document_issue_date",
-    "documentDateOfIssue",
-    "document_date_of_issue",
-    "fechaExpedicionDocumento",
-    "fecha_expedicion_documento",
-    "fechaDeExpedicion",
-    "fecha_de_expedicion",
-    "identificationExpeditionDate",
-    "idExpeditionDate",
-    "fechaExpedicionCedula",
-    "fecha_expedicion_cedula",
-    "date_create",
-    "dateCreate",
-  ]);
-}
-
 function getCreditCreationDate(record: Record<string, unknown>) {
   return getClientDate([record], [
     "loan_date",
@@ -1457,53 +1386,6 @@ async function appendClientCreditReportPayloads(
   }
 }
 
-async function appendClientIdentityPayloads(
-  session: SumasSession,
-  documento: string,
-  payloads: SumasPayload[]
-) {
-  const endpoints = [
-    {
-      source: "frauds-client",
-      path: `service-frauds/frauds/manage/client/${encodeURIComponent(documento)}`,
-    },
-    {
-      source: "frauds-session-document",
-      path: `service-frauds/frauds/session/document/${encodeURIComponent(
-        documento
-      )}`,
-    },
-    {
-      source: "frauds-client-rcs",
-      path: `service-frauds/frauds/get-frauds-client-and-rcs/document/${encodeURIComponent(
-        documento
-      )}`,
-    },
-    {
-      source: "micuentasumas-client",
-      path: `service-core/micuentasumas/client/document/${encodeURIComponent(
-        documento
-      )}`,
-    },
-    {
-      source: "frauds-sac-client",
-      path: `service-frauds/frauds/sac/client/${encodeURIComponent(documento)}`,
-    },
-  ];
-
-  for (const endpoint of endpoints) {
-    const payload = await tryOptionalProtectedJson(
-      session.apiBaseUrl,
-      session.accessToken,
-      endpoint.path
-    );
-
-    if (payload) {
-      payloads.push({ source: endpoint.source, data: payload });
-    }
-  }
-}
-
 function getLoanIdFromRecord(record: Record<string, unknown>) {
   const direct = directString(record, [
     "account_no",
@@ -1677,8 +1559,6 @@ export async function obtenerCreditoSumasPayPorCedula(
     payloads.push({ source: "client-online", data: clientOnline });
   }
 
-  await appendClientIdentityPayloads(session, documento, payloads);
-
   const clientId =
     getId(clientSecure) ||
     getId(clientOnline) ||
@@ -1770,8 +1650,6 @@ export async function obtenerCreditoSumasPayPorCedula(
     clienteNombre: getClientName(...clientPayloads),
     correoElectronico: getClientEmail(...clientPayloads),
     telefonoCliente: getClientPhone(...clientPayloads),
-    fechaNacimiento: getClientBirthDate(...clientPayloads),
-    fechaExpedicion: getClientExpeditionDate(...clientPayloads),
     fechaCreacionCredito: candidate.fechaCreacionCredito,
     puntoCredito: candidate.puntoCredito,
     creditoAutorizado: candidate.creditoAutorizado,

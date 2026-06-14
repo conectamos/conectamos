@@ -199,8 +199,6 @@ type SumasPayCreditoResponse = {
     clienteNombre: string | null;
     correoElectronico: string | null;
     telefonoCliente: string | null;
-    fechaNacimiento: string | null;
-    fechaExpedicion: string | null;
     fechaCreacionCredito: string | null;
     puntoCredito: string | null;
     creditoAutorizado: number;
@@ -1428,8 +1426,6 @@ export default function VendedorRegistroWorkspace({
         whatsapp:
           whatsappSumas.length === 10 ? whatsappSumas : current.whatsapp,
         telefono: telefonoSumas || current.telefono,
-        fechaNacimiento: credito.fechaNacimiento || current.fechaNacimiento,
-        fechaExpedicion: credito.fechaExpedicion || current.fechaExpedicion,
         medioPago2Tipo: "",
         medioPago2Valor: "",
         financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
