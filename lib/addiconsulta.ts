@@ -7,6 +7,8 @@ const ADDI_PORTAL_ORIGIN = "https://aliados.addi.com";
 const ADDI_PORTAL_API_BASE_URL = "https://ally-portal.addi.com/";
 const ADDI_PORTAL_EXTERNAL_API_BASE_URL =
   "https://ally-portal-external-api.addi.com/";
+const ADDI_IDENTITY_MANAGEMENT_API_BASE_URL =
+  "https://identity-management-sync-api.addi.com/";
 const COLOMBIA_TIME_ZONE = "America/Bogota";
 const ADDI_STORE_KEYWORD = "CONECTAMOS";
 
@@ -34,10 +36,12 @@ type AddiConfig = {
   clientId: string;
   connection: string;
   callbackUrl: string;
+  identityBaseUrl: string;
 };
 
 type AddiSession = {
   accessToken: string;
+  authCookie: string | null;
 };
 
 type AddiPayload = {
@@ -172,6 +176,9 @@ function getConfiguredAddiConfig(): AddiConfig {
       parsed.searchParams.get("connection") || ADDI_DEFAULT_CONNECTION,
     callbackUrl:
       parsed.searchParams.get("redirect_uri") || ADDI_DEFAULT_CALLBACK_URL,
+    identityBaseUrl:
+      String(process.env.ADDICONSULTA_IDENTITY_URL || "").trim() ||
+      ADDI_IDENTITY_MANAGEMENT_API_BASE_URL,
   };
 }
 
@@ -582,6 +589,45 @@ function getAccessTokenFromUrl(value: string) {
   }
 }
 
+async function exchangeAuth0TokenForAddiSession(
+  auth0AccessToken: string,
+  config: AddiConfig
+): Promise<AddiSession> {
+  const url = new URL("/login", config.identityBaseUrl).toString();
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: "POST",
+      headers: {
+        ...getAddiBrowserHeaders(),
+        Authorization: `Bearer ${auth0AccessToken}`,
+      },
+    },
+    15000
+  );
+  const payload = await readJsonResponse(response);
+
+  if (!response.ok) {
+    throw new AddiConsultaConfigError(
+      getMessage(payload) ||
+        "ADDI no permitio intercambiar la sesion por token del portal."
+    );
+  }
+
+  const accessToken = response.headers.get("x-addi-token");
+
+  if (!accessToken) {
+    throw new AddiConsultaConfigError("ADDI no devolvio token del portal.");
+  }
+
+  const authCookie =
+    getSetCookieHeaders(response.headers).find((cookie) =>
+      cookie.toLowerCase().startsWith("addiauth=")
+    ) || null;
+
+  return { accessToken, authCookie };
+}
+
 async function loginAddi(): Promise<AddiSession> {
   const config = getConfiguredAddiConfig();
   const { usuario, clave } = getCredentials();
@@ -676,10 +722,10 @@ async function loginAddi(): Promise<AddiSession> {
     throw new AddiConsultaConfigError("ADDI no devolvio token de acceso.");
   }
 
-  return { accessToken };
+  return exchangeAuth0TokenForAddiSession(accessToken, config);
 }
 
-async function getProtectedJson(baseUrl: string, accessToken: string, path: string) {
+async function getProtectedJson(baseUrl: string, session: AddiSession, path: string) {
   const url = new URL(path.replace(/^\/+/, ""), baseUrl).toString();
 
   return unwrapData(
@@ -687,8 +733,9 @@ async function getProtectedJson(baseUrl: string, accessToken: string, path: stri
       url,
       {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${session.accessToken}`,
           "Content-Type": "application/json",
+          ...(session.authCookie ? { Cookie: session.authCookie } : {}),
         },
       },
       { allowNotFound: true, timeoutMs: 20000 }
@@ -1201,7 +1248,7 @@ export async function obtenerCreditoAddiPorCedula(
   try {
     const portalTransactions = await getProtectedJson(
       ADDI_PORTAL_API_BASE_URL,
-      session.accessToken,
+      session,
       `/transactions?${query.toString()}`
     );
 
@@ -1218,7 +1265,7 @@ export async function obtenerCreditoAddiPorCedula(
   try {
     const externalTransactions = await getProtectedJson(
       ADDI_PORTAL_EXTERNAL_API_BASE_URL,
-      session.accessToken,
+      session,
       `/v1/transactions?${query.toString()}`
     );
 
