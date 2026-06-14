@@ -53,6 +53,15 @@ type AddiPayload = {
   data: unknown;
 };
 
+type AddiRequestTrace = {
+  source: string;
+  path: string;
+  queryKeys: string[];
+  status: "ok" | "empty" | "error";
+  records?: number;
+  message?: string;
+};
+
 type AddiCandidate = {
   record: Record<string, unknown>;
   source: string;
@@ -857,6 +866,49 @@ function collectRecords(
   }
 
   return out;
+}
+
+function describeAddiPath(path: string) {
+  try {
+    const url = new URL(path, "https://addi.local");
+
+    return {
+      path: url.pathname,
+      queryKeys: Array.from(new Set(url.searchParams.keys())).sort(),
+    };
+  } catch {
+    return { path, queryKeys: [] };
+  }
+}
+
+function getErrorSummary(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "error");
+}
+
+function traceAddiRequest(
+  traces: AddiRequestTrace[],
+  request: { source: string; path: string },
+  status: AddiRequestTrace["status"],
+  data?: unknown,
+  error?: unknown
+) {
+  const pathInfo = describeAddiPath(request.path);
+  const trace: AddiRequestTrace = {
+    source: request.source,
+    path: pathInfo.path,
+    queryKeys: pathInfo.queryKeys,
+    status,
+  };
+
+  if (status === "ok") {
+    trace.records = collectRecords(data, request.source).length;
+  }
+
+  if (error) {
+    trace.message = getErrorSummary(error).slice(0, 180);
+  }
+
+  traces.push(trace);
 }
 
 function directText(record: Record<string, unknown>, keys: string[]) {
@@ -1858,26 +1910,34 @@ function getPaymentIdsFromPayloads(
 async function fetchAddiPaymentPayloads(
   session: AddiSession,
   candidate: AddiCandidate,
-  documento: string
+  documento: string,
+  traces: AddiRequestTrace[]
 ) {
   const lookupRequests = getAddiPaymentLookupRequests(candidate, documento);
   const paymentListRequests: Array<Promise<AddiPayload | null>> =
     lookupRequests.map(async (request) => {
-      const data = await getProtectedJson(
-        ADDI_PORTAL_API_BASE_URL,
-        session,
-        request.path,
-        6000
-      );
+      try {
+        const data = await getProtectedJson(
+          ADDI_PORTAL_API_BASE_URL,
+          session,
+          request.path,
+          6000
+        );
 
-      if (!data) {
+        if (!data) {
+          traceAddiRequest(traces, request, "empty");
+          return null;
+        }
+
+        traceAddiRequest(traces, request, "ok", data);
+        return {
+          source: request.source,
+          data,
+        };
+      } catch (error) {
+        traceAddiRequest(traces, request, "error", undefined, error);
         return null;
       }
-
-      return {
-        source: request.source,
-        data,
-      };
     });
   const paymentListResults = await Promise.allSettled(paymentListRequests);
   const payloads = paymentListResults
@@ -1902,39 +1962,62 @@ async function fetchAddiPaymentPayloads(
           path: `/payments/${encodedPaymentId}`,
         },
       ].map(async (request) => {
-        const data = await getProtectedJson(
-          ADDI_PORTAL_API_BASE_URL,
-          session,
-          request.path,
-          6000
-        );
+        try {
+          const data = await getProtectedJson(
+            ADDI_PORTAL_API_BASE_URL,
+            session,
+            request.path,
+            6000
+          );
 
-        if (!data) {
+          if (!data) {
+            traceAddiRequest(traces, request, "empty");
+            return null;
+          }
+
+          traceAddiRequest(traces, request, "ok", data);
+          return {
+            source: request.source,
+            data,
+          };
+        } catch (error) {
+          traceAddiRequest(traces, request, "error", undefined, error);
           return null;
         }
-
-        return {
-          source: request.source,
-          data,
-        };
       });
     });
   const consolidateRequest =
     paymentIds.length > 0
-      ? postProtectedJson(
-          ADDI_PORTAL_API_BASE_URL,
-          session,
-          "/payments/reports/consolidate",
-          { paymentIds },
-          8000
-        ).then((data) =>
-          data
-            ? ({
-                source: "ally-portal-payments-consolidate",
-                data,
-              } satisfies AddiPayload)
-            : null
-        )
+      ? (async () => {
+          const request = {
+            source: "ally-portal-payments-consolidate",
+            path: "/payments/reports/consolidate",
+          };
+
+          try {
+            const data = await postProtectedJson(
+              ADDI_PORTAL_API_BASE_URL,
+              session,
+              request.path,
+              { paymentIds },
+              8000
+            );
+
+            if (!data) {
+              traceAddiRequest(traces, request, "empty");
+              return null;
+            }
+
+            traceAddiRequest(traces, request, "ok", data);
+            return {
+              source: request.source,
+              data,
+            } satisfies AddiPayload;
+          } catch (error) {
+            traceAddiRequest(traces, request, "error", undefined, error);
+            return null;
+          }
+        })()
       : Promise.resolve(null);
   const [paymentDetailResults, consolidateResult] = await Promise.all([
     Promise.allSettled(paymentDetailRequests),
@@ -1960,10 +2043,11 @@ async function fetchAddiCandidateDetailPayloads(
   documento: string
 ) {
   if (candidate.numeroCuotas && candidate.valorCuota) {
-    return [];
+    return { payloads: [], traces: [] };
   }
 
   const payloads: AddiPayload[] = [];
+  const traces: AddiRequestTrace[] = [];
   const ids = getAddiCandidateDetailIds(candidate);
   const requests: Array<{
     source: string;
@@ -2040,22 +2124,32 @@ async function fetchAddiCandidateDetailPayloads(
   const [detailResults, paymentPayloads] = await Promise.all([
     Promise.allSettled(
       requests.map(async (request) => {
-        const data = await getProtectedJson(
-          request.baseUrl,
-          session,
-          request.path,
-          request.timeoutMs
-        );
+        try {
+          const data = await getProtectedJson(
+            request.baseUrl,
+            session,
+            request.path,
+            request.timeoutMs
+          );
 
-        return data
-          ? ({
-              source: request.source,
-              data: request.wrapData ? request.wrapData(data) : data,
-            } satisfies AddiPayload)
-          : null;
+          if (!data) {
+            traceAddiRequest(traces, request, "empty");
+            return null;
+          }
+
+          const wrappedData = request.wrapData ? request.wrapData(data) : data;
+          traceAddiRequest(traces, request, "ok", wrappedData);
+          return {
+            source: request.source,
+            data: wrappedData,
+          } satisfies AddiPayload;
+        } catch (error) {
+          traceAddiRequest(traces, request, "error", undefined, error);
+          return null;
+        }
       })
     ),
-    fetchAddiPaymentPayloads(session, candidate, documento),
+    fetchAddiPaymentPayloads(session, candidate, documento, traces),
   ]);
 
   for (const result of detailResults) {
@@ -2066,7 +2160,7 @@ async function fetchAddiCandidateDetailPayloads(
 
   payloads.push(...paymentPayloads);
 
-  return payloads;
+  return { payloads, traces };
 }
 
 function mergeCandidateDetails(
@@ -2336,11 +2430,12 @@ export async function obtenerCreditoAddiPorCedula(
     return null;
   }
 
-  const detailPayloads = await fetchAddiCandidateDetailPayloads(
+  const detailLookup = await fetchAddiCandidateDetailPayloads(
     session,
     selectedCandidate,
     documento
   );
+  const detailPayloads = detailLookup.payloads;
   const enrichedCandidate = mergeCandidateDetails(
     selectedCandidate,
     detailPayloads,
@@ -2351,6 +2446,15 @@ export async function obtenerCreditoAddiPorCedula(
     console.info("ADDI credito sin cuota o plazo en payloads consultados", {
       documento: maskDocumento(documento),
       origen: enrichedCandidate.source,
+      contexto: {
+        idsDetalle: getAddiCandidateDetailIds(selectedCandidate).length,
+        tieneApplicationId: Boolean(selectedCandidate.applicationId),
+        tieneLoanId: Boolean(selectedCandidate.loanId),
+        tieneOrdenId: Boolean(selectedCandidate.ordenId),
+        tieneTransactionId: Boolean(selectedCandidate.transactionId),
+        tieneAllySlug: Boolean(getCandidateAllySlug(selectedCandidate)),
+      },
+      intentos: detailLookup.traces,
       fuentes: describeDetailPayloads(
         detailPayloads,
         selectedCandidate,
