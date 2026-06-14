@@ -7,13 +7,10 @@ const ADDI_PORTAL_ORIGIN = "https://aliados.addi.com";
 const ADDI_PORTAL_API_BASE_URL = "https://ally-portal.addi.com/";
 const ADDI_PORTAL_EXTERNAL_API_BASE_URL =
   "https://ally-portal-external-api.addi.com/";
-const ADDI_PAYLINK_API_BASE_URL = "https://backend.addi.com/";
 const ADDI_IDENTITY_MANAGEMENT_API_BASE_URL =
   "https://identity-management-sync-api.addi.com/";
 const COLOMBIA_TIME_ZONE = "America/Bogota";
 const ADDI_STORE_KEYWORD = "CONECTAMOS";
-const ADDI_PAYMENT_LOOKUP_PAGE_SIZE = 50;
-const ADDI_PAYMENT_REPORT_PAGE_SIZE = 9999;
 
 export type AddiCreditoCedula = {
   documento: string;
@@ -53,15 +50,6 @@ type AddiPayload = {
   data: unknown;
 };
 
-type AddiRequestTrace = {
-  source: string;
-  path: string;
-  queryKeys: string[];
-  status: "ok" | "empty" | "error";
-  records?: number;
-  message?: string;
-};
-
 type AddiCandidate = {
   record: Record<string, unknown>;
   source: string;
@@ -76,11 +64,6 @@ type AddiCandidate = {
   valorCuota: number | null;
   estado: string | null;
   ordenId: string | null;
-  transactionId: string | null;
-  loanId: string | null;
-  applicationId: string | null;
-  allySlug: string | null;
-  storeSlug: string | null;
   sortTime: number;
 };
 
@@ -224,20 +207,6 @@ function getConfiguredAddiConfig(): AddiConfig {
       String(process.env.ADDICONSULTA_IDENTITY_URL || "").trim() ||
       ADDI_IDENTITY_MANAGEMENT_API_BASE_URL,
   };
-}
-
-function getAddiPaylinkBaseUrl() {
-  const rawUrl = String(process.env.ADDICONSULTA_PAYLINK_URL || "").trim();
-
-  if (!rawUrl) {
-    return ADDI_PAYLINK_API_BASE_URL;
-  }
-
-  try {
-    return new URL("/", rawUrl).toString();
-  } catch {
-    return ADDI_PAYLINK_API_BASE_URL;
-  }
 }
 
 function getCredentials() {
@@ -809,33 +778,6 @@ async function getProtectedJson(
   );
 }
 
-async function postProtectedJson(
-  baseUrl: string,
-  session: AddiSession,
-  path: string,
-  body: unknown,
-  timeoutMs = 20000
-) {
-  const url = new URL(path.replace(/^\/+/, ""), baseUrl).toString();
-
-  return unwrapData(
-    await requestJson(
-      url,
-      {
-        method: "POST",
-        body: JSON.stringify(body),
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          "x-addi-token": session.accessToken,
-          "Content-Type": "application/json",
-          ...(session.authCookie ? { Cookie: session.authCookie } : {}),
-        },
-      },
-      { allowNotFound: true, timeoutMs }
-    )
-  );
-}
-
 function collectRecords(
   value: unknown,
   source: string,
@@ -866,49 +808,6 @@ function collectRecords(
   }
 
   return out;
-}
-
-function describeAddiPath(path: string) {
-  try {
-    const url = new URL(path, "https://addi.local");
-
-    return {
-      path: url.pathname,
-      queryKeys: Array.from(new Set(url.searchParams.keys())).sort(),
-    };
-  } catch {
-    return { path, queryKeys: [] };
-  }
-}
-
-function getErrorSummary(error: unknown) {
-  return error instanceof Error ? error.message : String(error || "error");
-}
-
-function traceAddiRequest(
-  traces: AddiRequestTrace[],
-  request: { source: string; path: string },
-  status: AddiRequestTrace["status"],
-  data?: unknown,
-  error?: unknown
-) {
-  const pathInfo = describeAddiPath(request.path);
-  const trace: AddiRequestTrace = {
-    source: request.source,
-    path: pathInfo.path,
-    queryKeys: pathInfo.queryKeys,
-    status,
-  };
-
-  if (status === "ok") {
-    trace.records = collectRecords(data, request.source).length;
-  }
-
-  if (error) {
-    trace.message = getErrorSummary(error).slice(0, 180);
-  }
-
-  traces.push(trace);
 }
 
 function directText(record: Record<string, unknown>, keys: string[]) {
@@ -1007,184 +906,6 @@ function deepNumber(
   return null;
 }
 
-function isTermValue(value: number | null) {
-  return Boolean(
-    value !== null && Number.isFinite(value) && value >= 1 && value <= 60
-  );
-}
-
-function normalizeTerm(value: number | null) {
-  if (!isTermValue(value)) {
-    return null;
-  }
-
-  return Math.round(value as number);
-}
-
-function isInstallmentValue(value: number | null, amount?: number | null) {
-  if (value === null || !Number.isFinite(value) || value <= 0) {
-    return false;
-  }
-
-  if (amount && amount > 0 && value >= amount) {
-    return false;
-  }
-
-  return true;
-}
-
-function parseTermFromText(value: unknown) {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const match = value.match(
-    /(?:^|[^\d])(\d{1,2})\s*(?:cuota|cuotas|mes|meses|month|months|installment|installments|payment|payments)(?:[^\d]|$)/i
-  );
-
-  if (!match) {
-    return null;
-  }
-
-  return normalizeTerm(Number(match[1]));
-}
-
-function findNumberByKey(
-  record: Record<string, unknown>,
-  keyMatcher: (normalizedKey: string) => boolean,
-  valueMatcher: (value: number | null) => boolean,
-  depth = 0
-): number | null {
-  if (depth > 7) {
-    return null;
-  }
-
-  for (const [key, value] of Object.entries(record)) {
-    const normalizedKey = normalizeKey(key);
-
-    if (keyMatcher(normalizedKey)) {
-      const number = toNumber(value);
-
-      if (valueMatcher(number)) {
-        return number;
-      }
-    }
-
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (!isRecord(item)) continue;
-        const found = findNumberByKey(
-          item,
-          keyMatcher,
-          valueMatcher,
-          depth + 1
-        );
-        if (found !== null) return found;
-      }
-      continue;
-    }
-
-    if (isRecord(value)) {
-      const found = findNumberByKey(
-        value,
-        keyMatcher,
-        valueMatcher,
-        depth + 1
-      );
-      if (found !== null) return found;
-    }
-  }
-
-  return null;
-}
-
-function findTermInText(record: Record<string, unknown>, depth = 0): number | null {
-  if (depth > 7) {
-    return null;
-  }
-
-  for (const value of Object.values(record)) {
-    const term = parseTermFromText(value);
-
-    if (term !== null) {
-      return term;
-    }
-
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (!isRecord(item)) continue;
-        const found = findTermInText(item, depth + 1);
-        if (found !== null) return found;
-      }
-      continue;
-    }
-
-    if (isRecord(value)) {
-      const found = findTermInText(value, depth + 1);
-      if (found !== null) return found;
-    }
-  }
-
-  return null;
-}
-
-function isPlanArrayKey(normalizedKey: string) {
-  return (
-    normalizedKey.includes("PAYMENTPLAN") ||
-    normalizedKey.includes("REPAYMENT") ||
-    normalizedKey.includes("AMORTIZATION") ||
-    normalizedKey.includes("INSTALLMENT") ||
-    normalizedKey.includes("CUOTA")
-  );
-}
-
-function findPlanArrayInfo(
-  record: Record<string, unknown>,
-  amount: number,
-  depth = 0
-): { term: number | null; installment: number | null } | null {
-  if (depth > 7) {
-    return null;
-  }
-
-  for (const [key, value] of Object.entries(record)) {
-    const normalizedKey = normalizeKey(key);
-
-    if (
-      Array.isArray(value) &&
-      isPlanArrayKey(normalizedKey) &&
-      value.length >= 1 &&
-      value.length <= 60
-    ) {
-      const installment =
-        value
-          .map((item) => (isRecord(item) ? getInstallment(item, amount) : null))
-          .find((item) => isInstallmentValue(item, amount)) ?? null;
-
-      return {
-        term: value.length,
-        installment,
-      };
-    }
-
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (!isRecord(item)) continue;
-        const found = findPlanArrayInfo(item, amount, depth + 1);
-        if (found) return found;
-      }
-      continue;
-    }
-
-    if (isRecord(value)) {
-      const found = findPlanArrayInfo(value, amount, depth + 1);
-      if (found) return found;
-    }
-  }
-
-  return null;
-}
-
 function getDocument(record: Record<string, unknown>) {
   return normalizeDocumento(
     deepText(record, [
@@ -1225,57 +946,6 @@ function getClientName(record: Record<string, unknown>) {
     "fullName",
     "nombreCliente",
     "nombreCompleto",
-  ]);
-}
-
-function getEmail(record: Record<string, unknown>) {
-  return deepText(record, [
-    "email",
-    "emailAddress",
-    "clientEmail",
-    "customerEmail",
-    "userEmail",
-    "correo",
-    "correoElectronico",
-  ]);
-}
-
-function getPhone(record: Record<string, unknown>) {
-  return deepText(record, [
-    "phone",
-    "phoneNumber",
-    "clientPhone",
-    "clientPhoneNumber",
-    "customerPhone",
-    "customerPhoneNumber",
-    "cellPhone",
-    "cellPhoneNumber",
-    "clientCellPhone",
-    "customerCellPhone",
-    "mobile",
-    "mobilePhone",
-    "mobilePhoneNumber",
-    "clientMobile",
-    "customerMobile",
-    "telefono",
-    "celular",
-  ]);
-}
-
-function getAddress(record: Record<string, unknown>) {
-  return deepText(record, [
-    "address",
-    "addressLine",
-    "addressLine1",
-    "clientAddress",
-    "customerAddress",
-    "residenceAddress",
-    "homeAddress",
-    "shippingAddress",
-    "billingAddress",
-    "direccion",
-    "direccionCliente",
-    "domicilio",
   ]);
 }
 
@@ -1322,20 +992,6 @@ function getStoreName(record: Record<string, unknown>) {
   return null;
 }
 
-function getAllySlug(record: Record<string, unknown>) {
-  return deepText(record, [
-    "allySlug",
-    "allySLug",
-    "allyId",
-    "brandSlug",
-    "merchantSlug",
-  ]);
-}
-
-function getStoreSlug(record: Record<string, unknown>) {
-  return deepText(record, ["storeSlug", "shopSlug", "commerceSlug"]);
-}
-
 function getAmount(record: Record<string, unknown>) {
   return deepNumber(record, [
     "amount",
@@ -1349,120 +1005,6 @@ function getAmount(record: Record<string, unknown>) {
     "capital",
     "price",
   ]);
-}
-
-function getReportedCreditAmount(record: Record<string, unknown>) {
-  return deepNumber(record, [
-    "applicationRequestedAmount",
-    "applicationRequestedAmountWithoutDiscount",
-    "approvedValue",
-    "approvedAmount",
-    "creditAmount",
-    "loanAmount",
-    "transactionAmount",
-    "totalAmount",
-    "capital",
-    "value",
-    "valor",
-    "amount",
-  ]);
-}
-
-function amountsMatch(a: number | null, b: number | null) {
-  if (a === null || b === null) {
-    return false;
-  }
-
-  return Math.abs(Math.round(a) - Math.round(b)) <= 1;
-}
-
-function getInstallment(record: Record<string, unknown>, amount?: number | null) {
-  const exact = deepNumber(record, [
-    "installmentAmount",
-    "installmentValue",
-    "monthlyInstallment",
-    "monthlyInstallmentAmount",
-    "valorCuota",
-    "valorDeCuota",
-    "cuota",
-    "cuotaMensual",
-    "montoCuota",
-    "monthlyPayment",
-    "monthlyPaymentAmount",
-    "paymentAmount",
-  ]);
-
-  if (isInstallmentValue(exact, amount)) {
-    return exact;
-  }
-
-  return findNumberByKey(
-    record,
-    (key) =>
-      key.includes("INSTALLMENT") ||
-      key.includes("CUOTA") ||
-      key.includes("MONTHLYPAYMENT") ||
-      key.includes("MONTHLYINSTALLMENT") ||
-      key.includes("PAYMENTAMOUNT") ||
-      key.includes("PAYMENTVALUE"),
-    (value) => isInstallmentValue(value, amount)
-  );
-}
-
-function getTerm(record: Record<string, unknown>, amount?: number | null) {
-  const exact = normalizeTerm(
-    deepNumber(record, [
-    "installments",
-    "installmentsNumber",
-    "numberOfInstallments",
-    "installmentCount",
-    "numberOfPayments",
-    "term",
-    "loanTerm",
-    "termInMonths",
-    "months",
-    "plazo",
-    "numeroCuotas",
-    "numCuotas",
-    ])
-  );
-
-  if (exact !== null) {
-    return exact;
-  }
-
-  const keyed = normalizeTerm(
-    findNumberByKey(
-      record,
-      (key) =>
-        key.includes("TERM") ||
-        key.includes("PLAZO") ||
-        key.includes("INSTALLMENT") ||
-        key.includes("CUOTA") ||
-        key.includes("MONTHS") ||
-        key.includes("TERMINMONTHS") ||
-        key.includes("NUMBEROFMONTHS") ||
-        key.includes("PAYMENTPLAN") ||
-        key.includes("PLANPAGO"),
-      isTermValue
-    )
-  );
-
-  if (keyed !== null) {
-    return keyed;
-  }
-
-  const plan = amount ? findPlanArrayInfo(record, amount) : null;
-
-  return plan?.term ?? findTermInText(record);
-}
-
-function inferMonthlyInstallment(amount: number, term: number | null) {
-  if (!term || term <= 0 || term > 60) {
-    return null;
-  }
-
-  return Math.round(amount / term);
 }
 
 function getStatus(record: Record<string, unknown>) {
@@ -1483,23 +1025,6 @@ function getOrderId(record: Record<string, unknown>) {
     "transactionId",
     "id",
   ]);
-}
-
-function getTransactionId(record: Record<string, unknown>) {
-  return deepText(record, ["transactionId", "transactionID", "id"]);
-}
-
-function getLoanId(record: Record<string, unknown>) {
-  return deepText(record, [
-    "loanId",
-    "creditId",
-    "creditoId",
-    "numeroCredito",
-  ]);
-}
-
-function getApplicationId(record: Record<string, unknown>) {
-  return deepText(record, ["applicationId", "applicationID", "application"]);
 }
 
 function getCreditDate(record: Record<string, unknown>) {
@@ -1531,17 +1056,6 @@ function getRecentDateSet() {
   const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   return new Set([getDateInColombia(now), getDateInColombia(yesterday)]);
-}
-
-function shiftDateKey(dateKey: string, days: number) {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day + days));
-
-  return date.toISOString().slice(0, 10);
-}
-
-function toAddiReportDateTime(dateKey: string) {
-  return `${dateKey}T05:00:00-05:00`;
 }
 
 function parseSpanishDate(value: string) {
@@ -1664,676 +1178,6 @@ function isSuccessfulStatus(value: unknown) {
   );
 }
 
-function getAddiCandidateDetailIds(candidate: AddiCandidate) {
-  return Array.from(
-    new Set(
-      [
-        candidate.transactionId,
-        candidate.ordenId,
-        candidate.loanId,
-        candidate.applicationId,
-      ]
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-    )
-  ).slice(0, 3);
-}
-
-function getCandidateIdentityValues(candidate: AddiCandidate, documento: string) {
-  return Array.from(
-    new Set(
-      [
-        documento,
-        candidate.transactionId,
-        candidate.ordenId,
-        candidate.loanId,
-        candidate.applicationId,
-      ]
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-    )
-  );
-}
-
-function getRecordIdentityValues(record: Record<string, unknown>) {
-  return Array.from(
-    new Set(
-      [
-        getDocument(record),
-        getTransactionId(record),
-        getOrderId(record),
-        getLoanId(record),
-        getApplicationId(record),
-      ]
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-    )
-  );
-}
-
-function recordMatchesCandidate(
-  record: Record<string, unknown>,
-  candidate: AddiCandidate,
-  documento: string
-) {
-  const recordDocument = getDocument(record);
-
-  if (recordDocument && recordDocument !== documento) {
-    return false;
-  }
-
-  const candidateValues = new Set(getCandidateIdentityValues(candidate, documento));
-  const sharesId = getRecordIdentityValues(record).some((value) =>
-    candidateValues.has(value)
-  );
-
-  return Boolean(recordDocument || sharesId);
-}
-
-function recordContainsCandidate(
-  record: Record<string, unknown>,
-  candidate: AddiCandidate,
-  documento: string
-) {
-  return collectRecords(record, "candidate-scan").some((item) =>
-    recordMatchesCandidate(item.record, candidate, documento)
-  );
-}
-
-function recordLooksLikeCandidateCredit(record: Record<string, unknown>) {
-  return Boolean(
-    getTerm(record, getReportedCreditAmount(record) ?? getAmount(record)) ||
-      getInstallment(record, getReportedCreditAmount(record) ?? getAmount(record))
-  );
-}
-
-function recordLikelyCandidateDetail(
-  record: Record<string, unknown>,
-  candidate: AddiCandidate,
-  documento: string
-) {
-  const recordDocument = getDocument(record);
-
-  if (recordDocument && recordDocument !== documento) {
-    return false;
-  }
-
-  if (recordContainsCandidate(record, candidate, documento)) {
-    return true;
-  }
-
-  const reportedAmount = getReportedCreditAmount(record) ?? getAmount(record);
-
-  return (
-    recordLooksLikeCandidateCredit(record) &&
-    amountsMatch(reportedAmount, candidate.creditoAutorizado)
-  );
-}
-
-function getCandidateAllySlug(candidate: AddiCandidate) {
-  return candidate.allySlug || getAllySlug(candidate.record);
-}
-
-function buildAddiPaymentQuery(
-  params: Record<string, string | null | undefined>,
-  size = ADDI_PAYMENT_LOOKUP_PAGE_SIZE
-) {
-  const query = new URLSearchParams({
-    page: "1",
-    size: String(size),
-  });
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value) {
-      query.set(key, value);
-    }
-  }
-
-  return query.toString();
-}
-
-function buildAddiTransactionQuery(params: Record<string, string | null | undefined>) {
-  const query = new URLSearchParams({
-    limit: "5000",
-  });
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value) {
-      query.set(key, value);
-    }
-  }
-
-  return query.toString();
-}
-
-function toAddiTransactionDateTime(dateKey: string, endOfDay = false) {
-  return `${dateKey}T${endOfDay ? "23:59:59" : "00:00:00"}-05:00`;
-}
-
-function getAddiTransactionLookupRequests(
-  candidate: AddiCandidate,
-  documento: string
-) {
-  const today = getDateInColombia();
-  const startDate = shiftDateKey(today, -1);
-  const endDate = shiftDateKey(today, 1);
-  const createdAtFrom = toAddiTransactionDateTime(startDate);
-  const createdAtTo = toAddiTransactionDateTime(endDate, true);
-  const status = "APPROVED";
-  const allySlug = getCandidateAllySlug(candidate);
-  const requests: Array<{ source: string; baseUrl: string; path: string }> = [];
-  const addPair = (query: string, label: string) => {
-    requests.push(
-      {
-        source: `ally-portal-transactions-${label}`,
-        baseUrl: ADDI_PORTAL_API_BASE_URL,
-        path: `/transactions?${query}`,
-      },
-      {
-        source: `ally-portal-external-transactions-${label}`,
-        baseUrl: ADDI_PORTAL_EXTERNAL_API_BASE_URL,
-        path: `/v1/transactions?${query}`,
-      }
-    );
-  };
-
-  addPair(
-    buildAddiTransactionQuery({
-      searchField: documento,
-      createdAtFrom,
-      createdAtTo,
-      status,
-    }),
-    "document-download"
-  );
-
-  if (allySlug) {
-    addPair(
-      buildAddiTransactionQuery({
-        createdAtFrom,
-        createdAtTo,
-        status,
-        allyName: allySlug,
-      }),
-      "date-download"
-    );
-  }
-
-  return requests;
-}
-
-function getAddiPaymentLookupPaths(candidate: AddiCandidate, documento: string) {
-  const today = getDateInColombia();
-  const startDate = shiftDateKey(today, -1);
-  const endDate = shiftDateKey(today, 1);
-  const start = toAddiReportDateTime(startDate);
-  const end = toAddiReportDateTime(endDate);
-  const allySlug = getCandidateAllySlug(candidate);
-  const paths: string[] = [];
-  const directValues = getCandidateIdentityValues(candidate, documento).slice(0, 4);
-
-  for (const value of directValues) {
-    paths.push(`/allies/payments?${buildAddiPaymentQuery({ searchField: value })}`);
-  }
-
-  if (candidate.applicationId) {
-    paths.push(
-      `/allies/payments?${buildAddiPaymentQuery({
-        applicationId: candidate.applicationId,
-      })}`
-    );
-  }
-
-  if (candidate.loanId) {
-    paths.push(
-      `/allies/payments?${buildAddiPaymentQuery({ loanId: candidate.loanId })}`
-    );
-  }
-
-  paths.push(
-    `/allies/payments?${buildAddiPaymentQuery(
-      {
-        start,
-        end,
-        allyName: allySlug,
-      },
-      ADDI_PAYMENT_REPORT_PAGE_SIZE
-    )}`,
-    `/allies/payments?${buildAddiPaymentQuery(
-      {
-        paymentStart: start,
-        paymentEnd: end,
-        allyName: allySlug,
-      },
-      ADDI_PAYMENT_REPORT_PAGE_SIZE
-    )}`
-  );
-
-  return Array.from(new Set(paths)).slice(0, 8);
-}
-
-function getAddiPaymentLookupRequests(
-  candidate: AddiCandidate,
-  documento: string
-) {
-  const paths = getAddiPaymentLookupPaths(candidate, documento);
-  const requests: Array<{ source: string; path: string }> = [];
-
-  for (const path of paths) {
-    requests.push({
-      source: "ally-portal-payments",
-      path,
-    });
-
-    if (path.startsWith("/allies/payments?")) {
-      requests.push({
-        source: "ally-portal-payments-legacy",
-        path: path.replace("/allies/payments?", "/payments?"),
-      });
-    }
-  }
-
-  return requests;
-}
-
-function getPaymentIdsFromPayloads(
-  payloads: AddiPayload[],
-  candidate: AddiCandidate,
-  documento: string
-) {
-  const ids: string[] = [];
-  const fallbackIds: string[] = [];
-
-  for (const payload of payloads) {
-    const records = collectRecords(payload.data, payload.source);
-
-    for (const { record } of records) {
-      const id = deepText(record, [
-        "paymentId",
-        "paymentID",
-        "paymentUuid",
-        "id",
-      ]);
-
-      if (!id) {
-        continue;
-      }
-
-      if (recordMatchesCandidate(record, candidate, documento)) {
-        ids.push(id);
-        continue;
-      }
-
-      if (recordContainsCandidate(record, candidate, documento)) {
-        ids.push(id);
-      } else {
-        fallbackIds.push(id);
-      }
-    }
-  }
-
-  const selectedIds = ids.length > 0 ? ids : fallbackIds;
-
-  return Array.from(new Set(selectedIds)).slice(0, ids.length > 0 ? 6 : 3);
-}
-
-async function fetchAddiPaymentPayloads(
-  session: AddiSession,
-  candidate: AddiCandidate,
-  documento: string,
-  traces: AddiRequestTrace[]
-) {
-  const lookupRequests = getAddiPaymentLookupRequests(candidate, documento);
-  const paymentListRequests: Array<Promise<AddiPayload | null>> =
-    lookupRequests.map(async (request) => {
-      try {
-        const data = await getProtectedJson(
-          ADDI_PORTAL_API_BASE_URL,
-          session,
-          request.path,
-          6000
-        );
-
-        if (!data) {
-          traceAddiRequest(traces, request, "empty");
-          return null;
-        }
-
-        traceAddiRequest(traces, request, "ok", data);
-        return {
-          source: request.source,
-          data,
-        };
-      } catch (error) {
-        traceAddiRequest(traces, request, "error", undefined, error);
-        return null;
-      }
-    });
-  const paymentListResults = await Promise.allSettled(paymentListRequests);
-  const payloads = paymentListResults
-    .filter(
-      (result): result is PromiseFulfilledResult<AddiPayload | null> =>
-        result.status === "fulfilled"
-    )
-    .map((result) => result.value)
-    .filter((payload): payload is AddiPayload => Boolean(payload));
-  const paymentIds = getPaymentIdsFromPayloads(payloads, candidate, documento);
-  const paymentDetailRequests: Array<Promise<AddiPayload | null>> =
-    paymentIds.flatMap((paymentId) => {
-      const encodedPaymentId = encodeURIComponent(paymentId);
-
-      return [
-        {
-          source: "ally-portal-payment-detail",
-          path: `/allies/payments/${encodedPaymentId}`,
-        },
-        {
-          source: "ally-portal-payment-detail-legacy",
-          path: `/payments/${encodedPaymentId}`,
-        },
-      ].map(async (request) => {
-        try {
-          const data = await getProtectedJson(
-            ADDI_PORTAL_API_BASE_URL,
-            session,
-            request.path,
-            6000
-          );
-
-          if (!data) {
-            traceAddiRequest(traces, request, "empty");
-            return null;
-          }
-
-          traceAddiRequest(traces, request, "ok", data);
-          return {
-            source: request.source,
-            data,
-          };
-        } catch (error) {
-          traceAddiRequest(traces, request, "error", undefined, error);
-          return null;
-        }
-      });
-    });
-  const consolidateRequest =
-    paymentIds.length > 0
-      ? (async () => {
-          const request = {
-            source: "ally-portal-payments-consolidate",
-            path: "/payments/reports/consolidate",
-          };
-
-          try {
-            const data = await postProtectedJson(
-              ADDI_PORTAL_API_BASE_URL,
-              session,
-              request.path,
-              { paymentIds },
-              8000
-            );
-
-            if (!data) {
-              traceAddiRequest(traces, request, "empty");
-              return null;
-            }
-
-            traceAddiRequest(traces, request, "ok", data);
-            return {
-              source: request.source,
-              data,
-            } satisfies AddiPayload;
-          } catch (error) {
-            traceAddiRequest(traces, request, "error", undefined, error);
-            return null;
-          }
-        })()
-      : Promise.resolve(null);
-  const [paymentDetailResults, consolidateResult] = await Promise.all([
-    Promise.allSettled(paymentDetailRequests),
-    consolidateRequest.catch(() => null),
-  ]);
-
-  return [
-    ...payloads,
-    ...paymentDetailResults
-      .filter(
-        (result): result is PromiseFulfilledResult<AddiPayload | null> =>
-          result.status === "fulfilled"
-      )
-      .map((result) => result.value)
-      .filter((payload): payload is AddiPayload => Boolean(payload)),
-    ...(consolidateResult ? [consolidateResult] : []),
-  ];
-}
-
-async function fetchAddiTransactionPayloads(
-  session: AddiSession,
-  candidate: AddiCandidate,
-  documento: string,
-  traces: AddiRequestTrace[]
-) {
-  const requests = getAddiTransactionLookupRequests(candidate, documento);
-  const transactionRequests: Array<Promise<AddiPayload | null>> = requests.map(
-    async (request) => {
-      try {
-        const data = await getProtectedJson(
-          request.baseUrl,
-          session,
-          request.path,
-          7000
-        );
-
-        if (!data) {
-          traceAddiRequest(traces, request, "empty");
-          return null;
-        }
-
-        traceAddiRequest(traces, request, "ok", data);
-        return {
-          source: request.source,
-          data,
-        } satisfies AddiPayload;
-      } catch (error) {
-        traceAddiRequest(traces, request, "error", undefined, error);
-        return null;
-      }
-    }
-  );
-  const results = await Promise.allSettled(transactionRequests);
-
-  return results
-    .filter(
-      (result): result is PromiseFulfilledResult<AddiPayload | null> =>
-        result.status === "fulfilled"
-    )
-    .map((result) => result.value)
-    .filter((payload): payload is AddiPayload => Boolean(payload));
-}
-
-async function fetchAddiCandidateDetailPayloads(
-  session: AddiSession,
-  candidate: AddiCandidate,
-  documento: string
-) {
-  if (candidate.numeroCuotas && candidate.valorCuota) {
-    return { payloads: [], traces: [] };
-  }
-
-  const payloads: AddiPayload[] = [];
-  const traces: AddiRequestTrace[] = [];
-  const ids = getAddiCandidateDetailIds(candidate);
-  const requests: Array<{
-    source: string;
-    baseUrl: string;
-    path: string;
-    timeoutMs: number;
-    wrapData?: (data: unknown) => unknown;
-  }> = [];
-
-  for (const id of ids) {
-    const encoded = encodeURIComponent(id);
-
-    requests.push(
-      {
-        source: "ally-portal-transaction-detail",
-        baseUrl: ADDI_PORTAL_API_BASE_URL,
-        path: `/transactions/${encoded}`,
-        timeoutMs: 7000,
-      },
-      {
-        source: "ally-portal-external-transaction-detail",
-        baseUrl: ADDI_PORTAL_EXTERNAL_API_BASE_URL,
-        path: `/v1/transactions/${encoded}`,
-        timeoutMs: 7000,
-      }
-    );
-  }
-
-  const applicationId = candidate.applicationId || candidate.ordenId;
-  const allySlug = getCandidateAllySlug(candidate);
-
-  if (applicationId && allySlug) {
-    const query = new URLSearchParams({
-      applicationId,
-      allySlug,
-    });
-
-    requests.push({
-      source: "ally-portal-external-balance",
-      baseUrl: ADDI_PORTAL_EXTERNAL_API_BASE_URL,
-      path: `/v1/balance?${query.toString()}`,
-      timeoutMs: 7000,
-      wrapData: (balance) => ({
-        applicationId,
-        allySlug,
-        balance,
-      }),
-    });
-  }
-
-  if (allySlug) {
-    requests.push({
-      source: "addi-paylink-contact-info",
-      baseUrl: getAddiPaylinkBaseUrl(),
-      path: `/payment-links/customers/${encodeURIComponent(
-        allySlug
-      )}/${encodeURIComponent(documento)}/contact-info`,
-      timeoutMs: 7000,
-      wrapData: (contact) =>
-        isRecord(contact)
-          ? {
-              nationalIdNumber: documento,
-              allySlug,
-              ...contact,
-            }
-          : {
-              nationalIdNumber: documento,
-              allySlug,
-              contact,
-            },
-    });
-  }
-
-  const [detailResults, transactionPayloads, paymentPayloads] = await Promise.all([
-    Promise.allSettled(
-      requests.map(async (request) => {
-        try {
-          const data = await getProtectedJson(
-            request.baseUrl,
-            session,
-            request.path,
-            request.timeoutMs
-          );
-
-          if (!data) {
-            traceAddiRequest(traces, request, "empty");
-            return null;
-          }
-
-          const wrappedData = request.wrapData ? request.wrapData(data) : data;
-          traceAddiRequest(traces, request, "ok", wrappedData);
-          return {
-            source: request.source,
-            data: wrappedData,
-          } satisfies AddiPayload;
-        } catch (error) {
-          traceAddiRequest(traces, request, "error", undefined, error);
-          return null;
-        }
-      })
-    ),
-    fetchAddiTransactionPayloads(session, candidate, documento, traces),
-    fetchAddiPaymentPayloads(session, candidate, documento, traces),
-  ]);
-
-  for (const result of detailResults) {
-    if (result.status === "fulfilled" && result.value) {
-      payloads.push(result.value);
-    }
-  }
-
-  payloads.push(...transactionPayloads);
-  payloads.push(...paymentPayloads);
-
-  return { payloads, traces };
-}
-
-function mergeCandidateDetails(
-  candidate: AddiCandidate,
-  payloads: AddiPayload[],
-  documento: string
-) {
-  if (payloads.length === 0) {
-    return candidate;
-  }
-
-  const allRecords = payloads.flatMap((payload) =>
-    collectRecords(payload.data, payload.source)
-  );
-  let merged = { ...candidate };
-
-  for (const { record } of allRecords) {
-    if (
-      !recordMatchesCandidate(record, candidate, documento) &&
-      !recordLikelyCandidateDetail(record, candidate, documento)
-    ) {
-      continue;
-    }
-
-    const amount =
-      getReportedCreditAmount(record) ??
-      getAmount(record) ??
-      candidate.creditoAutorizado;
-    const plan = findPlanArrayInfo(record, amount);
-    const numeroCuotas =
-      candidate.numeroCuotas ?? plan?.term ?? getTerm(record, amount);
-    const valorCuota =
-      candidate.valorCuota ??
-      plan?.installment ??
-      getInstallment(record, amount) ??
-      inferMonthlyInstallment(candidate.creditoAutorizado, numeroCuotas);
-
-    merged = {
-      ...merged,
-      clienteNombre: merged.clienteNombre ?? getClientName(record),
-      correoElectronico: merged.correoElectronico ?? getEmail(record),
-      telefonoCliente: merged.telefonoCliente ?? getPhone(record),
-      direccionCliente: merged.direccionCliente ?? getAddress(record),
-      allySlug: merged.allySlug ?? getAllySlug(record),
-      storeSlug: merged.storeSlug ?? getStoreSlug(record),
-      numeroCuotas,
-      valorCuota,
-    };
-
-    if (merged.numeroCuotas && merged.valorCuota) {
-      return merged;
-    }
-  }
-
-  return merged;
-}
-
 function buildCandidates(payloads: AddiPayload[], documento: string) {
   const candidates: AddiCandidate[] = [];
 
@@ -2355,30 +1199,21 @@ function buildCandidates(payloads: AddiPayload[], documento: string) {
 
       const fechaCreacionCredito = getCreditDate(record);
       const parsedDate = parseCreditDate(fechaCreacionCredito);
-      const numeroCuotas = getTerm(record, creditoAutorizado);
-      const valorCuota =
-        getInstallment(record, creditoAutorizado) ??
-        inferMonthlyInstallment(creditoAutorizado, numeroCuotas);
 
       candidates.push({
         record,
         source,
         clienteNombre: getClientName(record),
-        correoElectronico: getEmail(record),
-        telefonoCliente: getPhone(record),
-        direccionCliente: getAddress(record),
+        correoElectronico: null,
+        telefonoCliente: null,
+        direccionCliente: null,
         fechaCreacionCredito: parsedDate.dateKey || fechaCreacionCredito,
         puntoCredito: getStoreName(record),
         creditoAutorizado,
-        numeroCuotas,
-        valorCuota,
+        numeroCuotas: null,
+        valorCuota: null,
         estado: getStatus(record),
         ordenId: getOrderId(record),
-        transactionId: getTransactionId(record),
-        loanId: getLoanId(record),
-        applicationId: getApplicationId(record),
-        allySlug: getAllySlug(record),
-        storeSlug: getStoreSlug(record),
         sortTime: parsedDate.sortTime,
       });
     }
@@ -2395,57 +1230,6 @@ function describeCandidates(candidates: AddiCandidate[]) {
     puntoCredito: candidate.puntoCredito,
     creditoAutorizado: candidate.creditoAutorizado,
   }));
-}
-
-function getRelevantDebugKeys(record: Record<string, unknown>) {
-  return Object.keys(record)
-    .filter((key) => {
-      const normalized = normalizeKey(key);
-
-      return (
-        normalized.includes("AMOUNT") ||
-        normalized.includes("APPLICATION") ||
-        normalized.includes("ADDRESS") ||
-        normalized.includes("BALANCE") ||
-        normalized.includes("CUOTA") ||
-        normalized.includes("DIRECCION") ||
-        normalized.includes("EMAIL") ||
-        normalized.includes("INSTALLMENT") ||
-        normalized.includes("LOAN") ||
-        normalized.includes("MONTH") ||
-        normalized.includes("PAYMENT") ||
-        normalized.includes("PHONE") ||
-        normalized.includes("PLAN") ||
-        normalized.includes("PLAZO") ||
-        normalized.includes("TERM") ||
-        normalized.includes("VALUE") ||
-        normalized.includes("VALOR")
-      );
-    })
-    .slice(0, 25);
-}
-
-function describeDetailPayloads(
-  payloads: AddiPayload[],
-  candidate: AddiCandidate,
-  documento: string
-) {
-  return payloads.map((payload) => {
-    const records = collectRecords(payload.data, payload.source);
-    const matchedRecords = records.filter((item) =>
-      recordMatchesCandidate(item.record, candidate, documento)
-    );
-    const relevantKeys = Array.from(
-      new Set(matchedRecords.flatMap((item) => getRelevantDebugKeys(item.record)))
-    ).slice(0, 30);
-
-    return {
-      source: payload.source,
-      records: records.length,
-      matchedRecords: matchedRecords.length,
-      relevantKeys,
-    };
-  });
 }
 
 export function isAddiConsultaConfigured() {
@@ -2546,55 +1330,22 @@ export async function obtenerCreditoAddiPorCedula(
     return null;
   }
 
-  const detailLookup = await fetchAddiCandidateDetailPayloads(
-    session,
-    selectedCandidate,
-    documento
-  );
-  const detailPayloads = detailLookup.payloads;
-  const enrichedCandidate = mergeCandidateDetails(
-    selectedCandidate,
-    detailPayloads,
-    documento
-  );
-
-  if (!enrichedCandidate.numeroCuotas || !enrichedCandidate.valorCuota) {
-    console.info("ADDI credito sin cuota o plazo en payloads consultados", {
-      documento: maskDocumento(documento),
-      origen: enrichedCandidate.source,
-      contexto: {
-        idsDetalle: getAddiCandidateDetailIds(selectedCandidate).length,
-        tieneApplicationId: Boolean(selectedCandidate.applicationId),
-        tieneLoanId: Boolean(selectedCandidate.loanId),
-        tieneOrdenId: Boolean(selectedCandidate.ordenId),
-        tieneTransactionId: Boolean(selectedCandidate.transactionId),
-        tieneAllySlug: Boolean(getCandidateAllySlug(selectedCandidate)),
-      },
-      intentos: detailLookup.traces,
-      fuentes: describeDetailPayloads(
-        detailPayloads,
-        selectedCandidate,
-        documento
-      ),
-    });
-  }
-
   return {
     documento,
     financiera: "ADDI",
-    clienteNombre: enrichedCandidate.clienteNombre,
-    correoElectronico: enrichedCandidate.correoElectronico,
-    telefonoCliente: enrichedCandidate.telefonoCliente,
-    direccionCliente: enrichedCandidate.direccionCliente,
-    fechaCreacionCredito: enrichedCandidate.fechaCreacionCredito,
-    puntoCredito: enrichedCandidate.puntoCredito,
-    creditoAutorizado: enrichedCandidate.creditoAutorizado,
-    numeroCuotas: enrichedCandidate.numeroCuotas,
-    valorCuota: enrichedCandidate.valorCuota,
-    frecuenciaCuota: "MENSUAL",
+    clienteNombre: selectedCandidate.clienteNombre,
+    correoElectronico: null,
+    telefonoCliente: null,
+    direccionCliente: null,
+    fechaCreacionCredito: selectedCandidate.fechaCreacionCredito,
+    puntoCredito: selectedCandidate.puntoCredito,
+    creditoAutorizado: selectedCandidate.creditoAutorizado,
+    numeroCuotas: null,
+    valorCuota: null,
+    frecuenciaCuota: null,
     encontradoEnAddi: true,
-    estado: enrichedCandidate.estado,
-    ordenId: enrichedCandidate.ordenId,
-    origen: enrichedCandidate.source,
+    estado: selectedCandidate.estado,
+    ordenId: selectedCandidate.ordenId,
+    origen: selectedCandidate.source,
   };
 }
