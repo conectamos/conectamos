@@ -22,9 +22,10 @@ type DownloadCandidate = {
 };
 
 type MatrixCell = string | number | boolean | Date | null | undefined;
+type ReportSource = Buffer | string;
 
 type CachedReport = {
-  buffer: Buffer;
+  source: ReportSource;
   expiresAt: number;
 };
 
@@ -80,6 +81,12 @@ function normalizeKey(value: unknown) {
 
 function visibleText(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function isHtmlResponse(buffer: Buffer) {
+  return /^\s*<!doctype html|^\s*<html/i.test(
+    buffer.subarray(0, 300).toString("utf8")
+  );
 }
 
 function parseAmount(value: unknown) {
@@ -547,6 +554,26 @@ function findDownloadCandidates(
   return candidates.sort((a, b) => b.score - a.score);
 }
 
+function describeDownloadCandidate(candidate: DownloadCandidate) {
+  try {
+    const url = new URL(candidate.url);
+
+    return {
+      path: url.pathname,
+      queryKeys: Array.from(url.searchParams.keys()).sort(),
+      method: candidate.method || "GET",
+      score: candidate.score,
+    };
+  } catch {
+    return {
+      path: candidate.url.slice(0, 80),
+      queryKeys: [],
+      method: candidate.method || "GET",
+      score: candidate.score,
+    };
+  }
+}
+
 function chooseConsultForm(forms: HtmlForm[]) {
   return (
     forms.find((form) => {
@@ -665,54 +692,85 @@ async function fetchReportBufferFromUrl(
 
 async function downloadFirstReport() {
   if (cachedReport && cachedReport.expiresAt > Date.now()) {
-    return cachedReport.buffer;
+    return cachedReport.source;
   }
 
   const session = await loginAlo();
   const reportsPage = await getConsultedReportsPage(session.jar, session.reportUrl);
-  const candidates = findDownloadCandidates(reportsPage.text, reportsPage.url);
+  let candidates = findDownloadCandidates(reportsPage.text, reportsPage.url);
 
   if (candidates.length === 0) {
-    throw new AloConsultaLookupError(
-      "No se encontro el enlace de descarga del primer reporte de ALO CREDIT."
-    );
+    console.info("ALO CREDIT sin candidatos de descarga; se intentara leer HTML", {
+      reportPath: new URL(reportsPage.url).pathname,
+      forms: parseForms(reportsPage.text, reportsPage.url).length,
+      rows: firstTableRows(reportsPage.text, 10).length,
+    });
+    cachedReport = {
+      source: reportsPage.text,
+      expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
+    };
+
+    return reportsPage.text;
   }
 
-  let buffer = await fetchReportBufferFromUrl(
-    session.jar,
-    candidates[0],
-    reportsPage.url
-  );
-  const asText = buffer.subarray(0, 300).toString("utf8");
+  console.info("ALO CREDIT candidatos de descarga", {
+    candidatos: candidates.slice(0, 5).map(describeDownloadCandidate),
+  });
 
-  if (/^\s*<!doctype html|^\s*<html/i.test(asText)) {
-    const nested = findDownloadCandidates(buffer.toString("utf8"), candidates[0].url);
-    if (nested.length > 0) {
-      buffer = await fetchReportBufferFromUrl(
-        session.jar,
-        nested[0],
-        candidates[0].url
-      );
+  let referer = reportsPage.url;
+  let lastHtml = reportsPage.text;
+
+  for (let depth = 0; depth < 4; depth++) {
+    const candidate = candidates[0];
+    const buffer = await fetchReportBufferFromUrl(session.jar, candidate, referer);
+
+    if (!isHtmlResponse(buffer)) {
+      cachedReport = {
+        source: buffer,
+        expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
+      };
+
+      return buffer;
+    }
+
+    lastHtml = buffer.toString("utf8");
+    referer = candidate.url;
+    candidates = findDownloadCandidates(lastHtml, referer);
+
+    console.info("ALO CREDIT descarga devolvio HTML", {
+      intento: depth + 1,
+      origen: describeDownloadCandidate(candidate),
+      candidatos: candidates.slice(0, 5).map(describeDownloadCandidate),
+      filas: firstTableRows(lastHtml, 10).length,
+    });
+
+    if (candidates.length === 0) {
+      cachedReport = {
+        source: lastHtml,
+        expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
+      };
+
+      return lastHtml;
     }
   }
 
-  if (/^\s*<!doctype html|^\s*<html/i.test(buffer.subarray(0, 300).toString("utf8"))) {
+  if (!lastHtml || looksLikeLoginPage(lastHtml)) {
     throw new AloConsultaLookupError(
-      "ALO CREDIT no devolvio un archivo Excel al descargar el reporte."
+      "ALO CREDIT no devolvio un reporte valido despues de descargar."
     );
   }
 
   cachedReport = {
-    buffer,
+    source: lastHtml,
     expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
   };
 
-  return buffer;
+  return lastHtml;
 }
 
-function readWorkbookMatrix(buffer: Buffer) {
-  const workbook = XLSX.read(buffer, {
-    type: "buffer",
+function readWorkbookMatrix(source: ReportSource) {
+  const workbook = XLSX.read(source, {
+    type: Buffer.isBuffer(source) ? "buffer" : "string",
     cellDates: false,
     raw: false,
   });
@@ -821,13 +879,33 @@ function findPhone(row: MatrixCell[], documento: string | null, imei: string) {
 }
 
 function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, imei: string) {
-  const creditoAutorizado = parseAmount(getCell(row, 10));
+  const creditoAutorizado =
+    parseAmount(
+      getByHeader(
+        row,
+        headerRow,
+        (key) =>
+          key.includes("MONTOTOTAL") ||
+          (key.includes("MONTO") && key.includes("TOTAL")) ||
+          key.includes("VALORTOTAL")
+      )
+    ) ?? parseAmount(getCell(row, 10));
 
   if (creditoAutorizado === null || creditoAutorizado <= 0) {
     return null;
   }
 
-  const accesorios = parseAmount(getCell(row, 8));
+  const accesorios =
+    parseAmount(
+      getByHeader(
+        row,
+        headerRow,
+        (key) =>
+          key.includes("ACCESORIO") ||
+          key.includes("SUMAPRECIOACCESORIOS") ||
+          (key.includes("PRECIO") && key.includes("ACCESORIO"))
+      )
+    ) ?? parseAmount(getCell(row, 8));
   const documento = normalizeImei(
     getByHeader(
       row,
@@ -902,8 +980,10 @@ function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, 
   } satisfies AloCreditoImei;
 }
 
-function findCreditoInWorkbook(buffer: Buffer, imei: string) {
-  for (const { matrix } of readWorkbookMatrix(buffer)) {
+function findCreditoInWorkbook(source: ReportSource, imei: string) {
+  const matrices = readWorkbookMatrix(source);
+
+  for (const { matrix } of matrices) {
     for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
       const row = matrix[rowIndex] || [];
 
@@ -922,6 +1002,19 @@ function findCreditoInWorkbook(buffer: Buffer, imei: string) {
       }
     }
   }
+
+  console.info("ALO CREDIT reporte leido sin coincidencia de IMEI", {
+    imei: `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}`,
+    fuente: Buffer.isBuffer(source) ? "archivo" : "html",
+    hojas: matrices.slice(0, 5).map(({ sheetName, matrix }) => ({
+      sheetName,
+      filas: matrix.length,
+      columnas: matrix.reduce(
+        (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
+        0
+      ),
+    })),
+  });
 
   return null;
 }
