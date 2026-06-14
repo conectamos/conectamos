@@ -1667,18 +1667,16 @@ export default function VendedorRegistroWorkspace({
       );
       const data = (await response.json()) as PayJoyCreditoResponse;
 
-      if (!response.ok || !data.credito) {
+      if (response.ok && data.credito) {
+        aplicarCreditoPayjoyPrincipal(data.credito);
+        setFormMessage(
+          `Este IMEI esta activo en PAYJOY. Se selecciono PAYJOY automaticamente por ${formatMoney(
+            data.credito.creditoAutorizado
+          )}.`,
+          "success"
+        );
         return;
       }
-
-      aplicarCreditoPayjoyPrincipal(data.credito);
-      setFormMessage(
-        `Este IMEI esta activo en PAYJOY. Se selecciono PAYJOY automaticamente por ${formatMoney(
-          data.credito.creditoAutorizado
-        )}.`,
-        "success"
-      );
-      return;
     } catch {
     } finally {
       setConsultandoPayjoyIndex(null);
