@@ -168,6 +168,14 @@ function getCredentials() {
   return { usuario, clave };
 }
 
+function formatSumasDate(date = new Date()) {
+  return new Intl.DateTimeFormat("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
 function evpBytesToKey(password: Buffer, salt: Buffer) {
   const targetLength = 32 + 16;
   const chunks: Buffer[] = [];
@@ -355,14 +363,17 @@ async function loginSumas(): Promise<SumasSession> {
 async function tryProtectedJson(
   apiBaseUrl: string,
   accessToken: string,
-  path: string
+  path: string,
+  init?: RequestInit
 ) {
   try {
     const payload = await requestJson(
       joinUrl(apiBaseUrl, path),
       {
+        ...(init || {}),
         headers: {
           Authorization: `Bearer ${accessToken}`,
+          ...(init?.headers || {}),
         },
       },
       { allowNotFound: true }
@@ -632,7 +643,7 @@ function getInstallmentValue(record: Record<string, unknown>) {
 }
 
 function getTerm(record: Record<string, unknown>) {
-  const direct = directNumber(record, [
+  const keys = [
     "numeroCuotas",
     "numberOfRepayments",
     "numberOfInstallments",
@@ -640,7 +651,8 @@ function getTerm(record: Record<string, unknown>) {
     "term",
     "quota",
     "loanTermFrequency",
-  ]);
+  ];
+  const direct = directNumber(record, keys) ?? deepNumber(record, keys);
 
   if (direct !== null) {
     return Math.round(direct);
@@ -655,7 +667,11 @@ function getTerm(record: Record<string, unknown>) {
 
 function getCreditAmount(record: Record<string, unknown>, source: string) {
   const sourceSpecificKeys =
-    source === "list-credit-y2" ? ["value", "ammount"] : [];
+    source === "list-credit-y2" ||
+    source === "client-pos" ||
+    source.startsWith("client-credit-")
+      ? ["value", "ammount"]
+      : [];
 
   return (
     directNumber(record, [
@@ -694,6 +710,8 @@ function getClientName(...values: unknown[]) {
       "fullname",
       "completeName",
       "nombreCompleto",
+      "full_name",
+      "razonSocial",
     ]);
 
     if (byKey) {
@@ -704,11 +722,17 @@ function getClientName(...values: unknown[]) {
       const parts = [
         value.firstname,
         value.firstName,
+        value.first_name,
         value.name,
+        value.secondName,
+        value.second_name,
         value.lastname,
         value.lastName,
+        value.firstSurname,
+        value.first_surname,
         value.surname,
         value.secondSurname,
+        value.second_surname,
       ]
         .map((item) => String(item || "").trim())
         .filter(Boolean);
@@ -720,6 +744,14 @@ function getClientName(...values: unknown[]) {
   }
 
   return null;
+}
+
+function acceptsAmountOnlyCandidate(source: string) {
+  return (
+    source === "client-pos" ||
+    source === "list-credit-y2" ||
+    source.startsWith("client-credit-")
+  );
 }
 
 function buildCandidates(payloads: SumasPayload[]) {
@@ -736,7 +768,11 @@ function buildCandidates(payloads: SumasPayload[]) {
       const numeroCuotas = getTerm(record);
       const valorCuota = getInstallmentValue(record);
 
-      if (numeroCuotas === null && valorCuota === null) {
+      if (
+        numeroCuotas === null &&
+        valorCuota === null &&
+        !acceptsAmountOnlyCandidate(source)
+      ) {
         continue;
       }
 
@@ -790,6 +826,81 @@ function getId(value: unknown) {
   return id === null ? null : String(Math.round(id));
 }
 
+function getDeepId(value: unknown, keys: string[]) {
+  const id = deepNumber(value, keys);
+  return id === null ? null : String(Math.round(id));
+}
+
+function getStoreCode(value: unknown) {
+  if (isRecord(value) && isRecord(value.store)) {
+    const direct = deepString(value.store, ["code", "codigo", "storeCode"]);
+    if (direct) {
+      return direct;
+    }
+  }
+
+  return deepString(value, [
+    "pointOfSalesCode",
+    "storeCode",
+    "codigoTienda",
+    "codigo",
+    "code",
+  ]);
+}
+
+async function enrichCandidateWithPlan(
+  session: SumasSession,
+  documento: string,
+  candidate: Candidate,
+  clientId: string | null
+): Promise<Candidate> {
+  if (candidate.valorCuota !== null || candidate.numeroCuotas === null || !clientId) {
+    return candidate;
+  }
+
+  const storeCode = getStoreCode(session.currentUser);
+
+  if (!storeCode) {
+    return candidate;
+  }
+
+  const planPayload = await tryProtectedJson(
+    session.apiBaseUrl,
+    session.accessToken,
+    `service-credit/manage/pay/plan/${encodeURIComponent(clientId)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        clientDocumentId: Number(documento),
+        pointOfSalesCode: Number(storeCode),
+        requestedDate: formatSumasDate(),
+        amount: candidate.creditoAutorizado,
+        term: candidate.numeroCuotas,
+        dateFormat: "dd/MM/yyyy",
+        locale: "es",
+      }),
+    }
+  );
+
+  if (!planPayload) {
+    return candidate;
+  }
+
+  const valorCuota = getInstallmentValue(
+    isRecord(planPayload) ? planPayload : { planPayload }
+  );
+
+  return valorCuota === null
+    ? candidate
+    : {
+        ...candidate,
+        valorCuota,
+      };
+}
+
 export function isSumasConsultaConfigured() {
   return Boolean(
     String(process.env.SUMASCONSULTA_URL || "").trim() &&
@@ -820,6 +931,16 @@ export async function obtenerCreditoSumasPayPorCedula(
 
   if (listCreditY2) {
     payloads.push({ source: "list-credit-y2", data: listCreditY2 });
+  }
+
+  const clientPos = await tryProtectedJson(
+    session.apiBaseUrl,
+    session.accessToken,
+    `service-credit/manage/client/pos/${encodeURIComponent(documento)}`
+  );
+
+  if (clientPos) {
+    payloads.push({ source: "client-pos", data: clientPos });
   }
 
   const creditPointParams = new URLSearchParams({
@@ -878,7 +999,11 @@ export async function obtenerCreditoSumasPayPorCedula(
     payloads.push({ source: "client-online", data: clientOnline });
   }
 
-  const clientId = getId(clientSecure) || getId(clientOnline);
+  const clientId =
+    getId(clientSecure) ||
+    getId(clientOnline) ||
+    getId(clientPos) ||
+    getDeepId(clientPos, ["clientId"]);
 
   if (clientId) {
     const accounts = await tryProtectedJson(
@@ -920,10 +1045,10 @@ export async function obtenerCreditoSumasPayPorCedula(
     creadoConConectamos:
       candidate.creadoConConectamos || currentUserConectamos,
   }));
-  const candidate =
+  const selectedCandidate =
     candidates.find((item) => item.creadoConConectamos) || candidates[0];
 
-  if (!candidate) {
+  if (!selectedCandidate) {
     console.info("SUMASPAY consulta sin candidato", {
       documento: maskDocumento(documento),
       currentUserConectamos,
@@ -933,10 +1058,22 @@ export async function obtenerCreditoSumasPayPorCedula(
     return null;
   }
 
+  const candidate = await enrichCandidateWithPlan(
+    session,
+    documento,
+    selectedCandidate,
+    clientId
+  );
+
   return {
     documento,
     financiera: "SUMASPAY",
-    clienteNombre: getClientName(clientSecure, clientOnline, candidate.record),
+    clienteNombre: getClientName(
+      clientSecure,
+      clientOnline,
+      clientPos,
+      candidate.record
+    ),
     creditoAutorizado: candidate.creditoAutorizado,
     numeroCuotas: candidate.numeroCuotas,
     valorCuota: candidate.valorCuota,
