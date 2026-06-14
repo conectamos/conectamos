@@ -7,6 +7,8 @@ import {
 
 const SUMAS_SECRET_KEY = "cGFzc3dvcmRfc2VjcmV0X3N1bWFzX3BhcmFfdGk=";
 const DEFAULT_FRECUENCIA_CUOTA = "MENSUAL";
+const CONECTAMOS_STORE_NAME = "CONECTAMOS";
+const CONECTAMOS_STORE_WILDCARD = "*CONECTAMOS*";
 
 export type SumasPayCreditoCedula = {
   documento: string;
@@ -339,8 +341,8 @@ async function loginSumas(): Promise<SumasSession> {
     "service-user/users/me"
   );
   const scopedToConectamos =
-    containsText(loginPayload, "CONECTAMOS") ||
-    containsText(currentUser, "CONECTAMOS");
+    containsText(loginPayload, CONECTAMOS_STORE_NAME) ||
+    containsText(currentUser, CONECTAMOS_STORE_NAME);
 
   return {
     apiBaseUrl,
@@ -744,7 +746,7 @@ function buildCandidates(payloads: SumasPayload[]) {
         creditoAutorizado,
         numeroCuotas,
         valorCuota,
-        creadoConConectamos: containsText(record, "CONECTAMOS"),
+        creadoConConectamos: containsText(record, CONECTAMOS_STORE_NAME),
         activeScore: getStatusScore(record),
       });
     }
@@ -820,6 +822,40 @@ export async function obtenerCreditoSumasPayPorCedula(
     payloads.push({ source: "list-credit-y2", data: listCreditY2 });
   }
 
+  const creditPointParams = new URLSearchParams({
+    identification: documento,
+    creditPoint: CONECTAMOS_STORE_WILDCARD,
+  });
+  const creditsByConectamosPoint = await tryProtectedJson(
+    session.apiBaseUrl,
+    session.accessToken,
+    `service-credit/manage/core-bridge/client-credit?${creditPointParams.toString()}`
+  );
+
+  if (creditsByConectamosPoint) {
+    payloads.push({
+      source: "client-credit-point-conectamos",
+      data: creditsByConectamosPoint,
+    });
+  }
+
+  const companyParams = new URLSearchParams({
+    identification: documento,
+    company: CONECTAMOS_STORE_WILDCARD,
+  });
+  const creditsByConectamosCompany = await tryProtectedJson(
+    session.apiBaseUrl,
+    session.accessToken,
+    `service-credit/manage/core-bridge/client-credit?${companyParams.toString()}`
+  );
+
+  if (creditsByConectamosCompany) {
+    payloads.push({
+      source: "client-credit-company-conectamos",
+      data: creditsByConectamosCompany,
+    });
+  }
+
   const clientSecure = await tryProtectedJson(
     session.apiBaseUrl,
     session.accessToken,
@@ -878,7 +914,7 @@ export async function obtenerCreditoSumasPayPorCedula(
 
   const currentUserConectamos =
     session.scopedToConectamos ||
-    containsText(session.currentUser, "CONECTAMOS");
+    containsText(session.currentUser, CONECTAMOS_STORE_NAME);
   const candidates = buildCandidates(payloads).map((candidate) => ({
     ...candidate,
     creadoConConectamos:
