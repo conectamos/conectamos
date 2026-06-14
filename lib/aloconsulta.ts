@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 
 const ALO_DEFAULT_REPORT_URL = "https://consola.alocredit.co/admin_reportes";
 const ALO_LOGIN_PATH = "/login";
+const ALO_REPORT_PATH = "/admin_reportes";
 const ALO_REPORT_CACHE_MS = 60_000;
 const COLOMBIA_CURRENCY = "COP";
 
@@ -162,17 +163,22 @@ function getCredentials() {
     );
   }
 
-  let reportUrl: URL;
+  let configuredUrl: URL;
 
   try {
-    reportUrl = new URL(url);
+    configuredUrl = new URL(url);
   } catch {
     throw new AloConsultaConfigError("ALOCONSULTA_URL no es una URL valida.");
   }
 
+  const reportUrl =
+    configuredUrl.pathname.replace(/\/+$/, "") === ALO_REPORT_PATH
+      ? configuredUrl
+      : new URL(ALO_REPORT_PATH, configuredUrl.origin);
+
   return {
     reportUrl,
-    loginUrl: new URL(ALO_LOGIN_PATH, reportUrl.origin),
+    loginUrl: new URL(ALO_LOGIN_PATH, configuredUrl.origin),
     usuario,
     clave,
   };
@@ -811,6 +817,103 @@ function findDownloadCandidates(
   );
 }
 
+function htmlRowText(row: string) {
+  return normalizeText(row.replace(/<[^>]*>/g, " "));
+}
+
+function looksLikeWeeklyReportRow(row: string) {
+  const text = htmlRowText(row);
+  const dateMatches = text.match(/\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b/g) ?? [];
+
+  return text.includes("DESCARG") && dateMatches.length >= 2;
+}
+
+function extractRowDates(row: string) {
+  return htmlRowText(row).match(/\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b/g)?.slice(0, 2) ?? [];
+}
+
+function slashDate(date: string) {
+  return date.replace(/-/g, "/");
+}
+
+function buildDateScopedCandidates(
+  candidate: DownloadCandidate,
+  startDate: string,
+  endDate: string
+) {
+  const candidates: DownloadCandidate[] = [candidate];
+  const datePairs = [
+    [startDate, endDate],
+    [slashDate(startDate), slashDate(endDate)],
+  ];
+  const keyPairs = [
+    ["fecha_inicio", "fecha_fin"],
+    ["fechaInicio", "fechaFin"],
+    ["fechaInicial", "fechaFinal"],
+    ["inicio", "fin"],
+    ["start", "end"],
+  ];
+
+  for (const [inicio, fin] of datePairs) {
+    for (const [inicioKey, finKey] of keyPairs) {
+      const body = new URLSearchParams(candidate.body);
+      body.set(inicioKey, inicio);
+      body.set(finKey, fin);
+
+      candidates.push({
+        ...candidate,
+        method: candidate.method || "GET",
+        body,
+        score: candidate.score + 25,
+      });
+    }
+  }
+
+  return candidates;
+}
+
+function findWeeklyReportDownloadCandidates(html: string, baseUrl: string) {
+  const row = firstTableRows(html, 80).find(looksLikeWeeklyReportRow);
+
+  if (!row) {
+    return [];
+  }
+
+  const rowDates = extractRowDates(row);
+  const baseCandidates = findDownloadCandidates(row, baseUrl, {
+    includeFirstRows: false,
+  });
+  const rowCandidates = (
+    baseCandidates.length > 0
+      ? baseCandidates
+      : [
+          {
+            url: new URL("/admin_facturacion", baseUrl).toString(),
+            method: "GET" as const,
+            score: 80,
+          },
+          {
+            url: new URL("/admin_reportes/descargar", baseUrl).toString(),
+            method: "GET" as const,
+            score: 70,
+          },
+        ]
+  ).map((candidate) => ({
+    ...candidate,
+    score: candidate.score + 150,
+  }));
+
+  if (rowDates.length < 2) {
+    return dedupeDownloadCandidates(rowCandidates);
+  }
+
+  return dedupeDownloadCandidates(
+    rowCandidates.flatMap((candidate) =>
+      buildDateScopedCandidates(candidate, rowDates[0], rowDates[1])
+    )
+  );
+}
+
 function describeDownloadCandidate(candidate: DownloadCandidate) {
   try {
     const url = new URL(candidate.url);
@@ -949,14 +1052,25 @@ async function fetchReportBufferFromUrl(
   return Buffer.from(await response.arrayBuffer());
 }
 
-async function downloadFirstReport() {
-  if (cachedReport && cachedReport.expiresAt > Date.now()) {
+async function downloadFirstReport(imei?: string) {
+  if (
+    cachedReport &&
+    cachedReport.expiresAt > Date.now() &&
+    (!imei || sourceContainsImei(cachedReport.source, imei))
+  ) {
     return cachedReport.source;
   }
 
   const session = await loginAlo();
   const reportsPage = await getConsultedReportsPage(session.jar, session.reportUrl);
-  let candidates = findDownloadCandidates(reportsPage.text, reportsPage.url);
+  const weeklyCandidates = findWeeklyReportDownloadCandidates(
+    reportsPage.text,
+    reportsPage.url
+  );
+  let candidates =
+    weeklyCandidates.length > 0
+      ? weeklyCandidates
+      : findDownloadCandidates(reportsPage.text, reportsPage.url);
 
   if (candidates.length === 0) {
     console.info("ALO CREDIT sin candidatos de descarga; se intentara leer HTML", {
@@ -974,6 +1088,7 @@ async function downloadFirstReport() {
   }
 
   console.info("ALO CREDIT candidatos de descarga", {
+    modo: weeklyCandidates.length > 0 ? "primera-fila-reportes-semanales" : "general",
     candidatos: candidates.slice(0, 5).map(describeDownloadCandidate),
   });
 
@@ -995,15 +1110,38 @@ async function downloadFirstReport() {
     const buffer = await fetchReportBufferFromUrl(session.jar, candidate, referer);
 
     if (!isHtmlResponse(buffer)) {
-      cachedReport = {
-        source: buffer,
-        expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
-      };
+      if (!imei || sourceContainsImei(buffer, imei)) {
+        cachedReport = {
+          source: buffer,
+          expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
+        };
 
-      return buffer;
+        return buffer;
+      }
+
+      console.info("ALO CREDIT descarga descartada porque no contiene el IMEI", {
+        origen: describeDownloadCandidate(candidate),
+        imei: `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}`,
+        fuente: "archivo",
+      });
+
+      candidates = candidates.filter(
+        (item) => !triedCandidates.has(candidateKey(item))
+      );
+      continue;
     }
 
     lastHtml = buffer.toString("utf8");
+
+    if (!imei || sourceContainsImei(lastHtml, imei)) {
+      cachedReport = {
+        source: lastHtml,
+        expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
+      };
+
+      return lastHtml;
+    }
+
     referer = candidate.url;
     const nestedCandidates = findDownloadCandidates(lastHtml, referer);
     candidates = dedupeDownloadCandidates([
@@ -1017,15 +1155,11 @@ async function downloadFirstReport() {
       candidatos: candidates.slice(0, 5).map(describeDownloadCandidate),
       filas: firstTableRows(lastHtml, 10).length,
       muestras: debugHtmlRows(lastHtml),
+      descartadoSinImei: Boolean(imei),
     });
 
     if (candidates.length === 0) {
-      cachedReport = {
-        source: lastHtml,
-        expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
-      };
-
-      return lastHtml;
+      break;
     }
   }
 
@@ -1035,12 +1169,16 @@ async function downloadFirstReport() {
     );
   }
 
-  cachedReport = {
-    source: lastHtml,
-    expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
-  };
+  console.info("ALO CREDIT no encontro una descarga que contenga el IMEI", {
+    imei: imei ? `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}` : null,
+    intentos: triedCandidates.size,
+    ultimoHtml: {
+      filas: firstTableRows(lastHtml, 10).length,
+      muestras: debugHtmlRows(lastHtml),
+    },
+  });
 
-  return lastHtml;
+  return null;
 }
 
 function readWorkbookMatrix(source: ReportSource) {
@@ -1060,6 +1198,26 @@ function readWorkbookMatrix(source: ReportSource) {
   }));
 
   return matrices;
+}
+
+function sourceContainsImei(source: ReportSource, imei: string) {
+  if (typeof source === "string" && !source.replace(/\D/g, "").includes(imei)) {
+    return false;
+  }
+
+  try {
+    return readWorkbookMatrix(source).some(({ matrix }) =>
+      matrix.some((row) => rowContainsImei(row || [], imei))
+    );
+  } catch (error) {
+    console.info("ALO CREDIT no pudo validar IMEI en descarga", {
+      imei: `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}`,
+      fuente: Buffer.isBuffer(source) ? "archivo" : "html",
+      error: error instanceof Error ? error.message : "error desconocido",
+    });
+
+    return false;
+  }
 }
 
 function debugMatrixRows(matrix: MatrixCell[][], maxRows = 5) {
@@ -1321,7 +1479,11 @@ export async function obtenerCreditoAloPorImei(imeiValue: unknown) {
     throw new AloConsultaLookupError("El IMEI debe tener 15 digitos.");
   }
 
-  const reportBuffer = await downloadFirstReport();
+  const reportBuffer = await downloadFirstReport(imei);
+
+  if (!reportBuffer) {
+    return null;
+  }
 
   return findCreditoInWorkbook(reportBuffer, imei);
 }
