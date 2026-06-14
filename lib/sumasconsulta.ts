@@ -24,6 +24,7 @@ type SumasSession = {
   apiBaseUrl: string;
   accessToken: string;
   currentUser: unknown;
+  scopedToConectamos: boolean;
 };
 
 type Candidate = {
@@ -301,11 +302,15 @@ async function loginSumas(): Promise<SumasSession> {
     accessToken,
     "service-user/users/me"
   );
+  const scopedToConectamos =
+    containsText(loginPayload, "CONECTAMOS") ||
+    containsText(currentUser, "CONECTAMOS");
 
   return {
     apiBaseUrl,
     accessToken,
     currentUser,
+    scopedToConectamos,
   };
 }
 
@@ -800,13 +805,16 @@ export async function obtenerCreditoSumasPayPorCedula(
     return null;
   }
 
-  const currentUserConectamos = containsText(session.currentUser, "CONECTAMOS");
+  const currentUserConectamos =
+    session.scopedToConectamos ||
+    containsText(session.currentUser, "CONECTAMOS");
   const candidates = buildCandidates(payloads).map((candidate) => ({
     ...candidate,
     creadoConConectamos:
       candidate.creadoConConectamos || currentUserConectamos,
   }));
-  const candidate = candidates.find((item) => item.creadoConConectamos);
+  const candidate =
+    candidates.find((item) => item.creadoConConectamos) || candidates[0];
 
   if (!candidate) {
     return null;

@@ -1455,12 +1455,14 @@ export default function VendedorRegistroWorkspace({
 
       if (!response.ok || !data.credito) {
         setSumaspayCredito(null);
-        if (!options?.silent) {
-          setSumaspayError(
-            data.error ||
-              "No se encontro un credito SUMASPAY creado con CONECTAMOS"
-          );
-        }
+        const errorMessage =
+          data.error ||
+          "No se encontro un credito SUMASPAY creado con CONECTAMOS";
+        setSumaspayError(
+          options?.silent && response.status !== 404
+            ? "No se pudo consultar SUMASPAY. Usa Consultar para reintentar."
+            : errorMessage
+        );
         return;
       }
 

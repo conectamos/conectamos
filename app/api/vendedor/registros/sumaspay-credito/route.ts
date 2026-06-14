@@ -34,7 +34,17 @@ function normalizarDocumento(value: unknown) {
   return String(value || "").replace(/\D/g, "").slice(0, 15);
 }
 
+function ocultarDocumento(documento: string) {
+  if (documento.length <= 4) {
+    return "****";
+  }
+
+  return `${"*".repeat(documento.length - 4)}${documento.slice(-4)}`;
+}
+
 export async function GET(req: Request) {
+  let documento = "";
+
   try {
     const access = await requireVendor();
 
@@ -43,7 +53,7 @@ export async function GET(req: Request) {
     }
 
     const requestUrl = new URL(req.url);
-    const documento = normalizarDocumento(requestUrl.searchParams.get("documento"));
+    documento = normalizarDocumento(requestUrl.searchParams.get("documento"));
 
     if (documento.length < 5) {
       return NextResponse.json(
@@ -55,6 +65,10 @@ export async function GET(req: Request) {
     const credito = await obtenerCreditoSumasPayPorCedula(documento);
 
     if (!credito) {
+      console.info("SUMASPAY sin credito para documento", {
+        documento: ocultarDocumento(documento),
+      });
+
       return NextResponse.json(
         { error: "No se encontro un credito SUMASPAY creado con CONECTAMOS" },
         { status: 404 }
@@ -67,6 +81,11 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     if (error instanceof SumasConsultaConfigError) {
+      console.warn("SUMASPAY configuracion incompleta", {
+        documento: documento ? ocultarDocumento(documento) : "",
+        error: error.message,
+      });
+
       return NextResponse.json(
         { error: error.message },
         { status: 503 }
@@ -74,6 +93,11 @@ export async function GET(req: Request) {
     }
 
     if (error instanceof SumasConsultaLookupError) {
+      console.warn("SUMASPAY error de consulta", {
+        documento: documento ? ocultarDocumento(documento) : "",
+        error: error.message,
+      });
+
       return NextResponse.json(
         { error: error.message },
         { status: 502 }
