@@ -1694,6 +1694,9 @@ export default function VendedorRegistroWorkspace({
       const data = (await response.json()) as AloCreditoResponse;
 
       if (!response.ok || !data.credito) {
+        if (response.status !== 404 && data.error) {
+          setFormMessage(`ALO CREDIT: ${data.error}`, "error");
+        }
         return;
       }
 
@@ -1705,6 +1708,7 @@ export default function VendedorRegistroWorkspace({
         "success"
       );
     } catch {
+      setFormMessage("Error consultando ALO CREDIT por IMEI", "error");
       return;
     } finally {
       setConsultandoAloIndex(null);

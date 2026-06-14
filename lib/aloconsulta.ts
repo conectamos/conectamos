@@ -17,6 +17,8 @@ type HtmlForm = {
 type DownloadCandidate = {
   url: string;
   score: number;
+  method?: "GET" | "POST";
+  body?: URLSearchParams;
 };
 
 type MatrixCell = string | number | boolean | Date | null | undefined;
@@ -441,7 +443,74 @@ function scoreDownloadCandidate(text: string, href: string) {
   return score;
 }
 
-function findDownloadCandidates(html: string, baseUrl: string) {
+function firstTableRows(html: string, maxRows = 3) {
+  const rows = Array.from(html.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi)).map(
+    (match) => match[0]
+  );
+
+  return rows
+    .filter((row) => normalizeText(row.replace(/<[^>]*>/g, " ")).length > 0)
+    .slice(0, maxRows);
+}
+
+function extractJavascriptUrls(html: string, baseUrl: string) {
+  const candidates: DownloadCandidate[] = [];
+  const onclickRegex =
+    /(?:onclick|data-url|data-href)\s*=\s*("([^"]+)"|'([^']+)')/gi;
+
+  for (const match of html.matchAll(onclickRegex)) {
+    const value = decodeHtml(match[2] || match[3] || "");
+    const urlMatch = value.match(
+      /(?:window\.open|location\.href|location\.assign|location\.replace)\s*\(\s*['"]([^'"]+)['"]/i
+    ) || value.match(/(?:href|url)\s*[:=]\s*['"]([^'"]+)['"]/i);
+    const rawUrl = urlMatch?.[1];
+
+    if (!rawUrl) {
+      continue;
+    }
+
+    const score = scoreDownloadCandidate(value, rawUrl);
+
+    if (score <= 0) {
+      continue;
+    }
+
+    candidates.push({
+      url: new URL(rawUrl, baseUrl).toString(),
+      score,
+    });
+  }
+
+  return candidates;
+}
+
+function findDownloadFormCandidates(html: string, baseUrl: string) {
+  const candidates: DownloadCandidate[] = [];
+
+  parseForms(html, baseUrl).forEach((form, index) => {
+    const score =
+      scoreDownloadCandidate(form.html, form.action) + (index === 0 ? 5 : 0);
+
+    if (score <= 0) {
+      return;
+    }
+
+    candidates.push({
+      url: form.action,
+      method: form.method === "GET" ? "GET" : "POST",
+      body: new URLSearchParams(form.fields),
+      score,
+    });
+  });
+
+  return candidates;
+}
+
+function findDownloadCandidates(
+  html: string,
+  baseUrl: string,
+  options: { includeFirstRows?: boolean } = {}
+) {
   const candidates: DownloadCandidate[] = [];
 
   for (const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
@@ -457,6 +526,22 @@ function findDownloadCandidates(html: string, baseUrl: string) {
       url: new URL(href, baseUrl).toString(),
       score,
     });
+  }
+
+  candidates.push(...extractJavascriptUrls(html, baseUrl));
+  candidates.push(...findDownloadFormCandidates(html, baseUrl));
+
+  if (options.includeFirstRows !== false) {
+    for (const row of firstTableRows(html)) {
+      candidates.push(
+        ...findDownloadCandidates(row, baseUrl, {
+          includeFirstRows: false,
+        }).map((candidate) => ({
+          ...candidate,
+          score: candidate.score + 20,
+        }))
+      );
+    }
   }
 
   return candidates.sort((a, b) => b.score - a.score);
@@ -537,15 +622,31 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
 
 async function fetchReportBufferFromUrl(
   jar: CookieJar,
-  url: string,
+  candidate: DownloadCandidate,
   referer: string
 ) {
+  const url = new URL(candidate.url);
+
+  if (candidate.method === "GET" && candidate.body) {
+    for (const [key, value] of candidate.body) {
+      url.searchParams.set(key, value);
+    }
+  }
+
   const response = await fetchWithCookies(
-    url,
+    url.toString(),
     {
+      method: candidate.method === "POST" ? "POST" : "GET",
+      body:
+        candidate.method === "POST" && candidate.body
+          ? candidate.body
+          : undefined,
       headers: {
         Accept:
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/html,*/*",
+        ...(candidate.method === "POST"
+          ? { "Content-Type": "application/x-www-form-urlencoded" }
+          : {}),
         Referer: referer,
       },
     },
@@ -579,7 +680,7 @@ async function downloadFirstReport() {
 
   let buffer = await fetchReportBufferFromUrl(
     session.jar,
-    candidates[0].url,
+    candidates[0],
     reportsPage.url
   );
   const asText = buffer.subarray(0, 300).toString("utf8");
@@ -589,10 +690,16 @@ async function downloadFirstReport() {
     if (nested.length > 0) {
       buffer = await fetchReportBufferFromUrl(
         session.jar,
-        nested[0].url,
+        nested[0],
         candidates[0].url
       );
     }
+  }
+
+  if (/^\s*<!doctype html|^\s*<html/i.test(buffer.subarray(0, 300).toString("utf8"))) {
+    throw new AloConsultaLookupError(
+      "ALO CREDIT no devolvio un archivo Excel al descargar el reporte."
+    );
   }
 
   cachedReport = {
@@ -623,7 +730,13 @@ function readWorkbookMatrix(buffer: Buffer) {
 }
 
 function rowContainsImei(row: MatrixCell[], imei: string) {
-  return row.some((cell) => normalizeImei(cell) === imei);
+  return row.some((cell) => {
+    const text = String(cell || "");
+    const exact = normalizeImei(text) === imei;
+    const groups: string[] = text.match(/\d{15}/g) ?? [];
+
+    return exact || groups.includes(imei);
+  });
 }
 
 function headerScore(row: MatrixCell[]) {
