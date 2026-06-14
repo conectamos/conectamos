@@ -294,15 +294,6 @@ async function loginAddi(): Promise<AddiSession> {
   const url = new URL("/oauth/token", config.authBaseUrl).toString();
   const attempts = [
     {
-      grant_type: "http://auth0.com/oauth/grant-type/password-realm",
-      username: usuario,
-      password: clave,
-      audience: config.audience,
-      scope: "openid profile email",
-      client_id: config.clientId,
-      realm: config.connection,
-    },
-    {
       grant_type: "password",
       username: usuario,
       password: clave,
@@ -340,9 +331,17 @@ async function loginAddi(): Promise<AddiSession> {
     }
   }
 
+  const blockedGrant = errors.some((message) => {
+    const normalized = normalizeText(message);
+
+    return normalized.includes("GRANT TYPE") && normalized.includes("NOT ALLOWED");
+  });
+
   throw new AddiConsultaConfigError(
-    errors.find(Boolean) ||
-      "ADDI no permitio iniciar sesion con las credenciales configuradas."
+    blockedGrant
+      ? "ADDI no permite iniciar sesion directo con usuario y clave para esta aplicacion. Se requiere habilitar Password Grant o usar una credencial API de ADDI."
+      : errors.find(Boolean) ||
+          "ADDI no permitio iniciar sesion con las credenciales configuradas."
   );
 }
 

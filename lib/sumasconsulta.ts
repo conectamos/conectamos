@@ -1222,6 +1222,23 @@ function getPointCreditNameByLoanId(payloads: SumasPayload[]) {
   return pointCreditByLoanId;
 }
 
+function getTermByLoanIdFromRepaymentPlan(payloads: SumasPayload[]) {
+  const termsByLoanId = new Map<string, number>();
+
+  for (const payload of payloads) {
+    for (const { record } of collectRecords(payload.data, payload.source)) {
+      const loanId = getLoanIdFromRecord(record) || payload.loanId;
+      const numeroCuotas = getTermFromRepaymentPeriods(record);
+
+      if (loanId && numeroCuotas !== null && !termsByLoanId.has(loanId)) {
+        termsByLoanId.set(loanId, numeroCuotas);
+      }
+    }
+  }
+
+  return termsByLoanId;
+}
+
 function acceptsAmountOnlyCandidate(source: string) {
   return (
     source === "client-pos" ||
@@ -1234,6 +1251,7 @@ function buildCandidates(payloads: SumasPayload[]) {
   const candidates: Candidate[] = [];
   const creationDatesByLoanId = getCreditCreationDateByLoanId(payloads);
   const pointCreditNamesByLoanId = getPointCreditNameByLoanId(payloads);
+  const termsByLoanId = getTermByLoanIdFromRepaymentPlan(payloads);
 
   for (const payload of payloads) {
     for (const { record, source } of collectRecords(payload.data, payload.source)) {
@@ -1243,9 +1261,10 @@ function buildCandidates(payloads: SumasPayload[]) {
         continue;
       }
 
-      const numeroCuotas = getTerm(record);
       const valorCuota = getInstallmentValue(record);
       const loanId = getLoanIdFromRecord(record) || payload.loanId;
+      const numeroCuotas =
+        (loanId ? termsByLoanId.get(loanId) || null : null) || getTerm(record);
       const fechaCreacionCredito =
         getCreditCreationDate(record) ||
         (loanId ? creationDatesByLoanId.get(loanId) || null : null);
