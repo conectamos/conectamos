@@ -308,6 +308,21 @@ function getHtmlAttribute(tag: string, attribute: string) {
   return decodeHtml(match?.[2] || match?.[3] || match?.[4] || "");
 }
 
+function getHtmlAttributes(tag: string) {
+  const attributes = new Map<string, string>();
+
+  for (const match of tag.matchAll(
+    /([A-Za-z_:][\w:.-]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g
+  )) {
+    attributes.set(
+      match[1].toLowerCase(),
+      decodeHtml(match[3] || match[4] || match[5] || "")
+    );
+  }
+
+  return attributes;
+}
+
 function parseForms(html: string, baseUrl: string): HtmlForm[] {
   const forms: HtmlForm[] = [];
   const formRegex = /<form\b[^>]*>[\s\S]*?<\/form>/gi;
@@ -431,10 +446,26 @@ async function loginAlo() {
   return { jar, reportUrl: config.reportUrl };
 }
 
+function hasDownloadSignal(normalized: string) {
+  return (
+    normalized.includes("DESCARG") ||
+    normalized.includes("DOWNLOAD") ||
+    normalized.includes("EXCEL") ||
+    normalized.includes("XLS") ||
+    normalized.includes("EXPORT") ||
+    normalized.includes("CSV") ||
+    normalized.includes("ARCHIVO")
+  );
+}
+
 function scoreDownloadCandidate(text: string, href: string) {
   const normalized = normalizeText(`${text} ${href}`);
 
   if (normalized.includes("CERRAR SESION") || normalized.includes("LOGOUT")) {
+    return 0;
+  }
+
+  if (!hasDownloadSignal(normalized)) {
     return 0;
   }
 
@@ -445,9 +476,23 @@ function scoreDownloadCandidate(text: string, href: string) {
   if (normalized.includes("EXCEL")) score += 35;
   if (normalized.includes("XLS")) score += 35;
   if (normalized.includes("EXPORT")) score += 25;
-  if (normalized.includes("REPORTE")) score += 10;
+  if (normalized.includes("CSV")) score += 20;
+  if (normalized.includes("ARCHIVO")) score += 15;
+  if (normalized.includes("REPORTE")) score += 5;
 
   return score;
+}
+
+function maskDebugText(value: string, maxLength = 220) {
+  return decodeHtml(value)
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "***@***")
+    .replace(/\d/g, "#")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
 }
 
 function firstTableRows(html: string, maxRows = 3) {
@@ -460,30 +505,243 @@ function firstTableRows(html: string, maxRows = 3) {
     .slice(0, maxRows);
 }
 
+function debugHtmlRows(html: string, maxRows = 4) {
+  return firstTableRows(html, maxRows)
+    .map((row) => maskDebugText(row))
+    .filter(Boolean);
+}
+
+function candidateKey(candidate: DownloadCandidate) {
+  const body = candidate.body
+    ? Array.from(candidate.body.entries())
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("&")
+    : "";
+
+  return `${candidate.method || "GET"} ${candidate.url} ${body}`;
+}
+
+function dedupeDownloadCandidates(candidates: DownloadCandidate[]) {
+  const byKey = new Map<string, DownloadCandidate>();
+
+  for (const candidate of candidates) {
+    const key = candidateKey(candidate);
+    const current = byKey.get(key);
+
+    if (!current || candidate.score > current.score) {
+      byKey.set(key, candidate);
+    }
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => b.score - a.score);
+}
+
+function isSamePathWithoutQuery(candidate: DownloadCandidate, pageUrl: string) {
+  if ((candidate.method || "GET") !== "GET" || candidate.body?.toString()) {
+    return false;
+  }
+
+  try {
+    const candidateUrl = new URL(candidate.url, pageUrl);
+    const currentUrl = new URL(pageUrl);
+
+    return (
+      candidateUrl.origin === currentUrl.origin &&
+      candidateUrl.pathname.replace(/\/+$/, "") ===
+        currentUrl.pathname.replace(/\/+$/, "") &&
+      !candidateUrl.search
+    );
+  } catch {
+    return false;
+  }
+}
+
+function pushCandidate(
+  candidates: DownloadCandidate[],
+  baseUrl: string,
+  rawUrl: string,
+  scoreSource: string,
+  scoreBonus = 0,
+  options: Pick<DownloadCandidate, "method" | "body"> = {}
+) {
+  if (
+    !rawUrl ||
+    rawUrl === "#" ||
+    /^javascript:/i.test(rawUrl)
+  ) {
+    return;
+  }
+
+  const score = scoreDownloadCandidate(scoreSource, rawUrl) + scoreBonus;
+
+  if (score <= 0) {
+    return;
+  }
+
+  candidates.push({
+    url: new URL(rawUrl, baseUrl).toString(),
+    method: options.method,
+    body: options.body,
+    score,
+  });
+}
+
+function extractQuotedUrls(value: string) {
+  return Array.from(value.matchAll(/["']([^"']+)["']/g))
+    .map((match) => match[1])
+    .filter((item) => /^(?:https?:)?\/\//i.test(item) || item.startsWith("/"));
+}
+
+function pushFunctionRouteCandidates(
+  candidates: DownloadCandidate[],
+  baseUrl: string,
+  value: string,
+  scoreBonus = 0
+) {
+  const normalized = normalizeText(value);
+
+  if (!hasDownloadSignal(normalized)) {
+    return;
+  }
+
+  const functionMatch = value.match(
+    /\b([A-Za-z_$][\w$]*)\s*\(([\s\S]*?)\)/
+  );
+  const args = functionMatch?.[2] || value;
+  const explicitUrls = extractQuotedUrls(args);
+
+  for (const rawUrl of explicitUrls) {
+    pushCandidate(candidates, baseUrl, rawUrl, value, scoreBonus);
+  }
+
+  const id = args.match(/\b\d{1,12}\b/)?.[0];
+
+  if (!id) {
+    return;
+  }
+
+  for (const rawUrl of [
+    `/admin_reportes/descargar/${id}`,
+    `/admin_reportes/download/${id}`,
+    `/admin_reportes/exportar/${id}`,
+    `/admin_reportes/excel/${id}`,
+    `/admin_reportes/reporte/${id}`,
+    `/admin_reportes/${id}/descargar`,
+    `/admin_reportes/${id}/download`,
+    `/admin_reportes/${id}/exportar`,
+    `/admin_reportes/${id}/excel`,
+  ]) {
+    pushCandidate(candidates, baseUrl, rawUrl, value, scoreBonus - 5);
+  }
+}
+
+function extractAttributeUrlCandidates(
+  html: string,
+  baseUrl: string,
+  scoreBonus = 0
+) {
+  const candidates: DownloadCandidate[] = [];
+  const tagRegex = /<(a|button|input)\b[^>]*(?:>[\s\S]*?<\/\1>)?/gi;
+
+  for (const match of html.matchAll(tagRegex)) {
+    const tagHtml = match[0];
+    const attributes = getHtmlAttributes(tagHtml);
+    const scoreSource = `${tagHtml} ${Array.from(attributes.values()).join(" ")}`;
+
+    for (const attribute of [
+      "href",
+      "data-url",
+      "data-href",
+      "data-download",
+      "data-route",
+      "data-action",
+      "formaction",
+    ]) {
+      const rawUrl = attributes.get(attribute);
+
+      if (rawUrl) {
+        if (/^javascript:/i.test(rawUrl)) {
+          pushFunctionRouteCandidates(candidates, baseUrl, rawUrl, scoreBonus);
+        }
+
+        pushCandidate(candidates, baseUrl, rawUrl, scoreSource, scoreBonus);
+      }
+    }
+
+    const onclick = attributes.get("onclick");
+
+    if (onclick) {
+      pushFunctionRouteCandidates(candidates, baseUrl, onclick, scoreBonus);
+    }
+  }
+
+  return candidates;
+}
+
 function extractJavascriptUrls(html: string, baseUrl: string) {
   const candidates: DownloadCandidate[] = [];
   const onclickRegex =
-    /(?:onclick|data-url|data-href)\s*=\s*("([^"]+)"|'([^']+)')/gi;
+    /(?:onclick|data-url|data-href|data-download|data-route|formaction)\s*=\s*("([^"]+)"|'([^']+)')/gi;
 
   for (const match of html.matchAll(onclickRegex)) {
     const value = decodeHtml(match[2] || match[3] || "");
-    const urlMatch = value.match(
-      /(?:window\.open|location\.href|location\.assign|location\.replace)\s*\(\s*['"]([^'"]+)['"]/i
-    ) || value.match(/(?:href|url)\s*[:=]\s*['"]([^'"]+)['"]/i);
-    const rawUrl = urlMatch?.[1];
+    const urlMatches = [
+      value.match(
+        /(?:window\.open|location\.href|location\.assign|location\.replace)\s*\(\s*['"]([^'"]+)['"]/i
+      ),
+      value.match(/(?:window\.)?location(?:\.href)?\s*=\s*['"]([^'"]+)['"]/i),
+      value.match(/(?:href|url)\s*[:=]\s*['"]([^'"]+)['"]/i),
+    ].filter(Boolean) as RegExpMatchArray[];
 
-    if (!rawUrl) {
+    for (const urlMatch of urlMatches) {
+      pushCandidate(candidates, baseUrl, urlMatch[1], value);
+    }
+
+    pushFunctionRouteCandidates(candidates, baseUrl, value);
+  }
+
+  return candidates;
+}
+
+function findSubmitControlCandidates(form: HtmlForm, baseUrl: string) {
+  const candidates: DownloadCandidate[] = [];
+  const controlRegex =
+    /<button\b[^>]*>[\s\S]*?<\/button>|<input\b[^>]*>/gi;
+
+  for (const match of form.html.matchAll(controlRegex)) {
+    const controlHtml = match[0];
+    const attributes = getHtmlAttributes(controlHtml);
+    const type = (attributes.get("type") || "submit").toLowerCase();
+
+    if (["button", "reset", "file"].includes(type)) {
       continue;
     }
 
-    const score = scoreDownloadCandidate(value, rawUrl);
+    const action = attributes.get("formaction") || form.action;
+    const method = (
+      attributes.get("formmethod") ||
+      form.method ||
+      "GET"
+    ).toUpperCase();
+    const fields = new URLSearchParams(form.fields);
+    const name = attributes.get("name");
 
-    if (score <= 0) {
+    if (name) {
+      fields.set(name, attributes.get("value") || "1");
+    }
+
+    const scoreSource = `${form.html} ${controlHtml}`;
+    const score = scoreDownloadCandidate(scoreSource, action) + 10;
+
+    if (score <= 10) {
       continue;
     }
 
     candidates.push({
-      url: new URL(rawUrl, baseUrl).toString(),
+      url: new URL(action, baseUrl).toString(),
+      method: method === "POST" ? "POST" : "GET",
+      body: fields,
       score,
     });
   }
@@ -494,20 +752,19 @@ function extractJavascriptUrls(html: string, baseUrl: string) {
 function findDownloadFormCandidates(html: string, baseUrl: string) {
   const candidates: DownloadCandidate[] = [];
 
-  parseForms(html, baseUrl).forEach((form, index) => {
-    const score =
-      scoreDownloadCandidate(form.html, form.action) + (index === 0 ? 5 : 0);
+  parseForms(html, baseUrl).forEach((form) => {
+    const score = scoreDownloadCandidate(form.html, form.action);
 
-    if (score <= 0) {
-      return;
+    if (score > 0) {
+      candidates.push({
+        url: form.action,
+        method: form.method === "GET" ? "GET" : "POST",
+        body: new URLSearchParams(form.fields),
+        score,
+      });
     }
 
-    candidates.push({
-      url: form.action,
-      method: form.method === "GET" ? "GET" : "POST",
-      body: new URLSearchParams(form.fields),
-      score,
-    });
+    candidates.push(...findSubmitControlCandidates(form, baseUrl));
   });
 
   return candidates;
@@ -523,23 +780,21 @@ function findDownloadCandidates(
   for (const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
     const href = decodeHtml(match[1]);
     const text = match[2].replace(/<[^>]*>/g, " ");
-    const score = scoreDownloadCandidate(text, href);
 
-    if (score <= 0) {
+    if (/^javascript:/i.test(href)) {
+      pushFunctionRouteCandidates(candidates, baseUrl, href);
       continue;
     }
 
-    candidates.push({
-      url: new URL(href, baseUrl).toString(),
-      score,
-    });
+    pushCandidate(candidates, baseUrl, href, text);
   }
 
+  candidates.push(...extractAttributeUrlCandidates(html, baseUrl));
   candidates.push(...extractJavascriptUrls(html, baseUrl));
   candidates.push(...findDownloadFormCandidates(html, baseUrl));
 
   if (options.includeFirstRows !== false) {
-    for (const row of firstTableRows(html)) {
+    for (const row of firstTableRows(html, 12)) {
       candidates.push(
         ...findDownloadCandidates(row, baseUrl, {
           includeFirstRows: false,
@@ -551,7 +806,9 @@ function findDownloadCandidates(
     }
   }
 
-  return candidates.sort((a, b) => b.score - a.score);
+  return dedupeDownloadCandidates(candidates).filter(
+    (candidate) => !isSamePathWithoutQuery(candidate, baseUrl)
+  );
 }
 
 function describeDownloadCandidate(candidate: DownloadCandidate) {
@@ -562,6 +819,7 @@ function describeDownloadCandidate(candidate: DownloadCandidate) {
       path: url.pathname,
       queryKeys: Array.from(url.searchParams.keys()).sort(),
       method: candidate.method || "GET",
+      bodyKeys: candidate.body ? Array.from(candidate.body.keys()).sort() : [],
       score: candidate.score,
     };
   } catch {
@@ -569,6 +827,7 @@ function describeDownloadCandidate(candidate: DownloadCandidate) {
       path: candidate.url.slice(0, 80),
       queryKeys: [],
       method: candidate.method || "GET",
+      bodyKeys: candidate.body ? Array.from(candidate.body.keys()).sort() : [],
       score: candidate.score,
     };
   }
@@ -704,6 +963,7 @@ async function downloadFirstReport() {
       reportPath: new URL(reportsPage.url).pathname,
       forms: parseForms(reportsPage.text, reportsPage.url).length,
       rows: firstTableRows(reportsPage.text, 10).length,
+      muestras: debugHtmlRows(reportsPage.text),
     });
     cachedReport = {
       source: reportsPage.text,
@@ -719,9 +979,19 @@ async function downloadFirstReport() {
 
   let referer = reportsPage.url;
   let lastHtml = reportsPage.text;
+  const triedCandidates = new Set<string>();
 
-  for (let depth = 0; depth < 4; depth++) {
-    const candidate = candidates[0];
+  for (let depth = 0; depth < 8 && candidates.length > 0; depth++) {
+    const candidate = candidates.find((item) => {
+      const key = candidateKey(item);
+      return !triedCandidates.has(key) && !isSamePathWithoutQuery(item, referer);
+    });
+
+    if (!candidate) {
+      break;
+    }
+
+    triedCandidates.add(candidateKey(candidate));
     const buffer = await fetchReportBufferFromUrl(session.jar, candidate, referer);
 
     if (!isHtmlResponse(buffer)) {
@@ -735,13 +1005,18 @@ async function downloadFirstReport() {
 
     lastHtml = buffer.toString("utf8");
     referer = candidate.url;
-    candidates = findDownloadCandidates(lastHtml, referer);
+    const nestedCandidates = findDownloadCandidates(lastHtml, referer);
+    candidates = dedupeDownloadCandidates([
+      ...candidates.filter((item) => !triedCandidates.has(candidateKey(item))),
+      ...nestedCandidates,
+    ]);
 
     console.info("ALO CREDIT descarga devolvio HTML", {
       intento: depth + 1,
       origen: describeDownloadCandidate(candidate),
       candidatos: candidates.slice(0, 5).map(describeDownloadCandidate),
       filas: firstTableRows(lastHtml, 10).length,
+      muestras: debugHtmlRows(lastHtml),
     });
 
     if (candidates.length === 0) {
@@ -785,6 +1060,15 @@ function readWorkbookMatrix(source: ReportSource) {
   }));
 
   return matrices;
+}
+
+function debugMatrixRows(matrix: MatrixCell[][], maxRows = 5) {
+  return matrix
+    .slice(0, maxRows)
+    .map((row) =>
+      maskDebugText(row.map((cell) => visibleText(cell)).join(" | "))
+    )
+    .filter(Boolean);
 }
 
 function rowContainsImei(row: MatrixCell[], imei: string) {
@@ -1006,6 +1290,8 @@ function findCreditoInWorkbook(source: ReportSource, imei: string) {
   console.info("ALO CREDIT reporte leido sin coincidencia de IMEI", {
     imei: `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}`,
     fuente: Buffer.isBuffer(source) ? "archivo" : "html",
+    htmlContieneImei:
+      typeof source === "string" ? source.replace(/\D/g, "").includes(imei) : null,
     hojas: matrices.slice(0, 5).map(({ sheetName, matrix }) => ({
       sheetName,
       filas: matrix.length,
@@ -1013,6 +1299,7 @@ function findCreditoInWorkbook(source: ReportSource, imei: string) {
         (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
         0
       ),
+      muestras: debugMatrixRows(matrix, 3),
     })),
   });
 
