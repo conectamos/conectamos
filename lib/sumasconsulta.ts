@@ -12,6 +12,8 @@ export type SumasPayCreditoCedula = {
   documento: string;
   financiera: "SUMASPAY";
   clienteNombre: string | null;
+  correoElectronico: string | null;
+  telefonoCliente: string | null;
   creditoAutorizado: number;
   numeroCuotas: number | null;
   valorCuota: number | null;
@@ -771,6 +773,77 @@ function getClientName(...values: unknown[]) {
   return null;
 }
 
+function normalizeEmail(value: unknown) {
+  const email = String(value || "").replace(/\s+/g, "").trim().toLowerCase();
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
+
+function normalizePhone(value: unknown) {
+  const digits = String(value || "").replace(/\D/g, "");
+
+  if (!digits) {
+    return null;
+  }
+
+  if (digits.length === 12 && digits.startsWith("57")) {
+    return digits.slice(2);
+  }
+
+  if (digits.length > 10 && digits.startsWith("57")) {
+    return digits.slice(-10);
+  }
+
+  return digits;
+}
+
+function getClientEmail(...values: unknown[]) {
+  for (const value of values) {
+    const byKey = deepString(value, [
+      "correo",
+      "correoElectronico",
+      "email",
+      "emailAddress",
+      "mail",
+      "clientEmail",
+      "e_mail",
+    ]);
+    const email = normalizeEmail(byKey);
+
+    if (email) {
+      return email;
+    }
+  }
+
+  return null;
+}
+
+function getClientPhone(...values: unknown[]) {
+  for (const value of values) {
+    const byKey = deepString(value, [
+      "celular",
+      "cellphone",
+      "cellPhone",
+      "mobile",
+      "mobileNumber",
+      "phone",
+      "phoneNumber",
+      "telefono",
+      "telephone",
+      "whatsapp",
+      "clientPhone",
+      "clientMobile",
+    ]);
+    const phone = normalizePhone(byKey);
+
+    if (phone) {
+      return phone;
+    }
+  }
+
+  return null;
+}
+
 function acceptsAmountOnlyCandidate(source: string) {
   return (
     source === "client-pos" ||
@@ -1201,16 +1274,20 @@ export async function obtenerCreditoSumasPayPorCedula(
     selectedCandidate,
     clientId
   );
+  const clientPayloads = [
+    clientSecure,
+    clientOnline,
+    clientPos,
+    candidate.record,
+    ...payloads.map((payload) => payload.data),
+  ];
 
   return {
     documento,
     financiera: "SUMASPAY",
-    clienteNombre: getClientName(
-      clientSecure,
-      clientOnline,
-      clientPos,
-      candidate.record
-    ),
+    clienteNombre: getClientName(...clientPayloads),
+    correoElectronico: getClientEmail(...clientPayloads),
+    telefonoCliente: getClientPhone(...clientPayloads),
     creditoAutorizado: candidate.creditoAutorizado,
     numeroCuotas: candidate.numeroCuotas,
     valorCuota: candidate.valorCuota,

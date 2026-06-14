@@ -197,6 +197,8 @@ type SumasPayCreditoResponse = {
     documento: string;
     financiera: "SUMASPAY";
     clienteNombre: string | null;
+    correoElectronico: string | null;
+    telefonoCliente: string | null;
     creditoAutorizado: number;
     numeroCuotas: number | null;
     valorCuota: number | null;
@@ -1404,6 +1406,9 @@ export default function VendedorRegistroWorkspace({
     setSumaspayCredito(credito);
     setSumaspayError("");
     setForm((current) => {
+      const telefonoSumas = onlyDigits(credito.telefonoCliente || "");
+      const whatsappSumas = onlyDigits(credito.telefonoCliente || "", 10);
+
       if (
         documentoEsperado &&
         onlyDigits(current.documentoNumero, 15) !== documentoEsperado
@@ -1415,6 +1420,10 @@ export default function VendedorRegistroWorkspace({
         ...current,
         servicio: "FINANCIERA",
         clienteNombre: credito.clienteNombre || current.clienteNombre,
+        correo: credito.correoElectronico || current.correo,
+        whatsapp:
+          whatsappSumas.length === 10 ? whatsappSumas : current.whatsapp,
+        telefono: telefonoSumas || current.telefono,
         medioPago2Tipo: "",
         medioPago2Valor: "",
         financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
