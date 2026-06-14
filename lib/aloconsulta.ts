@@ -397,6 +397,132 @@ function parseForms(html: string, baseUrl: string): HtmlForm[] {
   return forms;
 }
 
+function todayBogota() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: values.year,
+    month: values.month,
+    day: values.day,
+  };
+}
+
+function reportDateDefaults() {
+  const today = todayBogota();
+
+  return {
+    start: `01/01/${today.year}`,
+    end: `${today.day}/${today.month}/${today.year}`,
+  };
+}
+
+function findSearchSubmitControl(formHtml: string) {
+  const controls = formHtml.match(
+    /<button\b[^>]*>[\s\S]*?<\/button>|<input\b[^>]*>/gi
+  ) ?? [];
+
+  return (
+    controls.find((control) => {
+      const normalized = normalizeText(control.replace(/<[^>]*>/g, " "));
+      const attributes = normalizeText(Array.from(getHtmlAttributes(control).values()).join(" "));
+
+      return (
+        normalized.includes("BUSCAR") ||
+        normalized.includes("CONSULT") ||
+        attributes.includes("BUSCAR") ||
+        attributes.includes("CONSULT")
+      );
+    }) || null
+  );
+}
+
+function applySearchSubmit(fields: URLSearchParams, formHtml: string) {
+  const control = findSearchSubmitControl(formHtml);
+
+  if (!control) {
+    return;
+  }
+
+  const attributes = getHtmlAttributes(control);
+  const name = attributes.get("name");
+
+  if (name) {
+    fields.set(name, attributes.get("value") || normalizeText(control.replace(/<[^>]*>/g, " ")) || "1");
+  }
+}
+
+function applyReportDateDefaults(fields: URLSearchParams, formHtml: string) {
+  const defaults = reportDateDefaults();
+  const dateInputs = Array.from(formHtml.matchAll(/<input\b[^>]*>/gi));
+  let hasStartField = false;
+  let hasEndField = false;
+
+  for (const input of dateInputs) {
+    const attributes = getHtmlAttributes(input[0]);
+    const name = attributes.get("name");
+
+    if (!name) {
+      continue;
+    }
+
+    const key = normalizeKey(
+      `${name} ${attributes.get("id") || ""} ${attributes.get("placeholder") || ""}`
+    );
+
+    if (
+      key.includes("FECHAINICIO") ||
+      key.includes("FECHAINICIAL") ||
+      key.includes("DESDE") ||
+      key === "INICIO" ||
+      key.includes("START")
+    ) {
+      hasStartField = true;
+      if (!fields.get(name)) {
+        fields.set(name, defaults.start);
+      }
+    }
+
+    if (
+      key.includes("FECHAFIN") ||
+      key.includes("FECHAFINAL") ||
+      key.includes("HASTA") ||
+      key === "FIN" ||
+      key.includes("END")
+    ) {
+      hasEndField = true;
+      if (!fields.get(name)) {
+        fields.set(name, defaults.end);
+      }
+    }
+  }
+
+  const fallbackPairs = [
+    ["fecha_inicio", defaults.start],
+    ["fecha_fin", defaults.end],
+    ["fechaInicio", defaults.start],
+    ["fechaFin", defaults.end],
+    ["fechaInicial", defaults.start],
+    ["fechaFinal", defaults.end],
+    ["fecha_ini", defaults.start],
+    ["fecha_fin", defaults.end],
+  ];
+
+  for (const [key, value] of fallbackPairs) {
+    if (
+      (!hasStartField && value === defaults.start) ||
+      (!hasEndField && value === defaults.end)
+    ) {
+      fields.set(key, value);
+    }
+  }
+}
+
 function looksLikeLoginPage(html: string) {
   return /name=["']_username["']/i.test(html) || /id=["']inputPassword["']/i.test(html);
 }
@@ -975,16 +1101,9 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
   }
 
   const fields = new URLSearchParams(consultForm.fields);
-  const submitMatch = consultForm.html.match(
-    /<(button|input)\b[^>]*(consult|buscar)[^>]*>/i
-  );
 
-  if (submitMatch) {
-    const name = getHtmlAttribute(submitMatch[0], "name");
-    if (name) {
-      fields.set(name, getHtmlAttribute(submitMatch[0], "value") || "1");
-    }
-  }
+  applyReportDateDefaults(fields, consultForm.html);
+  applySearchSubmit(fields, consultForm.html);
 
   const action = new URL(consultForm.action);
 
@@ -994,7 +1113,7 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
     }
   }
 
-  return fetchTextFollowingRedirects(
+  const result = await fetchTextFollowingRedirects(
     action.toString(),
     {
       method: consultForm.method === "GET" ? "GET" : "POST",
@@ -1007,6 +1126,16 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
     },
     jar
   );
+
+  console.info("ALO CREDIT consulta reporte semanal", {
+    actionPath: action.pathname,
+    method: consultForm.method === "GET" ? "GET" : "POST",
+    fieldKeys: Array.from(fields.keys()).sort(),
+    rows: firstTableRows(result.text, 10).length,
+    muestras: debugHtmlRows(result.text),
+  });
+
+  return result;
 }
 
 async function fetchReportBufferFromUrl(
