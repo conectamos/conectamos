@@ -2,6 +2,7 @@ const ADDI_DEFAULT_AUTH_DOMAIN = "auth.addi.com";
 const ADDI_DEFAULT_CLIENT_ID = "LOzXiHhw5VBPNm8xZXK6mYeDo6PEANvg";
 const ADDI_DEFAULT_AUDIENCE = "https://api.addi.com";
 const ADDI_DEFAULT_CONNECTION = "Username-Password-Authentication";
+const ADDI_DEFAULT_CALLBACK_URL = "https://login.addi.com/login";
 const ADDI_PORTAL_ORIGIN = "https://aliados.addi.com";
 const ADDI_PORTAL_API_BASE_URL = "https://ally-portal.addi.com/";
 const ADDI_PORTAL_EXTERNAL_API_BASE_URL =
@@ -32,6 +33,7 @@ type AddiConfig = {
   audience: string;
   clientId: string;
   connection: string;
+  callbackUrl: string;
 };
 
 type AddiSession = {
@@ -168,6 +170,8 @@ function getConfiguredAddiConfig(): AddiConfig {
       ADDI_DEFAULT_CLIENT_ID,
     connection:
       parsed.searchParams.get("connection") || ADDI_DEFAULT_CONNECTION,
+    callbackUrl:
+      parsed.searchParams.get("redirect_uri") || ADDI_DEFAULT_CALLBACK_URL,
   };
 }
 
@@ -288,61 +292,391 @@ async function requestJson(
   throw new AddiConsultaLookupError(message);
 }
 
-async function loginAddi(): Promise<AddiSession> {
-  const config = getConfiguredAddiConfig();
-  const { usuario, clave } = getCredentials();
-  const url = new URL("/oauth/token", config.authBaseUrl).toString();
-  const attempts = [
+type CookieJar = Map<string, string>;
+
+function randomAuthValue() {
+  return (
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
+}
+
+function splitSetCookieHeader(value: string) {
+  return value.split(/,(?=\s*[^;,=]+=)/g).map((item) => item.trim());
+}
+
+function getSetCookieHeaders(headers: Headers) {
+  const extendedHeaders = headers as Headers & {
+    getSetCookie?: () => string[];
+    raw?: () => Record<string, string[]>;
+  };
+
+  if (typeof extendedHeaders.getSetCookie === "function") {
+    return extendedHeaders.getSetCookie();
+  }
+
+  const rawHeaders = extendedHeaders.raw?.();
+
+  if (rawHeaders?.["set-cookie"]) {
+    return rawHeaders["set-cookie"];
+  }
+
+  const header = headers.get("set-cookie");
+
+  return header ? splitSetCookieHeader(header) : [];
+}
+
+function storeResponseCookies(headers: Headers, jar: CookieJar) {
+  for (const cookie of getSetCookieHeaders(headers)) {
+    const [pair] = cookie.split(";");
+    const separatorIndex = pair.indexOf("=");
+
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    jar.set(pair.slice(0, separatorIndex).trim(), pair.slice(separatorIndex + 1));
+  }
+}
+
+function getCookieHeader(jar: CookieJar) {
+  return Array.from(jar.entries())
+    .map(([key, value]) => `${key}=${value}`)
+    .join("; ");
+}
+
+async function fetchWithCookies(
+  url: string,
+  init: RequestInit,
+  jar: CookieJar,
+  timeoutMs = 20000
+) {
+  const headers = new Headers(init.headers);
+  const cookieHeader = getCookieHeader(jar);
+
+  if (cookieHeader) {
+    headers.set("Cookie", cookieHeader);
+  }
+
+  const response = await fetchWithTimeout(
+    url,
     {
-      grant_type: "password",
-      username: usuario,
-      password: clave,
-      audience: config.audience,
-      scope: "openid profile email",
-      client_id: config.clientId,
-      connection: config.connection,
+      ...init,
+      headers,
+      redirect: "manual",
     },
-  ];
-  const errors: string[] = [];
+    timeoutMs
+  );
 
-  for (const body of attempts) {
-    try {
-      const payload = await requestJson(
-        url,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Origin: "https://login.addi.com",
-            Referer: "https://login.addi.com/",
-          },
-          body: JSON.stringify(body),
-        },
-        { timeoutMs: 15000 }
-      );
+  storeResponseCookies(response.headers, jar);
 
-      if (isRecord(payload) && typeof payload.access_token === "string") {
-        return { accessToken: payload.access_token };
-      }
+  return response;
+}
 
-      errors.push("ADDI no devolvio token de acceso.");
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
+async function fetchTextFollowingRedirects(
+  url: string,
+  init: RequestInit,
+  jar: CookieJar,
+  maxRedirects = 8
+) {
+  let currentUrl = url;
+  let requestInit = init;
+
+  for (let index = 0; index <= maxRedirects; index++) {
+    const response = await fetchWithCookies(currentUrl, requestInit, jar);
+    const location = response.headers.get("location");
+
+    if (
+      location &&
+      response.status >= 300 &&
+      response.status < 400 &&
+      index < maxRedirects
+    ) {
+      currentUrl = new URL(location, currentUrl).toString();
+      requestInit = {
+        method: "GET",
+        headers: init.headers,
+      };
+      continue;
+    }
+
+    return {
+      response,
+      text: await response.text(),
+      url: currentUrl,
+    };
+  }
+
+  throw new AddiConsultaLookupError("ADDI excedio los redireccionamientos.");
+}
+
+function getRecordValueString(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getRecordValueRecord(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  return isRecord(value) ? value : null;
+}
+
+function getOptionString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
     }
   }
 
-  const blockedGrant = errors.some((message) => {
-    const normalized = normalizeText(message);
+  return null;
+}
 
-    return normalized.includes("GRANT TYPE") && normalized.includes("NOT ALLOWED");
+function parseAuth0LockConfig(html: string) {
+  const match =
+    html.match(/window\.atob\('([^']+)'\)/) ||
+    html.match(/window\.atob\("([^"]+)"\)/);
+
+  if (!match) {
+    throw new AddiConsultaConfigError(
+      "ADDI no devolvio la configuracion del login."
+    );
+  }
+
+  const decoded = Buffer.from(match[1], "base64").toString("utf8");
+  const payload = JSON.parse(decoded) as unknown;
+
+  if (!isRecord(payload)) {
+    throw new AddiConsultaConfigError(
+      "ADDI devolvio una configuracion de login invalida."
+    );
+  }
+
+  return payload;
+}
+
+function buildInitialAuthorizeUrl(config: AddiConfig) {
+  const params = new URLSearchParams({
+    client_id: config.clientId,
+    response_type: "token",
+    response_mode: "form_post",
+    redirect_uri: config.callbackUrl,
+    audience: config.audience,
+    scope: "openid",
+    state: JSON.stringify({ redirect_url: `${ADDI_PORTAL_ORIGIN}/` }),
+    nonce: randomAuthValue(),
+    connection: config.connection,
   });
 
-  throw new AddiConsultaConfigError(
-    blockedGrant
-      ? "ADDI no permite iniciar sesion directo con usuario y clave para esta aplicacion. Se requiere habilitar Password Grant o usar una credencial API de ADDI."
-      : errors.find(Boolean) ||
-          "ADDI no permitio iniciar sesion con las credenciales configuradas."
+  return new URL(`/authorize?${params.toString()}`, config.authBaseUrl).toString();
+}
+
+function setAuthorizeParam(
+  params: URLSearchParams,
+  outputKey: string,
+  options: Record<string, unknown>,
+  inputKeys: string[],
+  fallback?: string | null
+) {
+  const value = getOptionString(options, inputKeys) || fallback;
+
+  if (value) {
+    params.set(outputKey, value);
+  }
+}
+
+function buildTicketAuthorizeUrl(
+  config: AddiConfig,
+  lockConfig: Record<string, unknown>,
+  loginTicket: string
+) {
+  const internalOptions =
+    getRecordValueRecord(lockConfig, "internalOptions") ||
+    getRecordValueRecord(lockConfig, "extraParams") ||
+    {};
+  const params = new URLSearchParams();
+  const clientId = getRecordValueString(lockConfig, "clientID") || config.clientId;
+
+  params.set("client_id", clientId);
+  setAuthorizeParam(params, "response_type", internalOptions, [
+    "response_type",
+    "responseType",
+  ], "token");
+  setAuthorizeParam(params, "response_mode", internalOptions, [
+    "response_mode",
+    "responseMode",
+  ], "form_post");
+  setAuthorizeParam(params, "redirect_uri", internalOptions, [
+    "redirect_uri",
+    "redirectUri",
+    "redirectURI",
+  ], getRecordValueString(lockConfig, "callbackURL") || config.callbackUrl);
+  setAuthorizeParam(params, "audience", internalOptions, ["audience"], config.audience);
+  setAuthorizeParam(params, "scope", internalOptions, ["scope"], "openid");
+  setAuthorizeParam(params, "state", internalOptions, ["state"], randomAuthValue());
+  setAuthorizeParam(params, "nonce", internalOptions, ["nonce"], randomAuthValue());
+  setAuthorizeParam(params, "_csrf", internalOptions, ["_csrf"]);
+  setAuthorizeParam(params, "_intstate", internalOptions, ["_intstate"]);
+  setAuthorizeParam(params, "protocol", internalOptions, ["protocol"], "oauth2");
+  params.set(
+    "connection",
+    getRecordValueString(lockConfig, "connection") || config.connection
   );
+  params.set("login_ticket", loginTicket);
+
+  return new URL(`/authorize?${params.toString()}`, config.authBaseUrl).toString();
+}
+
+function decodeHtmlAttribute(value: string) {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) =>
+      String.fromCharCode(parseInt(hex, 16))
+    )
+    .replace(/&#(\d+);/g, (_, code: string) =>
+      String.fromCharCode(Number(code))
+    );
+}
+
+function getHtmlAttribute(tag: string, attribute: string) {
+  const match = tag.match(
+    new RegExp(`${attribute}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i")
+  );
+  const value = match?.[1] ?? match?.[2] ?? match?.[3];
+
+  return value ? decodeHtmlAttribute(value) : null;
+}
+
+function getFormFields(html: string) {
+  const fields = new Map<string, string>();
+  const inputTags = html.match(/<input\b[^>]*>/gi) || [];
+
+  for (const tag of inputTags) {
+    const name = getHtmlAttribute(tag, "name");
+
+    if (!name) {
+      continue;
+    }
+
+    fields.set(name, getHtmlAttribute(tag, "value") || "");
+  }
+
+  return fields;
+}
+
+function getAccessTokenFromUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+    const hashToken = new URLSearchParams(hash).get("access_token");
+
+    return hashToken || url.searchParams.get("access_token");
+  } catch {
+    return null;
+  }
+}
+
+async function loginAddi(): Promise<AddiSession> {
+  const config = getConfiguredAddiConfig();
+  const { usuario, clave } = getCredentials();
+  const jar: CookieJar = new Map();
+  const authPage = await fetchTextFollowingRedirects(
+    buildInitialAuthorizeUrl(config),
+    {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        ...getAddiBrowserHeaders(),
+      },
+    },
+    jar
+  );
+
+  if (!authPage.response.ok) {
+    throw new AddiConsultaConfigError(
+      `ADDI no abrio el login. Estado ${authPage.response.status}.`
+    );
+  }
+
+  const lockConfig = parseAuth0LockConfig(authPage.text);
+  const authDomain = getRecordValueString(lockConfig, "auth0Domain");
+  const authBaseUrl = authDomain ? `https://${authDomain}` : config.authBaseUrl;
+  const clientId = getRecordValueString(lockConfig, "clientID") || config.clientId;
+  const connection =
+    getRecordValueString(lockConfig, "connection") || config.connection;
+  const authenticateResponse = await fetchWithCookies(
+    new URL("/co/authenticate", authBaseUrl).toString(),
+    {
+      method: "POST",
+      headers: {
+        ...getAddiBrowserHeaders(),
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Origin: authBaseUrl,
+        Referer: `${authBaseUrl}/login`,
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        username: usuario,
+        password: clave,
+        realm: connection,
+        credential_type: "http://auth0.com/oauth/grant-type/password-realm",
+      }),
+    },
+    jar,
+    15000
+  );
+  const authenticatePayload = await readJsonResponse(authenticateResponse);
+
+  if (!authenticateResponse.ok) {
+    throw new AddiConsultaConfigError(
+      getMessage(authenticatePayload) ||
+        "ADDI no permitio iniciar sesion con las credenciales configuradas."
+    );
+  }
+
+  if (
+    !isRecord(authenticatePayload) ||
+    typeof authenticatePayload.login_ticket !== "string"
+  ) {
+    throw new AddiConsultaConfigError("ADDI no devolvio ticket de login.");
+  }
+
+  const ticketPage = await fetchTextFollowingRedirects(
+    buildTicketAuthorizeUrl(
+      { ...config, authBaseUrl },
+      lockConfig,
+      authenticatePayload.login_ticket
+    ),
+    {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        ...getAddiBrowserHeaders(),
+      },
+    },
+    jar
+  );
+  const fields = getFormFields(ticketPage.text);
+  const error = fields.get("error");
+  const accessToken =
+    fields.get("access_token") || getAccessTokenFromUrl(ticketPage.url);
+
+  if (error) {
+    throw new AddiConsultaConfigError(
+      fields.get("error_description") || "ADDI rechazo el inicio de sesion."
+    );
+  }
+
+  if (!accessToken) {
+    throw new AddiConsultaConfigError("ADDI no devolvio token de acceso.");
+  }
+
+  return { accessToken };
 }
 
 async function getProtectedJson(baseUrl: string, accessToken: string, path: string) {
