@@ -796,6 +796,32 @@ async function getProtectedJson(
   );
 }
 
+async function postProtectedJson(
+  baseUrl: string,
+  session: AddiSession,
+  path: string,
+  body: unknown,
+  timeoutMs = 20000
+) {
+  const url = new URL(path.replace(/^\/+/, ""), baseUrl).toString();
+
+  return unwrapData(
+    await requestJson(
+      url,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": "application/json",
+          ...(session.authCookie ? { Cookie: session.authCookie } : {}),
+        },
+      },
+      { allowNotFound: true, timeoutMs }
+    )
+  );
+}
+
 function collectRecords(
   value: unknown,
   source: string,
@@ -1256,6 +1282,31 @@ function getAmount(record: Record<string, unknown>) {
   ]);
 }
 
+function getReportedCreditAmount(record: Record<string, unknown>) {
+  return deepNumber(record, [
+    "applicationRequestedAmount",
+    "applicationRequestedAmountWithoutDiscount",
+    "approvedValue",
+    "approvedAmount",
+    "creditAmount",
+    "loanAmount",
+    "transactionAmount",
+    "totalAmount",
+    "capital",
+    "value",
+    "valor",
+    "amount",
+  ]);
+}
+
+function amountsMatch(a: number | null, b: number | null) {
+  if (a === null || b === null) {
+    return false;
+  }
+
+  return Math.abs(Math.round(a) - Math.round(b)) <= 1;
+}
+
 function getInstallment(record: Record<string, unknown>, amount?: number | null) {
   const exact = deepNumber(record, [
     "installmentAmount",
@@ -1620,6 +1671,36 @@ function recordContainsCandidate(
   );
 }
 
+function recordLooksLikeCandidateCredit(record: Record<string, unknown>) {
+  return Boolean(
+    getTerm(record, getReportedCreditAmount(record) ?? getAmount(record)) ||
+      getInstallment(record, getReportedCreditAmount(record) ?? getAmount(record))
+  );
+}
+
+function recordLikelyCandidateDetail(
+  record: Record<string, unknown>,
+  candidate: AddiCandidate,
+  documento: string
+) {
+  const recordDocument = getDocument(record);
+
+  if (recordDocument && recordDocument !== documento) {
+    return false;
+  }
+
+  if (recordContainsCandidate(record, candidate, documento)) {
+    return true;
+  }
+
+  const reportedAmount = getReportedCreditAmount(record) ?? getAmount(record);
+
+  return (
+    recordLooksLikeCandidateCredit(record) &&
+    amountsMatch(reportedAmount, candidate.creditoAutorizado)
+  );
+}
+
 function getCandidateAllySlug(candidate: AddiCandidate) {
   return candidate.allySlug || getAllySlug(candidate.record);
 }
@@ -1683,6 +1764,30 @@ function getAddiPaymentLookupPaths(candidate: AddiCandidate, documento: string) 
   return Array.from(new Set(paths)).slice(0, 8);
 }
 
+function getAddiPaymentLookupRequests(
+  candidate: AddiCandidate,
+  documento: string
+) {
+  const paths = getAddiPaymentLookupPaths(candidate, documento);
+  const requests: Array<{ source: string; path: string }> = [];
+
+  for (const path of paths) {
+    requests.push({
+      source: "ally-portal-payments",
+      path,
+    });
+
+    if (path.startsWith("/allies/payments?")) {
+      requests.push({
+        source: "ally-portal-payments-legacy",
+        path: path.replace("/allies/payments?", "/payments?"),
+      });
+    }
+  }
+
+  return requests;
+}
+
 function getPaymentIdsFromPayloads(
   payloads: AddiPayload[],
   candidate: AddiCandidate,
@@ -1729,13 +1834,13 @@ async function fetchAddiPaymentPayloads(
   candidate: AddiCandidate,
   documento: string
 ) {
-  const paths = getAddiPaymentLookupPaths(candidate, documento);
-  const paymentListRequests: Array<Promise<AddiPayload | null>> = paths.map(
-    async (path) => {
+  const lookupRequests = getAddiPaymentLookupRequests(candidate, documento);
+  const paymentListRequests: Array<Promise<AddiPayload | null>> =
+    lookupRequests.map(async (request) => {
       const data = await getProtectedJson(
         ADDI_PORTAL_API_BASE_URL,
         session,
-        path,
+        request.path,
         6000
       );
 
@@ -1744,11 +1849,10 @@ async function fetchAddiPaymentPayloads(
       }
 
       return {
-        source: "ally-portal-payments",
+        source: request.source,
         data,
       };
-    }
-  );
+    });
   const paymentListResults = await Promise.allSettled(paymentListRequests);
   const payloads = paymentListResults
     .filter(
@@ -1758,26 +1862,58 @@ async function fetchAddiPaymentPayloads(
     .map((result) => result.value)
     .filter((payload): payload is AddiPayload => Boolean(payload));
   const paymentIds = getPaymentIdsFromPayloads(payloads, candidate, documento);
-  const paymentDetailRequests: Array<Promise<AddiPayload | null>> = paymentIds.map(
-    async (paymentId) => {
-      const data = await getProtectedJson(
-        ADDI_PORTAL_API_BASE_URL,
-        session,
-        `/allies/payments/${encodeURIComponent(paymentId)}`,
-        6000
-      );
+  const paymentDetailRequests: Array<Promise<AddiPayload | null>> =
+    paymentIds.flatMap((paymentId) => {
+      const encodedPaymentId = encodeURIComponent(paymentId);
 
-      if (!data) {
-        return null;
-      }
+      return [
+        {
+          source: "ally-portal-payment-detail",
+          path: `/allies/payments/${encodedPaymentId}`,
+        },
+        {
+          source: "ally-portal-payment-detail-legacy",
+          path: `/payments/${encodedPaymentId}`,
+        },
+      ].map(async (request) => {
+        const data = await getProtectedJson(
+          ADDI_PORTAL_API_BASE_URL,
+          session,
+          request.path,
+          6000
+        );
 
-      return {
-        source: "ally-portal-payment-detail",
-        data,
-      };
-    }
-  );
-  const paymentDetailResults = await Promise.allSettled(paymentDetailRequests);
+        if (!data) {
+          return null;
+        }
+
+        return {
+          source: request.source,
+          data,
+        };
+      });
+    });
+  const consolidateRequest =
+    paymentIds.length > 0
+      ? postProtectedJson(
+          ADDI_PORTAL_API_BASE_URL,
+          session,
+          "/payments/reports/consolidate",
+          { paymentIds },
+          8000
+        ).then((data) =>
+          data
+            ? ({
+                source: "ally-portal-payments-consolidate",
+                data,
+              } satisfies AddiPayload)
+            : null
+        )
+      : Promise.resolve(null);
+  const [paymentDetailResults, consolidateResult] = await Promise.all([
+    Promise.allSettled(paymentDetailRequests),
+    consolidateRequest.catch(() => null),
+  ]);
 
   return [
     ...payloads,
@@ -1788,6 +1924,7 @@ async function fetchAddiPaymentPayloads(
       )
       .map((result) => result.value)
       .filter((payload): payload is AddiPayload => Boolean(payload)),
+    ...(consolidateResult ? [consolidateResult] : []),
   ];
 }
 
@@ -1921,11 +2058,17 @@ function mergeCandidateDetails(
   let merged = { ...candidate };
 
   for (const { record } of allRecords) {
-    if (!recordMatchesCandidate(record, candidate, documento)) {
+    if (
+      !recordMatchesCandidate(record, candidate, documento) &&
+      !recordLikelyCandidateDetail(record, candidate, documento)
+    ) {
       continue;
     }
 
-    const amount = getAmount(record) ?? candidate.creditoAutorizado;
+    const amount =
+      getReportedCreditAmount(record) ??
+      getAmount(record) ??
+      candidate.creditoAutorizado;
     const plan = findPlanArrayInfo(record, amount);
     const numeroCuotas =
       candidate.numeroCuotas ?? plan?.term ?? getTerm(record, amount);
