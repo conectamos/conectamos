@@ -7,6 +7,7 @@ const ADDI_PORTAL_ORIGIN = "https://aliados.addi.com";
 const ADDI_PORTAL_API_BASE_URL = "https://ally-portal.addi.com/";
 const ADDI_PORTAL_EXTERNAL_API_BASE_URL =
   "https://ally-portal-external-api.addi.com/";
+const ADDI_PAYLINK_API_BASE_URL = "https://backend.addi.com/";
 const ADDI_IDENTITY_MANAGEMENT_API_BASE_URL =
   "https://identity-management-sync-api.addi.com/";
 const COLOMBIA_TIME_ZONE = "America/Bogota";
@@ -19,6 +20,7 @@ export type AddiCreditoCedula = {
   clienteNombre: string | null;
   correoElectronico: string | null;
   telefonoCliente: string | null;
+  direccionCliente: string | null;
   fechaCreacionCredito: string | null;
   puntoCredito: string | null;
   creditoAutorizado: number;
@@ -56,6 +58,7 @@ type AddiCandidate = {
   clienteNombre: string | null;
   correoElectronico: string | null;
   telefonoCliente: string | null;
+  direccionCliente: string | null;
   fechaCreacionCredito: string | null;
   puntoCredito: string | null;
   creditoAutorizado: number;
@@ -211,6 +214,20 @@ function getConfiguredAddiConfig(): AddiConfig {
       String(process.env.ADDICONSULTA_IDENTITY_URL || "").trim() ||
       ADDI_IDENTITY_MANAGEMENT_API_BASE_URL,
   };
+}
+
+function getAddiPaylinkBaseUrl() {
+  const rawUrl = String(process.env.ADDICONSULTA_PAYLINK_URL || "").trim();
+
+  if (!rawUrl) {
+    return ADDI_PAYLINK_API_BASE_URL;
+  }
+
+  try {
+    return new URL("/", rawUrl).toString();
+  } catch {
+    return ADDI_PAYLINK_API_BASE_URL;
+  }
 }
 
 function getCredentials() {
@@ -1150,6 +1167,23 @@ function getPhone(record: Record<string, unknown>) {
   ]);
 }
 
+function getAddress(record: Record<string, unknown>) {
+  return deepText(record, [
+    "address",
+    "addressLine",
+    "addressLine1",
+    "clientAddress",
+    "customerAddress",
+    "residenceAddress",
+    "homeAddress",
+    "shippingAddress",
+    "billingAddress",
+    "direccion",
+    "direccionCliente",
+    "domicilio",
+  ]);
+}
+
 function getStoreName(record: Record<string, unknown>) {
   const direct = deepText(record, [
     "storeName",
@@ -1817,6 +1851,29 @@ async function fetchAddiCandidateDetailPayloads(
     });
   }
 
+  if (allySlug) {
+    requests.push({
+      source: "addi-paylink-contact-info",
+      baseUrl: getAddiPaylinkBaseUrl(),
+      path: `/payment-links/customers/${encodeURIComponent(
+        allySlug
+      )}/${encodeURIComponent(documento)}/contact-info`,
+      timeoutMs: 7000,
+      wrapData: (contact) =>
+        isRecord(contact)
+          ? {
+              nationalIdNumber: documento,
+              allySlug,
+              ...contact,
+            }
+          : {
+              nationalIdNumber: documento,
+              allySlug,
+              contact,
+            },
+    });
+  }
+
   const [detailResults, paymentPayloads] = await Promise.all([
     Promise.allSettled(
       requests.map(async (request) => {
@@ -1883,6 +1940,7 @@ function mergeCandidateDetails(
       clienteNombre: merged.clienteNombre ?? getClientName(record),
       correoElectronico: merged.correoElectronico ?? getEmail(record),
       telefonoCliente: merged.telefonoCliente ?? getPhone(record),
+      direccionCliente: merged.direccionCliente ?? getAddress(record),
       allySlug: merged.allySlug ?? getAllySlug(record),
       storeSlug: merged.storeSlug ?? getStoreSlug(record),
       numeroCuotas,
@@ -1929,6 +1987,7 @@ function buildCandidates(payloads: AddiPayload[], documento: string) {
         clienteNombre: getClientName(record),
         correoElectronico: getEmail(record),
         telefonoCliente: getPhone(record),
+        direccionCliente: getAddress(record),
         fechaCreacionCredito: parsedDate.dateKey || fechaCreacionCredito,
         puntoCredito: getStoreName(record),
         creditoAutorizado,
@@ -1967,12 +2026,16 @@ function getRelevantDebugKeys(record: Record<string, unknown>) {
       return (
         normalized.includes("AMOUNT") ||
         normalized.includes("APPLICATION") ||
+        normalized.includes("ADDRESS") ||
         normalized.includes("BALANCE") ||
         normalized.includes("CUOTA") ||
+        normalized.includes("DIRECCION") ||
+        normalized.includes("EMAIL") ||
         normalized.includes("INSTALLMENT") ||
         normalized.includes("LOAN") ||
         normalized.includes("MONTH") ||
         normalized.includes("PAYMENT") ||
+        normalized.includes("PHONE") ||
         normalized.includes("PLAN") ||
         normalized.includes("PLAZO") ||
         normalized.includes("TERM") ||
@@ -2133,6 +2196,7 @@ export async function obtenerCreditoAddiPorCedula(
     clienteNombre: enrichedCandidate.clienteNombre,
     correoElectronico: enrichedCandidate.correoElectronico,
     telefonoCliente: enrichedCandidate.telefonoCliente,
+    direccionCliente: enrichedCandidate.direccionCliente,
     fechaCreacionCredito: enrichedCandidate.fechaCreacionCredito,
     puntoCredito: enrichedCandidate.puntoCredito,
     creditoAutorizado: enrichedCandidate.creditoAutorizado,

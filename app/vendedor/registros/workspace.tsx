@@ -198,6 +198,7 @@ type CreditoFinancieraCedula = {
   clienteNombre: string | null;
   correoElectronico: string | null;
   telefonoCliente: string | null;
+  direccionCliente: string | null;
   fechaCreacionCredito: string | null;
   puntoCredito: string | null;
   creditoAutorizado: number;
@@ -1463,6 +1464,9 @@ export default function VendedorRegistroWorkspace({
     const creditoTelefono = creditosAplicables.find(
       (credito) => credito.telefonoCliente
     );
+    const creditoDireccion = creditosAplicables.find(
+      (credito) => credito.direccionCliente
+    );
     const creditosPorIndex = Object.fromEntries(
       creditosAplicables.map((credito, index) => [index, credito])
     ) as Record<number, CreditoFinancieraCedula>;
@@ -1495,6 +1499,7 @@ export default function VendedorRegistroWorkspace({
         whatsapp:
           whatsappCredito.length === 10 ? whatsappCredito : current.whatsapp,
         telefono: telefonoCredito || current.telefono,
+        direccion: creditoDireccion?.direccionCliente || current.direccion,
         medioPago2Tipo: "",
         medioPago2Valor: "",
         financierasDetalle: current.financierasDetalle.map((item, itemIndex) => {

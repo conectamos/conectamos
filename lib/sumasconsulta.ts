@@ -16,6 +16,7 @@ export type SumasPayCreditoCedula = {
   clienteNombre: string | null;
   correoElectronico: string | null;
   telefonoCliente: string | null;
+  direccionCliente: string | null;
   fechaCreacionCredito: string | null;
   puntoCredito: string | null;
   creditoAutorizado: number;
@@ -896,6 +897,30 @@ function getClientPhone(...values: unknown[]) {
   return null;
 }
 
+function getClientAddress(...values: unknown[]) {
+  for (const value of values) {
+    const address = deepString(value, [
+      "direccion",
+      "direccionCliente",
+      "address",
+      "addressLine",
+      "addressLine1",
+      "clientAddress",
+      "customerAddress",
+      "residenceAddress",
+      "homeAddress",
+      "domicilio",
+      "dir",
+    ]);
+
+    if (address && address !== "[object Object]") {
+      return address;
+    }
+  }
+
+  return null;
+}
+
 function formatDateParts(year: number, month: number, day: number) {
   if (year < 1900 || year > 2100) {
     return null;
@@ -1715,6 +1740,7 @@ export async function obtenerCreditoSumasPayPorCedula(
     clienteNombre: getClientName(...clientPayloads),
     correoElectronico: getClientEmail(...clientPayloads),
     telefonoCliente: getClientPhone(...clientPayloads),
+    direccionCliente: getClientAddress(...clientPayloads),
     fechaCreacionCredito: candidate.fechaCreacionCredito,
     puntoCredito: candidate.puntoCredito,
     creditoAutorizado: candidate.creditoAutorizado,
