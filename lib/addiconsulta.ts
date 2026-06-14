@@ -11,6 +11,7 @@ const ADDI_IDENTITY_MANAGEMENT_API_BASE_URL =
   "https://identity-management-sync-api.addi.com/";
 const COLOMBIA_TIME_ZONE = "America/Bogota";
 const ADDI_STORE_KEYWORD = "CONECTAMOS";
+const ADDI_PAYMENT_REPORT_PAGE_SIZE = 25;
 
 export type AddiCreditoCedula = {
   documento: string;
@@ -65,6 +66,8 @@ type AddiCandidate = {
   transactionId: string | null;
   loanId: string | null;
   applicationId: string | null;
+  allySlug: string | null;
+  storeSlug: string | null;
   sortTime: number;
 };
 
@@ -1190,6 +1193,20 @@ function getStoreName(record: Record<string, unknown>) {
   return null;
 }
 
+function getAllySlug(record: Record<string, unknown>) {
+  return deepText(record, [
+    "allySlug",
+    "allySLug",
+    "allyId",
+    "brandSlug",
+    "merchantSlug",
+  ]);
+}
+
+function getStoreSlug(record: Record<string, unknown>) {
+  return deepText(record, ["storeSlug", "shopSlug", "commerceSlug"]);
+}
+
 function getAmount(record: Record<string, unknown>) {
   return deepNumber(record, [
     "amount",
@@ -1328,7 +1345,7 @@ function getLoanId(record: Record<string, unknown>) {
 }
 
 function getApplicationId(record: Record<string, unknown>) {
-  return deepText(record, ["applicationId", "applicationID"]);
+  return deepText(record, ["applicationId", "applicationID", "application"]);
 }
 
 function getCreditDate(record: Record<string, unknown>) {
@@ -1360,6 +1377,17 @@ function getRecentDateSet() {
   const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   return new Set([getDateInColombia(now), getDateInColombia(yesterday)]);
+}
+
+function shiftDateKey(dateKey: string, days: number) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+
+  return date.toISOString().slice(0, 10);
+}
+
+function toAddiReportDateTime(dateKey: string) {
+  return `${dateKey}T05:00:00-05:00`;
 }
 
 function parseSpanishDate(value: string) {
@@ -1497,9 +1525,242 @@ function getAddiCandidateDetailIds(candidate: AddiCandidate) {
   ).slice(0, 3);
 }
 
+function getCandidateIdentityValues(candidate: AddiCandidate, documento: string) {
+  return Array.from(
+    new Set(
+      [
+        documento,
+        candidate.transactionId,
+        candidate.ordenId,
+        candidate.loanId,
+        candidate.applicationId,
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function getRecordIdentityValues(record: Record<string, unknown>) {
+  return Array.from(
+    new Set(
+      [
+        getDocument(record),
+        getTransactionId(record),
+        getOrderId(record),
+        getLoanId(record),
+        getApplicationId(record),
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function recordMatchesCandidate(
+  record: Record<string, unknown>,
+  candidate: AddiCandidate,
+  documento: string
+) {
+  const recordDocument = getDocument(record);
+
+  if (recordDocument && recordDocument !== documento) {
+    return false;
+  }
+
+  const candidateValues = new Set(getCandidateIdentityValues(candidate, documento));
+  const sharesId = getRecordIdentityValues(record).some((value) =>
+    candidateValues.has(value)
+  );
+
+  return Boolean(recordDocument || sharesId);
+}
+
+function recordContainsCandidate(
+  record: Record<string, unknown>,
+  candidate: AddiCandidate,
+  documento: string
+) {
+  return collectRecords(record, "candidate-scan").some((item) =>
+    recordMatchesCandidate(item.record, candidate, documento)
+  );
+}
+
+function getCandidateAllySlug(candidate: AddiCandidate) {
+  return candidate.allySlug || getAllySlug(candidate.record);
+}
+
+function buildAddiPaymentQuery(params: Record<string, string | null | undefined>) {
+  const query = new URLSearchParams({
+    page: "1",
+    size: String(ADDI_PAYMENT_REPORT_PAGE_SIZE),
+  });
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      query.set(key, value);
+    }
+  }
+
+  return query.toString();
+}
+
+function getAddiPaymentLookupPaths(candidate: AddiCandidate, documento: string) {
+  const today = getDateInColombia();
+  const startDate = shiftDateKey(today, -1);
+  const endDate = shiftDateKey(today, 1);
+  const start = toAddiReportDateTime(startDate);
+  const end = toAddiReportDateTime(endDate);
+  const allySlug = getCandidateAllySlug(candidate);
+  const paths: string[] = [];
+  const directValues = getCandidateIdentityValues(candidate, documento).slice(0, 4);
+
+  for (const value of directValues) {
+    paths.push(`/allies/payments?${buildAddiPaymentQuery({ searchField: value })}`);
+  }
+
+  if (candidate.applicationId) {
+    paths.push(
+      `/allies/payments?${buildAddiPaymentQuery({
+        applicationId: candidate.applicationId,
+      })}`
+    );
+  }
+
+  if (candidate.loanId) {
+    paths.push(
+      `/allies/payments?${buildAddiPaymentQuery({ loanId: candidate.loanId })}`
+    );
+  }
+
+  paths.push(
+    `/allies/payments?${buildAddiPaymentQuery({
+      start,
+      end,
+      allyName: allySlug,
+    })}`,
+    `/allies/payments?${buildAddiPaymentQuery({
+      paymentStart: start,
+      paymentEnd: end,
+      allyName: allySlug,
+    })}`
+  );
+
+  return Array.from(new Set(paths)).slice(0, 8);
+}
+
+function getPaymentIdsFromPayloads(
+  payloads: AddiPayload[],
+  candidate: AddiCandidate,
+  documento: string
+) {
+  const ids: string[] = [];
+  const fallbackIds: string[] = [];
+
+  for (const payload of payloads) {
+    const records = collectRecords(payload.data, payload.source);
+
+    for (const { record } of records) {
+      const id = deepText(record, [
+        "paymentId",
+        "paymentID",
+        "paymentUuid",
+        "id",
+      ]);
+
+      if (!id) {
+        continue;
+      }
+
+      if (recordMatchesCandidate(record, candidate, documento)) {
+        ids.push(id);
+        continue;
+      }
+
+      if (recordContainsCandidate(record, candidate, documento)) {
+        ids.push(id);
+      } else {
+        fallbackIds.push(id);
+      }
+    }
+  }
+
+  const selectedIds = ids.length > 0 ? ids : fallbackIds;
+
+  return Array.from(new Set(selectedIds)).slice(0, ids.length > 0 ? 6 : 3);
+}
+
+async function fetchAddiPaymentPayloads(
+  session: AddiSession,
+  candidate: AddiCandidate,
+  documento: string
+) {
+  const paths = getAddiPaymentLookupPaths(candidate, documento);
+  const paymentListRequests: Array<Promise<AddiPayload | null>> = paths.map(
+    async (path) => {
+      const data = await getProtectedJson(
+        ADDI_PORTAL_API_BASE_URL,
+        session,
+        path,
+        6000
+      );
+
+      if (!data) {
+        return null;
+      }
+
+      return {
+        source: "ally-portal-payments",
+        data,
+      };
+    }
+  );
+  const paymentListResults = await Promise.allSettled(paymentListRequests);
+  const payloads = paymentListResults
+    .filter(
+      (result): result is PromiseFulfilledResult<AddiPayload | null> =>
+        result.status === "fulfilled"
+    )
+    .map((result) => result.value)
+    .filter((payload): payload is AddiPayload => Boolean(payload));
+  const paymentIds = getPaymentIdsFromPayloads(payloads, candidate, documento);
+  const paymentDetailRequests: Array<Promise<AddiPayload | null>> = paymentIds.map(
+    async (paymentId) => {
+      const data = await getProtectedJson(
+        ADDI_PORTAL_API_BASE_URL,
+        session,
+        `/allies/payments/${encodeURIComponent(paymentId)}`,
+        6000
+      );
+
+      if (!data) {
+        return null;
+      }
+
+      return {
+        source: "ally-portal-payment-detail",
+        data,
+      };
+    }
+  );
+  const paymentDetailResults = await Promise.allSettled(paymentDetailRequests);
+
+  return [
+    ...payloads,
+    ...paymentDetailResults
+      .filter(
+        (result): result is PromiseFulfilledResult<AddiPayload | null> =>
+          result.status === "fulfilled"
+      )
+      .map((result) => result.value)
+      .filter((payload): payload is AddiPayload => Boolean(payload)),
+  ];
+}
+
 async function fetchAddiCandidateDetailPayloads(
   session: AddiSession,
-  candidate: AddiCandidate
+  candidate: AddiCandidate,
+  documento: string
 ) {
   if (candidate.numeroCuotas && candidate.valorCuota) {
     return [];
@@ -1507,50 +1768,83 @@ async function fetchAddiCandidateDetailPayloads(
 
   const payloads: AddiPayload[] = [];
   const ids = getAddiCandidateDetailIds(candidate);
+  const requests: Array<{
+    source: string;
+    baseUrl: string;
+    path: string;
+    timeoutMs: number;
+    wrapData?: (data: unknown) => unknown;
+  }> = [];
 
   for (const id of ids) {
     const encoded = encodeURIComponent(id);
-    const requests: Array<{
-      source: string;
-      baseUrl: string;
-      path: string;
-    }> = [
+
+    requests.push(
       {
         source: "ally-portal-transaction-detail",
         baseUrl: ADDI_PORTAL_API_BASE_URL,
         path: `/transactions/${encoded}`,
+        timeoutMs: 7000,
       },
       {
         source: "ally-portal-external-transaction-detail",
         baseUrl: ADDI_PORTAL_EXTERNAL_API_BASE_URL,
         path: `/v1/transactions/${encoded}`,
-      },
-    ];
+        timeoutMs: 7000,
+      }
+    );
+  }
 
-    for (const request of requests) {
-      try {
+  const applicationId = candidate.applicationId || candidate.ordenId;
+  const allySlug = getCandidateAllySlug(candidate);
+
+  if (applicationId && allySlug) {
+    const query = new URLSearchParams({
+      applicationId,
+      allySlug,
+    });
+
+    requests.push({
+      source: "ally-portal-external-balance",
+      baseUrl: ADDI_PORTAL_EXTERNAL_API_BASE_URL,
+      path: `/v1/balance?${query.toString()}`,
+      timeoutMs: 7000,
+      wrapData: (balance) => ({
+        applicationId,
+        allySlug,
+        balance,
+      }),
+    });
+  }
+
+  const [detailResults, paymentPayloads] = await Promise.all([
+    Promise.allSettled(
+      requests.map(async (request) => {
         const data = await getProtectedJson(
           request.baseUrl,
           session,
           request.path,
-          7000
+          request.timeoutMs
         );
 
-        if (data) {
-          payloads.push({
-            source: request.source,
-            data,
-          });
-        }
-      } catch {
-        continue;
-      }
-    }
+        return data
+          ? ({
+              source: request.source,
+              data: request.wrapData ? request.wrapData(data) : data,
+            } satisfies AddiPayload)
+          : null;
+      })
+    ),
+    fetchAddiPaymentPayloads(session, candidate, documento),
+  ]);
 
-    if (payloads.length > 0) {
-      break;
+  for (const result of detailResults) {
+    if (result.status === "fulfilled" && result.value) {
+      payloads.push(result.value);
     }
   }
+
+  payloads.push(...paymentPayloads);
 
   return payloads;
 }
@@ -1570,24 +1864,7 @@ function mergeCandidateDetails(
   let merged = { ...candidate };
 
   for (const { record } of allRecords) {
-    const recordDocument = getDocument(record);
-
-    if (recordDocument && recordDocument !== documento) {
-      continue;
-    }
-
-    const recordTransactionId = getTransactionId(record);
-    const recordOrderId = getOrderId(record);
-    const recordLoanId = getLoanId(record);
-    const recordApplicationId = getApplicationId(record);
-    const sharesId = [
-      recordTransactionId && recordTransactionId === candidate.transactionId,
-      recordOrderId && recordOrderId === candidate.ordenId,
-      recordLoanId && recordLoanId === candidate.loanId,
-      recordApplicationId && recordApplicationId === candidate.applicationId,
-    ].some(Boolean);
-
-    if (!recordDocument && !sharesId) {
+    if (!recordMatchesCandidate(record, candidate, documento)) {
       continue;
     }
 
@@ -1606,6 +1883,8 @@ function mergeCandidateDetails(
       clienteNombre: merged.clienteNombre ?? getClientName(record),
       correoElectronico: merged.correoElectronico ?? getEmail(record),
       telefonoCliente: merged.telefonoCliente ?? getPhone(record),
+      allySlug: merged.allySlug ?? getAllySlug(record),
+      storeSlug: merged.storeSlug ?? getStoreSlug(record),
       numeroCuotas,
       valorCuota,
     };
@@ -1660,6 +1939,8 @@ function buildCandidates(payloads: AddiPayload[], documento: string) {
         transactionId: getTransactionId(record),
         loanId: getLoanId(record),
         applicationId: getApplicationId(record),
+        allySlug: getAllySlug(record),
+        storeSlug: getStoreSlug(record),
         sortTime: parsedDate.sortTime,
       });
     }
@@ -1676,6 +1957,53 @@ function describeCandidates(candidates: AddiCandidate[]) {
     puntoCredito: candidate.puntoCredito,
     creditoAutorizado: candidate.creditoAutorizado,
   }));
+}
+
+function getRelevantDebugKeys(record: Record<string, unknown>) {
+  return Object.keys(record)
+    .filter((key) => {
+      const normalized = normalizeKey(key);
+
+      return (
+        normalized.includes("AMOUNT") ||
+        normalized.includes("APPLICATION") ||
+        normalized.includes("BALANCE") ||
+        normalized.includes("CUOTA") ||
+        normalized.includes("INSTALLMENT") ||
+        normalized.includes("LOAN") ||
+        normalized.includes("MONTH") ||
+        normalized.includes("PAYMENT") ||
+        normalized.includes("PLAN") ||
+        normalized.includes("PLAZO") ||
+        normalized.includes("TERM") ||
+        normalized.includes("VALUE") ||
+        normalized.includes("VALOR")
+      );
+    })
+    .slice(0, 25);
+}
+
+function describeDetailPayloads(
+  payloads: AddiPayload[],
+  candidate: AddiCandidate,
+  documento: string
+) {
+  return payloads.map((payload) => {
+    const records = collectRecords(payload.data, payload.source);
+    const matchedRecords = records.filter((item) =>
+      recordMatchesCandidate(item.record, candidate, documento)
+    );
+    const relevantKeys = Array.from(
+      new Set(matchedRecords.flatMap((item) => getRelevantDebugKeys(item.record)))
+    ).slice(0, 30);
+
+    return {
+      source: payload.source,
+      records: records.length,
+      matchedRecords: matchedRecords.length,
+      relevantKeys,
+    };
+  });
 }
 
 export function isAddiConsultaConfigured() {
@@ -1778,13 +2106,26 @@ export async function obtenerCreditoAddiPorCedula(
 
   const detailPayloads = await fetchAddiCandidateDetailPayloads(
     session,
-    selectedCandidate
+    selectedCandidate,
+    documento
   );
   const enrichedCandidate = mergeCandidateDetails(
     selectedCandidate,
     detailPayloads,
     documento
   );
+
+  if (!enrichedCandidate.numeroCuotas || !enrichedCandidate.valorCuota) {
+    console.info("ADDI credito sin cuota o plazo en payloads consultados", {
+      documento: maskDocumento(documento),
+      origen: enrichedCandidate.source,
+      fuentes: describeDetailPayloads(
+        detailPayloads,
+        selectedCandidate,
+        documento
+      ),
+    });
+  }
 
   return {
     documento,
