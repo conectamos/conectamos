@@ -1792,6 +1792,76 @@ function buildAddiPaymentQuery(
   return query.toString();
 }
 
+function buildAddiTransactionQuery(params: Record<string, string | null | undefined>) {
+  const query = new URLSearchParams({
+    limit: "5000",
+  });
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      query.set(key, value);
+    }
+  }
+
+  return query.toString();
+}
+
+function toAddiTransactionDateTime(dateKey: string, endOfDay = false) {
+  return `${dateKey}T${endOfDay ? "23:59:59" : "00:00:00"}-05:00`;
+}
+
+function getAddiTransactionLookupRequests(
+  candidate: AddiCandidate,
+  documento: string
+) {
+  const today = getDateInColombia();
+  const startDate = shiftDateKey(today, -1);
+  const endDate = shiftDateKey(today, 1);
+  const createdAtFrom = toAddiTransactionDateTime(startDate);
+  const createdAtTo = toAddiTransactionDateTime(endDate, true);
+  const status = "APPROVED";
+  const allySlug = getCandidateAllySlug(candidate);
+  const requests: Array<{ source: string; baseUrl: string; path: string }> = [];
+  const addPair = (query: string, label: string) => {
+    requests.push(
+      {
+        source: `ally-portal-transactions-${label}`,
+        baseUrl: ADDI_PORTAL_API_BASE_URL,
+        path: `/transactions?${query}`,
+      },
+      {
+        source: `ally-portal-external-transactions-${label}`,
+        baseUrl: ADDI_PORTAL_EXTERNAL_API_BASE_URL,
+        path: `/v1/transactions?${query}`,
+      }
+    );
+  };
+
+  addPair(
+    buildAddiTransactionQuery({
+      searchField: documento,
+      createdAtFrom,
+      createdAtTo,
+      status,
+    }),
+    "document-download"
+  );
+
+  if (allySlug) {
+    addPair(
+      buildAddiTransactionQuery({
+        createdAtFrom,
+        createdAtTo,
+        status,
+        allyName: allySlug,
+      }),
+      "date-download"
+    );
+  }
+
+  return requests;
+}
+
 function getAddiPaymentLookupPaths(candidate: AddiCandidate, documento: string) {
   const today = getDateInColombia();
   const startDate = shiftDateKey(today, -1);
@@ -2037,6 +2107,50 @@ async function fetchAddiPaymentPayloads(
   ];
 }
 
+async function fetchAddiTransactionPayloads(
+  session: AddiSession,
+  candidate: AddiCandidate,
+  documento: string,
+  traces: AddiRequestTrace[]
+) {
+  const requests = getAddiTransactionLookupRequests(candidate, documento);
+  const transactionRequests: Array<Promise<AddiPayload | null>> = requests.map(
+    async (request) => {
+      try {
+        const data = await getProtectedJson(
+          request.baseUrl,
+          session,
+          request.path,
+          7000
+        );
+
+        if (!data) {
+          traceAddiRequest(traces, request, "empty");
+          return null;
+        }
+
+        traceAddiRequest(traces, request, "ok", data);
+        return {
+          source: request.source,
+          data,
+        } satisfies AddiPayload;
+      } catch (error) {
+        traceAddiRequest(traces, request, "error", undefined, error);
+        return null;
+      }
+    }
+  );
+  const results = await Promise.allSettled(transactionRequests);
+
+  return results
+    .filter(
+      (result): result is PromiseFulfilledResult<AddiPayload | null> =>
+        result.status === "fulfilled"
+    )
+    .map((result) => result.value)
+    .filter((payload): payload is AddiPayload => Boolean(payload));
+}
+
 async function fetchAddiCandidateDetailPayloads(
   session: AddiSession,
   candidate: AddiCandidate,
@@ -2121,7 +2235,7 @@ async function fetchAddiCandidateDetailPayloads(
     });
   }
 
-  const [detailResults, paymentPayloads] = await Promise.all([
+  const [detailResults, transactionPayloads, paymentPayloads] = await Promise.all([
     Promise.allSettled(
       requests.map(async (request) => {
         try {
@@ -2149,6 +2263,7 @@ async function fetchAddiCandidateDetailPayloads(
         }
       })
     ),
+    fetchAddiTransactionPayloads(session, candidate, documento, traces),
     fetchAddiPaymentPayloads(session, candidate, documento, traces),
   ]);
 
@@ -2158,6 +2273,7 @@ async function fetchAddiCandidateDetailPayloads(
     }
   }
 
+  payloads.push(...transactionPayloads);
   payloads.push(...paymentPayloads);
 
   return { payloads, traces };
