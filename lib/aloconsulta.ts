@@ -1371,7 +1371,7 @@ function withDateFields(
   return next;
 }
 
-function exactAloFacturacionCandidates(
+function exactAloReportCandidates(
   baseUrl: string,
   submittedFields = new URLSearchParams()
 ) {
@@ -1403,34 +1403,46 @@ function exactAloFacturacionCandidates(
 
   return [
     {
-      url: new URL("/admin_facturacion/export", baseUrl).toString(),
-      method: "GET" as const,
-      body: isoFields,
-      score: 1100,
+      url: new URL("/admin_reportes/export", baseUrl).toString(),
+      method: "POST" as const,
+      body: dashFields,
+      score: 1300,
     },
     {
-      url: new URL("/admin_facturacion/export", baseUrl).toString(),
+      url: new URL("/admin_reportes/export", baseUrl).toString(),
+      method: "GET" as const,
+      body: new URLSearchParams(dashFields),
+      score: 1250,
+    },
+    {
+      url: new URL("/admin_reportes/export", baseUrl).toString(),
       method: "POST" as const,
       body: new URLSearchParams(isoFields),
-      score: 1080,
+      score: 1150,
     },
     {
-      url: new URL("/admin_facturacion/export", baseUrl).toString(),
+      url: new URL("/admin_reportes/export", baseUrl).toString(),
       method: "GET" as const,
-      body: dashFields,
-      score: 1040,
+      body: new URLSearchParams(isoFields),
+      score: 1125,
     },
     {
-      url: new URL("/admin_facturacion/export", baseUrl).toString(),
+      url: new URL("/admin_reportes/ajax", baseUrl).toString(),
       method: "GET" as const,
+      body: new URLSearchParams(submittedFields),
+      score: 1000,
+    },
+    {
+      url: new URL("/admin_reportes/export", baseUrl).toString(),
+      method: "POST" as const,
       body: slashFields,
-      score: 1030,
+      score: 950,
     },
     {
       url: new URL("/admin_facturacion/ajax", baseUrl).toString(),
       method: "GET" as const,
       body: ajaxFields,
-      score: 900,
+      score: 700,
     },
   ];
 }
@@ -1520,7 +1532,7 @@ function findWeeklyReportDownloadCandidates(
   baseUrl: string,
   submittedFields = new URLSearchParams()
 ) {
-  const exactCandidates = exactAloFacturacionCandidates(baseUrl, submittedFields);
+  const exactCandidates = exactAloReportCandidates(baseUrl, submittedFields);
   const rows = firstTableRows(html, 80).filter(looksLikeWeeklyReportRow);
   const row = rows.find(rowIncludesToday);
 
@@ -1910,7 +1922,7 @@ async function downloadFirstReport(imei?: string) {
     referer = candidate.url;
     const nestedFields = candidate.body || reportsPage.submittedFields;
     const nestedCandidates = dedupeDownloadCandidates([
-      ...exactAloFacturacionCandidates(referer, nestedFields),
+      ...exactAloReportCandidates(referer, nestedFields),
       ...routeHintDownloadCandidates(lastHtml, referer, nestedFields),
       ...findDownloadCandidates(lastHtml, referer),
     ]);
