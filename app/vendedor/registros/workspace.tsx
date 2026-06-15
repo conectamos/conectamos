@@ -331,10 +331,10 @@ function createInitialState(session: SessionProps): FormState {
 }
 
 function inputClass(readOnly = false) {
-  return `w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${
+  return `w-full rounded-[18px] border px-4 py-3 text-sm font-semibold outline-none transition ${
     readOnly
-      ? "border-slate-200 bg-slate-50 text-slate-600"
-      : "border-slate-300 bg-white text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+      ? "border-slate-200 bg-slate-100 text-slate-500"
+      : "border-slate-300 bg-white text-slate-950 shadow-[0_1px_0_rgba(15,23,42,0.04)] focus:border-teal-500 focus:bg-white focus:ring-[3px] focus:ring-teal-100"
   }`;
 }
 
@@ -2795,22 +2795,22 @@ export default function VendedorRegistroWorkspace({
         </div>
       )}
       {confirmacionGuardadoVisible && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 px-4 py-6 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617]/75 px-4 py-6 backdrop-blur-md">
           <section
             role="dialog"
             aria-modal="true"
-            className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[34px] border border-slate-200 bg-white shadow-[0_32px_100px_rgba(15,23,42,0.38)]"
+            className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-[30px] border border-white/20 bg-white shadow-[0_34px_100px_rgba(2,6,23,0.48)]"
           >
-            <div className="bg-[linear-gradient(135deg,#0f172a_0%,#1f2937_48%,#0f766e_100%)] px-6 py-6 text-white md:px-8">
+            <div className="border-b border-slate-200 bg-white px-6 py-5 md:px-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-white/90">
-                    Revision final
+                  <p className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-teal-700">
+                    Revision antes de guardar
                   </p>
-                  <h2 className="mt-4 text-3xl font-black leading-tight tracking-tight md:text-4xl">
-                    Confirma antes de guardar
+                  <h2 className="mt-3 text-3xl font-black leading-tight tracking-tight text-slate-950 md:text-4xl">
+                    Resumen del registro
                   </h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-200">
+                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
                     Revisa que el punto de venta, el cliente, el IMEI y los valores
                     correspondan al tramite. Al confirmar se guardara el registro.
                   </p>
@@ -2818,7 +2818,7 @@ export default function VendedorRegistroWorkspace({
                 <button
                   type="button"
                   onClick={() => setConfirmacionGuardadoVisible(false)}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/10 text-xl font-black leading-none text-white transition hover:bg-white/20"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-xl font-black leading-none text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
                   aria-label="Cerrar resumen"
                 >
                   x
@@ -2826,21 +2826,50 @@ export default function VendedorRegistroWorkspace({
               </div>
             </div>
 
-            <div className="space-y-5 px-6 py-6 md:px-8">
-              <div className="rounded-[28px] border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">
-                <span className="text-[11px] font-black uppercase tracking-[0.22em] text-amber-700">
+            <div className="max-h-[calc(92vh-150px)] space-y-5 overflow-y-auto bg-slate-50 px-6 py-6 md:px-8">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+                <div className="rounded-[26px] border border-slate-900 bg-slate-950 p-5 text-white shadow-[0_18px_45px_rgba(15,23,42,0.2)]">
+                <span className="text-[11px] font-black uppercase tracking-[0.22em] text-teal-200">
                   Punto de venta seleccionado
                 </span>
-                <p className="mt-2 text-3xl font-black text-amber-950">
+                <p className="mt-3 text-4xl font-black tracking-tight">
                   {form.puntoVenta || "Sin punto de venta"}
                 </p>
-                <p className="mt-2 text-sm font-semibold text-amber-800">
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-300">
                   Si este punto no es correcto, vuelve y corrige antes de guardar.
                 </p>
               </div>
 
+                <div className="grid gap-3 rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-3">
+                  <div>
+                    <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Tipo
+                    </span>
+                    <strong className="mt-1 block text-slate-950">
+                      {form.servicio || "Pendiente"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Asesor
+                    </span>
+                    <strong className="mt-1 block text-slate-950">
+                      {form.asesorNombre || session.perfilNombre}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Jalador
+                    </span>
+                    <strong className="mt-1 block text-slate-950">
+                      {form.jaladorNombre || "Pendiente"}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-5">
+                <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
                   <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-slate-500">
                     Cliente y equipo
                   </h3>
@@ -2885,7 +2914,7 @@ export default function VendedorRegistroWorkspace({
                   </dl>
                 </div>
 
-                <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-5">
+                <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
                   <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-slate-500">
                     Venta y pagos
                   </h3>
@@ -3028,7 +3057,7 @@ export default function VendedorRegistroWorkspace({
                 </div>
               </div>
 
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <div className="sticky bottom-0 -mx-6 -mb-6 flex flex-col-reverse gap-3 border-t border-slate-200 bg-white/95 px-6 py-4 backdrop-blur sm:flex-row sm:justify-end md:-mx-8 md:px-8">
                 <button
                   type="button"
                   onClick={() => setConfirmacionGuardadoVisible(false)}
@@ -3049,9 +3078,9 @@ export default function VendedorRegistroWorkspace({
           </section>
         </div>
       )}
-      <div className="mx-auto max-w-7xl">
-        <section className="overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#1f2937_52%,#0f766e_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mx-auto max-w-[1500px]">
+        <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.28),transparent_34%),linear-gradient(135deg,#0f172a_0%,#111827_58%,#164e63_100%)] px-6 py-6 text-white shadow-[0_24px_80px_rgba(15,23,42,0.22)] md:px-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-3xl">
               <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
                 Hoja digital
@@ -3070,17 +3099,17 @@ export default function VendedorRegistroWorkspace({
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[410px]">
               <Link
                 href="/vendedor/lista-precios"
-                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-center text-sm font-black text-slate-900 transition hover:bg-slate-100"
+                className="rounded-[18px] border border-white/10 bg-white px-5 py-3 text-center text-sm font-black text-slate-900 transition hover:bg-slate-100"
               >
                 LISTA DE PRECIOS
               </Link>
               {puedeBuscarRegistros && (
                 <Link
                   href="/vendedor/registros/buscar"
-                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                  className="rounded-[18px] border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
                 >
                   Buscar registro
                 </Link>
@@ -3089,14 +3118,14 @@ export default function VendedorRegistroWorkspace({
                 <button
                   type="button"
                   onClick={() => limpiarFormulario(false)}
-                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                  className="rounded-[18px] border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
                 >
                   Cancelar edicion
                 </button>
               )}
               <Link
                 href="/dashboard"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                className="rounded-[18px] border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
               >
                 Volver a CONECTAMOS
               </Link>
@@ -3148,11 +3177,48 @@ export default function VendedorRegistroWorkspace({
           </div>
         )}
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <section className="mt-6 rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_16px_42px_rgba(15,23,42,0.06)]">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-[20px] border border-teal-100 bg-teal-50 px-4 py-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-teal-700">
+                01 Punto
+              </p>
+              <p className="mt-1 truncate text-sm font-black text-slate-950">
+                {form.puntoVenta || "Sin seleccionar"}
+              </p>
+            </div>
+            <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                02 Cliente
+              </p>
+              <p className="mt-1 truncate text-sm font-black text-slate-950">
+                {form.clienteNombre || "Pendiente"}
+              </p>
+            </div>
+            <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                03 Equipo
+              </p>
+              <p className="mt-1 truncate text-sm font-black text-slate-950">
+                {form.serialImei || "Sin IMEI"}
+              </p>
+            </div>
+            <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                04 Venta
+              </p>
+              <p className="mt-1 truncate text-sm font-black text-slate-950">
+                {form.servicio || "Sin tipo"}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="space-y-5">
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Cliente y equipo
+                01 Cliente, punto e IMEI
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -3455,9 +3521,9 @@ export default function VendedorRegistroWorkspace({
             </section>
 
             {esServicioFinanciera(form.servicio) && !registroEditandoConvertido && (
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Financieras del tramite
+                02 Financiacion del tramite
               </div>
 
               <div className="mt-6 space-y-4">
@@ -3961,9 +4027,9 @@ export default function VendedorRegistroWorkspace({
             )}
 
             {esServicioContado(form.servicio) && !registroEditandoConvertido && (
-              <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+              <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
                 <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Ingresos del contado
+                  02 Ingresos del contado
                 </div>
 
                 <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -4064,9 +4130,9 @@ export default function VendedorRegistroWorkspace({
               </section>
             )}
 
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Contacto y referencias
+                03 Contacto, fechas y referencias
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -4249,9 +4315,9 @@ export default function VendedorRegistroWorkspace({
             </section>
 
             {!registroEditandoConvertido && (
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Texto visible al cliente
+                04 Confirmaciones del cliente
               </div>
 
               {(esServicioFinanciera(form.servicio) ||
@@ -4543,9 +4609,9 @@ export default function VendedorRegistroWorkspace({
             </section>
             )}
 
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Equipo comercial y observaciones
+                06 Equipo comercial y observaciones
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -4598,13 +4664,22 @@ export default function VendedorRegistroWorkspace({
           </div>
 
           <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Resumen del registro
+            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
+              <div className="bg-slate-950 px-5 py-5 text-white">
+                <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
+                Revision en vivo
+              </div>
+                <p className="mt-4 text-[11px] font-black uppercase tracking-[0.24em] text-teal-200">
+                  Punto de venta
+                </p>
+                <p className="mt-1 text-2xl font-black tracking-tight">
+                  {form.puntoVenta || "Sin seleccionar"}
+                </p>
               </div>
 
-              <div className="mt-5 space-y-3 text-sm text-slate-700">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="space-y-3 p-5 text-sm text-slate-700">
+                <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
                   <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
                     Tipo
                   </span>
@@ -4613,16 +4688,19 @@ export default function VendedorRegistroWorkspace({
                   </span>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
                   <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
-                    Punto de venta
+                    Financieras
                   </span>
                   <span className="mt-1 block font-semibold text-slate-900">
-                    {form.puntoVenta || "Sin seleccionar"}
+                    {esServicioContado(form.servicio)
+                      ? "No aplica"
+                      : `${financierasVisibles} / ${MAX_FINANCIERAS_REGISTRO}`}
                   </span>
                 </div>
+                </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-3">
                   <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
                     Cliente
                   </span>
@@ -4631,7 +4709,7 @@ export default function VendedorRegistroWorkspace({
                   </span>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-3">
                   <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
                     IMEI
                   </span>
@@ -4640,7 +4718,7 @@ export default function VendedorRegistroWorkspace({
                   </span>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-3">
                   <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
                     Jalador
                   </span>
@@ -4650,7 +4728,7 @@ export default function VendedorRegistroWorkspace({
                 </div>
 
                 {esServicioContado(form.servicio) ? (
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                  <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-3">
                     <span className="block text-xs uppercase tracking-[0.18em] text-emerald-700">
                       Ingresos
                     </span>
@@ -4658,23 +4736,13 @@ export default function VendedorRegistroWorkspace({
                       {formatMoney(totalIngresosContado(form))}
                     </span>
                   </div>
-                ) : (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
-                      Financieras cargadas
-                    </span>
-                    <span className="mt-1 block font-semibold text-slate-900">
-                      {financierasVisibles} / {MAX_FINANCIERAS_REGISTRO}
-                    </span>
-                  </div>
-                )}
-              </div>
+                ) : null}
 
               <button
                 type="button"
                 onClick={() => void guardarRegistro()}
                 disabled={guardando || cargando || cargandoEdicion}
-                className="mt-6 w-full rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="mt-5 w-full rounded-[18px] bg-slate-950 px-5 py-4 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {guardando
                   ? registroEditando
@@ -4684,9 +4752,10 @@ export default function VendedorRegistroWorkspace({
                     ? "Guardar cambios del registro"
                     : "Guardar registro digital"}
               </button>
+              </div>
             </section>
 
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                 Registros recientes
               </div>
