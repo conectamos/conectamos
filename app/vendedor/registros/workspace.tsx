@@ -331,12 +331,21 @@ function createInitialState(session: SessionProps): FormState {
 }
 
 function inputClass(readOnly = false) {
-  return `w-full rounded-[18px] border px-4 py-3 text-sm font-semibold outline-none transition ${
+  return `w-full rounded-[20px] border px-4 py-3.5 text-sm font-bold outline-none transition ${
     readOnly
       ? "border-slate-200 bg-slate-100 text-slate-500"
-      : "border-slate-300 bg-white text-slate-950 shadow-[0_1px_0_rgba(15,23,42,0.04)] focus:border-teal-500 focus:bg-white focus:ring-[3px] focus:ring-teal-100"
+      : "border-slate-200 bg-[#f8fafc] text-slate-950 shadow-inner focus:border-teal-500 focus:bg-white focus:ring-[4px] focus:ring-teal-100"
   }`;
 }
+
+const formSectionClass =
+  "overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_22px_70px_rgba(15,23,42,0.08)]";
+
+const formSectionHeaderClass =
+  "-mx-5 -mt-5 mb-6 flex items-center justify-between gap-4 border-b border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#eef6f5_100%)] px-5 py-4 text-[11px] font-black uppercase tracking-[0.2em] text-slate-700";
+
+const fieldLabelClass =
+  "flex flex-col gap-2 text-[13px] font-black uppercase tracking-[0.08em] text-slate-500";
 
 function onlyDigits(value: string, maxLength?: number) {
   const digits = value.replace(/\D/g, "");
@@ -2643,7 +2652,7 @@ export default function VendedorRegistroWorkspace({
   );
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_34%),radial-gradient(circle_at_top_right,rgba(239,68,68,0.12),transparent_30%),linear-gradient(180deg,#f8fafc_0%,#e8eef6_100%)] px-4 py-8">
       {registroDuplicadoAlerta && !duplicadoModalCerrado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6 backdrop-blur-sm">
           <section
@@ -2795,30 +2804,30 @@ export default function VendedorRegistroWorkspace({
         </div>
       )}
       {confirmacionGuardadoVisible && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617]/75 px-4 py-6 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617]/80 px-4 py-6 backdrop-blur-md">
           <section
             role="dialog"
             aria-modal="true"
-            className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-[30px] border border-white/20 bg-white shadow-[0_34px_100px_rgba(2,6,23,0.48)]"
+            className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-[34px] border border-white/20 bg-white shadow-[0_34px_110px_rgba(2,6,23,0.55)]"
           >
-            <div className="border-b border-slate-200 bg-white px-6 py-5 md:px-8">
+            <div className="border-b border-slate-800 bg-[linear-gradient(135deg,#020617_0%,#0f172a_54%,#0f766e_100%)] px-6 py-6 text-white md:px-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-teal-700">
+                  <p className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-teal-100">
                     Revision antes de guardar
                   </p>
-                  <h2 className="mt-3 text-3xl font-black leading-tight tracking-tight text-slate-950 md:text-4xl">
-                    Resumen del registro
+                  <h2 className="mt-3 text-3xl font-black leading-tight tracking-tight md:text-5xl">
+                    Confirma la venta
                   </h2>
-                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
-                    Revisa que el punto de venta, el cliente, el IMEI y los valores
-                    correspondan al tramite. Al confirmar se guardara el registro.
+                  <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-slate-200">
+                    Esta es la ultima revision. Valida especialmente punto de venta,
+                    documento, IMEI y valores antes de guardar el registro.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setConfirmacionGuardadoVisible(false)}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-xl font-black leading-none text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-black leading-none text-white transition hover:bg-white/20"
                   aria-label="Cerrar resumen"
                 >
                   x
@@ -2826,21 +2835,21 @@ export default function VendedorRegistroWorkspace({
               </div>
             </div>
 
-            <div className="max-h-[calc(92vh-150px)] space-y-5 overflow-y-auto bg-slate-50 px-6 py-6 md:px-8">
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-                <div className="rounded-[26px] border border-slate-900 bg-slate-950 p-5 text-white shadow-[0_18px_45px_rgba(15,23,42,0.2)]">
-                <span className="text-[11px] font-black uppercase tracking-[0.22em] text-teal-200">
+            <div className="max-h-[calc(92vh-166px)] space-y-5 overflow-y-auto bg-slate-50 px-6 py-6 md:px-8">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+                <div className="rounded-[30px] border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm">
+                <span className="text-[11px] font-black uppercase tracking-[0.22em] text-amber-700">
                   Punto de venta seleccionado
                 </span>
-                <p className="mt-3 text-4xl font-black tracking-tight">
+                <p className="mt-3 text-5xl font-black tracking-tight">
                   {form.puntoVenta || "Sin punto de venta"}
                 </p>
-                <p className="mt-3 text-sm font-semibold leading-6 text-slate-300">
+                <p className="mt-3 text-sm font-bold leading-6 text-amber-800">
                   Si este punto no es correcto, vuelve y corrige antes de guardar.
                 </p>
               </div>
 
-                <div className="grid gap-3 rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-3">
+                <div className="grid gap-3 rounded-[30px] border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-3">
                   <div>
                     <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
                       Tipo
@@ -2869,7 +2878,7 @@ export default function VendedorRegistroWorkspace({
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
                   <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-slate-500">
                     Cliente y equipo
                   </h3>
@@ -2914,7 +2923,7 @@ export default function VendedorRegistroWorkspace({
                   </dl>
                 </div>
 
-                <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
                   <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-slate-500">
                     Venta y pagos
                   </h3>
@@ -2973,7 +2982,7 @@ export default function VendedorRegistroWorkspace({
                           .map((item, index) => (
                             <div
                               key={`${item.plataformaCredito}-${index}`}
-                              className="rounded-2xl border border-white bg-white px-4 py-3"
+                              className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3"
                             >
                               <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
                                 Financiera {index + 1}
@@ -3016,7 +3025,7 @@ export default function VendedorRegistroWorkspace({
                 </div>
               </div>
 
-              <div className="grid gap-3 rounded-[26px] border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-950 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 rounded-[30px] border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-950 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-emerald-700">
                     Firma cliente
@@ -3078,8 +3087,8 @@ export default function VendedorRegistroWorkspace({
           </section>
         </div>
       )}
-      <div className="mx-auto max-w-[1500px]">
-        <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.28),transparent_34%),linear-gradient(135deg,#0f172a_0%,#111827_58%,#164e63_100%)] px-6 py-6 text-white shadow-[0_24px_80px_rgba(15,23,42,0.22)] md:px-8">
+      <div className="mx-auto max-w-[1680px]">
+        <section className="overflow-hidden rounded-[36px] border border-white/20 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.34),transparent_34%),linear-gradient(135deg,#020617_0%,#0f172a_52%,#146b66_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.26)] md:px-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-3xl">
               <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
@@ -3177,52 +3186,56 @@ export default function VendedorRegistroWorkspace({
           </div>
         )}
 
-        <section className="mt-6 rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_16px_42px_rgba(15,23,42,0.06)]">
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-[20px] border border-teal-100 bg-teal-50 px-4 py-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-teal-700">
-                01 Punto
-              </p>
-              <p className="mt-1 truncate text-sm font-black text-slate-950">
-                {form.puntoVenta || "Sin seleccionar"}
-              </p>
-            </div>
-            <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
-                02 Cliente
-              </p>
-              <p className="mt-1 truncate text-sm font-black text-slate-950">
-                {form.clienteNombre || "Pendiente"}
-              </p>
-            </div>
-            <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
-                03 Equipo
-              </p>
-              <p className="mt-1 truncate text-sm font-black text-slate-950">
-                {form.serialImei || "Sin IMEI"}
-              </p>
-            </div>
-            <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
-                04 Venta
-              </p>
-              <p className="mt-1 truncate text-sm font-black text-slate-950">
-                {form.servicio || "Sin tipo"}
-              </p>
-            </div>
+        <section className="mt-6 overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+          <div className="grid gap-px bg-slate-200 md:grid-cols-4">
+            {[
+              ["01", "Punto de venta", form.puntoVenta || "Sin seleccionar"],
+              ["02", "Cliente", form.clienteNombre || "Pendiente"],
+              ["03", "Equipo", form.serialImei || "Sin IMEI"],
+              ["04", "Venta", form.servicio || "Sin tipo"],
+            ].map(([numero, titulo, valor], index) => (
+              <div
+                key={numero}
+                className={`bg-white px-5 py-4 ${
+                  index === 0 ? "bg-teal-50" : ""
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black ${
+                      index === 0
+                        ? "bg-teal-600 text-white"
+                        : "bg-slate-950 text-white"
+                    }`}
+                  >
+                    {numero}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+                      {titulo}
+                    </p>
+                    <p className="mt-1 truncate text-sm font-black text-slate-950">
+                      {valor}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="space-y-5">
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                01 Cliente, punto e IMEI
+        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="space-y-6">
+            <section className={`${formSectionClass} p-5`}>
+              <div className={formSectionHeaderClass}>
+                <span>01 Cliente, punto e IMEI</span>
+                <span className="rounded-full bg-teal-100 px-3 py-1 text-teal-700">
+                  Datos base
+                </span>
               </div>
 
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className={fieldLabelClass}>
                   Ciudad
                   <input
                     value={form.ciudad}
@@ -3233,7 +3246,7 @@ export default function VendedorRegistroWorkspace({
                   />
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <label className={fieldLabelClass}>
                   Punto de venta
                   <select
                     value={form.puntoVenta}
@@ -3249,9 +3262,9 @@ export default function VendedorRegistroWorkspace({
                   </select>
                 </label>
 
-                <div className="md:col-span-2 grid gap-3 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                <div className="md:col-span-2 grid gap-3 rounded-[30px] border border-teal-100 bg-[linear-gradient(135deg,#ecfeff_0%,#f8fafc_100%)] p-4">
                   <div className="flex flex-col gap-2 md:flex-row md:items-end">
-                    <label className="flex-1 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    <label className={`${fieldLabelClass} flex-1`}>
                       IMEI
                       <input
                         value={form.serialImei}
@@ -3298,13 +3311,13 @@ export default function VendedorRegistroWorkspace({
                         buscandoImei ||
                         form.serialImei.length !== 15
                       }
-                      className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className="rounded-[20px] bg-slate-950 px-6 py-3.5 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
                       {buscandoImei ? "Consultando..." : "Buscar IMEI"}
                     </button>
                   </div>
 
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600">
+                  <div className="rounded-[22px] border border-dashed border-teal-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
                     {imeiDetalle ||
                       "Cuando el IMEI exista en cualquier sede o en bodega principal, se completara la informacion disponible del equipo."}
                   </div>
@@ -3317,7 +3330,7 @@ export default function VendedorRegistroWorkspace({
                 </div>
 
                 <div className="md:col-span-2">
-                  <p className="mb-2 text-sm font-semibold text-slate-700">
+                  <p className="mb-2 text-[13px] font-black uppercase tracking-[0.08em] text-slate-500">
                     Tipo de venta
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -3330,10 +3343,10 @@ export default function VendedorRegistroWorkspace({
                           type="button"
                           disabled={registroEditandoConvertido}
                           onClick={() => seleccionarServicio(option.value)}
-                          className={`rounded-2xl border px-4 py-4 text-left text-sm font-black transition ${
+                          className={`rounded-[24px] border px-5 py-5 text-left text-sm font-black transition ${
                             active
-                              ? "border-slate-950 bg-slate-950 text-white shadow-sm"
-                              : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+                              ? "border-slate-950 bg-slate-950 text-white shadow-[0_14px_30px_rgba(15,23,42,0.2)]"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-teal-50"
                           } disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500`}
                         >
                           {option.label}
@@ -3343,7 +3356,7 @@ export default function VendedorRegistroWorkspace({
                   </div>
                 </div>
 
-                <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <label className={`${fieldLabelClass} md:col-span-2`}>
                   Nombre del cliente
                   <input
                     value={form.clienteNombre}
@@ -3353,7 +3366,7 @@ export default function VendedorRegistroWorkspace({
                   />
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <label className={fieldLabelClass}>
                   Tipo de documento
                   <select
                     value={form.tipoDocumento}
@@ -3372,7 +3385,7 @@ export default function VendedorRegistroWorkspace({
                   </select>
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <label className={fieldLabelClass}>
                   Numero de documento
                   <input
                     value={form.documentoNumero}
@@ -3442,7 +3455,7 @@ export default function VendedorRegistroWorkspace({
                 {(esServicioFinanciera(form.servicio) ||
                   esServicioContado(form.servicio)) && (
                   <>
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    <label className={fieldLabelClass}>
                       Referencia
                       <input
                         value={form.referenciaEquipo}
@@ -3455,7 +3468,7 @@ export default function VendedorRegistroWorkspace({
                       />
                     </label>
 
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    <label className={fieldLabelClass}>
                       Almacenamiento
                       <input
                         value={form.almacenamiento}
@@ -3468,7 +3481,7 @@ export default function VendedorRegistroWorkspace({
                       />
                     </label>
 
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    <label className={fieldLabelClass}>
                       Color
                       <input
                         value={form.color}
@@ -3479,7 +3492,7 @@ export default function VendedorRegistroWorkspace({
                       />
                     </label>
 
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    <label className={fieldLabelClass}>
                       Tipo de equipo
                       <select
                         value={form.tipoEquipo}
@@ -3498,7 +3511,7 @@ export default function VendedorRegistroWorkspace({
                       </select>
                     </label>
 
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    <label className={fieldLabelClass}>
                       Tipo de producto
                       <select
                         value={form.tipoProducto}
@@ -3521,12 +3534,15 @@ export default function VendedorRegistroWorkspace({
             </section>
 
             {esServicioFinanciera(form.servicio) && !registroEditandoConvertido && (
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                02 Financiacion del tramite
+            <section className={`${formSectionClass} p-5`}>
+              <div className={formSectionHeaderClass}>
+                <span>02 Financiacion del tramite</span>
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">
+                  Credito
+                </span>
               </div>
 
-              <div className="mt-6 space-y-4">
+              <div className="space-y-4">
                 {form.financierasDetalle.map((item, index) => {
                   const shouldShow = index < financierasVisibles;
 
@@ -3582,7 +3598,7 @@ export default function VendedorRegistroWorkspace({
                   return (
                     <div
                       key={`financiera-${index}`}
-                      className="rounded-[28px] border border-slate-200 bg-slate-50 p-4"
+                      className="rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#fff_100%)] p-4 shadow-inner"
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -3606,7 +3622,7 @@ export default function VendedorRegistroWorkspace({
                       </div>
 
                       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        <label className="md:col-span-2 xl:col-span-3 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                          <label className={`${fieldLabelClass} md:col-span-2 xl:col-span-3`}>
                           Plataforma de credito utilizada
                           <select
                             value={item.plataformaCredito}
@@ -3636,7 +3652,7 @@ export default function VendedorRegistroWorkspace({
 
                         {item.plataformaCredito && (
                           <>
-                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            <label className={fieldLabelClass}>
                               Credito autorizado
                               <input
                                 value={item.creditoAutorizado}
@@ -3759,7 +3775,7 @@ export default function VendedorRegistroWorkspace({
 
                             {financieraMuestraInicial(index) && (
                                 <>
-                                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                  <label className={fieldLabelClass}>
                                     Inicial
                                   <input
                                     value={item.cuotaInicial}
@@ -3776,7 +3792,7 @@ export default function VendedorRegistroWorkspace({
                                   />
                                 </label>
 
-                                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                <label className={fieldLabelClass}>
                                   {index === 0 && ingresoContado2Visible
                                     ? "Tipo ingreso 1"
                                     : "Tipo de pago de la inicial"}
@@ -3818,7 +3834,7 @@ export default function VendedorRegistroWorkspace({
                                     ) : (
                                       <div className="space-y-4">
                                         <div className="grid gap-4 md:grid-cols-3">
-                                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                          <label className={fieldLabelClass}>
                                             Valor ingreso 1
                                             <input
                                               value={form.medioPago1Valor}
@@ -3834,7 +3850,7 @@ export default function VendedorRegistroWorkspace({
                                             />
                                           </label>
 
-                                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                          <label className={fieldLabelClass}>
                                             Valor ingreso 2
                                             <input
                                               value={form.medioPago2Valor}
@@ -3850,7 +3866,7 @@ export default function VendedorRegistroWorkspace({
                                             />
                                           </label>
 
-                                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                                          <label className={fieldLabelClass}>
                                             Tipo ingreso 2
                                             <select
                                               value={form.medioPago2Tipo}
@@ -3895,7 +3911,7 @@ export default function VendedorRegistroWorkspace({
                               </>
                             )}
 
-                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            <label className={fieldLabelClass}>
                               Valor cuota
                               <input
                                 value={item.valorCuota}
@@ -3929,7 +3945,7 @@ export default function VendedorRegistroWorkspace({
                               />
                             </label>
 
-                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            <label className={fieldLabelClass}>
                               Plazo
                               <select
                                 value={item.numeroCuotas}
@@ -3960,7 +3976,7 @@ export default function VendedorRegistroWorkspace({
                               </select>
                             </label>
 
-                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            <label className={fieldLabelClass}>
                               Frecuencia de pago
                               <select
                                 value={item.frecuenciaCuota}
@@ -4027,13 +4043,16 @@ export default function VendedorRegistroWorkspace({
             )}
 
             {esServicioContado(form.servicio) && !registroEditandoConvertido && (
-              <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  02 Ingresos del contado
+              <section className={`${formSectionClass} p-5`}>
+                <div className={formSectionHeaderClass}>
+                  <span>02 Ingresos del contado</span>
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">
+                    Caja
+                  </span>
                 </div>
 
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <label className={fieldLabelClass}>
                     Valor ingreso
                     <input
                       value={form.medioPago1Valor}
@@ -4046,7 +4065,7 @@ export default function VendedorRegistroWorkspace({
                     />
                   </label>
 
-                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  <label className={fieldLabelClass}>
                     Tipo de ingreso
                     <select
                       value={form.medioPago1Tipo}
@@ -4082,7 +4101,7 @@ export default function VendedorRegistroWorkspace({
                 ) : (
                   <div className="mt-4 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
                     <div className="grid gap-4 md:grid-cols-2">
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      <label className={fieldLabelClass}>
                         Segundo valor
                         <input
                           value={form.medioPago2Valor}
@@ -4095,7 +4114,7 @@ export default function VendedorRegistroWorkspace({
                         />
                       </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      <label className={fieldLabelClass}>
                         Tipo segundo ingreso
                         <select
                           value={form.medioPago2Tipo}
@@ -4130,13 +4149,16 @@ export default function VendedorRegistroWorkspace({
               </section>
             )}
 
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                03 Contacto, fechas y referencias
+            <section className={`${formSectionClass} p-5`}>
+              <div className={formSectionHeaderClass}>
+                <span>03 Contacto, fechas y referencias</span>
+                <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-700">
+                  Cliente
+                </span>
               </div>
 
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+              <div className="grid gap-4 md:grid-cols-2">
+                  <label className={fieldLabelClass}>
                     Correo
                     <input
                       type="email"
@@ -4149,7 +4171,7 @@ export default function VendedorRegistroWorkspace({
                     />
                   </label>
 
-                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  <label className={fieldLabelClass}>
                     WhatsApp
                     <input
                       inputMode="numeric"
@@ -4165,7 +4187,7 @@ export default function VendedorRegistroWorkspace({
 
                 {esServicioFinanciera(form.servicio) && (
                   <>
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    <label className={fieldLabelClass}>
                       Telefono
                       <input
                         value={form.telefono}
@@ -4177,7 +4199,7 @@ export default function VendedorRegistroWorkspace({
                       />
                     </label>
 
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    <label className={fieldLabelClass}>
                       Barrio
                       <input
                         value={form.barrio}
@@ -4189,7 +4211,7 @@ export default function VendedorRegistroWorkspace({
                   </>
                 )}
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <label className={fieldLabelClass}>
                   Fecha de nacimiento
                   <input
                     type="date"
@@ -4201,7 +4223,7 @@ export default function VendedorRegistroWorkspace({
                   />
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <label className={fieldLabelClass}>
                   Fecha de expedicion
                   <input
                     type="date"
@@ -4213,7 +4235,7 @@ export default function VendedorRegistroWorkspace({
                   />
                 </label>
 
-                <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <label className={`${fieldLabelClass} md:col-span-2`}>
                   Direccion
                   <input
                     value={form.direccion}
@@ -4224,12 +4246,12 @@ export default function VendedorRegistroWorkspace({
                 </label>
 
                 {esServicioFinanciera(form.servicio) && (
-                  <div className="md:col-span-2 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                  <div className="md:col-span-2 rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#fff_100%)] p-4">
                     <p className="text-sm font-bold text-slate-900">
                       Referencias familiares
                     </p>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      <label className={fieldLabelClass}>
                         Referencia familiar 1
                         <input
                           value={form.referenciaFamiliar1Nombre}
@@ -4241,7 +4263,7 @@ export default function VendedorRegistroWorkspace({
                         />
                       </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      <label className={fieldLabelClass}>
                         Telefono referencia 1
                         <input
                           value={form.referenciaFamiliar1Telefono}
@@ -4256,7 +4278,7 @@ export default function VendedorRegistroWorkspace({
                         />
                       </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      <label className={fieldLabelClass}>
                         Referencia familiar 2
                         <input
                           value={form.referenciaFamiliar2Nombre}
@@ -4268,7 +4290,7 @@ export default function VendedorRegistroWorkspace({
                         />
                       </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                      <label className={fieldLabelClass}>
                         Telefono referencia 2
                         <input
                           value={form.referenciaFamiliar2Telefono}
@@ -4286,7 +4308,7 @@ export default function VendedorRegistroWorkspace({
                   </div>
                 )}
 
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <label className={fieldLabelClass}>
                   Registro SIM 1
                   <input
                     value={form.simCardRegistro1}
@@ -4299,7 +4321,7 @@ export default function VendedorRegistroWorkspace({
                 </label>
 
                 {esServicioFinanciera(form.servicio) && (
-                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  <label className={fieldLabelClass}>
                     Registro SIM 2
                     <input
                       value={form.simCardRegistro2}
@@ -4315,14 +4337,17 @@ export default function VendedorRegistroWorkspace({
             </section>
 
             {!registroEditandoConvertido && (
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                04 Confirmaciones del cliente
+            <section className={`${formSectionClass} p-5`}>
+              <div className={formSectionHeaderClass}>
+                <span>04 Confirmaciones y evidencias</span>
+                <span className="rounded-full bg-violet-100 px-3 py-1 text-violet-700">
+                  Firma y fotos
+                </span>
               </div>
 
               {(esServicioFinanciera(form.servicio) ||
                 esServicioContado(form.servicio)) && (
-                <div className="mt-6 space-y-4">
+                <div className="space-y-4">
                   {TEXTOS_VISIBLES_CLIENTE.filter(
                     (_, index) => esServicioFinanciera(form.servicio) || index < 2
                   ).map((texto, index) => {
@@ -4336,7 +4361,7 @@ export default function VendedorRegistroWorkspace({
                     return (
                       <label
                         key={field}
-                        className="flex items-start gap-4 rounded-[26px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"
+                        className="flex items-start gap-4 rounded-[26px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-700"
                       >
                         <input
                           type="checkbox"
@@ -4353,14 +4378,14 @@ export default function VendedorRegistroWorkspace({
                 </div>
               )}
 
-              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.92fr)]">
+              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.92fr)]">
                 <SignaturePad
                   key={signaturePadKey}
                   value={form.firmaClienteDataUrl}
                   onChange={(dataUrl) => setField("firmaClienteDataUrl", dataUrl)}
                 />
 
-                <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                <div className="rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#fff_100%)] p-4">
                   <p className="text-sm font-semibold text-slate-700">
                     Foto con entrega del producto
                   </p>
@@ -4492,7 +4517,7 @@ export default function VendedorRegistroWorkspace({
               )}
 
               {esServicioFinanciera(form.servicio) && (
-                <div className="mt-5 rounded-[28px] border border-slate-200 bg-slate-50 p-4">
+                <div className="mt-5 rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#fff_100%)] p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <p className="text-sm font-black text-slate-950">
@@ -4609,19 +4634,22 @@ export default function VendedorRegistroWorkspace({
             </section>
             )}
 
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                06 Equipo comercial y observaciones
+            <section className={`${formSectionClass} p-5`}>
+              <div className={formSectionHeaderClass}>
+                <span>05 Equipo comercial y observaciones</span>
+                <span className="rounded-full bg-slate-200 px-3 py-1 text-slate-700">
+                  Cierre
+                </span>
               </div>
 
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className={fieldLabelClass}>
                   Asesor
                   <input value={form.asesorNombre} readOnly className={inputClass(true)} />
                 </label>
 
                 {jaladores.length > 0 ? (
-                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  <label className={fieldLabelClass}>
                     Jalador
                     <select
                       value={form.jaladorNombre}
@@ -4638,7 +4666,7 @@ export default function VendedorRegistroWorkspace({
                     </select>
                   </label>
                 ) : (
-                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  <label className={fieldLabelClass}>
                     Jalador
                     <input
                       value={form.jaladorNombre}
@@ -4650,7 +4678,7 @@ export default function VendedorRegistroWorkspace({
                   </label>
                 )}
 
-                <label className="md:col-span-2 flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                <label className={`${fieldLabelClass} md:col-span-2`}>
                   Observacion
                   <textarea
                     value={form.observacion}
@@ -4664,35 +4692,42 @@ export default function VendedorRegistroWorkspace({
           </div>
 
           <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
-              <div className="bg-slate-950 px-5 py-5 text-white">
-                <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
-                Revision en vivo
-              </div>
-                <p className="mt-4 text-[11px] font-black uppercase tracking-[0.24em] text-teal-200">
-                  Punto de venta
-                </p>
-                <p className="mt-1 text-2xl font-black tracking-tight">
-                  {form.puntoVenta || "Sin seleccionar"}
-                </p>
+            <section className="overflow-hidden rounded-[32px] border border-slate-900 bg-slate-950 text-white shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
+              <div className="border-b border-white/10 px-5 py-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="inline-flex rounded-full border border-teal-300/30 bg-teal-300/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-teal-100">
+                      Revision en vivo
+                    </div>
+                    <p className="mt-4 text-[11px] font-black uppercase tracking-[0.24em] text-slate-400">
+                      Punto de venta
+                    </p>
+                    <p className="mt-1 text-3xl font-black tracking-tight">
+                      {form.puntoVenta || "Sin seleccionar"}
+                    </p>
+                  </div>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-xl font-black">
+                    OK
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-3 p-5 text-sm text-slate-700">
+              <div className="space-y-3 p-5 text-sm text-slate-200">
                 <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
-                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
+                <div className="rounded-[20px] border border-white/10 bg-white/[0.08] px-4 py-3">
+                  <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
                     Tipo
                   </span>
-                  <span className="mt-1 block font-semibold text-slate-900">
+                  <span className="mt-1 block font-black text-white">
                     {form.servicio || "Pendiente"}
                   </span>
                 </div>
 
-                <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
-                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
+                <div className="rounded-[20px] border border-white/10 bg-white/[0.08] px-4 py-3">
+                  <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
                     Financieras
                   </span>
-                  <span className="mt-1 block font-semibold text-slate-900">
+                  <span className="mt-1 block font-black text-white">
                     {esServicioContado(form.servicio)
                       ? "No aplica"
                       : `${financierasVisibles} / ${MAX_FINANCIERAS_REGISTRO}`}
@@ -4700,7 +4735,7 @@ export default function VendedorRegistroWorkspace({
                 </div>
                 </div>
 
-                <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-3">
+                <div className="rounded-[20px] border border-white/10 bg-white px-4 py-3 text-slate-900">
                   <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
                     Cliente
                   </span>
@@ -4709,7 +4744,7 @@ export default function VendedorRegistroWorkspace({
                   </span>
                 </div>
 
-                <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-3">
+                <div className="rounded-[20px] border border-white/10 bg-white px-4 py-3 text-slate-900">
                   <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
                     IMEI
                   </span>
@@ -4718,7 +4753,7 @@ export default function VendedorRegistroWorkspace({
                   </span>
                 </div>
 
-                <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-3">
+                <div className="rounded-[20px] border border-white/10 bg-white px-4 py-3 text-slate-900">
                   <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
                     Jalador
                   </span>
@@ -4728,7 +4763,7 @@ export default function VendedorRegistroWorkspace({
                 </div>
 
                 {esServicioContado(form.servicio) ? (
-                  <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <div className="rounded-[20px] border border-emerald-300/60 bg-emerald-100 px-4 py-3 text-emerald-950">
                     <span className="block text-xs uppercase tracking-[0.18em] text-emerald-700">
                       Ingresos
                     </span>
@@ -4742,7 +4777,7 @@ export default function VendedorRegistroWorkspace({
                 type="button"
                 onClick={() => void guardarRegistro()}
                 disabled={guardando || cargando || cargandoEdicion}
-                className="mt-5 w-full rounded-[18px] bg-slate-950 px-5 py-4 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="mt-5 w-full rounded-[20px] bg-white px-5 py-4 text-sm font-black text-slate-950 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-300"
               >
                 {guardando
                   ? registroEditando
@@ -4755,12 +4790,15 @@ export default function VendedorRegistroWorkspace({
               </div>
             </section>
 
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_44px_rgba(15,23,42,0.06)]">
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Registros recientes
+            <section className={`${formSectionClass} p-5`}>
+              <div className={formSectionHeaderClass}>
+                <span>Registros recientes</span>
+                <span className="rounded-full bg-slate-200 px-3 py-1 text-slate-700">
+                  Ultimos
+                </span>
               </div>
 
-              <div className="mt-5 space-y-3">
+              <div className="space-y-3">
                 {cargando && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                     Cargando registros...
