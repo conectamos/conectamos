@@ -406,6 +406,150 @@ function extractRecords(value: unknown): Record<string, unknown>[] {
   return [];
 }
 
+function collectRecords(
+  value: unknown,
+  source: string,
+  out: Array<{ record: Record<string, unknown>; source: string }> = [],
+  depth = 0
+) {
+  if (depth > 7) {
+    return out;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectRecords(item, source, out, depth + 1);
+    }
+    return out;
+  }
+
+  if (!isRecord(value)) {
+    return out;
+  }
+
+  out.push({ record: value, source });
+
+  for (const child of Object.values(value)) {
+    if (Array.isArray(child) || isRecord(child)) {
+      collectRecords(child, source, out, depth + 1);
+    }
+  }
+
+  return out;
+}
+
+function directText(record: Record<string, unknown>, keys: string[]) {
+  const wanted = new Set(keys.map(normalizeKey));
+
+  for (const [key, value] of Object.entries(record)) {
+    if (!wanted.has(normalizeKey(key))) {
+      continue;
+    }
+
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+
+    if (text && text !== "[object Object]") {
+      return text;
+    }
+  }
+
+  return null;
+}
+
+function deepText(value: unknown, keys: string[], depth = 0): string | null {
+  if (depth > 5) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = deepText(item, keys, depth + 1);
+
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const direct = directText(value, keys);
+
+  if (direct) {
+    return direct;
+  }
+
+  for (const child of Object.values(value)) {
+    const found = deepText(child, keys, depth + 1);
+
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function directNumber(record: Record<string, unknown>, keys: string[]) {
+  const wanted = new Set(keys.map(normalizeKey));
+
+  for (const [key, value] of Object.entries(record)) {
+    if (!wanted.has(normalizeKey(key))) {
+      continue;
+    }
+
+    const number = toNumber(value);
+
+    if (number !== null) {
+      return number;
+    }
+  }
+
+  return null;
+}
+
+function deepNumber(value: unknown, keys: string[], depth = 0): number | null {
+  if (depth > 5) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = deepNumber(item, keys, depth + 1);
+
+      if (found !== null) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const direct = directNumber(value, keys);
+
+  if (direct !== null) {
+    return direct;
+  }
+
+  for (const child of Object.values(value)) {
+    const found = deepNumber(child, keys, depth + 1);
+
+    if (found !== null) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
 async function loginStore(config: EsmioConfig) {
   const url = buildApiUrl(config.apiBaseUrl, "stores/login_store/");
   const response = await requestJson(
@@ -693,38 +837,48 @@ function getClientName(value: unknown) {
   return parts.length > 0 ? cleanClientName(parts.join(" ")) : null;
 }
 
-function getFirstFromKeys(record: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    if (record[key] !== null && record[key] !== undefined && record[key] !== "") {
-      return record[key];
-    }
-  }
-
-  return null;
-}
-
 function buildCandidate(
   record: Record<string, unknown>,
   source: string,
   documentoEsperado: string
 ): EsmioCandidate | null {
-  const documento = normalizeDocumento(
-    getFirstFromKeys(record, [
+  const documentoRecord = normalizeDocumento(
+    deepText(record, [
       "customer__document_number",
       "customer_document_number",
+      "customerDocumentNumber",
       "document_number",
+      "documentNumber",
       "doc_cliente",
       "docClient",
       "client_document",
+      "clientDocument",
+      "clientDocumentNumber",
+      "identification",
+      "identificationNumber",
+      "cedula",
     ])
   );
+  const documento =
+    documentoRecord ||
+    (source.startsWith("credit/get_customer_credits") ? documentoEsperado : "");
 
   if (documento !== documentoEsperado) {
     return null;
   }
 
   const fechaCreacionCredito = normalizeDateInput(
-    getFirstFromKeys(record, ["timestamp", "created_at", "created", "date"])
+    deepText(record, [
+      "timestamp",
+      "created_at",
+      "createdAt",
+      "created",
+      "date",
+      "start_date",
+      "startDate",
+      "generation_date",
+      "generationDate",
+    ])
   );
 
   if (!fechaCreacionCredito || !getAllowedCreditDates().has(fechaCreacionCredito)) {
@@ -732,7 +886,19 @@ function buildCandidate(
   }
 
   const creditoAutorizado = toNumber(
-    getFirstFromKeys(record, ["capital", "Capital", "total_capital"])
+    deepNumber(record, [
+      "capital",
+      "total_capital",
+      "totalCapital",
+      "loan_amount_initial",
+      "loanAmountInitial",
+      "credit_value",
+      "creditValue",
+      "approvedAmount",
+      "approved_amount",
+      "principal",
+      "value",
+    ])
   );
 
   if (creditoAutorizado === null || creditoAutorizado <= 0) {
@@ -741,23 +907,45 @@ function buildCandidate(
 
   const clienteNombre =
     getClientName(record.customer__names) ||
+    getClientName(record.customer) ||
+    getClientName(record.client) ||
     getClientName(
-      getFirstFromKeys(record, [
+      deepText(record, [
         "customer_name",
+        "customerName",
         "client_name",
+        "clientName",
+        "customerFullName",
+        "clientFullName",
         "cliente",
         "Cliente",
       ])
     );
   const numeroCuotas = toNumber(
-    getFirstFromKeys(record, ["periods", "cuotas", "installments"])
+    deepNumber(record, [
+      "periods",
+      "cuotas",
+      "installments",
+      "numberOfInstallments",
+      "number_of_installments",
+      "number_of_payments",
+      "numberOfPayments",
+      "term",
+    ])
   );
   const valorCuota = toNumber(
-    getFirstFromKeys(record, [
+    deepNumber(record, [
       "amount",
       "theorical_planned_payments__amount",
+      "theoricalPlannedPaymentsAmount",
+      "planned_payment_amount",
+      "plannedPaymentAmount",
       "installment_amount",
+      "installmentAmount",
+      "quota_value",
+      "quotaValue",
       "valor_cuota",
+      "valorCuota",
     ])
   );
 
@@ -768,22 +956,40 @@ function buildCandidate(
     clienteNombre,
     fechaCreacionCredito,
     puntoCredito:
-      extractStringByKeys(record, ["store__name", "store_name", "store"]) || null,
+      deepText(record, [
+        "store__name",
+        "store_name",
+        "storeName",
+        "store",
+        "commerceName",
+      ]) || null,
     creditoAutorizado,
     numeroCuotas,
     valorCuota,
-    sortTime: toSortableDate(record.timestamp || record.created_at || record.created),
+    sortTime: toSortableDate(
+      record.timestamp || record.created_at || record.createdAt || record.created
+    ),
   };
 }
 
 function describeRows(rows: Record<string, unknown>[]) {
   return rows.slice(0, 8).map((row) => ({
-    documento: maskDocumento(normalizeDocumento(row.customer__document_number)),
-    fecha: normalizeDateInput(row.timestamp),
-    capital: toNumber(row.capital),
-    periods: row.periods,
-    amount: row.amount,
+    documento: maskDocumento(
+      normalizeDocumento(deepText(row, ["customer__document_number"]))
+    ),
+    fecha: normalizeDateInput(deepText(row, ["timestamp", "created_at"])),
+    capital: deepNumber(row, ["capital", "total_capital", "value"]),
+    periods: deepNumber(row, ["periods", "installments"]),
+    amount: deepNumber(row, ["amount", "installment_amount"]),
   }));
+}
+
+function pushReportAttempt(
+  attempts: ReportAttempt[],
+  source: string,
+  data: unknown
+) {
+  attempts.push({ source, data });
 }
 
 async function fetchCreditsReport(
@@ -794,6 +1000,24 @@ async function fetchCreditsReport(
   const allowedDates = Array.from(getAllowedCreditDates()).sort();
   const attempts: ReportAttempt[] = [];
   const requestConfigs = [
+    new URLSearchParams({
+      search: documento,
+      page_size: "50",
+    }),
+    new URLSearchParams({
+      search: documento,
+      start: allowedDates[0],
+      end: allowedDates[allowedDates.length - 1],
+      page_size: "50",
+    }),
+    new URLSearchParams({
+      search: documento,
+    }),
+    new URLSearchParams({
+      search: documento,
+      start: allowedDates[0],
+      end: allowedDates[allowedDates.length - 1],
+    }),
     new URLSearchParams({
       all: "true",
       search: documento,
@@ -828,30 +1052,82 @@ async function fetchCreditsReport(
     } catch (error) {
       if (
         error instanceof EsmioOpcionConsultaLookupError &&
-        error.status === 404
+        (error.status === 404 || error.status === 500)
       ) {
-        attempts.push({
-          source: `commerce_reports/get_credits_table/?${params.toString()}`,
-          data: [],
-        });
+        pushReportAttempt(
+          attempts,
+          `commerce_reports/get_credits_table/?${params.toString()}`,
+          []
+        );
         continue;
       }
 
       throw error;
     }
 
-    attempts.push({
-      source: `commerce_reports/get_credits_table/?${params.toString()}`,
-      data: response,
-    });
+    pushReportAttempt(
+      attempts,
+      `commerce_reports/get_credits_table/?${params.toString()}`,
+      response
+    );
 
-    const rows = extractRecords(response);
+    const rows = collectRecords(
+      response,
+      `commerce_reports/get_credits_table/?${params.toString()}`
+    ).map((item) => item.record);
     const hasDocumento = rows.some(
-      (row) => normalizeDocumento(row.customer__document_number) === documento
+      (row) =>
+        normalizeDocumento(deepText(row, ["customer__document_number"])) ===
+        documento
     );
 
     if (hasDocumento) {
       break;
+    }
+  }
+
+  return attempts;
+}
+
+async function fetchCustomerCreditsFallback(
+  config: EsmioConfig,
+  session: EsmioSession,
+  documento: string
+) {
+  const attempts: ReportAttempt[] = [];
+  const endpoints = [
+    `credit/get_customer_credits/?document_number=${encodeURIComponent(documento)}`,
+    `credit/get_customer_credits_pg/?document_number=${encodeURIComponent(
+      documento
+    )}&page_size=50`,
+  ];
+
+  for (const endpoint of endpoints) {
+    const url = buildApiUrl(config.apiBaseUrl, endpoint);
+
+    try {
+      const response = await requestJson(
+        url,
+        {
+          method: "GET",
+          headers: {
+            authorization: `Token ${session.employeeToken || session.storeToken}`,
+          },
+        },
+        "creditos por cliente"
+      );
+
+      pushReportAttempt(attempts, endpoint, response);
+    } catch (error) {
+      if (
+        error instanceof EsmioOpcionConsultaLookupError &&
+        (error.status === 404 || error.status === 500)
+      ) {
+        pushReportAttempt(attempts, endpoint, []);
+        continue;
+      }
+
+      throw error;
     }
   }
 
@@ -871,19 +1147,41 @@ export async function obtenerCreditoEsmioOpcionPorCedula(
 
   const config = getConfig();
   const session = await loginEsmio(config);
-  const attempts = await fetchCreditsReport(config, session, documento);
+  const attempts = [
+    ...(await fetchCreditsReport(config, session, documento)),
+    ...(await fetchCustomerCreditsFallback(config, session, documento)),
+  ];
+  const seenCandidates = new Set<string>();
   const candidates = attempts
     .flatMap((attempt) =>
-      extractRecords(attempt.data).map((record) =>
+      collectRecords(attempt.data, attempt.source).map(({ record }) =>
         buildCandidate(record, attempt.source, documento)
       )
     )
     .filter((candidate): candidate is EsmioCandidate => Boolean(candidate))
+    .filter((candidate) => {
+      const key = [
+        candidate.documento,
+        candidate.fechaCreacionCredito,
+        candidate.creditoAutorizado,
+        candidate.numeroCuotas,
+        candidate.valorCuota,
+      ].join("|");
+
+      if (seenCandidates.has(key)) {
+        return false;
+      }
+
+      seenCandidates.add(key);
+      return true;
+    })
     .sort((a, b) => b.sortTime - a.sortTime);
   const selected = candidates[0];
 
   if (!selected) {
-    const rows = attempts.flatMap((attempt) => extractRecords(attempt.data));
+    const rows = attempts.flatMap((attempt) =>
+      collectRecords(attempt.data, attempt.source).map((item) => item.record)
+    );
 
     console.info("ESMIOPCION consulta sin credito reciente", {
       documento: maskDocumento(documento),
