@@ -1500,13 +1500,11 @@ async function fetchReportBufferFromUrl(
     45000
   );
 
-  if (!response.ok) {
-    throw new AloConsultaLookupError(
-      `ALO CREDIT respondio con estado ${response.status} al descargar el reporte.`
-    );
-  }
-
-  return Buffer.from(await response.arrayBuffer());
+  return {
+    ok: response.ok,
+    status: response.status,
+    buffer: Buffer.from(await response.arrayBuffer()),
+  };
 }
 
 async function downloadFirstReport(imei?: string) {
@@ -1579,7 +1577,29 @@ async function downloadFirstReport(imei?: string) {
     }
 
     triedCandidates.add(candidateKey(candidate));
-    const buffer = await fetchReportBufferFromUrl(session.jar, candidate, referer);
+    const download = await fetchReportBufferFromUrl(
+      session.jar,
+      candidate,
+      referer
+    );
+
+    if (!download.ok) {
+      console.info("ALO CREDIT candidato de descarga fallo", {
+        origen: describeDownloadCandidate(candidate),
+        status: download.status,
+      });
+      logAloInfo("ALO CREDIT candidato de descarga fallo detalle", {
+        origen: describeDownloadCandidate(candidate),
+        status: download.status,
+      });
+
+      candidates = candidates.filter(
+        (item) => !triedCandidates.has(candidateKey(item))
+      );
+      continue;
+    }
+
+    const buffer = download.buffer;
 
     if (!isHtmlResponse(buffer)) {
       if (!imei || sourceContainsImei(buffer, imei)) {
