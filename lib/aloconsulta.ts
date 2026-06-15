@@ -1109,9 +1109,13 @@ function datePairsForRange(startDate: string, endDate: string) {
 }
 
 function datePathCandidates(baseUrl: string, startDate: string, endDate: string) {
-  const pairs = datePairsForRange(startDate, endDate).filter(
+  const compactPairs = datePairsForRange(startDate, endDate).filter(
     ([start, end]) => !start.includes("/") && !end.includes("/")
   );
+  const slashSegmentPair = [
+    slashDate(startDate).split("/").map(encodeURIComponent).join("/"),
+    slashDate(endDate).split("/").map(encodeURIComponent).join("/"),
+  ];
   const paths = [
     "/admin_facturacion",
     "/admin_facturacion/descargar",
@@ -1125,16 +1129,38 @@ function datePathCandidates(baseUrl: string, startDate: string, endDate: string)
   const candidates: DownloadCandidate[] = [];
 
   for (const path of paths) {
-    for (const [start, end] of pairs) {
-      candidates.push({
-        url: new URL(
-          `${path}/${encodeURIComponent(start)}/${encodeURIComponent(end)}`,
-          baseUrl
-        ).toString(),
-        method: "GET",
-        score: 280,
-      });
+    for (const [start, end] of compactPairs) {
+      for (const [left, right] of [
+        [start, end],
+        [end, start],
+      ]) {
+        candidates.push({
+          url: new URL(
+            `${path}/${encodeURIComponent(left)}/${encodeURIComponent(right)}`,
+            baseUrl
+          ).toString(),
+          method: "GET",
+          score: left === start ? 280 : 245,
+        });
+      }
     }
+
+    candidates.push({
+      url: new URL(
+        `${path}/${slashSegmentPair[0]}/${slashSegmentPair[1]}`,
+        baseUrl
+      ).toString(),
+      method: "GET",
+      score: 270,
+    });
+    candidates.push({
+      url: new URL(
+        `${path}/${slashSegmentPair[1]}/${slashSegmentPair[0]}`,
+        baseUrl
+      ).toString(),
+      method: "GET",
+      score: 235,
+    });
   }
 
   return candidates;
@@ -1566,7 +1592,7 @@ async function downloadFirstReport(imei?: string) {
   let lastHtml = reportsPage.text;
   const triedCandidates = new Set<string>();
 
-  for (let depth = 0; depth < 40 && candidates.length > 0; depth++) {
+  for (let depth = 0; depth < 80 && candidates.length > 0; depth++) {
     const candidate = candidates.find((item) => {
       const key = candidateKey(item);
       return !triedCandidates.has(key) && !isSamePathWithoutQuery(item, referer);
