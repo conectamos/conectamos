@@ -74,6 +74,10 @@ function normalizeImei(value: unknown) {
   return String(value || "").replace(/\D/g, "").slice(0, 15);
 }
 
+function onlyDigits(value: unknown) {
+  return String(value || "").replace(/\D/g, "");
+}
+
 function normalizeText(value: unknown) {
   return String(value || "")
     .normalize("NFD")
@@ -2058,10 +2062,10 @@ function findHeaderRow(matrix: MatrixCell[][], rowIndex: number) {
   let bestIndex = -1;
   let bestScore = 0;
 
-  for (let index = Math.max(0, rowIndex - 12); index <= rowIndex; index++) {
+  for (let index = 0; index <= rowIndex; index++) {
     const score = headerScore(matrix[index] || []);
 
-    if (score > bestScore) {
+    if (score > bestScore || (score === bestScore && score > 0 && index > bestIndex)) {
       bestScore = score;
       bestIndex = index;
     }
@@ -2097,6 +2101,25 @@ function getByHeader(
   return getCell(row, findHeaderIndex(headerRow, matcher));
 }
 
+function getHeaderKey(headerRow: MatrixCell[] | null, index: number) {
+  return headerRow ? normalizeKey(getCell(headerRow, index)) : "";
+}
+
+function getValuesByHeader(
+  row: MatrixCell[],
+  headerRow: MatrixCell[] | null,
+  matcher: (key: string) => boolean
+) {
+  if (!headerRow) {
+    return [];
+  }
+
+  return headerRow
+    .map((cell, index) => ({ key: normalizeKey(cell), value: row[index] }))
+    .filter(({ key }) => matcher(key))
+    .map(({ value }) => value);
+}
+
 function findEmail(row: MatrixCell[]) {
   return (
     row.map(visibleText).find((cell) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(cell)) ||
@@ -2104,20 +2127,222 @@ function findEmail(row: MatrixCell[]) {
   );
 }
 
-function findPhone(row: MatrixCell[], documento: string | null, imei: string) {
-  for (const cell of row) {
-    const digits = String(cell || "").replace(/\D/g, "");
+function isDocumentKey(key: string) {
+  return (
+    key.includes("CEDULA") ||
+    key.includes("DOCUMENTO") ||
+    key.includes("IDENTIFICACION") ||
+    key === "CC" ||
+    key.includes("NUMERODOC") ||
+    key.includes("NRODOC") ||
+    key.includes("DOCCLIENTE")
+  );
+}
+
+function isClientNameKey(key: string) {
+  if (
+    key.includes("VENDEDOR") ||
+    key.includes("ASESOR") ||
+    key.includes("TIENDA") ||
+    key.includes("PUNTO")
+  ) {
+    return false;
+  }
+
+  if (
+    key.includes("CEDULA") ||
+    key.includes("DOCUMENTO") ||
+    key.includes("IDENTIFICACION") ||
+    key.includes("CORREO") ||
+    key.includes("EMAIL") ||
+    key.includes("MAIL") ||
+    key.includes("WHATSAPP") ||
+    key.includes("CELULAR") ||
+    key.includes("TELEF") ||
+    key.includes("DIRECCION") ||
+    key.includes("BARRIO") ||
+    key.includes("CIUDAD") ||
+    key.includes("CONTRATO") ||
+    key.includes("CREDITO") ||
+    key.includes("MONTO") ||
+    key.includes("VALOR") ||
+    key.includes("ID")
+  ) {
+    return false;
+  }
+
+  return (
+    key.includes("NOMBRECLIENTE") ||
+    key.includes("CLIENTE") ||
+    key.includes("TITULAR") ||
+    key.includes("NOMBRECOMPLETO") ||
+    key === "NOMBRE" ||
+    key === "NOMBRES" ||
+    key === "APELLIDOS"
+  );
+}
+
+function isPhoneKey(key: string) {
+  return (
+    key.includes("WHATSAPP") ||
+    key.includes("CELULAR") ||
+    key.includes("TELEFONO") ||
+    key.includes("MOVIL") ||
+    key.includes("TELEF") ||
+    key.includes("PHONE")
+  );
+}
+
+function isEmailKey(key: string) {
+  return key.includes("CORREO") || key.includes("EMAIL") || key.includes("MAIL");
+}
+
+function isTermKey(key: string) {
+  if (key.includes("VALOR") || key.includes("MONTO") || key.includes("PAGO")) {
+    return false;
+  }
+
+  return (
+    key.includes("PLAZO") ||
+    key.includes("MESES") ||
+    key.includes("NUMEROCUOTAS") ||
+    key.includes("CANTIDADCUOTAS") ||
+    key === "CUOTAS"
+  );
+}
+
+function isInstallmentValueKey(key: string) {
+  if (
+    key.includes("INICIAL") ||
+    key.includes("CUOTAINICIAL") ||
+    key.includes("PLAZO") ||
+    key.includes("NUMERO") ||
+    key.includes("CANTIDAD")
+  ) {
+    return false;
+  }
+
+  return (
+    key.includes("VALORCUOTA") ||
+    key.includes("CUOTACATORCENAL") ||
+    key.includes("CUOTAQUINCENAL") ||
+    key.includes("CUOTAMENSUAL") ||
+    (key.includes("VALOR") && key.includes("PAGO")) ||
+    key === "CUOTA"
+  );
+}
+
+function isDocumentCandidate(digits: string, imei: string) {
+  return digits.length >= 6 && digits.length <= 12 && digits !== imei;
+}
+
+function findDocument(row: MatrixCell[], headerRow: MatrixCell[] | null, imei: string) {
+  const fromHeader = onlyDigits(getByHeader(row, headerRow, isDocumentKey));
+
+  if (isDocumentCandidate(fromHeader, imei)) {
+    return fromHeader;
+  }
+
+  const candidates = row
+    .map((cell, index) => ({
+      digits: onlyDigits(cell),
+      key: getHeaderKey(headerRow, index),
+    }))
+    .filter(({ digits }) => isDocumentCandidate(digits, imei))
+    .filter(({ key }) => !key.includes("MONTO") && !key.includes("VALOR"));
+
+  return candidates.find(({ key }) => isDocumentKey(key))?.digits || "";
+}
+
+function normalizeColombianPhone(value: unknown, documento: string | null, imei: string) {
+  const digitGroups = onlyDigits(value).match(/\d{10,12}/g) ?? [];
+  const forbidden = new Set(
+    [documento, imei, imei.slice(-10)].filter(Boolean) as string[]
+  );
+
+  for (const raw of digitGroups) {
+    const phone = raw.length === 12 && raw.startsWith("57") ? raw.slice(2) : raw;
 
     if (
-      digits.length === 10 &&
-      digits !== documento &&
-      digits !== imei.slice(-10)
+      phone.length === 10 &&
+      phone.startsWith("3") &&
+      !forbidden.has(phone)
     ) {
-      return digits;
+      return phone;
     }
   }
 
   return null;
+}
+
+function findPhone(
+  row: MatrixCell[],
+  headerRow: MatrixCell[] | null,
+  documento: string | null,
+  imei: string
+) {
+  for (const value of getValuesByHeader(row, headerRow, isPhoneKey)) {
+    const phone = normalizeColombianPhone(value, documento, imei);
+
+    if (phone) {
+      return phone;
+    }
+  }
+
+  for (const cell of row) {
+    const phone = normalizeColombianPhone(cell, documento, imei);
+
+    if (phone) {
+      return phone;
+    }
+  }
+
+  return null;
+}
+
+function findClientName(row: MatrixCell[], headerRow: MatrixCell[] | null) {
+  const values = getValuesByHeader(row, headerRow, isClientNameKey)
+    .map(visibleText)
+    .filter(Boolean);
+
+  return Array.from(new Set(values)).join(" ").trim();
+}
+
+function findTermValue(row: MatrixCell[], headerRow: MatrixCell[] | null) {
+  const index = findHeaderIndex(headerRow, isTermKey);
+
+  if (index >= 0) {
+    return {
+      value: getCell(row, index),
+      headerKey: getHeaderKey(headerRow, index),
+    };
+  }
+
+  const value = row
+    .map(visibleText)
+    .find((cell) =>
+      /\b\d{1,2}(?:[.,]\d+)?\s*(?:MESES?|MES|CUOTAS?|CATORCENAS?|QUINCENAS?)\b/i.test(
+        cell
+      )
+    );
+
+  return { value: value || "", headerKey: "" };
+}
+
+function parseTermByHeader(value: unknown, headerKey: string) {
+  if (
+    headerKey.includes("CUOTA") ||
+    headerKey.includes("CATORCEN") ||
+    headerKey.includes("QUINCEN")
+  ) {
+    const number = Number(
+      String(value ?? "").match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(",", ".")
+    );
+
+    return Number.isFinite(number) && number > 0 ? Math.round(number) : null;
+  }
+
+  return parseTerm(value);
 }
 
 function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, imei: string) {
@@ -2148,60 +2373,41 @@ function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, 
           (key.includes("PRECIO") && key.includes("ACCESORIO"))
       )
     ) ?? parseAmount(getCell(row, 8));
-  const documento = normalizeImei(
-    getByHeader(
-      row,
-      headerRow,
-      (key) =>
-        key.includes("CEDULA") ||
-        key.includes("DOCUMENTO") ||
-        key.includes("IDENTIFICACION")
-    )
-  );
-  const plazoRaw = getByHeader(row, headerRow, (key) => key.includes("PLAZO"));
+  const documento = findDocument(row, headerRow, imei);
+  const plazo = findTermValue(row, headerRow);
   const valorCuotaRaw = getByHeader(
     row,
     headerRow,
-    (key) =>
-      key.includes("CUOTA") &&
-      !key.includes("INICIAL") &&
-      !key.includes("CUOTAINICIAL")
+    isInstallmentValueKey
   );
   const correo =
     visibleText(
-      getByHeader(
-        row,
-        headerRow,
-        (key) => key.includes("CORREO") || key.includes("EMAIL")
-      )
+      getByHeader(row, headerRow, isEmailKey)
     ) ||
     findEmail(row);
-  const telefono =
-    normalizeImei(
-      getByHeader(
-        row,
-        headerRow,
-        (key) =>
-          key.includes("WHATSAPP") ||
-          key.includes("TELEFONO") ||
-          key.includes("CELULAR")
-      )
-    ) || findPhone(row, documento || null, imei);
-  const clienteNombre = visibleText(
-    getByHeader(
-      row,
-      headerRow,
-      (key) =>
-        key.includes("NOMBRE") &&
-        (key.includes("CLIENTE") ||
-          key === "NOMBRE" ||
-          key.includes("TITULAR"))
-    )
-  );
-  const numeroCuotas = parseTerm(plazoRaw);
-  const valorCuota = parseAmount(valorCuotaRaw);
+  const telefono = findPhone(row, headerRow, documento || null, imei);
+  const clienteNombre = findClientName(row, headerRow);
+  const numeroCuotas = parseTermByHeader(plazo.value, plazo.headerKey);
+  const valorCuota =
+    parseAmount(valorCuotaRaw) ??
+    (numeroCuotas && numeroCuotas > 0
+      ? Math.round(creditoAutorizado / numeroCuotas)
+      : null);
   const valorAccesorios =
     accesorios !== null && accesorios > 0 ? accesorios : null;
+
+  if (!clienteNombre || !documento || !valorCuota || !numeroCuotas) {
+    logAloInfo("ALO CREDIT credito parcial detalle", {
+      faltantes: {
+        clienteNombre: !clienteNombre,
+        documento: !documento,
+        valorCuota: !valorCuota,
+        numeroCuotas: !numeroCuotas,
+      },
+      encabezados: headerRow?.map((cell) => maskDebugText(visibleText(cell), 80)) ?? [],
+      fila: row.map((cell) => maskDebugText(visibleText(cell), 80)),
+    });
+  }
 
   return {
     imei,
