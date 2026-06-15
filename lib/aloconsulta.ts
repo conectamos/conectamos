@@ -22,6 +22,10 @@ type DownloadCandidate = {
   body?: URLSearchParams;
 };
 
+type ConsultedReportsPage = Awaited<ReturnType<typeof fetchTextFollowingRedirects>> & {
+  submittedFields: URLSearchParams;
+};
+
 type MatrixCell = string | number | boolean | Date | null | undefined;
 type ReportSource = Buffer | string;
 
@@ -499,6 +503,7 @@ function applySearchSubmit(fields: URLSearchParams, formHtml: string) {
 function applyReportDateDefaults(fields: URLSearchParams, formHtml: string) {
   const defaults = reportDateDefaults();
   const dateInputs = Array.from(formHtml.matchAll(/<input\b[^>]*>/gi));
+  const namedDateFields: Array<{ name: string; isDateInput: boolean }> = [];
   let hasStartField = false;
   let hasEndField = false;
 
@@ -513,8 +518,14 @@ function applyReportDateDefaults(fields: URLSearchParams, formHtml: string) {
     const key = normalizeKey(
       `${name} ${attributes.get("id") || ""} ${attributes.get("placeholder") || ""}`
     );
+    const isDateInput = (attributes.get("type") || "").toLowerCase() === "date";
+
+    if (isDateInput || key.includes("FECHA")) {
+      namedDateFields.push({ name, isDateInput });
+    }
+
     const dateValue =
-      (attributes.get("type") || "").toLowerCase() === "date"
+      isDateInput
         ? {
             start: defaults.startIso,
             end: defaults.endIso,
@@ -552,6 +563,21 @@ function applyReportDateDefaults(fields: URLSearchParams, formHtml: string) {
         fields.set(name, dateValue.end);
       }
     }
+  }
+
+  if (!hasStartField && !hasEndField && namedDateFields.length >= 2) {
+    const [startField, endField] = namedDateFields;
+
+    fields.set(
+      startField.name,
+      startField.isDateInput ? defaults.startIso : defaults.start
+    );
+    fields.set(
+      endField.name,
+      endField.isDateInput ? defaults.endIso : defaults.end
+    );
+    hasStartField = true;
+    hasEndField = true;
   }
 
   const fallbackPairs = [
@@ -1042,14 +1068,58 @@ function datePairsForRange(startDate: string, endDate: string) {
   ];
 }
 
+function findDateFieldPairs(fields: URLSearchParams) {
+  const entries = Array.from(fields.entries()).map(([key, value]) => ({
+    key,
+    value,
+    normalized: normalizeKey(key),
+  }));
+  const starts = entries.filter(({ normalized }) =>
+    normalized.includes("INICIO") ||
+    normalized.includes("INICIAL") ||
+    normalized.includes("INI") ||
+    normalized.includes("DESDE") ||
+    normalized.includes("START")
+  );
+  const ends = entries.filter(({ normalized }) =>
+    normalized.includes("FIN") ||
+    normalized.includes("FINAL") ||
+    normalized.includes("HASTA") ||
+    normalized.includes("END")
+  );
+  const pairs: Array<[string, string]> = [];
+
+  for (const start of starts) {
+    for (const end of ends) {
+      if (start.key !== end.key) {
+        pairs.push([start.key, end.key]);
+      }
+    }
+  }
+
+  if (pairs.length === 0) {
+    const dateEntries = entries.filter(({ value }) =>
+      /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value)
+    );
+
+    if (dateEntries.length >= 2) {
+      pairs.push([dateEntries[0].key, dateEntries[1].key]);
+    }
+  }
+
+  return pairs;
+}
+
 function buildDateScopedCandidates(
   candidate: DownloadCandidate,
   startDate: string,
-  endDate: string
+  endDate: string,
+  preferredKeyPairs: Array<[string, string]> = []
 ) {
   const candidates: DownloadCandidate[] = [candidate];
   const datePairs = datePairsForRange(startDate, endDate);
   const keyPairs = [
+    ...preferredKeyPairs,
     ["fecha_inicio", "fecha_fin"],
     ["fechaInicio", "fechaFin"],
     ["fechaInicial", "fechaFinal"],
@@ -1059,10 +1129,16 @@ function buildDateScopedCandidates(
     ["desde", "hasta"],
     ["inicio", "fin"],
     ["start", "end"],
+    ["fi", "ff"],
+    ["fechaI", "fechaF"],
+    ["fInicio", "fFin"],
   ];
+  const uniqueKeyPairs = Array.from(
+    new Map(keyPairs.map((pair) => [pair.join("\u0000"), pair])).values()
+  );
 
   for (const [inicio, fin] of datePairs) {
-    for (const [inicioKey, finKey] of keyPairs) {
+    for (const [inicioKey, finKey] of uniqueKeyPairs) {
       const body = new URLSearchParams(candidate.body);
       body.set(inicioKey, inicio);
       body.set(finKey, fin);
@@ -1079,50 +1155,63 @@ function buildDateScopedCandidates(
   return candidates;
 }
 
-function directWeeklyDownloadCandidates(baseUrl: string) {
+function directWeeklyDownloadCandidates(
+  baseUrl: string,
+  submittedFields = new URLSearchParams()
+) {
   const { start, end } = currentWeeklyReportDates();
   const startDash = dashFromParts(start);
   const endDash = dashFromParts(end);
+  const preferredPairs = findDateFieldPairs(submittedFields);
   const bases: DownloadCandidate[] = [
     {
       url: new URL("/admin_facturacion", baseUrl).toString(),
       method: "GET",
+      body: new URLSearchParams(submittedFields),
       score: 240,
     },
     {
       url: new URL("/admin_facturacion", baseUrl).toString(),
       method: "POST",
+      body: new URLSearchParams(submittedFields),
       score: 235,
     },
     {
       url: new URL("/admin_reportes/descargar", baseUrl).toString(),
       method: "GET",
+      body: new URLSearchParams(submittedFields),
       score: 210,
     },
     {
       url: new URL("/admin_reportes/descargar", baseUrl).toString(),
       method: "POST",
+      body: new URLSearchParams(submittedFields),
       score: 205,
     },
     {
       url: new URL("/admin_reportes/download", baseUrl).toString(),
       method: "GET",
+      body: new URLSearchParams(submittedFields),
       score: 200,
     },
   ];
 
   return dedupeDownloadCandidates(
     bases.flatMap((candidate) =>
-      buildDateScopedCandidates(candidate, startDash, endDash)
+      buildDateScopedCandidates(candidate, startDash, endDash, preferredPairs)
     )
   );
 }
 
-function findWeeklyReportDownloadCandidates(html: string, baseUrl: string) {
+function findWeeklyReportDownloadCandidates(
+  html: string,
+  baseUrl: string,
+  submittedFields = new URLSearchParams()
+) {
   const row = firstTableRows(html, 80).find(looksLikeWeeklyReportRow);
 
   if (!row) {
-    return directWeeklyDownloadCandidates(baseUrl);
+    return directWeeklyDownloadCandidates(baseUrl, submittedFields);
   }
 
   const rowDates = extractRowDates(row);
@@ -1155,12 +1244,23 @@ function findWeeklyReportDownloadCandidates(html: string, baseUrl: string) {
 
   return dedupeDownloadCandidates(
     rowCandidates.flatMap((candidate) =>
-      buildDateScopedCandidates(candidate, rowDates[0], rowDates[1])
+      buildDateScopedCandidates(
+        candidate,
+        rowDates[0],
+        rowDates[1],
+        findDateFieldPairs(submittedFields)
+      )
     )
   );
 }
 
 function describeDownloadCandidate(candidate: DownloadCandidate) {
+  const bodyPreview = candidate.body
+    ? Array.from(candidate.body.entries())
+        .filter(([, value]) => /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value))
+        .map(([key, value]) => [key, value])
+    : [];
+
   try {
     const url = new URL(candidate.url);
 
@@ -1169,6 +1269,7 @@ function describeDownloadCandidate(candidate: DownloadCandidate) {
       queryKeys: Array.from(url.searchParams.keys()).sort(),
       method: candidate.method || "GET",
       bodyKeys: candidate.body ? Array.from(candidate.body.keys()).sort() : [],
+      bodyPreview,
       score: candidate.score,
     };
   } catch {
@@ -1177,6 +1278,7 @@ function describeDownloadCandidate(candidate: DownloadCandidate) {
       queryKeys: [],
       method: candidate.method || "GET",
       bodyKeys: candidate.body ? Array.from(candidate.body.keys()).sort() : [],
+      bodyPreview,
       score: candidate.score,
     };
   }
@@ -1217,7 +1319,10 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
   const consultForm = chooseConsultForm(forms);
 
   if (!consultForm) {
-    return page;
+    return {
+      ...page,
+      submittedFields: new URLSearchParams(),
+    } satisfies ConsultedReportsPage;
   }
 
   const fields = new URLSearchParams(consultForm.fields);
@@ -1251,6 +1356,7 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
     actionPath: action.pathname,
     method: consultForm.method === "GET" ? "GET" : "POST",
     fieldKeys: Array.from(fields.keys()).sort(),
+    dateFieldPairs: findDateFieldPairs(fields),
     rows: firstTableRows(result.text, 10).length,
     muestras: debugHtmlRows(result.text),
   });
@@ -1258,11 +1364,19 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
     actionPath: action.pathname,
     method: consultForm.method === "GET" ? "GET" : "POST",
     fieldKeys: Array.from(fields.keys()).sort(),
+    fieldValues: Array.from(fields.entries()).map(([key, value]) => [
+      key,
+      /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value) ? value : "***",
+    ]),
+    dateFieldPairs: findDateFieldPairs(fields),
     rows: firstTableRows(result.text, 10).length,
     muestras: debugHtmlRows(result.text),
   });
 
-  return result;
+  return {
+    ...result,
+    submittedFields: fields,
+  } satisfies ConsultedReportsPage;
 }
 
 async function fetchReportBufferFromUrl(
@@ -1321,7 +1435,8 @@ async function downloadFirstReport(imei?: string) {
   const reportsPage = await getConsultedReportsPage(session.jar, session.reportUrl);
   const weeklyCandidates = findWeeklyReportDownloadCandidates(
     reportsPage.text,
-    reportsPage.url
+    reportsPage.url,
+    reportsPage.submittedFields
   );
   let candidates =
     weeklyCandidates.length > 0
@@ -1356,7 +1471,7 @@ async function downloadFirstReport(imei?: string) {
   let lastHtml = reportsPage.text;
   const triedCandidates = new Set<string>();
 
-  for (let depth = 0; depth < 8 && candidates.length > 0; depth++) {
+  for (let depth = 0; depth < 40 && candidates.length > 0; depth++) {
     const candidate = candidates.find((item) => {
       const key = candidateKey(item);
       return !triedCandidates.has(key) && !isSamePathWithoutQuery(item, referer);
