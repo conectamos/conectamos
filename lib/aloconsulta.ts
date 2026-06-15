@@ -727,6 +727,98 @@ function logAloInfo(message: string, data: Record<string, unknown>) {
   console.info(`${message} ${JSON.stringify(data)}`);
 }
 
+function extractRouteHints(text: string) {
+  const hints = new Set<string>();
+  const routeRegex =
+    /["'`]((?:https?:\/\/[^"'`]+|\/)[^"'`]*?(?:admin|ajax|api|facturacion|reporte|reportes|descarg|download|export)[^"'`]*)["'`]/gi;
+
+  for (const match of text.matchAll(routeRegex)) {
+    const route = decodeHtml(match[1]).trim();
+
+    if (
+      route &&
+      !route.includes("logout") &&
+      !route.includes("login") &&
+      route.length <= 220
+    ) {
+      hints.add(route);
+    }
+  }
+
+  return Array.from(hints).slice(0, 40);
+}
+
+function debugHtmlStructure(html: string, baseUrl: string) {
+  const forms = parseForms(html, baseUrl).slice(0, 6).map((form) => {
+    const controls =
+      form.html.match(/<button\b[^>]*>[\s\S]*?<\/button>|<input\b[^>]*>/gi) ??
+      [];
+
+    return {
+      actionPath: new URL(form.action).pathname,
+      method: form.method,
+      fieldKeys: Array.from(form.fields.keys()).sort(),
+      controls: controls.slice(0, 8).map((control) => {
+        const attrs = getHtmlAttributes(control);
+
+        return {
+          text: maskDebugText(control, 80),
+          type: attrs.get("type") || "",
+          name: attrs.get("name") || "",
+          id: attrs.get("id") || "",
+          href: attrs.get("href") || "",
+          onclick: attrs.get("onclick") ? maskDebugText(attrs.get("onclick") || "", 120) : "",
+          dataUrl: attrs.get("data-url") || attrs.get("data-href") || "",
+        };
+      }),
+    };
+  });
+  const downloadElements = Array.from(
+    html.matchAll(/<(a|button|input)\b[^>]*(?:>[\s\S]*?<\/\1>)?/gi)
+  )
+    .map((match) => {
+      const elementHtml = match[0];
+      const attrs = getHtmlAttributes(elementHtml);
+      const text = maskDebugText(elementHtml, 120);
+      const combined = normalizeText(
+        `${elementHtml} ${Array.from(attrs.values()).join(" ")}`
+      );
+
+      if (
+        !combined.includes("DESCARG") &&
+        !combined.includes("DOWNLOAD") &&
+        !combined.includes("FACTUR") &&
+        !combined.includes("REPORTE")
+      ) {
+        return null;
+      }
+
+      return {
+        tag: match[1].toLowerCase(),
+        text,
+        href: attrs.get("href") || "",
+        onclick: attrs.get("onclick") ? maskDebugText(attrs.get("onclick") || "", 160) : "",
+        dataUrl: attrs.get("data-url") || attrs.get("data-href") || "",
+        formaction: attrs.get("formaction") || "",
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 20);
+
+  return {
+    forms,
+    downloadElements,
+    routeHints: extractRouteHints(html).slice(0, 20),
+    muestras: debugHtmlRows(html, 6),
+  };
+}
+
+function bufferLooksText(buffer: Buffer) {
+  const sample = buffer.subarray(0, 500).toString("utf8");
+
+  return /^[\s\S]*$/.test(sample) && !sample.includes("\u0000");
+}
+
 function candidateKey(candidate: DownloadCandidate) {
   const body = candidate.body
     ? Array.from(candidate.body.entries())
@@ -1253,6 +1345,39 @@ function buildDateScopedCandidates(
   return candidates;
 }
 
+function routeHintDownloadCandidates(
+  html: string,
+  baseUrl: string,
+  submittedFields = new URLSearchParams()
+) {
+  const { start, end } = currentWeeklyReportDates();
+  const startDash = dashFromParts(start);
+  const endDash = dashFromParts(end);
+  const preferredPairs = findDateFieldPairs(submittedFields);
+  const baseCandidates = extractRouteHints(html).map((route) => {
+    const normalized = normalizeText(route);
+    let score = 120;
+
+    if (normalized.includes("FACTUR")) score += 70;
+    if (normalized.includes("DESCARG") || normalized.includes("DOWNLOAD")) score += 60;
+    if (normalized.includes("EXPORT")) score += 40;
+    if (normalized.includes("REPORTE")) score += 20;
+
+    return {
+      url: new URL(route, baseUrl).toString(),
+      method: "GET" as const,
+      body: new URLSearchParams(submittedFields),
+      score,
+    };
+  });
+
+  return dedupeDownloadCandidates(
+    baseCandidates.flatMap((candidate) =>
+      buildDateScopedCandidates(candidate, startDash, endDash, preferredPairs)
+    )
+  );
+}
+
 function directWeeklyDownloadCandidates(
   baseUrl: string,
   submittedFields = new URLSearchParams()
@@ -1313,7 +1438,10 @@ function findWeeklyReportDownloadCandidates(
   const row = rows.find(rowIncludesToday);
 
   if (!row) {
-    return directWeeklyDownloadCandidates(baseUrl, submittedFields);
+    return dedupeDownloadCandidates([
+      ...routeHintDownloadCandidates(html, baseUrl, submittedFields),
+      ...directWeeklyDownloadCandidates(baseUrl, submittedFields),
+    ]);
   }
 
   const rowDates = extractRowDates(row);
@@ -1480,6 +1608,7 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
     dateFieldPairs: findDateFieldPairs(fields),
     rows: firstTableRows(result.text, 10).length,
     muestras: debugHtmlRows(result.text),
+    estructura: debugHtmlStructure(result.text, result.url),
   });
 
   return {
@@ -1586,6 +1715,7 @@ async function downloadFirstReport(imei?: string) {
       hoy: dashFromParts(currentWeeklyReportDates().today),
     },
     candidatos: candidates.slice(0, 8).map(describeDownloadCandidate),
+    estructura: debugHtmlStructure(reportsPage.text, reportsPage.url),
   });
 
   let referer = reportsPage.url;
@@ -1635,6 +1765,27 @@ async function downloadFirstReport(imei?: string) {
         };
 
         return buffer;
+      }
+
+      if (bufferLooksText(buffer)) {
+        const text = buffer.toString("utf8");
+        const nestedCandidates = routeHintDownloadCandidates(
+          text,
+          candidate.url,
+          candidate.body || reportsPage.submittedFields
+        );
+
+        if (nestedCandidates.length > 0) {
+          candidates = dedupeDownloadCandidates([
+            ...candidates.filter((item) => !triedCandidates.has(candidateKey(item))),
+            ...nestedCandidates,
+          ]);
+          console.info("ALO CREDIT respuesta textual sin IMEI con rutas candidatas", {
+            origen: describeDownloadCandidate(candidate),
+            rutas: nestedCandidates.slice(0, 5).map(describeDownloadCandidate),
+          });
+          continue;
+        }
       }
 
       console.info("ALO CREDIT descarga descartada porque no contiene el IMEI", {
@@ -1700,6 +1851,15 @@ async function downloadFirstReport(imei?: string) {
       muestras: debugHtmlRows(lastHtml),
     },
   });
+  logAloInfo("ALO CREDIT sin descarga valida detalle", {
+    imei: imei ? `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}` : null,
+    intentos: triedCandidates.size,
+    ultimoHtml: {
+      filas: firstTableRows(lastHtml, 10).length,
+      muestras: debugHtmlRows(lastHtml),
+      estructura: debugHtmlStructure(lastHtml, referer),
+    },
+  });
 
   return null;
 }
@@ -1726,6 +1886,14 @@ function readWorkbookMatrix(source: ReportSource) {
 function sourceContainsImei(source: ReportSource, imei: string) {
   if (typeof source === "string" && !source.replace(/\D/g, "").includes(imei)) {
     return false;
+  }
+
+  if (Buffer.isBuffer(source) && bufferLooksText(source)) {
+    const text = source.toString("utf8");
+
+    if (text.replace(/\D/g, "").includes(imei)) {
+      return true;
+    }
   }
 
   try {
