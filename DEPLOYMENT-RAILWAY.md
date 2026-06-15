@@ -81,12 +81,12 @@ La resolucion/documento, vendedor, forma de pago, ciudad y opciones de envio se 
 
 ### Variables para consulta ESMIOPCION
 
-- `ESMIOPCIONCONSULTA_URL`: URL de ESMIOPCION. Si usa el mismo portal tipo SUMAS y se define como URL de login, la app usa automaticamente `/api/` sobre ese dominio para consultar.
-- `ESMIOPCIONCONSULTA_USUARIO`: usuario de ESMIOPCION usado para leer creditos.
-- `ESMIOPCIONCONSULTA_CLAVE`: clave de ESMIOPCION.
-- `ESMIOPCIONCONSULTA_PERFIL`: nombre visible o id del perfil que se debe seleccionar despues de iniciar sesion.
+- `ESMIOPCIONCONSULTA_URL`: URL del portal AppMikro de ESMIOPCION, por ejemplo `https://esmio.appmikro.com/commerce/home`. La app consulta automaticamente el backend `https://esmioback.appmikro.com/`.
+- `ESMIOPCIONCONSULTA_USUARIO`: usuario de la tienda en ESMIOPCION.
+- `ESMIOPCIONCONSULTA_CLAVE`: clave de la tienda en ESMIOPCION.
+- `ESMIOPCIONCONSULTA_PERFIL`: nombre visible, usuario, documento o id del perfil que se selecciona despues de iniciar sesion.
 - `ESMIOPCIONCONSULTA_PIN`: PIN del perfil configurado.
-- `ESMIOPCIONCONSULTA_PERFIL_ENDPOINT`: opcional; ruta exacta para validar perfil/PIN si el portal no usa una ruta estandar.
+- `ESMIOPCIONCONSULTA_API_URL`: opcional; URL base del backend AppMikro si ESMIO cambia de subdominio.
 
 ### Parametros Siigo por sede
 

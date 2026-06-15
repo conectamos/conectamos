@@ -9,13 +9,17 @@ import {
   type AddiCreditoCedula,
 } from "@/lib/addiconsulta";
 import {
+  EsmioOpcionConsultaConfigError,
+  EsmioOpcionConsultaLookupError,
   isEsmioOpcionConsultaConfigured,
-  isSumasConsultaConfigured,
   obtenerCreditoEsmioOpcionPorCedula,
+  type EsmioOpcionCreditoCedula,
+} from "@/lib/esmiopcionconsulta";
+import {
+  isSumasConsultaConfigured,
   obtenerCreditoSumasPayPorCedula,
   SumasConsultaConfigError,
   SumasConsultaLookupError,
-  type EsmioOpcionCreditoCedula,
   type SumasPayCreditoCedula,
 } from "@/lib/sumasconsulta";
 
@@ -131,8 +135,8 @@ async function lookupEsmioOpcion(documento: string): Promise<LookupResult> {
     };
   } catch (error) {
     if (
-      error instanceof SumasConsultaConfigError ||
-      error instanceof SumasConsultaLookupError
+      error instanceof EsmioOpcionConsultaConfigError ||
+      error instanceof EsmioOpcionConsultaLookupError
     ) {
       return {
         financiera: "ESMIOPCION",
@@ -227,7 +231,7 @@ export async function GET(req: Request) {
           creditos: [],
           errores,
           error:
-            "No se encontro un credito SUMASPAY, ADDI o ESMIOPCION creado hoy o ayer en tienda CONECTAMOS para esta cedula",
+            "No se encontro un credito SUMASPAY, ADDI o ESMIOPCION creado hoy o ayer para esta cedula",
         },
         { status: 404 }
       );
