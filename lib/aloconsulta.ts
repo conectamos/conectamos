@@ -1200,6 +1200,19 @@ function datePairsForRange(startDate: string, endDate: string) {
   ];
 }
 
+function currentWeeklyDateValues() {
+  const { start, end } = currentWeeklyReportDates();
+
+  return {
+    startDash: dashFromParts(start),
+    endDash: dashFromParts(end),
+    startSlash: slashFromParts(start),
+    endSlash: slashFromParts(end),
+    startIso: isoFromParts(start),
+    endIso: isoFromParts(end),
+  };
+}
+
 function datePathCandidates(baseUrl: string, startDate: string, endDate: string) {
   const compactPairs = datePairsForRange(startDate, endDate).filter(
     ([start, end]) => !start.includes("/") && !end.includes("/")
@@ -1345,14 +1358,89 @@ function buildDateScopedCandidates(
   return candidates;
 }
 
+function withDateFields(
+  fields: URLSearchParams,
+  startValue: string,
+  endValue: string
+) {
+  const next = new URLSearchParams(fields);
+
+  next.set("start_date", startValue);
+  next.set("end_date", endValue);
+
+  return next;
+}
+
+function exactAloFacturacionCandidates(
+  baseUrl: string,
+  submittedFields = new URLSearchParams()
+) {
+  const weeklyDates = currentWeeklyDateValues();
+  const isoFields = withDateFields(
+    submittedFields,
+    weeklyDates.startIso,
+    weeklyDates.endIso
+  );
+  const dashFields = withDateFields(
+    submittedFields,
+    weeklyDates.startDash,
+    weeklyDates.endDash
+  );
+  const slashFields = withDateFields(
+    submittedFields,
+    weeklyDates.startSlash,
+    weeklyDates.endSlash
+  );
+  const ajaxFields = new URLSearchParams(isoFields);
+
+  ajaxFields.set("draw", ajaxFields.get("draw") || "1");
+  ajaxFields.set("start", ajaxFields.get("start") || "0");
+  ajaxFields.set("length", ajaxFields.get("length") || "5000");
+  ajaxFields.set("search[value]", ajaxFields.get("search[value]") || "");
+  ajaxFields.set("search[regex]", ajaxFields.get("search[regex]") || "false");
+  ajaxFields.set("order[0][column]", ajaxFields.get("order[0][column]") || "0");
+  ajaxFields.set("order[0][dir]", ajaxFields.get("order[0][dir]") || "desc");
+
+  return [
+    {
+      url: new URL("/admin_facturacion/export", baseUrl).toString(),
+      method: "GET" as const,
+      body: isoFields,
+      score: 1100,
+    },
+    {
+      url: new URL("/admin_facturacion/export", baseUrl).toString(),
+      method: "POST" as const,
+      body: new URLSearchParams(isoFields),
+      score: 1080,
+    },
+    {
+      url: new URL("/admin_facturacion/export", baseUrl).toString(),
+      method: "GET" as const,
+      body: dashFields,
+      score: 1040,
+    },
+    {
+      url: new URL("/admin_facturacion/export", baseUrl).toString(),
+      method: "GET" as const,
+      body: slashFields,
+      score: 1030,
+    },
+    {
+      url: new URL("/admin_facturacion/ajax", baseUrl).toString(),
+      method: "GET" as const,
+      body: ajaxFields,
+      score: 900,
+    },
+  ];
+}
+
 function routeHintDownloadCandidates(
   html: string,
   baseUrl: string,
   submittedFields = new URLSearchParams()
 ) {
-  const { start, end } = currentWeeklyReportDates();
-  const startDash = dashFromParts(start);
-  const endDash = dashFromParts(end);
+  const { startDash, endDash } = currentWeeklyDateValues();
   const preferredPairs = findDateFieldPairs(submittedFields);
   const baseCandidates = extractRouteHints(html).map((route) => {
     const normalized = normalizeText(route);
@@ -1382,9 +1470,7 @@ function directWeeklyDownloadCandidates(
   baseUrl: string,
   submittedFields = new URLSearchParams()
 ) {
-  const { start, end } = currentWeeklyReportDates();
-  const startDash = dashFromParts(start);
-  const endDash = dashFromParts(end);
+  const { startDash, endDash } = currentWeeklyDateValues();
   const preferredPairs = findDateFieldPairs(submittedFields);
   const bases: DownloadCandidate[] = [
     {
@@ -1434,11 +1520,13 @@ function findWeeklyReportDownloadCandidates(
   baseUrl: string,
   submittedFields = new URLSearchParams()
 ) {
+  const exactCandidates = exactAloFacturacionCandidates(baseUrl, submittedFields);
   const rows = firstTableRows(html, 80).filter(looksLikeWeeklyReportRow);
   const row = rows.find(rowIncludesToday);
 
   if (!row) {
     return dedupeDownloadCandidates([
+      ...exactCandidates,
       ...routeHintDownloadCandidates(html, baseUrl, submittedFields),
       ...directWeeklyDownloadCandidates(baseUrl, submittedFields),
     ]);
@@ -1469,18 +1557,21 @@ function findWeeklyReportDownloadCandidates(
   }));
 
   if (rowDates.length < 2) {
-    return dedupeDownloadCandidates(rowCandidates);
+    return dedupeDownloadCandidates([...exactCandidates, ...rowCandidates]);
   }
 
   return dedupeDownloadCandidates(
-    rowCandidates.flatMap((candidate) =>
-      buildDateScopedCandidates(
-        candidate,
-        rowDates[0],
-        rowDates[1],
-        findDateFieldPairs(submittedFields)
-      )
-    )
+    [
+      ...exactCandidates,
+      ...rowCandidates.flatMap((candidate) =>
+        buildDateScopedCandidates(
+          candidate,
+          rowDates[0],
+          rowDates[1],
+          findDateFieldPairs(submittedFields)
+        )
+      ),
+    ]
   );
 }
 
@@ -1817,7 +1908,13 @@ async function downloadFirstReport(imei?: string) {
     }
 
     referer = candidate.url;
-    const nestedCandidates = findDownloadCandidates(lastHtml, referer);
+    const nestedFields = candidate.body || reportsPage.submittedFields;
+    const nestedCandidates = dedupeDownloadCandidates([
+      ...exactAloFacturacionCandidates(referer, nestedFields),
+      ...routeHintDownloadCandidates(lastHtml, referer, nestedFields),
+      ...findDownloadCandidates(lastHtml, referer),
+    ]);
+
     candidates = dedupeDownloadCandidates([
       ...candidates.filter((item) => !triedCandidates.has(candidateKey(item))),
       ...nestedCandidates,
