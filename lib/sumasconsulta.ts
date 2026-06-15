@@ -6,13 +6,28 @@ import {
 } from "node:crypto";
 
 const SUMAS_SECRET_KEY = "cGFzc3dvcmRfc2VjcmV0X3N1bWFzX3BhcmFfdGk=";
-const DEFAULT_FRECUENCIA_CUOTA = "MENSUAL";
+const DEFAULT_FRECUENCIA_CUOTA = "MENSUAL" as const;
 const COLOMBIA_TIME_ZONE = "America/Bogota";
 const SUMAS_POINT_CREDIT_KEYWORD = "CONECTAMOS";
 
-export type SumasPayCreditoCedula = {
+const SUMASPAY_PROVIDER = {
+  envPrefix: "SUMASCONSULTA",
+  financiera: "SUMASPAY",
+  logLabel: "SUMASPAY",
+} as const;
+
+const ESMIOPCION_PROVIDER = {
+  envPrefix: "ESMIOPCIONCONSULTA",
+  financiera: "ESMIOPCION",
+  logLabel: "ESMIOPCION",
+} as const;
+
+type SumasConsultaProvider =
+  | typeof SUMASPAY_PROVIDER
+  | typeof ESMIOPCION_PROVIDER;
+
+type SumasCreditoCedulaBase = {
   documento: string;
-  financiera: "SUMASPAY";
   clienteNombre: string | null;
   correoElectronico: string | null;
   telefonoCliente: string | null;
@@ -23,9 +38,22 @@ export type SumasPayCreditoCedula = {
   numeroCuotas: number | null;
   valorCuota: number | null;
   frecuenciaCuota: "MENSUAL" | null;
-  encontradoEnSumasPay: boolean;
   origen: string;
 };
+
+export type SumasPayCreditoCedula = SumasCreditoCedulaBase & {
+  financiera: "SUMASPAY";
+  encontradoEnSumasPay: boolean;
+};
+
+export type EsmioOpcionCreditoCedula = SumasCreditoCedulaBase & {
+  financiera: "ESMIOPCION";
+  encontradoEnEsmioOpcion: boolean;
+};
+
+type SumasLikeCreditoCedula =
+  | SumasPayCreditoCedula
+  | EsmioOpcionCreditoCedula;
 
 type SumasSession = {
   apiBaseUrl: string;
@@ -125,11 +153,14 @@ function joinUrl(baseUrl: string, path: string) {
   return new URL(path.replace(/^\/+/, ""), baseUrl).toString();
 }
 
-function getConfiguredSumasConfig(): SumasConfig {
-  const rawUrl = String(process.env.SUMASCONSULTA_URL || "").trim();
+function getConfiguredSumasConfig(
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
+): SumasConfig {
+  const urlEnv = `${provider.envPrefix}_URL`;
+  const rawUrl = String(process.env[urlEnv] || "").trim();
 
   if (!rawUrl) {
-    throw new SumasConsultaConfigError("Falta configurar SUMASCONSULTA_URL.");
+    throw new SumasConsultaConfigError(`Falta configurar ${urlEnv}.`);
   }
 
   let parsed: URL;
@@ -137,7 +168,7 @@ function getConfiguredSumasConfig(): SumasConfig {
   try {
     parsed = new URL(rawUrl);
   } catch {
-    throw new SumasConsultaConfigError("SUMASCONSULTA_URL no es una URL valida.");
+    throw new SumasConsultaConfigError(`${urlEnv} no es una URL valida.`);
   }
 
   const apiIndex = parsed.pathname.toLowerCase().indexOf("/api");
@@ -158,8 +189,10 @@ function getConfiguredSumasConfig(): SumasConfig {
   };
 }
 
-function getSumasBrowserHeaders() {
-  const config = getConfiguredSumasConfig();
+function getSumasBrowserHeaders(
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
+) {
+  const config = getConfiguredSumasConfig(provider);
 
   return {
     Origin: config.origin,
@@ -170,13 +203,15 @@ function getSumasBrowserHeaders() {
   };
 }
 
-function getCredentials() {
-  const usuario = String(process.env.SUMASCONSULTA_USUARIO || "").trim();
-  const clave = String(process.env.SUMASCONSULTA_CLAVE || "").trim();
+function getCredentials(provider: SumasConsultaProvider = SUMASPAY_PROVIDER) {
+  const usuarioEnv = `${provider.envPrefix}_USUARIO`;
+  const claveEnv = `${provider.envPrefix}_CLAVE`;
+  const usuario = String(process.env[usuarioEnv] || "").trim();
+  const clave = String(process.env[claveEnv] || "").trim();
 
   if (!usuario || !clave) {
     throw new SumasConsultaConfigError(
-      "Falta configurar SUMASCONSULTA_USUARIO y SUMASCONSULTA_CLAVE."
+      `Falta configurar ${usuarioEnv} y ${claveEnv}.`
     );
   }
 
@@ -297,14 +332,15 @@ function unwrapData(payload: unknown) {
 async function requestJson(
   url: string,
   init: RequestInit,
-  options?: { allowNotFound?: boolean }
+  options?: { allowNotFound?: boolean },
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
 ) {
   const response = await fetch(url, {
     ...init,
     cache: "no-store",
     headers: {
       Accept: "application/json",
-      ...getSumasBrowserHeaders(),
+      ...getSumasBrowserHeaders(provider),
       ...(init.headers || {}),
     },
   });
@@ -319,7 +355,8 @@ async function requestJson(
   }
 
   const message =
-    getMessage(payload) || `SUMAS respondio con estado ${response.status}.`;
+    getMessage(payload) ||
+    `${provider.logLabel} respondio con estado ${response.status}.`;
 
   if ([401, 403].includes(response.status)) {
     throw new SumasConsultaConfigError(message);
@@ -328,22 +365,29 @@ async function requestJson(
   throw new SumasConsultaLookupError(message);
 }
 
-async function loginSumas(): Promise<SumasSession> {
-  const { apiBaseUrl } = getConfiguredSumasConfig();
-  const { usuario, clave } = getCredentials();
+async function loginSumas(
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
+): Promise<SumasSession> {
+  const { apiBaseUrl } = getConfiguredSumasConfig(provider);
+  const { usuario, clave } = getCredentials(provider);
   const body = new URLSearchParams();
 
   body.set("username", encryptCryptoJsPassphrase(usuario));
   body.set("password", encryptCryptoJsPassphrase(clave));
 
   const loginPayload = unwrapData(
-    await requestJson(joinUrl(apiBaseUrl, "service-user/users/login"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+    await requestJson(
+      joinUrl(apiBaseUrl, "service-user/users/login"),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body,
       },
-      body,
-    })
+      undefined,
+      provider
+    )
   );
 
   if (!isRecord(loginPayload)) {
@@ -361,7 +405,9 @@ async function loginSumas(): Promise<SumasSession> {
   const currentUser = await tryProtectedJson(
     apiBaseUrl,
     accessToken,
-    "service-user/users/me"
+    "service-user/users/me",
+    undefined,
+    provider
   );
 
   return {
@@ -375,7 +421,8 @@ async function tryProtectedJson(
   apiBaseUrl: string,
   accessToken: string,
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
 ) {
   try {
     const payload = await requestJson(
@@ -387,7 +434,8 @@ async function tryProtectedJson(
           ...(init?.headers || {}),
         },
       },
-      { allowNotFound: true }
+      { allowNotFound: true },
+      provider
     );
 
     return unwrapData(payload);
@@ -1457,7 +1505,8 @@ function getClientCreditReportQueries(documento: string, currentUser: unknown) {
 async function appendClientCreditReportPayloads(
   session: SumasSession,
   documento: string,
-  payloads: SumasPayload[]
+  payloads: SumasPayload[],
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
 ) {
   for (const query of getClientCreditReportQueries(
     documento,
@@ -1467,7 +1516,9 @@ async function appendClientCreditReportPayloads(
     const clientCredit = await tryProtectedJson(
       session.apiBaseUrl,
       session.accessToken,
-      `service-credit/manage/core-bridge/client-credit?${params.toString()}`
+      `service-credit/manage/core-bridge/client-credit?${params.toString()}`,
+      undefined,
+      provider
     );
 
     if (clientCredit) {
@@ -1515,13 +1566,16 @@ function collectLoanIds(payloads: SumasPayload[]) {
 
 async function appendLoanDetailPayloads(
   session: SumasSession,
-  payloads: SumasPayload[]
+  payloads: SumasPayload[],
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
 ) {
   for (const loanId of collectLoanIds(payloads)) {
     const loan = await tryProtectedJson(
       session.apiBaseUrl,
       session.accessToken,
-      `service-credit/manage/loan/${encodeURIComponent(loanId)}`
+      `service-credit/manage/loan/${encodeURIComponent(loanId)}`,
+      undefined,
+      provider
     );
 
     if (loan) {
@@ -1534,7 +1588,8 @@ async function enrichCandidateWithPlan(
   session: SumasSession,
   documento: string,
   candidate: Candidate,
-  clientId: string | null
+  clientId: string | null,
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
 ): Promise<Candidate> {
   if (candidate.valorCuota !== null || candidate.numeroCuotas === null || !clientId) {
     return candidate;
@@ -1564,7 +1619,8 @@ async function enrichCandidateWithPlan(
         dateFormat: "dd/MM/yyyy",
         locale: "es",
       }),
-    }
+    },
+    provider
   );
 
   if (!planPayload) {
@@ -1583,17 +1639,48 @@ async function enrichCandidateWithPlan(
       };
 }
 
-export function isSumasConsultaConfigured() {
+function isSumasLikeConsultaConfigured(provider: SumasConsultaProvider) {
   return Boolean(
-    String(process.env.SUMASCONSULTA_URL || "").trim() &&
-      String(process.env.SUMASCONSULTA_USUARIO || "").trim() &&
-      String(process.env.SUMASCONSULTA_CLAVE || "").trim()
+    String(process.env[`${provider.envPrefix}_URL`] || "").trim() &&
+      String(process.env[`${provider.envPrefix}_USUARIO`] || "").trim() &&
+      String(process.env[`${provider.envPrefix}_CLAVE`] || "").trim()
   );
+}
+
+export function isSumasConsultaConfigured() {
+  return isSumasLikeConsultaConfigured(SUMASPAY_PROVIDER);
+}
+
+export function isEsmioOpcionConsultaConfigured() {
+  return isSumasLikeConsultaConfigured(ESMIOPCION_PROVIDER);
 }
 
 export async function obtenerCreditoSumasPayPorCedula(
   documentoInput: unknown
 ): Promise<SumasPayCreditoCedula | null> {
+  const credito = await obtenerCreditoSumaLikePorCedula(
+    documentoInput,
+    SUMASPAY_PROVIDER
+  );
+
+  return credito as SumasPayCreditoCedula | null;
+}
+
+export async function obtenerCreditoEsmioOpcionPorCedula(
+  documentoInput: unknown
+): Promise<EsmioOpcionCreditoCedula | null> {
+  const credito = await obtenerCreditoSumaLikePorCedula(
+    documentoInput,
+    ESMIOPCION_PROVIDER
+  );
+
+  return credito as EsmioOpcionCreditoCedula | null;
+}
+
+async function obtenerCreditoSumaLikePorCedula(
+  documentoInput: unknown,
+  provider: SumasConsultaProvider
+): Promise<SumasLikeCreditoCedula | null> {
   const documento = normalizeDocumento(documentoInput);
 
   if (documento.length < 5 || documento.length > 15) {
@@ -1602,13 +1689,15 @@ export async function obtenerCreditoSumasPayPorCedula(
     );
   }
 
-  const session = await loginSumas();
+  const session = await loginSumas(provider);
   const payloads: SumasPayload[] = [];
 
   const listCreditY2 = await tryProtectedJson(
     session.apiBaseUrl,
     session.accessToken,
-    `service-credit/manage/list-credit/y2/${encodeURIComponent(documento)}`
+    `service-credit/manage/list-credit/y2/${encodeURIComponent(documento)}`,
+    undefined,
+    provider
   );
 
   if (listCreditY2) {
@@ -1618,19 +1707,28 @@ export async function obtenerCreditoSumasPayPorCedula(
   const clientPos = await tryProtectedJson(
     session.apiBaseUrl,
     session.accessToken,
-    `service-credit/manage/client/pos/${encodeURIComponent(documento)}`
+    `service-credit/manage/client/pos/${encodeURIComponent(documento)}`,
+    undefined,
+    provider
   );
 
   if (clientPos) {
     payloads.push({ source: "client-pos", data: clientPos });
   }
 
-  await appendClientCreditReportPayloads(session, documento, payloads);
+  await appendClientCreditReportPayloads(
+    session,
+    documento,
+    payloads,
+    provider
+  );
 
   const clientSecure = await tryProtectedJson(
     session.apiBaseUrl,
     session.accessToken,
-    `service-credit/manage/client/secure/${encodeURIComponent(documento)}`
+    `service-credit/manage/client/secure/${encodeURIComponent(documento)}`,
+    undefined,
+    provider
   );
 
   if (clientSecure) {
@@ -1642,7 +1740,9 @@ export async function obtenerCreditoSumasPayPorCedula(
     (await tryProtectedJson(
       session.apiBaseUrl,
       session.accessToken,
-      `service-credit/manage/client/${encodeURIComponent(documento)}`
+      `service-credit/manage/client/${encodeURIComponent(documento)}`,
+      undefined,
+      provider
     ));
 
   if (clientOnline && clientOnline !== clientSecure) {
@@ -1659,7 +1759,9 @@ export async function obtenerCreditoSumasPayPorCedula(
     const accounts = await tryProtectedJson(
       session.apiBaseUrl,
       session.accessToken,
-      `service-credit/manage/accounts/${encodeURIComponent(clientId)}`
+      `service-credit/manage/accounts/${encodeURIComponent(clientId)}`,
+      undefined,
+      provider
     );
 
     if (accounts) {
@@ -1672,17 +1774,19 @@ export async function obtenerCreditoSumasPayPorCedula(
     session.accessToken,
     `service-credit/manage/core-bridge/credits-by-client/all?identification=${encodeURIComponent(
       documento
-    )}`
+    )}`,
+    undefined,
+    provider
   );
 
   if (allCredits) {
     payloads.push({ source: "credits-by-client", data: allCredits });
   }
 
-  await appendLoanDetailPayloads(session, payloads);
+  await appendLoanDetailPayloads(session, payloads, provider);
 
   if (payloads.length === 0) {
-    console.info("SUMASPAY consulta sin payloads", {
+    console.info(`${provider.logLabel} consulta sin payloads`, {
       documento: maskDocumento(documento),
     });
 
@@ -1699,7 +1803,7 @@ export async function obtenerCreditoSumasPayPorCedula(
 
   if (!selectedCandidate) {
     if (candidates.length > 0) {
-      console.info("SUMASPAY consulta sin credito CONECTAMOS reciente", {
+      console.info(`${provider.logLabel} consulta sin credito CONECTAMOS reciente`, {
         documento: maskDocumento(documento),
         fechaActual: getDateInColombia(),
         candidatos: candidates.slice(0, 8).map((candidate) => ({
@@ -1712,7 +1816,7 @@ export async function obtenerCreditoSumasPayPorCedula(
       return null;
     }
 
-    console.info("SUMASPAY consulta sin candidato", {
+    console.info(`${provider.logLabel} consulta sin candidato`, {
       documento: maskDocumento(documento),
       payloads: describePayloads(payloads),
     });
@@ -1724,7 +1828,8 @@ export async function obtenerCreditoSumasPayPorCedula(
     session,
     documento,
     selectedCandidate,
-    clientId
+    clientId,
+    provider
   );
   const clientPayloads = [
     clientSecure,
@@ -1734,9 +1839,8 @@ export async function obtenerCreditoSumasPayPorCedula(
     ...payloads.map((payload) => payload.data),
   ];
 
-  return {
+  const base = {
     documento,
-    financiera: "SUMASPAY",
     clienteNombre: getClientName(...clientPayloads),
     correoElectronico: getClientEmail(...clientPayloads),
     telefonoCliente: getClientPhone(...clientPayloads),
@@ -1747,7 +1851,20 @@ export async function obtenerCreditoSumasPayPorCedula(
     numeroCuotas: candidate.numeroCuotas,
     valorCuota: candidate.valorCuota,
     frecuenciaCuota: DEFAULT_FRECUENCIA_CUOTA,
-    encontradoEnSumasPay: true,
     origen: candidate.source,
+  };
+
+  if (provider.financiera === "ESMIOPCION") {
+    return {
+      ...base,
+      financiera: "ESMIOPCION",
+      encontradoEnEsmioOpcion: true,
+    };
+  }
+
+  return {
+    ...base,
+    financiera: "SUMASPAY",
+    encontradoEnSumasPay: true,
   };
 }

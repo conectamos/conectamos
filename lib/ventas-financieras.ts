@@ -35,7 +35,11 @@ const LEGACY_FINANCIAL_FIELD_MAP = [
   { key: "celya", nombre: "CELYA", aliases: ["CELYA"] },
   { key: "bogota", nombre: "BANCO BOGOTA", aliases: ["BANCO BOGOTA", "BOGOTA"] },
   { key: "alocredit", nombre: "ALO-CREDIT", aliases: ["ALO-CREDIT", "ALO CREDIT"] },
-  { key: "esmio", nombre: "ESMIO", aliases: ["ESMIO"] },
+  {
+    key: "esmio",
+    nombre: "ESMIO",
+    aliases: ["ESMIO", "ESMIOPCION", "ESMIOPCIÓN"],
+  },
   { key: "kaiowa", nombre: "KAIOWA", aliases: ["KAIOWA"] },
   { key: "finser", nombre: "FINSER", aliases: ["FINSER", "FINSER PAY"] },
   { key: "gora", nombre: "GORA", aliases: ["GORA"] },
@@ -83,6 +87,8 @@ function legacyIntermediationPercentage(nombreNormalizado: string) {
   }
   if (
     nombreNormalizado === "ESMIO" ||
+    nombreNormalizado === "ESMIOPCION" ||
+    nombreNormalizado === "ESMIOPCIÓN" ||
     nombreNormalizado === "KAIOWA" ||
     nombreNormalizado === "FINSER PAY"
   ) {

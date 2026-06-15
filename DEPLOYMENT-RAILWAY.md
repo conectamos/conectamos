@@ -36,6 +36,12 @@ Para consultar creditos SUMASPAY desde el registro del asesor tambien agrega:
 - `SUMASCONSULTA_USUARIO`
 - `SUMASCONSULTA_CLAVE`
 
+Para consultar creditos ESMIOPCION desde el registro del asesor tambien agrega:
+
+- `ESMIOPCIONCONSULTA_URL`
+- `ESMIOPCIONCONSULTA_USUARIO`
+- `ESMIOPCIONCONSULTA_CLAVE`
+
 Opcionales para Siigo:
 
 - `SIIGO_ITEM_CODE`
@@ -70,6 +76,12 @@ La resolucion/documento, vendedor, forma de pago, ciudad y opciones de envio se 
 - `SUMASCONSULTA_URL`: URL de SUMAS Consulta. Si se define como `https://sumasparati.mundosumas.com/auth/login`, la app usa automaticamente `https://sumasparati.mundosumas.com/api/` para consultar.
 - `SUMASCONSULTA_USUARIO`: usuario de SUMAS Consulta usado para leer creditos SUMASPAY.
 - `SUMASCONSULTA_CLAVE`: clave de SUMAS Consulta.
+
+### Variables para consulta ESMIOPCION
+
+- `ESMIOPCIONCONSULTA_URL`: URL de ESMIOPCION. Si usa el mismo portal tipo SUMAS y se define como URL de login, la app usa automaticamente `/api/` sobre ese dominio para consultar.
+- `ESMIOPCIONCONSULTA_USUARIO`: usuario de ESMIOPCION usado para leer creditos.
+- `ESMIOPCIONCONSULTA_CLAVE`: clave de ESMIOPCION.
 
 ### Parametros Siigo por sede
 

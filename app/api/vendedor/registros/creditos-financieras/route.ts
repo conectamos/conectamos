@@ -9,14 +9,20 @@ import {
   type AddiCreditoCedula,
 } from "@/lib/addiconsulta";
 import {
+  isEsmioOpcionConsultaConfigured,
   isSumasConsultaConfigured,
+  obtenerCreditoEsmioOpcionPorCedula,
   obtenerCreditoSumasPayPorCedula,
   SumasConsultaConfigError,
   SumasConsultaLookupError,
+  type EsmioOpcionCreditoCedula,
   type SumasPayCreditoCedula,
 } from "@/lib/sumasconsulta";
 
-type CreditoFinancieraCedula = SumasPayCreditoCedula | AddiCreditoCedula;
+type CreditoFinancieraCedula =
+  | SumasPayCreditoCedula
+  | AddiCreditoCedula
+  | EsmioOpcionCreditoCedula;
 
 type LookupResult = {
   financiera: CreditoFinancieraCedula["financiera"];
@@ -117,9 +123,40 @@ async function lookupAddi(documento: string): Promise<LookupResult> {
   }
 }
 
+async function lookupEsmioOpcion(documento: string): Promise<LookupResult> {
+  try {
+    return {
+      financiera: "ESMIOPCION",
+      credito: await obtenerCreditoEsmioOpcionPorCedula(documento),
+    };
+  } catch (error) {
+    if (
+      error instanceof SumasConsultaConfigError ||
+      error instanceof SumasConsultaLookupError
+    ) {
+      return {
+        financiera: "ESMIOPCION",
+        credito: null,
+        error: error.message,
+      };
+    }
+
+    console.error("ERROR CONSULTANDO CREDITO ESMIOPCION:", error);
+    return {
+      financiera: "ESMIOPCION",
+      credito: null,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Error consultando el credito ESMIOPCION",
+    };
+  }
+}
+
 function orderCredito(credito: CreditoFinancieraCedula) {
   if (credito.financiera === "SUMASPAY") return 1;
   if (credito.financiera === "ADDI") return 2;
+  if (credito.financiera === "ESMIOPCION") return 3;
   return 99;
 }
 
@@ -153,11 +190,15 @@ export async function GET(req: Request) {
       lookups.push(lookupAddi(documento));
     }
 
+    if (isEsmioOpcionConsultaConfigured()) {
+      lookups.push(lookupEsmioOpcion(documento));
+    }
+
     if (lookups.length === 0) {
       return NextResponse.json(
         {
           error:
-            "Falta configurar las variables de consulta de SUMASPAY o ADDI en el servidor",
+            "Falta configurar las variables de consulta de SUMASPAY, ADDI o ESMIOPCION en el servidor",
         },
         { status: 503 }
       );
@@ -186,7 +227,7 @@ export async function GET(req: Request) {
           creditos: [],
           errores,
           error:
-            "No se encontro un credito SUMASPAY o ADDI creado hoy o ayer en tienda CONECTAMOS para esta cedula",
+            "No se encontro un credito SUMASPAY, ADDI o ESMIOPCION creado hoy o ayer en tienda CONECTAMOS para esta cedula",
         },
         { status: 404 }
       );

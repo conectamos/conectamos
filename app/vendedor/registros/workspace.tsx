@@ -214,7 +214,7 @@ type AloCreditoResponse = {
 
 type CreditoFinancieraCedula = {
   documento: string;
-  financiera: "SUMASPAY" | "ADDI";
+  financiera: "SUMASPAY" | "ADDI" | "ESMIOPCION";
   clienteNombre: string | null;
   correoElectronico: string | null;
   telefonoCliente: string | null;
@@ -230,6 +230,7 @@ type CreditoFinancieraCedula = {
   ordenId?: string | null;
   encontradoEnSumasPay?: boolean;
   encontradoEnAddi?: boolean;
+  encontradoEnEsmioOpcion?: boolean;
 };
 
 type CreditosFinancierasResponse = {
@@ -434,8 +435,17 @@ function esPlataformaAddi(value: unknown) {
   return normalizePlatformKey(value) === "ADDI";
 }
 
+function esPlataformaEsmioOpcion(value: unknown) {
+  const key = normalizePlatformKey(value);
+  return key === "ESMIO" || key === "ESMIOPCION";
+}
+
 function esPlataformaConsultaCedula(value: unknown) {
-  return esPlataformaSumasPay(value) || esPlataformaAddi(value);
+  return (
+    esPlataformaSumasPay(value) ||
+    esPlataformaAddi(value) ||
+    esPlataformaEsmioOpcion(value)
+  );
 }
 
 function creditoCoincideConPlataforma(
@@ -454,6 +464,10 @@ function creditoCoincideConPlataforma(
     return esPlataformaAddi(plataformaCredito);
   }
 
+  if (credito.financiera === "ESMIOPCION") {
+    return esPlataformaEsmioOpcion(plataformaCredito);
+  }
+
   return false;
 }
 
@@ -464,10 +478,19 @@ function resolvePlatformName(
   const matcher =
     financiera === "SUMASPAY"
       ? esPlataformaSumasPay
-      : esPlataformaAddi;
+      : financiera === "ADDI"
+        ? esPlataformaAddi
+        : esPlataformaEsmioOpcion;
   const option = catalogo.find((item) => matcher(item.nombre));
 
   return option?.nombre ?? financiera;
+}
+
+function getPlataformaConsultaLabel(value: unknown) {
+  if (esPlataformaSumasPay(value)) return "SUMASPAY";
+  if (esPlataformaAddi(value)) return "ADDI";
+  if (esPlataformaEsmioOpcion(value)) return "ESMIOPCION";
+  return "la financiera";
 }
 
 function applyCreditoFinancieraCedulaToFinancialState(
@@ -3187,11 +3210,9 @@ export default function VendedorRegistroWorkspace({
                     )
                       ? creditosFinancierasCedula[index]
                       : null;
-                  const plataformaConsultaLabel = esPlataformaSumasPay(
+                  const plataformaConsultaLabel = getPlataformaConsultaLabel(
                     item.plataformaCredito
-                  )
-                    ? "SUMASPAY"
-                    : "ADDI";
+                  );
                   const bloqueaPlataforma =
                     Boolean(index === 0 && payjoyCreditos[0]) ||
                     Boolean(index === 0 && aloCreditos[0]) ||

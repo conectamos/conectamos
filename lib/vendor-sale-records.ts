@@ -11,6 +11,7 @@ export const PLATAFORMAS_CREDITO = [
   "SUMAS+",
   "SUMASPAY",
   "ESMIO",
+  "ESMIOPCION",
   "PAYJOY",
   "ALCANOS",
   "BANCO BOGOTA",
