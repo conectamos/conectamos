@@ -5,6 +5,9 @@ const ALO_LOGIN_PATH = "/login";
 const ALO_REPORT_PATH = "/admin_reportes";
 const ALO_REPORT_CACHE_MS = 60_000;
 const COLOMBIA_CURRENCY = "COP";
+const ALO_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
 type CookieJar = Map<string, string>;
 
@@ -613,9 +616,7 @@ async function loginAlo() {
     {
       headers: {
         Accept: "text/html,application/xhtml+xml",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-          "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "User-Agent": ALO_USER_AGENT,
       },
     },
     jar
@@ -639,9 +640,7 @@ async function loginAlo() {
         Accept: "text/html,application/xhtml+xml",
         "Content-Type": "application/x-www-form-urlencoded",
         Referer: loginPage.url,
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-          "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "User-Agent": ALO_USER_AGENT,
       },
     },
     jar
@@ -1068,6 +1067,38 @@ function datePairsForRange(startDate: string, endDate: string) {
   ];
 }
 
+function datePathCandidates(baseUrl: string, startDate: string, endDate: string) {
+  const pairs = datePairsForRange(startDate, endDate).filter(
+    ([start, end]) => !start.includes("/") && !end.includes("/")
+  );
+  const paths = [
+    "/admin_facturacion",
+    "/admin_facturacion/descargar",
+    "/admin_facturacion/download",
+    "/admin_facturacion/exportar",
+    "/admin_facturacion/reporte",
+    "/admin_reportes/facturacion",
+    "/admin_reportes/descargar",
+    "/admin_reportes/download",
+  ];
+  const candidates: DownloadCandidate[] = [];
+
+  for (const path of paths) {
+    for (const [start, end] of pairs) {
+      candidates.push({
+        url: new URL(
+          `${path}/${encodeURIComponent(start)}/${encodeURIComponent(end)}`,
+          baseUrl
+        ).toString(),
+        method: "GET",
+        score: 280,
+      });
+    }
+  }
+
+  return candidates;
+}
+
 function findDateFieldPairs(fields: URLSearchParams) {
   const entries = Array.from(fields.entries()).map(([key, value]) => ({
     key,
@@ -1197,9 +1228,12 @@ function directWeeklyDownloadCandidates(
   ];
 
   return dedupeDownloadCandidates(
-    bases.flatMap((candidate) =>
-      buildDateScopedCandidates(candidate, startDash, endDash, preferredPairs)
-    )
+    [
+      ...datePathCandidates(baseUrl, startDash, endDash),
+      ...bases.flatMap((candidate) =>
+        buildDateScopedCandidates(candidate, startDash, endDash, preferredPairs)
+      ),
+    ]
   );
 }
 
@@ -1267,6 +1301,7 @@ function describeDownloadCandidate(candidate: DownloadCandidate) {
     return {
       path: url.pathname,
       queryKeys: Array.from(url.searchParams.keys()).sort(),
+      pathConFecha: /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(url.pathname),
       method: candidate.method || "GET",
       bodyKeys: candidate.body ? Array.from(candidate.body.keys()).sort() : [],
       bodyPreview,
@@ -1276,6 +1311,7 @@ function describeDownloadCandidate(candidate: DownloadCandidate) {
     return {
       path: candidate.url.slice(0, 80),
       queryKeys: [],
+      pathConFecha: /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(candidate.url),
       method: candidate.method || "GET",
       bodyKeys: candidate.body ? Array.from(candidate.body.keys()).sort() : [],
       bodyPreview,
@@ -1306,6 +1342,8 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
     {
       headers: {
         Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "es-CO,es;q=0.9",
+        "User-Agent": ALO_USER_AGENT,
       },
     },
     jar
@@ -1346,7 +1384,10 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
       headers: {
         Accept: "text/html,application/xhtml+xml",
         "Content-Type": "application/x-www-form-urlencoded",
+        "Accept-Language": "es-CO,es;q=0.9",
+        Origin: action.origin,
         Referer: page.url,
+        "User-Agent": ALO_USER_AGENT,
       },
     },
     jar
@@ -1403,6 +1444,10 @@ async function fetchReportBufferFromUrl(
       headers: {
         Accept:
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/html,*/*",
+        "Accept-Language": "es-CO,es;q=0.9",
+        Origin: url.origin,
+        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": ALO_USER_AGENT,
         ...(candidate.method === "POST"
           ? { "Content-Type": "application/x-www-form-urlencoded" }
           : {}),
