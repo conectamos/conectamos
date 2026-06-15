@@ -1214,6 +1214,28 @@ function getCreditAmount(record: Record<string, unknown>, source: string) {
   );
 }
 
+function cleanClientName(value: unknown) {
+  const parts = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  const cleanedParts: string[] = [];
+
+  for (const part of parts) {
+    const currentKey = normalizeText(part);
+    const previousKey = normalizeText(cleanedParts[cleanedParts.length - 1]);
+
+    if (currentKey && currentKey === previousKey) {
+      continue;
+    }
+
+    cleanedParts.push(part);
+  }
+
+  return cleanedParts.join(" ").trim() || null;
+}
+
 function getClientName(...values: unknown[]) {
   for (const value of values) {
     const byKey = deepString(value, [
@@ -1230,7 +1252,7 @@ function getClientName(...values: unknown[]) {
     ]);
 
     if (byKey) {
-      return byKey;
+      return cleanClientName(byKey);
     }
 
     if (isRecord(value)) {
@@ -1253,7 +1275,7 @@ function getClientName(...values: unknown[]) {
         .filter(Boolean);
 
       if (parts.length >= 2) {
-        return parts.join(" ").replace(/\s+/g, " ").trim();
+        return cleanClientName(parts.join(" "));
       }
     }
   }

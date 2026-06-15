@@ -636,9 +636,31 @@ function toSortableDate(value: unknown) {
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 }
 
+function cleanClientName(value: unknown) {
+  const parts = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  const cleanedParts: string[] = [];
+
+  for (const part of parts) {
+    const currentKey = normalizeText(part);
+    const previousKey = normalizeText(cleanedParts[cleanedParts.length - 1]);
+
+    if (currentKey && currentKey === previousKey) {
+      continue;
+    }
+
+    cleanedParts.push(part);
+  }
+
+  return cleanedParts.join(" ").trim() || null;
+}
+
 function getClientName(value: unknown) {
   if (typeof value === "string") {
-    const trimmed = value.trim();
+    const trimmed = cleanClientName(value);
 
     return trimmed && trimmed !== "-" ? trimmed : null;
   }
@@ -655,7 +677,7 @@ function getClientName(value: unknown) {
   ]);
 
   if (fullName) {
-    return fullName;
+    return cleanClientName(fullName);
   }
 
   const parts = [
@@ -668,7 +690,7 @@ function getClientName(value: unknown) {
     .map((item) => String(item || "").trim())
     .filter(Boolean);
 
-  return parts.length > 0 ? parts.join(" ") : null;
+  return parts.length > 0 ? cleanClientName(parts.join(" ")) : null;
 }
 
 function getFirstFromKeys(record: Record<string, unknown>, keys: string[]) {
