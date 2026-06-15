@@ -11,7 +11,8 @@ async function runEnsureVendorProfilesSchema() {
         'AUDITOR',
         'FACTURADOR',
         'SUPERVISOR_TIENDA',
-        'VENDEDOR'
+        'VENDEDOR',
+        'APOYO_OPERATIVO'
       );
     EXCEPTION
       WHEN duplicate_object THEN NULL;
@@ -25,6 +26,10 @@ async function runEnsureVendorProfilesSchema() {
 
   await prisma.$executeRawUnsafe(`
     ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'VENDEDOR';
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'APOYO_OPERATIVO';
   `);
 
   await prisma.$executeRawUnsafe(`

@@ -4,6 +4,7 @@ export const TIPOS_PERFIL_VISUAL = [
   "FACTURADOR",
   "SUPERVISOR_TIENDA",
   "VENDEDOR",
+  "APOYO_OPERATIVO",
 ] as const;
 
 export type TipoPerfilVisual = (typeof TIPOS_PERFIL_VISUAL)[number];
@@ -45,6 +46,10 @@ const AVATAR_OPTIONS_BY_TIPO: Record<TipoPerfilVisual, AvatarOption[]> = {
     { value: "VENDEDOR_HOMBRE", label: "Vendedor hombre" },
     { value: "VENDEDOR_MUJER", label: "Vendedor mujer" },
   ],
+  APOYO_OPERATIVO: [
+    { value: "VENDEDOR_HOMBRE", label: "Apoyo operativo hombre" },
+    { value: "VENDEDOR_MUJER", label: "Apoyo operativo mujer" },
+  ],
 };
 
 export function obtenerOpcionesAvatarPorTipo(tipo: TipoPerfilVisual) {
@@ -74,6 +79,7 @@ export function etiquetaAvatarPerfil(avatarKey: AvatarPerfilKey) {
     AVATAR_OPTIONS_BY_TIPO.FACTURADOR.find((item) => item.value === avatarKey)?.label ||
     AVATAR_OPTIONS_BY_TIPO.SUPERVISOR_TIENDA.find((item) => item.value === avatarKey)?.label ||
     AVATAR_OPTIONS_BY_TIPO.VENDEDOR.find((item) => item.value === avatarKey)?.label ||
+    AVATAR_OPTIONS_BY_TIPO.APOYO_OPERATIVO.find((item) => item.value === avatarKey)?.label ||
     avatarKey
   );
 }

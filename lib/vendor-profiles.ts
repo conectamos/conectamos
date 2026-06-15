@@ -12,6 +12,7 @@ export const TIPOS_PERFIL_VENDEDOR = [
   "FACTURADOR",
   "SUPERVISOR_TIENDA",
   "VENDEDOR",
+  "APOYO_OPERATIVO",
 ] as const;
 
 export type TipoPerfilVendedor = (typeof TIPOS_PERFIL_VENDEDOR)[number];
@@ -81,6 +82,7 @@ export function etiquetaTipoPerfilVendedor(tipo: TipoPerfilVendedor) {
   if (tipo === "AUDITOR") return "Auditor";
   if (tipo === "FACTURADOR") return "Facturador";
   if (tipo === "VENDEDOR") return "Vendedor";
+  if (tipo === "APOYO_OPERATIVO") return "Apoyo operativo";
   return "Supervisor de tienda";
 }
 

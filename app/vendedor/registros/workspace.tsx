@@ -31,6 +31,7 @@ type SessionProps = {
   nombre: string;
   sedeNombre: string;
   perfilNombre: string;
+  perfilTipo: string;
   perfilTipoLabel: string;
 };
 
@@ -966,7 +967,9 @@ export default function VendedorRegistroWorkspace({
   session: SessionProps;
 }) {
   const puedeBuscarRegistros =
-    String(session.perfilTipoLabel || "").trim().toUpperCase() !== "VENDEDOR";
+    !["VENDEDOR", "APOYO_OPERATIVO"].includes(
+      String(session.perfilTipo || "").trim().toUpperCase()
+    );
   const router = useRouter();
   const searchParams = useSearchParams();
   const [form, setForm] = useState<FormState>(() => createInitialState(session));

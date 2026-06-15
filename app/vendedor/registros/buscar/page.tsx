@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import { requireVendorPage } from "@/lib/page-access";
-import { esPerfilVendedor } from "@/lib/access-control";
+import { esPerfilRegistroVenta } from "@/lib/access-control";
 import BuscarRegistroWorkspace from "./workspace";
 
 export default async function BuscarRegistroPage() {
   const session = await requireVendorPage();
 
-  if (esPerfilVendedor(session.perfilTipo)) {
+  if (esPerfilRegistroVenta(session.perfilTipo)) {
     redirect("/vendedor/registros");
   }
 

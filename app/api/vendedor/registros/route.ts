@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
   esPerfilAdministrativo,
-  esPerfilVendedor,
+  esPerfilRegistroVenta,
   esRolAdministrativo,
   esRolAuditor,
   puedeAccederPanelVendedor,
@@ -148,7 +148,10 @@ async function requireVendor() {
     return {
       ok: false as const,
       response: NextResponse.json(
-        { error: "Solo un perfil vendedor o administrador puede usar este modulo" },
+        {
+          error:
+            "Solo un perfil de vendedor, apoyo operativo o administrador puede usar este modulo",
+        },
         { status: 403 }
       ),
     };
@@ -161,7 +164,7 @@ function puedeGestionarRegistrosConsultados(session: {
   perfilTipo?: unknown;
   rolNombre?: unknown;
 }) {
-  return !esPerfilVendedor(session.perfilTipo) || esRolAdministrativo(session.rolNombre);
+  return !esPerfilRegistroVenta(session.perfilTipo) || esRolAdministrativo(session.rolNombre);
 }
 
 function construirScopeRegistros(session: {

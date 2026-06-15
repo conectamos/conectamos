@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import {
   esPerfilFacturador,
-  esPerfilVendedor,
+  esPerfilRegistroVenta,
   esRolAdministrativo,
 } from "@/lib/access-control";
 import { getMonthlyAnalyticSummary } from "@/lib/dashboard-analytics";
@@ -20,7 +20,7 @@ export async function GET(req: Request) {
       );
     }
 
-    if (esPerfilVendedor(user.perfilTipo) || esPerfilFacturador(user.perfilTipo)) {
+    if (esPerfilRegistroVenta(user.perfilTipo) || esPerfilFacturador(user.perfilTipo)) {
       return NextResponse.json(
         { error: "No tienes acceso al panel analitico" },
         { status: 403 }

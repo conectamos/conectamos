@@ -36,7 +36,8 @@ type PerfilItem = {
     | "AUDITOR"
     | "FACTURADOR"
     | "SUPERVISOR_TIENDA"
-    | "VENDEDOR";
+    | "VENDEDOR"
+    | "APOYO_OPERATIVO";
   tipoLabel: string;
   debeCambiarPin: boolean;
   sedeIds: number[];
@@ -85,6 +86,11 @@ const TIPOS_PERFIL: Array<{
     label: "Vendedor",
     detail: "Solo ve su modulo de registros tipo venta.",
   },
+  {
+    value: "APOYO_OPERATIVO",
+    label: "Apoyo operativo",
+    detail: "Ve registros tipo venta y acceso al radar.",
+  },
 ];
 
 const COLUMNAS_PERFIL: Array<{
@@ -95,6 +101,7 @@ const COLUMNAS_PERFIL: Array<{
   { tipo: "AUDITOR", titulo: "Auditor" },
   { tipo: "SUPERVISOR_TIENDA", titulo: "Supervisor" },
   { tipo: "VENDEDOR", titulo: "Vendedor" },
+  { tipo: "APOYO_OPERATIVO", titulo: "Apoyo operativo" },
   { tipo: "FACTURADOR", titulo: "Facturador" },
 ];
 

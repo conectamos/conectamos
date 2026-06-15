@@ -6,6 +6,10 @@ export type InventoryBrandReferenceSummary = {
   total: number;
   bodegaPrincipal: number;
   sedes: number;
+  sedesDetalle: Array<{
+    sede: string;
+    total: number;
+  }>;
 };
 
 export type InventoryBrandSummary = {
@@ -63,6 +67,7 @@ function ensureReference(
     total: 0,
     bodegaPrincipal: 0,
     sedes: 0,
+    sedesDetalle: [],
   };
 
   map.set(referencia, next);
@@ -119,8 +124,19 @@ export async function getAdminInventorySummary(options?: {
 
   for (const item of sedeRowsVisibles) {
     const ref = ensureReference(referencias, item.referencia);
+    const sedeNombre = String(item.sede?.nombre || "Sede sin nombre").trim();
     ref.total += 1;
     ref.sedes += 1;
+    const sedeExistente = ref.sedesDetalle.find((detalle) => detalle.sede === sedeNombre);
+
+    if (sedeExistente) {
+      sedeExistente.total += 1;
+    } else {
+      ref.sedesDetalle.push({
+        sede: sedeNombre,
+        total: 1,
+      });
+    }
   }
 
   const brandMap = new Map<string, InventoryBrandSummary>();
@@ -151,7 +167,16 @@ export async function getAdminInventorySummary(options?: {
   const marcas = Array.from(brandMap.values())
     .map((marca) => ({
       ...marca,
-      referencias: sortReferences(marca.referencias),
+      referencias: sortReferences(marca.referencias).map((referencia) => ({
+        ...referencia,
+        sedesDetalle: [...referencia.sedesDetalle].sort((a, b) => {
+          if (b.total !== a.total) {
+            return b.total - a.total;
+          }
+
+          return a.sede.localeCompare(b.sede, "es");
+        }),
+      })),
     }))
     .filter((marca) => MARCAS_RADAR.includes(marca.marca) || marca.total > 0)
     .sort((a, b) => {

@@ -16,7 +16,8 @@ type PerfilAcceso = {
     | "AUDITOR"
     | "FACTURADOR"
     | "SUPERVISOR_TIENDA"
-    | "VENDEDOR";
+    | "VENDEDOR"
+    | "APOYO_OPERATIVO";
   avatarKey: AvatarPerfilKey;
   tipoLabel: string;
   debeCambiarPin: boolean;

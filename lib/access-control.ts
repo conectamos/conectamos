@@ -42,12 +42,20 @@ export function esPerfilFacturador(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "FACTURADOR";
 }
 
+export function esPerfilApoyoOperativo(perfilTipo: unknown) {
+  return normalizarPerfilTipo(perfilTipo) === "APOYO_OPERATIVO";
+}
+
 export function esPerfilVendedor(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "VENDEDOR";
 }
 
+export function esPerfilRegistroVenta(perfilTipo: unknown) {
+  return esPerfilVendedor(perfilTipo) || esPerfilApoyoOperativo(perfilTipo);
+}
+
 export function puedeAccederModulosOperativos(perfilTipo: unknown) {
-  return !esPerfilVendedor(perfilTipo) && !esPerfilFacturador(perfilTipo);
+  return !esPerfilRegistroVenta(perfilTipo) && !esPerfilFacturador(perfilTipo);
 }
 
 export function puedeAccederPanelVendedor(
@@ -55,7 +63,7 @@ export function puedeAccederPanelVendedor(
   rolNombre: unknown
 ) {
   return (
-    esPerfilVendedor(perfilTipo) ||
+    esPerfilRegistroVenta(perfilTipo) ||
     esPerfilSupervisor(perfilTipo) ||
     esPerfilAdministrativo(perfilTipo) ||
     esRolAdministrativo(rolNombre)

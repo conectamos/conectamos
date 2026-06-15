@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
 import {
+  esPerfilApoyoOperativo,
   esPerfilFacturador,
+  esPerfilRegistroVenta,
   esPerfilSupervisor,
-  esPerfilVendedor,
   puedeConsultarReporteSiigo,
   puedeAccederPanelFacturador,
   esRolAdministrativo,
@@ -35,6 +36,7 @@ type ModuleKey =
   | "caja"
   | "prestamos"
   | "registrarVenta"
+  | "radar"
   | "registrarFacturacion"
   | "administracion"
   | "payjoy"
@@ -514,6 +516,7 @@ function ModuleSectionBlock({
 function resolveSaludo({
   esAdmin,
   esSupervisor,
+  esApoyoOperativo,
   esVendedor,
   esFacturador,
   nombreUsuario,
@@ -521,11 +524,16 @@ function resolveSaludo({
 }: {
   esAdmin: boolean;
   esSupervisor: boolean;
+  esApoyoOperativo: boolean;
   esVendedor: boolean;
   esFacturador: boolean;
   nombreUsuario: string;
   sedeLabel: string;
 }) {
+  if (esApoyoOperativo) {
+    return `Bienvenido, ${nombreUsuario}. Desde aqui registras ventas y consultas el radar de disponibilidad por referencia.`;
+  }
+
   if (esVendedor) {
     return `Bienvenido, ${nombreUsuario}. Desde aqui solo registras ventas nuevas.`;
   }
@@ -554,7 +562,8 @@ export default async function DashboardPage() {
 
   const esAdmin = esRolAdministrativo(session.rolNombre);
   const esFacturador = esPerfilFacturador(session.perfilTipo);
-  const esVendedor = esPerfilVendedor(session.perfilTipo);
+  const esApoyoOperativo = esPerfilApoyoOperativo(session.perfilTipo);
+  const esVendedor = esPerfilRegistroVenta(session.perfilTipo) && !esApoyoOperativo;
   const esSupervisor =
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
@@ -577,6 +586,7 @@ export default async function DashboardPage() {
   const saludo = resolveSaludo({
     esAdmin,
     esSupervisor,
+    esApoyoOperativo,
     esVendedor,
     esFacturador,
     nombreUsuario,
@@ -585,7 +595,7 @@ export default async function DashboardPage() {
 
   const mesActual = getCurrentBogotaMonthRange();
   const [resumenComercialMensual, resumenFinanciero] =
-    esVendedor || esFacturador || esSedeSoloInventario
+    esPerfilRegistroVenta(session.perfilTipo) || esFacturador || esSedeSoloInventario
       ? ([null, null] as const)
       : await Promise.all([
           getMonthlyCommercialSummary({
@@ -595,7 +605,7 @@ export default async function DashboardPage() {
             sedeId: esAdmin ? null : session.sedeId ?? null,
           }),
         ]);
-  const mensajeBienvenidaVendedor = esVendedor
+  const mensajeBienvenidaVendedor = esPerfilRegistroVenta(session.perfilTipo)
     ? await getVendorWelcomeMessage()
     : null;
   const financieraDestacada =
@@ -695,9 +705,11 @@ export default async function DashboardPage() {
     },
     registrarVenta: {
       key: "registrarVenta",
-      title: esVendedor ? "REGISTRAR VENTAS" : "REGISTRAR VENTA",
+      title: esPerfilRegistroVenta(session.perfilTipo)
+        ? "REGISTRAR VENTAS"
+        : "REGISTRAR VENTA",
       eyebrow: "Vendedor / Registros",
-      description: esVendedor
+      description: esPerfilRegistroVenta(session.perfilTipo)
         ? "Digitaliza el tramite completo de la venta desde un unico modulo."
         : "Digitaliza la hoja de plataforma y registra el tramite completo desde este modulo.",
       actions: [
@@ -712,11 +724,20 @@ export default async function DashboardPage() {
               },
             ] as ModuleAction[])
           : []),
-        ...(!esVendedor
+        ...(!esPerfilRegistroVenta(session.perfilTipo)
           ? ([{ href: "/vendedor/registros/buscar", label: "Buscar registro", tone: "secondary" }] as ModuleAction[])
           : []),
       ],
       tone: "emerald",
+    },
+    radar: {
+      key: "radar",
+      title: "RADAR",
+      eyebrow: "Disponibilidad",
+      description:
+        "Consulta referencias en bodega principal y sedes, con detalle por sede al abrir cada resultado.",
+      actions: [{ href: "/dashboard/radar", label: "Abrir radar", tone: "primary" }],
+      tone: "sky",
     },
     registrarFacturacion: {
       key: "registrarFacturacion",
@@ -882,6 +903,8 @@ export default async function DashboardPage() {
           "nuovo",
           "equality",
         ]
+      : esApoyoOperativo
+        ? ["registrarVenta", "radar"]
       : esVendedor
         ? ["registrarVenta"]
         : esFacturador
@@ -892,7 +915,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] text-slate-950">
-      {esVendedor && mensajeBienvenidaVendedor && (
+      {esPerfilRegistroVenta(session.perfilTipo) && mensajeBienvenidaVendedor && (
         <VendorWelcomeModal
           mensaje={mensajeBienvenidaVendedor}
           sessionKey={session.sessionKey ?? `${session.id}-${session.perfilId ?? "usuario"}`}
@@ -926,7 +949,9 @@ export default async function DashboardPage() {
                   RADAR
                 </Link>
               )}
-              {!esSedeSoloInventario && !esVendedor && !esFacturador && (
+              {!esSedeSoloInventario &&
+                !esPerfilRegistroVenta(session.perfilTipo) &&
+                !esFacturador && (
                 <>
                   {esAdmin && (
                     <Link
@@ -977,7 +1002,9 @@ export default async function DashboardPage() {
               }
             />
           </section>
-        ) : esVendedor || esFacturador || esSedeSoloInventario ? null : (
+        ) : esPerfilRegistroVenta(session.perfilTipo) ||
+            esFacturador ||
+            esSedeSoloInventario ? null : (
           <div className="mt-6">
             <DashboardUtilityGate coverageLabel={sedeLabel} requiereClave={!esAdmin} />
           </div>
@@ -1026,7 +1053,10 @@ export default async function DashboardPage() {
           )}
         </section>
 
-        {!esSedeSoloInventario && !esVendedor && !esFacturador && resumenComercialMensual && (
+        {!esSedeSoloInventario &&
+          !esPerfilRegistroVenta(session.perfilTipo) &&
+          !esFacturador &&
+          resumenComercialMensual && (
           <div className="mt-6">
             <CommercialRankingSection
               periodLabel={mesActual.label}

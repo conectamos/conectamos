@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import {
   esPerfilAdministrativo,
   esPerfilFacturador,
-  esPerfilVendedor,
+  esPerfilRegistroVenta,
   esRolAdministrativo,
   puedeAccederModulosOperativos,
   puedeAccederPanelFacturador,
@@ -66,7 +66,7 @@ export async function GET() {
 
     const accesoTotal = esAccesoTotal(session);
     const sedeId = Number(session.sedeId || 0);
-    const perfilVendedor = esPerfilVendedor(session.perfilTipo);
+    const perfilVendedor = esPerfilRegistroVenta(session.perfilTipo);
     const perfilFacturador = esPerfilFacturador(session.perfilTipo);
     const puedeVerAprobacionesVenta = !perfilVendedor && !perfilFacturador;
     const puedeVerFacturacion = puedeAccederPanelFacturador(

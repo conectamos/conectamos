@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import {
   esPerfilFacturador,
   esPerfilAdministrativo,
-  esPerfilVendedor,
+  esPerfilRegistroVenta,
   esRolAdministrativo,
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
@@ -19,7 +19,7 @@ async function requireSalesApprovalAccess() {
     };
   }
 
-  if (esPerfilVendedor(session.perfilTipo) || esPerfilFacturador(session.perfilTipo)) {
+  if (esPerfilRegistroVenta(session.perfilTipo) || esPerfilFacturador(session.perfilTipo)) {
     return {
       ok: false as const,
       response: NextResponse.json(
