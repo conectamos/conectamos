@@ -46,6 +46,7 @@ type EsmioCandidate = {
   creditId: string | null;
   documento: string;
   clienteNombre: string | null;
+  direccionCliente: string | null;
   fechaCreacionCredito: string | null;
   puntoCredito: string | null;
   creditoAutorizado: number;
@@ -843,6 +844,36 @@ function getClientName(value: unknown) {
   return parts.length > 0 ? cleanClientName(parts.join(" ")) : null;
 }
 
+function cleanClientAddress(value: unknown) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+
+  return text && text !== "[object Object]" && text !== "-" ? text : null;
+}
+
+function getClientAddress(value: unknown) {
+  const address = deepText(value, [
+    "customer__address",
+    "customer_address",
+    "customerAddress",
+    "client_address",
+    "clientAddress",
+    "direccion",
+    "direccionCliente",
+    "address",
+    "address_line",
+    "addressLine",
+    "addressLine1",
+    "residence_address",
+    "residenceAddress",
+    "home_address",
+    "homeAddress",
+    "domicilio",
+    "dir",
+  ]);
+
+  return cleanClientAddress(address);
+}
+
 const PAYMENT_AMOUNT_KEYS = [
   "amount",
   "theorical_planned_payments__amount",
@@ -1039,6 +1070,10 @@ function buildCandidate(
         "Cliente",
       ])
     );
+  const direccionCliente =
+    getClientAddress(record.customer) ||
+    getClientAddress(record.client) ||
+    getClientAddress(record);
   const numeroCuotas = toNumber(
     deepNumber(record, PAYMENT_COUNT_KEYS)
   );
@@ -1052,6 +1087,7 @@ function buildCandidate(
     creditId: getCreditId(record),
     documento,
     clienteNombre,
+    direccionCliente,
     fechaCreacionCredito,
     puntoCredito:
       deepText(record, [
@@ -1366,7 +1402,7 @@ export async function obtenerCreditoEsmioOpcionPorCedula(
     clienteNombre: selected.clienteNombre,
     correoElectronico: null,
     telefonoCliente: null,
-    direccionCliente: null,
+    direccionCliente: selected.direccionCliente,
     fechaCreacionCredito: selected.fechaCreacionCredito,
     puntoCredito: selected.puntoCredito,
     creditoAutorizado: selected.creditoAutorizado,
