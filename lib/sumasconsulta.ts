@@ -14,12 +14,14 @@ const SUMASPAY_PROVIDER = {
   envPrefix: "SUMASCONSULTA",
   financiera: "SUMASPAY",
   logLabel: "SUMASPAY",
+  requierePerfilPin: false,
 } as const;
 
 const ESMIOPCION_PROVIDER = {
   envPrefix: "ESMIOPCIONCONSULTA",
   financiera: "ESMIOPCION",
   logLabel: "ESMIOPCION",
+  requierePerfilPin: true,
 } as const;
 
 type SumasConsultaProvider =
@@ -65,6 +67,14 @@ type SumasConfig = {
   apiBaseUrl: string;
   origin: string;
   refererUrl: string;
+};
+
+type SumasCredentials = {
+  usuario: string;
+  clave: string;
+  perfil?: string;
+  pin?: string;
+  perfilEndpoint?: string;
 };
 
 type Candidate = {
@@ -153,6 +163,14 @@ function joinUrl(baseUrl: string, path: string) {
   return new URL(path.replace(/^\/+/, ""), baseUrl).toString();
 }
 
+function joinEndpointUrl(baseUrl: string, endpoint: string) {
+  try {
+    return new URL(endpoint).toString();
+  } catch {
+    return joinUrl(baseUrl, endpoint);
+  }
+}
+
 function getConfiguredSumasConfig(
   provider: SumasConsultaProvider = SUMASPAY_PROVIDER
 ): SumasConfig {
@@ -203,7 +221,9 @@ function getSumasBrowserHeaders(
   };
 }
 
-function getCredentials(provider: SumasConsultaProvider = SUMASPAY_PROVIDER) {
+function getCredentials(
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
+): SumasCredentials {
   const usuarioEnv = `${provider.envPrefix}_USUARIO`;
   const claveEnv = `${provider.envPrefix}_CLAVE`;
   const usuario = String(process.env[usuarioEnv] || "").trim();
@@ -215,7 +235,30 @@ function getCredentials(provider: SumasConsultaProvider = SUMASPAY_PROVIDER) {
     );
   }
 
-  return { usuario, clave };
+  if (!provider.requierePerfilPin) {
+    return { usuario, clave };
+  }
+
+  const perfilEnv = `${provider.envPrefix}_PERFIL`;
+  const pinEnv = `${provider.envPrefix}_PIN`;
+  const perfilEndpointEnv = `${provider.envPrefix}_PERFIL_ENDPOINT`;
+  const perfil = String(process.env[perfilEnv] || "").trim();
+  const pin = String(process.env[pinEnv] || "").trim();
+  const perfilEndpoint = String(process.env[perfilEndpointEnv] || "").trim();
+
+  if (!perfil || !pin) {
+    throw new SumasConsultaConfigError(
+      `Falta configurar ${perfilEnv} y ${pinEnv}.`
+    );
+  }
+
+  return {
+    usuario,
+    clave,
+    perfil,
+    pin,
+    perfilEndpoint: perfilEndpoint || undefined,
+  };
 }
 
 function formatSumasDate(date = new Date()) {
@@ -369,11 +412,11 @@ async function loginSumas(
   provider: SumasConsultaProvider = SUMASPAY_PROVIDER
 ): Promise<SumasSession> {
   const { apiBaseUrl } = getConfiguredSumasConfig(provider);
-  const { usuario, clave } = getCredentials(provider);
+  const credentials = getCredentials(provider);
   const body = new URLSearchParams();
 
-  body.set("username", encryptCryptoJsPassphrase(usuario));
-  body.set("password", encryptCryptoJsPassphrase(clave));
+  body.set("username", encryptCryptoJsPassphrase(credentials.usuario));
+  body.set("password", encryptCryptoJsPassphrase(credentials.clave));
 
   const loginPayload = unwrapData(
     await requestJson(
@@ -402,18 +445,18 @@ async function loginSumas(
     );
   }
 
-  const currentUser = await tryProtectedJson(
+  const session = await completeSumasProfileLogin(
     apiBaseUrl,
     accessToken,
-    "service-user/users/me",
-    undefined,
+    loginPayload,
+    credentials,
     provider
   );
 
   return {
     apiBaseUrl,
-    accessToken,
-    currentUser,
+    accessToken: session.accessToken,
+    currentUser: session.currentUser,
   };
 }
 
@@ -446,6 +489,350 @@ async function tryProtectedJson(
 
     return null;
   }
+}
+
+async function requestProtectedJsonWithStatus(
+  apiBaseUrl: string,
+  accessToken: string,
+  path: string,
+  init: RequestInit,
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
+) {
+  const response = await fetch(joinEndpointUrl(apiBaseUrl, path), {
+    ...init,
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+      ...getSumasBrowserHeaders(provider),
+      Authorization: `Bearer ${accessToken}`,
+      ...(init.headers || {}),
+    },
+  });
+  const payload = await readJsonResponse(response);
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    payload: unwrapData(payload),
+  };
+}
+
+function getDeepJwtToken(value: unknown, depth = 0): string | null {
+  if (depth > 5) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const token = getDeepJwtToken(item, depth + 1);
+      if (token) return token;
+    }
+    return null;
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  for (const key of [
+    "access_token",
+    "accessToken",
+    "token",
+    "jwt",
+    "idToken",
+    "id_token",
+  ]) {
+    if (key in value) {
+      const token = getJwtToken(value[key]);
+      if (token) return token;
+    }
+  }
+
+  for (const child of Object.values(value)) {
+    if (Array.isArray(child) || isRecord(child)) {
+      const token = getDeepJwtToken(child, depth + 1);
+      if (token) return token;
+    }
+  }
+
+  return null;
+}
+
+function normalizeProfileSelector(value: unknown) {
+  return normalizeText(value).replace(/[^A-Z0-9]+/g, "");
+}
+
+function getProfileIdFromRecord(record: Record<string, unknown>) {
+  return directString(record, [
+    "id",
+    "profileId",
+    "profile_id",
+    "perfilId",
+    "perfil_id",
+    "idProfile",
+    "idPerfil",
+    "roleId",
+    "role_id",
+    "rolId",
+    "rol_id",
+    "userProfileId",
+    "user_profile_id",
+  ]);
+}
+
+function getProfileTextFromRecord(record: Record<string, unknown>) {
+  const direct = directString(record, [
+    "name",
+    "nombre",
+    "profile",
+    "perfil",
+    "profileName",
+    "profile_name",
+    "perfilNombre",
+    "perfil_nombre",
+    "role",
+    "rol",
+    "roleName",
+    "role_name",
+    "description",
+    "descripcion",
+  ]);
+
+  if (direct) {
+    return direct;
+  }
+
+  try {
+    return JSON.stringify(record);
+  } catch {
+    return "";
+  }
+}
+
+function findProfileId(payloads: unknown[], perfil: string) {
+  const trimmed = perfil.trim();
+
+  if (/^\d+$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const selector = normalizeProfileSelector(trimmed);
+
+  if (!selector) {
+    return null;
+  }
+
+  for (const payload of payloads) {
+    for (const { record } of collectRecords(payload, "perfil")) {
+      const text = normalizeProfileSelector(getProfileTextFromRecord(record));
+
+      if (!text || (!text.includes(selector) && !selector.includes(text))) {
+        continue;
+      }
+
+      return getProfileIdFromRecord(record) || trimmed;
+    }
+  }
+
+  return null;
+}
+
+async function resolveProfileId(
+  apiBaseUrl: string,
+  accessToken: string,
+  initialPayloads: unknown[],
+  credentials: SumasCredentials,
+  provider: SumasConsultaProvider
+) {
+  if (!credentials.perfil) {
+    return null;
+  }
+
+  const fromInitialPayloads = findProfileId(initialPayloads, credentials.perfil);
+
+  if (fromInitialPayloads) {
+    return fromInitialPayloads;
+  }
+
+  for (const path of [
+    "service-user/users/profiles",
+    "service-user/users/profile",
+    "service-user/profiles",
+    "service-user/users/roles",
+    "service-user/roles",
+  ]) {
+    const payload = await tryProtectedJson(
+      apiBaseUrl,
+      accessToken,
+      path,
+      undefined,
+      provider
+    );
+    const found = findProfileId([payload], credentials.perfil);
+
+    if (found) {
+      return found;
+    }
+  }
+
+  return credentials.perfil;
+}
+
+function profileValueForPayload(value: string) {
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
+
+function buildProfilePinPayloads(profileId: string, perfil: string, pin: string) {
+  const value = profileValueForPayload(profileId);
+  const perfilValue = profileValueForPayload(perfil);
+  const payloads: Array<Record<string, unknown>> = [
+    { profileId: value, pin },
+    { perfilId: value, pin },
+    { idProfile: value, pin },
+    { idPerfil: value, pin },
+    { roleId: value, pin },
+    { rolId: value, pin },
+    { userProfileId: value, pin },
+    { id: value, pin },
+    { profile: value, pin },
+    { perfil: value, pin },
+    { profileName: perfilValue, pin },
+    { perfilNombre: perfilValue, pin },
+    { profileId: value, password: pin },
+    { perfilId: value, password: pin },
+    { profileId: value, pinCode: pin },
+    { perfilId: value, pinCode: pin },
+  ];
+  const seen = new Set<string>();
+
+  return payloads.filter((payload) => {
+    const key = JSON.stringify(payload);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getProfileEndpointCandidates(credentials: SumasCredentials) {
+  const defaults = [
+    "service-user/users/profile/login",
+    "service-user/users/profiles/login",
+    "service-user/users/select-profile",
+    "service-user/users/profile/select",
+    "service-user/users/profiles/select",
+    "service-user/users/validate-pin",
+    "service-user/users/pin",
+    "service-user/profile/login",
+    "service-user/profiles/login",
+    "service-user/auth/profile",
+  ];
+
+  return Array.from(
+    new Set([
+      ...(credentials.perfilEndpoint ? [credentials.perfilEndpoint] : []),
+      ...defaults,
+    ])
+  );
+}
+
+async function completeSumasProfileLogin(
+  apiBaseUrl: string,
+  accessToken: string,
+  loginPayload: unknown,
+  credentials: SumasCredentials,
+  provider: SumasConsultaProvider
+) {
+  const currentUser = await tryProtectedJson(
+    apiBaseUrl,
+    accessToken,
+    "service-user/users/me",
+    undefined,
+    provider
+  );
+
+  if (!provider.requierePerfilPin) {
+    return { accessToken, currentUser };
+  }
+
+  if (!credentials.perfil || !credentials.pin) {
+    throw new SumasConsultaConfigError(
+      `Falta configurar ${provider.envPrefix}_PERFIL y ${provider.envPrefix}_PIN.`
+    );
+  }
+
+  const profileId = await resolveProfileId(
+    apiBaseUrl,
+    accessToken,
+    [loginPayload, currentUser],
+    credentials,
+    provider
+  );
+
+  if (!profileId) {
+    throw new SumasConsultaConfigError(
+      `${provider.logLabel} no encontro el perfil configurado.`
+    );
+  }
+
+  const payloads = buildProfilePinPayloads(
+    profileId,
+    credentials.perfil,
+    credentials.pin
+  );
+  const endpoints = getProfileEndpointCandidates(credentials);
+  const attempts: Array<{ endpoint: string; status: number }> = [];
+
+  for (const endpoint of endpoints) {
+    for (const payload of payloads) {
+      const response = await requestProtectedJsonWithStatus(
+        apiBaseUrl,
+        accessToken,
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        },
+        provider
+      );
+
+      attempts.push({ endpoint, status: response.status });
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const selectedAccessToken =
+        getDeepJwtToken(response.payload) || accessToken;
+      const selectedUser =
+        (await tryProtectedJson(
+          apiBaseUrl,
+          selectedAccessToken,
+          "service-user/users/me",
+          undefined,
+          provider
+        )) ||
+        response.payload ||
+        currentUser;
+
+      return {
+        accessToken: selectedAccessToken,
+        currentUser: selectedUser,
+      };
+    }
+  }
+
+  console.info(`${provider.logLabel} seleccion de perfil sin exito`, {
+    perfilConfigurado: Boolean(credentials.perfil),
+    endpoints: Array.from(new Set(attempts.map((attempt) => attempt.endpoint))),
+    estados: attempts.slice(-12),
+  });
+
+  throw new SumasConsultaConfigError(
+    `${provider.logLabel} no permitio seleccionar el perfil configurado con el PIN.`
+  );
 }
 
 function collectRecords(
@@ -1640,10 +2027,19 @@ async function enrichCandidateWithPlan(
 }
 
 function isSumasLikeConsultaConfigured(provider: SumasConsultaProvider) {
-  return Boolean(
+  const basicConfigured = Boolean(
     String(process.env[`${provider.envPrefix}_URL`] || "").trim() &&
       String(process.env[`${provider.envPrefix}_USUARIO`] || "").trim() &&
       String(process.env[`${provider.envPrefix}_CLAVE`] || "").trim()
+  );
+
+  if (!basicConfigured || !provider.requierePerfilPin) {
+    return basicConfigured;
+  }
+
+  return Boolean(
+    String(process.env[`${provider.envPrefix}_PERFIL`] || "").trim() &&
+      String(process.env[`${provider.envPrefix}_PIN`] || "").trim()
   );
 }
 
