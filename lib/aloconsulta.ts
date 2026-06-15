@@ -459,12 +459,15 @@ function currentWeeklyReportDates() {
   const day = todayDate.getUTCDay();
   const daysSinceMonday = (day + 6) % 7;
   const startDate = new Date(todayDate);
+  const endDate = new Date(todayDate);
 
   startDate.setUTCDate(todayDate.getUTCDate() - daysSinceMonday);
+  endDate.setUTCDate(startDate.getUTCDate() + 6);
 
   return {
     start: formatDateParts(startDate),
-    end: today,
+    end: formatDateParts(endDate),
+    today,
   };
 }
 
@@ -1045,6 +1048,44 @@ function extractRowDates(row: string) {
   return htmlRowText(row).match(/\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b/g)?.slice(0, 2) ?? [];
 }
 
+function parseLocalReportDate(value: string) {
+  const match = value.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+
+  if (!match) {
+    return null;
+  }
+
+  return Date.UTC(
+    Number(match[3]),
+    Number(match[2]) - 1,
+    Number(match[1])
+  );
+}
+
+function rowIncludesToday(row: string) {
+  const rowDates = extractRowDates(row);
+
+  if (rowDates.length < 2) {
+    return false;
+  }
+
+  const { today } = currentWeeklyReportDates();
+  const todayTime = Date.UTC(
+    Number(today.year),
+    Number(today.month) - 1,
+    Number(today.day)
+  );
+  const startTime = parseLocalReportDate(rowDates[0]);
+  const endTime = parseLocalReportDate(rowDates[1]);
+
+  return (
+    startTime !== null &&
+    endTime !== null &&
+    startTime <= todayTime &&
+    todayTime <= endTime
+  );
+}
+
 function slashDate(date: string) {
   return date.replace(/-/g, "/");
 }
@@ -1242,7 +1283,8 @@ function findWeeklyReportDownloadCandidates(
   baseUrl: string,
   submittedFields = new URLSearchParams()
 ) {
-  const row = firstTableRows(html, 80).find(looksLikeWeeklyReportRow);
+  const rows = firstTableRows(html, 80).filter(looksLikeWeeklyReportRow);
+  const row = rows.find(rowIncludesToday);
 
   if (!row) {
     return directWeeklyDownloadCandidates(baseUrl, submittedFields);
@@ -1505,10 +1547,20 @@ async function downloadFirstReport(imei?: string) {
 
   console.info("ALO CREDIT candidatos de descarga", {
     modo: weeklyCandidates.length > 0 ? "primera-fila-reportes-semanales" : "general",
+    rangoSemana: {
+      inicio: dashFromParts(currentWeeklyReportDates().start),
+      fin: dashFromParts(currentWeeklyReportDates().end),
+      hoy: dashFromParts(currentWeeklyReportDates().today),
+    },
     candidatos: candidates.slice(0, 5).map(describeDownloadCandidate),
   });
   logAloInfo("ALO CREDIT candidatos de descarga detalle", {
     modo: weeklyCandidates.length > 0 ? "primera-fila-reportes-semanales" : "general",
+    rangoSemana: {
+      inicio: dashFromParts(currentWeeklyReportDates().start),
+      fin: dashFromParts(currentWeeklyReportDates().end),
+      hoy: dashFromParts(currentWeeklyReportDates().today),
+    },
     candidatos: candidates.slice(0, 8).map(describeDownloadCandidate),
   });
 
