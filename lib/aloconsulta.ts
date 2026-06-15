@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 const ALO_DEFAULT_REPORT_URL = "https://consola.alocredit.co/admin_reportes";
 const ALO_LOGIN_PATH = "/login";
 const ALO_REPORT_PATH = "/admin_reportes";
+const ALO_CARTERA_PATH = "/admin_cartera";
 const ALO_REPORT_CACHE_MS = 60_000;
 const COLOMBIA_CURRENCY = "COP";
 const ALO_USER_AGENT =
@@ -35,6 +36,16 @@ type ReportSource = Buffer | string;
 type CachedReport = {
   source: ReportSource;
   expiresAt: number;
+};
+
+type AloSession = {
+  jar: CookieJar;
+  reportUrl: URL;
+};
+
+type AloCarteraTerms = {
+  valorCuota: number | null;
+  numeroCuotas: number | null;
 };
 
 export type AloCreditoImei = {
@@ -92,7 +103,12 @@ function normalizeKey(value: unknown) {
 }
 
 function visibleText(value: unknown) {
-  return String(value || "").replace(/\s+/g, " ").trim();
+  return decodeHtml(String(value || ""))
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function isHtmlResponse(buffer: Buffer) {
@@ -615,7 +631,7 @@ function looksLikeLoginPage(html: string) {
   return /name=["']_username["']/i.test(html) || /id=["']inputPassword["']/i.test(html);
 }
 
-async function loginAlo() {
+async function loginAlo(): Promise<AloSession> {
   const config = getCredentials();
   const jar: CookieJar = new Map();
   const loginPage = await fetchTextFollowingRedirects(
@@ -734,7 +750,7 @@ function logAloInfo(message: string, data: Record<string, unknown>) {
 function extractRouteHints(text: string) {
   const hints = new Set<string>();
   const routeRegex =
-    /["'`]((?:https?:\/\/[^"'`]+|\/)[^"'`]*?(?:admin|ajax|api|facturacion|reporte|reportes|descarg|download|export)[^"'`]*)["'`]/gi;
+    /["'`]((?:https?:\/\/[^"'`]+|\/)[^"'`]*?(?:admin|ajax|api|cartera|facturacion|reporte|reportes|descarg|download|export)[^"'`]*)["'`]/gi;
 
   for (const match of text.matchAll(routeRegex)) {
     const route = decodeHtml(match[1]).trim();
@@ -1769,7 +1785,7 @@ async function fetchReportBufferFromUrl(
   };
 }
 
-async function downloadFirstReport(imei?: string) {
+async function downloadFirstReport(imei?: string, sessionArg?: AloSession) {
   if (
     cachedReport &&
     cachedReport.expiresAt > Date.now() &&
@@ -1778,7 +1794,7 @@ async function downloadFirstReport(imei?: string) {
     return cachedReport.source;
   }
 
-  const session = await loginAlo();
+  const session = sessionArg ?? (await loginAlo());
   const reportsPage = await getConsultedReportsPage(session.jar, session.reportUrl);
   const weeklyCandidates = findWeeklyReportDownloadCandidates(
     reportsPage.text,
@@ -2054,6 +2070,7 @@ function headerScore(row: MatrixCell[]) {
   if (keys.includes("WHATSAPP") || keys.includes("TELEFONO") || keys.includes("CELULAR")) score += 1;
   if (keys.includes("MONTO") || keys.includes("TOTAL")) score += 1;
   if (keys.includes("PLAZO")) score += 1;
+  if (keys.includes("CUOTA")) score += 1;
 
   return score;
 }
@@ -2198,7 +2215,16 @@ function isEmailKey(key: string) {
 }
 
 function isTermKey(key: string) {
-  if (key.includes("VALOR") || key.includes("MONTO") || key.includes("PAGO")) {
+  if (
+    key.includes("VALOR") ||
+    key.includes("MONTO") ||
+    key.includes("PAGO") ||
+    key.includes("ATRAS") ||
+    key.includes("MORA") ||
+    key.includes("PENDIENT") ||
+    key.includes("VENCID") ||
+    key.includes("PAGAD")
+  ) {
     return false;
   }
 
@@ -2345,6 +2371,453 @@ function parseTermByHeader(value: unknown, headerKey: string) {
   return parseTerm(value);
 }
 
+function maskNumericValue(value: string) {
+  return value ? `${"*".repeat(Math.max(0, value.length - 4))}${value.slice(-4)}` : "";
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isJsonCell(value: unknown) {
+  return (
+    value === null ||
+    ["string", "number", "boolean"].includes(typeof value)
+  );
+}
+
+function toMatrixCell(value: unknown): MatrixCell {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  return JSON.stringify(value);
+}
+
+function jsonMatricesFromValue(value: unknown) {
+  const matrices: MatrixCell[][][] = [];
+  const seen = new Set<unknown>();
+
+  const visit = (node: unknown, depth: number) => {
+    if (depth > 8 || !node || seen.has(node)) {
+      return;
+    }
+
+    if (typeof node === "object") {
+      seen.add(node);
+    }
+
+    if (Array.isArray(node)) {
+      const records = node.filter(isPlainRecord);
+      const arrays = node.filter(Array.isArray);
+
+      if (records.length > 0) {
+        const keys = Array.from(
+          new Set(
+            records.flatMap((record) =>
+              Object.keys(record).filter((key) => isJsonCell(record[key]))
+            )
+          )
+        );
+
+        if (keys.length > 0) {
+          matrices.push([
+            keys,
+            ...records.map((record) => keys.map((key) => toMatrixCell(record[key]))),
+          ]);
+        }
+      }
+
+      if (arrays.length > 0) {
+        matrices.push(
+          arrays.map((row) =>
+            row.map((cell) => toMatrixCell(cell))
+          )
+        );
+      }
+
+      node.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+
+    if (isPlainRecord(node)) {
+      const primitiveEntries = Object.entries(node).filter(([, cell]) =>
+        isJsonCell(cell)
+      );
+
+      if (primitiveEntries.length >= 2) {
+        matrices.push([
+          primitiveEntries.map(([key]) => key),
+          primitiveEntries.map(([, cell]) => toMatrixCell(cell)),
+        ]);
+      }
+
+      Object.values(node).forEach((item) => visit(item, depth + 1));
+    }
+  };
+
+  visit(value, 0);
+
+  return matrices;
+}
+
+function readCarteraMatrices(text: string) {
+  const trimmed = text.trim();
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      return jsonMatricesFromValue(JSON.parse(trimmed));
+    } catch {
+      return [];
+    }
+  }
+
+  if (!/<(?:table|tr|td|th)\b/i.test(text)) {
+    return [];
+  }
+
+  try {
+    return readWorkbookMatrix(text).map(({ matrix }) => matrix);
+  } catch {
+    return [];
+  }
+}
+
+function rowMatchesAnySearch(row: MatrixCell[], searchValues: string[]) {
+  const rowDigits = row.map(visibleText).join(" ").replace(/\D/g, "");
+
+  return searchValues.some(
+    (value) => value.length >= 6 && rowDigits.includes(value)
+  );
+}
+
+function parseCarteraTermsFromRow(
+  row: MatrixCell[],
+  headerRow: MatrixCell[] | null
+): AloCarteraTerms {
+  const plazo = findTermValue(row, headerRow);
+  const numeroCuotas = parseTermByHeader(plazo.value, plazo.headerKey);
+  const valorCuota =
+    parseAmount(getByHeader(row, headerRow, isInstallmentValueKey)) ??
+    parseAmount(
+      getByHeader(
+        row,
+        headerRow,
+        (key) =>
+          key.includes("CUOTAVALOR") ||
+          key.includes("VALORPAGOCUOTA") ||
+          key.includes("VALORCATORCENAL") ||
+          key.includes("PAGOCATORCENAL")
+      )
+    );
+
+  return {
+    valorCuota,
+    numeroCuotas,
+  };
+}
+
+function extractTableHeaderCandidates(html: string) {
+  return Array.from(html.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi))
+    .map((match) => {
+      const rowHtml = match[0];
+      const cells = Array.from(
+        rowHtml.matchAll(/<t[hd]\b[^>]*>[\s\S]*?<\/t[hd]>/gi)
+      ).map((cell) => visibleText(cell[0]));
+
+      return cells;
+    })
+    .filter((cells) => cells.length > 0)
+    .sort((left, right) => headerScore(right) - headerScore(left));
+}
+
+function findCarteraTermsInText(
+  text: string,
+  searchValues: string[],
+  fallbackHeaders: MatrixCell[][] = []
+) {
+  const matrices = readCarteraMatrices(text);
+  const headers = [...extractTableHeaderCandidates(text), ...fallbackHeaders];
+
+  for (const matrix of matrices) {
+    for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
+      const row = matrix[rowIndex] || [];
+
+      if (!rowMatchesAnySearch(row, searchValues)) {
+        continue;
+      }
+
+      const terms = parseCarteraTermsFromRow(
+        row,
+        findHeaderRow(matrix, rowIndex) ||
+          headers.find((header) => header.length >= row.length) ||
+          headers[0] ||
+          null
+      );
+
+      if (terms.valorCuota !== null || terms.numeroCuotas !== null) {
+        return terms;
+      }
+    }
+  }
+
+  return null;
+}
+
+function carteraSearchFields(searchValue: string, baseFields = new URLSearchParams()) {
+  const fields = new URLSearchParams(baseFields);
+  const searchKeys = [
+    "search[value]",
+    "search",
+    "buscar",
+    "q",
+    "term",
+    "filtro",
+    "imei",
+    "cedula",
+    "documento",
+    "cc",
+    "cc_cliente",
+    "cliente",
+  ];
+
+  fields.set("draw", fields.get("draw") || "1");
+  fields.set("start", fields.get("start") || "0");
+  fields.set("length", fields.get("length") || "100");
+  fields.set("search[regex]", fields.get("search[regex]") || "false");
+
+  for (const key of searchKeys) {
+    fields.set(key, searchValue);
+  }
+
+  return fields;
+}
+
+function aloCarteraSearchCandidates(
+  html: string,
+  baseUrl: string,
+  searchValue: string
+) {
+  const candidates: DownloadCandidate[] = [
+    {
+      url: new URL("/admin_cartera/ajax", baseUrl).toString(),
+      method: "GET",
+      body: carteraSearchFields(searchValue),
+      score: 1000,
+    },
+    {
+      url: new URL("/admin_cartera/ajax", baseUrl).toString(),
+      method: "POST",
+      body: carteraSearchFields(searchValue),
+      score: 980,
+    },
+    {
+      url: new URL("/admin_cartera", baseUrl).toString(),
+      method: "GET",
+      body: carteraSearchFields(searchValue),
+      score: 700,
+    },
+    {
+      url: new URL("/admin_cartera", baseUrl).toString(),
+      method: "POST",
+      body: carteraSearchFields(searchValue),
+      score: 680,
+    },
+  ];
+
+  for (const route of extractRouteHints(html)) {
+    if (!normalizeText(route).includes("CARTERA")) {
+      continue;
+    }
+
+    candidates.push({
+      url: new URL(route, baseUrl).toString(),
+      method: "GET",
+      body: carteraSearchFields(searchValue),
+      score: normalizeText(route).includes("AJAX") ? 950 : 650,
+    });
+  }
+
+  for (const form of parseForms(html, baseUrl)) {
+    if (normalizeText(form.html).includes("_USERNAME")) {
+      continue;
+    }
+
+    candidates.push({
+      url: form.action,
+      method: form.method === "GET" ? "GET" : "POST",
+      body: carteraSearchFields(searchValue, form.fields),
+      score: 800,
+    });
+  }
+
+  return dedupeDownloadCandidates(candidates).slice(0, 24);
+}
+
+async function fetchAloTextCandidate(
+  jar: CookieJar,
+  candidate: DownloadCandidate,
+  referer: string
+) {
+  const url = new URL(candidate.url);
+
+  if (candidate.method === "GET" && candidate.body) {
+    for (const [key, value] of candidate.body) {
+      url.searchParams.set(key, value);
+    }
+  }
+
+  const response = await fetchWithCookies(
+    url.toString(),
+    {
+      method: candidate.method === "POST" ? "POST" : "GET",
+      body:
+        candidate.method === "POST" && candidate.body
+          ? candidate.body
+          : undefined,
+      headers: {
+        Accept: "application/json,text/html,*/*",
+        "Accept-Language": "es-CO,es;q=0.9",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest",
+        Origin: url.origin,
+        Referer: referer,
+        "User-Agent": ALO_USER_AGENT,
+      },
+    },
+    jar,
+    30000
+  );
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    text: await response.text(),
+    url: url.toString(),
+  };
+}
+
+async function consultarCuotaPlazoAloCartera(
+  session: AloSession,
+  credito: AloCreditoImei
+) {
+  const searchValues = Array.from(
+    new Set(
+      [credito.imei, credito.documento]
+        .map(onlyDigits)
+        .filter((value) => value.length >= 6)
+    )
+  );
+
+  if (searchValues.length === 0) {
+    return null;
+  }
+
+  const carteraUrl = new URL(ALO_CARTERA_PATH, session.reportUrl.origin);
+  const page = await fetchTextFollowingRedirects(
+    carteraUrl.toString(),
+    {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "es-CO,es;q=0.9",
+        "User-Agent": ALO_USER_AGENT,
+      },
+    },
+    session.jar
+  );
+
+  if (looksLikeLoginPage(page.text)) {
+    return null;
+  }
+
+  const pageHeaders = extractTableHeaderCandidates(page.text);
+  const pageTerms = findCarteraTermsInText(page.text, searchValues, pageHeaders);
+
+  if (pageTerms) {
+    return pageTerms;
+  }
+
+  const fallos: Array<Record<string, unknown>> = [];
+
+  for (const searchValue of searchValues) {
+    const candidates = aloCarteraSearchCandidates(
+      page.text,
+      page.url,
+      searchValue
+    );
+
+    for (const candidate of candidates) {
+      const result = await fetchAloTextCandidate(
+        session.jar,
+        candidate,
+        page.url
+      );
+
+      if (!result.ok) {
+        fallos.push({
+          origen: describeDownloadCandidate(candidate),
+          status: result.status,
+        });
+        continue;
+      }
+
+      const terms = findCarteraTermsInText(result.text, searchValues, pageHeaders);
+
+      if (terms) {
+        console.info("ALO CREDIT cartera encontro cuota/plazo", {
+          busqueda: maskNumericValue(searchValue),
+          origen: describeDownloadCandidate(candidate),
+          valorCuota: terms.valorCuota !== null,
+          numeroCuotas: terms.numeroCuotas !== null,
+        });
+
+        return terms;
+      }
+    }
+  }
+
+  logAloInfo("ALO CREDIT cartera sin cuota/plazo detalle", {
+    busquedas: searchValues.map(maskNumericValue),
+    estructura: debugHtmlStructure(page.text, page.url),
+    fallos: fallos.slice(0, 8),
+  });
+
+  return null;
+}
+
+async function completarCuotaPlazoDesdeCartera(
+  session: AloSession,
+  credito: AloCreditoImei
+) {
+  try {
+    const terms = await consultarCuotaPlazoAloCartera(session, credito);
+
+    if (!terms) {
+      return credito;
+    }
+
+    return {
+      ...credito,
+      valorCuota: terms.valorCuota ?? credito.valorCuota,
+      numeroCuotas: terms.numeroCuotas ?? credito.numeroCuotas,
+      origen:
+        terms.valorCuota !== null || terms.numeroCuotas !== null
+          ? `${credito.origen}+admin_cartera`
+          : credito.origen,
+    } satisfies AloCreditoImei;
+  } catch (error) {
+    console.info("ALO CREDIT cartera no pudo complementar cuota/plazo", {
+      error: error instanceof Error ? error.message : "error desconocido",
+    });
+
+    return credito;
+  }
+}
+
 function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, imei: string) {
   const creditoAutorizado =
     parseAmount(
@@ -2485,11 +2958,18 @@ export async function obtenerCreditoAloPorImei(imeiValue: unknown) {
     throw new AloConsultaLookupError("El IMEI debe tener 15 digitos.");
   }
 
-  const reportBuffer = await downloadFirstReport(imei);
+  const session = await loginAlo();
+  const reportBuffer = await downloadFirstReport(imei, session);
 
   if (!reportBuffer) {
     return null;
   }
 
-  return findCreditoInWorkbook(reportBuffer, imei);
+  const credito = findCreditoInWorkbook(reportBuffer, imei);
+
+  if (!credito) {
+    return null;
+  }
+
+  return completarCuotaPlazoDesdeCartera(session, credito);
 }
