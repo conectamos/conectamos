@@ -2258,6 +2258,20 @@ function isInstallmentValueKey(key: string) {
   );
 }
 
+function isAccessoryValueKey(key: string) {
+  if (key.includes("CANTIDAD") || key.includes("NUMERO") || key.includes("QTY")) {
+    return false;
+  }
+
+  return (
+    (key.includes("SUMA") &&
+      key.includes("PRECIO") &&
+      key.includes("ACCESORIO")) ||
+    (key.includes("PRECIO") && key.includes("ACCESORIO")) ||
+    (key.includes("VALOR") && key.includes("ACCESORIO"))
+  );
+}
+
 function isDocumentCandidate(digits: string, imei: string) {
   return digits.length >= 6 && digits.length <= 12 && digits !== imei;
 }
@@ -2836,16 +2850,8 @@ function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, 
   }
 
   const accesorios =
-    parseAmount(
-      getByHeader(
-        row,
-        headerRow,
-        (key) =>
-          key.includes("ACCESORIO") ||
-          key.includes("SUMAPRECIOACCESORIOS") ||
-          (key.includes("PRECIO") && key.includes("ACCESORIO"))
-      )
-    ) ?? parseAmount(getCell(row, 8));
+    parseAmount(getByHeader(row, headerRow, isAccessoryValueKey)) ??
+    (headerRow ? null : parseAmount(getCell(row, 8)));
   const documento = findDocument(row, headerRow, imei);
   const plazo = findTermValue(row, headerRow);
   const valorCuotaRaw = getByHeader(

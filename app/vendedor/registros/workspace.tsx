@@ -1815,13 +1815,16 @@ export default function VendedorRegistroWorkspace({
 
       if (!response.ok || !Array.isArray(data.creditos) || data.creditos.length === 0) {
         setCreditosFinancierasCedula({});
-        const errorMessage =
-          data.error ||
-          "No se encontro un credito SUMASPAY o ADDI creado hoy o ayer en tienda CONECTAMOS para esta cedula";
+        const sinCreditoEncontrado =
+          response.status === 404 ||
+          (response.ok && Array.isArray(data.creditos) && data.creditos.length === 0);
+
         setCreditosCedulaError(
-          options?.silent && response.status !== 404
-            ? "No se pudieron consultar las financieras. Usa Consultar para reintentar."
-            : errorMessage
+          sinCreditoEncontrado
+            ? ""
+            : options?.silent
+              ? "No se pudieron consultar las financieras. Usa Consultar para reintentar."
+              : data.error || "No se pudieron consultar las financieras"
         );
         return;
       }
