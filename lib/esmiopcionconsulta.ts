@@ -61,9 +61,14 @@ export class EsmioOpcionConsultaConfigError extends Error {
 }
 
 export class EsmioOpcionConsultaLookupError extends Error {
-  constructor(message: string) {
+  status?: number;
+  label?: string;
+
+  constructor(message: string, options?: { status?: number; label?: string }) {
     super(message);
     this.name = "EsmioOpcionConsultaLookupError";
+    this.status = options?.status;
+    this.label = options?.label;
   }
 }
 
@@ -291,7 +296,8 @@ async function requestJson(
       throw new EsmioOpcionConsultaLookupError(
         suffix
           ? `ESMIOPCION respondio con estado ${response.status} en ${label}: ${suffix}`
-          : `ESMIOPCION respondio con estado ${response.status} en ${label}.`
+          : `ESMIOPCION respondio con estado ${response.status} en ${label}.`,
+        { status: response.status, label }
       );
     }
 
@@ -784,16 +790,33 @@ async function fetchCreditsReport(
       "commerce_reports/get_credits_table/",
       params
     );
-    const response = await requestJson(
-      url,
-      {
-        method: "GET",
-        headers: {
-          authorization: `Token ${session.storeToken}`,
+    let response: unknown;
+
+    try {
+      response = await requestJson(
+        url,
+        {
+          method: "GET",
+          headers: {
+            authorization: `Token ${session.storeToken}`,
+          },
         },
-      },
-      "tabla de creditos"
-    );
+        "tabla de creditos"
+      );
+    } catch (error) {
+      if (
+        error instanceof EsmioOpcionConsultaLookupError &&
+        error.status === 404
+      ) {
+        attempts.push({
+          source: `commerce_reports/get_credits_table/?${params.toString()}`,
+          data: [],
+        });
+        continue;
+      }
+
+      throw error;
+    }
 
     attempts.push({
       source: `commerce_reports/get_credits_table/?${params.toString()}`,
