@@ -43,6 +43,7 @@ type ReportAttempt = {
 type EsmioCandidate = {
   record: Record<string, unknown>;
   source: string;
+  creditId: string | null;
   documento: string;
   clienteNombre: string | null;
   fechaCreacionCredito: string | null;
@@ -51,6 +52,11 @@ type EsmioCandidate = {
   numeroCuotas: number | null;
   valorCuota: number | null;
   sortTime: number;
+};
+
+type EsmioPaymentTerms = {
+  numeroCuotas: number | null;
+  valorCuota: number | null;
 };
 
 export class EsmioOpcionConsultaConfigError extends Error {
@@ -837,6 +843,118 @@ function getClientName(value: unknown) {
   return parts.length > 0 ? cleanClientName(parts.join(" ")) : null;
 }
 
+const PAYMENT_AMOUNT_KEYS = [
+  "amount",
+  "theorical_planned_payments__amount",
+  "theoricalPlannedPaymentsAmount",
+  "theoretical_planned_payments__amount",
+  "theoreticalPlannedPaymentsAmount",
+  "planned_payment_amount",
+  "plannedPaymentAmount",
+  "installment_amount",
+  "installmentAmount",
+  "installment_value",
+  "installmentValue",
+  "quota_value",
+  "quotaValue",
+  "payment_amount",
+  "paymentAmount",
+  "monthly_payment",
+  "monthlyPayment",
+  "fee",
+  "fee_value",
+  "valor_cuota",
+  "valorCuota",
+];
+
+const PAYMENT_COUNT_KEYS = [
+  "periods",
+  "cuotas",
+  "installments",
+  "numberOfInstallments",
+  "number_of_installments",
+  "number_of_payments",
+  "numberOfPayments",
+  "term",
+];
+
+const PAYMENT_INDEX_KEYS = [
+  "number",
+  "number_payment",
+  "numberPayment",
+  "installment_number",
+  "installmentNumber",
+  "period",
+  "period_number",
+  "periodNumber",
+  "quota_number",
+  "quotaNumber",
+  "nro_cuota",
+  "nroCuota",
+];
+
+function mostRepeatedNumber(values: number[]) {
+  const counts = new Map<number, number>();
+
+  for (const value of values) {
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+
+  return (
+    [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] ||
+    null
+  );
+}
+
+function getCreditId(record: Record<string, unknown>) {
+  return (
+    directText(record, ["credit_id", "creditId", "id", "credit"]) ||
+    deepText(record, ["credit_id", "creditId"])
+  );
+}
+
+function extractPaymentTerms(value: unknown): EsmioPaymentTerms {
+  const records = collectRecords(value, "planned_payment").map(
+    (item) => item.record
+  );
+  const amountValues: number[] = [];
+  const installmentIndexes: number[] = [];
+  const directPaymentCount = deepNumber(value, PAYMENT_COUNT_KEYS);
+
+  for (const record of records) {
+    const amount = directNumber(record, PAYMENT_AMOUNT_KEYS);
+
+    if (amount !== null && amount > 0) {
+      amountValues.push(amount);
+    }
+
+    const installmentIndex = directNumber(record, PAYMENT_INDEX_KEYS);
+
+    if (installmentIndex !== null && installmentIndex > 0) {
+      installmentIndexes.push(installmentIndex);
+    }
+  }
+
+  const paymentRows = records.filter(
+    (record) =>
+      directNumber(record, PAYMENT_AMOUNT_KEYS) !== null ||
+      directNumber(record, PAYMENT_INDEX_KEYS) !== null
+  );
+
+  return {
+    numeroCuotas:
+      directPaymentCount !== null && directPaymentCount > 0
+        ? directPaymentCount
+        : installmentIndexes.length > 0
+          ? Math.max(...installmentIndexes)
+          : paymentRows.length > 0
+            ? paymentRows.length
+            : null,
+    valorCuota:
+      amountValues.length > 0 ? mostRepeatedNumber(amountValues) : null,
+  };
+}
+
 function buildCandidate(
   record: Record<string, unknown>,
   source: string,
@@ -922,36 +1040,16 @@ function buildCandidate(
       ])
     );
   const numeroCuotas = toNumber(
-    deepNumber(record, [
-      "periods",
-      "cuotas",
-      "installments",
-      "numberOfInstallments",
-      "number_of_installments",
-      "number_of_payments",
-      "numberOfPayments",
-      "term",
-    ])
+    deepNumber(record, PAYMENT_COUNT_KEYS)
   );
   const valorCuota = toNumber(
-    deepNumber(record, [
-      "amount",
-      "theorical_planned_payments__amount",
-      "theoricalPlannedPaymentsAmount",
-      "planned_payment_amount",
-      "plannedPaymentAmount",
-      "installment_amount",
-      "installmentAmount",
-      "quota_value",
-      "quotaValue",
-      "valor_cuota",
-      "valorCuota",
-    ])
+    deepNumber(record, PAYMENT_AMOUNT_KEYS)
   );
 
   return {
     record,
     source,
+    creditId: getCreditId(record),
     documento,
     clienteNombre,
     fechaCreacionCredito,
@@ -1134,6 +1232,67 @@ async function fetchCustomerCreditsFallback(
   return attempts;
 }
 
+async function fetchPaymentPlanTerms(
+  config: EsmioConfig,
+  session: EsmioSession,
+  candidate: EsmioCandidate
+): Promise<EsmioPaymentTerms> {
+  if (!candidate.creditId) {
+    return {
+      numeroCuotas: null,
+      valorCuota: null,
+    };
+  }
+
+  const endpoint = `planned_payment/get_customer_planned_payment/?credit_id=${encodeURIComponent(
+    candidate.creditId
+  )}`;
+  const url = buildApiUrl(config.apiBaseUrl, endpoint);
+
+  try {
+    const response = await requestJson(
+      url,
+      {
+        method: "GET",
+        headers: {
+          authorization: `Token ${session.employeeToken || session.storeToken}`,
+        },
+      },
+      "plan de pagos"
+    );
+
+    const terms = extractPaymentTerms(response);
+
+    if (terms.valorCuota === null && candidate.valorCuota === null) {
+      console.info("ESMIOPCION plan de pagos sin valor cuota", {
+        documento: maskDocumento(candidate.documento),
+        creditId: candidate.creditId,
+        filas: collectRecords(response, "planned_payment").length,
+      });
+    }
+
+    return terms;
+  } catch (error) {
+    if (
+      error instanceof EsmioOpcionConsultaLookupError &&
+      (error.status === 404 || error.status === 500)
+    ) {
+      console.info("ESMIOPCION no pudo leer plan de pagos", {
+        documento: maskDocumento(candidate.documento),
+        creditId: candidate.creditId,
+        status: error.status,
+      });
+
+      return {
+        numeroCuotas: null,
+        valorCuota: null,
+      };
+    }
+
+    throw error;
+  }
+}
+
 export async function obtenerCreditoEsmioOpcionPorCedula(
   documentoInput: unknown
 ): Promise<EsmioOpcionCreditoCedula | null> {
@@ -1193,6 +1352,14 @@ export async function obtenerCreditoEsmioOpcionPorCedula(
     return null;
   }
 
+  const paymentTerms =
+    selected.valorCuota === null || selected.numeroCuotas === null
+      ? await fetchPaymentPlanTerms(config, session, selected)
+      : {
+          numeroCuotas: null,
+          valorCuota: null,
+        };
+
   return {
     documento: selected.documento,
     financiera: "ESMIOPCION",
@@ -1203,8 +1370,8 @@ export async function obtenerCreditoEsmioOpcionPorCedula(
     fechaCreacionCredito: selected.fechaCreacionCredito,
     puntoCredito: selected.puntoCredito,
     creditoAutorizado: selected.creditoAutorizado,
-    numeroCuotas: selected.numeroCuotas,
-    valorCuota: selected.valorCuota,
+    numeroCuotas: selected.numeroCuotas ?? paymentTerms.numeroCuotas,
+    valorCuota: selected.valorCuota ?? paymentTerms.valorCuota,
     frecuenciaCuota: DEFAULT_FRECUENCIA_CUOTA,
     encontradoEnEsmioOpcion: true,
     origen: selected.source,
