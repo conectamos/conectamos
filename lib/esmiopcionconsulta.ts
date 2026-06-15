@@ -46,6 +46,8 @@ type EsmioCandidate = {
   creditId: string | null;
   documento: string;
   clienteNombre: string | null;
+  correoElectronico: string | null;
+  telefonoCliente: string | null;
   direccionCliente: string | null;
   fechaCreacionCredito: string | null;
   puntoCredito: string | null;
@@ -58,6 +60,13 @@ type EsmioCandidate = {
 type EsmioPaymentTerms = {
   numeroCuotas: number | null;
   valorCuota: number | null;
+};
+
+type EsmioClientInfo = {
+  clienteNombre: string | null;
+  correoElectronico: string | null;
+  telefonoCliente: string | null;
+  direccionCliente: string | null;
 };
 
 export class EsmioOpcionConsultaConfigError extends Error {
@@ -844,6 +853,77 @@ function getClientName(value: unknown) {
   return parts.length > 0 ? cleanClientName(parts.join(" ")) : null;
 }
 
+function normalizeEmail(value: unknown) {
+  const email = String(value || "").replace(/\s+/g, "").trim().toLowerCase();
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
+
+function normalizePhone(value: unknown) {
+  const digits = String(value || "").replace(/\D/g, "");
+
+  if (!digits) {
+    return null;
+  }
+
+  if (digits.length === 12 && digits.startsWith("57")) {
+    return digits.slice(2);
+  }
+
+  if (digits.length > 10 && digits.startsWith("57")) {
+    return digits.slice(-10);
+  }
+
+  return digits;
+}
+
+function getClientEmail(value: unknown) {
+  const email = deepText(value, [
+    "correo",
+    "correoElectronico",
+    "customer__email",
+    "customer_email",
+    "customerEmail",
+    "client_email",
+    "clientEmail",
+    "email",
+    "emailAddress",
+    "mail",
+    "e_mail",
+  ]);
+
+  return normalizeEmail(email);
+}
+
+function getClientPhone(value: unknown) {
+  const phone = deepText(value, [
+    "celular",
+    "cellphone",
+    "cellPhone",
+    "mobile",
+    "mobile_number",
+    "mobileNumber",
+    "mobile_phone",
+    "mobilePhone",
+    "phone",
+    "phone_number",
+    "phoneNumber",
+    "telephone",
+    "telefono",
+    "telefonoCliente",
+    "customer__phone_number",
+    "customer_phone_number",
+    "customerPhoneNumber",
+    "client_phone",
+    "clientPhone",
+    "client_mobile",
+    "clientMobile",
+    "whatsapp",
+  ]);
+
+  return normalizePhone(phone);
+}
+
 function cleanClientAddress(value: unknown) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
 
@@ -872,6 +952,55 @@ function getClientAddress(value: unknown) {
   ]);
 
   return cleanClientAddress(address);
+}
+
+function getClientInfoFromValue(value: unknown): EsmioClientInfo {
+  const nestedInfo = isRecord(value)
+    ? mergeClientInfo(
+        getClientInfoFromValue(value.names),
+        getClientInfoFromValue(value.customer),
+        getClientInfoFromValue(value.client)
+      )
+    : null;
+
+  return {
+    clienteNombre:
+      nestedInfo?.clienteNombre ||
+      getClientName(value) ||
+      getClientName(
+        deepText(value, [
+          "customer__names",
+          "customer_name",
+          "customerName",
+          "client_name",
+          "clientName",
+          "customerFullName",
+          "clientFullName",
+          "cliente",
+          "Cliente",
+        ])
+      ),
+    correoElectronico: nestedInfo?.correoElectronico || getClientEmail(value),
+    telefonoCliente: nestedInfo?.telefonoCliente || getClientPhone(value),
+    direccionCliente: nestedInfo?.direccionCliente || getClientAddress(value),
+  };
+}
+
+function mergeClientInfo(...items: EsmioClientInfo[]): EsmioClientInfo {
+  return items.reduce<EsmioClientInfo>(
+    (merged, item) => ({
+      clienteNombre: merged.clienteNombre || item.clienteNombre,
+      correoElectronico: merged.correoElectronico || item.correoElectronico,
+      telefonoCliente: merged.telefonoCliente || item.telefonoCliente,
+      direccionCliente: merged.direccionCliente || item.direccionCliente,
+    }),
+    {
+      clienteNombre: null,
+      correoElectronico: null,
+      telefonoCliente: null,
+      direccionCliente: null,
+    }
+  );
 }
 
 const PAYMENT_AMOUNT_KEYS = [
@@ -1054,26 +1183,12 @@ function buildCandidate(
     return null;
   }
 
-  const clienteNombre =
-    getClientName(record.customer__names) ||
-    getClientName(record.customer) ||
-    getClientName(record.client) ||
-    getClientName(
-      deepText(record, [
-        "customer_name",
-        "customerName",
-        "client_name",
-        "clientName",
-        "customerFullName",
-        "clientFullName",
-        "cliente",
-        "Cliente",
-      ])
-    );
-  const direccionCliente =
-    getClientAddress(record.customer) ||
-    getClientAddress(record.client) ||
-    getClientAddress(record);
+  const clientInfo = mergeClientInfo(
+    getClientInfoFromValue(record.customer__names),
+    getClientInfoFromValue(record.customer),
+    getClientInfoFromValue(record.client),
+    getClientInfoFromValue(record)
+  );
   const numeroCuotas = toNumber(
     deepNumber(record, PAYMENT_COUNT_KEYS)
   );
@@ -1086,8 +1201,10 @@ function buildCandidate(
     source,
     creditId: getCreditId(record),
     documento,
-    clienteNombre,
-    direccionCliente,
+    clienteNombre: clientInfo.clienteNombre,
+    correoElectronico: clientInfo.correoElectronico,
+    telefonoCliente: clientInfo.telefonoCliente,
+    direccionCliente: clientInfo.direccionCliente,
     fechaCreacionCredito,
     puntoCredito:
       deepText(record, [
@@ -1268,6 +1385,82 @@ async function fetchCustomerCreditsFallback(
   return attempts;
 }
 
+function clientInfoIsComplete(info: EsmioClientInfo) {
+  return Boolean(
+    info.clienteNombre &&
+      info.correoElectronico &&
+      info.telefonoCliente &&
+      info.direccionCliente
+  );
+}
+
+async function fetchClientInfoByDocument(
+  config: EsmioConfig,
+  session: EsmioSession,
+  documento: string
+): Promise<EsmioClientInfo> {
+  const emptyInfo: EsmioClientInfo = {
+    clienteNombre: null,
+    correoElectronico: null,
+    telefonoCliente: null,
+    direccionCliente: null,
+  };
+  const endpoint = `clients/get_by_document_number/?document_number=${encodeURIComponent(
+    documento
+  )}`;
+  const url = buildApiUrl(config.apiBaseUrl, endpoint);
+
+  try {
+    const response = await requestJson(
+      url,
+      {
+        method: "GET",
+        headers: {
+          authorization: `Token ${session.storeToken}`,
+        },
+      },
+      "cliente por cedula"
+    );
+    const records = collectRecords(response, "cliente por cedula").map(
+      (item) => item.record
+    );
+    const matchingRecords = records.filter(
+      (record) =>
+        normalizeDocumento(
+          deepText(record, [
+            "document_number",
+            "documentNumber",
+            "identification",
+            "identificationNumber",
+            "cedula",
+          ])
+        ) === documento
+    );
+    const payloads =
+      matchingRecords.length > 0
+        ? [response, ...matchingRecords]
+        : [response, ...records];
+
+    return mergeClientInfo(
+      ...payloads.map((payload) => getClientInfoFromValue(payload))
+    );
+  } catch (error) {
+    if (
+      error instanceof EsmioOpcionConsultaLookupError &&
+      (error.status === 404 || error.status === 500)
+    ) {
+      console.info("ESMIOPCION no pudo leer ficha de cliente", {
+        documento: maskDocumento(documento),
+        status: error.status,
+      });
+
+      return emptyInfo;
+    }
+
+    throw error;
+  }
+}
+
 async function fetchPaymentPlanTerms(
   config: EsmioConfig,
   session: EsmioSession,
@@ -1395,14 +1588,26 @@ export async function obtenerCreditoEsmioOpcionPorCedula(
           numeroCuotas: null,
           valorCuota: null,
         };
+  const selectedClientInfo: EsmioClientInfo = {
+    clienteNombre: selected.clienteNombre,
+    correoElectronico: selected.correoElectronico,
+    telefonoCliente: selected.telefonoCliente,
+    direccionCliente: selected.direccionCliente,
+  };
+  const clientInfo = clientInfoIsComplete(selectedClientInfo)
+    ? selectedClientInfo
+    : mergeClientInfo(
+        selectedClientInfo,
+        await fetchClientInfoByDocument(config, session, selected.documento)
+      );
 
   return {
     documento: selected.documento,
     financiera: "ESMIOPCION",
-    clienteNombre: selected.clienteNombre,
-    correoElectronico: null,
-    telefonoCliente: null,
-    direccionCliente: selected.direccionCliente,
+    clienteNombre: clientInfo.clienteNombre,
+    correoElectronico: clientInfo.correoElectronico,
+    telefonoCliente: clientInfo.telefonoCliente,
+    direccionCliente: clientInfo.direccionCliente,
     fechaCreacionCredito: selected.fechaCreacionCredito,
     puntoCredito: selected.puntoCredito,
     creditoAutorizado: selected.creditoAutorizado,
