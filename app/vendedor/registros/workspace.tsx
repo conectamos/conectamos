@@ -1021,6 +1021,8 @@ export default function VendedorRegistroWorkspace({
   const [signaturePadKey, setSignaturePadKey] = useState(0);
   const [financierasVisibles, setFinancierasVisibles] = useState(1);
   const [ingresoContado2Visible, setIngresoContado2Visible] = useState(false);
+  const [confirmacionGuardadoVisible, setConfirmacionGuardadoVisible] =
+    useState(false);
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const [errorCamara, setErrorCamara] = useState("");
   const [registroEditando, setRegistroEditando] =
@@ -1063,6 +1065,7 @@ export default function VendedorRegistroWorkspace({
     setListaNegraModalCerrado(false);
     setRegistroDuplicadoAlerta(null);
     setDuplicadoModalCerrado(false);
+    setConfirmacionGuardadoVisible(false);
     setSignaturePadKey((current) => current + 1);
     setFinancierasVisibles(1);
     setIngresoContado2Visible(false);
@@ -2495,10 +2498,11 @@ export default function VendedorRegistroWorkspace({
     return null;
   };
 
-  const guardarRegistro = async () => {
+  const guardarRegistro = async (confirmado = false) => {
     const errorValidacion = validarFormularioVisible();
 
     if (errorValidacion) {
+      setConfirmacionGuardadoVisible(false);
       if (errorValidacion === "CEDULA REPORTADA POR FRAUDE") {
         setListaNegraModalCerrado(false);
       }
@@ -2506,8 +2510,15 @@ export default function VendedorRegistroWorkspace({
       return;
     }
 
+    if (!registroEditando && !confirmado) {
+      setFormMessage("", "success");
+      setConfirmacionGuardadoVisible(true);
+      return;
+    }
+
     try {
       setGuardando(true);
+      setConfirmacionGuardadoVisible(false);
       setFormMessage("", "success");
 
       const payload = {
@@ -2779,6 +2790,261 @@ export default function VendedorRegistroWorkspace({
               >
                 Entendido
               </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {confirmacionGuardadoVisible && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 px-4 py-6 backdrop-blur-sm">
+          <section
+            role="dialog"
+            aria-modal="true"
+            className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[34px] border border-slate-200 bg-white shadow-[0_32px_100px_rgba(15,23,42,0.38)]"
+          >
+            <div className="bg-[linear-gradient(135deg,#0f172a_0%,#1f2937_48%,#0f766e_100%)] px-6 py-6 text-white md:px-8">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-white/90">
+                    Revision final
+                  </p>
+                  <h2 className="mt-4 text-3xl font-black leading-tight tracking-tight md:text-4xl">
+                    Confirma antes de guardar
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-200">
+                    Revisa que el punto de venta, el cliente, el IMEI y los valores
+                    correspondan al tramite. Al confirmar se guardara el registro.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmacionGuardadoVisible(false)}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/10 text-xl font-black leading-none text-white transition hover:bg-white/20"
+                  aria-label="Cerrar resumen"
+                >
+                  x
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-5 px-6 py-6 md:px-8">
+              <div className="rounded-[28px] border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">
+                <span className="text-[11px] font-black uppercase tracking-[0.22em] text-amber-700">
+                  Punto de venta seleccionado
+                </span>
+                <p className="mt-2 text-3xl font-black text-amber-950">
+                  {form.puntoVenta || "Sin punto de venta"}
+                </p>
+                <p className="mt-2 text-sm font-semibold text-amber-800">
+                  Si este punto no es correcto, vuelve y corrige antes de guardar.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-5">
+                  <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-slate-500">
+                    Cliente y equipo
+                  </h3>
+                  <dl className="mt-4 grid gap-3 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">Cliente</dt>
+                      <dd className="text-right font-bold text-slate-950">
+                        {form.clienteNombre || "Pendiente"}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">Documento</dt>
+                      <dd className="text-right font-bold text-slate-950">
+                        {form.tipoDocumento || "Documento"}{" "}
+                        {form.documentoNumero || "Pendiente"}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">IMEI</dt>
+                      <dd className="text-right font-bold text-slate-950">
+                        {form.serialImei || "Pendiente"}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">Referencia</dt>
+                      <dd className="max-w-[55%] text-right font-bold text-slate-950">
+                        {form.referenciaEquipo || "Pendiente"}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">Color</dt>
+                      <dd className="text-right font-bold text-slate-950">
+                        {form.color || "Pendiente"}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">Tipo equipo</dt>
+                      <dd className="text-right font-bold text-slate-950">
+                        {form.tipoEquipo || "Pendiente"}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-5">
+                  <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-slate-500">
+                    Venta y pagos
+                  </h3>
+                  <dl className="mt-4 grid gap-3 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">Tipo de venta</dt>
+                      <dd className="text-right font-bold text-slate-950">
+                        {form.servicio || "Pendiente"}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">Asesor</dt>
+                      <dd className="text-right font-bold text-slate-950">
+                        {form.asesorNombre || session.perfilNombre}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-500">Jalador</dt>
+                      <dd className="text-right font-bold text-slate-950">
+                        {form.jaladorNombre || "Pendiente"}
+                      </dd>
+                    </div>
+                    {esServicioContado(form.servicio) ? (
+                      <>
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-slate-500">Ingreso total</dt>
+                          <dd className="text-right font-bold text-emerald-700">
+                            {formatMoney(totalIngresosContado(form))}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-slate-500">Medio 1</dt>
+                          <dd className="text-right font-bold text-slate-950">
+                            {form.medioPago1Tipo || "Sin medio"} |{" "}
+                            {formatMoney(moneyInputToNumber(form.medioPago1Valor))}
+                          </dd>
+                        </div>
+                        {ingresoContado2Visible && (
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-slate-500">Medio 2</dt>
+                            <dd className="text-right font-bold text-slate-950">
+                              {form.medioPago2Tipo || "Sin medio"} |{" "}
+                              {formatMoney(moneyInputToNumber(form.medioPago2Valor))}
+                            </dd>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {form.financierasDetalle
+                          .slice(0, financierasVisibles)
+                          .filter(
+                            (item, index) =>
+                              index === 0 || detalleFinancieraTieneDatos(item)
+                          )
+                          .map((item, index) => (
+                            <div
+                              key={`${item.plataformaCredito}-${index}`}
+                              className="rounded-2xl border border-white bg-white px-4 py-3"
+                            >
+                              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                                Financiera {index + 1}
+                              </span>
+                              <div className="mt-2 grid gap-2">
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-slate-500">Plataforma</span>
+                                  <strong className="text-right text-slate-950">
+                                    {item.plataformaCredito || "Pendiente"}
+                                  </strong>
+                                </div>
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-slate-500">Credito</span>
+                                  <strong className="text-right text-slate-950">
+                                    {formatMoney(
+                                      moneyInputToNumber(item.creditoAutorizado)
+                                    )}
+                                  </strong>
+                                </div>
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-slate-500">Inicial</span>
+                                  <strong className="text-right text-slate-950">
+                                    {formatMoney(moneyInputToNumber(item.cuotaInicial))}
+                                  </strong>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        {ingresoContado2Visible && (
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-slate-500">Ingresos inicial</dt>
+                            <dd className="text-right font-bold text-emerald-700">
+                              {formatMoney(totalIngresosInicialFinanciera(form))}
+                            </dd>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </dl>
+                </div>
+              </div>
+
+              <div className="grid gap-3 rounded-[26px] border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-950 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-emerald-700">
+                    Firma cliente
+                  </span>
+                  <strong>{form.firmaClienteDataUrl ? "Lista" : "Pendiente"}</strong>
+                </div>
+                <div>
+                  <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-emerald-700">
+                    Foto entrega
+                  </span>
+                  <strong>{form.fotoEntregaDataUrl ? "Lista" : "Pendiente"}</strong>
+                </div>
+                <div>
+                  <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-emerald-700">
+                    Factura contado
+                  </span>
+                  <strong>
+                    {esServicioContado(form.servicio)
+                      ? form.facturaFotoDataUrl
+                        ? "Lista"
+                        : "Pendiente"
+                      : "No aplica"}
+                  </strong>
+                </div>
+                <div>
+                  <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-emerald-700">
+                    Cedula financiera
+                  </span>
+                  <strong>
+                    {esServicioFinanciera(form.servicio)
+                      ? form.clienteSinCedulaFisica
+                        ? "Marcada sin cedula"
+                        : form.cedulaFrenteDataUrl && form.cedulaReversoDataUrl
+                          ? "Lista"
+                          : "Pendiente"
+                      : "No aplica"}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setConfirmacionGuardadoVisible(false)}
+                  className="rounded-2xl border border-slate-300 bg-white px-6 py-4 text-sm font-black text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                >
+                  Corregir datos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void guardarRegistro(true)}
+                  disabled={guardando}
+                  className="rounded-2xl bg-slate-950 px-6 py-4 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {guardando ? "Guardando..." : "Confirmar y guardar"}
+                </button>
+              </div>
             </div>
           </section>
         </div>
