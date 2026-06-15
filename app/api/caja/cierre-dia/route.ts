@@ -233,7 +233,7 @@ function financieraLabel(nombre: unknown) {
   if (value === "SUMASPAY" || value === "SUMAS+") return "SU+PAY";
   if (value === "BOGOTA" || value === "BANCO BOGOTA") return "BANCO BOGOTA";
   if (value === "ALO-CREDIT" || value === "ALO CREDIT") return "ALO CREDIT";
-  if (value === "FINSER PAY") return "FINSER";
+  if (value === "FINSER PAY" || value === "FINSERPAY") return "FINSER";
 
   return value;
 }

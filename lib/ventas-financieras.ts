@@ -41,7 +41,11 @@ const LEGACY_FINANCIAL_FIELD_MAP = [
     aliases: ["ESMIO", "ESMIOPCION", "ESMIOPCIÓN"],
   },
   { key: "kaiowa", nombre: "KAIOWA", aliases: ["KAIOWA"] },
-  { key: "finser", nombre: "FINSER", aliases: ["FINSER", "FINSER PAY"] },
+  {
+    key: "finser",
+    nombre: "FINSER",
+    aliases: ["FINSER", "FINSER PAY", "FINSERPAY"],
+  },
   { key: "gora", nombre: "GORA", aliases: ["GORA"] },
 ] as const;
 
@@ -90,7 +94,8 @@ function legacyIntermediationPercentage(nombreNormalizado: string) {
     nombreNormalizado === "ESMIOPCION" ||
     nombreNormalizado === "ESMIOPCIÓN" ||
     nombreNormalizado === "KAIOWA" ||
-    nombreNormalizado === "FINSER PAY"
+    nombreNormalizado === "FINSER PAY" ||
+    nombreNormalizado === "FINSERPAY"
   ) {
     return 10;
   }

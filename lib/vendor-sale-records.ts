@@ -13,6 +13,9 @@ export const PLATAFORMAS_CREDITO = [
   "ESMIO",
   "ESMIOPCION",
   "PAYJOY",
+  "FINSER",
+  "FINSER PAY",
+  "FINSERPAY",
   "ALCANOS",
   "BANCO BOGOTA",
   "ALO CREDIT",
@@ -170,6 +173,7 @@ function resolverPlataformaPermitida(
 ) {
   const plataforma = normalizarNombreFinanciera(valor);
   const clave = claveFinanciera(plataforma);
+  const claveCompacta = clave.replace(/[^A-Z0-9]+/g, "");
 
   if (!clave) {
     return null;
@@ -187,8 +191,29 @@ function resolverPlataformaPermitida(
           (item): item is readonly [string, string] => Boolean(item)
         )
     );
+    const catalogoCompactoMap = new Map<string, string>();
 
-    return catalogoMap.get(clave) ?? null;
+    for (const [key, nombre] of catalogoMap.entries()) {
+      const compactKey = key.replace(/[^A-Z0-9]+/g, "");
+      const aliases =
+        compactKey === "FINSER" || compactKey === "FINSERPAY"
+          ? ["FINSER", "FINSERPAY"]
+          : compactKey === "ALOCREDIT" || compactKey === "ALOCREDITO"
+            ? ["ALOCREDIT", "ALOCREDITO"]
+            : compactKey === "SUMAS" || compactKey === "SUMASPAY"
+              ? ["SUMAS", "SUMASPAY"]
+              : compactKey === "ESMIO" || compactKey === "ESMIOPCION"
+                ? ["ESMIO", "ESMIOPCION"]
+                : [compactKey];
+
+      for (const alias of aliases) {
+        catalogoCompactoMap.set(alias, nombre);
+      }
+    }
+
+    return (
+      catalogoMap.get(clave) ?? catalogoCompactoMap.get(claveCompacta) ?? null
+    );
   }
 
   return PLATAFORMAS_CREDITO.includes(

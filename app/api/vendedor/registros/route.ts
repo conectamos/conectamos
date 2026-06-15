@@ -17,6 +17,11 @@ import {
   obtenerCreditoPayJoyPorImei,
   PayJoyRetailConfigError,
 } from "@/lib/payjoy-retail";
+import {
+  FinserpayConsultaConfigError,
+  isFinserpayConsultaConfigured,
+  obtenerCreditoFinserpayPorImei,
+} from "@/lib/finserpayconsulta";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
   DOMINIOS_CORREO_REGISTRO_TEXTO,
@@ -236,6 +241,16 @@ function monedasSumanIgual(a: string | null, b: string | null, total: string | n
 
 function esPayJoy(value: unknown) {
   return String(value || "").trim().toUpperCase() === "PAYJOY";
+}
+
+function esFinserpay(value: unknown) {
+  const key = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9]+/gi, "")
+    .toUpperCase();
+
+  return key === "FINSERPAY" || key === "FINSER";
 }
 
 function formatMoneyValidation(value: number) {
@@ -984,6 +999,106 @@ async function validarCreditoPayJoy(payload: {
   }
 }
 
+async function validarCreditoFinserpay(payload: {
+  serialImei: string;
+  financierasDetalle: Array<{
+    plataformaCredito: string;
+    creditoAutorizado: string;
+    valorCuota: string;
+    numeroCuotas: number;
+    frecuenciaCuota: string;
+  }>;
+}) {
+  const financierasFinserpay = payload.financierasDetalle.filter((item) =>
+    esFinserpay(item.plataformaCredito)
+  );
+  const validaFinserpaySeleccionado = financierasFinserpay.length > 0;
+
+  if (!validaFinserpaySeleccionado && !isFinserpayConsultaConfigured()) {
+    return null;
+  }
+
+  try {
+    const creditoOficial = await obtenerCreditoFinserpayPorImei(
+      payload.serialImei
+    );
+
+    if (!creditoOficial) {
+      if (!validaFinserpaySeleccionado) {
+        return null;
+      }
+
+      return "No se encontro un credito FINSERPAY para este IMEI. Verifica el IMEI antes de guardar el registro.";
+    }
+
+    if (!validaFinserpaySeleccionado) {
+      return `Este IMEI esta activo en FINSERPAY con credito ${formatMoneyValidation(
+        creditoOficial.creditoAutorizado
+      )}. Debes registrar la venta con financiera FINSERPAY.`;
+    }
+
+    const distinta = financierasFinserpay.find(
+      (item) =>
+        !monedaIgual(item.creditoAutorizado, creditoOficial.creditoAutorizado)
+    );
+
+    if (distinta) {
+      return `El credito FINSERPAY del IMEI ${payload.serialImei} debe ser ${formatMoneyValidation(
+        creditoOficial.creditoAutorizado
+      )}. No coincide con el valor digitado por el asesor.`;
+    }
+
+    const valorCuotaOficial = creditoOficial.valorCuota;
+    const cuotaDistinta =
+      valorCuotaOficial !== null &&
+      financierasFinserpay.find(
+        (item) => !monedaIgual(item.valorCuota, valorCuotaOficial)
+      );
+
+    if (cuotaDistinta) {
+      return `La cuota FINSERPAY del IMEI ${payload.serialImei} debe ser ${formatMoneyValidation(
+        valorCuotaOficial
+      )}.`;
+    }
+
+    const plazoDistinto =
+      creditoOficial.numeroCuotas !== null &&
+      financierasFinserpay.find(
+        (item) => Number(item.numeroCuotas) !== creditoOficial.numeroCuotas
+      );
+
+    if (plazoDistinto) {
+      return `El plazo FINSERPAY del IMEI ${payload.serialImei} debe ser ${creditoOficial.numeroCuotas} cuotas.`;
+    }
+
+    const frecuenciaDistinta =
+      creditoOficial.frecuenciaCuota !== null &&
+      financierasFinserpay.find(
+        (item) =>
+          textoNormalizado(item.frecuenciaCuota) !==
+          creditoOficial.frecuenciaCuota
+      );
+
+    if (frecuenciaDistinta) {
+      return `La frecuencia FINSERPAY del IMEI ${payload.serialImei} debe ser ${creditoOficial.frecuenciaCuota}.`;
+    }
+
+    return null;
+  } catch (error) {
+    if (!validaFinserpaySeleccionado) {
+      return null;
+    }
+
+    if (error instanceof FinserpayConsultaConfigError) {
+      return "No se puede validar FINSERPAY porque falta configurar FINSERPAYCONSULTA_URL y FINSERPAYCONSULTA_TOKEN en el servidor.";
+    }
+
+    return error instanceof Error
+      ? error.message
+      : "No se pudo validar el credito FINSERPAY del IMEI.";
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const access = await requireVendor();
@@ -1177,6 +1292,12 @@ export async function POST(req: Request) {
 
     if (errorPayJoy) {
       return NextResponse.json({ error: errorPayJoy }, { status: 400 });
+    }
+
+    const errorFinserpay = await validarCreditoFinserpay(payload.data);
+
+    if (errorFinserpay) {
+      return NextResponse.json({ error: errorFinserpay }, { status: 400 });
     }
 
     await prisma.registroVendedorVenta.create({

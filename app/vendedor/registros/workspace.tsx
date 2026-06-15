@@ -213,6 +213,33 @@ type AloCreditoResponse = {
   error?: string;
 };
 
+type FinserpayCreditoResponse = {
+  credito?: {
+    imei: string;
+    financiera: "FINSERPAY";
+    clienteNombre: string | null;
+    documento: string | null;
+    correoElectronico: string | null;
+    telefonoCliente: string | null;
+    direccionCliente: string | null;
+    referenciaFamiliar1: {
+      nombre: string | null;
+      telefono: string | null;
+    };
+    referenciaFamiliar2: {
+      nombre: string | null;
+      telefono: string | null;
+    };
+    creditoAutorizado: number;
+    valorCuota: number | null;
+    numeroCuotas: number | null;
+    frecuenciaCuota: string | null;
+    moneda: string | null;
+    origen: string;
+  };
+  error?: string;
+};
+
 type CreditoFinancieraCedula = {
   documento: string;
   financiera: "SUMASPAY" | "ADDI" | "ESMIOPCION";
@@ -428,6 +455,27 @@ function applyAloCreditoToFinancialState(
   };
 }
 
+function applyFinserpayCreditoToFinancialState(
+  item: FinancialFormState,
+  credito: NonNullable<FinserpayCreditoResponse["credito"]>,
+  plataformaCredito = "FINSERPAY"
+) {
+  return {
+    ...item,
+    plataformaCredito,
+    creditoAutorizado: formatearPesoInput(credito.creditoAutorizado),
+    valorCuota:
+      credito.valorCuota === null
+        ? item.valorCuota
+        : formatearPesoInput(credito.valorCuota),
+    numeroCuotas:
+      credito.numeroCuotas === null
+        ? item.numeroCuotas
+        : String(credito.numeroCuotas),
+    frecuenciaCuota: credito.frecuenciaCuota ?? item.frecuenciaCuota,
+  };
+}
+
 function normalizePlatformKey(value: unknown) {
   return String(value || "")
     .normalize("NFD")
@@ -494,6 +542,15 @@ function resolvePlatformName(
   const option = catalogo.find((item) => matcher(item.nombre));
 
   return option?.nombre ?? financiera;
+}
+
+function resolveFinserpayPlatformName(
+  catalogo: FinancieraCatalogoOption[],
+  fallback = "FINSERPAY"
+) {
+  const option = catalogo.find((item) => esPlataformaFinserpay(item.nombre));
+
+  return option?.nombre ?? fallback;
 }
 
 function getPlataformaConsultaLabel(value: unknown) {
@@ -579,8 +636,17 @@ function esPlataformaAloCredit(value: unknown) {
   return key === "ALOCREDIT" || key === "ALOCREDITO";
 }
 
+function esPlataformaFinserpay(value: unknown) {
+  const key = normalizePlatformKey(value);
+  return key === "FINSERPAY" || key === "FINSER";
+}
+
 function esPlataformaConsultaImei(value: unknown) {
-  return esPlataformaPayJoy(value) || esPlataformaAloCredit(value);
+  return (
+    esPlataformaPayJoy(value) ||
+    esPlataformaAloCredit(value) ||
+    esPlataformaFinserpay(value)
+  );
 }
 
 function esRegistroConvertido(registro: RegistroVendedorDetalle | null) {
@@ -998,12 +1064,25 @@ export default function VendedorRegistroWorkspace({
     Record<number, AloCreditoResponse["credito"]>
   >({});
   const [aloErrores, setAloErrores] = useState<Record<number, string>>({});
+  const [consultandoFinserpayIndex, setConsultandoFinserpayIndex] = useState<
+    number | null
+  >(null);
+  const [finserpayCreditos, setFinserpayCreditos] = useState<
+    Record<number, FinserpayCreditoResponse["credito"]>
+  >({});
+  const [finserpayErrores, setFinserpayErrores] = useState<Record<number, string>>(
+    {}
+  );
   const autoPayJoyConsultaRef = useRef<Record<number, string>>({});
   const autoAloConsultaRef = useRef<Record<number, string>>({});
+  const autoFinserpayConsultaRef = useRef<Record<number, string>>({});
   const consultarPayJoyAutomaticoRef = useRef<
     ((index: number, imeiValue?: string) => Promise<void>) | null
   >(null);
   const consultarAloAutomaticoRef = useRef<
+    ((index: number, imeiValue?: string) => Promise<void>) | null
+  >(null);
+  const consultarFinserpayAutomaticoRef = useRef<
     ((index: number, imeiValue?: string) => Promise<void>) | null
   >(null);
   const [consultandoCreditosCedula, setConsultandoCreditosCedula] =
@@ -1423,7 +1502,13 @@ export default function VendedorRegistroWorkspace({
       (field === "creditoAutorizado" &&
         esPlataformaAloCredit(plataformaCredito)) ||
       (field === "creditoAutorizado" &&
+        esPlataformaFinserpay(plataformaCredito)) ||
+      (field === "creditoAutorizado" &&
         creditoCoincideConPlataforma(creditoCedula, plataformaCredito)) ||
+      (field === "valorCuota" &&
+        esPlataformaFinserpay(plataformaCredito) &&
+        finserpayCreditos[index]?.valorCuota !== null &&
+        finserpayCreditos[index]?.valorCuota !== undefined) ||
       (field === "valorCuota" &&
         Boolean(creditoCedula?.valorCuota) &&
         creditoCoincideConPlataforma(creditoCedula, plataformaCredito))
@@ -1599,6 +1684,145 @@ export default function VendedorRegistroWorkspace({
   };
   consultarAloAutomaticoRef.current = consultarCreditoAlo;
 
+  const consultarCreditoFinserpay = async (index: number, imeiValue?: string) => {
+    const imei = onlyDigits(imeiValue || form.serialImei, 15);
+
+    if (imei.length !== 15) {
+      setFinserpayErrores((current) => ({
+        ...current,
+        [index]: "Busca primero un IMEI valido de 15 digitos",
+      }));
+      return;
+    }
+
+    try {
+      setConsultandoFinserpayIndex(index);
+      setFinserpayErrores((current) => {
+        const next = { ...current };
+        delete next[index];
+        return next;
+      });
+
+      const params = new URLSearchParams({ imei });
+      const response = await fetch(
+        `/api/vendedor/registros/finserpay-credito?${params.toString()}`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as FinserpayCreditoResponse;
+
+      if (!response.ok || !data.credito) {
+        setFinserpayCreditos((current) => {
+          const next = { ...current };
+          delete next[index];
+          return next;
+        });
+        setFinancieraField(index, "creditoAutorizado", "");
+        setFinserpayErrores((current) => ({
+          ...current,
+          [index]:
+            data.error ||
+            "No se encontro un credito FINSERPAY para este IMEI",
+        }));
+        return;
+      }
+
+      const creditoFinserpay = data.credito;
+
+      setFinserpayCreditos((current) => ({
+        ...current,
+        [index]: creditoFinserpay,
+      }));
+      setForm((current) => {
+        if (onlyDigits(current.serialImei, 15) !== imei) {
+          return current;
+        }
+
+        const telefonoCredito = onlyDigits(
+          creditoFinserpay.telefonoCliente || "",
+          10
+        );
+        const documentoCredito = onlyDigits(
+          creditoFinserpay.documento || "",
+          15
+        );
+        const referencia1Telefono = onlyDigits(
+          creditoFinserpay.referenciaFamiliar1.telefono || "",
+          10
+        );
+        const referencia2Telefono = onlyDigits(
+          creditoFinserpay.referenciaFamiliar2.telefono || "",
+          10
+        );
+        const whatsappCredito =
+          telefonoCredito.length === 10 ? telefonoCredito : "";
+
+        return {
+          ...current,
+          clienteNombre:
+            current.clienteNombre ||
+            creditoFinserpay.clienteNombre ||
+            current.clienteNombre,
+          documentoNumero:
+            current.documentoNumero || documentoCredito || current.documentoNumero,
+          correo:
+            current.correo ||
+            creditoFinserpay.correoElectronico ||
+            current.correo,
+          whatsapp: current.whatsapp || whatsappCredito || current.whatsapp,
+          telefono: current.telefono || telefonoCredito || current.telefono,
+          direccion:
+            current.direccion ||
+            creditoFinserpay.direccionCliente ||
+            current.direccion,
+          referenciaFamiliar1Nombre:
+            current.referenciaFamiliar1Nombre ||
+            creditoFinserpay.referenciaFamiliar1.nombre ||
+            current.referenciaFamiliar1Nombre,
+          referenciaFamiliar1Telefono:
+            current.referenciaFamiliar1Telefono ||
+            referencia1Telefono ||
+            current.referenciaFamiliar1Telefono,
+          referenciaFamiliar2Nombre:
+            current.referenciaFamiliar2Nombre ||
+            creditoFinserpay.referenciaFamiliar2.nombre ||
+            current.referenciaFamiliar2Nombre,
+          referenciaFamiliar2Telefono:
+            current.referenciaFamiliar2Telefono ||
+            referencia2Telefono ||
+            current.referenciaFamiliar2Telefono,
+          servicio: "FINANCIERA",
+          medioPago2Tipo: "",
+          medioPago2Valor: "",
+          financierasDetalle: current.financierasDetalle.map((item, itemIndex) => {
+            if (itemIndex !== index) {
+              return item;
+            }
+
+            const plataformaFinserpay = esPlataformaFinserpay(
+              item.plataformaCredito
+            )
+              ? item.plataformaCredito
+              : resolveFinserpayPlatformName(financierasCatalogo);
+
+            return applyFinserpayCreditoToFinancialState(
+              item,
+              creditoFinserpay,
+              plataformaFinserpay
+            );
+          }),
+        };
+      });
+    } catch {
+      setFinserpayErrores((current) => ({
+        ...current,
+        [index]: "Error consultando el credito FINSERPAY",
+      }));
+    } finally {
+      setConsultandoFinserpayIndex(null);
+    }
+  };
+  consultarFinserpayAutomaticoRef.current = consultarCreditoFinserpay;
+
   const aplicarCreditoPayjoyPrincipal = (
     credito: NonNullable<PayJoyCreditoResponse["credito"]>
   ) => {
@@ -1610,6 +1834,16 @@ export default function VendedorRegistroWorkspace({
       return next;
     });
     setAloErrores((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setFinserpayCreditos((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setFinserpayErrores((current) => {
       const next = { ...current };
       delete next[0];
       return next;
@@ -1651,6 +1885,16 @@ export default function VendedorRegistroWorkspace({
       delete next[0];
       return next;
     });
+    setFinserpayCreditos((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setFinserpayErrores((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
     setAloCreditos((current) => ({
       ...current,
       0: credito,
@@ -1684,6 +1928,97 @@ export default function VendedorRegistroWorkspace({
         medioPago2Valor: "",
         financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
           itemIndex === 0 ? applyAloCreditoToFinancialState(item, credito) : item
+        ),
+      };
+    });
+  };
+
+  const aplicarCreditoFinserpayPrincipal = (
+    credito: NonNullable<FinserpayCreditoResponse["credito"]>
+  ) => {
+    setFinancierasVisibles((current) => Math.max(current, 1));
+    setIngresoContado2Visible(false);
+    setPayjoyCreditos((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setPayjoyErrores((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setAloCreditos((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setAloErrores((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setFinserpayCreditos((current) => ({
+      ...current,
+      0: credito,
+    }));
+    setFinserpayErrores((current) => {
+      const next = { ...current };
+      delete next[0];
+      return next;
+    });
+    setForm((current) => {
+      const telefonoCredito = onlyDigits(credito.telefonoCliente || "", 10);
+      const documentoCredito = onlyDigits(credito.documento || "", 15);
+      const referencia1Telefono = onlyDigits(
+        credito.referenciaFamiliar1.telefono || "",
+        10
+      );
+      const referencia2Telefono = onlyDigits(
+        credito.referenciaFamiliar2.telefono || "",
+        10
+      );
+      const whatsappCredito =
+        telefonoCredito.length === 10 ? telefonoCredito : "";
+
+      return {
+        ...current,
+        servicio: "FINANCIERA",
+        clienteNombre:
+          current.clienteNombre || credito.clienteNombre || current.clienteNombre,
+        documentoNumero:
+          current.documentoNumero || documentoCredito || current.documentoNumero,
+        correo: current.correo || credito.correoElectronico || current.correo,
+        whatsapp: current.whatsapp || whatsappCredito || current.whatsapp,
+        telefono: current.telefono || telefonoCredito || current.telefono,
+        direccion:
+          current.direccion || credito.direccionCliente || current.direccion,
+        referenciaFamiliar1Nombre:
+          current.referenciaFamiliar1Nombre ||
+          credito.referenciaFamiliar1.nombre ||
+          current.referenciaFamiliar1Nombre,
+        referenciaFamiliar1Telefono:
+          current.referenciaFamiliar1Telefono ||
+          referencia1Telefono ||
+          current.referenciaFamiliar1Telefono,
+        referenciaFamiliar2Nombre:
+          current.referenciaFamiliar2Nombre ||
+          credito.referenciaFamiliar2.nombre ||
+          current.referenciaFamiliar2Nombre,
+        referenciaFamiliar2Telefono:
+          current.referenciaFamiliar2Telefono ||
+          referencia2Telefono ||
+          current.referenciaFamiliar2Telefono,
+        medioPago2Tipo: "",
+        medioPago2Valor: "",
+        financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
+          itemIndex === 0
+            ? applyFinserpayCreditoToFinancialState(
+                item,
+                credito,
+                resolveFinserpayPlatformName(financierasCatalogo)
+              )
+            : item
         ),
       };
     });
@@ -1733,21 +2068,50 @@ export default function VendedorRegistroWorkspace({
         if (response.status !== 404 && data.error) {
           setFormMessage(`ALO CREDIT: ${data.error}`, "error");
         }
+      } else {
+        aplicarCreditoAloPrincipal(data.credito);
+        setFormMessage(
+          `Este IMEI esta activo en ALO CREDIT. Se selecciono ALO CREDIT automaticamente por ${formatMoney(
+            data.credito.creditoAutorizado
+          )}.`,
+          "success"
+        );
+        return;
+      }
+    } catch {
+      setFormMessage("Error consultando ALO CREDIT por IMEI", "error");
+    } finally {
+      setConsultandoAloIndex(null);
+    }
+
+    try {
+      setConsultandoFinserpayIndex(0);
+      const params = new URLSearchParams({ imei });
+      const response = await fetch(
+        `/api/vendedor/registros/finserpay-credito?${params.toString()}`,
+        { cache: "no-store" }
+      );
+      const data = (await response.json()) as FinserpayCreditoResponse;
+
+      if (!response.ok || !data.credito) {
+        if (response.status !== 404 && data.error) {
+          setFormMessage(`FINSERPAY: ${data.error}`, "error");
+        }
         return;
       }
 
-      aplicarCreditoAloPrincipal(data.credito);
+      aplicarCreditoFinserpayPrincipal(data.credito);
       setFormMessage(
-        `Este IMEI esta activo en ALO CREDIT. Se selecciono ALO CREDIT automaticamente por ${formatMoney(
+        `Este IMEI esta activo en FINSERPAY. Se selecciono FINSERPAY automaticamente por ${formatMoney(
           data.credito.creditoAutorizado
         )}.`,
         "success"
       );
     } catch {
-      setFormMessage("Error consultando ALO CREDIT por IMEI", "error");
+      setFormMessage("Error consultando FINSERPAY por IMEI", "error");
       return;
     } finally {
-      setConsultandoAloIndex(null);
+      setConsultandoFinserpayIndex(null);
     }
   };
 
@@ -1907,9 +2271,11 @@ export default function VendedorRegistroWorkspace({
   const seleccionarPlataformaFinanciera = (index: number, value: string) => {
     const esPayjoy = esPlataformaPayJoy(value);
     const esAloCredit = esPlataformaAloCredit(value);
+    const esFinserpay = esPlataformaFinserpay(value);
     const esConsultaCedula = esPlataformaConsultaCedula(value);
     delete autoPayJoyConsultaRef.current[index];
     delete autoAloConsultaRef.current[index];
+    delete autoFinserpayConsultaRef.current[index];
 
     setPayjoyCreditos((current) => {
       const next = { ...current };
@@ -1931,6 +2297,16 @@ export default function VendedorRegistroWorkspace({
       delete next[index];
       return next;
     });
+    setFinserpayCreditos((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setFinserpayErrores((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
     setCreditosFinancierasCedula((current) => {
       const next = { ...current };
       delete next[index];
@@ -1946,19 +2322,19 @@ export default function VendedorRegistroWorkspace({
               ...item,
               plataformaCredito: value,
               creditoAutorizado:
-                esPayjoy || esAloCredit || esConsultaCedula
+                esPayjoy || esAloCredit || esFinserpay || esConsultaCedula
                   ? ""
                   : item.creditoAutorizado,
               valorCuota:
-                esPayjoy || esAloCredit || esConsultaCedula
+                esPayjoy || esAloCredit || esFinserpay || esConsultaCedula
                   ? ""
                   : item.valorCuota,
               numeroCuotas:
-                esPayjoy || esAloCredit || esConsultaCedula
+                esPayjoy || esAloCredit || esFinserpay || esConsultaCedula
                   ? ""
                   : item.numeroCuotas,
               frecuenciaCuota:
-                esPayjoy || esAloCredit || esConsultaCedula
+                esPayjoy || esAloCredit || esFinserpay || esConsultaCedula
                   ? ""
                   : item.frecuenciaCuota,
             }
@@ -1973,6 +2349,10 @@ export default function VendedorRegistroWorkspace({
     if (esAloCredit && form.serialImei.length === 15) {
       void consultarCreditoAlo(index);
     }
+
+    if (esFinserpay && form.serialImei.length === 15) {
+      void consultarCreditoFinserpay(index);
+    }
   };
 
   useEffect(() => {
@@ -1985,8 +2365,9 @@ export default function VendedorRegistroWorkspace({
       .forEach((item, index) => {
         const esPayjoy = esPlataformaPayJoy(item.plataformaCredito);
         const esAloCredit = esPlataformaAloCredit(item.plataformaCredito);
+        const esFinserpay = esPlataformaFinserpay(item.plataformaCredito);
 
-        if (!esPayjoy && !esAloCredit) {
+        if (!esPayjoy && !esAloCredit && !esFinserpay) {
           return;
         }
 
@@ -2019,6 +2400,15 @@ export default function VendedorRegistroWorkspace({
           autoAloConsultaRef.current[index] = consultaKey;
           void consultarAloAutomaticoRef.current?.(index, form.serialImei);
         }
+
+        if (esFinserpay) {
+          if (autoFinserpayConsultaRef.current[index] === consultaKey) {
+            return;
+          }
+
+          autoFinserpayConsultaRef.current[index] = consultaKey;
+          void consultarFinserpayAutomaticoRef.current?.(index, form.serialImei);
+        }
       });
   }, [
     form.financierasDetalle,
@@ -2030,6 +2420,7 @@ export default function VendedorRegistroWorkspace({
   const resetFinanciera = (index: number) => {
     delete autoPayJoyConsultaRef.current[index];
     delete autoAloConsultaRef.current[index];
+    delete autoFinserpayConsultaRef.current[index];
     setPayjoyCreditos((current) => {
       const next = { ...current };
       delete next[index];
@@ -2046,6 +2437,16 @@ export default function VendedorRegistroWorkspace({
       return next;
     });
     setAloErrores((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setFinserpayCreditos((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setFinserpayErrores((current) => {
       const next = { ...current };
       delete next[index];
       return next;
@@ -2125,16 +2526,35 @@ export default function VendedorRegistroWorkspace({
         .slice(0, financierasVisibles)
         .map((item, index) => ({ item, index }))
         .filter(({ item }) => esPlataformaAloCredit(item.plataformaCredito));
+      const financierasFinserpaySeleccionadas = form.financierasDetalle
+        .slice(0, financierasVisibles)
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => esPlataformaFinserpay(item.plataformaCredito));
+
+      const consultaFinancierasSeleccionadas =
+        financierasPayJoySeleccionadas.length > 0 ||
+        financierasAloSeleccionadas.length > 0 ||
+        financierasFinserpaySeleccionadas.length > 0;
 
       if (financierasPayJoySeleccionadas.length) {
         financierasPayJoySeleccionadas.forEach(({ index }) => {
           void consultarCreditoPayjoy(index, equipo.imei);
         });
-      } else if (financierasAloSeleccionadas.length) {
+      }
+
+      if (financierasAloSeleccionadas.length) {
         financierasAloSeleccionadas.forEach(({ index }) => {
           void consultarCreditoAlo(index, equipo.imei);
         });
-      } else {
+      }
+
+      if (financierasFinserpaySeleccionadas.length) {
+        financierasFinserpaySeleccionadas.forEach(({ index }) => {
+          void consultarCreditoFinserpay(index, equipo.imei);
+        });
+      }
+
+      if (!consultaFinancierasSeleccionadas) {
         void detectarCreditoPayjoyPorImei(equipo.imei);
       }
     } catch {
@@ -3554,6 +3974,7 @@ export default function VendedorRegistroWorkspace({
                   }
                   const creditoPayJoy = payjoyCreditos[index];
                   const creditoAlo = aloCreditos[index];
+                  const creditoFinserpay = finserpayCreditos[index];
                   const creditoCedula =
                     creditoCoincideConPlataforma(
                       creditosFinancierasCedula[index],
@@ -3567,6 +3988,7 @@ export default function VendedorRegistroWorkspace({
                   const bloqueaPlataforma =
                     Boolean(index === 0 && payjoyCreditos[0]) ||
                     Boolean(index === 0 && aloCreditos[0]) ||
+                    Boolean(index === 0 && finserpayCreditos[0]) ||
                     Boolean(creditoCedula);
                   const bloqueaCredito =
                     esPlataformaConsultaImei(item.plataformaCredito) ||
@@ -3579,6 +4001,10 @@ export default function VendedorRegistroWorkspace({
                     esPlataformaAloCredit(item.plataformaCredito) &&
                     creditoAlo?.valorCuota !== null &&
                     creditoAlo?.valorCuota !== undefined;
+                  const bloqueaCuotaFinserpay =
+                    esPlataformaFinserpay(item.plataformaCredito) &&
+                    creditoFinserpay?.valorCuota !== null &&
+                    creditoFinserpay?.valorCuota !== undefined;
                   const bloqueaCuotaCedula = Boolean(creditoCedula?.valorCuota);
                   const bloqueaPlazoPayJoy =
                     esPlataformaPayJoy(item.plataformaCredito) &&
@@ -3588,6 +4014,10 @@ export default function VendedorRegistroWorkspace({
                     esPlataformaAloCredit(item.plataformaCredito) &&
                     creditoAlo?.numeroCuotas !== null &&
                     creditoAlo?.numeroCuotas !== undefined;
+                  const bloqueaPlazoFinserpay =
+                    esPlataformaFinserpay(item.plataformaCredito) &&
+                    creditoFinserpay?.numeroCuotas !== null &&
+                    creditoFinserpay?.numeroCuotas !== undefined;
                   const bloqueaPlazoCedula = Boolean(creditoCedula?.numeroCuotas);
                   const bloqueaFrecuenciaPayJoy =
                     esPlataformaPayJoy(item.plataformaCredito) &&
@@ -3595,6 +4025,9 @@ export default function VendedorRegistroWorkspace({
                   const bloqueaFrecuenciaAlo =
                     esPlataformaAloCredit(item.plataformaCredito) &&
                     Boolean(creditoAlo?.frecuenciaCuota);
+                  const bloqueaFrecuenciaFinserpay =
+                    esPlataformaFinserpay(item.plataformaCredito) &&
+                    Boolean(creditoFinserpay?.frecuenciaCuota);
                   const bloqueaFrecuenciaCedula =
                     Boolean(creditoCedula?.frecuenciaCuota);
 
@@ -3670,6 +4103,8 @@ export default function VendedorRegistroWorkspace({
                                   item.plataformaCredito
                                 ) || esPlataformaAloCredit(
                                   item.plataformaCredito
+                                ) || esPlataformaFinserpay(
+                                  item.plataformaCredito
                                 ) || Boolean(creditoCedula)}
                                 className={inputClass(bloqueaCredito)}
                                 inputMode="numeric"
@@ -3678,6 +4113,8 @@ export default function VendedorRegistroWorkspace({
                                     ? "Se completa desde PayJoy"
                                     : esPlataformaAloCredit(item.plataformaCredito)
                                       ? "Se completa desde ALO CREDIT"
+                                      : esPlataformaFinserpay(item.plataformaCredito)
+                                        ? "Se completa desde FINSERPAY"
                                       : creditoCedula
                                       ? `Se completa desde ${creditoCedula.financiera}`
                                     : "$ 0"
@@ -3734,6 +4171,36 @@ export default function VendedorRegistroWorkspace({
                                       }
                                       disabled={
                                         consultandoAloIndex === index ||
+                                        form.serialImei.length !== 15
+                                      }
+                                      className="rounded-full border border-emerald-200 bg-white px-3 py-1 font-bold text-emerald-800 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Consultar
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                              {esPlataformaFinserpay(item.plataformaCredito) && (
+                                <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span>
+                                      {consultandoFinserpayIndex === index
+                                        ? "Consultando credito FINSERPAY..."
+                                        : finserpayCreditos[index]
+                                          ? `Credito FINSERPAY: ${formatMoney(
+                                              finserpayCreditos[index]
+                                                ?.creditoAutorizado ?? null
+                                            )}`
+                                          : finserpayErrores[index] ||
+                                            "El valor se valida por IMEI en FINSERPAY."}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void consultarCreditoFinserpay(index)
+                                      }
+                                      disabled={
+                                        consultandoFinserpayIndex === index ||
                                         form.serialImei.length !== 15
                                       }
                                       className="rounded-full border border-emerald-200 bg-white px-3 py-1 font-bold text-emerald-800 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
@@ -3928,11 +4395,13 @@ export default function VendedorRegistroWorkspace({
                                 className={inputClass(
                                   bloqueaCuotaPayJoy ||
                                     bloqueaCuotaAlo ||
+                                    bloqueaCuotaFinserpay ||
                                     bloqueaCuotaCedula
                                 )}
                                 readOnly={
                                   bloqueaCuotaPayJoy ||
                                   bloqueaCuotaAlo ||
+                                  bloqueaCuotaFinserpay ||
                                   bloqueaCuotaCedula
                                 }
                                 inputMode="numeric"
@@ -3941,6 +4410,8 @@ export default function VendedorRegistroWorkspace({
                                     ? "Se completa desde PayJoy"
                                     : bloqueaCuotaAlo
                                       ? "Se completa desde ALO CREDIT"
+                                      : bloqueaCuotaFinserpay
+                                        ? "Se completa desde FINSERPAY"
                                       : bloqueaCuotaCedula
                                       ? `Se completa desde ${creditoCedula?.financiera}`
                                     : "$ 0"
@@ -3955,6 +4426,7 @@ export default function VendedorRegistroWorkspace({
                                 disabled={
                                   bloqueaPlazoPayJoy ||
                                   bloqueaPlazoAlo ||
+                                  bloqueaPlazoFinserpay ||
                                   bloqueaPlazoCedula
                                 }
                                 onChange={(event) =>
@@ -3967,6 +4439,7 @@ export default function VendedorRegistroWorkspace({
                                 className={inputClass(
                                   bloqueaPlazoPayJoy ||
                                     bloqueaPlazoAlo ||
+                                    bloqueaPlazoFinserpay ||
                                     bloqueaPlazoCedula
                                 )}
                               >
@@ -3986,6 +4459,7 @@ export default function VendedorRegistroWorkspace({
                                 disabled={
                                   bloqueaFrecuenciaPayJoy ||
                                   bloqueaFrecuenciaAlo ||
+                                  bloqueaFrecuenciaFinserpay ||
                                   bloqueaFrecuenciaCedula
                                 }
                                 onChange={(event) =>
@@ -3998,6 +4472,7 @@ export default function VendedorRegistroWorkspace({
                                 className={inputClass(
                                   bloqueaFrecuenciaPayJoy ||
                                     bloqueaFrecuenciaAlo ||
+                                    bloqueaFrecuenciaFinserpay ||
                                     bloqueaFrecuenciaCedula
                                 )}
                               >
