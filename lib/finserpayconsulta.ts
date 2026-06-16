@@ -1,5 +1,5 @@
 const FINSERPAY_DEFAULT_URL =
-  "https://finserpay.com/api/public/creditos/imei?imei=IMEI_DEL_EQUIPO";
+  "https://finserpay.com/api/public/creditos/imei";
 const FINSERPAY_TIMEOUT_MS = 30_000;
 
 type FinserpayConfig = {
@@ -352,7 +352,7 @@ function getConfig(): FinserpayConfig {
   }
 
   try {
-    new URL(urlTemplate.replace("IMEI_DEL_EQUIPO", "000000000000000"));
+    new URL(urlTemplate);
   } catch {
     throw new FinserpayConsultaConfigError(
       "FINSERPAYCONSULTA_URL no es una URL valida."
@@ -380,12 +380,11 @@ export function isFinserpayConsultaConfigured() {
 
 function buildLookupUrl(urlTemplate: string, imei: string) {
   const replaced = urlTemplate
-    .replace(/IMEI_DEL_EQUIPO/g, encodeURIComponent(imei))
     .replace(/\{imei\}/gi, encodeURIComponent(imei))
     .replace(/:imei/gi, encodeURIComponent(imei));
   const url = new URL(replaced);
 
-  if (!url.searchParams.has("imei")) {
+  if (!url.searchParams.get("imei")) {
     url.searchParams.set("imei", imei);
   }
 
