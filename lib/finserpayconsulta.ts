@@ -406,6 +406,10 @@ async function readResponseBody(response: Response) {
 }
 
 function authHeaderVariants(token: string): HeadersInit[] {
+  if (/^(Bearer|Token)\s+/i.test(token)) {
+    return [{ authorization: token }];
+  }
+
   return [
     { authorization: `Bearer ${token}` },
     { authorization: `Token ${token}` },

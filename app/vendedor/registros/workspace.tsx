@@ -2031,87 +2031,129 @@ export default function VendedorRegistroWorkspace({
       return;
     }
 
-    try {
-      setConsultandoPayjoyIndex(0);
-      const params = new URLSearchParams({ imei });
-      const response = await fetch(
-        `/api/vendedor/registros/payjoy-credito?${params.toString()}`,
-        { cache: "no-store" }
-      );
-      const data = (await response.json()) as PayJoyCreditoResponse;
+    const params = new URLSearchParams({ imei });
+    const errores: string[] = [];
+    let creditoAplicado = false;
 
-      if (response.ok && data.credito) {
-        aplicarCreditoPayjoyPrincipal(data.credito);
-        setFormMessage(
-          `Este IMEI esta activo en PAYJOY. Se selecciono PAYJOY automaticamente por ${formatMoney(
-            data.credito.creditoAutorizado
-          )}.`,
-          "success"
-        );
-        return;
+    const aplicarPrimerCredito = (callback: () => void) => {
+      if (creditoAplicado) {
+        return false;
       }
-    } catch {
-    } finally {
-      setConsultandoPayjoyIndex(null);
-    }
 
-    try {
-      setConsultandoAloIndex(0);
-      const params = new URLSearchParams({ imei });
-      const response = await fetch(
-        `/api/vendedor/registros/alo-credito?${params.toString()}`,
-        { cache: "no-store" }
-      );
-      const data = (await response.json()) as AloCreditoResponse;
+      creditoAplicado = true;
+      callback();
+      return true;
+    };
 
-      if (!response.ok || !data.credito) {
-        if (response.status !== 404 && data.error) {
-          setFormMessage(`ALO CREDIT: ${data.error}`, "error");
+    const registrarError = (
+      financiera: string,
+      response: Response,
+      error?: string
+    ) => {
+      if (!creditoAplicado && response.status !== 404 && error) {
+        errores.push(`${financiera}: ${error}`);
+      }
+    };
+
+    setConsultandoPayjoyIndex(0);
+    setConsultandoFinserpayIndex(0);
+    setConsultandoAloIndex(0);
+
+    await Promise.allSettled([
+      (async () => {
+        try {
+          const response = await fetch(
+            `/api/vendedor/registros/payjoy-credito?${params.toString()}`,
+            { cache: "no-store" }
+          );
+          const data = (await response.json()) as PayJoyCreditoResponse;
+
+          if (response.ok && data.credito) {
+            aplicarPrimerCredito(() => {
+              aplicarCreditoPayjoyPrincipal(data.credito!);
+              setFormMessage(
+                `Este IMEI esta activo en PAYJOY. Se selecciono PAYJOY automaticamente por ${formatMoney(
+                  data.credito!.creditoAutorizado
+                )}.`,
+                "success"
+              );
+            });
+            return;
+          }
+
+          registrarError("PAYJOY", response, data.error);
+        } catch {
+          if (!creditoAplicado) {
+            errores.push("Error consultando PayJoy por IMEI");
+          }
+        } finally {
+          setConsultandoPayjoyIndex(null);
         }
-      } else {
-        aplicarCreditoAloPrincipal(data.credito);
-        setFormMessage(
-          `Este IMEI esta activo en ALO CREDIT. Se selecciono ALO CREDIT automaticamente por ${formatMoney(
-            data.credito.creditoAutorizado
-          )}.`,
-          "success"
-        );
-        return;
-      }
-    } catch {
-      setFormMessage("Error consultando ALO CREDIT por IMEI", "error");
-    } finally {
-      setConsultandoAloIndex(null);
-    }
+      })(),
+      (async () => {
+        try {
+          const response = await fetch(
+            `/api/vendedor/registros/finserpay-credito?${params.toString()}`,
+            { cache: "no-store" }
+          );
+          const data = (await response.json()) as FinserpayCreditoResponse;
 
-    try {
-      setConsultandoFinserpayIndex(0);
-      const params = new URLSearchParams({ imei });
-      const response = await fetch(
-        `/api/vendedor/registros/finserpay-credito?${params.toString()}`,
-        { cache: "no-store" }
-      );
-      const data = (await response.json()) as FinserpayCreditoResponse;
+          if (response.ok && data.credito) {
+            aplicarPrimerCredito(() => {
+              aplicarCreditoFinserpayPrincipal(data.credito!);
+              setFormMessage(
+                `Este IMEI esta activo en FINSERPAY. Se selecciono FINSERPAY automaticamente por ${formatMoney(
+                  data.credito!.creditoAutorizado
+                )}.`,
+                "success"
+              );
+            });
+            return;
+          }
 
-      if (!response.ok || !data.credito) {
-        if (response.status !== 404 && data.error) {
-          setFormMessage(`FINSERPAY: ${data.error}`, "error");
+          registrarError("FINSERPAY", response, data.error);
+        } catch {
+          if (!creditoAplicado) {
+            errores.push("Error consultando FINSERPAY por IMEI");
+          }
+        } finally {
+          setConsultandoFinserpayIndex(null);
         }
-        return;
-      }
+      })(),
+      (async () => {
+        try {
+          const response = await fetch(
+            `/api/vendedor/registros/alo-credito?${params.toString()}`,
+            { cache: "no-store" }
+          );
+          const data = (await response.json()) as AloCreditoResponse;
 
-      aplicarCreditoFinserpayPrincipal(data.credito);
-      setFormMessage(
-        `Este IMEI esta activo en FINSERPAY. Se selecciono FINSERPAY automaticamente por ${formatMoney(
-          data.credito.creditoAutorizado
-        )}.`,
-        "success"
-      );
-    } catch {
-      setFormMessage("Error consultando FINSERPAY por IMEI", "error");
-      return;
-    } finally {
-      setConsultandoFinserpayIndex(null);
+          if (response.ok && data.credito) {
+            aplicarPrimerCredito(() => {
+              aplicarCreditoAloPrincipal(data.credito!);
+              setFormMessage(
+                `Este IMEI esta activo en ALO CREDIT. Se selecciono ALO CREDIT automaticamente por ${formatMoney(
+                  data.credito!.creditoAutorizado
+                )}.`,
+                "success"
+              );
+            });
+            return;
+          }
+
+          registrarError("ALO CREDIT", response, data.error);
+        } catch {
+          if (!creditoAplicado) {
+            errores.push("Error consultando ALO CREDIT por IMEI");
+          }
+        } finally {
+          setConsultandoAloIndex(null);
+        }
+      })(),
+    ]);
+
+    if (!creditoAplicado && errores.length) {
+      setFormMessage(errores[0], "error");
     }
   };
 
