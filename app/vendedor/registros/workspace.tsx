@@ -222,6 +222,9 @@ type FinserpayCreditoResponse = {
     correoElectronico: string | null;
     telefonoCliente: string | null;
     direccionCliente: string | null;
+    barrioCliente: string | null;
+    fechaNacimiento: string | null;
+    fechaExpedicion: string | null;
     referenciaFamiliar1: {
       nombre: string | null;
       telefono: string | null;
@@ -1774,6 +1777,18 @@ export default function VendedorRegistroWorkspace({
             current.direccion ||
             creditoFinserpay.direccionCliente ||
             current.direccion,
+          barrio:
+            current.barrio ||
+            creditoFinserpay.barrioCliente ||
+            current.barrio,
+          fechaNacimiento:
+            current.fechaNacimiento ||
+            creditoFinserpay.fechaNacimiento ||
+            current.fechaNacimiento,
+          fechaExpedicion:
+            current.fechaExpedicion ||
+            creditoFinserpay.fechaExpedicion ||
+            current.fechaExpedicion,
           referenciaFamiliar1Nombre:
             current.referenciaFamiliar1Nombre ||
             creditoFinserpay.referenciaFamiliar1.nombre ||
@@ -1993,6 +2008,15 @@ export default function VendedorRegistroWorkspace({
         telefono: current.telefono || telefonoCredito || current.telefono,
         direccion:
           current.direccion || credito.direccionCliente || current.direccion,
+        barrio: current.barrio || credito.barrioCliente || current.barrio,
+        fechaNacimiento:
+          current.fechaNacimiento ||
+          credito.fechaNacimiento ||
+          current.fechaNacimiento,
+        fechaExpedicion:
+          current.fechaExpedicion ||
+          credito.fechaExpedicion ||
+          current.fechaExpedicion,
         referenciaFamiliar1Nombre:
           current.referenciaFamiliar1Nombre ||
           credito.referenciaFamiliar1.nombre ||

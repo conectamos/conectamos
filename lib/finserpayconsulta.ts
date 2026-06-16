@@ -20,6 +20,9 @@ export type FinserpayCreditoImei = {
   correoElectronico: string | null;
   telefonoCliente: string | null;
   direccionCliente: string | null;
+  barrioCliente: string | null;
+  fechaNacimiento: string | null;
+  fechaExpedicion: string | null;
   referenciaFamiliar1: FinserpayReferenciaCliente;
   referenciaFamiliar2: FinserpayReferenciaCliente;
   creditoAutorizado: number;
@@ -266,6 +269,183 @@ function deepNumber(value: unknown, keys: string[], depth = 0): number | null {
 
     if (found !== null) {
       return found;
+    }
+  }
+
+  return null;
+}
+
+function formatDateParts(year: number, month: number, day: number) {
+  if (year < 1900 || year > 2100) {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return [
+    String(year).padStart(4, "0"),
+    String(month).padStart(2, "0"),
+    String(day).padStart(2, "0"),
+  ].join("-");
+}
+
+function normalizeDateInput(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value > 1_000_000_000) {
+      const date = new Date(value > 9_999_999_999 ? value : value * 1000);
+
+      if (!Number.isNaN(date.getTime())) {
+        return formatDateParts(
+          date.getUTCFullYear(),
+          date.getUTCMonth() + 1,
+          date.getUTCDate()
+        );
+      }
+    }
+
+    return normalizeDateInput(String(Math.round(value)));
+  }
+
+  if (Array.isArray(value) && value.length >= 3) {
+    const [year, month, day] = value.map((item) => Number(item));
+
+    if (
+      Number.isInteger(year) &&
+      Number.isInteger(month) &&
+      Number.isInteger(day)
+    ) {
+      return formatDateParts(year, month, day);
+    }
+  }
+
+  if (isRecord(value)) {
+    const year =
+      directNumber(value, ["year", "anio", "ano"]) ??
+      directNumber(value, ["years"]);
+    const month =
+      directNumber(value, ["month", "monthValue", "mes"]) ??
+      directNumber(value, ["months"]);
+    const day =
+      directNumber(value, ["day", "dayOfMonth", "dia"]) ??
+      directNumber(value, ["days"]);
+
+    if (
+      year !== null &&
+      month !== null &&
+      day !== null &&
+      Number.isInteger(year) &&
+      Number.isInteger(month) &&
+      Number.isInteger(day)
+    ) {
+      return formatDateParts(year, month, day);
+    }
+
+    const nested = directText(value, ["date", "value", "fecha"]);
+
+    if (nested) {
+      return normalizeDateInput(nested);
+    }
+  }
+
+  const text = String(value).trim();
+
+  if (!text) {
+    return null;
+  }
+
+  const isoMatch = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    return formatDateParts(
+      Number(isoMatch[1]),
+      Number(isoMatch[2]),
+      Number(isoMatch[3])
+    );
+  }
+
+  const compactMatch = text.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compactMatch) {
+    return formatDateParts(
+      Number(compactMatch[1]),
+      Number(compactMatch[2]),
+      Number(compactMatch[3])
+    );
+  }
+
+  const localMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (localMatch) {
+    return formatDateParts(
+      Number(localMatch[3]),
+      Number(localMatch[2]),
+      Number(localMatch[1])
+    );
+  }
+
+  const arrayStringMatch = text.match(/^(\d{4}),(\d{1,2}),(\d{1,2})$/);
+  if (arrayStringMatch) {
+    return formatDateParts(
+      Number(arrayStringMatch[1]),
+      Number(arrayStringMatch[2]),
+      Number(arrayStringMatch[3])
+    );
+  }
+
+  return null;
+}
+
+function collectDeepValues(
+  value: unknown,
+  keys: string[],
+  out: unknown[] = [],
+  depth = 0
+) {
+  if (depth > 7) {
+    return out;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectDeepValues(item, keys, out, depth + 1);
+    }
+    return out;
+  }
+
+  if (!isRecord(value)) {
+    return out;
+  }
+
+  const wanted = new Set(keys.map(normalizeKey));
+
+  for (const [key, child] of Object.entries(value)) {
+    if (wanted.has(normalizeKey(key))) {
+      out.push(child);
+    }
+
+    if (Array.isArray(child) || isRecord(child)) {
+      collectDeepValues(child, keys, out, depth + 1);
+    }
+  }
+
+  return out;
+}
+
+function deepDate(value: unknown, keys: string[]) {
+  for (const dateValue of collectDeepValues(value, keys)) {
+    const date = normalizeDateInput(dateValue);
+
+    if (date) {
+      return date;
     }
   }
 
@@ -708,6 +888,47 @@ function parseCreditoFromValue(
         "domicilio",
       ])
     ),
+    barrioCliente: cleanText(
+      deepText(value, [
+        "barrio",
+        "barrioCliente",
+        "neighborhood",
+        "neighbourhood",
+        "sector",
+        "localidad",
+        "district",
+        "zona",
+      ])
+    ),
+    fechaNacimiento: deepDate(value, [
+      "fechaNacimiento",
+      "fecha_nacimiento",
+      "fechaNacimientoCliente",
+      "birthDate",
+      "birth_date",
+      "dateOfBirth",
+      "date_of_birth",
+      "customerBirthDate",
+      "customer_birth_date",
+      "dob",
+      "birthday",
+    ]),
+    fechaExpedicion: deepDate(value, [
+      "fechaExpedicion",
+      "fecha_expedicion",
+      "fechaExpedicionDocumento",
+      "fechaExpedicionCedula",
+      "expeditionDate",
+      "expedition_date",
+      "documentExpeditionDate",
+      "document_expedition_date",
+      "documentIssueDate",
+      "document_issue_date",
+      "issueDate",
+      "issue_date",
+      "dateOfIssue",
+      "date_of_issue",
+    ]),
     referenciaFamiliar1: getReference(value, 1),
     referenciaFamiliar2: getReference(value, 2),
     creditoAutorizado,
@@ -736,15 +957,20 @@ function parseCreditoFromValue(
       "months",
       "meses",
     ]),
-    frecuenciaCuota: normalizeFrequency(
-      deepText(value, [
-        "frecuencia",
-        "frecuenciaCuota",
-        "frecuencia_cuota",
-        "periodicidad",
-        "periodicity",
-      ])
-    ),
+    frecuenciaCuota:
+      normalizeFrequency(
+        deepText(value, [
+          "frecuencia",
+          "frecuenciaCuota",
+          "frecuencia_cuota",
+          "frecuenciaPago",
+          "frecuencia_pago",
+          "periodicidad",
+          "periodicity",
+          "paymentFrequency",
+          "payment_frequency",
+        ])
+      ) ?? "CATORCENAL",
     moneda:
       cleanText(deepText(value, ["moneda", "currency", "currencyCode"])) ||
       "COP",
