@@ -94,6 +94,7 @@ type SaleDetailRow = {
 type SaleTableRow = {
   venta: string;
   servicio: string;
+  cedula: string;
   imei: string;
   jalador: string;
   ingresos: number;
@@ -436,6 +437,7 @@ function buildSaleTableRows(
     return {
       venta: textoLimpio(venta.idVenta),
       servicio: textoLimpio(venta.servicio),
+      cedula: textoLimpio(registro?.documentoNumero) || "-",
       imei: textoLimpio(venta.serial || registro?.serialImei),
       jalador: textoLimpio(venta.jalador || registro?.jaladorNombre),
       ingresos: n(venta.ingreso),
@@ -528,6 +530,7 @@ function buildTrialTotals(rows: SaleTableRow[], movimientos: CashMovementRow[]) 
 function trialExcelColumnWidth(header: string, financieras: string[]) {
   if (financieras.includes(header)) return 19;
   if (header === "JALADOR") return 17;
+  if (header === "CEDULA") return 16;
   if (header === "DETALLES DE INGRESO") return 32;
   if (header === "IMEI") return 19;
   if (header === "SERVICIO") return 22;
@@ -547,6 +550,7 @@ async function buildExcelCierreTabla(params: {
   const headers = [
     "# VENTA",
     "SERVICIO",
+    "CEDULA",
     "IMEI",
     "JALADOR",
     "INGRESOS",
@@ -723,6 +727,7 @@ async function buildExcelCierreTabla(params: {
     const row = worksheet.addRow([
       saleRow.venta,
       saleRow.servicio,
+      saleRow.cedula,
       saleRow.imei,
       saleRow.jalador,
       moneyCell(saleRow.ingresos),
@@ -787,6 +792,7 @@ async function buildExcelCierreTabla(params: {
 
   const totalsRow = worksheet.addRow([
     "TOTALES",
+    "",
     "",
     "",
     "",
@@ -1238,6 +1244,7 @@ async function buildPdfCierreTabla(params: {
     [
       { key: "venta", title: "# VENTA", width: 56 },
       { key: "servicio", title: "SERVICIO", width: 70 },
+      { key: "cedula", title: "CEDULA", width: 70 },
       { key: "imei", title: "IMEI", width: 86 },
       { key: "jalador", title: "JALADOR", width: 96 },
       { key: "ingresos", title: "INGRESOS", width: 72, align: "right", tone: "money" },
@@ -1416,6 +1423,7 @@ async function buildPdfCierreTabla(params: {
       const values: Record<string, string> = {
         venta: row.venta,
         servicio: row.servicio,
+        cedula: row.cedula,
         imei: row.imei,
         jalador: row.jalador,
         ingresos: formatoPesos(row.ingresos),
@@ -2025,18 +2033,40 @@ export async function GET(req: Request) {
       }),
     ]);
 
+    const ventaIds = ventasDetalleDia.map((venta) => venta.id);
+    const ventaImeis = Array.from(
+      new Set(
+        ventasDetalleDia
+          .map((venta) => textoLimpio(venta.serial))
+          .filter(Boolean)
+      )
+    );
     const registrosVentas = ventasDetalleDia.length
       ? await prisma.registroVendedorVenta.findMany({
           where: {
-            ventaIdRelacionada: {
-              in: ventasDetalleDia.map((venta) => venta.id),
-            },
             eliminadoEn: null,
             ...scope,
+            OR: [
+              {
+                ventaIdRelacionada: {
+                  in: ventaIds,
+                },
+              },
+              ...(ventaImeis.length
+                ? [
+                    {
+                      serialImei: {
+                        in: ventaImeis,
+                      },
+                    },
+                  ]
+                : []),
+            ],
           },
           select: {
             ventaIdRelacionada: true,
             clienteNombre: true,
+            documentoNumero: true,
             plataformaCredito: true,
             financierasDetalle: true,
             creditoAutorizado: true,
@@ -2057,10 +2087,26 @@ export async function GET(req: Request) {
           },
         })
       : [];
-    const registrosPorVenta = new Map(
+    const registrosPorVentaId = new Map(
       registrosVentas
         .filter((registro) => registro.ventaIdRelacionada)
         .map((registro) => [registro.ventaIdRelacionada as number, registro])
+    );
+    const registrosPorImei = new Map<string, (typeof registrosVentas)[number]>();
+
+    registrosVentas.forEach((registro) => {
+      const imei = textoLimpio(registro.serialImei);
+      if (imei && !registrosPorImei.has(imei)) {
+        registrosPorImei.set(imei, registro);
+      }
+    });
+
+    const registrosPorVenta = new Map(
+      ventasDetalleDia.map((venta) => [
+        venta.id,
+        registrosPorVentaId.get(venta.id) ||
+          registrosPorImei.get(textoLimpio(venta.serial)),
+      ])
     );
     const ingresosCajaDia = movimientosDia
       .filter((movimiento) => String(movimiento.tipo || "").toUpperCase() === "INGRESO")
