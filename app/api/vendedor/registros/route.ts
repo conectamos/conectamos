@@ -19,6 +19,7 @@ import {
 } from "@/lib/payjoy-retail";
 import {
   FinserpayConsultaConfigError,
+  FinserpayConsultaLookupError,
   isFinserpayConsultaConfigured,
   obtenerCreditoFinserpayPorImei,
 } from "@/lib/finserpayconsulta";
@@ -924,11 +925,7 @@ async function validarCreditoPayJoy(payload: {
     const creditoOficial = await obtenerCreditoPayJoyPorImei(payload.serialImei);
 
     if (!creditoOficial) {
-      if (!validaPayJoySeleccionado) {
-        return null;
-      }
-
-      return "No se encontro un credito PayJoy para este IMEI. Verifica el IMEI antes de guardar el registro.";
+      return null;
     }
 
     if (!validaPayJoySeleccionado) {
@@ -1024,11 +1021,7 @@ async function validarCreditoFinserpay(payload: {
     );
 
     if (!creditoOficial) {
-      if (!validaFinserpaySeleccionado) {
-        return null;
-      }
-
-      return "No se encontro un credito FINSERPAY para este IMEI. Verifica el IMEI antes de guardar el registro.";
+      return null;
     }
 
     if (!validaFinserpaySeleccionado) {
@@ -1091,6 +1084,10 @@ async function validarCreditoFinserpay(payload: {
 
     if (error instanceof FinserpayConsultaConfigError) {
       return "No se puede validar FINSERPAY porque falta configurar FINSERPAYCONSULTA_URL y FINSERPAYCONSULTA_TOKEN en el servidor.";
+    }
+
+    if (error instanceof FinserpayConsultaLookupError && error.status === 404) {
+      return null;
     }
 
     return error instanceof Error

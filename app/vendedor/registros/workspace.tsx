@@ -644,14 +644,6 @@ function esPlataformaFinserpay(value: unknown) {
   return key === "FINSERPAY" || key === "FINSER";
 }
 
-function esPlataformaConsultaImei(value: unknown) {
-  return (
-    esPlataformaPayJoy(value) ||
-    esPlataformaAloCredit(value) ||
-    esPlataformaFinserpay(value)
-  );
-}
-
 function esRegistroConvertido(registro: RegistroVendedorDetalle | null) {
   return Boolean(
     registro?.ventaIdRelacionada ||
@@ -1498,14 +1490,20 @@ export default function VendedorRegistroWorkspace({
   ) => {
     const creditoCedula = creditosFinancierasCedula[index];
     const plataformaCredito = form.financierasDetalle[index]?.plataformaCredito;
+    const creditoPayJoy = payjoyCreditos[index];
+    const creditoAlo = aloCreditos[index];
+    const creditoFinserpay = finserpayCreditos[index];
 
     if (
       (field === "creditoAutorizado" &&
-        esPlataformaPayJoy(plataformaCredito)) ||
+        esPlataformaPayJoy(plataformaCredito) &&
+        Boolean(creditoPayJoy)) ||
       (field === "creditoAutorizado" &&
-        esPlataformaAloCredit(plataformaCredito)) ||
+        esPlataformaAloCredit(plataformaCredito) &&
+        Boolean(creditoAlo)) ||
       (field === "creditoAutorizado" &&
-        esPlataformaFinserpay(plataformaCredito)) ||
+        esPlataformaFinserpay(plataformaCredito) &&
+        Boolean(creditoFinserpay)) ||
       (field === "creditoAutorizado" &&
         creditoCoincideConPlataforma(creditoCedula, plataformaCredito)) ||
       (field === "valorCuota" &&
@@ -4056,9 +4054,21 @@ export default function VendedorRegistroWorkspace({
                     Boolean(index === 0 && aloCreditos[0]) ||
                     Boolean(index === 0 && finserpayCreditos[0]) ||
                     Boolean(creditoCedula);
+                  const bloqueaCreditoPayJoy =
+                    esPlataformaPayJoy(item.plataformaCredito) &&
+                    Boolean(creditoPayJoy);
+                  const bloqueaCreditoAlo =
+                    esPlataformaAloCredit(item.plataformaCredito) &&
+                    Boolean(creditoAlo);
+                  const bloqueaCreditoFinserpay =
+                    esPlataformaFinserpay(item.plataformaCredito) &&
+                    Boolean(creditoFinserpay);
+                  const bloqueaCreditoCedula = Boolean(creditoCedula);
                   const bloqueaCredito =
-                    esPlataformaConsultaImei(item.plataformaCredito) ||
-                    Boolean(creditoCedula);
+                    bloqueaCreditoPayJoy ||
+                    bloqueaCreditoAlo ||
+                    bloqueaCreditoFinserpay ||
+                    bloqueaCreditoCedula;
                   const bloqueaCuotaPayJoy =
                     esPlataformaPayJoy(item.plataformaCredito) &&
                     creditoPayJoy?.valorCuota !== null &&
@@ -4165,24 +4175,18 @@ export default function VendedorRegistroWorkspace({
                                     event.target.value
                                   )
                                 }
-                                readOnly={esPlataformaPayJoy(
-                                  item.plataformaCredito
-                                ) || esPlataformaAloCredit(
-                                  item.plataformaCredito
-                                ) || esPlataformaFinserpay(
-                                  item.plataformaCredito
-                                ) || Boolean(creditoCedula)}
+                                readOnly={bloqueaCredito}
                                 className={inputClass(bloqueaCredito)}
                                 inputMode="numeric"
                                 placeholder={
-                                  esPlataformaPayJoy(item.plataformaCredito)
+                                  bloqueaCreditoPayJoy
                                     ? "Se completa desde PayJoy"
-                                    : esPlataformaAloCredit(item.plataformaCredito)
+                                    : bloqueaCreditoAlo
                                       ? "Se completa desde ALO CREDIT"
-                                      : esPlataformaFinserpay(item.plataformaCredito)
+                                      : bloqueaCreditoFinserpay
                                         ? "Se completa desde FINSERPAY"
-                                      : creditoCedula
-                                      ? `Se completa desde ${creditoCedula.financiera}`
+                                      : bloqueaCreditoCedula
+                                      ? `Se completa desde ${creditoCedula?.financiera}`
                                     : "$ 0"
                                 }
                               />
@@ -4198,7 +4202,7 @@ export default function VendedorRegistroWorkspace({
                                                 ?.creditoAutorizado ?? null
                                             )}`
                                           : payjoyErrores[index] ||
-                                            "El valor se valida por IMEI en PayJoy."}
+                                            "Si no hay credito consultado, puedes digitar los valores."}
                                     </span>
                                     <button
                                       type="button"
@@ -4228,7 +4232,7 @@ export default function VendedorRegistroWorkspace({
                                                 ?.creditoAutorizado ?? null
                                             )}`
                                           : aloErrores[index] ||
-                                            "El valor se valida por IMEI en ALO CREDIT."}
+                                            "Si no hay credito consultado, puedes digitar los valores."}
                                     </span>
                                     <button
                                       type="button"
@@ -4258,7 +4262,7 @@ export default function VendedorRegistroWorkspace({
                                                 ?.creditoAutorizado ?? null
                                             )}`
                                           : finserpayErrores[index] ||
-                                            "El valor se valida por IMEI en FINSERPAY."}
+                                            "Si no hay credito consultado, puedes digitar los valores."}
                                     </span>
                                     <button
                                       type="button"
