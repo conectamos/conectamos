@@ -1,8 +1,4 @@
 import prisma from "@/lib/prisma";
-import {
-  normalizarClaveReferenciaListaPrecio,
-  obtenerListaPrecios,
-} from "@/lib/price-list";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
   getBogotaDateKey,
@@ -13,9 +9,10 @@ import {
 
 const BOLSA_ESTADO_HABILITADA = "TOP10_HABILITADA";
 const BOLSA_ESTADO_FUERA_TOP10 = "FUERA_TOP10";
-const BOLSA_ESTADO_SIN_COMISION = "SIN_COMISION";
 const BOLSA_PROFILE_TYPES = new Set(["VENDEDOR", "APOYO_OPERATIVO"]);
 const UPDATE_CHUNK_SIZE = 50;
+const BOLSA_VALOR_POR_VENTA = 1000;
+const BOLSA_VALOR_TOP1 = 2000;
 
 type RewardMonthRecord = {
   id: number;
@@ -47,17 +44,6 @@ type RankingEntry = {
   total: number;
 };
 
-type CommissionCandidate = {
-  claveExacta: string;
-  claveBusqueda: string;
-  comision: number;
-};
-
-type CommissionLookup = {
-  exactMap: Map<string, number>;
-  candidates: CommissionCandidate[];
-};
-
 export type VendorEarningsItem = {
   id: number;
   referencia: string;
@@ -74,7 +60,7 @@ export type VendorEarningsSummary = {
   periodoLabel: string;
   totalGanado: number;
   totalVentasConComision: number;
-  totalReferenciasConComision: number;
+  valorBonoPorVenta: number;
   recientes: VendorEarningsItem[];
 };
 
@@ -127,95 +113,8 @@ function buildRankingEntries(
     .sort(sortRankingEntries);
 }
 
-function normalizarClaveBusquedaReferencia(value: unknown) {
-  return normalizarClaveReferenciaListaPrecio(value)
-    .replace(/([A-Z])(\d)/g, "$1 $2")
-    .replace(/(\d)([A-Z])/g, "$1 $2")
-    .replace(/[^A-Z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function matchesReferenceCandidate(
-  referenciaVenta: string,
-  referenciaConfigurada: string
-) {
-  if (!referenciaVenta || !referenciaConfigurada) {
-    return false;
-  }
-
-  return (
-    referenciaVenta === referenciaConfigurada ||
-    referenciaVenta.startsWith(`${referenciaConfigurada} `) ||
-    referenciaVenta.endsWith(` ${referenciaConfigurada}`) ||
-    referenciaVenta.includes(` ${referenciaConfigurada} `)
-  );
-}
-
-function buildCommissionLookup(
-  items: Awaited<ReturnType<typeof obtenerListaPrecios>>
-) {
-  const exactMap = new Map<string, number>();
-  const searchMap = new Map<string, CommissionCandidate>();
-
-  for (const item of [...items].sort(
-    (a, b) => a.updatedAt.getTime() - b.updatedAt.getTime()
-  )) {
-    const claveExacta = normalizarClaveReferenciaListaPrecio(item.referencia);
-    const claveBusqueda = normalizarClaveBusquedaReferencia(item.referencia);
-
-    if (!claveExacta) {
-      continue;
-    }
-
-    exactMap.set(claveExacta, Number(item.comisionVendedor || 0));
-
-    if (!claveBusqueda) {
-      continue;
-    }
-
-    searchMap.set(claveBusqueda, {
-      claveExacta,
-      claveBusqueda,
-      comision: Number(item.comisionVendedor || 0),
-    });
-  }
-
-  return {
-    exactMap,
-    candidates: Array.from(searchMap.values()).sort((a, b) => {
-      if (b.claveBusqueda.length !== a.claveBusqueda.length) {
-        return b.claveBusqueda.length - a.claveBusqueda.length;
-      }
-
-      return a.claveBusqueda.localeCompare(b.claveBusqueda, "es");
-    }),
-  };
-}
-
-function resolveCommissionForReference(
-  referenciaEquipo: string | null | undefined,
-  lookup: CommissionLookup
-) {
-  const claveExacta = normalizarClaveReferenciaListaPrecio(referenciaEquipo);
-
-  if (claveExacta && lookup.exactMap.has(claveExacta)) {
-    return Number(lookup.exactMap.get(claveExacta) || 0);
-  }
-
-  const claveBusqueda = normalizarClaveBusquedaReferencia(referenciaEquipo);
-
-  if (!claveBusqueda) {
-    return 0;
-  }
-
-  for (const candidate of lookup.candidates) {
-    if (matchesReferenceCandidate(claveBusqueda, candidate.claveBusqueda)) {
-      return candidate.comision;
-    }
-  }
-
-  return 0;
+function getBolsaValorPorVenta(puestoActual: number | null) {
+  return puestoActual === 1 ? BOLSA_VALOR_TOP1 : BOLSA_VALOR_POR_VENTA;
 }
 
 function hasSnapshotChanged(
@@ -235,16 +134,11 @@ function hasSnapshotChanged(
 function evaluateSnapshotForRecord(params: {
   record: Pick<RewardMonthRecord, "id" | "perfilVendedorId" | "referenciaEquipo">;
   ranking: RankingEntry[];
-  commissionLookup: CommissionLookup;
 }) {
   const puestoActual =
     params.ranking.findIndex((item) => item.perfilId === params.record.perfilVendedorId) +
     1;
   const estaEnTop10 = puestoActual > 0 && puestoActual <= 10;
-  const valorComision = resolveCommissionForReference(
-    params.record.referenciaEquipo,
-    params.commissionLookup
-  );
 
   if (!estaEnTop10) {
     return {
@@ -255,18 +149,9 @@ function evaluateSnapshotForRecord(params: {
     };
   }
 
-  if (valorComision <= 0) {
-    return {
-      bolsaGananciaHabilitada: false,
-      bolsaGananciaValor: 0,
-      bolsaGananciaEstado: BOLSA_ESTADO_SIN_COMISION,
-      bolsaGananciaEvaluadaEn: new Date(),
-    };
-  }
-
   return {
     bolsaGananciaHabilitada: true,
-    bolsaGananciaValor: valorComision,
+    bolsaGananciaValor: getBolsaValorPorVenta(puestoActual),
     bolsaGananciaEstado: BOLSA_ESTADO_HABILITADA,
     bolsaGananciaEvaluadaEn: new Date(),
   };
@@ -344,7 +229,6 @@ async function ensureCurrentMonthRewardSnapshots() {
     return { period, records, ranking: [] as RankingEntry[] };
   }
 
-  const commissionLookup = buildCommissionLookup(await obtenerListaPrecios());
   const counts = new Map<number, number>();
   const names = new Map<number, string>();
   const updates: RewardSnapshotUpdate[] = [];
@@ -363,7 +247,6 @@ async function ensureCurrentMonthRewardSnapshots() {
     const snapshot = evaluateSnapshotForRecord({
       record,
       ranking: buildRankingEntries(counts, names),
-      commissionLookup,
     });
 
     if (!record.bolsaGananciaEvaluadaEn || hasSnapshotChanged(record, snapshot)) {
@@ -472,7 +355,6 @@ export async function syncVendorRewardSnapshotForSale(saleId: number) {
     return null;
   }
 
-  const commissionLookup = buildCommissionLookup(await obtenerListaPrecios());
   const counts = new Map<number, number>();
   const names = new Map<number, string>();
 
@@ -491,7 +373,6 @@ export async function syncVendorRewardSnapshotForSale(saleId: number) {
     const snapshot = evaluateSnapshotForRecord({
       record: item,
       ranking: buildRankingEntries(counts, names),
-      commissionLookup,
     });
 
     await prisma.registroVendedorVenta.update({
@@ -519,7 +400,7 @@ export async function getVendorEarningsSummary(
       periodoLabel: getTodayBogotaRange().label,
       totalGanado: 0,
       totalVentasConComision: 0,
-      totalReferenciasConComision: 0,
+      valorBonoPorVenta: BOLSA_VALOR_POR_VENTA,
       recientes: [],
     };
   }
@@ -546,15 +427,6 @@ export async function getVendorEarningsSummary(
     (acc, item) => acc + toNumber(item.bolsaGananciaValor),
     0
   );
-  const referenciasConComision = new Set<string>();
-
-  for (const item of rewardedRecords) {
-    const clave = normalizarClaveReferenciaListaPrecio(item.referenciaEquipo);
-
-    if (clave) {
-      referenciasConComision.add(clave);
-    }
-  }
 
   return {
     bolsaHabilitada,
@@ -566,7 +438,7 @@ export async function getVendorEarningsSummary(
     periodoLabel: todayRange.label,
     totalGanado,
     totalVentasConComision: rewardedRecords.length,
-    totalReferenciasConComision: referenciasConComision.size,
+    valorBonoPorVenta: getBolsaValorPorVenta(puestoActual),
     recientes: rewardedRecords.slice(0, 5).map((item) => ({
       id: item.id,
       referencia: String(item.referenciaEquipo || "Sin referencia"),

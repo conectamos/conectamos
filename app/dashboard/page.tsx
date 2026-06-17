@@ -367,7 +367,7 @@ function VendorEarningsSection({
   periodoLabel,
   totalGanado,
   totalVentasConComision,
-  totalReferenciasConComision,
+  valorBonoPorVenta,
 }: {
   bolsaHabilitada: boolean;
   puestoActual: number | null;
@@ -375,7 +375,7 @@ function VendorEarningsSection({
   periodoLabel: string;
   totalGanado: number;
   totalVentasConComision: number;
-  totalReferenciasConComision: number;
+  valorBonoPorVenta: number;
 }) {
   const tituloTop10 = "\u{1F3C6} TOP 10";
   const mensajeTop10 =
@@ -426,18 +426,22 @@ function VendorEarningsSection({
             <MetricCard
               label="Total acumulado"
               value={formatoPesos(totalGanado)}
-              detail="Comisiones ya sumadas a tu bolsa hoy."
+              detail="Ganancias que ya sumaste a tu bolsa hoy."
               valueClassName="text-emerald-600"
             />
             <MetricCard
               label="Ventas con recompensa"
               value={String(totalVentasConComision)}
-              detail="Ventas de hoy que ya sumaron comision."
+              detail="Ventas de hoy que ya activaron recompensa."
             />
             <MetricCard
-              label="Referencias con comision"
-              value={String(totalReferenciasConComision)}
-              detail="Referencias diferentes de hoy que ya pagaron comision."
+              label="Bono por venta"
+              value={formatoPesos(valorBonoPorVenta)}
+              detail={
+                puestoActual === 1
+                  ? "Estando en el Top 1, cada venta te paga recompensa x2."
+                  : "Cada venta realizada te suma esta recompensa."
+              }
             />
             <MetricCard
               label="Puesto actual"
@@ -1135,9 +1139,7 @@ export default async function DashboardPage() {
             periodoLabel={resumenGananciasVendedor.periodoLabel}
             totalGanado={resumenGananciasVendedor.totalGanado}
             totalVentasConComision={resumenGananciasVendedor.totalVentasConComision}
-            totalReferenciasConComision={
-              resumenGananciasVendedor.totalReferenciasConComision
-            }
+            valorBonoPorVenta={resumenGananciasVendedor.valorBonoPorVenta}
           />
         )}
 
