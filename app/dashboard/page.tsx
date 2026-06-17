@@ -396,7 +396,7 @@ function VendorEarningsSection({
                 </div>
 
                 <div className="w-fit rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Hoy: {periodoLabel}
+                  Periodo: {periodoLabel}
                 </div>
               </div>
 
@@ -426,21 +426,21 @@ function VendorEarningsSection({
             <MetricCard
               label="Total acumulado"
               value={formatoPesos(totalGanado)}
-              detail="Ganancias que ya sumaste a tu bolsa hoy."
+              detail="Ganancias que ya sumaste a tu bolsa en este periodo."
               valueClassName="text-emerald-600"
             />
             <MetricCard
               label="Ventas con recompensa"
               value={String(totalVentasConComision)}
-              detail="Ventas de hoy que ya activaron recompensa."
+              detail="Ventas del periodo que ya activaron recompensa."
             />
             <MetricCard
               label="Bono por venta"
               value={formatoPesos(valorBonoPorVenta)}
               detail={
                 puestoActual === 1
-                  ? "Estando en el Top 1, cada venta te paga recompensa x2."
-                  : "Cada venta realizada te suma esta recompensa."
+                  ? "Estando en el Top 1, cada venta del periodo te paga recompensa x2."
+                  : "Cada venta del periodo te suma esta recompensa."
               }
             />
             <MetricCard
@@ -458,7 +458,7 @@ function VendorEarningsSection({
             </div>
 
             <div className="w-fit rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Hoy: {periodoLabel}
+              Periodo: {periodoLabel}
             </div>
           </div>
 
