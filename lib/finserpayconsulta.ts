@@ -1,3 +1,5 @@
+import { isTodayOrYesterdayDateKey } from "@/lib/credit-date-utils";
+
 const FINSERPAY_DEFAULT_URL =
   "https://finserpay.com/api/public/creditos/imei";
 const FINSERPAY_TIMEOUT_MS = 30_000;
@@ -29,6 +31,7 @@ export type FinserpayCreditoImei = {
   valorCuota: number | null;
   numeroCuotas: number | null;
   frecuenciaCuota: "SEMANAL" | "CATORCENAL" | "MENSUAL" | null;
+  fechaCreacionCredito: string | null;
   moneda: string | null;
   origen: string;
 };
@@ -804,6 +807,43 @@ function normalizeFrequency(value: unknown) {
   return null;
 }
 
+function getCreditCreationDate(value: unknown) {
+  return deepDate(value, [
+    "fechaCreacionCredito",
+    "fecha_creacion_credito",
+    "fechaCredito",
+    "fecha_credito",
+    "fechaCreacion",
+    "fecha_creacion",
+    "fechaVenta",
+    "fecha_venta",
+    "fechaTransaccion",
+    "fecha_transaccion",
+    "creditDate",
+    "credit_date",
+    "loanDate",
+    "loan_date",
+    "saleDate",
+    "sale_date",
+    "transactionDate",
+    "transaction_date",
+    "createdAt",
+    "created_at",
+    "createdOn",
+    "created_on",
+    "createdDate",
+    "created_date",
+    "creationDate",
+    "creation_date",
+    "dateCreated",
+    "date_created",
+    "disbursementDate",
+    "disbursement_date",
+    "approvedAt",
+    "approved_at",
+  ]);
+}
+
 function parseCreditoFromValue(
   value: unknown,
   imei: string
@@ -829,6 +869,12 @@ function parseCreditoFromValue(
   ]);
 
   if (creditoAutorizado === null || creditoAutorizado <= 0) {
+    return null;
+  }
+
+  const fechaCreacionCredito = getCreditCreationDate(value);
+
+  if (!isTodayOrYesterdayDateKey(fechaCreacionCredito)) {
     return null;
   }
 
@@ -971,6 +1017,7 @@ function parseCreditoFromValue(
           "payment_frequency",
         ])
       ) ?? "CATORCENAL",
+    fechaCreacionCredito,
     moneda:
       cleanText(deepText(value, ["moneda", "currency", "currencyCode"])) ||
       "COP",
@@ -1013,6 +1060,7 @@ function candidateScore(credito: FinserpayCreditoImei) {
     credito.valorCuota,
     credito.numeroCuotas,
     credito.frecuenciaCuota,
+    credito.fechaCreacionCredito,
   ].filter(Boolean).length;
 }
 

@@ -1,4 +1,8 @@
 import * as XLSX from "xlsx";
+import {
+  isTodayOrYesterdayDateKey,
+  normalizeDateKey,
+} from "@/lib/credit-date-utils";
 
 const ALO_DEFAULT_REPORT_URL = "https://consola.alocredit.co/admin_reportes";
 const ALO_LOGIN_PATH = "/login";
@@ -61,6 +65,7 @@ export type AloCreditoImei = {
   frecuenciaCuota: "CATORCENAL";
   valorAccesorios: number | null;
   observacionAccesorios: string | null;
+  fechaCreacionCredito: string | null;
   moneda: string | null;
   origen: string;
 };
@@ -2258,6 +2263,35 @@ function isInstallmentValueKey(key: string) {
   );
 }
 
+function isCreditDateKey(key: string) {
+  if (
+    key.includes("NACIM") ||
+    key.includes("EXPED") ||
+    key.includes("INICIO") ||
+    key.includes("FIN") ||
+    key.includes("VENC") ||
+    key.includes("PAGO")
+  ) {
+    return false;
+  }
+
+  return (
+    key === "FECHA" ||
+    key.includes("FECHAVENTA") ||
+    key.includes("FECHACREDITO") ||
+    key.includes("FECHACREACION") ||
+    key.includes("CREATEDAT") ||
+    key.includes("CREATEDDATE")
+  );
+}
+
+function findCreditDate(row: MatrixCell[], headerRow: MatrixCell[] | null) {
+  return (
+    normalizeDateKey(getByHeader(row, headerRow, isCreditDateKey)) ||
+    normalizeDateKey(getCell(row, 0))
+  );
+}
+
 function isAccessoryValueKey(key: string) {
   if (key.includes("CANTIDAD") || key.includes("NUMERO") || key.includes("QTY")) {
     return false;
@@ -2833,6 +2867,12 @@ async function completarCuotaPlazoDesdeCartera(
 }
 
 function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, imei: string) {
+  const fechaCreacionCredito = findCreditDate(row, headerRow);
+
+  if (!isTodayOrYesterdayDateKey(fechaCreacionCredito)) {
+    return null;
+  }
+
   const creditoAutorizado =
     parseAmount(
       getByHeader(
@@ -2902,6 +2942,7 @@ function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, 
     valorAccesorios,
     observacionAccesorios:
       valorAccesorios === null ? null : `$ ${valorAccesorios.toLocaleString("es-CO")} ACCESORIOS`,
+    fechaCreacionCredito,
     moneda: COLOMBIA_CURRENCY,
     origen: "admin_reportes",
   } satisfies AloCreditoImei;

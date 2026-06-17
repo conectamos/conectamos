@@ -52,7 +52,7 @@ export async function GET(req: Request) {
 
     if (!credito) {
       return NextResponse.json(
-        { error: "No se encontro un credito PayJoy para este IMEI" },
+        { error: "No se encontro un credito PayJoy creado hoy o ayer para este IMEI" },
         { status: 404 }
       );
     }

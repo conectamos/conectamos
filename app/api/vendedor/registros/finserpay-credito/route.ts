@@ -53,7 +53,7 @@ export async function GET(req: Request) {
 
     if (!credito) {
       return NextResponse.json(
-        { error: "No se encontro un credito FINSERPAY para este IMEI" },
+        { error: "No se encontro un credito FINSERPAY creado hoy o ayer para este IMEI" },
         { status: 404 }
       );
     }

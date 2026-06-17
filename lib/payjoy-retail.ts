@@ -1,8 +1,13 @@
 import { getPayJoyPaymentSnapshot } from "@/lib/payjoy";
+import {
+  dateKeyFromUnixTimestamp,
+  getYesterdayStartUnixInColombia,
+  isTodayOrYesterdayDateKey,
+  normalizeDateKey,
+} from "@/lib/credit-date-utils";
 
 const PAYJOY_RETAIL_API_BASE_URL =
   process.env.PAYJOY_RETAIL_API_BASE_URL || "https://partner.payjoy.com/v1";
-const DEFAULT_LOOKBACK_DAYS = 450;
 
 type PayJoyAmount = string | number | null | undefined;
 type PayJoyFinanceOrder = {
@@ -59,6 +64,7 @@ export type PayJoyCreditoImei = {
   numeroCuotas: number | null;
   frecuenciaCuota: "CATORCENAL" | null;
   valorCompra: number | null;
+  fechaCreacionCredito: string | null;
   origen: "lookup-customer" | "list-transactions";
 };
 
@@ -356,16 +362,51 @@ function resolveInstallmentInfo(
   };
 }
 
-function getLookbackDays() {
-  const configured = Number(process.env.PAYJOY_RETAIL_LOOKBACK_DAYS);
-
-  return Number.isFinite(configured) && configured > 0
-    ? Math.floor(configured)
-    : DEFAULT_LOOKBACK_DAYS;
-}
-
 function getUnixNow() {
   return Math.floor(Date.now() / 1000);
+}
+
+function getPayJoyDateFromRecord(record: Record<string, unknown> | null | undefined) {
+  if (!record) {
+    return null;
+  }
+
+  const dateKeys = [
+    "createdAt",
+    "created_at",
+    "createdOn",
+    "created_on",
+    "createdDate",
+    "created_date",
+    "creationDate",
+    "creation_date",
+    "dateCreated",
+    "date_created",
+    "orderDate",
+    "order_date",
+    "loanDate",
+    "loan_date",
+    "financeDate",
+    "finance_date",
+    "activationDate",
+    "activation_date",
+    "submittedAt",
+    "submitted_at",
+    "time",
+  ];
+
+  for (const key of dateKeys) {
+    const value = record[key];
+    const date = key === "time"
+      ? dateKeyFromUnixTimestamp(value)
+      : normalizeDateKey(value);
+
+    if (date) {
+      return date;
+    }
+  }
+
+  return null;
 }
 
 async function fetchPayJoy<T>(
@@ -443,6 +484,7 @@ async function buildCreditoFromFinanceOrder(
   currency?: string | null,
   paymentOptions?: PayJoyPaymentOption[] | null,
   device?: PayJoyDevice | null,
+  fechaCreacionCredito?: string | null,
   ...deviceSources: unknown[]
 ): Promise<PayJoyCreditoImei | null> {
   const creditoAutorizado = parseAmount(financeOrder?.financeAmount);
@@ -467,11 +509,15 @@ async function buildCreditoFromFinanceOrder(
     numeroCuotas: installment.numeroCuotas,
     frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(financeOrder?.purchaseAmount),
+    fechaCreacionCredito: fechaCreacionCredito ?? getPayJoyDateFromRecord(financeOrder),
     origen: source,
   }, deviceTag);
 }
 
-async function lookupCustomerFinanceByImei(imei: string) {
+async function lookupCustomerFinanceByImei(
+  imei: string,
+  options: { requireRecentDate?: boolean } = {}
+) {
   const data = await fetchPayJoy<PayJoyCustomerLookupResponse>(
     "lookup-customer.php",
     {
@@ -484,6 +530,17 @@ async function lookupCustomerFinanceByImei(imei: string) {
     return null;
   }
 
+  const fechaCreacionCredito =
+    getPayJoyDateFromRecord(data.financeOrder) ||
+    getPayJoyDateFromRecord(data as Record<string, unknown>);
+
+  if (
+    options.requireRecentDate &&
+    !isTodayOrYesterdayDateKey(fechaCreacionCredito)
+  ) {
+    return null;
+  }
+
   return buildCreditoFromFinanceOrder(
     imei,
     data.financeOrder,
@@ -491,13 +548,14 @@ async function lookupCustomerFinanceByImei(imei: string) {
     data.financeOrder.currency,
     data.paymentOptions,
     data.device,
+    fechaCreacionCredito,
     data
   );
 }
 
 async function lookupTransactionFinanceByImei(imei: string) {
   const endtime = getUnixNow();
-  const starttime = endtime - getLookbackDays() * 86_400;
+  const starttime = getYesterdayStartUnixInColombia();
   const data = await fetchPayJoy<PayJoyTransactionResponse>(
     "list-transactions.php",
     {
@@ -514,13 +572,27 @@ async function lookupTransactionFinanceByImei(imei: string) {
   const transaction = data.transactions
     .filter((item) => {
       const type = String(item.type || "").trim().toLowerCase();
-      return type === "finance" && normalizeImei(item.device?.imei) === imei;
+      const fechaCreacionCredito =
+        dateKeyFromUnixTimestamp(item.time) ||
+        getPayJoyDateFromRecord(item.financeOrder) ||
+        getPayJoyDateFromRecord(item as Record<string, unknown>);
+
+      return (
+        type === "finance" &&
+        normalizeImei(item.device?.imei) === imei &&
+        isTodayOrYesterdayDateKey(fechaCreacionCredito)
+      );
     })
     .sort((a, b) => Number(b.time || 0) - Number(a.time || 0))[0];
 
   if (!transaction) {
     return null;
   }
+
+  const fechaCreacionCredito =
+    dateKeyFromUnixTimestamp(transaction.time) ||
+    getPayJoyDateFromRecord(transaction.financeOrder) ||
+    getPayJoyDateFromRecord(transaction as Record<string, unknown>);
 
   const fromFinanceOrder = await buildCreditoFromFinanceOrder(
     imei,
@@ -529,6 +601,7 @@ async function lookupTransactionFinanceByImei(imei: string) {
     transaction.currency,
     null,
     transaction.device,
+    fechaCreacionCredito,
     transaction
   );
 
@@ -559,6 +632,7 @@ async function lookupTransactionFinanceByImei(imei: string) {
     numeroCuotas: installment.numeroCuotas,
     frecuenciaCuota: installment.frecuenciaCuota,
     valorCompra: parseAmount(transaction.financeOrder?.purchaseAmount),
+    fechaCreacionCredito,
     origen: "list-transactions",
   } satisfies PayJoyCreditoImei, deviceTag);
 }
@@ -583,7 +657,21 @@ function mergeCreditoDetails(
     numeroCuotas: primary.numeroCuotas ?? fallback.numeroCuotas,
     frecuenciaCuota: primary.frecuenciaCuota ?? fallback.frecuenciaCuota,
     valorCompra: primary.valorCompra ?? fallback.valorCompra,
+    fechaCreacionCredito:
+      primary.fechaCreacionCredito ?? fallback.fechaCreacionCredito,
   };
+}
+
+function samePayJoyFinanceOrder(
+  primary: PayJoyCreditoImei,
+  fallback: PayJoyCreditoImei | null
+) {
+  return Boolean(
+    fallback &&
+      primary.ordenId &&
+      fallback.ordenId &&
+      primary.ordenId === fallback.ordenId
+  );
 }
 
 export async function obtenerCreditoPayJoyPorImei(imeiValue: string) {
@@ -593,23 +681,23 @@ export async function obtenerCreditoPayJoyPorImei(imeiValue: string) {
     throw new PayJoyRetailLookupError("El IMEI es obligatorio para consultar PayJoy.");
   }
 
-  const customerResult = await lookupCustomerFinanceByImei(imei);
+  const transactionResult = await lookupTransactionFinanceByImei(imei);
 
-  if (customerResult && !needsPaymentDetails(customerResult)) {
-    return customerResult;
+  if (!transactionResult) {
+    return lookupCustomerFinanceByImei(imei, { requireRecentDate: true });
+  }
+
+  if (!needsPaymentDetails(transactionResult)) {
+    return transactionResult;
   }
 
   try {
-    const transactionResult = await lookupTransactionFinanceByImei(imei);
+    const customerResult = await lookupCustomerFinanceByImei(imei);
 
-    return customerResult
-      ? mergeCreditoDetails(customerResult, transactionResult)
+    return samePayJoyFinanceOrder(transactionResult, customerResult)
+      ? mergeCreditoDetails(transactionResult, customerResult)
       : transactionResult;
-  } catch (error) {
-    if (customerResult) {
-      return customerResult;
-    }
-
-    throw error;
+  } catch {
+    return transactionResult;
   }
 }

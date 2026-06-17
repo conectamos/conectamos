@@ -53,7 +53,7 @@ export async function GET(req: Request) {
 
     if (!credito) {
       return NextResponse.json(
-        { error: "No se encontro un credito ALO CREDIT para este IMEI" },
+        { error: "No se encontro un credito ALO CREDIT creado hoy o ayer para este IMEI" },
         { status: 404 }
       );
     }

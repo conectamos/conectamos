@@ -188,6 +188,7 @@ type PayJoyCreditoResponse = {
     numeroCuotas: number | null;
     frecuenciaCuota: string | null;
     valorCompra: number | null;
+    fechaCreacionCredito: string | null;
     origen: string;
   };
   error?: string;
@@ -207,6 +208,7 @@ type AloCreditoResponse = {
     frecuenciaCuota: string | null;
     valorAccesorios: number | null;
     observacionAccesorios: string | null;
+    fechaCreacionCredito: string | null;
     moneda: string | null;
     origen: string;
   };
@@ -237,6 +239,7 @@ type FinserpayCreditoResponse = {
     valorCuota: number | null;
     numeroCuotas: number | null;
     frecuenciaCuota: string | null;
+    fechaCreacionCredito: string | null;
     moneda: string | null;
     origen: string;
   };
@@ -1557,7 +1560,7 @@ export default function VendedorRegistroWorkspace({
           ...current,
           [index]:
             data.error ||
-            "No se encontro un credito PayJoy para este IMEI",
+            "No se encontro un credito PayJoy creado hoy o ayer para este IMEI",
         }));
         return;
       }
@@ -1630,7 +1633,7 @@ export default function VendedorRegistroWorkspace({
           ...current,
           [index]:
             data.error ||
-            "No se encontro un credito ALO CREDIT para este IMEI",
+            "No se encontro un credito ALO CREDIT creado hoy o ayer para este IMEI",
         }));
         return;
       }
@@ -1722,7 +1725,7 @@ export default function VendedorRegistroWorkspace({
           ...current,
           [index]:
             data.error ||
-            "No se encontro un credito FINSERPAY para este IMEI",
+            "No se encontro un credito FINSERPAY creado hoy o ayer para este IMEI",
         }));
         return;
       }
