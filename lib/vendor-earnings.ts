@@ -128,6 +128,8 @@ function buildRankingEntries(
 
 function normalizarClaveBusquedaReferencia(value: unknown) {
   return normalizarClaveReferenciaListaPrecio(value)
+    .replace(/([A-Z])(\d)/g, "$1 $2")
+    .replace(/(\d)([A-Z])/g, "$1 $2")
     .replace(/[^A-Z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
