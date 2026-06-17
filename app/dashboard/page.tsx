@@ -385,12 +385,12 @@ function VendorEarningsSection({
     createdAt: Date;
   }>;
 }) {
-  const tituloTop10 = "🏆 TOP 10";
+  const tituloTop10 = "\u{1F3C6} TOP 10";
   const mensajeTop10 =
-    "💰 Estás donde se recogen las recompensas.\nSigue esforzándote, mantén tu posición y continúa disfrutando los beneficios de estar entre los mejores.";
-  const tituloFueraTop10 = "🔴 Fuera del TOP 10.";
+    "\u{1F4B0} Est\u00e1s donde se recogen las recompensas.\nSigue esforz\u00e1ndote, mant\u00e9n tu posici\u00f3n y contin\u00faa disfrutando los beneficios de estar entre los mejores.";
+  const tituloFueraTop10 = "\u{1F534} FUERA DEL TOP 10";
   const mensajeFueraTop10 =
-    "📈 Los resultados hablan. Es momento de esforzarse más y demostrar de qué estás hecho.";
+    "\u{1F4CA} Hoy observas c\u00f3mo otros recogen las recompensas.\n\n\u{1F4AA} Es momento de redoblar esfuerzos, subir tu nivel e ingresar al TOP 10.\n\n\u{1F4B0} La Bolsa de Ganancias est\u00e1 reservada para quienes generan resultados.";
 
   return (
     <section className="mt-6 rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
@@ -421,7 +421,7 @@ function VendorEarningsSection({
 
       {bolsaHabilitada ? (
         <>
-          <div className="relative mt-6 overflow-hidden rounded-[28px] border border-[#eadfce] bg-[#130707] shadow-[0_20px_60px_rgba(15,23,42,0.14)]">
+          <div className="relative mt-6 max-w-[380px] overflow-hidden rounded-[28px] border border-[#eadfce] bg-[#130707] shadow-[0_20px_60px_rgba(15,23,42,0.14)] lg:ml-auto">
             <Image
               src="/branding/bolsa-ganancias-top10.png"
               alt="Bolsa de ganancias Conectamos"
@@ -436,10 +436,10 @@ function VendorEarningsSection({
                   <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/75">
                     Programa del mes
                   </p>
-                  <p className="mt-2 text-xl font-black tracking-tight text-white sm:text-2xl">
+                  <p className="mt-2 text-lg font-black tracking-tight text-white sm:text-xl">
                     {tituloTop10}
                   </p>
-                  <p className="mt-2 max-w-2xl whitespace-pre-line text-sm font-semibold leading-6 text-white/88">
+                  <p className="mt-2 max-w-2xl whitespace-pre-line text-xs font-semibold leading-5 text-white/88 sm:text-sm">
                     {mensajeTop10}
                   </p>
                 </div>
@@ -513,52 +513,13 @@ function VendorEarningsSection({
         </>
       ) : (
         <>
-          <div className="relative mt-6 overflow-hidden rounded-[28px] border border-rose-200 bg-[#130707] shadow-[0_20px_60px_rgba(15,23,42,0.14)]">
-            <Image
-              src="/branding/bolsa-ganancias-top10.png"
-              alt="Bolsa de ganancias Conectamos"
-              width={1280}
-              height={1280}
-              className="h-auto w-full opacity-45 saturate-[0.7]"
-            />
-
-            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(127,29,29,0.18)_0%,rgba(15,23,42,0.7)_100%)]" />
-            <div className="absolute inset-x-0 bottom-0 px-5 py-5 sm:px-7">
-              <div className="rounded-[22px] border border-white/12 bg-black/42 px-4 py-4 backdrop-blur-sm">
-                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/70">
-                  Estado de la bolsa
-                </p>
-                <p className="mt-2 text-xl font-black tracking-tight text-white sm:text-2xl">
-                  {tituloFueraTop10}
-                </p>
-                <p className="mt-2 whitespace-pre-line text-sm font-semibold leading-6 text-white/82">
-                  {mensajeFueraTop10}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <MetricCard
-              label="Estado actual"
-              value={puestoActual ? `#${puestoActual}` : "Sin puesto"}
-              detail={mensajeFueraTop10}
-              valueClassName="text-rose-600"
-            />
-            <MetricCard
-              label="Ventas del mes"
-              value={String(ventasMes)}
-              detail="Tu posicion se calcula con los registros del mes actual."
-            />
-            <MetricCard
-              label="Acumulado congelado"
-              value={formatoPesos(totalGanado)}
-              detail="Este valor no suma nuevas recompensas hasta volver al Top 10."
-            />
-          </div>
-
-          <div className="mt-6 rounded-[24px] border border-dashed border-rose-200 bg-rose-50 px-5 py-5 text-sm font-semibold text-rose-800">
-            <span className="whitespace-pre-line">{`${tituloFueraTop10}\n${mensajeFueraTop10}`}</span>
+          <div className="mt-6 rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-5 text-rose-900 shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
+            <p className="text-2xl font-black tracking-tight text-rose-700">
+              {tituloFueraTop10}
+            </p>
+            <p className="mt-4 whitespace-pre-line text-base font-semibold leading-8 text-rose-900">
+              {mensajeFueraTop10}
+            </p>
           </div>
         </>
       )}
