@@ -135,6 +135,20 @@ function buildCommissionMap(
   return commissionMap;
 }
 
+function hasSnapshotChanged(
+  record: Pick<
+    RewardMonthRecord,
+    "bolsaGananciaHabilitada" | "bolsaGananciaValor" | "bolsaGananciaEstado"
+  >,
+  snapshot: Omit<RewardSnapshotUpdate, "id">
+) {
+  return (
+    record.bolsaGananciaHabilitada !== snapshot.bolsaGananciaHabilitada ||
+    toNumber(record.bolsaGananciaValor) !== snapshot.bolsaGananciaValor ||
+    String(record.bolsaGananciaEstado || "").trim() !== snapshot.bolsaGananciaEstado
+  );
+}
+
 function evaluateSnapshotForRecord(params: {
   record: Pick<RewardMonthRecord, "id" | "perfilVendedorId" | "referenciaEquipo">;
   ranking: RankingEntry[];
@@ -265,20 +279,18 @@ async function ensureCurrentMonthRewardSnapshots() {
       Number(counts.get(record.perfilVendedorId) || 0) + 1
     );
 
-    if (record.bolsaGananciaEvaluadaEn) {
-      continue;
-    }
-
     const snapshot = evaluateSnapshotForRecord({
       record,
       ranking: buildRankingEntries(counts, names),
       commissionMap,
     });
 
-    updates.push({
-      id: record.id,
-      ...snapshot,
-    });
+    if (!record.bolsaGananciaEvaluadaEn || hasSnapshotChanged(record, snapshot)) {
+      updates.push({
+        id: record.id,
+        ...snapshot,
+      });
+    }
 
     record.bolsaGananciaHabilitada = snapshot.bolsaGananciaHabilitada;
     record.bolsaGananciaValor = snapshot.bolsaGananciaValor;
@@ -293,6 +305,11 @@ async function ensureCurrentMonthRewardSnapshots() {
     records,
     ranking: buildRankingEntries(counts, names),
   };
+}
+
+export async function syncCurrentMonthRewardSnapshots() {
+  await ensureVendorProfilesSchema();
+  return ensureCurrentMonthRewardSnapshots();
 }
 
 export async function syncVendorRewardSnapshotForSale(saleId: number) {
@@ -315,7 +332,6 @@ export async function syncVendorRewardSnapshotForSale(saleId: number) {
       perfilVendedorId: true,
       referenciaEquipo: true,
       createdAt: true,
-      bolsaGananciaEvaluadaEn: true,
       perfilVendedor: {
         select: {
           nombre: true,
@@ -326,10 +342,6 @@ export async function syncVendorRewardSnapshotForSale(saleId: number) {
   });
 
   if (!record || !isBolsaProfileType(record.perfilVendedor?.tipo)) {
-    return null;
-  }
-
-  if (record.bolsaGananciaEvaluadaEn) {
     return null;
   }
 

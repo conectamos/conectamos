@@ -11,6 +11,7 @@ import {
   obtenerListaPrecios,
   type PriceListItem,
 } from "@/lib/price-list";
+import { syncCurrentMonthRewardSnapshots } from "@/lib/vendor-earnings";
 
 function serializeItem(item: PriceListItem) {
   return {
@@ -120,6 +121,9 @@ export async function POST(req: Request) {
     }
 
     await crearListaPrecio(validacion.data);
+    await syncCurrentMonthRewardSnapshots().catch((error) => {
+      console.error("ERROR RESYNC BOLSA LISTA PRECIOS POST:", error);
+    });
     const items = await obtenerListaPrecios();
 
     return NextResponse.json({
@@ -176,6 +180,9 @@ export async function PATCH(req: Request) {
       );
     }
 
+    await syncCurrentMonthRewardSnapshots().catch((error) => {
+      console.error("ERROR RESYNC BOLSA LISTA PRECIOS PATCH:", error);
+    });
     const items = await obtenerListaPrecios();
 
     return NextResponse.json({
@@ -224,6 +231,9 @@ export async function DELETE(req: Request) {
     }
 
     await eliminarListaPrecioPorId(id);
+    await syncCurrentMonthRewardSnapshots().catch((error) => {
+      console.error("ERROR RESYNC BOLSA LISTA PRECIOS DELETE:", error);
+    });
     const items = await obtenerListaPrecios();
 
     return NextResponse.json({
