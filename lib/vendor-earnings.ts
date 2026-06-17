@@ -116,6 +116,25 @@ function getBolsaValorPorVenta(puestoActual: number | null) {
   return puestoActual === 1 ? BOLSA_VALOR_TOP1 : BOLSA_VALOR_POR_VENTA;
 }
 
+function buildFinalRankingForRecords(records: RewardMonthRecord[]) {
+  const counts = new Map<number, number>();
+  const names = new Map<number, string>();
+
+  for (const record of records) {
+    const nombrePerfil =
+      String(record.perfilVendedor?.nombre || "").trim() ||
+      `Perfil ${record.perfilVendedorId}`;
+
+    names.set(record.perfilVendedorId, nombrePerfil);
+    counts.set(
+      record.perfilVendedorId,
+      Number(counts.get(record.perfilVendedorId) || 0) + 1
+    );
+  }
+
+  return buildRankingEntries(counts, names);
+}
+
 function hasSnapshotChanged(
   record: Pick<
     RewardMonthRecord,
@@ -228,24 +247,13 @@ async function ensureCurrentMonthRewardSnapshots() {
     return { period, records, ranking: [] as RankingEntry[] };
   }
 
-  const counts = new Map<number, number>();
-  const names = new Map<number, string>();
+  const ranking = buildFinalRankingForRecords(records);
   const updates: RewardSnapshotUpdate[] = [];
 
   for (const record of records) {
-    const nombrePerfil =
-      String(record.perfilVendedor?.nombre || "").trim() ||
-      `Perfil ${record.perfilVendedorId}`;
-
-    names.set(record.perfilVendedorId, nombrePerfil);
-    counts.set(
-      record.perfilVendedorId,
-      Number(counts.get(record.perfilVendedorId) || 0) + 1
-    );
-
     const snapshot = evaluateSnapshotForRecord({
       record,
-      ranking: buildRankingEntries(counts, names),
+      ranking,
     });
 
     if (!record.bolsaGananciaEvaluadaEn || hasSnapshotChanged(record, snapshot)) {
@@ -266,7 +274,7 @@ async function ensureCurrentMonthRewardSnapshots() {
   return {
     period,
     records,
-    ranking: buildRankingEntries(counts, names),
+    ranking,
   };
 }
 
@@ -354,24 +362,16 @@ export async function syncVendorRewardSnapshotForSale(saleId: number) {
     return null;
   }
 
-  const counts = new Map<number, number>();
-  const names = new Map<number, string>();
+  const ranking = buildFinalRankingForRecords(filteredRecords);
 
   for (const item of filteredRecords) {
-    const nombrePerfil =
-      String(item.perfilVendedor?.nombre || "").trim() ||
-      `Perfil ${item.perfilVendedorId}`;
-
-    names.set(item.perfilVendedorId, nombrePerfil);
-    counts.set(item.perfilVendedorId, Number(counts.get(item.perfilVendedorId) || 0) + 1);
-
     if (item.id !== saleId) {
       continue;
     }
 
     const snapshot = evaluateSnapshotForRecord({
       record: item,
-      ranking: buildRankingEntries(counts, names),
+      ranking,
     });
 
     await prisma.registroVendedorVenta.update({
