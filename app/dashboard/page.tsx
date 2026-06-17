@@ -368,7 +368,6 @@ function VendorEarningsSection({
   totalGanado,
   totalVentasConComision,
   totalReferenciasConComision,
-  recientes,
 }: {
   bolsaHabilitada: boolean;
   puestoActual: number | null;
@@ -377,13 +376,6 @@ function VendorEarningsSection({
   totalGanado: number;
   totalVentasConComision: number;
   totalReferenciasConComision: number;
-  recientes: Array<{
-    id: number;
-    referencia: string;
-    clienteNombre: string;
-    valorComision: number;
-    createdAt: Date;
-  }>;
 }) {
   const tituloTop10 = "\u{1F3C6} TOP 10";
   const mensajeTop10 =
@@ -472,43 +464,6 @@ function VendorEarningsSection({
               value={puestoActual ? `#${puestoActual}` : "Sin puesto"}
               detail={`Llevas ${ventasMes} venta${ventasMes === 1 ? "" : "s"} en el periodo.`}
             />
-          </div>
-
-          <div className="mt-6 rounded-[24px] border border-slate-200">
-            <div className="grid min-w-[620px] grid-cols-[1.4fr_1.3fr_150px_160px] gap-3 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
-              <span>Cliente</span>
-              <span>Referencia</span>
-              <span className="text-right">Ganancia</span>
-              <span className="text-right">Fecha</span>
-            </div>
-
-            {recientes.length === 0 ? (
-              <div className="px-4 py-8 text-sm font-semibold text-slate-500">
-                Aun no tienes ventas con recompensa acumulada.
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {recientes.map((item) => (
-                  <div
-                    key={item.id}
-                    className="grid min-w-[620px] grid-cols-[1.4fr_1.3fr_150px_160px] items-center gap-3 px-4 py-4 text-sm"
-                  >
-                    <span className="min-w-0 truncate font-bold text-slate-950">
-                      {item.clienteNombre}
-                    </span>
-                    <span className="min-w-0 truncate font-semibold text-slate-700">
-                      {item.referencia}
-                    </span>
-                    <span className="text-right font-black text-amber-700">
-                      {formatoPesos(item.valorComision)}
-                    </span>
-                    <span className="text-right text-xs font-semibold text-slate-500">
-                      {item.createdAt.toLocaleDateString("es-CO")}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </>
       ) : (
@@ -1193,7 +1148,6 @@ export default async function DashboardPage() {
             totalReferenciasConComision={
               resumenGananciasVendedor.totalReferenciasConComision
             }
-            recientes={resumenGananciasVendedor.recientes}
           />
         )}
 
