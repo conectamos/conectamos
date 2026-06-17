@@ -5,6 +5,7 @@ export type PriceListItem = {
   marca: string;
   referencia: string;
   precio: number;
+  comisionVendedor: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -31,6 +32,7 @@ function toPriceListItem(row: Record<string, unknown>): PriceListItem {
     marca: String(row.marca || ""),
     referencia: String(row.referencia || ""),
     precio: toNumber(row.precio),
+    comisionVendedor: toNumber(row.comisionVendedor),
     createdAt: toDate(row.createdAt),
     updatedAt: toDate(row.updatedAt),
   };
@@ -45,10 +47,22 @@ async function ensurePriceListSchema() {
           "marca" TEXT NOT NULL,
           "referencia" TEXT NOT NULL,
           "precio" DOUBLE PRECISION NOT NULL DEFAULT 0,
+          "comisionVendedor" DOUBLE PRECISION NOT NULL DEFAULT 0,
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           CONSTRAINT "ListaPrecio_pkey" PRIMARY KEY ("id")
         );
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "ListaPrecio"
+        ADD COLUMN IF NOT EXISTS "comisionVendedor" DOUBLE PRECISION NOT NULL DEFAULT 0;
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        UPDATE "ListaPrecio"
+        SET "comisionVendedor" = 0
+        WHERE "comisionVendedor" IS NULL;
       `);
 
       await prisma.$executeRawUnsafe(`
@@ -66,6 +80,13 @@ async function ensurePriceListSchema() {
 
 export function normalizarTextoListaPrecio(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+export function normalizarClaveReferenciaListaPrecio(value: unknown) {
+  return normalizarTextoListaPrecio(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
 }
 
 export function normalizarPrecioLista(value: unknown) {
@@ -92,6 +113,7 @@ export async function obtenerListaPrecios() {
         "marca",
         "referencia",
         "precio",
+        "comisionVendedor",
         "createdAt",
         "updatedAt"
       FROM "ListaPrecio"
@@ -112,6 +134,7 @@ export async function obtenerListaPrecioPorId(id: number) {
         "marca",
         "referencia",
         "precio",
+        "comisionVendedor",
         "createdAt",
         "updatedAt"
       FROM "ListaPrecio"
@@ -128,18 +151,20 @@ export async function crearListaPrecio(params: {
   marca: string;
   referencia: string;
   precio: number;
+  comisionVendedor: number;
 }) {
   await ensurePriceListSchema();
 
   const rows = (await prisma.$queryRawUnsafe(
     `
-      INSERT INTO "ListaPrecio" ("marca", "referencia", "precio", "createdAt", "updatedAt")
-      VALUES ($1, $2, $3, NOW(), NOW())
-      RETURNING "id", "marca", "referencia", "precio", "createdAt", "updatedAt"
+      INSERT INTO "ListaPrecio" ("marca", "referencia", "precio", "comisionVendedor", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, NOW(), NOW())
+      RETURNING "id", "marca", "referencia", "precio", "comisionVendedor", "createdAt", "updatedAt"
     `,
     params.marca,
     params.referencia,
-    params.precio
+    params.precio,
+    params.comisionVendedor
   )) as Array<Record<string, unknown>>;
 
   return rows[0] ? toPriceListItem(rows[0]) : null;
@@ -150,6 +175,7 @@ export async function actualizarListaPrecio(params: {
   marca: string;
   referencia: string;
   precio: number;
+  comisionVendedor: number;
 }) {
   await ensurePriceListSchema();
 
@@ -160,14 +186,16 @@ export async function actualizarListaPrecio(params: {
         "marca" = $2,
         "referencia" = $3,
         "precio" = $4,
+        "comisionVendedor" = $5,
         "updatedAt" = NOW()
       WHERE "id" = $1
-      RETURNING "id", "marca", "referencia", "precio", "createdAt", "updatedAt"
+      RETURNING "id", "marca", "referencia", "precio", "comisionVendedor", "createdAt", "updatedAt"
     `,
     params.id,
     params.marca,
     params.referencia,
-    params.precio
+    params.precio,
+    params.comisionVendedor
   )) as Array<Record<string, unknown>>;
 
   return rows[0] ? toPriceListItem(rows[0]) : null;

@@ -8,6 +8,7 @@ type PriceListItem = {
   marca: string;
   referencia: string;
   precio: number;
+  comisionVendedor: number;
   updatedAt: string;
 };
 
@@ -15,12 +16,14 @@ type FormState = {
   marca: string;
   referencia: string;
   precio: string;
+  comisionVendedor: string;
 };
 
 const emptyForm: FormState = {
   marca: "",
   referencia: "",
   precio: "",
+  comisionVendedor: "",
 };
 
 function formatoPesos(value: number) {
@@ -106,6 +109,8 @@ export default function ListaPreciosAdminWorkspace() {
     const referencia = form.referencia.trim();
     const precio = limpiarPrecioInput(form.precio);
 
+    const comisionVendedor = limpiarPrecioInput(form.comisionVendedor);
+
     if (!marca || !referencia || !precio) {
       setMensaje("Completa marca, referencia y precio");
       setMensajeTipo("error");
@@ -126,6 +131,7 @@ export default function ListaPreciosAdminWorkspace() {
           marca,
           referencia,
           precio,
+          comisionVendedor,
         }),
       });
 
@@ -155,6 +161,7 @@ export default function ListaPreciosAdminWorkspace() {
       marca: item.marca,
       referencia: item.referencia,
       precio: String(Math.round(Number(item.precio || 0))),
+      comisionVendedor: String(Math.round(Number(item.comisionVendedor || 0))),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -216,11 +223,11 @@ export default function ListaPreciosAdminWorkspace() {
               </div>
 
               <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                LISTA DE PRECIOS
+                PRECIOS Y COMISIONES
               </h1>
 
               <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                Mantiene actualizada la informacion que consultan los vendedores.
+                Mantiene actualizadas las referencias, precios y comisiones que alimentan la bolsa del vendedor.
               </p>
             </div>
 
@@ -277,7 +284,7 @@ export default function ListaPreciosAdminWorkspace() {
 
           <form
             onSubmit={(event) => void guardarPrecio(event)}
-            className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.2fr_220px_180px]"
+            className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.2fr_180px_180px_180px]"
           >
             <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
               MARCA
@@ -312,6 +319,22 @@ export default function ListaPreciosAdminWorkspace() {
               />
             </label>
 
+            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+              COMISION
+              <input
+                value={form.comisionVendedor}
+                onChange={(event) =>
+                  setField(
+                    "comisionVendedor",
+                    limpiarPrecioInput(event.target.value)
+                  )
+                }
+                inputMode="numeric"
+                placeholder="50000"
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+              />
+            </label>
+
             <div className="flex flex-col justify-end">
               <button
                 type="submit"
@@ -335,7 +358,7 @@ export default function ListaPreciosAdminWorkspace() {
                 Catalogo
               </div>
               <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                {items.length} precio{items.length === 1 ? "" : "s"}
+                {items.length} referencia{items.length === 1 ? "" : "s"}
               </h2>
             </div>
 
@@ -348,10 +371,11 @@ export default function ListaPreciosAdminWorkspace() {
           </div>
 
           <div className="mt-6 overflow-x-auto rounded-[24px] border border-slate-200">
-            <div className="grid min-w-[820px] grid-cols-[1fr_1.25fr_140px_190px] bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
+            <div className="grid min-w-[960px] grid-cols-[1fr_1.2fr_140px_140px_190px] bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
               <span>Marca</span>
               <span>Referencia</span>
               <span className="text-right">Precio</span>
+              <span className="text-right">Comision</span>
               <span className="text-right">Acciones</span>
             </div>
 
@@ -368,7 +392,7 @@ export default function ListaPreciosAdminWorkspace() {
                 {itemsFiltrados.map((item) => (
                   <div
                     key={item.id}
-                    className="grid min-w-[820px] grid-cols-[1fr_1.25fr_140px_190px] items-center gap-3 px-4 py-4 text-sm"
+                    className="grid min-w-[960px] grid-cols-[1fr_1.2fr_140px_140px_190px] items-center gap-3 px-4 py-4 text-sm"
                   >
                     <span className="min-w-0 truncate font-black uppercase text-slate-950">
                       {item.marca}
@@ -378,6 +402,9 @@ export default function ListaPreciosAdminWorkspace() {
                     </span>
                     <span className="text-right font-black text-emerald-700">
                       {formatoPesos(item.precio)}
+                    </span>
+                    <span className="text-right font-black text-amber-700">
+                      {formatoPesos(item.comisionVendedor)}
                     </span>
                     <span className="flex justify-end gap-2">
                       <button

@@ -18,6 +18,7 @@ function serializeItem(item: PriceListItem) {
     marca: item.marca,
     referencia: item.referencia,
     precio: item.precio,
+    comisionVendedor: item.comisionVendedor,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
   };
@@ -40,6 +41,12 @@ function validarDatos(body: Record<string, unknown>) {
   const marca = normalizarTextoListaPrecio(body.marca);
   const referencia = normalizarTextoListaPrecio(body.referencia);
   const precio = normalizarPrecioLista(body.precio);
+  const comisionVendedor =
+    body.comisionVendedor === undefined ||
+    body.comisionVendedor === null ||
+    String(body.comisionVendedor).trim() === ""
+      ? 0
+      : normalizarPrecioLista(body.comisionVendedor);
 
   if (!marca) {
     return { ok: false as const, error: "La marca es obligatoria" };
@@ -53,7 +60,17 @@ function validarDatos(body: Record<string, unknown>) {
     return { ok: false as const, error: "El precio es obligatorio" };
   }
 
-  return { ok: true as const, data: { marca, referencia, precio } };
+  if (!Number.isFinite(comisionVendedor) || comisionVendedor < 0) {
+    return {
+      ok: false as const,
+      error: "La comision del vendedor debe ser un valor valido",
+    };
+  }
+
+  return {
+    ok: true as const,
+    data: { marca, referencia, precio, comisionVendedor },
+  };
 }
 
 export async function GET() {

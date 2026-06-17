@@ -19,6 +19,7 @@ import {
   type CommercialRankingItem,
 } from "@/lib/dashboard-commercial-summary";
 import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
+import { getVendorEarningsSummary } from "@/lib/vendor-earnings";
 
 type ModuleTone = "slate" | "emerald" | "sky" | "amber" | "violet" | "rose";
 type ActionTone = "primary" | "secondary" | "danger";
@@ -358,6 +359,99 @@ function CommercialRankingSection({
   );
 }
 
+function VendorEarningsSection({
+  totalGanado,
+  totalVentasConComision,
+  totalReferenciasConComision,
+  recientes,
+}: {
+  totalGanado: number;
+  totalVentasConComision: number;
+  totalReferenciasConComision: number;
+  recientes: Array<{
+    id: number;
+    referencia: string;
+    clienteNombre: string;
+    valorComision: number;
+    createdAt: Date;
+  }>;
+}) {
+  return (
+    <section className="mt-6 rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
+            Bolsa de ganancias
+          </div>
+          <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+            Tu acumulado por referencias
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+            Este total se calcula con la comision configurada por administracion
+            para cada referencia que registras.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <MetricCard
+          label="Total acumulado"
+          value={formatoPesos(totalGanado)}
+          detail="Suma de las comisiones asociadas a tus ventas registradas."
+          valueClassName="text-emerald-600"
+        />
+        <MetricCard
+          label="Ventas con comision"
+          value={String(totalVentasConComision)}
+          detail="Registros que ya coinciden con una referencia comisionable."
+        />
+        <MetricCard
+          label="Referencias activas"
+          value={String(totalReferenciasConComision)}
+          detail="Referencias diferentes que hoy te estan generando ganancia."
+        />
+      </div>
+
+      <div className="mt-6 rounded-[24px] border border-slate-200">
+        <div className="grid min-w-[620px] grid-cols-[1.4fr_1.3fr_150px_160px] gap-3 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
+          <span>Cliente</span>
+          <span>Referencia</span>
+          <span className="text-right">Ganancia</span>
+          <span className="text-right">Fecha</span>
+        </div>
+
+        {recientes.length === 0 ? (
+          <div className="px-4 py-8 text-sm font-semibold text-slate-500">
+            Aun no tienes ventas con comision acumulada.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {recientes.map((item) => (
+              <div
+                key={item.id}
+                className="grid min-w-[620px] grid-cols-[1.4fr_1.3fr_150px_160px] items-center gap-3 px-4 py-4 text-sm"
+              >
+                <span className="min-w-0 truncate font-bold text-slate-950">
+                  {item.clienteNombre}
+                </span>
+                <span className="min-w-0 truncate font-semibold text-slate-700">
+                  {item.referencia}
+                </span>
+                <span className="text-right font-black text-amber-700">
+                  {formatoPesos(item.valorComision)}
+                </span>
+                <span className="text-right text-xs font-semibold text-slate-500">
+                  {item.createdAt.toLocaleDateString("es-CO")}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ModulePanel({
   title,
   eyebrow,
@@ -607,6 +701,9 @@ export default async function DashboardPage() {
         ]);
   const mensajeBienvenidaVendedor = esPerfilRegistroVenta(session.perfilTipo)
     ? await getVendorWelcomeMessage()
+    : null;
+  const resumenGananciasVendedor = esPerfilRegistroVenta(session.perfilTipo)
+    ? await getVendorEarningsSummary(Number(session.perfilId || 0))
     : null;
   const financieraDestacada =
     resumenComercialMensual?.topFinancieras[0] ?? null;
@@ -1008,6 +1105,17 @@ export default async function DashboardPage() {
           <div className="mt-6">
             <DashboardUtilityGate coverageLabel={sedeLabel} requiereClave={!esAdmin} />
           </div>
+        )}
+
+        {resumenGananciasVendedor && (
+          <VendorEarningsSection
+            totalGanado={resumenGananciasVendedor.totalGanado}
+            totalVentasConComision={resumenGananciasVendedor.totalVentasConComision}
+            totalReferenciasConComision={
+              resumenGananciasVendedor.totalReferenciasConComision
+            }
+            recientes={resumenGananciasVendedor.recientes}
+          />
         )}
 
         <section className="mt-6">
