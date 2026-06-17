@@ -385,64 +385,44 @@ function VendorEarningsSection({
     "\u{1F4CA} Hoy observas c\u00f3mo otros recogen las recompensas.\n\n\u{1F4AA} Es momento de redoblar esfuerzos, subir tu nivel e ingresar al TOP 10.\n\n\u{1F4B0} La Bolsa de Ganancias est\u00e1 reservada para quienes generan resultados.";
 
   return (
-    <section className="mt-6 rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div
-            className={[
-              "inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]",
-              bolsaHabilitada
-                ? "border border-amber-200 bg-amber-50 text-amber-700"
-                : "border border-rose-200 bg-rose-50 text-rose-700",
-            ].join(" ")}
-          >
-            Bolsa de ganancias
-          </div>
-          <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-            {bolsaHabilitada ? tituloTop10 : tituloFueraTop10}
-          </h2>
-          <p className="mt-2 max-w-3xl whitespace-pre-line text-sm leading-6 text-slate-500">
-            {bolsaHabilitada ? mensajeTop10 : mensajeFueraTop10}
-          </p>
-        </div>
-
-        <div className="rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-          Periodo: {periodoLabel}
-        </div>
-      </div>
-
+    <section className="mt-6 overflow-hidden rounded-[28px] border border-[#e9e3d8] bg-white shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
       {bolsaHabilitada ? (
         <>
-          <div className="relative mt-6 max-w-[380px] overflow-hidden rounded-[28px] border border-[#eadfce] bg-[#130707] shadow-[0_20px_60px_rgba(15,23,42,0.14)] lg:ml-auto">
-            <Image
-              src="/branding/bolsa-ganancias-top10.png"
-              alt="Bolsa de ganancias Conectamos"
-              width={1280}
-              height={1280}
-              className="h-auto w-full"
-            />
+          <div className="grid gap-6 p-5 sm:p-7 lg:p-8 xl:grid-cols-[minmax(0,1fr)_230px] xl:items-center">
+            <div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="inline-flex w-fit rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
+                  Bolsa de ganancias
+                </div>
 
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 via-black/32 to-transparent px-5 py-5 sm:px-7">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/75">
-                    Programa del mes
-                  </p>
-                  <p className="mt-2 text-lg font-black tracking-tight text-white sm:text-xl">
-                    {tituloTop10}
-                  </p>
-                  <p className="mt-2 max-w-2xl whitespace-pre-line text-xs font-semibold leading-5 text-white/88 sm:text-sm">
-                    {mensajeTop10}
-                  </p>
+                <div className="w-fit rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Periodo: {periodoLabel}
                 </div>
-                <div className="rounded-full bg-emerald-400 px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-950">
-                  Top 10 activo
-                </div>
+              </div>
+
+              <h2 className="mt-5 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+                {tituloTop10}
+              </h2>
+              <p className="mt-3 max-w-2xl whitespace-pre-line text-sm leading-7 text-slate-600 sm:text-base">
+                {mensajeTop10}
+              </p>
+            </div>
+
+            <div className="mx-auto w-full max-w-[230px] overflow-hidden rounded-[24px] border border-[#eadfce] bg-[#130707] shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+              <div className="relative aspect-[0.9] w-full">
+                <Image
+                  src="/branding/bolsa-ganancias-top10.png"
+                  alt="Bolsa de ganancias Conectamos"
+                  fill
+                  sizes="230px"
+                  className="object-cover"
+                  priority
+                />
               </div>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 border-t border-[#ede6db] bg-[#fbfaf6] p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
               label="Total acumulado"
               value={formatoPesos(totalGanado)}
@@ -467,7 +447,17 @@ function VendorEarningsSection({
           </div>
         </>
       ) : (
-        <>
+        <div className="p-5 sm:p-7 lg:p-8">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="inline-flex w-fit rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-rose-700">
+              Bolsa de ganancias
+            </div>
+
+            <div className="w-fit rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              Periodo: {periodoLabel}
+            </div>
+          </div>
+
           <div className="mt-6 rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-5 text-rose-900 shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
             <p className="text-2xl font-black tracking-tight text-rose-700">
               {tituloFueraTop10}
@@ -476,7 +466,7 @@ function VendorEarningsSection({
               {mensajeFueraTop10}
             </p>
           </div>
-        </>
+        </div>
       )}
     </section>
   );
