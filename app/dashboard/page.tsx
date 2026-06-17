@@ -396,7 +396,7 @@ function VendorEarningsSection({
                 </div>
 
                 <div className="w-fit rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Periodo: {periodoLabel}
+                  Hoy: {periodoLabel}
                 </div>
               </div>
 
@@ -426,23 +426,23 @@ function VendorEarningsSection({
             <MetricCard
               label="Total acumulado"
               value={formatoPesos(totalGanado)}
-              detail="Comisiones ya sumadas a tu bolsa durante este periodo."
+              detail="Comisiones ya sumadas a tu bolsa hoy."
               valueClassName="text-emerald-600"
             />
             <MetricCard
               label="Ventas con recompensa"
               value={String(totalVentasConComision)}
-              detail="Ventas de este periodo que ya sumaron comision."
+              detail="Ventas de hoy que ya sumaron comision."
             />
             <MetricCard
               label="Referencias con comision"
               value={String(totalReferenciasConComision)}
-              detail="Referencias diferentes de este periodo que ya pagaron comision."
+              detail="Referencias diferentes de hoy que ya pagaron comision."
             />
             <MetricCard
               label="Puesto actual"
               value={puestoActual ? `#${puestoActual}` : "Sin puesto"}
-              detail={`Llevas ${ventasMes} venta${ventasMes === 1 ? "" : "s"} en el periodo.`}
+              detail={`Llevas ${ventasMes} venta${ventasMes === 1 ? "" : "s"} en el mes.`}
             />
           </div>
         </>
@@ -454,7 +454,7 @@ function VendorEarningsSection({
             </div>
 
             <div className="w-fit rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Periodo: {periodoLabel}
+              Hoy: {periodoLabel}
             </div>
           </div>
 

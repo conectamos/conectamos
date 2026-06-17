@@ -8,6 +8,7 @@ import {
   getBogotaDateKey,
   getBogotaMonthRangeFromInput,
   getCurrentBogotaMonthRange,
+  getTodayBogotaRange,
 } from "@/lib/ventas-utils";
 
 const BOLSA_ESTADO_HABILITADA = "TOP10_HABILITADA";
@@ -515,7 +516,7 @@ export async function getVendorEarningsSummary(
       puestoActual: null,
       ventasMes: 0,
       mensajeEstado: "FUERA DEL TOP 10, debe esforzarse mas",
-      periodoLabel: getCurrentBogotaMonthRange().label,
+      periodoLabel: getTodayBogotaRange().label,
       totalGanado: 0,
       totalVentasConComision: 0,
       totalReferenciasConComision: 0,
@@ -523,7 +524,8 @@ export async function getVendorEarningsSummary(
     };
   }
 
-  const { period, records, ranking } = await ensureCurrentMonthRewardSnapshots();
+  const todayRange = getTodayBogotaRange();
+  const { records, ranking } = await ensureCurrentMonthRewardSnapshots();
   const rankingEntry = ranking.find((item) => item.perfilId === perfilVendedorId) || null;
   const puestoActual = rankingEntry
     ? ranking.findIndex((item) => item.perfilId === perfilVendedorId) + 1
@@ -533,6 +535,8 @@ export async function getVendorEarningsSummary(
     .filter(
       (record) =>
         record.perfilVendedorId === perfilVendedorId &&
+        record.createdAt >= todayRange.start &&
+        record.createdAt < todayRange.end &&
         record.bolsaGananciaHabilitada &&
         toNumber(record.bolsaGananciaValor) > 0
     )
@@ -559,7 +563,7 @@ export async function getVendorEarningsSummary(
     mensajeEstado: bolsaHabilitada
       ? "SI ESTAS EN EL TOP 10, tu bolsa sigue habilitada"
       : "FUERA DEL TOP 10, debe esforzarse mas",
-    periodoLabel: period.label,
+    periodoLabel: todayRange.label,
     totalGanado,
     totalVentasConComision: rewardedRecords.length,
     totalReferenciasConComision: referenciasConComision.size,
