@@ -113,6 +113,10 @@ CREATE TABLE IF NOT EXISTS "RegistroVendedorVenta" (
   "firmaClienteDataUrl" TEXT,
   "fotoEntregaDataUrl" TEXT,
   "confirmacionCliente" BOOLEAN NOT NULL DEFAULT false,
+  "bolsaGananciaHabilitada" BOOLEAN NOT NULL DEFAULT false,
+  "bolsaGananciaValor" DECIMAL(12,2),
+  "bolsaGananciaEstado" TEXT,
+  "bolsaGananciaEvaluadaEn" TIMESTAMP(3),
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -142,7 +146,11 @@ ALTER TABLE "RegistroVendedorVenta"
   ADD COLUMN IF NOT EXISTS "eliminadoPor" TEXT,
   ADD COLUMN IF NOT EXISTS "firmaClienteDataUrl" TEXT,
   ADD COLUMN IF NOT EXISTS "fotoEntregaDataUrl" TEXT,
-  ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
+  ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA',
+  ADD COLUMN IF NOT EXISTS "bolsaGananciaHabilitada" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "bolsaGananciaValor" DECIMAL(12,2),
+  ADD COLUMN IF NOT EXISTS "bolsaGananciaEstado" TEXT,
+  ADD COLUMN IF NOT EXISTS "bolsaGananciaEvaluadaEn" TIMESTAMP(3);
 
 ALTER TABLE "Inventario"
   ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';

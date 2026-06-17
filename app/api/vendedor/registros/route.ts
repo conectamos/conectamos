@@ -39,6 +39,7 @@ import {
   normalizarWhatsappRegistro,
   validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
+import { syncVendorRewardSnapshotForSale } from "@/lib/vendor-earnings";
 
 const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
 const LISTA_NEGRA_ERROR = "CEDULA REPORTADA POR FRAUDE";
@@ -1297,7 +1298,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: errorFinserpay }, { status: 400 });
     }
 
-    await prisma.registroVendedorVenta.create({
+    const creado = await prisma.registroVendedorVenta.create({
       data: {
         perfilVendedorId: access.session.perfilId,
         sedeId: sedeRegistro.id,
@@ -1311,6 +1312,13 @@ export async function POST(req: Request) {
           access.session.perfilNombre ??
           access.session.nombre,
       },
+      select: {
+        id: true,
+      },
+    });
+
+    await syncVendorRewardSnapshotForSale(creado.id).catch((error) => {
+      console.error("ERROR SYNC BOLSA GANANCIA:", error);
     });
 
     return NextResponse.json({
@@ -1543,6 +1551,10 @@ export async function PATCH(req: Request) {
           access.session.nombre,
       },
       select: REGISTRO_DETALLE_SELECT,
+    });
+
+    await syncVendorRewardSnapshotForSale(id).catch((error) => {
+      console.error("ERROR RESYNC BOLSA GANANCIA:", error);
     });
 
     return NextResponse.json({

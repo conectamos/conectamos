@@ -360,11 +360,21 @@ function CommercialRankingSection({
 }
 
 function VendorEarningsSection({
+  bolsaHabilitada,
+  puestoActual,
+  ventasMes,
+  mensajeEstado,
+  periodoLabel,
   totalGanado,
   totalVentasConComision,
   totalReferenciasConComision,
   recientes,
 }: {
+  bolsaHabilitada: boolean;
+  puestoActual: number | null;
+  ventasMes: number;
+  mensajeEstado: string;
+  periodoLabel: string;
   totalGanado: number;
   totalVentasConComision: number;
   totalReferenciasConComision: number;
@@ -380,74 +390,122 @@ function VendorEarningsSection({
     <section className="mt-6 rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
+          <div
+            className={[
+              "inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]",
+              bolsaHabilitada
+                ? "border border-amber-200 bg-amber-50 text-amber-700"
+                : "border border-rose-200 bg-rose-50 text-rose-700",
+            ].join(" ")}
+          >
             Bolsa de ganancias
           </div>
           <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-            Tu acumulado por referencias
+            {bolsaHabilitada
+              ? "Bolsa habilitada para recompensas"
+              : "FUERA DEL TOP 10, debe esforzarse mas"}
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Este total se calcula con la comision configurada por administracion
-            para cada referencia que registras.
+            {bolsaHabilitada
+              ? "Solo los vendedores del Top 10 del mes siguen sumando recompensas por las referencias con comision configurada."
+              : "Tu bolsa queda bloqueada y no suma nuevas recompensas hasta volver a entrar al Top 10 del mes."}
           </p>
         </div>
-      </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <MetricCard
-          label="Total acumulado"
-          value={formatoPesos(totalGanado)}
-          detail="Suma de las comisiones asociadas a tus ventas registradas."
-          valueClassName="text-emerald-600"
-        />
-        <MetricCard
-          label="Ventas con comision"
-          value={String(totalVentasConComision)}
-          detail="Registros que ya coinciden con una referencia comisionable."
-        />
-        <MetricCard
-          label="Referencias activas"
-          value={String(totalReferenciasConComision)}
-          detail="Referencias diferentes que hoy te estan generando ganancia."
-        />
-      </div>
-
-      <div className="mt-6 rounded-[24px] border border-slate-200">
-        <div className="grid min-w-[620px] grid-cols-[1.4fr_1.3fr_150px_160px] gap-3 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
-          <span>Cliente</span>
-          <span>Referencia</span>
-          <span className="text-right">Ganancia</span>
-          <span className="text-right">Fecha</span>
+        <div className="rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+          Periodo: {periodoLabel}
         </div>
-
-        {recientes.length === 0 ? (
-          <div className="px-4 py-8 text-sm font-semibold text-slate-500">
-            Aun no tienes ventas con comision acumulada.
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {recientes.map((item) => (
-              <div
-                key={item.id}
-                className="grid min-w-[620px] grid-cols-[1.4fr_1.3fr_150px_160px] items-center gap-3 px-4 py-4 text-sm"
-              >
-                <span className="min-w-0 truncate font-bold text-slate-950">
-                  {item.clienteNombre}
-                </span>
-                <span className="min-w-0 truncate font-semibold text-slate-700">
-                  {item.referencia}
-                </span>
-                <span className="text-right font-black text-amber-700">
-                  {formatoPesos(item.valorComision)}
-                </span>
-                <span className="text-right text-xs font-semibold text-slate-500">
-                  {item.createdAt.toLocaleDateString("es-CO")}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
+
+      {bolsaHabilitada ? (
+        <>
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              label="Total acumulado"
+              value={formatoPesos(totalGanado)}
+              detail="Comisiones ya sumadas a tu bolsa durante este mes."
+              valueClassName="text-emerald-600"
+            />
+            <MetricCard
+              label="Ventas con recompensa"
+              value={String(totalVentasConComision)}
+              detail="Registros del Top 10 que ya generaron ganancia."
+            />
+            <MetricCard
+              label="Referencias activas"
+              value={String(totalReferenciasConComision)}
+              detail="Referencias diferentes que hoy te estan pagando comision."
+            />
+            <MetricCard
+              label="Puesto actual"
+              value={puestoActual ? `#${puestoActual}` : "Sin puesto"}
+              detail={`Llevas ${ventasMes} venta${ventasMes === 1 ? "" : "s"} en el periodo.`}
+            />
+          </div>
+
+          <div className="mt-6 rounded-[24px] border border-slate-200">
+            <div className="grid min-w-[620px] grid-cols-[1.4fr_1.3fr_150px_160px] gap-3 bg-slate-950 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
+              <span>Cliente</span>
+              <span>Referencia</span>
+              <span className="text-right">Ganancia</span>
+              <span className="text-right">Fecha</span>
+            </div>
+
+            {recientes.length === 0 ? (
+              <div className="px-4 py-8 text-sm font-semibold text-slate-500">
+                Aun no tienes ventas con recompensa acumulada.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {recientes.map((item) => (
+                  <div
+                    key={item.id}
+                    className="grid min-w-[620px] grid-cols-[1.4fr_1.3fr_150px_160px] items-center gap-3 px-4 py-4 text-sm"
+                  >
+                    <span className="min-w-0 truncate font-bold text-slate-950">
+                      {item.clienteNombre}
+                    </span>
+                    <span className="min-w-0 truncate font-semibold text-slate-700">
+                      {item.referencia}
+                    </span>
+                    <span className="text-right font-black text-amber-700">
+                      {formatoPesos(item.valorComision)}
+                    </span>
+                    <span className="text-right text-xs font-semibold text-slate-500">
+                      {item.createdAt.toLocaleDateString("es-CO")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <MetricCard
+              label="Estado actual"
+              value={puestoActual ? `#${puestoActual}` : "Sin puesto"}
+              detail={mensajeEstado}
+              valueClassName="text-rose-600"
+            />
+            <MetricCard
+              label="Ventas del mes"
+              value={String(ventasMes)}
+              detail="Tu posicion se calcula con los registros del mes actual."
+            />
+            <MetricCard
+              label="Acumulado congelado"
+              value={formatoPesos(totalGanado)}
+              detail="Este valor no suma nuevas recompensas hasta volver al Top 10."
+            />
+          </div>
+
+          <div className="mt-6 rounded-[24px] border border-dashed border-rose-200 bg-rose-50 px-5 py-5 text-sm font-semibold text-rose-800">
+            {mensajeEstado}. Debes volver a entrar al Top 10 para reactivar la bolsa de ganancias.
+          </div>
+        </>
+      )}
     </section>
   );
 }
@@ -1109,6 +1167,11 @@ export default async function DashboardPage() {
 
         {resumenGananciasVendedor && (
           <VendorEarningsSection
+            bolsaHabilitada={resumenGananciasVendedor.bolsaHabilitada}
+            puestoActual={resumenGananciasVendedor.puestoActual}
+            ventasMes={resumenGananciasVendedor.ventasMes}
+            mensajeEstado={resumenGananciasVendedor.mensajeEstado}
+            periodoLabel={resumenGananciasVendedor.periodoLabel}
             totalGanado={resumenGananciasVendedor.totalGanado}
             totalVentasConComision={resumenGananciasVendedor.totalVentasConComision}
             totalReferenciasConComision={

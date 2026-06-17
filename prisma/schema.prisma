@@ -256,6 +256,10 @@ model RegistroVendedorVenta {
   cedulaReversoDataUrl            String?
   clienteSinCedulaFisica          Boolean         @default(false)
   confirmacionCliente             Boolean         @default(false)
+  bolsaGananciaHabilitada         Boolean         @default(false)
+  bolsaGananciaValor              Decimal?        @db.Decimal(12, 2)
+  bolsaGananciaEstado             String?
+  bolsaGananciaEvaluadaEn         DateTime?
   createdAt                       DateTime        @default(now())
   updatedAt                       DateTime        @updatedAt
 

@@ -146,6 +146,10 @@ async function runEnsureVendorProfilesSchema() {
       "cedulaReversoDataUrl" TEXT,
       "clienteSinCedulaFisica" BOOLEAN NOT NULL DEFAULT false,
       "confirmacionCliente" BOOLEAN NOT NULL DEFAULT false,
+      "bolsaGananciaHabilitada" BOOLEAN NOT NULL DEFAULT false,
+      "bolsaGananciaValor" DECIMAL(12,2),
+      "bolsaGananciaEstado" TEXT,
+      "bolsaGananciaEvaluadaEn" TIMESTAMP(3),
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "RegistroVendedorVenta_pkey" PRIMARY KEY ("id")
@@ -187,7 +191,11 @@ async function runEnsureVendorProfilesSchema() {
       ADD COLUMN IF NOT EXISTS "cedulaFrenteDataUrl" TEXT,
       ADD COLUMN IF NOT EXISTS "cedulaReversoDataUrl" TEXT,
       ADD COLUMN IF NOT EXISTS "clienteSinCedulaFisica" BOOLEAN NOT NULL DEFAULT false,
-      ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
+      ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA',
+      ADD COLUMN IF NOT EXISTS "bolsaGananciaHabilitada" BOOLEAN NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "bolsaGananciaValor" DECIMAL(12,2),
+      ADD COLUMN IF NOT EXISTS "bolsaGananciaEstado" TEXT,
+      ADD COLUMN IF NOT EXISTS "bolsaGananciaEvaluadaEn" TIMESTAMP(3);
   `);
 
   await prisma.$executeRawUnsafe(`
