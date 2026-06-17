@@ -46,6 +46,17 @@ type RankingEntry = {
   total: number;
 };
 
+type CommissionCandidate = {
+  claveExacta: string;
+  claveBusqueda: string;
+  comision: number;
+};
+
+type CommissionLookup = {
+  exactMap: Map<string, number>;
+  candidates: CommissionCandidate[];
+};
+
 export type VendorEarningsItem = {
   id: number;
   referencia: string;
@@ -115,24 +126,93 @@ function buildRankingEntries(
     .sort(sortRankingEntries);
 }
 
-function buildCommissionMap(
+function normalizarClaveBusquedaReferencia(value: unknown) {
+  return normalizarClaveReferenciaListaPrecio(value)
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchesReferenceCandidate(
+  referenciaVenta: string,
+  referenciaConfigurada: string
+) {
+  if (!referenciaVenta || !referenciaConfigurada) {
+    return false;
+  }
+
+  return (
+    referenciaVenta === referenciaConfigurada ||
+    referenciaVenta.startsWith(`${referenciaConfigurada} `) ||
+    referenciaVenta.endsWith(` ${referenciaConfigurada}`) ||
+    referenciaVenta.includes(` ${referenciaConfigurada} `)
+  );
+}
+
+function buildCommissionLookup(
   items: Awaited<ReturnType<typeof obtenerListaPrecios>>
 ) {
-  const commissionMap = new Map<string, number>();
+  const exactMap = new Map<string, number>();
+  const searchMap = new Map<string, CommissionCandidate>();
 
   for (const item of [...items].sort(
     (a, b) => a.updatedAt.getTime() - b.updatedAt.getTime()
   )) {
-    const clave = normalizarClaveReferenciaListaPrecio(item.referencia);
+    const claveExacta = normalizarClaveReferenciaListaPrecio(item.referencia);
+    const claveBusqueda = normalizarClaveBusquedaReferencia(item.referencia);
 
-    if (!clave) {
+    if (!claveExacta) {
       continue;
     }
 
-    commissionMap.set(clave, Number(item.comisionVendedor || 0));
+    exactMap.set(claveExacta, Number(item.comisionVendedor || 0));
+
+    if (!claveBusqueda) {
+      continue;
+    }
+
+    searchMap.set(claveBusqueda, {
+      claveExacta,
+      claveBusqueda,
+      comision: Number(item.comisionVendedor || 0),
+    });
   }
 
-  return commissionMap;
+  return {
+    exactMap,
+    candidates: Array.from(searchMap.values()).sort((a, b) => {
+      if (b.claveBusqueda.length !== a.claveBusqueda.length) {
+        return b.claveBusqueda.length - a.claveBusqueda.length;
+      }
+
+      return a.claveBusqueda.localeCompare(b.claveBusqueda, "es");
+    }),
+  };
+}
+
+function resolveCommissionForReference(
+  referenciaEquipo: string | null | undefined,
+  lookup: CommissionLookup
+) {
+  const claveExacta = normalizarClaveReferenciaListaPrecio(referenciaEquipo);
+
+  if (claveExacta && lookup.exactMap.has(claveExacta)) {
+    return Number(lookup.exactMap.get(claveExacta) || 0);
+  }
+
+  const claveBusqueda = normalizarClaveBusquedaReferencia(referenciaEquipo);
+
+  if (!claveBusqueda) {
+    return 0;
+  }
+
+  for (const candidate of lookup.candidates) {
+    if (matchesReferenceCandidate(claveBusqueda, candidate.claveBusqueda)) {
+      return candidate.comision;
+    }
+  }
+
+  return 0;
 }
 
 function hasSnapshotChanged(
@@ -152,18 +232,16 @@ function hasSnapshotChanged(
 function evaluateSnapshotForRecord(params: {
   record: Pick<RewardMonthRecord, "id" | "perfilVendedorId" | "referenciaEquipo">;
   ranking: RankingEntry[];
-  commissionMap: Map<string, number>;
+  commissionLookup: CommissionLookup;
 }) {
   const puestoActual =
     params.ranking.findIndex((item) => item.perfilId === params.record.perfilVendedorId) +
     1;
   const estaEnTop10 = puestoActual > 0 && puestoActual <= 10;
-  const claveReferencia = normalizarClaveReferenciaListaPrecio(
-    params.record.referenciaEquipo
+  const valorComision = resolveCommissionForReference(
+    params.record.referenciaEquipo,
+    params.commissionLookup
   );
-  const valorComision = claveReferencia
-    ? Number(params.commissionMap.get(claveReferencia) || 0)
-    : 0;
 
   if (!estaEnTop10) {
     return {
@@ -263,7 +341,7 @@ async function ensureCurrentMonthRewardSnapshots() {
     return { period, records, ranking: [] as RankingEntry[] };
   }
 
-  const commissionMap = buildCommissionMap(await obtenerListaPrecios());
+  const commissionLookup = buildCommissionLookup(await obtenerListaPrecios());
   const counts = new Map<number, number>();
   const names = new Map<number, string>();
   const updates: RewardSnapshotUpdate[] = [];
@@ -282,7 +360,7 @@ async function ensureCurrentMonthRewardSnapshots() {
     const snapshot = evaluateSnapshotForRecord({
       record,
       ranking: buildRankingEntries(counts, names),
-      commissionMap,
+      commissionLookup,
     });
 
     if (!record.bolsaGananciaEvaluadaEn || hasSnapshotChanged(record, snapshot)) {
@@ -391,7 +469,7 @@ export async function syncVendorRewardSnapshotForSale(saleId: number) {
     return null;
   }
 
-  const commissionMap = buildCommissionMap(await obtenerListaPrecios());
+  const commissionLookup = buildCommissionLookup(await obtenerListaPrecios());
   const counts = new Map<number, number>();
   const names = new Map<number, string>();
 
@@ -410,7 +488,7 @@ export async function syncVendorRewardSnapshotForSale(saleId: number) {
     const snapshot = evaluateSnapshotForRecord({
       record: item,
       ranking: buildRankingEntries(counts, names),
-      commissionMap,
+      commissionLookup,
     });
 
     await prisma.registroVendedorVenta.update({
