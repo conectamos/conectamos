@@ -426,18 +426,18 @@ function VendorEarningsSection({
             <MetricCard
               label="Total acumulado"
               value={formatoPesos(totalGanado)}
-              detail="Comisiones ya sumadas a tu bolsa durante este mes."
+              detail="Comisiones ya sumadas a tu bolsa durante este periodo."
               valueClassName="text-emerald-600"
             />
             <MetricCard
               label="Ventas con recompensa"
               value={String(totalVentasConComision)}
-              detail="Registros del Top 10 que ya generaron ganancia."
+              detail="Ventas de este periodo que ya sumaron comision."
             />
             <MetricCard
-              label="Referencias activas"
+              label="Referencias con comision"
               value={String(totalReferenciasConComision)}
-              detail="Referencias diferentes que hoy te estan pagando comision."
+              detail="Referencias diferentes de este periodo que ya pagaron comision."
             />
             <MetricCard
               label="Puesto actual"
