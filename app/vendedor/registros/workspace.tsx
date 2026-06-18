@@ -1523,6 +1523,57 @@ export default function VendedorRegistroWorkspace({
     setFinancieraField(index, field, formatearPesoInput(value));
   };
 
+  const limpiarCreditoAutocompletadoSiCoincide = (
+    index: number,
+    credito?: {
+      creditoAutorizado: number;
+      valorCuota?: number | null;
+      numeroCuotas?: number | null;
+      frecuenciaCuota?: string | null;
+    }
+  ) => {
+    if (!credito || credito.creditoAutorizado <= 0) {
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      financierasDetalle: current.financierasDetalle.map((item, itemIndex) => {
+        if (itemIndex !== index) {
+          return item;
+        }
+
+        if (
+          moneyInputToNumber(item.creditoAutorizado) !==
+          Math.round(credito.creditoAutorizado)
+        ) {
+          return item;
+        }
+
+        const valorCuotaAutocompletado =
+          credito.valorCuota !== null &&
+          credito.valorCuota !== undefined &&
+          moneyInputToNumber(item.valorCuota) === Math.round(credito.valorCuota);
+        const plazoAutocompletado =
+          credito.numeroCuotas !== null &&
+          credito.numeroCuotas !== undefined &&
+          Number(item.numeroCuotas) === credito.numeroCuotas;
+        const frecuenciaAutocompletada =
+          credito.frecuenciaCuota &&
+          normalizePlatformKey(item.frecuenciaCuota) ===
+            normalizePlatformKey(credito.frecuenciaCuota);
+
+        return {
+          ...item,
+          creditoAutorizado: "",
+          valorCuota: valorCuotaAutocompletado ? "" : item.valorCuota,
+          numeroCuotas: plazoAutocompletado ? "" : item.numeroCuotas,
+          frecuenciaCuota: frecuenciaAutocompletada ? "" : item.frecuenciaCuota,
+        };
+      }),
+    }));
+  };
+
   const consultarCreditoPayjoy = async (index: number, imeiValue?: string) => {
     const imei = onlyDigits(imeiValue || form.serialImei, 15);
 
@@ -1550,12 +1601,14 @@ export default function VendedorRegistroWorkspace({
       const data = (await response.json()) as PayJoyCreditoResponse;
 
       if (!response.ok || !data.credito) {
+        const creditoAnterior = payjoyCreditos[index];
+
         setPayjoyCreditos((current) => {
           const next = { ...current };
           delete next[index];
           return next;
         });
-        setFinancieraField(index, "creditoAutorizado", "");
+        limpiarCreditoAutocompletadoSiCoincide(index, creditoAnterior);
         setPayjoyErrores((current) => ({
           ...current,
           [index]:
@@ -1623,12 +1676,14 @@ export default function VendedorRegistroWorkspace({
       const data = (await response.json()) as AloCreditoResponse;
 
       if (!response.ok || !data.credito) {
+        const creditoAnterior = aloCreditos[index];
+
         setAloCreditos((current) => {
           const next = { ...current };
           delete next[index];
           return next;
         });
-        setFinancieraField(index, "creditoAutorizado", "");
+        limpiarCreditoAutocompletadoSiCoincide(index, creditoAnterior);
         setAloErrores((current) => ({
           ...current,
           [index]:
@@ -1715,12 +1770,14 @@ export default function VendedorRegistroWorkspace({
       const data = (await response.json()) as FinserpayCreditoResponse;
 
       if (!response.ok || !data.credito) {
+        const creditoAnterior = finserpayCreditos[index];
+
         setFinserpayCreditos((current) => {
           const next = { ...current };
           delete next[index];
           return next;
         });
-        setFinancieraField(index, "creditoAutorizado", "");
+        limpiarCreditoAutocompletadoSiCoincide(index, creditoAnterior);
         setFinserpayErrores((current) => ({
           ...current,
           [index]:

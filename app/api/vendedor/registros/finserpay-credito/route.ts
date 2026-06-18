@@ -8,6 +8,17 @@ import {
 } from "@/lib/finserpayconsulta";
 import { normalizarImei } from "@/lib/vendor-sale-records";
 
+function esConsultaSinCreditoVigente(error: FinserpayConsultaLookupError) {
+  const mensaje = error.message.toLowerCase();
+
+  return (
+    error.status === 404 ||
+    mensaje.includes("estado 404") ||
+    mensaje.includes("no hay credito activo") ||
+    mensaje.includes("no hay credito vigente")
+  );
+}
+
 async function requireVendor() {
   const session = await getSessionUser();
 
@@ -71,6 +82,16 @@ export async function GET(req: Request) {
     }
 
     if (error instanceof FinserpayConsultaLookupError) {
+      if (esConsultaSinCreditoVigente(error)) {
+        return NextResponse.json(
+          {
+            error:
+              "No hay credito FINSERPAY vigente para este IMEI. Puedes digitar los valores manualmente.",
+          },
+          { status: 404 }
+        );
+      }
+
       return NextResponse.json(
         { error: error.message },
         { status: 502 }

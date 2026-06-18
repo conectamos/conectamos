@@ -997,6 +997,21 @@ async function validarCreditoPayJoy(payload: {
   }
 }
 
+function esFinserpaySinCreditoVigente(error: unknown) {
+  if (!(error instanceof FinserpayConsultaLookupError)) {
+    return false;
+  }
+
+  const mensaje = error.message.toLowerCase();
+
+  return (
+    error.status === 404 ||
+    mensaje.includes("estado 404") ||
+    mensaje.includes("no hay credito activo") ||
+    mensaje.includes("no hay credito vigente")
+  );
+}
+
 async function validarCreditoFinserpay(payload: {
   serialImei: string;
   financierasDetalle: Array<{
@@ -1087,7 +1102,7 @@ async function validarCreditoFinserpay(payload: {
       return "No se puede validar FINSERPAY porque falta configurar FINSERPAYCONSULTA_URL y FINSERPAYCONSULTA_TOKEN en el servidor.";
     }
 
-    if (error instanceof FinserpayConsultaLookupError && error.status === 404) {
+    if (esFinserpaySinCreditoVigente(error)) {
       return null;
     }
 
@@ -1533,6 +1548,12 @@ export async function PATCH(req: Request) {
 
     if (errorPayJoy) {
       return NextResponse.json({ error: errorPayJoy }, { status: 400 });
+    }
+
+    const errorFinserpay = await validarCreditoFinserpay(payload.data);
+
+    if (errorFinserpay) {
+      return NextResponse.json({ error: errorFinserpay }, { status: 400 });
     }
 
     const actualizado = await prisma.registroVendedorVenta.update({
