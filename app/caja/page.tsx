@@ -18,6 +18,20 @@ type CajaMovimiento = {
   };
 };
 
+type CajaResumen = {
+  totalIngresos: number;
+  totalEgresos: number;
+  saldo: number;
+  totalMovimientos: number;
+};
+
+type CajaResponse =
+  | CajaMovimiento[]
+  | {
+      movimientos: CajaMovimiento[];
+      resumen: CajaResumen;
+    };
+
 type SessionUser = {
   id: number;
   nombre: string;
@@ -66,6 +80,7 @@ function metricToneClass(tone: "emerald" | "red" | "slate" | "amber") {
 
 export default function CajaPage() {
   const [movimientos, setMovimientos] = useState<CajaMovimiento[]>([]);
+  const [resumenCaja, setResumenCaja] = useState<CajaResumen | null>(null);
   const [mensaje, setMensaje] = useState("");
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
@@ -113,13 +128,17 @@ export default function CajaPage() {
         params.set("sedeId", sedeFiltroId);
       }
 
+      params.set("resumen", "1");
+      params.set("limit", "300");
+
       const endpoint = params.size
         ? `/api/caja?${params.toString()}`
         : "/api/caja";
 
       const res = await fetch(endpoint, { cache: "no-store" });
-      const data = await res.json();
-      setMovimientos(Array.isArray(data) ? data : []);
+      const data = (await res.json()) as CajaResponse;
+      setMovimientos(Array.isArray(data) ? data : data.movimientos ?? []);
+      setResumenCaja(Array.isArray(data) ? null : data.resumen ?? null);
     } catch {
       setMensaje("Error cargando caja");
     }
@@ -147,7 +166,7 @@ export default function CajaPage() {
     return () => window.clearTimeout(timer);
   }, [user, sedeFiltroId]);
 
-  useLiveRefresh(cargarCaja, { intervalMs: 10000 });
+  useLiveRefresh(cargarCaja, { intervalMs: 30000 });
 
   const cancelarEdicion = () => {
     setEditandoMovimiento(null);
@@ -244,23 +263,25 @@ export default function CajaPage() {
 
   const totalIngresos = useMemo(
     () =>
+      resumenCaja?.totalIngresos ??
       movimientos
-        .filter((movimiento) => movimiento.tipo === "INGRESO")
-        .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0),
-    [movimientos]
+          .filter((movimiento) => movimiento.tipo === "INGRESO")
+          .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0),
+    [movimientos, resumenCaja]
   );
 
   const totalEgresos = useMemo(
     () =>
+      resumenCaja?.totalEgresos ??
       movimientos
-        .filter((movimiento) => movimiento.tipo === "EGRESO")
-        .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0),
-    [movimientos]
+          .filter((movimiento) => movimiento.tipo === "EGRESO")
+          .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0),
+    [movimientos, resumenCaja]
   );
 
-  const saldo = totalIngresos - totalEgresos;
+  const saldo = resumenCaja?.saldo ?? totalIngresos - totalEgresos;
   const ultimoMovimiento = movimientos[0] ?? null;
-  const totalMovimientos = movimientos.length;
+  const totalMovimientos = resumenCaja?.totalMovimientos ?? movimientos.length;
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#eef2f7_28%,#edf2f7_100%)] px-4 py-8">

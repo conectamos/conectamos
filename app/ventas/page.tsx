@@ -19,10 +19,10 @@ type Venta = VentaLike & {
   id: number;
 };
 
-type CajaMovimiento = {
-  id: number;
-  tipo: string;
-  valor: number;
+type CajaResumenResponse = {
+  resumen?: {
+    saldo: number;
+  };
 };
 
 type SessionUser = {
@@ -75,7 +75,7 @@ function servicioBadge(servicio: string) {
 
 export default function VentasPage() {
   const [ventas, setVentas] = useState<Venta[]>([]);
-  const [movimientosCaja, setMovimientosCaja] = useState<CajaMovimiento[]>([]);
+  const [cajaNetaMovimientos, setCajaNetaMovimientos] = useState(0);
   const [mensaje, setMensaje] = useState("");
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedesReporte, setSedesReporte] = useState<Sede[]>([]);
@@ -127,15 +127,18 @@ export default function VentasPage() {
         params.set("sedeId", vistaSedeId);
       }
 
+      params.set("resumen", "1");
+      params.set("limit", "0");
+
       const endpoint = params.size
         ? `/api/caja?${params.toString()}`
         : "/api/caja";
 
       const res = await fetch(endpoint, { cache: "no-store" });
-      const data = await res.json();
-      setMovimientosCaja(Array.isArray(data) ? data : []);
+      const data = (await res.json()) as CajaResumenResponse;
+      setCajaNetaMovimientos(Number(data.resumen?.saldo || 0));
     } catch {
-      setMovimientosCaja([]);
+      setCajaNetaMovimientos(0);
     }
   };
 
@@ -184,7 +187,7 @@ export default function VentasPage() {
       await cargarUsuario();
       await Promise.all([cargarVentas(), cargarCajaResumen()]);
     },
-    { intervalMs: 12000 }
+    { intervalMs: 30000 }
   );
 
   const vistaSedeNombre = useMemo(() => {
@@ -229,19 +232,7 @@ export default function VentasPage() {
     [ventas]
   );
 
-  const totalCajaNeta = useMemo(() => {
-    const ingresos = movimientosCaja
-      .filter((movimiento) => String(movimiento.tipo || "").toUpperCase() === "INGRESO")
-      .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0);
-
-    const egresos = movimientosCaja
-      .filter((movimiento) => String(movimiento.tipo || "").toUpperCase() === "EGRESO")
-      .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0);
-
-    return ingresos - egresos;
-  }, [movimientosCaja]);
-
-  const totalCajaAcumulada = totalCajaGeneral + totalCajaNeta;
+  const totalCajaAcumulada = totalCajaGeneral + cajaNetaMovimientos;
 
   const totalIngresos = useMemo(
     () => ventas.reduce((acc, venta) => acc + dinero(venta.ingreso), 0),

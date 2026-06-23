@@ -104,6 +104,8 @@ export default function CajaGestionPage() {
         params.set("sedeId", sedeId);
       }
 
+      params.set("limit", "300");
+
       const endpoint = params.size ? `/api/caja?${params.toString()}` : "/api/caja";
       const res = await fetch(endpoint, { cache: "no-store" });
       const data = await res.json();
@@ -131,7 +133,7 @@ export default function CajaGestionPage() {
     return () => window.clearTimeout(timer);
   }, [user, sedeId]);
 
-  useLiveRefresh(cargarMovimientos, { intervalMs: 12000 });
+  useLiveRefresh(cargarMovimientos, { intervalMs: 30000 });
 
   const limpiarFormulario = () => {
     setTipo("INGRESO");
