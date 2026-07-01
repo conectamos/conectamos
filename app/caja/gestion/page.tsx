@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
@@ -96,7 +96,7 @@ export default function CajaGestionPage() {
     }
   };
 
-  const cargarMovimientos = async () => {
+  const cargarMovimientos = useCallback(async () => {
     try {
       const params = new URLSearchParams();
 
@@ -114,13 +114,12 @@ export default function CajaGestionPage() {
         setMovimientos(Array.isArray(data) ? data : []);
       }
     } catch {}
-  };
+  }, [esAdmin, sedeId]);
 
   useEffect(() => {
     void cargarUsuario();
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!user) {
       return;
@@ -131,7 +130,7 @@ export default function CajaGestionPage() {
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [user, sedeId]);
+  }, [cargarMovimientos, user]);
 
   useLiveRefresh(cargarMovimientos, { intervalMs: 30000 });
 

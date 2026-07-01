@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
@@ -59,6 +59,32 @@ function formatoFecha(valor: string) {
   return new Date(valor).toLocaleString("es-CO");
 }
 
+function extraerNombreArchivo(
+  contentDisposition: string | null,
+  fallback: string
+) {
+  const match = contentDisposition?.match(/filename="?([^"]+)"?/i);
+  return match?.[1] || fallback;
+}
+
+function describirPeriodo(fechaDesde: string, fechaHasta: string) {
+  if (fechaDesde && fechaHasta) {
+    return fechaDesde === fechaHasta
+      ? fechaDesde
+      : `${fechaDesde} a ${fechaHasta}`;
+  }
+
+  if (fechaDesde) {
+    return `Desde ${fechaDesde}`;
+  }
+
+  if (fechaHasta) {
+    return `Hasta ${fechaHasta}`;
+  }
+
+  return "Todo el historial";
+}
+
 function tipoBadgeClass(tipo: string) {
   return String(tipo || "").toUpperCase() === "INGRESO"
     ? "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -85,6 +111,8 @@ export default function CajaPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
   const [editandoMovimiento, setEditandoMovimiento] =
     useState<CajaMovimiento | null>(null);
   const [tipoEdicion, setTipoEdicion] = useState<"INGRESO" | "EGRESO">(
@@ -95,8 +123,27 @@ export default function CajaPage() {
   const [descripcionEdicion, setDescripcionEdicion] = useState("");
   const [sedeEdicionId, setSedeEdicionId] = useState("");
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [exportandoExcel, setExportandoExcel] = useState(false);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
+
+  const construirParametrosCaja = useCallback(() => {
+    const params = new URLSearchParams();
+
+    if (esAdmin && sedeFiltroId !== "TODAS") {
+      params.set("sedeId", sedeFiltroId);
+    }
+
+    if (fechaDesde) {
+      params.set("fechaDesde", fechaDesde);
+    }
+
+    if (fechaHasta) {
+      params.set("fechaHasta", fechaHasta);
+    }
+
+    return params;
+  }, [esAdmin, fechaDesde, fechaHasta, sedeFiltroId]);
 
   const cargarUsuario = async () => {
     try {
@@ -120,13 +167,14 @@ export default function CajaPage() {
     } catch {}
   };
 
-  const cargarCaja = async () => {
+  const cargarCaja = useCallback(async () => {
     try {
-      const params = new URLSearchParams();
-
-      if (esAdmin && sedeFiltroId !== "TODAS") {
-        params.set("sedeId", sedeFiltroId);
+      if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+        setMensaje("La fecha inicial no puede ser mayor que la fecha final");
+        return;
       }
+
+      const params = construirParametrosCaja();
 
       params.set("resumen", "1");
       params.set("limit", "300");
@@ -137,12 +185,23 @@ export default function CajaPage() {
 
       const res = await fetch(endpoint, { cache: "no-store" });
       const data = (await res.json()) as CajaResponse;
+
+      if (!res.ok) {
+        setMensaje(
+          typeof data === "object" && data && "error" in data
+            ? String(data.error || "Error cargando caja")
+            : "Error cargando caja"
+        );
+        return;
+      }
+
       setMovimientos(Array.isArray(data) ? data : data.movimientos ?? []);
       setResumenCaja(Array.isArray(data) ? null : data.resumen ?? null);
+      setMensaje("");
     } catch {
       setMensaje("Error cargando caja");
     }
-  };
+  }, [construirParametrosCaja, fechaDesde, fechaHasta]);
 
   useEffect(() => {
     const init = async () => {
@@ -153,7 +212,6 @@ export default function CajaPage() {
     void init();
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!user) {
       return;
@@ -164,7 +222,7 @@ export default function CajaPage() {
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [user, sedeFiltroId]);
+  }, [cargarCaja, user]);
 
   useLiveRefresh(cargarCaja, { intervalMs: 30000 });
 
@@ -246,6 +304,52 @@ export default function CajaPage() {
     }
   };
 
+  const limpiarFiltroFechas = () => {
+    setFechaDesde("");
+    setFechaHasta("");
+  };
+
+  const exportarExcel = async () => {
+    try {
+      if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+        setMensaje("La fecha inicial no puede ser mayor que la fecha final");
+        return;
+      }
+
+      setExportandoExcel(true);
+      setMensaje("");
+
+      const params = construirParametrosCaja();
+      const endpoint = params.size
+        ? `/api/caja/export?${params.toString()}`
+        : "/api/caja/export";
+      const res = await fetch(endpoint, { cache: "no-store" });
+
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        setMensaje(data.error || "No se pudo exportar el Excel");
+        return;
+      }
+
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = extraerNombreArchivo(
+        res.headers.get("Content-Disposition"),
+        "movimientos-caja.xlsx"
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch {
+      setMensaje("Error exportando el Excel de caja");
+    } finally {
+      setExportandoExcel(false);
+    }
+  };
+
   const sedeFiltroNombre = useMemo(() => {
     if (!esAdmin) {
       return user?.sedeNombre || "tu sede";
@@ -260,6 +364,11 @@ export default function CajaPage() {
       "la sede seleccionada"
     );
   }, [esAdmin, sedeFiltroId, sedes, user?.sedeNombre]);
+
+  const periodoActivoTexto = useMemo(
+    () => describirPeriodo(fechaDesde, fechaHasta),
+    [fechaDesde, fechaHasta]
+  );
 
   const totalIngresos = useMemo(
     () =>
@@ -351,6 +460,43 @@ export default function CajaPage() {
                   </select>
                 </label>
               )}
+
+              <label className="flex min-w-[180px] flex-col gap-2 text-sm font-semibold text-white">
+                Desde
+                <input
+                  type="date"
+                  value={fechaDesde}
+                  onChange={(event) => setFechaDesde(event.target.value)}
+                  className="rounded-2xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-white focus:ring-2 focus:ring-white/30"
+                />
+              </label>
+
+              <label className="flex min-w-[180px] flex-col gap-2 text-sm font-semibold text-white">
+                Hasta
+                <input
+                  type="date"
+                  value={fechaHasta}
+                  onChange={(event) => setFechaHasta(event.target.value)}
+                  className="rounded-2xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-white focus:ring-2 focus:ring-white/30"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={limpiarFiltroFechas}
+                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+              >
+                Limpiar periodo
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void exportarExcel()}
+                disabled={exportandoExcel}
+                className="rounded-2xl border border-emerald-300/30 bg-emerald-400/15 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-emerald-400/25 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {exportandoExcel ? "Exportando..." : "Exportar Excel"}
+              </button>
 
               <Link
                 href="/caja/arqueo"
@@ -566,6 +712,8 @@ export default function CajaPage() {
                     : sedeFiltroNombre
                   : user?.sedeNombre || "Sede actual"}
               </span>
+              {" · "}Periodo:{" "}
+              <span className="font-semibold text-slate-900">{periodoActivoTexto}</span>
             </div>
           </div>
 

@@ -210,25 +210,6 @@ function getStatusPolicy(
   };
 }
 
-function computeStatus(
-  transactionTime: string | null,
-  devicePaymentDate: string | null,
-  paidInFull: boolean
-): RowStatus {
-  return getStatusPolicy(transactionTime, devicePaymentDate, paidInFull)
-    .automaticStatus;
-}
-
-function getAutomaticStatusForRow(
-  row: Pick<PayJoyRow, "transactionTime" | "devicePaymentDate" | "paidInFull">
-) {
-  return computeStatus(
-    row.transactionTime,
-    row.devicePaymentDate,
-    row.paidInFull
-  );
-}
-
 function resolveEffectiveStatus(row: EditablePayJoyRow) {
   if (row.manualStatus) {
     return row.manualStatus;
@@ -249,12 +230,6 @@ function recalculateDerivedFields(row: EditablePayJoyRow) {
   const maximumPaymentDate = transactionDate
     ? addCalendarDays(transactionDate, 18).toISOString()
     : null;
-  const policy = getStatusPolicy(
-    row.transactionTime,
-    row.devicePaymentDate,
-    row.paidInFull
-  );
-  const automaticStatus = policy.automaticStatus;
   const nextManualStatus: RowStatus | null = row.manualStatus;
 
   return {

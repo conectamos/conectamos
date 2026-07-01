@@ -306,15 +306,6 @@ function getReloadPolicy(
   };
 }
 
-function computeAutomaticStatus(
-  transactionTime: string | null,
-  devicePaymentDate: string | null,
-  paidInFull: boolean
-): PayJoyStoredRow["status"] | "PAGO X" {
-  return getReloadPolicy(transactionTime, devicePaymentDate, paidInFull)
-    .automaticStatus;
-}
-
 function resolveReloadedStatus(
   manualStatus: PayJoyStoredRow["manualStatus"],
   automaticStatus: PayJoyStoredRow["status"] | "PAGO X"

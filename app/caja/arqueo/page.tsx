@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 import {
   ARQUEO_DENOMINACIONES,
@@ -128,8 +128,13 @@ export default function CajaArqueoPage() {
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [cargando, setCargando] = useState(true);
+  const formDirtyRef = useRef(formDirty);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user?.rolNombre || "").toUpperCase());
+
+  useEffect(() => {
+    formDirtyRef.current = formDirty;
+  }, [formDirty]);
 
   const cargarUsuario = async () => {
     const res = await fetch("/api/session", { cache: "no-store" });
@@ -155,7 +160,7 @@ export default function CajaArqueoPage() {
     }
   };
 
-  const aplicarRegistroAlFormulario = (registro: ArqueoRegistro | null) => {
+  const aplicarRegistroAlFormulario = useCallback((registro: ArqueoRegistro | null) => {
     if (!registro) {
       setForm(FORM_BASE);
       return;
@@ -177,19 +182,16 @@ export default function CajaArqueoPage() {
       cheques: Number(registro.cheques || 0),
       observacion: registro.observacion || "",
     });
-  };
+  }, []);
 
-  const cargarArqueo = async (
-    targetSedeId?: string,
-    targetFecha?: string,
+  const cargarArqueo = useCallback(async (
+    targetSedeId: string,
+    targetFecha: string,
     options?: {
       preserveForm?: boolean;
     }
   ) => {
-    const sedeConsulta = targetSedeId || sedeId;
-    const fechaConsulta = targetFecha || fecha;
-
-    if (!sedeConsulta || sedeConsulta === "0" || !fechaConsulta) {
+    if (!targetSedeId || targetSedeId === "0" || !targetFecha) {
       return;
     }
 
@@ -197,11 +199,11 @@ export default function CajaArqueoPage() {
 
     try {
       const params = new URLSearchParams({
-        fecha: fechaConsulta,
+        fecha: targetFecha,
       });
 
-      if (sedeConsulta && sedeConsulta !== "0") {
-        params.set("sedeId", sedeConsulta);
+      if (targetSedeId && targetSedeId !== "0") {
+        params.set("sedeId", targetSedeId);
       }
 
       const res = await fetch(`/api/arqueo?${params.toString()}`, {
@@ -218,7 +220,7 @@ export default function CajaArqueoPage() {
       setRegistroActual(data.registro || null);
       setHistorial(Array.isArray(data.historial) ? data.historial : []);
 
-      if (!(options?.preserveForm && formDirty)) {
+      if (!(options?.preserveForm && formDirtyRef.current)) {
         aplicarRegistroAlFormulario(data.registro || null);
         setFormDirty(false);
       }
@@ -227,7 +229,7 @@ export default function CajaArqueoPage() {
     } finally {
       setCargando(false);
     }
-  };
+  }, [aplicarRegistroAlFormulario]);
 
   useEffect(() => {
     const init = async () => {
@@ -249,7 +251,7 @@ export default function CajaArqueoPage() {
     };
 
     void init();
-  }, []);
+  }, [cargarArqueo]);
 
   useEffect(() => {
     if (!user || !sedeId || sedeId === "0") {
@@ -257,7 +259,7 @@ export default function CajaArqueoPage() {
     }
 
     void cargarArqueo(sedeId, fecha, { preserveForm: false });
-  }, [fecha, sedeId, user]);
+  }, [cargarArqueo, fecha, sedeId, user]);
 
   useLiveRefresh(async () => {
     if (!user || !sedeId || sedeId === "0") {

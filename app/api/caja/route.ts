@@ -5,49 +5,15 @@ import {
   puedeAccederModulosOperativos,
   puedeEliminarRegistros,
 } from "@/lib/access-control";
-
-const CONCEPTOS_PROTEGIDOS = new Set([
-  "GASTO CARTERA",
-  "PAGO DEUDA INVENTARIO",
-  "PAGO PRESTAMO ENTRE SEDES",
-  "ABONO TRANSFERENCIA",
-  "ABONO FINANCIERA",
-]);
-const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
-const CAJA_MOVIMIENTOS_LIMIT_DEFAULT = 300;
-const CAJA_MOVIMIENTOS_LIMIT_MAX = 1000;
-
-function parseSedeId(value: string | null) {
-  const sedeId = Number(value);
-  return Number.isInteger(sedeId) && sedeId > 0 ? sedeId : null;
-}
-
-function parseMovimientoId(value: string | null) {
-  const id = Number(value);
-  return Number.isInteger(id) && id > 0 ? id : null;
-}
-
-function parseLimit(value: string | null) {
-  if (value === null || value === "") {
-    return CAJA_MOVIMIENTOS_LIMIT_DEFAULT;
-  }
-
-  const limit = Number(value);
-
-  if (!Number.isInteger(limit) || limit < 0) {
-    return CAJA_MOVIMIENTOS_LIMIT_DEFAULT;
-  }
-
-  return Math.min(limit, CAJA_MOVIMIENTOS_LIMIT_MAX);
-}
-
-function normalizarConcepto(value: unknown) {
-  return String(value ?? "").trim();
-}
-
-function esMovimientoEditable(concepto: string | null | undefined) {
-  return !CONCEPTOS_PROTEGIDOS.has(String(concepto || "").trim().toUpperCase());
-}
+import {
+  buildCajaWhere,
+  CAJA_MOVIMIENTO_SELECT,
+  esMovimientoEditable,
+  normalizarConcepto,
+  parseLimit,
+  parseMovimientoId,
+  parseSedeId,
+} from "@/lib/caja-movimientos";
 
 export async function GET(req: Request) {
   try {
@@ -71,32 +37,26 @@ export async function GET(req: Request) {
     const incluirResumen = ["1", "true", "si"].includes(
       String(requestUrl.searchParams.get("resumen") || "").trim().toLowerCase()
     );
-    const where = esAdmin
-      ? sedeIdFiltro
-        ? { sedeId: sedeIdFiltro, NOT: { concepto: CONCEPTO_GASTO_CARTERA } }
-        : { NOT: { concepto: CONCEPTO_GASTO_CARTERA } }
-      : { sedeId: user.sedeId, NOT: { concepto: CONCEPTO_GASTO_CARTERA } };
+    const filtros = buildCajaWhere({
+      esAdmin,
+      sedeIdUsuario: user.sedeId,
+      sedeIdFiltro,
+      fechaDesde: requestUrl.searchParams.get("fechaDesde"),
+      fechaHasta: requestUrl.searchParams.get("fechaHasta"),
+    });
+
+    if ("error" in filtros) {
+      return NextResponse.json({ error: filtros.error }, { status: 400 });
+    }
+
     const movimientosQuery =
       limit === 0
         ? Promise.resolve([])
         : prisma.cajaMovimiento.findMany({
-            where,
+            where: filtros.where,
             orderBy: { id: "desc" },
             take: limit,
-            select: {
-              id: true,
-              tipo: true,
-              concepto: true,
-              valor: true,
-              descripcion: true,
-              sedeId: true,
-              createdAt: true,
-              sede: {
-                select: {
-                  nombre: true,
-                },
-              },
-            },
+            select: CAJA_MOVIMIENTO_SELECT,
           });
 
     if (incluirResumen) {
@@ -104,12 +64,12 @@ export async function GET(req: Request) {
         movimientosQuery,
         prisma.cajaMovimiento.groupBy({
           by: ["tipo"],
-          where,
+          where: filtros.where,
           _sum: {
             valor: true,
           },
         }),
-        prisma.cajaMovimiento.count({ where }),
+        prisma.cajaMovimiento.count({ where: filtros.where }),
       ]);
       const totalIngresos = Number(
         resumenes.find((item) => item.tipo === "INGRESO")?._sum.valor || 0

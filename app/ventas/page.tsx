@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 import {
   detalleIngresosTexto,
@@ -99,7 +99,7 @@ export default function VentasPage() {
     } catch {}
   };
 
-  const cargarVentas = async () => {
+  const cargarVentas = useCallback(async () => {
     try {
       const params = new URLSearchParams();
 
@@ -117,9 +117,9 @@ export default function VentasPage() {
     } catch {
       setMensaje("Error cargando ventas");
     }
-  };
+  }, [esAdmin, vistaSedeId]);
 
-  const cargarCajaResumen = async () => {
+  const cargarCajaResumen = useCallback(async () => {
     try {
       const params = new URLSearchParams();
 
@@ -140,9 +140,9 @@ export default function VentasPage() {
     } catch {
       setCajaNetaMovimientos(0);
     }
-  };
+  }, [esAdmin, vistaSedeId]);
 
-  const cargarSedes = async () => {
+  const cargarSedes = useCallback(async () => {
     try {
       const res = await fetch("/api/sedes", { cache: "no-store" });
       const data = await res.json();
@@ -150,19 +150,12 @@ export default function VentasPage() {
     } catch {
       setSedesReporte([]);
     }
-  };
-
-  useEffect(() => {
-    const init = async () => {
-      await cargarUsuario();
-      await cargarVentas();
-      await cargarCajaResumen();
-    };
-
-    void init();
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void cargarUsuario();
+  }, []);
+
   useEffect(() => {
     if (!esAdmin) {
       setSedesReporte([]);
@@ -171,16 +164,15 @@ export default function VentasPage() {
     }
 
     void cargarSedes();
-  }, [esAdmin]);
+  }, [cargarSedes, esAdmin]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!user) {
       return;
     }
 
     void Promise.all([cargarVentas(), cargarCajaResumen()]);
-  }, [user, vistaSedeId]);
+  }, [cargarCajaResumen, cargarVentas, user]);
 
   useLiveRefresh(
     async () => {
