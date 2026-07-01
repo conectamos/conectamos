@@ -6,8 +6,9 @@ import {
   getCurrentBogotaMonthRange,
 } from "@/lib/ventas-utils";
 
-const BOLSA_ESTADO_HABILITADA = "TOP10_HABILITADA";
-const BOLSA_ESTADO_FUERA_TOP10 = "FUERA_TOP10";
+const BOLSA_TOP_LIMIT = 5;
+const BOLSA_ESTADO_HABILITADA = "TOP_HABILITADA";
+const BOLSA_ESTADO_FUERA_TOP = "FUERA_TOP";
 const BOLSA_PROFILE_TYPES = new Set(["VENDEDOR", "APOYO_OPERATIVO"]);
 const UPDATE_CHUNK_SIZE = 50;
 const BOLSA_VALOR_POR_VENTA = 1000;
@@ -156,13 +157,13 @@ function evaluateSnapshotForRecord(params: {
   const puestoActual =
     params.ranking.findIndex((item) => item.perfilId === params.record.perfilVendedorId) +
     1;
-  const estaEnTop10 = puestoActual > 0 && puestoActual <= 10;
+  const estaEnTop = puestoActual > 0 && puestoActual <= BOLSA_TOP_LIMIT;
 
-  if (!estaEnTop10) {
+  if (!estaEnTop) {
     return {
       bolsaGananciaHabilitada: false,
       bolsaGananciaValor: 0,
-      bolsaGananciaEstado: BOLSA_ESTADO_FUERA_TOP10,
+      bolsaGananciaEstado: BOLSA_ESTADO_FUERA_TOP,
       bolsaGananciaEvaluadaEn: new Date(),
     };
   }
@@ -395,7 +396,7 @@ export async function getVendorEarningsSummary(
       bolsaHabilitada: false,
       puestoActual: null,
       ventasMes: 0,
-      mensajeEstado: "FUERA DEL TOP 10, debe esforzarse mas",
+      mensajeEstado: "FUERA DEL TOP 5, debe esforzarse mas",
       periodoLabel: getCurrentBogotaMonthRange().label,
       totalGanado: 0,
       totalVentasConComision: 0,
@@ -409,7 +410,8 @@ export async function getVendorEarningsSummary(
   const puestoActual = rankingEntry
     ? ranking.findIndex((item) => item.perfilId === perfilVendedorId) + 1
     : null;
-  const bolsaHabilitada = puestoActual !== null && puestoActual <= 10;
+  const bolsaHabilitada =
+    puestoActual !== null && puestoActual <= BOLSA_TOP_LIMIT;
   const rewardedRecords = records
     .filter(
       (record) =>
@@ -429,8 +431,8 @@ export async function getVendorEarningsSummary(
     puestoActual,
     ventasMes: rankingEntry?.total || 0,
     mensajeEstado: bolsaHabilitada
-      ? "SI ESTAS EN EL TOP 10, tu bolsa sigue habilitada"
-      : "FUERA DEL TOP 10, debe esforzarse mas",
+      ? "SI ESTAS EN EL TOP 5, tu bolsa sigue habilitada"
+      : "FUERA DEL TOP 5, debe esforzarse mas",
     periodoLabel: period.label,
     totalGanado,
     totalVentasConComision: rewardedRecords.length,

@@ -377,12 +377,12 @@ function VendorEarningsSection({
   totalVentasConComision: number;
   valorBonoPorVenta: number;
 }) {
-  const tituloTop10 = "\u{1F3C6} TOP 10";
-  const mensajeTop10 =
+  const tituloTop5 = "\u{1F3C6} TOP 5";
+  const mensajeTop5 =
     "\u{1F4B0} Est\u00e1s donde se recogen las recompensas.\nSigue esforz\u00e1ndote, mant\u00e9n tu posici\u00f3n y contin\u00faa disfrutando los beneficios de estar entre los mejores.";
-  const tituloFueraTop10 = "\u{1F534} FUERA DEL TOP 10";
-  const mensajeFueraTop10 =
-    "\u{1F4CA} Hoy observas c\u00f3mo otros recogen las recompensas.\n\n\u{1F4AA} Es momento de redoblar esfuerzos, subir tu nivel e ingresar al TOP 10.\n\n\u{1F4B0} La Bolsa de Ganancias est\u00e1 reservada para quienes generan resultados.";
+  const tituloFueraTop5 = "\u{1F534} FUERA DEL TOP 5";
+  const mensajeFueraTop5 =
+    "\u{1F4CA} Hoy observas c\u00f3mo otros recogen las recompensas.\n\n\u{1F4AA} Es momento de redoblar esfuerzos, subir tu nivel e ingresar al TOP 5.\n\n\u{1F4B0} La Bolsa de Ganancias est\u00e1 reservada para quienes generan resultados.";
 
   return (
     <section className="mt-6 overflow-hidden rounded-[28px] border border-[#e9e3d8] bg-white shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
@@ -401,10 +401,10 @@ function VendorEarningsSection({
               </div>
 
               <h2 className="mt-5 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-                {tituloTop10}
+                {tituloTop5}
               </h2>
               <p className="mt-3 max-w-2xl whitespace-pre-line text-sm leading-7 text-slate-600 sm:text-base">
-                {mensajeTop10}
+                {mensajeTop5}
               </p>
             </div>
 
@@ -464,10 +464,10 @@ function VendorEarningsSection({
 
           <div className="mt-6 rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-5 text-rose-900 shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
             <p className="text-2xl font-black tracking-tight text-rose-700">
-              {tituloFueraTop10}
+              {tituloFueraTop5}
             </p>
             <p className="mt-4 whitespace-pre-line text-base font-semibold leading-8 text-rose-900">
-              {mensajeFueraTop10}
+              {mensajeFueraTop5}
             </p>
           </div>
         </div>
