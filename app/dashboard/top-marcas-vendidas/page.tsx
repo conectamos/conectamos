@@ -141,7 +141,11 @@ function RankingPanel({
   );
 }
 
-export default async function TopMarcasVendidasPage() {
+export default async function TopMarcasVendidasPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ period?: string }>;
+}) {
   const session = await requireSessionPage();
   const esAdmin = esRolAdministrativo(session.rolNombre);
 
@@ -149,7 +153,11 @@ export default async function TopMarcasVendidasPage() {
     redirect("/dashboard");
   }
 
-  const resumen = await getMonthlyCommercialSummary({ sedeId: null });
+  const params = await searchParams;
+  const resumen = await getMonthlyCommercialSummary({
+    period: params?.period || null,
+    sedeId: null,
+  });
   const marcaLider = resumen.topMarcasVendidas[0] ?? null;
   const referenciaLider = resumen.topReferenciasVendidas[0] ?? null;
 
@@ -171,12 +179,26 @@ export default async function TopMarcasVendidasPage() {
               </p>
             </div>
 
-            <Link
-              href="/dashboard"
-              className="inline-flex min-h-[48px] w-max items-center justify-center rounded-2xl border border-white/15 bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-950 shadow-[0_16px_38px_rgba(15,23,42,0.18)] transition hover:bg-slate-100"
-            >
-              Volver
-            </Link>
+            <form className="flex flex-col gap-3 rounded-[24px] border border-white/12 bg-white/10 p-4 backdrop-blur sm:flex-row sm:items-end">
+              <label className="flex min-w-[220px] flex-col gap-2 text-sm font-semibold text-white">
+                Mes comercial
+                <input
+                  type="month"
+                  name="period"
+                  defaultValue={resumen.periodo.key}
+                  className="min-h-[46px] rounded-2xl border border-white/20 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none"
+                />
+              </label>
+              <button className="min-h-[46px] rounded-2xl bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-950 transition hover:bg-slate-100">
+                Consultar
+              </button>
+              <Link
+                href="/dashboard"
+                className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-white/15"
+              >
+                Volver
+              </Link>
+            </form>
           </div>
         </section>
 
@@ -184,7 +206,7 @@ export default async function TopMarcasVendidasPage() {
           <MetricCard
             label="Periodo"
             value={resumen.periodo.label}
-            detail="Corte mensual actual."
+            detail="Corte mensual seleccionado."
           />
           <MetricCard
             label="Marca lider"
