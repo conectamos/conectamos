@@ -21,6 +21,7 @@ type ApiResponse = {
 };
 
 const MAX_DOCUMENTOS = 100;
+const DOCUMENTOS_POR_CONSULTA = 4;
 
 function formatoPesos(valor: number | null) {
   if (valor === null || !Number.isFinite(Number(valor))) {
@@ -52,6 +53,34 @@ function extraerDocumentos(texto: string) {
   }
 
   return documentos;
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+async function leerRespuestaApi(response: Response): Promise<ApiResponse> {
+  const texto = await response.text();
+
+  if (!texto) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(texto) as ApiResponse;
+  } catch {
+    const mensaje = texto.toLowerCase().includes("upstream error")
+      ? "SUMASPAY tardo demasiado en responder este bloque."
+      : texto.slice(0, 180);
+
+    return { error: mensaje || "Respuesta invalida de SUMASPAY." };
+  }
 }
 
 function getNombreTabla(nombreCompleto: string | null) {
@@ -139,6 +168,7 @@ export default function SumasPayBatchWorkspace() {
   const [resultados, setResultados] = useState<ResultadoConsulta[]>([]);
   const [error, setError] = useState("");
   const [consultando, setConsultando] = useState(false);
+  const [procesadas, setProcesadas] = useState(0);
 
   const resumen = useMemo(() => {
     const encontrados = resultados.filter(
@@ -190,23 +220,60 @@ export default function SumasPayBatchWorkspace() {
     setConsultando(true);
     setError("");
     setResultados([]);
+    setProcesadas(0);
 
     try {
-      const response = await fetch("/api/dashboard/sumaspay-lote", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ documentos }),
-      });
-      const data = (await response.json()) as ApiResponse;
+      const acumulados: ResultadoConsulta[] = [];
+      const bloques = chunkArray(documentos, DOCUMENTOS_POR_CONSULTA);
+      let bloquesConError = 0;
 
-      if (!response.ok || !data.ok) {
-        setError(data.error || "No se pudo consultar el lote SUMASPAY.");
-        return;
+      for (const bloque of bloques) {
+        try {
+          const response = await fetch("/api/dashboard/sumaspay-lote", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ documentos: bloque }),
+          });
+          const data = await leerRespuestaApi(response);
+
+          if (!response.ok || !data.ok) {
+            throw new Error(
+              data.error || "No se pudo consultar este bloque SUMASPAY."
+            );
+          }
+
+          acumulados.push(...(data.resultados || []));
+        } catch (lookupError) {
+          bloquesConError += 1;
+          const mensaje =
+            lookupError instanceof Error
+              ? lookupError.message
+              : "No se pudo consultar este bloque SUMASPAY.";
+
+          acumulados.push(
+            ...bloque.map((documento) => ({
+              documento,
+              clienteNombre: null,
+              valorCuota: null,
+              estado: "ERROR" as const,
+              mensaje,
+            }))
+          );
+        }
+
+        setProcesadas(acumulados.length);
+        setResultados([...acumulados]);
       }
 
-      setResultados(data.resultados || []);
+      if (bloquesConError > 0) {
+        setError(
+          `${bloquesConError} bloque${
+            bloquesConError === 1 ? "" : "s"
+          } no se pudo consultar. Los demas resultados se conservaron.`
+        );
+      }
     } catch (lookupError) {
       setError(
         lookupError instanceof Error
@@ -217,6 +284,10 @@ export default function SumasPayBatchWorkspace() {
       setConsultando(false);
     }
   }
+
+  const estadoConsulta = consultando
+    ? `Consultando ${procesadas}/${documentos.length}`
+    : "Listo";
 
   return (
     <div className="space-y-6">
@@ -251,7 +322,7 @@ export default function SumasPayBatchWorkspace() {
               disabled={documentos.length === 0 || consultando}
               className="inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              {consultando ? "Consultando" : "Consultar"}
+              {consultando ? estadoConsulta : "Consultar"}
             </button>
           </div>
         </div>
@@ -278,7 +349,7 @@ export default function SumasPayBatchWorkspace() {
               Estado
             </p>
             <p className="mt-2 text-sm font-bold text-slate-900">
-              {consultando ? "Consulta en proceso" : "Listo"}
+              {estadoConsulta}
             </p>
           </div>
         </div>
