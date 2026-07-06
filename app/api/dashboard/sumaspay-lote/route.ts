@@ -6,7 +6,15 @@ import {
   obtenerCreditosSumasPayPorCedulas,
 } from "@/lib/sumasconsulta";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 const MAX_DOCUMENTOS = 100;
+const MAX_DOCUMENTOS_POR_REQUEST = 4;
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
+};
 
 type ResultadoConsultaSumasPay = {
   documento: string;
@@ -75,23 +83,33 @@ function mapearResultadoBatch(
   };
 }
 
+function jsonNoStore(body: unknown, init?: ResponseInit) {
+  return NextResponse.json(body, {
+    ...init,
+    headers: {
+      ...NO_STORE_HEADERS,
+      ...(init?.headers || {}),
+    },
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const session = await getSessionUser();
 
     if (!session) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+      return jsonNoStore({ error: "No autenticado" }, { status: 401 });
     }
 
     if (!esRolAdministrativo(session.rolNombre)) {
-      return NextResponse.json(
+      return jsonNoStore(
         { error: "Solo el administrador puede consultar lotes SUMASPAY" },
         { status: 403 }
       );
     }
 
     if (!isSumasConsultaConfigured()) {
-      return NextResponse.json(
+      return jsonNoStore(
         {
           error:
             "Falta configurar las variables SUMASCONSULTA_URL, SUMASCONSULTA_USUARIO y SUMASCONSULTA_CLAVE.",
@@ -104,9 +122,19 @@ export async function POST(req: Request) {
     const documentos = normalizarDocumentos(body?.documentos);
 
     if (documentos.length === 0) {
-      return NextResponse.json(
+      return jsonNoStore(
         { error: "El archivo no contiene cedulas validas." },
         { status: 400 }
+      );
+    }
+
+    if (documentos.length > MAX_DOCUMENTOS_POR_REQUEST) {
+      return jsonNoStore(
+        {
+          error:
+            "La pantalla esta desactualizada. Recarga con Ctrl+F5 y vuelve a consultar el TXT.",
+        },
+        { status: 409 }
       );
     }
 
@@ -122,7 +150,7 @@ export async function POST(req: Request) {
     ).length;
     const errores = resultados.filter((item) => item.estado === "ERROR").length;
 
-    return NextResponse.json({
+    return jsonNoStore({
       ok: true,
       limite: MAX_DOCUMENTOS,
       total: resultados.length,
@@ -133,7 +161,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("ERROR CONSULTANDO LOTE SUMASPAY:", error);
-    return NextResponse.json(
+    return jsonNoStore(
       {
         error:
           error instanceof Error

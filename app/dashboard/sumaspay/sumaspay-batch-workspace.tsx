@@ -227,15 +227,21 @@ export default function SumasPayBatchWorkspace() {
       const bloques = chunkArray(documentos, DOCUMENTOS_POR_CONSULTA);
       let bloquesConError = 0;
 
-      for (const bloque of bloques) {
+      for (let index = 0; index < bloques.length; index += 1) {
+        const bloque = bloques[index];
+
         try {
-          const response = await fetch("/api/dashboard/sumaspay-lote", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ documentos: bloque }),
-          });
+          const response = await fetch(
+            `/api/dashboard/sumaspay-lote?bloque=${index + 1}&t=${Date.now()}`,
+            {
+              method: "POST",
+              cache: "no-store",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ documentos: bloque }),
+            }
+          );
           const data = await leerRespuestaApi(response);
 
           if (!response.ok || !data.ok) {

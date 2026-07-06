@@ -4,6 +4,9 @@ import { esRolAdministrativo } from "@/lib/access-control";
 import { requireSessionPage } from "@/lib/page-access";
 import SumasPayBatchWorkspace from "./sumaspay-batch-workspace";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function SumasPayBatchPage() {
   const session = await requireSessionPage();
 
