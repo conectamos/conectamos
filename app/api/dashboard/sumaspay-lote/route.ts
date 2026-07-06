@@ -3,13 +3,10 @@ import { esRolAdministrativo } from "@/lib/access-control";
 import { getSessionUser } from "@/lib/auth";
 import {
   isSumasConsultaConfigured,
-  obtenerCreditoSumasPayPorCedula,
-  SumasConsultaConfigError,
-  SumasConsultaLookupError,
+  obtenerCreditosSumasPayPorCedulas,
 } from "@/lib/sumasconsulta";
 
 const MAX_DOCUMENTOS = 100;
-const CONCURRENCIA_CONSULTA = 1;
 
 type ResultadoConsultaSumasPay = {
   documento: string;
@@ -21,14 +18,6 @@ type ResultadoConsultaSumasPay = {
 
 function normalizarDocumento(value: unknown) {
   return String(value || "").replace(/\D/g, "").slice(0, 15);
-}
-
-function ocultarDocumento(documento: string) {
-  if (documento.length <= 4) {
-    return "****";
-  }
-
-  return `${"*".repeat(documento.length - 4)}${documento.slice(-4)}`;
 }
 
 function normalizarDocumentos(value: unknown) {
@@ -54,84 +43,36 @@ function normalizarDocumentos(value: unknown) {
   return documentos;
 }
 
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  task: (item: T, index: number) => Promise<R>
-) {
-  const results = new Array<R>(items.length);
-  let currentIndex = 0;
-  const workers = Array.from(
-    { length: Math.min(concurrency, items.length) },
-    async () => {
-      while (currentIndex < items.length) {
-        const index = currentIndex;
-        currentIndex += 1;
-        results[index] = await task(items[index], index);
-      }
-    }
-  );
-
-  await Promise.all(workers);
-  return results;
-}
-
-async function consultarDocumento(
-  documento: string
-): Promise<ResultadoConsultaSumasPay> {
-  try {
-    const credito = await obtenerCreditoSumasPayPorCedula(documento, {
-      maxCreditAgeMonths: 2,
-      requireConectamosPoint: false,
-    });
-
-    if (!credito) {
-      return {
-        documento,
-        clienteNombre: null,
-        valorCuota: null,
-        estado: "NO_ENCONTRADO",
-        mensaje: "Sin credito SUMASPAY vigente en los ultimos 2 meses",
-      };
-    }
-
+function mapearResultadoBatch(
+  item: Awaited<ReturnType<typeof obtenerCreditosSumasPayPorCedulas>>[number]
+): ResultadoConsultaSumasPay {
+  if (item.error) {
     return {
-      documento,
-      clienteNombre: credito.clienteNombre,
-      valorCuota: credito.valorCuota,
-      estado: "ENCONTRADO",
-      mensaje: null,
-    };
-  } catch (error) {
-    if (
-      error instanceof SumasConsultaConfigError ||
-      error instanceof SumasConsultaLookupError
-    ) {
-      return {
-        documento,
-        clienteNombre: null,
-        valorCuota: null,
-        estado: "ERROR",
-        mensaje: error.message,
-      };
-    }
-
-    console.error("ERROR CONSULTANDO SUMASPAY EN LOTE:", {
-      documento: ocultarDocumento(documento),
-      error,
-    });
-
-    return {
-      documento,
+      documento: item.documento,
       clienteNombre: null,
       valorCuota: null,
       estado: "ERROR",
-      mensaje:
-        error instanceof Error
-          ? error.message
-          : "Error consultando credito SUMASPAY",
+      mensaje: item.error,
     };
   }
+
+  if (!item.credito) {
+    return {
+      documento: item.documento,
+      clienteNombre: null,
+      valorCuota: null,
+      estado: "NO_ENCONTRADO",
+      mensaje: "Sin credito SUMASPAY vigente en los ultimos 2 meses",
+    };
+  }
+
+  return {
+    documento: item.documento,
+    clienteNombre: item.credito.clienteNombre,
+    valorCuota: item.credito.valorCuota,
+    estado: "ENCONTRADO",
+    mensaje: null,
+  };
 }
 
 export async function POST(req: Request) {
@@ -169,11 +110,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const resultados = await mapWithConcurrency(
-      documentos,
-      CONCURRENCIA_CONSULTA,
-      consultarDocumento
-    );
+    const batch = await obtenerCreditosSumasPayPorCedulas(documentos, {
+      maxCreditAgeMonths: 2,
+      requireConectamosPoint: false,
+    });
+    const resultados = batch.map(mapearResultadoBatch);
 
     const encontrados = resultados.filter(
       (item) => item.estado === "ENCONTRADO"

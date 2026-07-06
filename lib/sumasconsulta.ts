@@ -48,6 +48,12 @@ export type SumasPayCreditoCedula = SumasCreditoCedulaBase & {
   encontradoEnSumasPay: boolean;
 };
 
+export type SumasPayCreditoCedulaBatchItem = {
+  documento: string;
+  credito: SumasPayCreditoCedula | null;
+  error?: string;
+};
+
 export type EsmioOpcionCreditoCedula = SumasCreditoCedulaBase & {
   financiera: "ESMIOPCION";
   encontradoEnEsmioOpcion: boolean;
@@ -100,12 +106,35 @@ const DEFAULT_SUMAS_CREDITO_LOOKUP_OPTIONS = {
   maxCreditAgeDays: 1,
   requireConectamosPoint: true,
 };
+const SUMASPAY_BATCH_CONCURRENCY = 4;
 
 export class SumasConsultaConfigError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "SumasConsultaConfigError";
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  task: (item: T, index: number) => Promise<R>
+) {
+  const results = new Array<R>(items.length);
+  let currentIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (currentIndex < items.length) {
+        const index = currentIndex;
+        currentIndex += 1;
+        results[index] = await task(items[index], index);
+      }
+    }
+  );
+
+  await Promise.all(workers);
+  return results;
 }
 
 export class SumasConsultaLookupError extends Error {
@@ -2118,6 +2147,49 @@ export async function obtenerCreditoSumasPayPorCedula(
   return credito as SumasPayCreditoCedula | null;
 }
 
+export async function obtenerCreditosSumasPayPorCedulas(
+  documentosInput: unknown[],
+  options: SumasCreditoLookupOptions = {}
+): Promise<SumasPayCreditoCedulaBatchItem[]> {
+  const documentos = documentosInput
+    .map((documentoInput) => normalizeDocumento(documentoInput))
+    .filter((documento) => documento.length >= 5 && documento.length <= 15);
+
+  if (documentos.length === 0) {
+    return [];
+  }
+
+  const session = await loginSumas(SUMASPAY_PROVIDER);
+  return mapWithConcurrency(
+    documentos,
+    SUMASPAY_BATCH_CONCURRENCY,
+    async (documento): Promise<SumasPayCreditoCedulaBatchItem> => {
+      try {
+        const credito = await obtenerCreditoSumaLikePorCedulaConSesion(
+          documento,
+          SUMASPAY_PROVIDER,
+          session,
+          options
+        );
+
+        return {
+          documento,
+          credito: credito as SumasPayCreditoCedula | null,
+        };
+      } catch (error) {
+        return {
+          documento,
+          credito: null,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Error consultando credito SUMASPAY",
+        };
+      }
+    }
+  );
+}
+
 export async function obtenerCreditoEsmioOpcionPorCedula(
   documentoInput: unknown
 ): Promise<EsmioOpcionCreditoCedula | null> {
@@ -2144,6 +2216,20 @@ async function obtenerCreditoSumaLikePorCedula(
   }
 
   const session = await loginSumas(provider);
+  return obtenerCreditoSumaLikePorCedulaConSesion(
+    documento,
+    provider,
+    session,
+    options
+  );
+}
+
+async function obtenerCreditoSumaLikePorCedulaConSesion(
+  documento: string,
+  provider: SumasConsultaProvider,
+  session: SumasSession,
+  options: SumasCreditoLookupOptions = {}
+): Promise<SumasLikeCreditoCedula | null> {
   const payloads: SumasPayload[] = [];
 
   const listCreditY2 = await tryProtectedJson(
