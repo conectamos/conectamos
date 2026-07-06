@@ -107,7 +107,7 @@ const DEFAULT_SUMAS_CREDITO_LOOKUP_OPTIONS = {
   maxCreditAgeDays: 1,
   requireConectamosPoint: true,
 };
-const SUMASPAY_BATCH_CONCURRENCY = 1;
+const SUMASPAY_BATCH_DOCUMENTS_PER_SESSION = 4;
 
 export class SumasConsultaConfigError extends Error {
   constructor(message: string) {
@@ -116,32 +116,20 @@ export class SumasConsultaConfigError extends Error {
   }
 }
 
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  task: (item: T, index: number) => Promise<R>
-) {
-  const results = new Array<R>(items.length);
-  let currentIndex = 0;
-  const workers = Array.from(
-    { length: Math.min(concurrency, items.length) },
-    async () => {
-      while (currentIndex < items.length) {
-        const index = currentIndex;
-        currentIndex += 1;
-        results[index] = await task(items[index], index);
-      }
-    }
-  );
-
-  await Promise.all(workers);
-  return results;
-}
-
 function isSumasServerProcessError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
 
   return message.trim().toLowerCase() === "error process in server";
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
 }
 
 export class SumasConsultaLookupError extends Error {
@@ -2166,11 +2154,15 @@ export async function obtenerCreditosSumasPayPorCedulas(
     return [];
   }
 
-  const session = await loginSumas(SUMASPAY_PROVIDER);
-  return mapWithConcurrency(
+  const resultados: SumasPayCreditoCedulaBatchItem[] = [];
+
+  for (const bloque of chunkArray(
     documentos,
-    SUMASPAY_BATCH_CONCURRENCY,
-    async (documento): Promise<SumasPayCreditoCedulaBatchItem> => {
+    SUMASPAY_BATCH_DOCUMENTS_PER_SESSION
+  )) {
+    let session = await loginSumas(SUMASPAY_PROVIDER);
+
+    for (const documento of bloque) {
       try {
         const credito = await obtenerCreditoSumaLikePorCedulaConSesion(
           documento,
@@ -2179,29 +2171,52 @@ export async function obtenerCreditosSumasPayPorCedulas(
           options
         );
 
-        return {
+        resultados.push({
           documento,
           credito: credito as SumasPayCreditoCedula | null,
-        };
+        });
       } catch (error) {
         if (isSumasServerProcessError(error)) {
-          return {
-            documento,
-            credito: null,
-          };
+          try {
+            session = await loginSumas(SUMASPAY_PROVIDER);
+            const credito = await obtenerCreditoSumaLikePorCedulaConSesion(
+              documento,
+              SUMASPAY_PROVIDER,
+              session,
+              options
+            );
+
+            resultados.push({
+              documento,
+              credito: credito as SumasPayCreditoCedula | null,
+            });
+            continue;
+          } catch (retryError) {
+            resultados.push({
+              documento,
+              credito: null,
+              error:
+                retryError instanceof Error
+                  ? retryError.message
+                  : "SUMASPAY no pudo procesar esta cedula",
+            });
+            continue;
+          }
         }
 
-        return {
+        resultados.push({
           documento,
           credito: null,
           error:
             error instanceof Error
               ? error.message
               : "Error consultando credito SUMASPAY",
-        };
+        });
       }
     }
-  );
+  }
+
+  return resultados;
 }
 
 export async function obtenerCreditoEsmioOpcionPorCedula(
