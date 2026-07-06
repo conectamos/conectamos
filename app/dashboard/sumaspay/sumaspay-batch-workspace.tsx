@@ -65,7 +65,9 @@ function getNombreTabla(nombreCompleto: string | null) {
       ? ""
       : partes.length === 2
         ? partes[1]
-        : partes[partes.length - 2];
+        : partes.length === 3
+          ? partes[2]
+          : partes[partes.length - 2];
 
   return {
     nombre1: nombre1.toLocaleUpperCase("es-CO"),
@@ -321,7 +323,7 @@ export default function SumasPayBatchWorkspace() {
               Resultados
             </div>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-              Datos para exportar
+              Cedula, nombre, apellido y cuota
             </h2>
           </div>
 

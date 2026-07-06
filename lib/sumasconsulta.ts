@@ -100,6 +100,7 @@ type SumasCreditoLookupOptions = {
   maxCreditAgeDays?: number;
   maxCreditAgeMonths?: number;
   requireConectamosPoint?: boolean;
+  allowMissingCreditCreationDate?: boolean;
 };
 
 const DEFAULT_SUMAS_CREDITO_LOOKUP_OPTIONS = {
@@ -2353,10 +2354,12 @@ async function obtenerCreditoSumaLikePorCedulaConSesion(
   const candidates = buildCandidates(payloads);
   const eligibleCandidates = candidates.filter(
     (candidate) =>
-      isAllowedCreditCreationDate(
+      (isAllowedCreditCreationDate(
         candidate.fechaCreacionCredito,
         lookupOptions
-      ) &&
+      ) ||
+        (lookupOptions.allowMissingCreditCreationDate === true &&
+          !candidate.fechaCreacionCredito)) &&
       (lookupOptions.requireConectamosPoint === false ||
         isConectamosPointCredit(candidate.puntoCredito))
   );
@@ -2371,6 +2374,8 @@ async function obtenerCreditoSumaLikePorCedulaConSesion(
           maxCreditAgeDays: lookupOptions.maxCreditAgeDays,
           maxCreditAgeMonths: lookupOptions.maxCreditAgeMonths,
           requireConectamosPoint: lookupOptions.requireConectamosPoint,
+          allowMissingCreditCreationDate:
+            lookupOptions.allowMissingCreditCreationDate,
         },
         candidatos: candidates.slice(0, 8).map((candidate) => ({
           source: candidate.source,

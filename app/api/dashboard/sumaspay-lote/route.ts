@@ -113,6 +113,7 @@ export async function POST(req: Request) {
     const batch = await obtenerCreditosSumasPayPorCedulas(documentos, {
       maxCreditAgeMonths: 2,
       requireConectamosPoint: false,
+      allowMissingCreditCreationDate: true,
     });
     const resultados = batch.map(mapearResultadoBatch);
 
