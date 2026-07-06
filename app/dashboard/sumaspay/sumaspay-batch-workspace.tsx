@@ -32,24 +32,6 @@ function formatoPesos(valor: number | null) {
   })}`;
 }
 
-function estadoLabel(estado: ResultadoConsulta["estado"]) {
-  if (estado === "ENCONTRADO") return "Encontrado";
-  if (estado === "NO_ENCONTRADO") return "Sin credito";
-  return "Error";
-}
-
-function estadoClassName(estado: ResultadoConsulta["estado"]) {
-  if (estado === "ENCONTRADO") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  }
-
-  if (estado === "NO_ENCONTRADO") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
-  }
-
-  return "border-rose-200 bg-rose-50 text-rose-700";
-}
-
 function extraerDocumentos(texto: string) {
   const vistos = new Set<string>();
   const documentos: string[] = [];
@@ -72,22 +54,43 @@ function extraerDocumentos(texto: string) {
   return documentos;
 }
 
+function getNombreTabla(nombreCompleto: string | null) {
+  const partes = String(nombreCompleto || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const nombre1 = partes[0] || "";
+  const apellido1 =
+    partes.length <= 1
+      ? ""
+      : partes.length === 2
+        ? partes[1]
+        : partes[partes.length - 2];
+
+  return {
+    nombre1: nombre1.toLocaleUpperCase("es-CO"),
+    apellido1: apellido1.toLocaleUpperCase("es-CO"),
+  };
+}
+
 async function descargarExcel(resultados: ResultadoConsulta[]) {
   const XLSX = await import("xlsx");
-  const filas: Array<Record<string, string | number>> = resultados.map((item) => ({
-    Cedula: item.documento,
-    Nombre: item.clienteNombre ?? "",
-    "Valor cuota": item.valorCuota ?? "",
-    Estado: estadoLabel(item.estado),
-    Mensaje: item.mensaje ?? "",
-  }));
+  const filas: Array<Record<string, string | number>> = resultados.map((item) => {
+    const { nombre1, apellido1 } = getNombreTabla(item.clienteNombre);
+
+    return {
+      Cedula: item.documento,
+      "Nombre 1": nombre1,
+      "Apellido 1": apellido1,
+      "Valor cuota": item.valorCuota ?? "",
+    };
+  });
   const hoja = XLSX.utils.json_to_sheet(filas);
   hoja["!cols"] = [
     { wch: 18 },
-    { wch: 36 },
+    { wch: 18 },
+    { wch: 20 },
     { wch: 16 },
-    { wch: 16 },
-    { wch: 44 },
   ];
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, hoja, "SUMASPAY");
@@ -318,7 +321,7 @@ export default function SumasPayBatchWorkspace() {
               Resultados
             </div>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-              Nombre y valor de cuota
+              Datos para exportar
             </h2>
           </div>
 
@@ -340,13 +343,13 @@ export default function SumasPayBatchWorkspace() {
                   Cedula
                 </th>
                 <th className="px-5 py-4 text-left text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                  Nombre
+                  Nombre 1
+                </th>
+                <th className="px-5 py-4 text-left text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Apellido 1
                 </th>
                 <th className="px-5 py-4 text-left text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
                   Valor cuota
-                </th>
-                <th className="px-5 py-4 text-left text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                  Estado
                 </th>
               </tr>
             </thead>
@@ -361,36 +364,26 @@ export default function SumasPayBatchWorkspace() {
                   </td>
                 </tr>
               ) : (
-                resultados.map((item) => (
-                  <tr key={item.documento}>
-                    <td className="whitespace-nowrap px-5 py-4 text-sm font-black text-slate-950">
-                      {item.documento}
-                    </td>
-                    <td className="min-w-[260px] px-5 py-4 text-sm font-semibold text-slate-700">
-                      {item.clienteNombre || "-"}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 text-sm font-black text-slate-950">
-                      {formatoPesos(item.valorCuota)}
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-col gap-1">
-                        <span
-                          className={[
-                            "w-fit rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.12em]",
-                            estadoClassName(item.estado),
-                          ].join(" ")}
-                        >
-                          {estadoLabel(item.estado)}
-                        </span>
-                        {item.mensaje && (
-                          <span className="max-w-sm text-xs font-semibold text-slate-500">
-                            {item.mensaje}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                resultados.map((item) => {
+                  const { nombre1, apellido1 } = getNombreTabla(item.clienteNombre);
+
+                  return (
+                    <tr key={item.documento}>
+                      <td className="whitespace-nowrap px-5 py-4 text-sm font-black text-slate-950">
+                        {item.documento}
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 text-sm font-black text-slate-950">
+                        {nombre1 || "-"}
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 text-sm font-black text-slate-950">
+                        {apellido1 || "-"}
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 text-sm font-black text-slate-950">
+                        {formatoPesos(item.valorCuota)}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
