@@ -106,7 +106,7 @@ const DEFAULT_SUMAS_CREDITO_LOOKUP_OPTIONS = {
   maxCreditAgeDays: 1,
   requireConectamosPoint: true,
 };
-const SUMASPAY_BATCH_CONCURRENCY = 4;
+const SUMASPAY_BATCH_CONCURRENCY = 1;
 
 export class SumasConsultaConfigError extends Error {
   constructor(message: string) {
@@ -135,6 +135,12 @@ async function mapWithConcurrency<T, R>(
 
   await Promise.all(workers);
   return results;
+}
+
+function isSumasServerProcessError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+
+  return message.trim().toLowerCase() === "error process in server";
 }
 
 export class SumasConsultaLookupError extends Error {
@@ -2177,6 +2183,13 @@ export async function obtenerCreditosSumasPayPorCedulas(
           credito: credito as SumasPayCreditoCedula | null,
         };
       } catch (error) {
+        if (isSumasServerProcessError(error)) {
+          return {
+            documento,
+            credito: null,
+          };
+        }
+
         return {
           documento,
           credito: null,
