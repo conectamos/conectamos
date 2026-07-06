@@ -25,7 +25,8 @@ export default async function SumasPayBatchPage() {
                 Consulta SUMASPAY
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                Carga masiva de cedulas para consultar nombre y valor de cuota.
+                Carga masiva de cedulas para consultar nombre y valor de cuota
+                con vigencia de 2 meses.
               </p>
             </div>
 

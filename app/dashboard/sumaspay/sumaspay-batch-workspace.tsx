@@ -72,31 +72,26 @@ function extraerDocumentos(texto: string) {
   return documentos;
 }
 
-function descargarCsv(resultados: ResultadoConsulta[]) {
-  const encabezados = ["Cedula", "Nombre", "Valor cuota", "Estado", "Mensaje"];
-  const filas = resultados.map((item) => [
-    item.documento,
-    item.clienteNombre ?? "",
-    item.valorCuota === null ? "" : String(item.valorCuota),
-    estadoLabel(item.estado),
-    item.mensaje ?? "",
-  ]);
-  const contenido = [encabezados, ...filas]
-    .map((fila) =>
-      fila
-        .map((valor) => `"${String(valor).replaceAll('"', '""')}"`)
-        .join(",")
-    )
-    .join("\n");
-  const blob = new Blob([contenido], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "consulta-sumaspay.csv";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+async function descargarExcel(resultados: ResultadoConsulta[]) {
+  const XLSX = await import("xlsx");
+  const filas: Array<Record<string, string | number>> = resultados.map((item) => ({
+    Cedula: item.documento,
+    Nombre: item.clienteNombre ?? "",
+    "Valor cuota": item.valorCuota ?? "",
+    Estado: estadoLabel(item.estado),
+    Mensaje: item.mensaje ?? "",
+  }));
+  const hoja = XLSX.utils.json_to_sheet(filas);
+  hoja["!cols"] = [
+    { wch: 18 },
+    { wch: 36 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 44 },
+  ];
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, "SUMASPAY");
+  XLSX.writeFile(libro, "consulta-sumaspay.xlsx");
 }
 
 function MetricCard({
@@ -230,7 +225,8 @@ export default function SumasPayBatchWorkspace() {
               Cedulas a consultar
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-              Se procesan hasta {MAX_DOCUMENTOS} cedulas por archivo.
+              Se procesan hasta {MAX_DOCUMENTOS} cedulas por archivo y se
+              aceptan creditos creados en los ultimos 2 meses.
             </p>
           </div>
 
@@ -328,11 +324,11 @@ export default function SumasPayBatchWorkspace() {
 
           <button
             type="button"
-            onClick={() => descargarCsv(resultados)}
+            onClick={() => void descargarExcel(resultados)}
             disabled={resultados.length === 0}
             className="inline-flex min-h-[44px] items-center justify-center rounded-2xl border border-[#e4ddd2] bg-[#fcfbf8] px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-800 transition hover:bg-white disabled:cursor-not-allowed disabled:text-slate-300"
           >
-            Descargar CSV
+            Descargar Excel
           </button>
         </div>
 

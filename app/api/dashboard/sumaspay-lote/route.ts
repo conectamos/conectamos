@@ -9,7 +9,7 @@ import {
 } from "@/lib/sumasconsulta";
 
 const MAX_DOCUMENTOS = 100;
-const CONCURRENCIA_CONSULTA = 3;
+const CONCURRENCIA_CONSULTA = 1;
 
 type ResultadoConsultaSumasPay = {
   documento: string;
@@ -80,7 +80,10 @@ async function consultarDocumento(
   documento: string
 ): Promise<ResultadoConsultaSumasPay> {
   try {
-    const credito = await obtenerCreditoSumasPayPorCedula(documento);
+    const credito = await obtenerCreditoSumasPayPorCedula(documento, {
+      maxCreditAgeMonths: 2,
+      requireConectamosPoint: false,
+    });
 
     if (!credito) {
       return {
@@ -88,7 +91,7 @@ async function consultarDocumento(
         clienteNombre: null,
         valorCuota: null,
         estado: "NO_ENCONTRADO",
-        mensaje: "Sin credito SUMASPAY vigente para esta cedula",
+        mensaje: "Sin credito SUMASPAY vigente en los ultimos 2 meses",
       };
     }
 

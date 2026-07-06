@@ -90,6 +90,17 @@ type Candidate = {
 
 type SumasPayload = { source: string; data: unknown; loanId?: string };
 
+type SumasCreditoLookupOptions = {
+  maxCreditAgeDays?: number;
+  maxCreditAgeMonths?: number;
+  requireConectamosPoint?: boolean;
+};
+
+const DEFAULT_SUMAS_CREDITO_LOOKUP_OPTIONS = {
+  maxCreditAgeDays: 1,
+  requireConectamosPoint: true,
+};
+
 export class SumasConsultaConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -1658,15 +1669,36 @@ function shiftDateInput(value: string, days: number) {
   );
 }
 
-function isRecentCreditCreationDate(
+function shiftMonthInput(value: string, months: number) {
+  const [year, month, day] = value.split("-").map((item) => Number(item));
+  const date = new Date(Date.UTC(year, month - 1 + months, day));
+
+  return formatDateParts(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    date.getUTCDate()
+  );
+}
+
+function isAllowedCreditCreationDate(
   fechaCreacionCredito: string | null,
+  options: SumasCreditoLookupOptions,
   today = getDateInColombia()
 ) {
-  const yesterday = shiftDateInput(today, -1);
+  const maxCreditAgeMonths = Number(options.maxCreditAgeMonths || 0);
+  const maxCreditAgeDays = Number(
+    options.maxCreditAgeDays ??
+      DEFAULT_SUMAS_CREDITO_LOOKUP_OPTIONS.maxCreditAgeDays
+  );
+  const minDate =
+    (maxCreditAgeMonths > 0
+      ? shiftMonthInput(today, -maxCreditAgeMonths)
+      : shiftDateInput(today, -Math.max(0, maxCreditAgeDays))) || today;
 
   return (
     Boolean(fechaCreacionCredito) &&
-    (fechaCreacionCredito === today || fechaCreacionCredito === yesterday)
+    String(fechaCreacionCredito) >= minDate &&
+    String(fechaCreacionCredito) <= today
   );
 }
 
@@ -2074,11 +2106,13 @@ export function isEsmioOpcionConsultaConfigured() {
 }
 
 export async function obtenerCreditoSumasPayPorCedula(
-  documentoInput: unknown
+  documentoInput: unknown,
+  options: SumasCreditoLookupOptions = {}
 ): Promise<SumasPayCreditoCedula | null> {
   const credito = await obtenerCreditoSumaLikePorCedula(
     documentoInput,
-    SUMASPAY_PROVIDER
+    SUMASPAY_PROVIDER,
+    options
   );
 
   return credito as SumasPayCreditoCedula | null;
@@ -2089,7 +2123,8 @@ export async function obtenerCreditoEsmioOpcionPorCedula(
 ): Promise<EsmioOpcionCreditoCedula | null> {
   const credito = await obtenerCreditoSumaLikePorCedula(
     documentoInput,
-    ESMIOPCION_PROVIDER
+    ESMIOPCION_PROVIDER,
+    {}
   );
 
   return credito as EsmioOpcionCreditoCedula | null;
@@ -2097,7 +2132,8 @@ export async function obtenerCreditoEsmioOpcionPorCedula(
 
 async function obtenerCreditoSumaLikePorCedula(
   documentoInput: unknown,
-  provider: SumasConsultaProvider
+  provider: SumasConsultaProvider,
+  options: SumasCreditoLookupOptions = {}
 ): Promise<SumasLikeCreditoCedula | null> {
   const documento = normalizeDocumento(documentoInput);
 
@@ -2211,19 +2247,32 @@ async function obtenerCreditoSumaLikePorCedula(
     return null;
   }
 
+  const lookupOptions = {
+    ...DEFAULT_SUMAS_CREDITO_LOOKUP_OPTIONS,
+    ...options,
+  };
   const candidates = buildCandidates(payloads);
   const eligibleCandidates = candidates.filter(
     (candidate) =>
-      isRecentCreditCreationDate(candidate.fechaCreacionCredito) &&
-      isConectamosPointCredit(candidate.puntoCredito)
+      isAllowedCreditCreationDate(
+        candidate.fechaCreacionCredito,
+        lookupOptions
+      ) &&
+      (lookupOptions.requireConectamosPoint === false ||
+        isConectamosPointCredit(candidate.puntoCredito))
   );
   const selectedCandidate = eligibleCandidates[0];
 
   if (!selectedCandidate) {
     if (candidates.length > 0) {
-      console.info(`${provider.logLabel} consulta sin credito CONECTAMOS reciente`, {
+      console.info(`${provider.logLabel} consulta sin credito elegible`, {
         documento: maskDocumento(documento),
         fechaActual: getDateInColombia(),
+        opciones: {
+          maxCreditAgeDays: lookupOptions.maxCreditAgeDays,
+          maxCreditAgeMonths: lookupOptions.maxCreditAgeMonths,
+          requireConectamosPoint: lookupOptions.requireConectamosPoint,
+        },
         candidatos: candidates.slice(0, 8).map((candidate) => ({
           source: candidate.source,
           fechaCreacionCredito: candidate.fechaCreacionCredito,
