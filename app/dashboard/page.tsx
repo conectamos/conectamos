@@ -41,6 +41,7 @@ type ModuleKey =
   | "radar"
   | "registrarFacturacion"
   | "administracion"
+  | "sumaspay"
   | "payjoy"
   | "nuovo"
   | "equality";
@@ -925,6 +926,21 @@ export default async function DashboardPage() {
       ],
       tone: "slate",
     },
+    sumaspay: {
+      key: "sumaspay",
+      title: "SUMASPAY",
+      eyebrow: "Consulta",
+      description:
+        "Carga cedulas por archivo TXT y consulta nombre y valor de cuota.",
+      actions: [
+        {
+          href: "/dashboard/sumaspay",
+          label: "Consultar lote",
+          tone: "primary",
+        },
+      ],
+      tone: "emerald",
+    },
     nuovo: {
       key: "nuovo",
       title: "NUOVO",
@@ -991,8 +1007,8 @@ export default async function DashboardPage() {
           eyebrow: "Plataformas",
           title: "Plataformas externas",
           description:
-            "Accesos directos a PayJoy, NUOVO y Trustonic para consulta y seguimiento.",
-          modules: mapModuleKeys(["payjoy", "nuovo", "equality"]),
+            "Accesos directos a SUMASPAY, PayJoy, NUOVO y Trustonic para consulta y seguimiento.",
+          modules: mapModuleKeys(["sumaspay", "payjoy", "nuovo", "equality"]),
         },
       ]
     : [];
@@ -1007,6 +1023,7 @@ export default async function DashboardPage() {
         "registrarVenta",
         "registrarFacturacion",
         "administracion",
+        "sumaspay",
         "payjoy",
         "nuovo",
         "equality",
