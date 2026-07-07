@@ -47,6 +47,22 @@ function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
 
+function mensajeConBloqueos(data: { error?: string; bloqueados?: unknown }, fallback: string) {
+  const bloqueos = Array.isArray(data.bloqueados)
+    ? data.bloqueados
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 4)
+    : [];
+  const base = data.error || fallback;
+
+  if (bloqueos.length === 0) {
+    return base;
+  }
+
+  return `${base}. Detalle: ${bloqueos.join(" | ")}`;
+}
+
 function MetricCard({
   label,
   value,
@@ -774,7 +790,7 @@ export default function InventarioPrincipalPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMensaje(`Error: ${data.error || "No se pudo volver a bodega"}`);
+        setMensaje(`Error: ${mensajeConBloqueos(data, "No se pudo volver a bodega")}`);
         return;
       }
 
@@ -873,7 +889,9 @@ export default function InventarioPrincipalPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMensaje(`Error: ${data.error || "No se pudo volver la seleccion a bodega"}`);
+        setMensaje(
+          `Error: ${mensajeConBloqueos(data, "No se pudo volver la seleccion a bodega")}`
+        );
         return;
       }
 
@@ -881,7 +899,9 @@ export default function InventarioPrincipalPage() {
         [
           data.mensaje || "Seleccion devuelta a Bodega Principal",
           Array.isArray(data.bloqueados) && data.bloqueados.length > 0
-            ? `${data.bloqueados.length} equipo(s) no se procesaron por bloqueo.`
+            ? `${data.bloqueados.length} equipo(s) no se procesaron por bloqueo: ${data.bloqueados
+                .slice(0, 4)
+                .join(" | ")}`
             : "",
         ]
           .filter(Boolean)

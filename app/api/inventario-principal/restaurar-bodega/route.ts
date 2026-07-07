@@ -124,14 +124,28 @@ export async function POST(req: Request) {
         eliminadoEn: null,
         ventaIdRelacionada: null,
       },
-      select: { serialImei: true },
+      select: {
+        id: true,
+        serialImei: true,
+        clienteNombre: true,
+        documentoNumero: true,
+        estadoVentaRegistro: true,
+        sede: { select: { nombre: true } },
+        perfilVendedor: { select: { nombre: true } },
+      },
     });
 
-    const imeisConRegistroAbierto = new Set(
-      registrosVentaAbiertos
-        .map((item) => item.serialImei || "")
-        .filter(Boolean)
-    );
+    const registrosAbiertosPorImei = new Map<
+      string,
+      typeof registrosVentaAbiertos
+    >();
+
+    for (const registro of registrosVentaAbiertos) {
+      if (!registro.serialImei) continue;
+      const actuales = registrosAbiertosPorImei.get(registro.serialImei) ?? [];
+      actuales.push(registro);
+      registrosAbiertosPorImei.set(registro.serialImei, actuales);
+    }
 
     const restaurables: Array<{
       item: (typeof items)[number];
@@ -171,8 +185,30 @@ export async function POST(req: Request) {
         continue;
       }
 
-      if (imeiConRegistroAbierto(imeisConRegistroAbierto, item.imei)) {
-        bloqueados.push(`${item.imei}: tiene un registro comercial pendiente`);
+      const registrosPendientes = registrosAbiertosPorImei.get(item.imei) ?? [];
+
+      if (registrosPendientes.length > 0) {
+        const detalleRegistros = registrosPendientes
+          .map((registro) =>
+            [
+              `#${registro.id}`,
+              registro.sede?.nombre ? `sede ${registro.sede.nombre}` : "",
+              registro.perfilVendedor?.nombre
+                ? `asesor ${registro.perfilVendedor.nombre}`
+                : "",
+              registro.clienteNombre ? `cliente ${registro.clienteNombre}` : "",
+              registro.estadoVentaRegistro
+                ? `estado ${registro.estadoVentaRegistro}`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(", ")
+          )
+          .join(" | ");
+
+        bloqueados.push(
+          `${item.imei}: tiene registro comercial pendiente (${detalleRegistros})`
+        );
         continue;
       }
 
@@ -274,8 +310,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-}
-
-function imeiConRegistroAbierto(registros: Set<string>, imei: string) {
-  return registros.has(imei);
 }
