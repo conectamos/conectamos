@@ -30,6 +30,16 @@ function esPrestamoActivo(estado: string | null | undefined) {
   );
 }
 
+function dividirEnLotes<T>(items: T[], tamanoLote: number) {
+  const lotes: T[][] = [];
+
+  for (let index = 0; index < items.length; index += tamanoLote) {
+    lotes.push(items.slice(index, index + tamanoLote));
+  }
+
+  return lotes;
+}
+
 export async function GET(req: Request) {
   try {
     const user = await getSessionUser();
@@ -77,39 +87,47 @@ export async function GET(req: Request) {
       orderBy: { id: "desc" },
     });
 
-    const equiposRelacionados = Array.from(
-      new Map(
+    const imeisRelacionados = Array.from(
+      new Set(prestamosCrudos.map((prestamo) => prestamo.imei).filter(Boolean))
+    );
+    const sedeIdsRelacionados = Array.from(
+      new Set(
         prestamosCrudos
           .flatMap((prestamo) => [
-            {
-              imei: prestamo.imei,
-              sedeId: prestamo.sedeDestinoId,
-            },
-            {
-              imei: prestamo.imei,
-              sedeId: prestamo.sedeOrigenId,
-            },
+            prestamo.sedeDestinoId,
+            prestamo.sedeOrigenId,
           ])
-          .map((item) => [`${item.imei}:${item.sedeId}`, item])
-      ).values()
+          .filter((sedeId) => Number.isInteger(sedeId) && sedeId > 0)
+      )
     );
 
     const inventarioRelacionado =
-      equiposRelacionados.length > 0
-        ? await prisma.inventarioSede.findMany({
-            where: {
-              OR: equiposRelacionados,
-            },
-            select: {
-              imei: true,
-              sedeId: true,
-              deboA: true,
-              estadoFinanciero: true,
-              estadoActual: true,
-              origen: true,
-              inventarioPrincipalId: true,
-            },
-          })
+      imeisRelacionados.length > 0 && sedeIdsRelacionados.length > 0
+        ? (
+            await Promise.all(
+              dividirEnLotes(imeisRelacionados, 800).map((imeisLote) =>
+                prisma.inventarioSede.findMany({
+                  where: {
+                    imei: {
+                      in: imeisLote,
+                    },
+                    sedeId: {
+                      in: sedeIdsRelacionados,
+                    },
+                  },
+                  select: {
+                    imei: true,
+                    sedeId: true,
+                    deboA: true,
+                    estadoFinanciero: true,
+                    estadoActual: true,
+                    origen: true,
+                    inventarioPrincipalId: true,
+                  },
+                })
+              )
+            )
+          ).flat()
         : [];
 
     const inventarioPorSede = new Map(
