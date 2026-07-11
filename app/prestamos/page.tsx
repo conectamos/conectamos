@@ -159,7 +159,17 @@ export default function PrestamosPage() {
 
       const res = await fetch(endpoint, { cache: "no-store" });
       const data = await res.json();
-      setPrestamos(Array.isArray(data) ? data : []);
+
+      if (!res.ok || !Array.isArray(data)) {
+        throw new Error(data?.error || "Error cargando prestamos");
+      }
+
+      setPrestamos(data);
+      setMensaje((actual) =>
+        actual === "Error cargando prestamos" || actual === "Error cargando sesion"
+          ? ""
+          : actual
+      );
     } catch {
       setMensaje("Error cargando prestamos");
     }
@@ -183,9 +193,12 @@ export default function PrestamosPage() {
   }, [cargarPrestamos, user]);
 
   useLiveRefresh(async () => {
-    await cargarUsuario();
+    if (!user) {
+      return;
+    }
+
     await cargarPrestamos();
-  }, { intervalMs: 10000 });
+  }, { enabled: Boolean(user), intervalMs: 30000 });
 
   const sedeFiltroNombre = useMemo(() => {
     if (!esAdmin) {
