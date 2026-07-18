@@ -8,11 +8,13 @@ import {
   esPerfilSupervisor,
   puedeConsultarReporteSiigo,
   puedeAccederPanelFacturador,
+  puedeAccederModulosOperativos,
   esRolAdministrativo,
 } from "@/lib/access-control";
 import DashboardUtilityGate from "./_components/dashboard-utility-gate";
 import LogoutButton from "./_components/logout-button";
 import VendorWelcomeModal from "./_components/vendor-welcome-modal";
+import PendingLoanAlertModal from "./_components/pending-loan-alert-modal";
 import { getCurrentBogotaMonthRange } from "@/lib/ventas-utils";
 import { getVendorWelcomeMessage } from "@/lib/vendor-welcome-message";
 import {
@@ -1056,6 +1058,11 @@ export default async function DashboardPage() {
       {esPerfilRegistroVenta(session.perfilTipo) && mensajeBienvenidaVendedor && (
         <VendorWelcomeModal
           mensaje={mensajeBienvenidaVendedor}
+          sessionKey={session.sessionKey ?? `${session.id}-${session.perfilId ?? "usuario"}`}
+        />
+      )}
+      {puedeAccederModulosOperativos(session.perfilTipo) && session.sedeId && (
+        <PendingLoanAlertModal
           sessionKey={session.sessionKey ?? `${session.id}-${session.perfilId ?? "usuario"}`}
         />
       )}
