@@ -10,7 +10,9 @@ import {
   DashboardSidebar,
   type NavigationItem,
 } from "@/app/dashboard/_components/operations-dashboard";
-import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
 import LogoutButton from "@/app/dashboard/_components/logout-button";
 
 type ItemPrincipal = {
@@ -45,15 +47,7 @@ type SessionUser = {
   rolNombre: string;
 };
 
-type FiltroEstado = "TODOS" | "BODEGA" | "ENVIADOS" | "COBRO_PENDIENTE" | "PAGADOS";
-
-const FILTROS_ESTADO: Array<{ value: FiltroEstado; label: string }> = [
-  { value: "TODOS", label: "Todos" },
-  { value: "BODEGA", label: "Bodega" },
-  { value: "ENVIADOS", label: "Enviados a sede" },
-  { value: "COBRO_PENDIENTE", label: "Deuda" },
-  { value: "PAGADOS", label: "Pagados" },
-];
+const PAGE_SIZE = 25;
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
@@ -76,30 +70,46 @@ function mensajeConBloqueos(data: { error?: string; bloqueados?: unknown }, fall
 }
 
 function MetricCard({
+  icon,
+  iconClassName,
   label,
   value,
   detail,
   valueClass = "text-slate-950",
 }: {
+  icon: DashboardIconName;
+  iconClassName: string;
   label: string;
   value: string | number;
   detail: string;
   valueClass?: string;
 }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-      <p
-        className={[
-          "mt-3 max-w-full text-[clamp(1.45rem,1.7vw,2rem)] font-black leading-tight tracking-tight [overflow-wrap:anywhere]",
-          valueClass,
-        ].join(" ")}
-      >
-        {value}
-      </p>
-      <p className="mt-2 text-sm text-slate-500">{detail}</p>
+    <div className="min-h-[148px] min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-4">
+        <span
+          className={[
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
+            iconClassName,
+          ].join(" ")}
+        >
+          <DashboardIcon name={icon} className="h-6 w-6" />
+        </span>
+        <div className="min-w-0 pt-0.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+            {label}
+          </p>
+          <p
+            className={[
+              "mt-2 max-w-full text-[clamp(1.4rem,1.55vw,1.9rem)] font-black leading-tight tracking-tight [overflow-wrap:anywhere]",
+              valueClass,
+            ].join(" ")}
+          >
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -263,8 +273,8 @@ export default function InventarioPrincipalPage() {
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
   const [busqueda, setBusqueda] = useState("");
-  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("TODOS");
   const [filtroSedeDestinoId, setFiltroSedeDestinoId] = useState("");
+  const [pagina, setPagina] = useState(1);
   const [nuevaReferencia, setNuevaReferencia] = useState("");
   const [referenciaEditada, setReferenciaEditada] = useState("");
   const [editandoReferenciaId, setEditandoReferenciaId] = useState<number | null>(null);
@@ -412,20 +422,6 @@ export default function InventarioPrincipalPage() {
     return items.filter((item) => {
       const sedeDestino =
         sedes.find((sede) => sede.id === item.sedeDestinoId)?.nombre || "";
-      const estadoNormalizado = String(item.estado || "BODEGA").toUpperCase();
-      const cobroNormalizado = String(item.estadoCobro || "").toUpperCase();
-
-      const cumpleEstado =
-        filtroEstado === "TODOS" ||
-        (filtroEstado === "BODEGA" && estadoNormalizado === "BODEGA") ||
-        (filtroEstado === "ENVIADOS" && estadoNormalizado !== "BODEGA") ||
-        (filtroEstado === "COBRO_PENDIENTE" && cobroNormalizado === "PENDIENTE") ||
-        (filtroEstado === "PAGADOS" &&
-          (estadoNormalizado === "PAGO" || cobroNormalizado === "PAGADO"));
-
-      if (!cumpleEstado) {
-        return false;
-      }
 
       if (
         filtroSedeDestinoId &&
@@ -453,11 +449,47 @@ export default function InventarioPrincipalPage() {
         .toLowerCase()
         .includes(termino);
     });
-  }, [busqueda, filtroEstado, filtroSedeDestinoId, items, sedes]);
+  }, [busqueda, filtroSedeDestinoId, items, sedes]);
+
+  const totalPaginas = Math.max(1, Math.ceil(itemsFiltrados.length / PAGE_SIZE));
+  const paginaActual = Math.min(pagina, totalPaginas);
+  const itemsPaginados = useMemo(() => {
+    const inicio = (paginaActual - 1) * PAGE_SIZE;
+    return itemsFiltrados.slice(inicio, inicio + PAGE_SIZE);
+  }, [itemsFiltrados, paginaActual]);
+  const paginasVisibles = useMemo(() => {
+    const candidatas = new Set([
+      1,
+      totalPaginas,
+      paginaActual - 1,
+      paginaActual,
+      paginaActual + 1,
+    ]);
+
+    return Array.from(candidatas)
+      .filter((numero) => numero >= 1 && numero <= totalPaginas)
+      .sort((a, b) => a - b);
+  }, [paginaActual, totalPaginas]);
+  const primerResultado =
+    itemsFiltrados.length === 0 ? 0 : (paginaActual - 1) * PAGE_SIZE + 1;
+  const ultimoResultado = Math.min(
+    paginaActual * PAGE_SIZE,
+    itemsFiltrados.length
+  );
+
+  useEffect(() => {
+    setPagina(1);
+  }, [busqueda, filtroSedeDestinoId]);
+
+  useEffect(() => {
+    if (pagina > totalPaginas) {
+      setPagina(totalPaginas);
+    }
+  }, [pagina, totalPaginas]);
 
   const idsVisibles = useMemo(
-    () => itemsFiltrados.map((item) => item.id),
-    [itemsFiltrados]
+    () => itemsPaginados.map((item) => item.id),
+    [itemsPaginados]
   );
 
   const todosVisiblesSeleccionados = useMemo(
@@ -566,8 +598,7 @@ export default function InventarioPrincipalPage() {
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario principal");
       const fecha = new Date().toISOString().slice(0, 10);
-      const filtro = filtroEstado.toLowerCase().replace(/_/g, "-");
-      XLSX.writeFile(workbook, `inventario-principal-${filtro}-${fecha}.xlsx`);
+      XLSX.writeFile(workbook, `inventario-principal-${fecha}.xlsx`);
 
       setMensaje(`Exportacion completada: ${itemsFiltrados.length} equipo(s) en Excel.`);
     } catch {
@@ -575,7 +606,7 @@ export default function InventarioPrincipalPage() {
     } finally {
       setExportandoExcel(false);
     }
-  }, [filtroEstado, itemsFiltrados, sedes]);
+  }, [itemsFiltrados, sedes]);
 
   const alternarSeleccion = (id: number) => {
     setIdsSeleccionados((actuales) =>
@@ -1157,7 +1188,21 @@ export default function InventarioPrincipalPage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
+              <label className="relative w-full sm:w-[360px] xl:w-[420px]">
+                <span className="sr-only">Buscar en inventario principal</span>
+                <input
+                  type="search"
+                  value={busqueda}
+                  onChange={(event) => setBusqueda(event.target.value)}
+                  placeholder="Buscar por IMEI, referencia, factura o distribuidor..."
+                  className="min-h-12 w-full rounded-xl border border-slate-200 bg-white py-3 pl-4 pr-12 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                />
+                <DashboardIcon
+                  name="search"
+                  className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500"
+                />
+              </label>
               <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
                   {inicialesUsuario || (
@@ -1177,50 +1222,14 @@ export default function InventarioPrincipalPage() {
                 variant="light"
                 className="min-h-12 shrink-0 rounded-xl"
               />
+              <Link
+                href="/inventario/nuevo"
+                className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl bg-[#e30613] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#bd0711]"
+              >
+                + Nuevo inventario
+              </Link>
             </div>
           </header>
-
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                  Bodega principal
-                </p>
-                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-                  Control de inventario
-                </h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                  Administra el stock disponible antes de enviarlo a sedes y conserva la trazabilidad de cada equipo.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
-                    {itemsFiltrados.length} equipos visibles
-                  </span>
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
-                    {equiposDisponibles.length} disponibles
-                  </span>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-amber-700">
-                    {pendientesCobro.length} cobros pendientes
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href="/inventario/nuevo"
-                  className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#e30613] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#bd0711]"
-                >
-                  + Nuevo inventario
-                </Link>
-                <Link
-                  href="/dashboard"
-                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
-                >
-                  Volver
-                </Link>
-              </div>
-            </div>
-          </section>
 
         {mensaje && (
           <div
@@ -1237,23 +1246,31 @@ export default function InventarioPrincipalPage() {
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard
+            icon="inventory"
+            iconClassName="bg-slate-100 text-slate-700"
             label="Equipos en bodega"
             value={equiposDisponibles.length}
             detail="Stock listo para enviar a sede."
           />
           <MetricCard
+            icon="cash"
+            iconClassName="bg-emerald-50 text-emerald-600"
             label="Valor en bodega"
             value={formatoPesos(valorEnBodega)}
             detail="Suma solo equipos en estado BODEGA."
             valueClass="text-emerald-700"
           />
           <MetricCard
+            icon="send"
+            iconClassName="bg-blue-50 text-blue-600"
             label="Enviados a sede"
             value={equiposEnviados.length}
             detail="Equipos ya despachados desde bodega."
             valueClass="text-sky-700"
           />
           <MetricCard
+            icon="document"
+            iconClassName="bg-orange-50 text-orange-600"
             label="Cobro pendiente"
             value={pendientesCobro.length}
             detail="Casos enviados con seguimiento de cobro."
@@ -1261,27 +1278,43 @@ export default function InventarioPrincipalPage() {
           />
         </section>
 
-        <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Catalogo
-              </div>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+          <button
+            type="button"
+            onClick={() => setMostrarCatalogoReferencias((actual) => !actual)}
+            aria-expanded={mostrarCatalogoReferencias}
+            className="flex w-full items-center justify-between gap-4 px-5 py-5 text-left transition hover:bg-slate-50"
+          >
+            <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <DashboardIcon name="catalog" className="h-5 w-5" />
+              </span>
+              <h2 className="text-lg font-black tracking-tight text-slate-950">
                 Referencias de bodega
               </h2>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.14em]">
-                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-700">
+              <div className="flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-[0.14em]">
+                <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700 ring-1 ring-emerald-100">
                   {referenciasActivas.length} activas
                 </span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-600">
+                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-600 ring-1 ring-slate-200">
                   {referenciasOcultas.length} ocultas
                 </span>
               </div>
             </div>
+            <span
+              className={[
+                "text-xl text-slate-500 transition-transform",
+                mostrarCatalogoReferencias ? "rotate-180" : "",
+              ].join(" ")}
+              aria-hidden="true"
+            >
+              ⌄
+            </span>
+          </button>
 
-            <div className="flex w-full flex-col gap-3 xl:max-w-[760px]">
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_160px]">
+          {mostrarCatalogoReferencias && (
+            <div className="border-t border-slate-200 p-5">
+              <div className="grid max-w-[760px] gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
                 <input
                   type="text"
                   value={nuevaReferencia}
@@ -1297,19 +1330,8 @@ export default function InventarioPrincipalPage() {
                 >
                   Agregar
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setMostrarCatalogoReferencias((actual) => !actual)}
-                  className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-800 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
-                >
-                  {mostrarCatalogoReferencias ? "Ocultar lista" : "Ver catalogo"}
-                </button>
               </div>
-            </div>
-          </div>
-
-          {mostrarCatalogoReferencias && (
-            <div className="mt-5 max-w-[760px] rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="mt-5 max-w-[760px] rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
                 {referenciasCatalogo.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-500">
@@ -1417,36 +1439,33 @@ export default function InventarioPrincipalPage() {
                 )}
               </div>
             </div>
+            </div>
           )}
         </section>
 
-        <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Exploracion de bodega
+        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+          <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-4">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <DashboardIcon name="inventory" className="h-6 w-6" />
+              </span>
+              <div>
+                <h2 className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+                  Stock de inventario principal
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  Administra disponibilidad, despachos hacia sedes y eliminación de registros.
+                </p>
               </div>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-                Stock de inventario principal
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                Busca por IMEI, referencia, factura, distribuidor o estado para operar mas rapido sobre la bodega principal.
-              </p>
             </div>
 
-            <div className="w-full xl:max-w-[680px]">
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-                <input
-                  type="text"
-                  value={busqueda}
-                  onChange={(event) => setBusqueda(event.target.value)}
-                  placeholder="Buscar por IMEI, referencia, factura o distribuidor..."
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                />
+            <div className="flex flex-wrap items-center gap-3">
+              <label>
+                <span className="sr-only">Filtrar por sede destino</span>
                 <select
                   value={filtroSedeDestinoId}
                   onChange={(event) => setFiltroSedeDestinoId(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                  className="min-h-10 min-w-[210px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 >
                   <option value="">Todas las sedes</option>
                   {sedesDestinoOperativas.map((sede) => (
@@ -1455,52 +1474,17 @@ export default function InventarioPrincipalPage() {
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {FILTROS_ESTADO.map((filtro) => (
-                  <button
-                    key={filtro.value}
-                    type="button"
-                    onClick={() => setFiltroEstado(filtro.value)}
-                    className={[
-                      "rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.12em] transition",
-                      filtroEstado === filtro.value
-                        ? "border-[#e30613] bg-[#e30613] text-white"
-                        : "border-slate-300 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
-                    ].join(" ")}
-                  >
-                    {filtro.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Listado
-              </div>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-                Equipos en bodega principal
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Administra disponibilidad, despacho hacia sedes y eliminacion de registros.
-              </p>
-            </div>
-
-            <div className="flex flex-col items-start gap-2 sm:items-end">
+              </label>
               <button
                 type="button"
                 onClick={() => void exportarInventarioExcel()}
                 disabled={exportandoExcel || itemsFiltrados.length === 0}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-60"
               >
+                <DashboardIcon name="download" className="h-4 w-4" />
                 {exportandoExcel ? "Exportando..." : "Exportar Excel"}
               </button>
-              <div className="text-sm font-medium text-slate-500">
+              <div className="text-sm font-medium tabular-nums text-slate-500">
                 {itemsFiltrados.length} resultado(s)
               </div>
             </div>
@@ -1613,7 +1597,7 @@ export default function InventarioPrincipalPage() {
                     </td>
                   </tr>
                 ) : (
-                  itemsFiltrados.map((item) => {
+                  itemsPaginados.map((item) => {
                     const estadoNormalizado = String(item.estado || "BODEGA").toUpperCase();
                     const enviado = estadoNormalizado === "PRESTAMO";
                     const pagado = estadoNormalizado === "PAGO";
@@ -1723,6 +1707,60 @@ export default function InventarioPrincipalPage() {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="flex flex-col gap-3 border-t border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500">
+              Mostrando {primerResultado}-{ultimoResultado} de {itemsFiltrados.length} registros
+            </p>
+            <nav
+              className="flex flex-wrap items-center gap-1.5"
+              aria-label="Paginación de inventario"
+            >
+              <button
+                type="button"
+                onClick={() => setPagina((actual) => Math.max(1, actual - 1))}
+                disabled={paginaActual === 1}
+                aria-label="Página anterior"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-red-200 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ‹
+              </button>
+              {paginasVisibles.map((numero, index) => {
+                const anterior = paginasVisibles[index - 1];
+
+                return (
+                  <span key={numero} className="flex items-center gap-1.5">
+                    {anterior && numero - anterior > 1 && (
+                      <span className="px-1 text-sm text-slate-400">…</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setPagina(numero)}
+                      aria-current={paginaActual === numero ? "page" : undefined}
+                      className={[
+                        "flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm font-bold transition",
+                        paginaActual === numero
+                          ? "border-[#e30613] bg-red-50 text-[#e30613]"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:text-[#e30613]",
+                      ].join(" ")}
+                    >
+                      {numero}
+                    </button>
+                  </span>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() =>
+                  setPagina((actual) => Math.min(totalPaginas, actual + 1))
+                }
+                disabled={paginaActual === totalPaginas}
+                aria-label="Página siguiente"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-red-200 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ›
+              </button>
+            </nav>
           </div>
         </section>
         </main>

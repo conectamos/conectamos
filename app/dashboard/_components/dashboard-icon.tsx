@@ -16,7 +16,12 @@ export type DashboardIconName =
   | "arrow"
   | "lock"
   | "user"
-  | "close";
+  | "close"
+  | "search"
+  | "send"
+  | "document"
+  | "download"
+  | "catalog";
 
 export default function DashboardIcon({
   name,
@@ -158,6 +163,41 @@ export default function DashboardIcon({
       return (
         <svg {...common}>
           <path d="m6 6 12 12M18 6 6 18" />
+        </svg>
+      );
+    case "search":
+      return (
+        <svg {...common}>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m16.5 16.5 4 4" />
+        </svg>
+      );
+    case "send":
+      return (
+        <svg {...common}>
+          <path d="m3 11 17-8-7.5 18-2.2-7.3L3 11Z" />
+          <path d="m10.3 13.7 4.2-4.2" />
+        </svg>
+      );
+    case "document":
+      return (
+        <svg {...common}>
+          <path d="M6 3h8l4 4v14H6V3Z" />
+          <path d="M14 3v5h5M9 13h6m-6 4h6" />
+        </svg>
+      );
+    case "download":
+      return (
+        <svg {...common}>
+          <path d="M12 3v12m-4-4 4 4 4-4" />
+          <path d="M5 20h14" />
+        </svg>
+      );
+    case "catalog":
+      return (
+        <svg {...common}>
+          <path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v17H7.5A3.5 3.5 0 0 0 4 22V5.5Z" />
+          <path d="M20 5.5A3.5 3.5 0 0 0 16.5 2H13v17h3.5A3.5 3.5 0 0 1 20 22V5.5Z" />
         </svg>
       );
   }
