@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import FinancialPasswordSettings from "./_components/financial-password-settings";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 
 type Resumen = {
   cajaGeneralVentas: number;
@@ -54,9 +60,9 @@ function toneClasses(tone: Tone) {
   switch (tone) {
     case "positive":
       return {
-        card: "border-emerald-200 bg-emerald-50/80",
+        card: "border-slate-200 bg-white",
         value: "text-emerald-700",
-        detail: "text-emerald-600",
+        detail: "text-slate-500",
       };
     case "negative":
       return {
@@ -86,7 +92,7 @@ function MetricCard({
   tone = "neutral",
 }: {
   label: string;
-  value: number;
+  value: number | null;
   detail: string;
   tone?: Tone;
 }) {
@@ -95,7 +101,7 @@ function MetricCard({
   return (
     <div
       className={[
-        "min-w-0 rounded-[26px] border px-5 py-5 shadow-sm transition",
+        "min-w-0 rounded-2xl border px-5 py-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] transition",
         styles.card,
       ].join(" ")}
     >
@@ -108,7 +114,7 @@ function MetricCard({
           styles.value,
         ].join(" ")}
       >
-        {formatoPesos(value)}
+        {value === null ? "—" : formatoPesos(value)}
       </p>
       <p className={["mt-3 text-sm leading-6", styles.detail].join(" ")}>
         {detail}
@@ -128,10 +134,10 @@ function SectionHeader({
 }) {
   return (
     <div>
-      <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
         {badge}
-      </div>
-      <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+      </p>
+      <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
         {title}
       </h2>
       <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
@@ -152,10 +158,10 @@ function ActionLink({
     <Link
       href={href}
       className={[
-        "inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition",
+        "inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold transition",
         primary
-          ? "bg-slate-950 text-white hover:bg-slate-800"
-          : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+          ? "bg-[#e30613] text-white hover:bg-[#bd0711]"
+          : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
       ].join(" ")}
     >
       {label}
@@ -371,75 +377,114 @@ export default function PanelFinancieroPage() {
   const estadoResumen =
     resumenGeneral >= 0 ? "Balance saludable" : "Balance bajo presion";
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdmin
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#eef2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <section className="relative overflow-hidden rounded-[36px] border border-[#2b2f36] bg-[linear-gradient(135deg,#0d0f13_0%,#171a21_52%,#3b1118_100%)] px-6 py-7 text-white shadow-[0_28px_90px_rgba(15,23,42,0.22)] md:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(199,154,87,0.24),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_20%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/caja"
+        coverageLabel={coberturaActual}
+        items={navigationItems}
+      />
 
-          <div className="relative grid gap-6 xl:grid-cols-[1.4fr_0.9fr]">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/12 bg-white/6 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#f1d19c]">
-                Panel financiero
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
                 Centro financiero
               </h1>
-
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200 md:text-base">
-                Lectura ejecutiva de liquidez, riesgo operativo, cartera y
-                financieras con una vista mas clara para la toma de decisiones.
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                Liquidez, riesgo operativo, cartera y financieras
               </p>
-
-              <div className="mt-6 flex flex-wrap gap-3 text-sm text-slate-200">
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
                   Cobertura: {coberturaActual}
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Estado: {estadoResumen}
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  Estado: {resumen ? estadoResumen : "Calculando balance"}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
                   Actualizado:{" "}
                   {ultimaActualizacion
                     ? formatTimeLabel(ultimaActualizacion)
                     : "Cargando..."}
-                </div>
+                </span>
               </div>
             </div>
 
-            <div className="rounded-[30px] border border-white/15 bg-[linear-gradient(135deg,#071122_0%,#111827_58%,#153f3c_100%)] p-5 shadow-[0_20px_55px_rgba(0,0,0,0.22)] backdrop-blur">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                Resultado neto
-              </p>
-              <p className="mt-3 text-5xl font-black tracking-tight text-white">
-                {formatoPesos(resumenGeneral)}
-              </p>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-emerald-200/20 bg-emerald-400/10 px-4 py-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-100">
-                    Activos
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {user?.nombre || user?.usuario || "Cargando usuario"}
                   </p>
-                  <p className="mt-2 text-2xl font-black text-white">
-                    {formatoPesos(activos)}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-rose-200/20 bg-rose-400/10 px-4 py-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-100">
-                    Pasivos
-                  </p>
-                  <p className="mt-2 text-2xl font-black text-white">
-                    {formatoPesos(pasivos)}
+                  <p className="truncate text-xs text-slate-500">
+                    {user?.rolNombre || "Sesión activa"}
                   </p>
                 </div>
               </div>
+              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
             </div>
-          </div>
-        </section>
+          </header>
 
-        <section className="rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf7f1_100%)] p-5 shadow-[0_18px_50px_rgba(15,23,42,0.07)]">
+          <section className="mt-6 grid gap-4 md:grid-cols-3" aria-label="Balance financiero">
+            <MetricCard
+              label="Resultado neto"
+              value={resumen ? resumenGeneral : null}
+              detail="Activos disponibles menos compromisos operativos."
+              tone={resumenGeneral >= 0 ? "positive" : "negative"}
+            />
+            <MetricCard
+              label="Activos"
+              value={resumen ? activos : null}
+              detail="Liquidez, cartera por cobrar, bodega y financieras."
+              tone="positive"
+            />
+            <MetricCard
+              label="Pasivos"
+              value={resumen ? pasivos : null}
+              detail="Deudas, pendientes, garantías y gastos de cartera."
+              tone="negative"
+            />
+          </section>
+
+        <div className="mt-6 space-y-6">
+        <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <SectionHeader
               badge="Acciones y control"
@@ -454,7 +499,7 @@ export default function PanelFinancieroPage() {
                   <select
                     value={sedeFiltroId}
                     onChange={(event) => setSedeFiltroId(event.target.value)}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                   >
                     <option value="TODAS">Todas las sedes</option>
                     {sedes.map((sede) => (
@@ -499,13 +544,13 @@ export default function PanelFinancieroPage() {
         )}
 
         {!resumen ? (
-          <div className="rounded-[30px] border border-slate-200 bg-white px-6 py-12 text-center text-slate-500 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center text-slate-500 shadow-sm">
             Cargando panel financiero...
           </div>
         ) : (
           <>
             <div className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
-              <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
                 <SectionHeader
                   badge="Liquidez"
                   title="Lectura operativa"
@@ -540,7 +585,7 @@ export default function PanelFinancieroPage() {
                 </div>
               </section>
 
-              <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
                 <SectionHeader
                   badge="Alertas"
                   title="Lectura ejecutiva"
@@ -573,7 +618,7 @@ export default function PanelFinancieroPage() {
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
-              <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
                 <SectionHeader
                   badge="Riesgo y cartera"
                   title="Compromisos abiertos"
@@ -610,7 +655,7 @@ export default function PanelFinancieroPage() {
                 </div>
               </section>
 
-              <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
                 <SectionHeader
                   badge="Inventario"
                   title="Respaldo operativo"
@@ -618,7 +663,7 @@ export default function PanelFinancieroPage() {
                 />
 
                 <div className="mt-6">
-                  <div className="rounded-[28px] border border-emerald-200 bg-emerald-50/80 p-6 shadow-sm">
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 shadow-sm">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-500">
                       Equipos en bodega
                     </p>
@@ -634,7 +679,7 @@ export default function PanelFinancieroPage() {
               </section>
             </div>
 
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                 <SectionHeader
                   badge="Financieras"
@@ -665,7 +710,7 @@ export default function PanelFinancieroPage() {
                     return (
                       <div
                         key={item.nombre}
-                        className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
                       >
                         <div className="flex items-center justify-between gap-4">
                           <div>
@@ -686,7 +731,7 @@ export default function PanelFinancieroPage() {
 
                         <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-slate-200">
                           <div
-                            className="h-full rounded-full bg-[linear-gradient(90deg,#111827_0%,#c79a57_100%)]"
+                            className="h-full rounded-full bg-[#e30613]"
                             style={{ width: `${width}%` }}
                           />
                         </div>
@@ -698,6 +743,8 @@ export default function PanelFinancieroPage() {
             </section>
           </>
         )}
+        </div>
+        </main>
       </div>
     </div>
   );
