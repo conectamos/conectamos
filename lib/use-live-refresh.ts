@@ -34,6 +34,7 @@ export function useLiveRefresh(
 ) {
   const { enabled = true, intervalMs = 10000, runOnMount = false } = options;
   const refreshRef = useRef(refresh);
+  const refreshPendingRef = useRef(false);
 
   useEffect(() => {
     refreshRef.current = refresh;
@@ -45,7 +46,20 @@ export function useLiveRefresh(
     }
 
     const runRefresh = () => {
-      void refreshRef.current();
+      if (refreshPendingRef.current) {
+        return;
+      }
+
+      refreshPendingRef.current = true;
+
+      void Promise.resolve()
+        .then(() => refreshRef.current())
+        .catch(() => {
+          // Cada consumidor decide como presentar sus errores de actualizacion.
+        })
+        .finally(() => {
+          refreshPendingRef.current = false;
+        });
     };
 
     const handleFocus = () => {

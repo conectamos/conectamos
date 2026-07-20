@@ -32,10 +32,15 @@ export default function SessionActivityGuard() {
           activitySinceHeartbeatRef.current = true;
           return;
         }
-      } catch {}
 
-      if (!cancelled) {
-        authenticatedRef.current = false;
+        if (
+          !cancelled &&
+          (res.status === 401 || res.status === 403)
+        ) {
+          authenticatedRef.current = false;
+        }
+      } catch {
+        // Un fallo temporal de red no invalida una sesion que ya estaba activa.
       }
     };
 
@@ -67,6 +72,7 @@ export default function SessionActivityGuard() {
       }
 
       heartbeatPendingRef.current = true;
+      const attemptedAt = Date.now();
 
       try {
         const res = await fetch("/api/session/heartbeat", {
@@ -74,18 +80,21 @@ export default function SessionActivityGuard() {
           credentials: "include",
         });
 
-        if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
           authenticatedRef.current = false;
           window.location.href = "/";
           return;
         }
 
-        lastHeartbeatAtRef.current = Date.now();
+        if (!res.ok) {
+          return;
+        }
+
         activitySinceHeartbeatRef.current = false;
       } catch {
-        authenticatedRef.current = false;
-        window.location.href = "/";
+        // Conserva la sesion y vuelve a intentar tras el intervalo normal.
       } finally {
+        lastHeartbeatAtRef.current = attemptedAt;
         heartbeatPendingRef.current = false;
       }
     };

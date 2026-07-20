@@ -172,6 +172,7 @@ function ActionLink({
 export default function PanelFinancieroPage() {
   const [resumen, setResumen] = useState<Resumen | null>(null);
   const [error, setError] = useState("");
+  const [actualizacionAdvertencia, setActualizacionAdvertencia] = useState("");
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
@@ -208,8 +209,6 @@ export default function PanelFinancieroPage() {
 
   const cargarResumen = async () => {
     try {
-      setError("");
-
       const params = new URLSearchParams();
 
       if (esAdmin && sedeFiltroId !== "TODAS") {
@@ -224,17 +223,33 @@ export default function PanelFinancieroPage() {
         cache: "no-store",
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setError(data.error || "Error cargando panel financiero");
+        const mensaje = data.error || "Error cargando panel financiero";
+
+        if (resumen) {
+          setActualizacionAdvertencia(
+            "No se pudo actualizar el panel en este momento. Se conservan los ultimos datos validos."
+          );
+        } else {
+          setError(mensaje);
+        }
         return;
       }
 
       setResumen(data.resumen);
+      setError("");
+      setActualizacionAdvertencia("");
       setUltimaActualizacion(new Date());
     } catch {
-      setError("Error interno cargando panel financiero");
+      if (resumen) {
+        setActualizacionAdvertencia(
+          "No se pudo actualizar el panel en este momento. Se conservan los ultimos datos validos."
+        );
+      } else {
+        setError("Error interno cargando panel financiero");
+      }
     }
   };
 
@@ -256,7 +271,7 @@ export default function PanelFinancieroPage() {
     },
     {
       enabled: Boolean(user),
-      intervalMs: 10000,
+      intervalMs: 30000,
       runOnMount: true,
     }
   );
@@ -540,6 +555,15 @@ export default function PanelFinancieroPage() {
         {error && (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
             {error}
+          </div>
+        )}
+
+        {actualizacionAdvertencia && (
+          <div
+            className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800"
+            role="status"
+          >
+            {actualizacionAdvertencia}
           </div>
         )}
 
