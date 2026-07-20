@@ -65,6 +65,11 @@ type SolicitudPagoLote = {
   items: Prestamo[];
 };
 
+type SolicitudPagoLoteSeleccionable = SolicitudPagoLote & {
+  seleccionados: Prestamo[];
+  totalSeleccionado: number;
+};
+
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
@@ -83,8 +88,8 @@ function tiempoSolicitudPago(fecha: string | null | undefined) {
   return fechaPago.getTime();
 }
 
-function imeisResumenLote(items: Prestamo[]) {
-  const visibles = items.slice(0, 10).map((item) => item.imei);
+function imeisResumenLote(items: Prestamo[], expandido = false) {
+  const visibles = expandido ? items : items.slice(0, 10);
   const restantes = Math.max(items.length - visibles.length, 0);
 
   return { visibles, restantes };
@@ -134,6 +139,7 @@ export default function PrestamosPage() {
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
   const [lotesDetalleAbiertos, setLotesDetalleAbiertos] = useState<string[]>([]);
+  const [lotesImeisExpandidos, setLotesImeisExpandidos] = useState<string[]>([]);
   const [idsSolicitudPago, setIdsSolicitudPago] = useState<number[]>([]);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
@@ -604,6 +610,14 @@ export default function PrestamosPage() {
     );
   };
 
+  const alternarImeisLote = (key: string) => {
+    setLotesImeisExpandidos((actuales) =>
+      actuales.includes(key)
+        ? actuales.filter((item) => item !== key)
+        : [...actuales, key]
+    );
+  };
+
   const prestamosFiltrados = useMemo(() => {
     return prestamos
       .filter((prestamo) => {
@@ -650,8 +664,8 @@ export default function PrestamosPage() {
       (acumulado, prestamo) => acumulado + Number(prestamo.costo || 0),
       0
     );
-  const lotesSolicitudPago: SolicitudPagoLote[] = Array.from(
-    prestamosSolicitudPagoSeleccionados
+  const lotesSolicitudPago: SolicitudPagoLoteSeleccionable[] = Array.from(
+    prestamosSeleccionablesPago
       .reduce((mapa, prestamo) => {
         const origen = prestamo.sedeOrigenNombre ?? "Sede sin configurar";
         const destino = prestamo.sedeDestinoNombre ?? "Sede sin configurar";
@@ -672,7 +686,22 @@ export default function PrestamosPage() {
         return mapa;
       }, new Map<string, SolicitudPagoLote>())
       .values()
-  ).sort((a, b) => b.total - a.total);
+  )
+    .map((lote) => {
+      const seleccionados = lote.items.filter((item) =>
+        idsSolicitudPago.includes(item.id)
+      );
+
+      return {
+        ...lote,
+        seleccionados,
+        totalSeleccionado: seleccionados.reduce(
+          (acumulado, item) => acumulado + Number(item.costo || 0),
+          0
+        ),
+      };
+    })
+    .sort((a, b) => b.totalSeleccionado - a.totalSeleccionado || b.total - a.total);
 
   const alternarSeleccionSolicitudPago = (id: number) => {
     setIdsSolicitudPago((actuales) =>
@@ -691,6 +720,19 @@ export default function PrestamosPage() {
       }
 
       return Array.from(new Set([...actuales, ...idsVisibles]));
+    });
+  };
+
+  const alternarSeleccionGrupoPago = (items: Prestamo[]) => {
+    const idsGrupo = items.map((item) => item.id);
+    const grupoCompleto = idsGrupo.every((id) => idsSolicitudPago.includes(id));
+
+    setIdsSolicitudPago((actuales) => {
+      if (grupoCompleto) {
+        return actuales.filter((id) => !idsGrupo.includes(id));
+      }
+
+      return Array.from(new Set([...actuales, ...idsGrupo]));
     });
   };
 
@@ -1173,20 +1215,20 @@ export default function PrestamosPage() {
                   type="button"
                   onClick={alternarSeleccionPagablesVisibles}
                   disabled={cargando || prestamosSeleccionablesPago.length === 0}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-[42px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {todosPagablesVisiblesSeleccionados
-                    ? "Quitar visibles"
-                    : "Seleccionar visibles"}
+                    ? "QUITAR VISIBLES"
+                    : "SELECCIONAR VISIBLES"}
                 </button>
 
                 <button
                   type="button"
                   onClick={limpiarSeleccionSolicitudPago}
                   disabled={cargando || idsSolicitudPago.length === 0}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-[42px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black tracking-[0.06em] text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Limpiar
+                  LIMPIAR
                 </button>
 
                 <button
@@ -1197,9 +1239,9 @@ export default function PrestamosPage() {
                     )
                   }
                   disabled={cargando || prestamosSolicitudPagoSeleccionados.length === 0}
-                  className="rounded-2xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-[42px] rounded-xl bg-[#e30613] px-5 text-xs font-black tracking-[0.06em] text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Enviar lote a pagar
+                  ENVIAR LOTE A PAGAR
                 </button>
               </div>
             </div>
@@ -1236,12 +1278,19 @@ export default function PrestamosPage() {
             {lotesSolicitudPago.length > 0 && (
               <div className="mt-5 grid gap-4 xl:grid-cols-2">
                 {lotesSolicitudPago.map((lote) => {
-                  const resumenImeis = imeisResumenLote(lote.items);
+                  const expansionKey = `solicitud:${lote.key}`;
+                  const imeisExpandidos = lotesImeisExpandidos.includes(expansionKey);
+                  const resumenImeis = imeisResumenLote(lote.items, imeisExpandidos);
+                  const grupoCompleto = lote.seleccionados.length === lote.items.length;
 
                   return (
                     <article
                       key={lote.key}
-                      className="rounded-xl border border-amber-100 bg-amber-50/35 p-5 shadow-sm"
+                      className={`rounded-2xl border p-5 transition ${
+                        lote.seleccionados.length > 0
+                          ? "border-red-200 bg-red-50/25 shadow-sm"
+                          : "border-slate-200 bg-slate-50/35"
+                      }`}
                     >
                       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                         <div>
@@ -1252,35 +1301,73 @@ export default function PrestamosPage() {
                             {lote.origen}
                           </h3>
                           <p className="mt-2 text-sm text-slate-500">
-                            {lote.items.length} equipo
-                            {lote.items.length === 1 ? "" : "s"} incluido
-                            {lote.items.length === 1 ? "" : "s"}
+                            {lote.seleccionados.length} de {lote.items.length} equipos seleccionados
                           </p>
                         </div>
 
-                        <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                            Valor lote
+                            Valor seleccionado
                           </p>
                           <p className="mt-1 text-2xl font-black text-emerald-700">
-                            {formatoPesos(lote.total)}
+                            {formatoPesos(lote.totalSeleccionado)}
                           </p>
                         </div>
                       </div>
 
-                      <div className="mt-5 flex flex-wrap gap-2">
-                        {resumenImeis.visibles.map((imei) => (
-                          <span
-                            key={imei}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-800"
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 pt-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                          Selecciona los IMEI del lote
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => alternarSeleccionGrupoPago(lote.items)}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-[10px] font-black tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
+                        >
+                          {grupoCompleto ? "QUITAR GRUPO" : "SELECCIONAR GRUPO"}
+                        </button>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {resumenImeis.visibles.map((item) => {
+                          const seleccionado = idsSolicitudPago.includes(item.id);
+
+                          return (
+                            <button
+                              type="button"
+                              key={item.id}
+                              onClick={() => alternarSeleccionSolicitudPago(item.id)}
+                              aria-pressed={seleccionado}
+                              title={`${item.referencia} · ${formatoPesos(item.costo)}`}
+                              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                                seleccionado
+                                  ? "border-[#e30613] bg-[#e30613] text-white shadow-sm"
+                                  : "border-slate-300 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50"
+                              }`}
+                            >
+                              <span
+                                className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
+                                  seleccionado
+                                    ? "border-white/70 bg-white text-[#e30613]"
+                                    : "border-slate-300 bg-white text-transparent"
+                                }`}
+                              >
+                                ✓
+                              </span>
+                              {item.imei}
+                            </button>
+                          );
+                        })}
+                        {(resumenImeis.restantes > 0 || imeisExpandidos) && (
+                          <button
+                            type="button"
+                            onClick={() => alternarImeisLote(expansionKey)}
+                            className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-700"
                           >
-                            {imei}
-                          </span>
-                        ))}
-                        {resumenImeis.restantes > 0 && (
-                          <span className="rounded-full border border-slate-900 bg-slate-900 px-3 py-1 text-xs font-bold text-white">
-                            +{resumenImeis.restantes} mas
-                          </span>
+                            {imeisExpandidos
+                              ? "VER MENOS"
+                              : `VER +${resumenImeis.restantes} MÁS`}
+                          </button>
                         )}
                       </div>
                     </article>
@@ -1325,7 +1412,9 @@ export default function PrestamosPage() {
               {lotesPagoPendiente.map((lote) => {
                 const detalleAbierto = lotesDetalleAbiertos.includes(lote.key);
                 const ids = lote.items.map((item) => item.id);
-                const resumenImeis = imeisResumenLote(lote.items);
+                const expansionKey = `pendiente:${lote.key}`;
+                const imeisExpandidos = lotesImeisExpandidos.includes(expansionKey);
+                const resumenImeis = imeisResumenLote(lote.items, imeisExpandidos);
 
                 return (
                   <article
@@ -1390,18 +1479,25 @@ export default function PrestamosPage() {
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {resumenImeis.visibles.map((imei) => (
+                        {resumenImeis.visibles.map((item) => (
                           <span
-                            key={imei}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-800"
+                            key={item.id}
+                            title={`${item.referencia} · ${formatoPesos(item.costo)}`}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800"
                           >
-                            {imei}
+                            {item.imei}
                           </span>
                         ))}
-                        {resumenImeis.restantes > 0 && (
-                          <span className="rounded-full border border-slate-200 bg-slate-900 px-3 py-1 text-xs font-bold text-white">
-                            +{resumenImeis.restantes} mas
-                          </span>
+                        {(resumenImeis.restantes > 0 || imeisExpandidos) && (
+                          <button
+                            type="button"
+                            onClick={() => alternarImeisLote(expansionKey)}
+                            className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-700"
+                          >
+                            {imeisExpandidos
+                              ? "VER MENOS"
+                              : `VER +${resumenImeis.restantes} MÁS`}
+                          </button>
                         )}
                       </div>
                     </div>
