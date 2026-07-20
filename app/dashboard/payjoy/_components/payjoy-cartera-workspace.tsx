@@ -331,35 +331,35 @@ function getRowAppearance(status: RowStatus) {
   switch (status) {
     case "MORA":
       return {
-        row: "bg-[#ffd5d5] hover:bg-[#ffc8c8]",
-        surface: "border-red-300/80 bg-white/55 text-slate-900",
+        row: "border-l-4 border-red-500 bg-white hover:bg-red-50/60",
+        surface: "text-slate-800",
         input:
-          "border-red-300 bg-white/75 text-slate-900 focus:border-red-500 focus:ring-red-100",
-        helper: "text-red-900/80",
+          "border-red-200 bg-white text-slate-900 focus:border-red-500 focus:ring-red-100",
+        helper: "text-red-700",
       };
     case "GESTIONAR":
       return {
-        row: "bg-[#fff1f3] hover:bg-[#ffe7eb]",
-        surface: "border-rose-200 bg-white/80 text-slate-900",
+        row: "border-l-4 border-amber-400 bg-white hover:bg-amber-50/60",
+        surface: "text-slate-800",
         input:
-          "border-rose-200 bg-white/90 text-slate-900 focus:border-rose-400 focus:ring-rose-100",
-        helper: "text-rose-800/80",
+          "border-amber-200 bg-white text-slate-900 focus:border-amber-400 focus:ring-amber-100",
+        helper: "text-amber-700",
       };
     case "PAGO":
       return {
-        row: "bg-[#ecfdf3] hover:bg-[#e2f8eb]",
-        surface: "border-emerald-200 bg-white/85 text-slate-900",
+        row: "border-l-4 border-emerald-400 bg-white hover:bg-emerald-50/40",
+        surface: "text-slate-800",
         input:
-          "border-emerald-200 bg-white/95 text-slate-900 focus:border-emerald-400 focus:ring-emerald-100",
-        helper: "text-emerald-800/80",
+          "border-emerald-200 bg-white text-slate-900 focus:border-emerald-400 focus:ring-emerald-100",
+        helper: "text-emerald-700",
       };
     case "PAGO X":
       return {
-        row: "bg-[#ecfdf3] hover:bg-[#e2f8eb]",
-        surface: "border-emerald-200 bg-white/85 text-slate-900",
+        row: "border-l-4 border-sky-400 bg-white hover:bg-sky-50/40",
+        surface: "text-slate-800",
         input:
-          "border-emerald-200 bg-white/95 text-slate-900 focus:border-emerald-400 focus:ring-emerald-100",
-        helper: "text-emerald-800/80",
+          "border-sky-200 bg-white text-slate-900 focus:border-sky-400 focus:ring-sky-100",
+        helper: "text-sky-700",
       };
   }
 }
@@ -563,21 +563,21 @@ function matchesStatusFilter(
 }
 
 const cellInputClass =
-  "w-full rounded-2xl border px-3 py-2.5 text-sm font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition focus:ring-2";
+  "min-h-10 w-full rounded-lg border px-3 py-2 text-xs font-semibold outline-none transition focus:ring-2";
 
 const cellReadonlyClass =
-  "rounded-2xl border px-3 py-2.5 text-sm font-medium";
+  "text-sm font-semibold leading-5";
 
-const tableColCorteClass = "w-[190px] min-w-[190px] px-4 py-4";
-const tableColTransactionClass = "w-[270px] min-w-[270px] px-4 py-4";
-const tableColMerchantClass = "w-[300px] min-w-[300px] px-4 py-4";
-const tableColDeviceClass = "w-[170px] min-w-[170px] px-4 py-4";
-const tableColDeviceFamilyClass = "w-[240px] min-w-[240px] px-4 py-4";
-const tableColImeiClass = "w-[210px] min-w-[210px] px-4 py-4";
-const tableColNationalIdClass = "w-[190px] min-w-[190px] px-4 py-4";
-const tableColInstallmentClass = "w-[190px] min-w-[190px] px-4 py-4";
-const tableColDateClass = "w-[190px] min-w-[190px] px-4 py-4";
-const tableColStatusClass = "w-[170px] min-w-[170px] px-4 py-4";
+const tableColCorteClass = "w-[130px] min-w-[130px] px-3 py-4";
+const tableColTransactionClass = "w-[175px] min-w-[175px] px-3 py-4";
+const tableColMerchantClass = "w-[220px] min-w-[220px] px-3 py-4";
+const tableColDeviceClass = "w-[115px] min-w-[115px] px-3 py-4";
+const tableColDeviceFamilyClass = "w-[175px] min-w-[175px] px-3 py-4";
+const tableColImeiClass = "w-[165px] min-w-[165px] px-3 py-4";
+const tableColNationalIdClass = "w-[135px] min-w-[135px] px-3 py-4";
+const tableColInstallmentClass = "w-[125px] min-w-[125px] px-3 py-4";
+const tableColDateClass = "w-[135px] min-w-[135px] px-3 py-4";
+const tableColStatusClass = "w-[190px] min-w-[190px] px-3 py-4";
 
 export default function PayJoyCarteraWorkspace({
   puedeEliminar,
@@ -1801,25 +1801,33 @@ export default function PayJoyCarteraWorkspace({
               </div>
             </section>
 
-            <section className="mt-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                    Analitica
+            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                    <DashboardIcon name="search" className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
+                      Analitica
+                    </p>
+                    <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                      Filtros de cartera
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Encuentra comercios y prioriza la gestion por estado.
+                    </p>
                   </div>
-                  <h2 className="mt-3 text-xl font-black tracking-tight text-slate-950">
-                    Filtros de cartera
-                  </h2>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
                     Comercios:{" "}
                     <span className="font-semibold text-slate-950">
                       {merchantSummaries.length}
                     </span>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
                     Filas visibles:{" "}
                     <span className="font-semibold text-slate-950">
                       {filteredRows.length}
@@ -1828,17 +1836,23 @@ export default function PayJoyCarteraWorkspace({
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px_auto]">
+              <div className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px_auto]">
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                     Buscar Merchant name
                   </span>
-                  <input
-                    value={merchantQuery}
-                    onChange={(event) => setMerchantQuery(event.target.value)}
-                    placeholder="Ej: CONECTAMOS CLARO 6"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-500"
-                  />
+                  <span className="relative block">
+                    <DashboardIcon
+                      name="search"
+                      className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    />
+                    <input
+                      value={merchantQuery}
+                      onChange={(event) => setMerchantQuery(event.target.value)}
+                      placeholder="Ej: CONECTAMOS CLARO 6"
+                      className="min-h-[50px] w-full rounded-xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
+                    />
+                  </span>
                 </label>
 
                 <label className="block">
@@ -1850,7 +1864,7 @@ export default function PayJoyCarteraWorkspace({
                     onChange={(event) =>
                       handleMerchantSelection(event.target.value)
                     }
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-500"
+                    className="min-h-[50px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
                   >
                     <option value="TODOS">Todos los merchant</option>
                     {merchantSummaries.map((summary) => (
@@ -1867,15 +1881,15 @@ export default function PayJoyCarteraWorkspace({
                 <div className="flex items-end">
                   <button
                     onClick={clearFilters}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    className="min-h-[50px] w-full rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
                   >
                     Limpiar filtros
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex flex-wrap gap-2">
+              <div className="mt-5 flex flex-col gap-4 border-t border-slate-100 pt-5 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex w-fit max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
                   {(
                     ["TODOS", "PAGO", "MORA", "GESTIONAR", "PAGO X"] as const
                   ).map(
@@ -1884,7 +1898,7 @@ export default function PayJoyCarteraWorkspace({
                         key={statusOption}
                         onClick={() => setSelectedStatus(statusOption)}
                         className={[
-                          "rounded-full border px-4 py-2 text-sm font-semibold transition",
+                          "rounded-lg border px-4 py-2 text-xs font-bold transition",
                           statusFilterClass(statusOption, selectedStatus),
                         ].join(" ")}
                       >
@@ -1897,21 +1911,22 @@ export default function PayJoyCarteraWorkspace({
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setMerchantSummaryExpanded((current) => !current)}
-                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
                   >
                     {merchantSummaryExpanded ? "Ocultar tiendas" : "Ver tiendas"}
                   </button>
                   <button
                     onClick={() => void exportVisibleRowsToExcel()}
                     disabled={exportingExcel || !filteredRows.length}
-                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {exportingExcel ? "Exportando..." : "Exportar a Excel"}
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="mt-5 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Cortes detectados
                 </p>
@@ -1927,7 +1942,8 @@ export default function PayJoyCarteraWorkspace({
                     )
                   )}
                 </div>
-                <p className="mt-3 text-sm text-slate-500">
+                </div>
+                <p className="shrink-0 text-xs font-semibold text-slate-500">
                   Duplicados removidos: {data.duplicatesRemoved}
                 </p>
               </div>
@@ -1998,26 +2014,41 @@ export default function PayJoyCarteraWorkspace({
             </section>
             )}
 
-            <section className="mt-4 overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-5 py-4">
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Tabla operativa
+            <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
+                    <DashboardIcon name="reports" className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
+                      Tabla operativa
+                    </p>
+                    <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                      Cartera PayJoy
+                    </h2>
+                    <p className="mt-1 max-w-3xl text-sm text-slate-500">
+                      Los datos del credito permanecen protegidos. Solo puedes
+                      ajustar <span className="font-semibold text-slate-700">Tienda</span> y{" "}
+                      <span className="font-semibold text-slate-700">Estado</span>; los indicadores
+                      se recalculan en vivo.
+                    </p>
+                  </div>
                 </div>
-                <h2 className="mt-3 text-xl font-black tracking-tight text-slate-950">
-                  Tabla de cartera PayJoy
-                </h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  Los campos base del credito quedan bloqueados. Solo puedes
-                  ajustar <span className="font-semibold">Tienda</span> y{" "}
-                  <span className="font-semibold">Estado</span>; el resumen por
-                  comercio se recalcula en vivo.
-                </p>
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                  <span className="rounded-lg bg-slate-100 px-3 py-2">
+                    {filteredRows.length} registros
+                  </span>
+                  <span className="hidden rounded-lg bg-slate-100 px-3 py-2 sm:inline-flex">
+                    Desliza horizontalmente para ver todo
+                  </span>
+                </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-[2370px] divide-y divide-slate-200">
-                  <thead className="sticky top-0 z-10 bg-[#f7f9fc]">
-                    <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <div className="overflow-x-auto overscroll-x-contain">
+                <table className="min-w-[1780px] divide-y divide-slate-200">
+                  <thead className="sticky top-0 z-10 bg-slate-50">
+                    <tr className="text-left text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
                       <th className={tableColTransactionClass}>
                         Fecha crédito
                       </th>
@@ -2034,7 +2065,7 @@ export default function PayJoyCarteraWorkspace({
                       <th className={tableColStatusClass}>Estado</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/60">
+                  <tbody className="divide-y divide-slate-100 bg-white">
                     {filteredRows.map((row) => {
                       const appearance = getRowAppearance(row.status);
                       const policy = getStatusPolicy(
@@ -2205,7 +2236,12 @@ export default function PayJoyCarteraWorkspace({
                                 </div>
                               )}
                               {statusPolicyMessage && (
-                                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800/80">
+                                <div
+                                  className={[
+                                    "text-[10px] font-bold uppercase tracking-[0.14em]",
+                                    appearance.helper,
+                                  ].join(" ")}
+                                >
                                   {statusPolicyMessage}
                                 </div>
                               )}

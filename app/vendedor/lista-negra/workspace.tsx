@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 
 type SessionProps = {
   perfilNombre: string;
@@ -238,64 +244,142 @@ export default function ListaNegraWorkspace({
     );
   }, [busqueda, registros]);
 
-  const rowGridClass = puedeAdministrar
-    ? "min-w-[1080px] grid-cols-[150px_1fr_150px_150px_170px]"
-    : "min-w-[840px] grid-cols-[150px_1fr_150px_150px]";
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/vendedor/registros", icon: "sales", label: "Registrar venta" },
+    {
+      href: "/vendedor/registros/buscar",
+      icon: "search",
+      label: "Buscar registro",
+    },
+    {
+      href: "/vendedor/lista-negra",
+      icon: "warning",
+      label: "Lista negra",
+    },
+    {
+      href: "/vendedor/lista-precios",
+      icon: "reports",
+      label: "Lista de precios",
+    },
+    { href: "/dashboard/radar", icon: "inventory", label: "Radar" },
+  ];
+  const sedesAfectadas = new Set(
+    registros.map((item) => item.sedeNombre).filter(Boolean)
+  ).size;
+  const iniciales = session.perfilNombre
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-6xl">
-        <section className="overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#3f1d28_52%,#b91c1c_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Control comercial
-              </div>
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950 [&_button]:uppercase">
+      <DashboardSidebar
+        activeHref="/vendedor/lista-negra"
+        coverageLabel={session.sedeNombre}
+        items={navigationItems}
+      />
 
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                LISTA NEGRA
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <Link href="/dashboard" className="transition hover:text-[#e30613]">
+                  Inicio
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-slate-600">Control comercial</span>
+              </nav>
+              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
+                Lista negra
               </h1>
-
-              <p className="mt-3 text-sm leading-6 text-slate-100 md:text-base">
-                Reporta cedulas asociadas a fraude para bloquear nuevos
-                registros en cualquier sede.
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+                Bloquea cédulas asociadas a fraude y consulta los reportes activos de todas las sedes.
               </p>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/90">
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
                   Sede: {session.sedeNombre}
                 </span>
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/90">
-                  Reporta: {session.perfilNombre}
-                </span>
                 {puedeAdministrar && (
-                  <span className="rounded-full border border-emerald-200/30 bg-emerald-300/15 px-3 py-1 text-xs font-semibold text-emerald-50">
-                    Admin: editar y eliminar
+                  <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700">
+                    Edición administrativa habilitada
                   </span>
                 )}
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-wrap items-center gap-2.5">
               <Link
                 href="/vendedor/registros"
-                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-center text-sm font-black text-slate-900 transition hover:bg-slate-100"
+                className="inline-flex min-h-[52px] items-center justify-center rounded-xl bg-[#e30613] px-5 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-red-700"
               >
                 Registrar venta
               </Link>
-              <Link
-                href="/dashboard"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                Volver
-              </Link>
+              <div className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {iniciales || "US"}
+                </span>
+                <div className="min-w-0 pr-2">
+                  <p className="max-w-[170px] truncate text-sm font-bold">
+                    {session.perfilNombre}
+                  </p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {session.sedeNombre}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
             </div>
-          </div>
-        </section>
+          </header>
+
+          <section className="mt-6 grid gap-4 sm:grid-cols-3">
+            {[
+              {
+                icon: "warning" as const,
+                label: "Reportes activos",
+                value: registros.length,
+                detail: "Cédulas bloqueadas actualmente.",
+                tone: "bg-red-50 text-red-600",
+              },
+              {
+                icon: "store" as const,
+                label: "Sedes con reportes",
+                value: sedesAfectadas,
+                detail: "Cobertura del historial visible.",
+                tone: "bg-amber-50 text-amber-600",
+              },
+              {
+                icon: "search" as const,
+                label: "Resultados visibles",
+                value: registrosFiltrados.length,
+                detail: busqueda ? "Coincidencias del filtro actual." : "Sin filtros aplicados.",
+                tone: "bg-slate-100 text-slate-700",
+              },
+            ].map((metric) => (
+              <article
+                key={metric.label}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
+              >
+                <div className="flex items-start gap-4">
+                  <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${metric.tone}`}>
+                    <DashboardIcon name={metric.icon} className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-600">{metric.label}</p>
+                    <p className="mt-1 text-3xl font-black tracking-tight">{metric.value}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">{metric.detail}</p>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </section>
 
         {mensaje && (
           <div
-            className={`mt-6 rounded-2xl border px-4 py-4 text-sm font-black shadow-sm ${
+            className={`mt-5 rounded-xl border px-4 py-3 text-sm font-bold shadow-sm ${
               mensajeTipo === "success"
                 ? "border-emerald-200 bg-emerald-50 text-emerald-900"
                 : "border-red-200 bg-red-50 text-red-900"
@@ -305,15 +389,26 @@ export default function ListaNegraWorkspace({
           </div>
         )}
 
-        <section className="mt-6 grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
-          <div className="rounded-[30px] border border-red-100 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-red-700">
-              Reporte de fraude
+        <section className="mt-6 grid items-start gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6 xl:sticky xl:top-6">
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                <DashboardIcon name="warning" className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
+                  Nuevo reporte
+                </p>
+                <h2 className="mt-1 text-xl font-black">Bloquear cédula</h2>
+              </div>
             </div>
+            <p className="mt-4 text-sm leading-6 text-slate-500">
+              El documento quedará bloqueado para nuevos registros en cualquier sede.
+            </p>
 
-            <div className="mt-6 grid gap-4">
+            <div className="mt-5 grid gap-4">
               <label className="flex flex-col gap-2 text-sm font-black text-slate-700">
-                Cedula
+                Cédula
                 <input
                   value={documentoNumero}
                   onChange={(event) =>
@@ -326,11 +421,14 @@ export default function ListaNegraWorkspace({
               </label>
 
               <label className="flex flex-col gap-2 text-sm font-black text-slate-700">
-                Observacion: PRESTA NOMBRE
+                Observación
+                <span className="w-fit rounded-md bg-red-50 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-700">
+                  Presta nombre
+                </span>
                 <textarea
                   value={motivo}
                   onChange={(event) => setMotivo(event.target.value)}
-                  className={`${inputClass()} min-h-32 resize-y leading-6`}
+                  className={`${inputClass()} min-h-36 resize-y leading-6`}
                   placeholder="Motivo o detalle del reporte..."
                 />
               </label>
@@ -339,153 +437,172 @@ export default function ListaNegraWorkspace({
                 type="button"
                 onClick={() => void guardar()}
                 disabled={guardando}
-                className="rounded-2xl bg-red-700 px-5 py-4 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="rounded-xl bg-[#e30613] px-5 py-4 text-sm font-black uppercase tracking-[0.08em] text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {guardando ? "Guardando..." : "Guardar en lista negra"}
               </button>
             </div>
           </div>
 
-          <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+          <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Reportes activos
+              <div className="flex items-center gap-3 px-5 pt-5 sm:px-6 sm:pt-6">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950 text-white">
+                  <DashboardIcon name="approvals" className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
+                    Reportes activos
+                  </p>
+                  <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                    Cédulas bloqueadas
+                  </h2>
                 </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                  Cedulas bloqueadas
-                </h2>
               </div>
-
-              <input
-                value={busqueda}
-                onChange={(event) => setBusqueda(event.target.value)}
-                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 md:max-w-xs"
-                placeholder="Buscar cedula, sede o asesor..."
-              />
             </div>
 
-            <div className="mt-6 overflow-hidden rounded-[24px] border border-slate-200">
-              <div
-                className={`grid ${rowGridClass} bg-slate-950 px-4 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white`}
-              >
-                <span>Cedula</span>
-                <span>Observacion</span>
-                <span>Sede</span>
-                <span>Fecha</span>
-                {puedeAdministrar && <span>Acciones</span>}
-              </div>
+            <div className="px-5 pb-5 pt-4 sm:px-6">
+              <label className="relative block">
+                <DashboardIcon
+                  name="search"
+                  className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  value={busqueda}
+                  onChange={(event) => setBusqueda(event.target.value)}
+                  className="min-h-[48px] w-full rounded-xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
+                  placeholder="Buscar cédula, sede, observación o asesor..."
+                />
+              </label>
+            </div>
 
-              {cargando ? (
-                <div className="px-4 py-8 text-sm font-semibold text-slate-500">
-                  Cargando lista negra...
-                </div>
-              ) : registrosFiltrados.length === 0 ? (
-                <div className="px-4 py-8 text-sm font-semibold text-slate-500">
-                  No hay cedulas en lista negra para esta busqueda.
-                </div>
-              ) : (
-                <div className="max-h-[560px] divide-y divide-slate-100 overflow-auto">
-                  {registrosFiltrados.map((item) => (
-                    <div
-                      key={item.id}
-                      className={puedeAdministrar ? "min-w-[1080px]" : "min-w-[840px]"}
-                    >
-                      <div className={`grid ${rowGridClass} gap-3 px-4 py-4 text-sm`}>
-                        <span className="font-black text-red-700">
+            <div className="overflow-x-auto border-t border-slate-200">
+              <table className="w-full min-w-[900px] table-fixed">
+                <thead className="bg-slate-50">
+                  <tr className="text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    <th className="w-[150px] px-5 py-4">Cédula</th>
+                    <th className="px-5 py-4">Observación</th>
+                    <th className="w-[150px] px-5 py-4">Sede</th>
+                    <th className="w-[180px] px-5 py-4">Fecha</th>
+                    {puedeAdministrar && <th className="w-[170px] px-5 py-4">Acciones</th>}
+                  </tr>
+                </thead>
+
+                {cargando ? (
+                  <tbody>
+                    <tr>
+                      <td colSpan={puedeAdministrar ? 5 : 4} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">
+                        Cargando lista negra...
+                      </td>
+                    </tr>
+                  </tbody>
+                ) : registrosFiltrados.length === 0 ? (
+                  <tbody>
+                    <tr>
+                      <td colSpan={puedeAdministrar ? 5 : 4} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">
+                        No hay cédulas en lista negra para esta búsqueda.
+                      </td>
+                    </tr>
+                  </tbody>
+                ) : (
+                  registrosFiltrados.map((item) => (
+                    <tbody key={item.id} className="border-t border-slate-100 first:border-t-0">
+                      <tr className="align-top transition hover:bg-slate-50/80">
+                        <td className="px-5 py-5 font-black text-red-700">
                           {item.documentoNumero}
-                        </span>
-                        <span className="min-w-0 font-semibold text-slate-700">
-                          <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-red-700">
+                        </td>
+                        <td className="px-5 py-5">
+                          <span className="inline-flex rounded-md bg-red-50 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-700">
                             {observacionLabel(item.tipoObservacion)}
                           </span>
                           {item.motivo && (
-                            <span className="mt-2 block text-sm font-semibold text-slate-700">
+                            <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">
                               {item.motivo}
-                            </span>
+                            </p>
                           )}
                           {item.reportadoPorNombre && (
-                            <span className="mt-1 block text-xs font-bold text-slate-400">
+                            <p className="mt-1 text-xs font-semibold text-slate-400">
                               Reportado por {item.reportadoPorNombre}
-                            </span>
+                            </p>
                           )}
-                        </span>
-                        <span className="font-bold text-slate-700">
+                        </td>
+                        <td className="px-5 py-5 text-sm font-bold text-slate-700">
                           {item.sedeNombre || "Sin sede"}
-                        </span>
-                        <span className="text-xs font-semibold leading-5 text-slate-500">
+                        </td>
+                        <td className="px-5 py-5 text-xs font-semibold leading-5 text-slate-500">
                           {formatDate(item.updatedAt)}
-                        </span>
+                        </td>
                         {puedeAdministrar && (
-                          <span className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => iniciarEdicion(item)}
-                              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-slate-50"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void eliminarRegistro(item.id)}
-                              disabled={eliminandoId === item.id}
-                              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {eliminandoId === item.id ? "Eliminando" : "Eliminar"}
-                            </button>
-                          </span>
-                        )}
-                      </div>
-
-                      {editandoId === item.id && (
-                        <div className="border-t border-slate-100 bg-slate-50 px-4 py-4">
-                          <div className="grid gap-3 md:grid-cols-[170px_1fr_auto] md:items-start">
-                            <input
-                              value={editDocumentoNumero}
-                              onChange={(event) =>
-                                setEditDocumentoNumero(
-                                  onlyDigits(event.target.value)
-                                )
-                              }
-                              className={inputClass()}
-                              inputMode="numeric"
-                              placeholder="Cedula"
-                            />
-                            <textarea
-                              value={editMotivo}
-                              onChange={(event) => setEditMotivo(event.target.value)}
-                              className={`${inputClass()} min-h-20 resize-y leading-6`}
-                              placeholder="Observacion..."
-                            />
-                            <div className="flex gap-2">
+                          <td className="px-5 py-5">
+                            <div className="flex flex-wrap gap-2">
                               <button
                                 type="button"
-                                onClick={() => void guardarEdicion(item.id)}
-                                disabled={actualizandoId === item.id}
-                                className="rounded-xl bg-slate-950 px-4 py-3 text-xs font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                onClick={() => iniciarEdicion(item)}
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-900 transition hover:bg-slate-50"
                               >
-                                {actualizandoId === item.id
-                                  ? "Guardando"
-                                  : "Guardar"}
+                                Editar
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setEditandoId(null)}
-                                className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+                                onClick={() => void eliminarRegistro(item.id)}
+                                disabled={eliminandoId === item.id}
+                                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                Cancelar
+                                {eliminandoId === item.id ? "Eliminando" : "Eliminar"}
                               </button>
                             </div>
-                          </div>
-                        </div>
+                          </td>
+                        )}
+                      </tr>
+
+                      {editandoId === item.id && (
+                        <tr>
+                          <td colSpan={puedeAdministrar ? 5 : 4} className="border-t border-slate-100 bg-slate-50 px-5 py-5">
+                            <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-start">
+                              <input
+                                value={editDocumentoNumero}
+                                onChange={(event) =>
+                                  setEditDocumentoNumero(onlyDigits(event.target.value))
+                                }
+                                className={inputClass()}
+                                inputMode="numeric"
+                                placeholder="Cédula"
+                              />
+                              <textarea
+                                value={editMotivo}
+                                onChange={(event) => setEditMotivo(event.target.value)}
+                                className={`${inputClass()} min-h-20 resize-y leading-6`}
+                                placeholder="Observación..."
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void guardarEdicion(item.id)}
+                                  disabled={actualizandoId === item.id}
+                                  className="rounded-lg bg-slate-950 px-4 py-3 text-xs font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                >
+                                  {actualizandoId === item.id ? "Guardando" : "Guardar"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditandoId(null)}
+                                  className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </div>
-                  ))}
-                </div>
-              )}
+                    </tbody>
+                  ))
+                )}
+              </table>
             </div>
           </div>
         </section>
+        </main>
       </div>
     </div>
   );
