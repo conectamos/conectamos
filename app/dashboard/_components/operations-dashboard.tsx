@@ -621,23 +621,23 @@ function ToolsSection({ groups }: { groups: ToolGroup[] }) {
                 {primaryLink && (
                   <Link
                     href={primaryLink.href}
-                    className="group flex min-h-11 w-full items-center justify-between gap-3 rounded-xl bg-[#11161d] px-3.5 py-2.5 text-sm font-bold text-white transition hover:bg-[#e30613]"
+                    className="group flex min-h-11 w-full items-center justify-between gap-3 rounded-xl bg-[#11161d] px-3.5 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-[#e30613]"
                   >
-                    <span>{primaryLink.label}</span>
+                    <span className="leading-4">{primaryLink.label}</span>
                     <DashboardIcon name="arrow" className="h-4 w-4 shrink-0 transition group-hover:translate-x-0.5" />
                   </Link>
                 )}
 
                 {secondaryLinks.length > 0 && (
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
+                  <div className="mt-2 grid auto-rows-fr gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
                     {secondaryLinks.map((link) => (
                       <Link
                         key={`${group.title}-${link.href}-${link.label}`}
                         href={link.href}
-                        className="group flex min-h-10 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
+                        className="group flex min-h-11 h-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
                       >
-                        <span>{link.label}</span>
-                        <DashboardIcon name="arrow" className="h-3.5 w-3.5 shrink-0 transition group-hover:translate-x-0.5" />
+                        <span className="leading-4">{link.label}</span>
+                        <DashboardIcon name="arrow" className="h-4 w-4 shrink-0 transition group-hover:translate-x-0.5" />
                       </Link>
                     ))}
                   </div>
