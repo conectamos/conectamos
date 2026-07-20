@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 
-type Categoria =
-  | "prestamos"
-  | "pagos"
-  | "devoluciones"
-  | "ventas"
-  | "facturacion";
+type Categoria = "prestamos" | "pagos" | "devoluciones" | "ventas";
 
 type BandejaItem = {
   accion: string;
@@ -32,13 +35,9 @@ type BandejaResponse = {
   cobertura: string;
   items: BandejaItem[];
   ok: boolean;
-  permisos?: {
-    facturacion: boolean;
-  };
   resumen: {
     alta: number;
     devoluciones: number;
-    facturacion: number;
     pagos: number;
     prestamos: number;
     total: number;
@@ -52,22 +51,55 @@ type SessionProps = {
   rolNombre: string;
   perfilNombre: string;
   perfilTipoLabel: string;
-  puedeVerFacturacion: boolean;
 };
 
 type Filtro = "todos" | Categoria;
 
 const filtros: Array<{ key: Filtro; label: string }> = [
   { key: "todos", label: "Todos" },
-  { key: "prestamos", label: "Prestamos" },
+  { key: "prestamos", label: "Préstamos" },
   { key: "pagos", label: "Pagos" },
   { key: "devoluciones", label: "Devoluciones" },
   { key: "ventas", label: "Ventas" },
-  { key: "facturacion", label: "Facturacion" },
 ];
 
+const categoriaConfig: Record<
+  Categoria,
+  {
+    icon: DashboardIconName;
+    label: string;
+    tone: string;
+    iconTone: string;
+  }
+> = {
+  devoluciones: {
+    icon: "arrow",
+    label: "Devolución",
+    tone: "border-violet-200 bg-violet-50 text-violet-700",
+    iconTone: "bg-violet-50 text-violet-600",
+  },
+  pagos: {
+    icon: "cash",
+    label: "Pago",
+    tone: "border-amber-200 bg-amber-50 text-amber-700",
+    iconTone: "bg-amber-50 text-amber-600",
+  },
+  prestamos: {
+    icon: "loans",
+    label: "Préstamo",
+    tone: "border-blue-200 bg-blue-50 text-blue-700",
+    iconTone: "bg-blue-50 text-blue-600",
+  },
+  ventas: {
+    icon: "sales",
+    label: "Venta",
+    tone: "border-red-200 bg-red-50 text-[#e30613]",
+    iconTone: "bg-red-50 text-[#e30613]",
+  },
+};
+
 function formatoPesos(valor: number | null | undefined) {
-  if (valor === null || valor === undefined) return "-";
+  if (valor === null || valor === undefined) return "Sin valor asociado";
 
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
 }
@@ -85,28 +117,10 @@ function formatoFecha(valor: string) {
   });
 }
 
-function categoriaLabel(categoria: Categoria) {
-  const labels: Record<Categoria, string> = {
-    devoluciones: "Devolucion",
-    facturacion: "Facturacion",
-    pagos: "Pago",
-    prestamos: "Prestamo",
-    ventas: "Venta",
-  };
-
-  return labels[categoria];
-}
-
-function categoriaTone(categoria: Categoria) {
-  const tones: Record<Categoria, string> = {
-    devoluciones: "border-violet-200 bg-violet-50 text-violet-700",
-    facturacion: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    pagos: "border-amber-200 bg-amber-50 text-amber-700",
-    prestamos: "border-sky-200 bg-sky-50 text-sky-700",
-    ventas: "border-rose-200 bg-rose-50 text-rose-700",
-  };
-
-  return tones[categoria];
+function prioridadLabel(prioridad: BandejaItem["prioridad"]) {
+  if (prioridad === "alta") return "Prioridad alta";
+  if (prioridad === "media") return "Prioridad media";
+  return "Prioridad normal";
 }
 
 function prioridadTone(prioridad: BandejaItem["prioridad"]) {
@@ -122,116 +136,157 @@ function prioridadTone(prioridad: BandejaItem["prioridad"]) {
 }
 
 function MetricCard({
+  detail,
+  icon,
+  iconClassName,
   label,
   value,
-  detail,
-  valueClass = "text-slate-950",
+  valueClassName = "text-slate-950",
 }: {
   detail: string;
+  icon: DashboardIconName;
+  iconClassName: string;
   label: string;
   value: string | number;
-  valueClass?: string;
+  valueClassName?: string;
 }) {
   return (
-    <div className="rounded-[26px] border border-[#e7e3da] bg-white px-5 py-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+    <article className="min-h-[142px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-4">
+        <span
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
+        >
+          <DashboardIcon name={icon} className="h-6 w-6" />
+        </span>
+        <div className="min-w-0 pt-0.5">
+          <p className="text-sm font-semibold text-slate-600">{label}</p>
+          <p
+            className={`mt-1.5 text-[27px] font-black leading-tight tracking-tight ${valueClassName}`}
+          >
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function DetailCell({
+  detail,
+  label,
+}: {
+  detail?: string | null;
+  label: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
         {label}
       </p>
-      <p className={["mt-3 text-3xl font-black tracking-tight", valueClass].join(" ")}>
-        {value}
+      <p className="mt-1.5 break-words text-sm font-bold leading-5 text-slate-950">
+        {detail || "-"}
       </p>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
     </div>
   );
 }
 
 function ApprovalCard({ item }: { item: BandejaItem }) {
+  const config = categoriaConfig[item.categoria];
+  const clienteImei = [item.cliente, item.imei].filter(Boolean).join(" · ");
+  const recorrido =
+    item.sedeOrigen && item.sedeDestino && item.sedeOrigen !== item.sedeDestino
+      ? `${item.sedeOrigen} → ${item.sedeDestino}`
+      : item.sedeDestino || item.sedeOrigen || "-";
+
   return (
-    <article className="rounded-[26px] border border-[#e5ded2] bg-white p-5 shadow-[0_16px_45px_rgba(15,23,42,0.06)]">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap gap-2">
+    <article className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <span className="absolute inset-y-0 left-0 w-1 bg-[#e30613]" />
+      <div className="p-5 sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex min-w-0 items-start gap-4">
             <span
-              className={[
-                "inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em]",
-                categoriaTone(item.categoria),
-              ].join(" ")}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${config.iconTone}`}
             >
-              {categoriaLabel(item.categoria)}
+              <DashboardIcon name={config.icon} className="h-5 w-5" />
             </span>
-            <span
-              className={[
-                "inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em]",
-                prioridadTone(item.prioridad),
-              ].join(" ")}
-            >
-              {item.prioridad}
-            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap gap-2">
+                <span
+                  className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.13em] ${config.tone}`}
+                >
+                  {config.label}
+                </span>
+                <span
+                  className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.13em] ${prioridadTone(item.prioridad)}`}
+                >
+                  {prioridadLabel(item.prioridad)}
+                </span>
+              </div>
+
+              <h3 className="mt-3 text-xl font-black tracking-tight text-slate-950">
+                {item.titulo}
+              </h3>
+              <p className="mt-1.5 text-sm leading-6 text-slate-500">{item.detalle}</p>
+            </div>
           </div>
 
-          <h3 className="mt-3 text-xl font-black tracking-tight text-slate-950">
-            {item.titulo}
-          </h3>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{item.detalle}</p>
-        </div>
-
-        <div className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-            Fecha
-          </p>
-          <p className="mt-1 text-sm font-bold text-slate-950">
+          <div className="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+            <DashboardIcon name="calendar" className="h-4 w-4 text-slate-400" />
             {formatoFecha(item.fecha)}
-          </p>
+          </div>
         </div>
-      </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-            IMEI / Cliente
-          </p>
-          <p className="mt-1 break-words text-sm font-bold text-slate-950">
-            {item.imei || item.cliente || "-"}
-          </p>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailCell label="Cliente / IMEI" detail={clienteImei} />
+          <DetailCell label="Referencia" detail={item.referencia} />
+          <DetailCell label="Ruta / Sede" detail={recorrido} />
+          <DetailCell label="Valor" detail={formatoPesos(item.valor)} />
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-            Referencia
-          </p>
-          <p className="mt-1 break-words text-sm font-bold text-slate-950">
-            {item.referencia || "-"}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-            Sede
-          </p>
-          <p className="mt-1 break-words text-sm font-bold text-slate-950">
-            {item.sedeDestino || item.sedeOrigen || "-"}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-            Valor
-          </p>
-          <p className="mt-1 text-sm font-bold text-slate-950">
-            {formatoPesos(item.valor)}
-          </p>
-        </div>
-      </div>
 
-      <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="text-sm text-slate-500">
-          Estado: <span className="font-bold text-slate-900">{item.estado}</span>
+        <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
+            Estado
+            <span className="font-bold text-slate-900">{item.estado}</span>
+          </div>
+          <Link
+            href={item.href}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-sm font-bold text-white transition hover:bg-[#c9000b]"
+          >
+            {item.accion}
+            <DashboardIcon name="arrow" className="h-4 w-4" />
+          </Link>
         </div>
-        <Link
-          href={item.href}
-          className="inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800"
-        >
-          {item.accion}
-        </Link>
       </div>
     </article>
+  );
+}
+
+function LoadingCards() {
+  return (
+    <div className="space-y-4" aria-label="Cargando aprobaciones">
+      {[0, 1, 2].map((item) => (
+        <div
+          key={item}
+          className="animate-pulse rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <div className="flex gap-4">
+            <div className="h-11 w-11 rounded-xl bg-slate-100" />
+            <div className="flex-1">
+              <div className="h-3 w-28 rounded bg-slate-100" />
+              <div className="mt-4 h-5 w-64 max-w-full rounded bg-slate-100" />
+              <div className="mt-3 h-3 w-96 max-w-full rounded bg-slate-100" />
+            </div>
+          </div>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[0, 1, 2, 3].map((cell) => (
+              <div key={cell} className="h-16 rounded-xl bg-slate-100" />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -245,6 +300,35 @@ export default function AprobacionesWorkspace({
   const [cargando, setCargando] = useState(true);
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [busqueda, setBusqueda] = useState("");
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(
+    String(session.rolNombre || "").trim().toUpperCase()
+  );
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdmin
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
 
   const cargarBandeja = useCallback(async () => {
     try {
@@ -276,31 +360,14 @@ export default function AprobacionesWorkspace({
   }, [cargarBandeja]);
 
   const items = useMemo(() => data?.items ?? [], [data]);
-  const puedeVerFacturacion =
-    data?.permisos?.facturacion ?? session.puedeVerFacturacion;
   const resumen = data?.resumen ?? {
     alta: 0,
     devoluciones: 0,
-    facturacion: 0,
     pagos: 0,
     prestamos: 0,
     total: 0,
     ventas: 0,
   };
-  const filtrosVisibles = useMemo(
-    () =>
-      filtros.filter(
-        (item) => item.key !== "facturacion" || puedeVerFacturacion
-      ),
-    [puedeVerFacturacion]
-  );
-
-  useEffect(() => {
-    if (!puedeVerFacturacion && filtro === "facturacion") {
-      setFiltro("todos");
-    }
-  }, [filtro, puedeVerFacturacion]);
-
   const itemsFiltrados = useMemo(() => {
     const termino = busqueda.trim().toLowerCase();
 
@@ -325,162 +392,225 @@ export default function AprobacionesWorkspace({
           .includes(termino);
       });
   }, [busqueda, filtro, items]);
+  const usuario = session.perfilNombre || session.nombre;
+  const inicialesUsuario = usuario
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+  const cobertura = data?.cobertura || (esAdmin ? "Todas las sedes" : session.sedeNombre);
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] px-4 py-8 text-slate-950">
-      <div className="mx-auto max-w-[1500px]">
-        <section className="relative overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#172033_52%,#7c2d12_100%)] px-6 py-7 text-white shadow-[0_26px_85px_rgba(15,23,42,0.2)] md:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.15),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_28%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/dashboard/aprobaciones"
+        coverageLabel={cobertura}
+        items={navigationItems}
+      />
 
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f2d7a6]">
-                Control operativo
-              </div>
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
                 Bandeja de aprobaciones
               </h1>
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                {puedeVerFacturacion
-                  ? "Unifica prestamos, pagos, devoluciones, ventas y facturacion pendiente sin cambiar los flujos existentes."
-                  : "Unifica prestamos, pagos, devoluciones y ventas pendientes sin cambiar los flujos existentes."}
+              <p className="mt-1 max-w-3xl text-sm text-slate-500 sm:text-base">
+                Préstamos, pagos, devoluciones y ventas que requieren gestión
               </p>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Usuario: <span className="font-semibold text-white">{session.nombre}</span>
-                </div>
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Cobertura: <span className="font-semibold text-white">{data?.cobertura || session.sedeNombre}</span>
-                </div>
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Perfil: <span className="font-semibold text-white">{session.perfilTipoLabel}</span>
-                </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  <DashboardIcon name="store" className="h-4 w-4 text-slate-500" />
+                  Cobertura: {cobertura}
+                </span>
+                {!cargando && resumen.alta > 0 && (
+                  <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-red-700">
+                    {resumen.alta} de prioridad alta
+                  </span>
+                )}
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => void cargarBandeja()}
-                className="inline-flex min-h-[50px] items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-slate-100"
+                disabled={cargando}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] disabled:cursor-wait disabled:opacity-60"
               >
-                Actualizar
+                <DashboardIcon name="approvals" className="h-4 w-4" />
+                {cargando ? "Actualizando..." : "Actualizar"}
               </button>
-              <Link
-                href="/dashboard"
-                className="inline-flex min-h-[50px] items-center justify-center rounded-2xl border border-white/12 bg-white/10 px-5 py-3 text-sm font-bold text-white transition hover:bg-white/15"
-              >
-                Volver
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {mensaje && (
-          <div className="mt-6 rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-800">
-            {mensaje}
-          </div>
-        )}
-
-        <section
-          className={[
-            "mt-6 grid gap-4 md:grid-cols-2",
-            puedeVerFacturacion ? "xl:grid-cols-5" : "xl:grid-cols-4",
-          ].join(" ")}
-        >
-          <MetricCard
-            label="Total"
-            value={cargando ? "..." : resumen.total}
-            detail="Pendientes visibles en tu cobertura."
-          />
-          <MetricCard
-            label="Pagos"
-            value={resumen.pagos}
-            detail="Pagos que requieren aprobacion."
-            valueClass="text-amber-600"
-          />
-          <MetricCard
-            label="Prestamos"
-            value={resumen.prestamos + resumen.devoluciones}
-            detail="Solicitudes y devoluciones abiertas."
-            valueClass="text-sky-600"
-          />
-          <MetricCard
-            label="Ventas"
-            value={resumen.ventas}
-            detail="Registros comerciales por completar."
-            valueClass="text-rose-600"
-          />
-          {puedeVerFacturacion && (
-            <MetricCard
-              label="Facturacion"
-              value={resumen.facturacion}
-              detail="Registros con factura pendiente."
-              valueClass="text-emerald-600"
-            />
-          )}
-        </section>
-
-        <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Filtros
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[205px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || (
+                    <DashboardIcon name="user" className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">{usuario}</p>
+                  <p className="truncate text-xs text-slate-500">
+                    {session.perfilTipoLabel}
+                  </p>
+                </div>
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Pendientes por tipo
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Esta bandeja no aprueba directamente: abre cada modulo responsable.
-              </p>
+              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
             </div>
+          </header>
 
-            <input
-              value={busqueda}
-              onChange={(event) => setBusqueda(event.target.value)}
-              placeholder="Buscar IMEI, cliente, referencia o sede..."
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 xl:max-w-[460px]"
-            />
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-2">
-            {filtrosVisibles.map((item) => (
+          {mensaje && (
+            <section className="mt-5 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2 font-semibold">
+                <DashboardIcon name="warning" className="h-5 w-5 shrink-0" />
+                {mensaje}
+              </div>
               <button
-                key={item.key}
                 type="button"
-                onClick={() => setFiltro(item.key)}
-                className={[
-                  "rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
-                  filtro === item.key
-                    ? "border border-[#111318] bg-[#111318] text-white shadow-sm"
-                    : "border border-[#d9cfbe] bg-white text-slate-700 hover:bg-[#faf7f1]",
-                ].join(" ")}
+                onClick={() => void cargarBandeja()}
+                className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100"
               >
-                {item.label}
+                Reintentar
               </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-6 space-y-4">
-          {cargando ? (
-            <div className="rounded-[30px] border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500">
-              Cargando bandeja de aprobaciones...
-            </div>
-          ) : itemsFiltrados.length === 0 ? (
-            <div className="rounded-[30px] border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-              <p className="text-lg font-black text-slate-950">
-                No hay pendientes en esta vista
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                Cambia el filtro o actualiza para revisar de nuevo.
-              </p>
-            </div>
-          ) : (
-            itemsFiltrados.map((item) => <ApprovalCard key={item.id} item={item} />)
+            </section>
           )}
-        </section>
+
+          <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+            <MetricCard
+              icon="approvals"
+              iconClassName="bg-red-50 text-[#e30613]"
+              label="Total pendientes"
+              value={cargando && !data ? "—" : resumen.total}
+              detail="Gestiones visibles en esta cobertura."
+            />
+            <MetricCard
+              icon="loans"
+              iconClassName="bg-blue-50 text-blue-600"
+              label="Préstamos"
+              value={resumen.prestamos}
+              detail="Solicitudes pendientes de decisión."
+            />
+            <MetricCard
+              icon="cash"
+              iconClassName="bg-amber-50 text-amber-600"
+              label="Pagos"
+              value={resumen.pagos}
+              detail="Pagos que requieren aprobación."
+              valueClassName="text-amber-600"
+            />
+            <MetricCard
+              icon="arrow"
+              iconClassName="bg-violet-50 text-violet-600"
+              label="Devoluciones"
+              value={resumen.devoluciones}
+              detail="Equipos con devolución solicitada."
+            />
+            <MetricCard
+              icon="sales"
+              iconClassName="bg-rose-50 text-rose-600"
+              label="Ventas"
+              value={resumen.ventas}
+              detail="Registros comerciales por completar."
+              valueClassName="text-[#e30613]"
+            />
+          </section>
+
+          <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                  Pendientes operativos
+                </p>
+                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
+                  Filtra y abre el módulo responsable
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Esta bandeja centraliza la consulta; cada acción mantiene su flujo actual.
+                </p>
+              </div>
+
+              <div className="relative w-full xl:max-w-[460px]">
+                <DashboardIcon
+                  name="search"
+                  className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  value={busqueda}
+                  onChange={(event) => setBusqueda(event.target.value)}
+                  placeholder="Buscar IMEI, cliente, referencia o sede..."
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white py-3 pl-12 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                />
+                {busqueda && (
+                  <button
+                    type="button"
+                    onClick={() => setBusqueda("")}
+                    aria-label="Limpiar búsqueda"
+                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    <DashboardIcon name="close" className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              {filtros.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setFiltro(item.key)}
+                  className={[
+                    "rounded-xl border px-4 py-2.5 text-sm font-semibold transition",
+                    filtro === item.key
+                      ? "border-slate-950 bg-slate-950 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
+                  ].join(" ")}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <span className="ml-auto text-xs font-semibold text-slate-500" aria-live="polite">
+                {cargando ? "Consultando..." : `${itemsFiltrados.length} resultado(s)`}
+              </span>
+            </div>
+          </section>
+
+          <section className="mt-5">
+            {cargando && !data ? (
+              <LoadingCards />
+            ) : itemsFiltrados.length === 0 ? (
+              <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 text-center">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                  <DashboardIcon name="approvals" className="h-7 w-7" />
+                </span>
+                <p className="mt-4 text-lg font-black text-slate-950">
+                  No hay pendientes en esta vista
+                </p>
+                <p className="mt-1 max-w-md text-sm leading-6 text-slate-500">
+                  Cambia el filtro, limpia la búsqueda o actualiza la bandeja.
+                </p>
+                {(busqueda || filtro !== "todos") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBusqueda("");
+                      setFiltro("todos");
+                    }}
+                    className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-100"
+                  >
+                    Limpiar filtros
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {itemsFiltrados.map((item) => (
+                  <ApprovalCard key={item.id} item={item} />
+                ))}
+              </div>
+            )}
+          </section>
+        </main>
       </div>
     </div>
   );

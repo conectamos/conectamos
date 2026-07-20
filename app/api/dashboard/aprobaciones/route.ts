@@ -3,17 +3,15 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
   esPerfilAdministrativo,
-  esPerfilFacturador,
   esPerfilRegistroVenta,
   esRolAdministrativo,
   puedeAccederModulosOperativos,
-  puedeAccederPanelFacturador,
 } from "@/lib/access-control";
 import { etiquetaSedeAcreedora } from "@/lib/prestamos";
 
 type BandejaItem = {
   accion: string;
-  categoria: "prestamos" | "pagos" | "devoluciones" | "ventas" | "facturacion";
+  categoria: "prestamos" | "pagos" | "devoluciones" | "ventas";
   cliente?: string | null;
   detalle: string;
   estado: string;
@@ -67,12 +65,7 @@ export async function GET() {
     const accesoTotal = esAccesoTotal(session);
     const sedeId = Number(session.sedeId || 0);
     const perfilVendedor = esPerfilRegistroVenta(session.perfilTipo);
-    const perfilFacturador = esPerfilFacturador(session.perfilTipo);
-    const puedeVerAprobacionesVenta = !perfilVendedor && !perfilFacturador;
-    const puedeVerFacturacion = puedeAccederPanelFacturador(
-      session.perfilTipo,
-      session.rolNombre
-    );
+    const puedeVerAprobacionesVenta = !perfilVendedor;
 
     const prestamos = await prisma.prestamoSede.findMany({
       where: {
@@ -142,33 +135,6 @@ export async function GET() {
             referenciaEquipo: true,
             serialImei: true,
             asesorNombre: true,
-            estadoFacturacion: true,
-            estadoVentaRegistro: true,
-            plataformaCredito: true,
-            creditoAutorizado: true,
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 100,
-        })
-      : [];
-
-    const registrosFacturacion = puedeVerFacturacion
-      ? await prisma.registroVendedorVenta.findMany({
-          where: {
-            eliminadoEn: null,
-            estadoFacturacion: "PENDIENTE",
-          },
-          select: {
-            id: true,
-            createdAt: true,
-            puntoVenta: true,
-            clienteNombre: true,
-            referenciaEquipo: true,
-            serialImei: true,
-            asesorNombre: true,
-            estadoFacturacion: true,
             estadoVentaRegistro: true,
             plataformaCredito: true,
             creditoAutorizado: true,
@@ -260,24 +226,7 @@ export async function GET() {
         valor: registro.creditoAutorizado ? Number(registro.creditoAutorizado) : null,
       }));
 
-    const itemsFacturacion: BandejaItem[] = registrosFacturacion.map((registro) => ({
-      accion: "Registrar factura",
-      categoria: "facturacion",
-      cliente: registro.clienteNombre,
-      detalle: `${registro.puntoVenta || "Sede sin nombre"} tiene facturacion pendiente.`,
-      estado: String(registro.estadoFacturacion || "PENDIENTE"),
-      fecha: serializarFecha(registro.createdAt),
-          href: esRolAdministrativo(session.rolNombre) ? "/dashboard/registros" : "/facturador/registros",
-      id: `facturacion-${registro.id}`,
-      imei: registro.serialImei,
-      prioridad: "normal",
-      referencia: registro.referenciaEquipo,
-      sedeOrigen: registro.puntoVenta,
-      titulo: `Facturacion pendiente #${registro.id}`,
-      valor: registro.creditoAutorizado ? Number(registro.creditoAutorizado) : null,
-    }));
-
-    const items = [...itemsPrestamos, ...itemsVentas, ...itemsFacturacion].sort(
+    const items = [...itemsPrestamos, ...itemsVentas].sort(
       (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
     );
 
@@ -287,16 +236,12 @@ export async function GET() {
       pagos: items.filter((item) => item.categoria === "pagos").length,
       devoluciones: items.filter((item) => item.categoria === "devoluciones").length,
       ventas: items.filter((item) => item.categoria === "ventas").length,
-      facturacion: items.filter((item) => item.categoria === "facturacion").length,
       alta: items.filter((item) => item.prioridad === "alta").length,
     };
 
     return NextResponse.json({
       ok: true,
       cobertura: accesoTotal ? "Todas las sedes" : session.sedeNombre,
-      permisos: {
-        facturacion: puedeVerFacturacion,
-      },
       resumen,
       items,
     });
