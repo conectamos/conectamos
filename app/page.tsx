@@ -160,6 +160,55 @@ function ProfileAvatar({ perfil }: { perfil: PerfilAcceso }) {
   );
 }
 
+function LoginBrandIcon() {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      className="h-14 w-14 text-[#ef1018]"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M39 43.5a18 18 0 1 1 0-27"
+        stroke="currentColor"
+        strokeWidth="7"
+        strokeLinecap="round"
+      />
+      <path d="M39 47h10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <path d="M45 15a8 8 0 0 1 8 8" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
+      <path d="M45 8a15 15 0 0 1 15 15" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LoginUserIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+      <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M4.5 20c.7-4 3.2-6 7.5-6s6.8 2 7.5 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LoginLockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+      <rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LoginEyeIcon({ crossed = false }: { crossed?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+      <path d="M3 12s3.2-5 9-5 9 5 9 5-3.2 5-9 5-9-5-9-5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      {crossed && <path d="M5 4 19 20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />}
+    </svg>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
 
@@ -173,6 +222,7 @@ export default function Home() {
   const [usuarioPendiente, setUsuarioPendiente] = useState<UsuarioPendiente | null>(null);
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
+  const [mostrarClave, setMostrarClave] = useState(false);
   const [pasoPerfil, setPasoPerfil] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [modalModo, setModalModo] = useState<ModalModo | null>(null);
@@ -742,82 +792,111 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#eef4fb] text-slate-950">
-      <div className="mx-auto grid min-h-screen max-w-[1500px] grid-cols-1 lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
-        <section className="relative flex min-h-[48vh] items-center justify-center overflow-hidden bg-[#151922] px-4 py-8 sm:px-8 lg:min-h-screen lg:px-12 lg:py-12">
-          <div className="absolute inset-0 bg-[linear-gradient(145deg,#111827_0%,#231722_46%,#7f1018_100%)]" />
-          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[linear-gradient(180deg,transparent_0%,rgba(127,16,24,0.32)_100%)]" />
-          <div className="relative z-10 flex w-full max-w-[860px] justify-center">
-            <Image
-              src="/branding/conectamos-login-robot-2026.png"
-              alt="CONECTAMOS"
-              width={1536}
-              height={1024}
-              priority
-              className="h-auto max-h-[440px] w-full rounded-[1.8rem] border border-white/10 object-contain shadow-[0_32px_90px_rgba(0,0,0,0.35)] sm:max-h-[700px] lg:max-h-[760px]"
-            />
-          </div>
+    <main className="min-h-screen overflow-x-hidden bg-[#fafafa] text-[#111827]">
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
+        <section className="relative hidden min-h-screen overflow-hidden bg-[#05070c] lg:block">
+          <Image
+            src="/branding/conectamos-login-layout-2026.png"
+            alt="Mascota de CONECTAMOS en el centro de operaciones"
+            fill
+            priority
+            sizes="50vw"
+            className="object-cover object-left"
+          />
         </section>
 
-        <section
-          className="flex min-w-0 items-center justify-center px-4 py-10 sm:px-6 lg:min-h-screen lg:px-16"
-          style={{
-            background:
-              "linear-gradient(180deg, #f8fbff 0%, #e7f0f8 100%)",
-          }}
-        >
-          <div className="w-full min-w-0 max-w-[460px]">
-            <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(30,41,59,0.12)] sm:p-8">
-              <p className="text-sm font-bold uppercase text-slate-500">
-                Ingreso de sede
-              </p>
-              <h2 className="mt-4 text-3xl font-black text-slate-950 sm:text-4xl">
-                Iniciar sesion
-              </h2>
-              <p className="mt-3 text-sm leading-7 text-slate-500 sm:text-base">
-                Ingresa con el usuario principal. Si tu sede tiene perfiles, el
-                sistema solicitara el PIN correspondiente.
-              </p>
+        <section className="relative flex min-h-screen min-w-0 items-center justify-center bg-[#fbfbfc] px-5 py-24 sm:px-8 lg:px-12">
+          <div className="w-full max-w-[530px] rounded-lg border border-[#d9dadd] bg-white px-6 py-9 shadow-[0_18px_50px_rgba(17,24,39,0.08)] sm:px-12 sm:py-10">
+            <div className="flex justify-center">
+              <LoginBrandIcon />
+            </div>
 
-              <div className="mt-8 space-y-5">
-                <label className="block text-sm font-bold text-slate-700">
+            <p className="mt-3 text-center text-sm font-extrabold uppercase text-[#ed111b]">
+              Acceso al sistema
+            </p>
+            <h1 className="mt-3 text-center text-4xl font-black text-[#10141d]">
+              Bienvenido
+            </h1>
+            <p className="mt-3 text-center text-base text-[#707783]">
+              Ingresa tus credenciales para continuar.
+            </p>
+
+            <form
+              className="mt-9"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void login();
+              }}
+            >
+              <div className="space-y-6">
+                <label className="block text-sm font-bold text-[#303746]">
                   Usuario
-                  <input
-                    type="text"
-                    placeholder="Usuario de la sede"
-                    value={usuario}
-                    onChange={(event) => setUsuario(event.target.value)}
-                    className="mt-2 box-border w-full min-w-0 max-w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-950 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100"
-                  />
+                  <span className="relative mt-2 block">
+                    <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-[#7c8490]">
+                      <LoginUserIcon />
+                    </span>
+                    <input
+                      type="text"
+                      autoComplete="username"
+                      placeholder="Usuario de la sede"
+                      value={usuario}
+                      onChange={(event) => setUsuario(event.target.value)}
+                      className="box-border h-14 w-full min-w-0 rounded-lg border border-[#d5d8dd] bg-white pl-14 pr-4 text-base font-medium text-[#111827] outline-none transition placeholder:text-[#9298a2] focus:border-[#ed111b] focus:ring-4 focus:ring-red-100"
+                    />
+                  </span>
                 </label>
 
-                <label className="block text-sm font-bold text-slate-700">
-                  Clave
-                  <input
-                    type="password"
-                    placeholder="Clave de acceso"
-                    value={clave}
-                    onChange={(event) => setClave(event.target.value)}
-                    className="mt-2 box-border w-full min-w-0 max-w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-950 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100"
-                  />
+                <label className="block text-sm font-bold text-[#303746]">
+                  Contraseña
+                  <span className="relative mt-2 block">
+                    <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-[#7c8490]">
+                      <LoginLockIcon />
+                    </span>
+                    <input
+                      type={mostrarClave ? "text" : "password"}
+                      autoComplete="current-password"
+                      placeholder="Clave de acceso"
+                      value={clave}
+                      onChange={(event) => setClave(event.target.value)}
+                      className="box-border h-14 w-full min-w-0 rounded-lg border border-[#d5d8dd] bg-white pl-14 pr-14 text-base font-medium text-[#111827] outline-none transition placeholder:text-[#9298a2] focus:border-[#ed111b] focus:ring-4 focus:ring-red-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMostrarClave((visible) => !visible)}
+                      className="absolute inset-y-0 right-0 flex w-14 items-center justify-center text-[#737b88] transition hover:text-[#ed111b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#ed111b]"
+                      aria-label={mostrarClave ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      title={mostrarClave ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    >
+                      <LoginEyeIcon crossed={mostrarClave} />
+                    </button>
+                  </span>
                 </label>
               </div>
 
-              <button
-                onClick={() => void login()}
-                disabled={cargando}
-                className="mt-8 w-full rounded-2xl bg-[#0b1020] px-6 py-4 text-base font-black text-white shadow-[0_18px_36px_rgba(15,23,42,0.22)] transition hover:bg-[#123f45] disabled:cursor-not-allowed disabled:opacity-65"
-              >
-                {cargando ? "Ingresando..." : "Ingresar"}
-              </button>
-
               {mensaje && (
-                <p className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                <p className="mt-5 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800" role="alert">
                   {mensaje}
                 </p>
               )}
+
+              <button
+                type="submit"
+                disabled={cargando}
+                className="mt-8 h-[60px] w-full rounded-lg border-b-[3px] border-[#ed111b] bg-[#090e18] px-6 text-lg font-extrabold text-white shadow-[0_12px_24px_rgba(9,14,24,0.18)] transition hover:bg-[#151b27] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-65"
+              >
+                {cargando ? "Ingresando..." : "Ingresar"}
+              </button>
+            </form>
+
+            <div className="mt-6 flex items-center justify-center gap-2 text-sm text-[#7b828e]">
+              <LoginLockIcon />
+              <span>Acceso seguro para personal autorizado</span>
             </div>
           </div>
+
+          <p className="absolute inset-x-0 bottom-8 text-center text-sm text-[#737b88]">
+            © 2026 CONECTAMOS
+          </p>
         </section>
       </div>
     </main>
