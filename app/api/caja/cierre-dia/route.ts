@@ -1002,15 +1002,15 @@ function drawCompactTableHeader(
   fonts: PdfFonts
 ) {
   let cursorX = x;
-  const headerHeight = 32;
+  const headerHeight = 28;
 
   for (const column of columns) {
     const headerFontSize =
       column.tone === "financial"
-        ? 5.8
+        ? 5.6
         : column.title.length > 9
-          ? 6
-          : 6.4;
+          ? 5.8
+          : 6.1;
     const fillColor =
       column.tone === "financial"
         ? "#2b3446"
@@ -1033,7 +1033,7 @@ function drawCompactTableHeader(
       .fillColor("#ffffff")
       .font(fonts.bold)
       .fontSize(headerFontSize)
-      .text(title, cursorX + 2, y + 6, {
+      .text(title, cursorX + 2, y + 5, {
         width: Math.max(8, column.width - 4),
         height: headerHeight - 8,
         align: "center",
@@ -1094,8 +1094,8 @@ function drawCompactRow(
     doc
       .fillColor(toneColor)
       .font(column.tone ? fonts.bold : fonts.regular)
-      .fontSize(column.key === "jalador" ? 6.2 : 6.6)
-      .text(values[column.key] || "-", cursorX + 2, y + 5, {
+      .fontSize(column.key === "jalador" ? 5.9 : 6.2)
+      .text(values[column.key] || "-", cursorX + 2, y + 4, {
         width: Math.max(8, column.width - 4),
         height: rowHeight - 8,
         align: column.align ?? "left",
@@ -1214,6 +1214,71 @@ function drawSalesComparisonChart(
     });
 }
 
+function drawCierreContinuationHeader(
+  doc: PDFKit.PDFDocument,
+  title: string,
+  periodoLabel: string,
+  cobertura: string,
+  fonts: PdfFonts
+) {
+  doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f5f6f8");
+  doc.rect(22, 20, doc.page.width - 44, 4).fill("#e30613");
+  doc
+    .fillColor("#11161d")
+    .font(fonts.bold)
+    .fontSize(15)
+    .text(title, 22, 34, { width: 520 });
+  doc
+    .fillColor("#64748b")
+    .font(fonts.regular)
+    .fontSize(7.5)
+    .text(`${periodoLabel} | ${cobertura}`, 22, 54, { width: 520 });
+
+  return 72;
+}
+
+function drawCierrePageFooters(
+  doc: PDFKit.PDFDocument,
+  periodoLabel: string,
+  cobertura: string,
+  fonts: PdfFonts
+) {
+  const range = doc.bufferedPageRange();
+  const generatedAt = new Date().toLocaleString("es-CO", {
+    timeZone: "America/Bogota",
+  });
+
+  for (let index = range.start; index < range.start + range.count; index += 1) {
+    doc.switchToPage(index);
+    const footerY = doc.page.height - 32;
+    doc
+      .moveTo(22, footerY - 8)
+      .lineTo(doc.page.width - 22, footerY - 8)
+      .lineWidth(0.6)
+      .strokeColor("#d7dce3")
+      .stroke();
+    doc
+      .fillColor("#7a8493")
+      .font(fonts.regular)
+      .fontSize(6.5)
+      .text(
+        `CONECTAMOS | ${periodoLabel} | ${cobertura} | Generado: ${generatedAt}`,
+        22,
+        footerY,
+        { width: doc.page.width - 160, height: 8, lineBreak: false }
+      );
+    doc
+      .fillColor("#11161d")
+      .font(fonts.bold)
+      .text(`Pagina ${index - range.start + 1} de ${range.count}`, doc.page.width - 118, footerY, {
+        width: 96,
+        align: "right",
+        height: 8,
+        lineBreak: false,
+      });
+  }
+}
+
 async function buildPdfCierreTabla(params: {
   periodoLabel: string;
   cobertura: string;
@@ -1228,6 +1293,7 @@ async function buildPdfCierreTabla(params: {
     size: "A3",
     layout: "landscape",
     margin: 22,
+    bufferPages: true,
     font: params.fonts.regular,
     info: {
       Title: "Cierre oficial",
@@ -1265,21 +1331,20 @@ async function buildPdfCierreTabla(params: {
     contentWidth
   );
 
-  doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f3f5f8");
-  const headerGradient = doc.linearGradient(tableX, 18, doc.page.width - 22, 104);
-  headerGradient.stop(0, "#101522").stop(0.56, "#1d2638").stop(1, "#812630");
-  doc.roundedRect(tableX, 18, contentWidth, 86, 16).fill(headerGradient);
+  doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f5f6f8");
+  doc.roundedRect(tableX, 18, contentWidth, 86, 16).fill("#11161d");
+  doc.roundedRect(tableX, 18, 8, 86, 4).fill("#e30613");
 
-  doc.roundedRect(tableX + 18, 30, 62, 62, 14).fill("#ffffff");
+  doc.roundedRect(tableX + 22, 32, 58, 58, 14).fill("#ffffff");
   if (logoPath) {
     try {
-      doc.image(logoPath, tableX + 23, 35, { fit: [52, 52], align: "center" });
+      doc.image(logoPath, tableX + 27, 37, { fit: [48, 48], align: "center" });
     } catch {
       doc
         .fillColor("#ef3333")
         .font(params.fonts.bold)
         .fontSize(10)
-        .text("C", tableX + 45, 52);
+        .text("C", tableX + 46, 53);
     }
   }
 
@@ -1287,9 +1352,9 @@ async function buildPdfCierreTabla(params: {
     .fillColor("#ffffff")
     .font(params.fonts.bold)
     .fontSize(21)
-    .text("CIERRE DEL DIA", tableX + 96, 31, { width: 360 });
+    .text("CIERRE DEL DIA", tableX + 98, 30, { width: 360 });
   doc
-    .fillColor("#f8fafc")
+    .fillColor("#ffffff")
     .font(params.fonts.bold)
     .fontSize(8)
     .text("CONECTAMOS FINAN SERVICES S.A.S", tableX + 98, 58, {
@@ -1297,30 +1362,28 @@ async function buildPdfCierreTabla(params: {
       characterSpacing: 0.8,
     });
   doc
-    .fillColor("#cbd5e1")
+    .fillColor("#b8c0cc")
     .font(params.fonts.regular)
     .fontSize(8)
     .text(`${params.periodoLabel} | ${params.cobertura}`, tableX + 98, 75, {
       width: 360,
     });
 
-  doc
-    .roundedRect(doc.page.width - 278, 36, 228, 46, 12)
-    .fillAndStroke("#ffffff", "#d9dee8");
+  doc.roundedRect(doc.page.width - 294, 32, 242, 58, 12).fill("#ffffff");
   doc
     .fillColor("#64748b")
     .font(params.fonts.bold)
     .fontSize(7)
-    .text("CAJA ACUMULADA", doc.page.width - 262, 45, {
-      width: 190,
+    .text("CAJA ACUMULADA", doc.page.width - 278, 41, {
+      width: 208,
       characterSpacing: 0.6,
     });
   doc
     .fillColor(params.cajaAcumulada < 0 ? "#9f2737" : "#1f6b4f")
     .font(params.fonts.bold)
-    .fontSize(14)
-    .text(formatoPesos(params.cajaAcumulada), doc.page.width - 262, 58, {
-      width: 190,
+    .fontSize(15)
+    .text(formatoPesos(params.cajaAcumulada), doc.page.width - 278, 55, {
+      width: 208,
       align: "left",
       ellipsis: true,
     });
@@ -1328,41 +1391,51 @@ async function buildPdfCierreTabla(params: {
     .fillColor("#64748b")
     .font(params.fonts.regular)
     .fontSize(6.4)
-    .text("Caja ventas + neto de caja", doc.page.width - 262, 75, { width: 160 });
+    .text("Ventas + movimientos de caja", doc.page.width - 278, 76, {
+      width: 190,
+    });
 
   const metricCards = [
     {
-      label: "Ingresos del dia",
-      value: formatoPesos(totals.ingresosAcumulados),
-      color: "#1f6b4f",
+      label: "Ventas del dia",
+      value: String(totals.ventas),
+      color: "#e30613",
     },
     {
-      label: "Ingreso ventas",
+      label: "Ingresos comerciales",
       value: formatoPesos(totals.ingresosVentas),
       color: "#1f6b4f",
     },
     {
-      label: "Ingreso caja",
-      value: formatoPesos(totals.ingresosCaja),
-      color: "#2d6f82",
+      label: "Utilidad del dia",
+      value: formatoPesos(totals.utilidad),
+      color: "#1f6b4f",
     },
     {
-      label: "Transferencia",
+      label: "Caja de ventas",
+      value: formatoPesos(totals.caja),
+      color: totals.caja < 0 ? "#9f2737" : "#1f6b4f",
+    },
+    {
+      label: "Efectivo",
+      value: formatoPesos(totals.efectivo),
+      color: "#374151",
+    },
+    {
+      label: "Transferencias",
       value: formatoPesos(totals.transferencia),
-      color: "#344f7a",
+      color: "#374151",
     },
     {
-      label: "Voucher",
+      label: "Voucher neto",
       value: formatoPesos(totals.voucher),
-      color: "#7652a6",
+      color: "#b45309",
     },
     {
       label: "Financieras",
       value: formatoPesos(totals.financieras),
-      color: "#2f4d75",
+      color: "#374151",
     },
-    { label: "Utilidad", value: formatoPesos(totals.utilidad), color: "#9a7324" },
-    { label: "Caja neta", value: formatoPesos(totals.cajaNeta), color: "#9f2737" },
   ];
   const metricGap = 12;
   const cardsPerRow = 4;
@@ -1390,19 +1463,19 @@ async function buildPdfCierreTabla(params: {
   drawSalesComparisonChart(
     doc,
     tableX,
-    232,
+    231,
     contentWidth,
     totals.ventas,
     params.previousSalesCount,
     params.fonts
   );
 
-  let y = 330;
+  let y = 321;
   doc
     .fillColor("#0f172a")
     .font(params.fonts.bold)
-    .fontSize(11)
-    .text("VENTAS DEL DIA - FINANCIERAS DEL CATALOGO", tableX, 314);
+    .fontSize(10.5)
+    .text("DETALLE DE VENTAS Y FINANCIERAS", tableX, 307);
   y = drawCompactTableHeader(doc, columns, y, tableX, params.fonts);
 
   if (!params.rows.length) {
@@ -1414,10 +1487,16 @@ async function buildPdfCierreTabla(params: {
     y += 58;
   } else {
     for (const row of params.rows) {
-      if (y + 32 > doc.page.height - 44) {
+      if (y + 25 > doc.page.height - 38) {
         doc.addPage();
-        doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f3f5f8");
-        y = drawCompactTableHeader(doc, columns, 34, tableX, params.fonts);
+        y = drawCierreContinuationHeader(
+          doc,
+          "DETALLE DE VENTAS - CONTINUACION",
+          params.periodoLabel,
+          params.cobertura,
+          params.fonts
+        );
+        y = drawCompactTableHeader(doc, columns, y, tableX, params.fonts);
       }
 
       const values: Record<string, string> = {
@@ -1439,7 +1518,7 @@ async function buildPdfCierreTabla(params: {
         values[`fin_${nombre}`] = formatoPesos(row.financieras[nombre] || 0);
       });
 
-      y = drawCompactRow(doc, columns, values, y, tableX, 30, params.fonts, {
+      y = drawCompactRow(doc, columns, values, y, tableX, 25, params.fonts, {
         index: params.rows.indexOf(row),
         cellTones:
           row.caja < 0
@@ -1451,21 +1530,23 @@ async function buildPdfCierreTabla(params: {
     }
   }
 
-  y += 22;
-  if (y + 156 > doc.page.height - 36) {
-    doc.addPage();
-    doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f3f5f8");
-    y = 34;
-  }
+  doc.addPage();
+  y = drawCierreContinuationHeader(
+    doc,
+    "CIERRE DEL DIA - FLUJO DE CAJA",
+    params.periodoLabel,
+    params.cobertura,
+    params.fonts
+  );
 
   doc
-    .roundedRect(tableX, y, contentWidth, 104, 14)
+    .roundedRect(tableX, y, contentWidth, 108, 14)
     .fillAndStroke("#ffffff", "#d9dee8");
   doc
     .fillColor("#151923")
     .font(params.fonts.bold)
-    .fontSize(13)
-    .text("FLUJO DE CAJA DEL DIA", tableX + 16, y + 14);
+    .fontSize(12)
+    .text("RESUMEN DE MOVIMIENTOS", tableX + 16, y + 13);
   doc
     .fillColor("#667085")
     .font(params.fonts.regular)
@@ -1476,12 +1557,39 @@ async function buildPdfCierreTabla(params: {
       y + 32,
       { width: 420 }
     );
+  doc
+    .roundedRect(tableX + contentWidth - 104, y + 12, 88, 24, 12)
+    .fill("#f1f3f6");
+  doc
+    .fillColor("#475467")
+    .font(params.fonts.bold)
+    .fontSize(7)
+    .text(`${params.movimientos.length} MOVIMIENTOS`, tableX + contentWidth - 96, y + 20, {
+      width: 72,
+      align: "center",
+    });
 
   [
-    { label: "Ingresos caja", value: formatoPesos(totals.ingresosCaja), color: "#1f6b4f" },
-    { label: "Egresos caja", value: formatoPesos(totals.egresosCaja), color: "#9f2737" },
-    { label: "Neto caja dia", value: formatoPesos(totals.cajaNeta), color: totals.cajaNeta < 0 ? "#9f2737" : "#1f6b4f" },
-    { label: "Movimientos", value: String(params.movimientos.length), color: "#2f4d75" },
+    {
+      label: "Caja desde ventas",
+      value: formatoPesos(totals.caja),
+      color: totals.caja < 0 ? "#9f2737" : "#1f6b4f",
+    },
+    {
+      label: "Ingresos manuales",
+      value: formatoPesos(totals.ingresosCaja),
+      color: "#1f6b4f",
+    },
+    {
+      label: "Egresos manuales",
+      value: formatoPesos(totals.egresosCaja),
+      color: "#9f2737",
+    },
+    {
+      label: "Balance movimientos",
+      value: formatoPesos(totals.cajaNeta),
+      color: totals.cajaNeta < 0 ? "#9f2737" : "#1f6b4f",
+    },
   ].forEach((item, index) => {
     const gap = 12;
     const cardWidth = (contentWidth - 32 - gap * 3) / 4;
@@ -1498,7 +1606,7 @@ async function buildPdfCierreTabla(params: {
     );
   });
 
-  y += 124;
+  y += 128;
   doc
     .fillColor("#151923")
     .font(params.fonts.bold)
@@ -1525,10 +1633,16 @@ async function buildPdfCierreTabla(params: {
       .text("No hay ingresos o egresos registrados para este dia.", tableX, y + 16);
   } else {
     for (const movimiento of params.movimientos) {
-      if (y + 26 > doc.page.height - 36) {
+      if (y + 25 > doc.page.height - 38) {
         doc.addPage();
-        doc.rect(0, 0, doc.page.width, doc.page.height).fill("#f3f5f8");
-        y = drawCompactTableHeader(doc, cashColumns, 34, tableX, params.fonts);
+        y = drawCierreContinuationHeader(
+          doc,
+          "MOVIMIENTOS DE CAJA - CONTINUACION",
+          params.periodoLabel,
+          params.cobertura,
+          params.fonts
+        );
+        y = drawCompactTableHeader(doc, cashColumns, y, tableX, params.fonts);
       }
 
       const tipoMovimiento = movimiento.tipo.toUpperCase();
@@ -1543,7 +1657,7 @@ async function buildPdfCierreTabla(params: {
         },
         y,
         tableX,
-        26,
+        25,
         params.fonts,
         {
           index: params.movimientos.indexOf(movimiento),
@@ -1558,6 +1672,12 @@ async function buildPdfCierreTabla(params: {
     }
   }
 
+  drawCierrePageFooters(
+    doc,
+    params.periodoLabel,
+    params.cobertura,
+    params.fonts
+  );
   doc.end();
   return bufferPromise;
 }
