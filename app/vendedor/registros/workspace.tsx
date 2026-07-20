@@ -25,6 +25,12 @@ import {
   validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 import type { RegistroVendedorDetalle } from "./types";
 
 type SessionProps = {
@@ -42,7 +48,6 @@ type RegistroResumen = {
   plataformaCredito: string;
   referenciaEquipo: string | null;
   serialImei: string | null;
-  tipoProducto: string | null;
   creditoAutorizado: number | null;
   cuotaInicial: number | null;
   valorCuota: number | null;
@@ -177,6 +182,10 @@ type ImeiLookupResponse = {
   };
 };
 
+type EquipoEncontrado = ImeiLookupResponse["equipo"];
+type PasoVenta = 1 | 2 | 3 | 4;
+type ErroresCampos = Record<string, string>;
+
 type PayJoyCreditoResponse = {
   credito?: {
     imei: string;
@@ -294,7 +303,7 @@ const TIPO_DOCUMENTO_CONTADO = "NIT";
 
 const SERVICIO_REGISTRO_OPTIONS = [
   { value: "CONTADO", label: "CONTADO" },
-  { value: "FINANCIERA", label: "FINANCIERA" },
+  { value: "FINANCIERA", label: "FINANCIADA" },
 ] as const;
 
 function createEmptyFinanciera(): FinancialFormState {
@@ -365,21 +374,35 @@ function createInitialState(session: SessionProps): FormState {
 }
 
 function inputClass(readOnly = false) {
-  return `w-full rounded-[20px] border px-4 py-3.5 text-sm font-bold outline-none transition ${
+  return `w-full rounded-xl border px-4 py-3.5 text-base font-semibold outline-none transition ${
     readOnly
       ? "border-slate-200 bg-slate-100 text-slate-500"
-      : "border-slate-200 bg-[#f8fafc] text-slate-950 shadow-inner focus:border-teal-500 focus:bg-white focus:ring-[4px] focus:ring-teal-100"
+      : "border-slate-200 bg-white text-slate-950 focus:border-[#e30613] focus:ring-4 focus:ring-red-100"
   }`;
 }
 
 const formSectionClass =
-  "overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_22px_70px_rgba(15,23,42,0.08)]";
+  "overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.055)]";
 
 const formSectionHeaderClass =
-  "-mx-5 -mt-5 mb-6 flex items-center justify-between gap-4 border-b border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#eef6f5_100%)] px-5 py-4 text-[11px] font-black uppercase tracking-[0.2em] text-slate-700";
+  "-mx-5 -mt-5 mb-6 flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4 text-xs font-black uppercase tracking-[0.15em] text-slate-700";
 
 const fieldLabelClass =
-  "flex flex-col gap-2 text-[13px] font-black uppercase tracking-[0.08em] text-slate-500";
+  "flex flex-col gap-2 text-sm font-bold text-slate-700";
+
+function esEstadoEquipoDisponible(estado: string | null | undefined) {
+  return String(estado || "").trim().toUpperCase() === "BODEGA";
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+
+  return (
+    <span role="alert" className="text-sm font-semibold text-[#c4000c]">
+      {message}
+    </span>
+  );
+}
 
 function onlyDigits(value: string, maxLength?: number) {
   const digits = value.replace(/\D/g, "");
@@ -1037,7 +1060,6 @@ export default function VendedorRegistroWorkspace({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [form, setForm] = useState<FormState>(() => createInitialState(session));
-  const [registros, setRegistros] = useState<RegistroResumen[]>([]);
   const [sedes, setSedes] = useState<SedeOption[]>([]);
   const [jaladores, setJaladores] = useState<JaladorOption[]>([]);
   const [financierasCatalogo, setFinancierasCatalogo] = useState<
@@ -1047,6 +1069,7 @@ export default function VendedorRegistroWorkspace({
   const [mensajeTipo, setMensajeTipo] = useState<"success" | "error">("success");
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const guardandoRef = useRef(false);
   const [buscandoImei, setBuscandoImei] = useState(false);
   const [consultandoPayjoyIndex, setConsultandoPayjoyIndex] = useState<
     number | null
@@ -1091,6 +1114,27 @@ export default function VendedorRegistroWorkspace({
   const [creditosCedulaError, setCreditosCedulaError] = useState("");
   const autoCreditosCedulaConsultaRef = useRef("");
   const documentoActualRef = useRef("");
+  const tipoDocumentoContadoRef = useRef<string | null>(null);
+  const contadoDraftRef = useRef<{
+    facturaFotoDataUrl: string;
+    medioPago1Tipo: string;
+    medioPago1Valor: string;
+    medioPago2Tipo: string;
+    medioPago2Valor: string;
+    segundoIngresoVisible: boolean;
+  } | null>(null);
+  const financieraDraftRef = useRef<{
+    cedulaFrenteDataUrl: string;
+    cedulaReversoDataUrl: string;
+    clienteSinCedulaFisica: boolean;
+    financierasDetalle: FinancialFormState[];
+    medioPago1Tipo: string;
+    medioPago1Valor: string;
+    medioPago2Tipo: string;
+    medioPago2Valor: string;
+    financierasVisibles: number;
+    segundoIngresoVisible: boolean;
+  } | null>(null);
   const consultarCreditosCedulaAutomaticoRef = useRef<
     ((
       documentoValue: string,
@@ -1099,6 +1143,11 @@ export default function VendedorRegistroWorkspace({
   >(null);
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const [imeiDetalle, setImeiDetalle] = useState("");
+  const [equipoEncontrado, setEquipoEncontrado] =
+    useState<EquipoEncontrado | null>(null);
+  const [pasoActual, setPasoActual] = useState<PasoVenta>(1);
+  const [erroresCampos, setErroresCampos] = useState<ErroresCampos>({});
+  const [resumenMovilAbierto, setResumenMovilAbierto] = useState(false);
   const [listaNegraAlerta, setListaNegraAlerta] =
     useState<ListaNegraAlerta | null>(null);
   const [listaNegraModalCerrado, setListaNegraModalCerrado] = useState(false);
@@ -1134,27 +1183,15 @@ export default function VendedorRegistroWorkspace({
     setMensajeTipo(tipo);
   };
 
-  const cargarRegistrosRecientes = async () => {
-    const registrosRes = await fetch("/api/vendedor/registros", {
-      cache: "no-store",
-    });
-    const registrosData = await registrosRes.json();
-
-    if (registrosRes.ok) {
-      setRegistros(Array.isArray(registrosData.registros) ? registrosData.registros : []);
-      return;
-    }
-
-    throw new Error(registrosData.error || "No se pudieron cargar los registros");
-  };
-
   const limpiarFormulario = (preservarContexto = false) => {
     setImeiDetalle("");
+    setEquipoEncontrado(null);
+    setPasoActual(1);
+    setErroresCampos({});
     setListaNegraAlerta(null);
     setListaNegraModalCerrado(false);
     setRegistroDuplicadoAlerta(null);
     setDuplicadoModalCerrado(false);
-    setConfirmacionGuardadoVisible(false);
     setSignaturePadKey((current) => current + 1);
     setFinancierasVisibles(1);
     setIngresoContado2Visible(false);
@@ -1171,6 +1208,9 @@ export default function VendedorRegistroWorkspace({
     autoPayJoyConsultaRef.current = {};
     autoAloConsultaRef.current = {};
     autoCreditosCedulaConsultaRef.current = "";
+    contadoDraftRef.current = null;
+    financieraDraftRef.current = null;
+    tipoDocumentoContadoRef.current = null;
     setForm((current) => {
       if (preservarContexto) {
         return {
@@ -1191,27 +1231,18 @@ export default function VendedorRegistroWorkspace({
 
     const cargarTodo = async () => {
       try {
-        const [registrosRes, sedesRes, catalogoRes] = await Promise.all([
-          fetch("/api/vendedor/registros", { cache: "no-store" }),
+        const [sedesRes, catalogoRes] = await Promise.all([
           fetch("/api/sedes", { cache: "no-store" }),
           fetch("/api/ventas/catalogo-personal", { cache: "no-store" }),
         ]);
 
-        const [registrosData, sedesData, catalogoData] = await Promise.all([
-          registrosRes.json(),
+        const [sedesData, catalogoData] = await Promise.all([
           sedesRes.json(),
           catalogoRes.json(),
         ]);
 
         if (cancelled) {
           return;
-        }
-
-        if (registrosRes.ok) {
-          setRegistros(Array.isArray(registrosData.registros) ? registrosData.registros : []);
-        } else {
-          setMensaje(registrosData.error || "No se pudieron cargar los registros");
-          setMensajeTipo("error");
         }
 
         if (sedesRes.ok && Array.isArray(sedesData)) {
@@ -1427,14 +1458,55 @@ export default function VendedorRegistroWorkspace({
       ...current,
       [field]: value,
     }));
+    setErroresCampos((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
   };
 
   const seleccionarServicio = (servicio: string) => {
+    if (servicio === form.servicio) return;
+
+    if (esServicioContado(form.servicio)) {
+      contadoDraftRef.current = {
+        facturaFotoDataUrl: form.facturaFotoDataUrl,
+        medioPago1Tipo: form.medioPago1Tipo,
+        medioPago1Valor: form.medioPago1Valor,
+        medioPago2Tipo: form.medioPago2Tipo,
+        medioPago2Valor: form.medioPago2Valor,
+        segundoIngresoVisible: ingresoContado2Visible,
+      };
+    } else if (esServicioFinanciera(form.servicio)) {
+      financieraDraftRef.current = {
+        cedulaFrenteDataUrl: form.cedulaFrenteDataUrl,
+        cedulaReversoDataUrl: form.cedulaReversoDataUrl,
+        clienteSinCedulaFisica: form.clienteSinCedulaFisica,
+        financierasDetalle: form.financierasDetalle,
+        medioPago1Tipo: form.medioPago1Tipo,
+        medioPago1Valor: form.medioPago1Valor,
+        medioPago2Tipo: form.medioPago2Tipo,
+        medioPago2Valor: form.medioPago2Valor,
+        financierasVisibles,
+        segundoIngresoVisible: ingresoContado2Visible,
+      };
+    }
+
     setForm((current) => {
       if (servicio === "CONTADO") {
+        const draft = contadoDraftRef.current;
+
         return {
           ...current,
           servicio,
+          tipoDocumento:
+            tipoDocumentoContadoRef.current || current.tipoDocumento,
+          facturaFotoDataUrl: draft?.facturaFotoDataUrl ?? "",
+          medioPago1Tipo: draft?.medioPago1Tipo ?? "EFECTIVO",
+          medioPago1Valor: draft?.medioPago1Valor ?? "",
+          medioPago2Tipo: draft?.medioPago2Tipo ?? "",
+          medioPago2Valor: draft?.medioPago2Valor ?? "",
           cedulaFrenteDataUrl: "",
           cedulaReversoDataUrl: "",
           clienteSinCedulaFisica: false,
@@ -1445,6 +1517,12 @@ export default function VendedorRegistroWorkspace({
         };
       }
 
+      if (current.tipoDocumento === TIPO_DOCUMENTO_CONTADO) {
+        tipoDocumentoContadoRef.current = current.tipoDocumento;
+      }
+
+      const draft = financieraDraftRef.current;
+
       return {
         ...current,
         servicio,
@@ -1453,19 +1531,39 @@ export default function VendedorRegistroWorkspace({
             ? "CC"
             : current.tipoDocumento,
         facturaFotoDataUrl: "",
-        medioPago1Tipo: "EFECTIVO",
-        medioPago1Valor: "",
-        medioPago2Tipo: "",
-        medioPago2Valor: "",
+        medioPago1Tipo: draft?.medioPago1Tipo ?? "EFECTIVO",
+        medioPago1Valor: draft?.medioPago1Valor ?? "",
+        medioPago2Tipo: draft?.medioPago2Tipo ?? "",
+        medioPago2Valor: draft?.medioPago2Valor ?? "",
+        cedulaFrenteDataUrl: draft?.cedulaFrenteDataUrl ?? "",
+        cedulaReversoDataUrl: draft?.cedulaReversoDataUrl ?? "",
+        clienteSinCedulaFisica: draft?.clienteSinCedulaFisica ?? false,
+        financierasDetalle:
+          draft?.financierasDetalle ??
+          Array.from(
+            { length: MAX_FINANCIERAS_REGISTRO },
+            createEmptyFinanciera
+          ),
       };
     });
-    setPayjoyCreditos({});
-    setPayjoyErrores({});
-    setCreditosFinancierasCedula({});
-    setCreditosCedulaError("");
-    autoCreditosCedulaConsultaRef.current = "";
-    setFinancierasVisibles(1);
-    setIngresoContado2Visible(false);
+    if (servicio === "CONTADO") {
+      setFinancierasVisibles(1);
+      setIngresoContado2Visible(
+        contadoDraftRef.current?.segundoIngresoVisible ?? false
+      );
+    } else {
+      setFinancierasVisibles(
+        financieraDraftRef.current?.financierasVisibles ?? 1
+      );
+      setIngresoContado2Visible(
+        financieraDraftRef.current?.segundoIngresoVisible ?? false
+      );
+    }
+    setErroresCampos((current) => {
+      const next = { ...current };
+      delete next.servicio;
+      return next;
+    });
   };
 
   const setFinancieraField = <K extends keyof FinancialFormState>(
@@ -1484,6 +1582,13 @@ export default function VendedorRegistroWorkspace({
           : item
       ),
     }));
+    setErroresCampos((current) => {
+      const key = `financiera-${index}-${String(field)}`;
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
   };
 
   const setFinancieraPesoField = (
@@ -2598,8 +2703,12 @@ export default function VendedorRegistroWorkspace({
     setFinancierasVisibles((current) => Math.max(1, current - 1));
   };
 
-  const buscarImei = async () => {
+  const buscarImei = async (puntoVentaOverride?: string) => {
     if (form.serialImei.length !== 15) {
+      setErroresCampos((current) => ({
+        ...current,
+        serialImei: "El IMEI debe tener 15 digitos",
+      }));
       setFormMessage("El IMEI debe tener 15 digitos", "error");
       return;
     }
@@ -2610,7 +2719,7 @@ export default function VendedorRegistroWorkspace({
 
       const params = new URLSearchParams({
         imei: form.serialImei,
-        puntoVenta: form.puntoVenta,
+        puntoVenta: puntoVentaOverride ?? form.puntoVenta,
       });
       const response = await fetch(
         `/api/vendedor/registros/imei?${params.toString()}`,
@@ -2622,6 +2731,11 @@ export default function VendedorRegistroWorkspace({
 
       if (!response.ok || !data?.equipo) {
         setImeiDetalle("");
+        setEquipoEncontrado(null);
+        setErroresCampos((current) => ({
+          ...current,
+          serialImei: data?.error || "No se pudo consultar el IMEI",
+        }));
         setFormMessage(
           data?.error || "No se pudo consultar el IMEI",
           "error"
@@ -2630,6 +2744,22 @@ export default function VendedorRegistroWorkspace({
       }
 
       const equipo = data.equipo;
+      const disponible = esEstadoEquipoDisponible(equipo.estadoActual);
+
+      setEquipoEncontrado(equipo);
+      setErroresCampos((current) => {
+        const next = { ...current };
+
+        if (disponible) {
+          delete next.serialImei;
+        } else {
+          next.serialImei = `El equipo no esta disponible. Estado actual: ${
+            equipo.estadoActual || "sin estado"
+          }`;
+        }
+
+        return next;
+      });
 
       setForm((current) => ({
         ...current,
@@ -2641,6 +2771,16 @@ export default function VendedorRegistroWorkspace({
       setImeiDetalle(
         `${equipo.referencia} | ${equipo.tipoProducto} | ${equipo.sedeNombre ?? "Sin ubicacion"} | ${equipo.estadoActual ?? "Sin estado"}`
       );
+
+      if (!disponible) {
+        setFormMessage(
+          `El equipo existe, pero no esta disponible para venta. Estado: ${
+            equipo.estadoActual || "sin estado"
+          }`,
+          "error"
+        );
+        return;
+      }
 
       const financierasPayJoySeleccionadas = form.financierasDetalle
         .slice(0, financierasVisibles)
@@ -2683,6 +2823,7 @@ export default function VendedorRegistroWorkspace({
       }
     } catch {
       setImeiDetalle("");
+      setEquipoEncontrado(null);
       setFormMessage("Error consultando el IMEI", "error");
     } finally {
       setBuscandoImei(false);
@@ -2840,6 +2981,9 @@ export default function VendedorRegistroWorkspace({
 
         setRegistroEditando(registro);
         setForm(mapped.form);
+        setPasoActual(1);
+        setErroresCampos({});
+        setEquipoEncontrado(null);
         setFinancierasVisibles(mapped.financierasVisibles);
         setIngresoContado2Visible(debeMostrarSegundoIngreso(mapped.form));
         setImeiDetalle(
@@ -2869,6 +3013,231 @@ export default function VendedorRegistroWorkspace({
       cancelled = true;
     };
   }, [searchParams, session]);
+
+  const validarPaso = (paso: PasoVenta) => {
+    const errores: ErroresCampos = {};
+    const requerido = (field: keyof FormState, message: string) => {
+      if (!isTextFilled(String(form[field] ?? ""))) errores[field] = message;
+    };
+
+    if (paso === 1 && !registroEditandoConvertido) {
+      requerido("ciudad", "La ciudad es obligatoria");
+      requerido("puntoVenta", "Selecciona el punto de venta");
+      requerido("servicio", "Selecciona contado o financiada");
+
+      if (form.serialImei.length !== 15) {
+        errores.serialImei = "El IMEI debe tener 15 digitos";
+      } else if (!registroEditando && !equipoEncontrado) {
+        errores.serialImei = "Busca el IMEI y confirma que el equipo este disponible";
+      } else if (
+        equipoEncontrado &&
+        !esEstadoEquipoDisponible(equipoEncontrado.estadoActual)
+      ) {
+        errores.serialImei = `El equipo no esta disponible. Estado: ${
+          equipoEncontrado.estadoActual || "sin estado"
+        }`;
+      }
+
+      requerido("referenciaEquipo", "La referencia es obligatoria");
+      requerido("almacenamiento", "El almacenamiento es obligatorio");
+      requerido("color", "El color es obligatorio");
+      requerido("tipoEquipo", "Selecciona el tipo de equipo");
+    }
+
+    if (paso === 2) {
+      if (registroEditandoConvertido) {
+        requerido("clienteNombre", "El nombre completo es obligatorio");
+        requerido("tipoDocumento", "Selecciona el tipo de documento");
+        requerido("documentoNumero", "El numero de documento es obligatorio");
+        requerido("correo", "El correo es obligatorio");
+        if (form.correo && !esCorreoRegistroValido(form.correo)) {
+          errores.correo =
+            `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`;
+        }
+        requerido("whatsapp", "El WhatsApp es obligatorio");
+        if (form.whatsapp && !esWhatsappRegistroValido(form.whatsapp)) {
+          errores.whatsapp = "El WhatsApp debe tener 10 digitos";
+        }
+        requerido("direccion", "La direccion es obligatoria");
+        const errorDocumentoContacto = validarDocumentoDiferenteDeContactos(form);
+        if (errorDocumentoContacto) {
+          errores.documentoNumero = errorDocumentoContacto;
+        }
+        return errores;
+      }
+
+      requerido("clienteNombre", "El nombre completo es obligatorio");
+      requerido("tipoDocumento", "Selecciona el tipo de documento");
+      requerido("documentoNumero", "El numero de documento es obligatorio");
+      if (listaNegraAlerta) errores.documentoNumero = "CEDULA REPORTADA POR FRAUDE";
+      if (registroDuplicadoAlerta) {
+        errores.documentoNumero =
+          "Esta cedula y este IMEI ya aparecen juntos en el sistema";
+      }
+      requerido("correo", "El correo es obligatorio");
+      if (form.correo && !esCorreoRegistroValido(form.correo)) {
+        errores.correo = `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`;
+      }
+      requerido("whatsapp", "El WhatsApp es obligatorio");
+      if (form.whatsapp && !esWhatsappRegistroValido(form.whatsapp)) {
+        errores.whatsapp = "El WhatsApp debe tener 10 digitos";
+      }
+      requerido("fechaNacimiento", "La fecha de nacimiento es obligatoria");
+      requerido("fechaExpedicion", "La fecha de expedicion es obligatoria");
+      requerido("direccion", "La direccion es obligatoria");
+      requerido("simCardRegistro1", "El registro SIM 1 es obligatorio");
+
+      const errorDocumentoContacto = validarDocumentoDiferenteDeContactos(
+        esServicioFinanciera(form.servicio)
+          ? form
+          : { documentoNumero: form.documentoNumero, whatsapp: form.whatsapp }
+      );
+      if (errorDocumentoContacto) errores.documentoNumero = errorDocumentoContacto;
+
+      if (!registroEditandoConvertido) {
+        if (!form.aceptaDeclaracionIntermediacion) {
+          errores.aceptaDeclaracionIntermediacion =
+            "Debes confirmar la declaracion de intermediacion";
+        }
+        if (!form.aceptaPoliticaGarantia) {
+          errores.aceptaPoliticaGarantia =
+            "Debes confirmar la politica de garantia";
+        }
+        if (!form.firmaClienteDataUrl) {
+          errores.firmaClienteDataUrl = "La firma del cliente es obligatoria";
+        }
+        if (!form.fotoEntregaDataUrl) {
+          errores.fotoEntregaDataUrl = "La foto de entrega es obligatoria";
+        }
+        if (esServicioContado(form.servicio) && !form.facturaFotoDataUrl) {
+          errores.facturaFotoDataUrl = "La foto de la factura es obligatoria";
+        }
+      }
+
+      if (esServicioFinanciera(form.servicio)) {
+        requerido("telefono", "El telefono es obligatorio");
+        requerido("barrio", "El barrio es obligatorio");
+        requerido("referenciaFamiliar1Nombre", "La primera referencia es obligatoria");
+        requerido(
+          "referenciaFamiliar1Telefono",
+          "El telefono de la primera referencia es obligatorio"
+        );
+        requerido("referenciaFamiliar2Nombre", "La segunda referencia es obligatoria");
+        requerido(
+          "referenciaFamiliar2Telefono",
+          "El telefono de la segunda referencia es obligatorio"
+        );
+        if (!registroEditandoConvertido && !form.aceptaCondicionesCredito) {
+          errores.aceptaCondicionesCredito =
+            "Debes confirmar las condiciones del credito";
+        }
+        if (
+          !registroEditandoConvertido &&
+          !form.clienteSinCedulaFisica &&
+          (!form.cedulaFrenteDataUrl || !form.cedulaReversoDataUrl)
+        ) {
+          errores.cedula =
+            "Adjunta ambos lados de la cedula o marca la excepcion";
+        }
+      }
+    }
+
+    if (paso === 3 && !registroEditandoConvertido) {
+      if (esServicioFinanciera(form.servicio)) {
+        if (financierasCatalogo.length === 0) {
+          errores.financieras = "No hay financieras creadas en el catalogo comercial";
+        }
+
+        form.financierasDetalle
+          .slice(0, financierasVisibles)
+          .forEach((item, index) => {
+            if (index > 0 && !detalleFinancieraTieneDatos(item)) return;
+            const prefix = `financiera-${index}`;
+            if (!isTextFilled(item.plataformaCredito)) {
+              errores[`${prefix}-plataformaCredito`] = "Selecciona la plataforma";
+            }
+            if (!isTextFilled(item.creditoAutorizado)) {
+              errores[`${prefix}-creditoAutorizado`] = "Ingresa el credito autorizado";
+            }
+            const requiereInicial =
+              financieraRequiereInicial(index) ||
+              isTextFilled(item.cuotaInicial) ||
+              isTextFilled(item.tipoPagoInicial);
+            if (requiereInicial && !isTextFilled(item.cuotaInicial)) {
+              errores[`${prefix}-cuotaInicial`] = "Ingresa la cuota inicial";
+            }
+            if (requiereInicial && !isTextFilled(item.tipoPagoInicial)) {
+              errores[`${prefix}-tipoPagoInicial`] = "Selecciona el pago de la inicial";
+            }
+            if (!isTextFilled(item.valorCuota)) {
+              errores[`${prefix}-valorCuota`] = "Ingresa el valor de la cuota";
+            }
+            if (!isTextFilled(item.numeroCuotas)) {
+              errores[`${prefix}-numeroCuotas`] = "Selecciona el plazo";
+            }
+            if (!isTextFilled(item.frecuenciaCuota)) {
+              errores[`${prefix}-frecuenciaCuota`] = "Selecciona la frecuencia";
+            }
+          });
+
+        if (ingresoContado2Visible) {
+          const inicial = moneyInputToNumber(
+            form.financierasDetalle[0]?.cuotaInicial ?? ""
+          );
+          const ingreso1 = moneyInputToNumber(form.medioPago1Valor);
+          const ingreso2 = moneyInputToNumber(form.medioPago2Valor);
+          if (ingreso1 <= 0) errores.medioPago1Valor = "Ingresa el primer valor";
+          if (!form.medioPago2Tipo) {
+            errores.medioPago2Tipo = "Selecciona el segundo tipo de ingreso";
+          }
+          if (ingreso2 <= 0) errores.medioPago2Valor = "Ingresa el segundo valor";
+          if (ingreso1 + ingreso2 !== inicial) {
+            errores.ingresosInicial = "La suma de los ingresos debe ser igual a la inicial";
+          }
+        }
+      } else if (esServicioContado(form.servicio)) {
+        requerido("medioPago1Tipo", "Selecciona el tipo del ingreso");
+        if (moneyInputToNumber(form.medioPago1Valor) <= 0) {
+          errores.medioPago1Valor = "Ingresa un valor mayor que cero";
+        }
+        if (ingresoContado2Visible) {
+          requerido("medioPago2Tipo", "Selecciona el segundo tipo de ingreso");
+          if (moneyInputToNumber(form.medioPago2Valor) <= 0) {
+            errores.medioPago2Valor = "Ingresa un valor mayor que cero";
+          }
+        }
+        if (!form.facturaFotoDataUrl) {
+          errores.facturaFotoDataUrl = "La foto de la factura es obligatoria";
+        }
+      }
+
+      requerido("jaladorNombre", "Selecciona el jalador");
+      requerido("observacion", "La observacion es obligatoria");
+    }
+
+    return errores;
+  };
+
+  const irAlPaso = (paso: PasoVenta) => {
+    if (paso > pasoActual) return;
+    setErroresCampos({});
+    setPasoActual(paso);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const continuarPaso = () => {
+    const errores = validarPaso(pasoActual);
+    setErroresCampos(errores);
+
+    if (Object.keys(errores).length > 0) {
+      setFormMessage("Revisa los campos marcados antes de continuar", "error");
+      return;
+    }
+
+    setFormMessage("", "success");
+    setPasoActual((current) => Math.min(4, current + 1) as PasoVenta);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const validarFormularioVisible = () => {
     if (registroEditandoConvertido) {
@@ -3054,11 +3423,24 @@ export default function VendedorRegistroWorkspace({
     return null;
   };
 
-  const guardarRegistro = async (confirmado = false) => {
+  const guardarRegistro = async () => {
+    if (guardandoRef.current) return;
+
+    for (const paso of [1, 2, 3] as PasoVenta[]) {
+      const erroresPaso = validarPaso(paso);
+
+      if (Object.keys(erroresPaso).length > 0) {
+        setErroresCampos(erroresPaso);
+        setPasoActual(paso);
+        setFormMessage("Revisa los campos marcados antes de guardar", "error");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+    }
+
     const errorValidacion = validarFormularioVisible();
 
     if (errorValidacion) {
-      setConfirmacionGuardadoVisible(false);
       if (errorValidacion === "CEDULA REPORTADA POR FRAUDE") {
         setListaNegraModalCerrado(false);
       }
@@ -3066,15 +3448,9 @@ export default function VendedorRegistroWorkspace({
       return;
     }
 
-    if (!registroEditando && !confirmado) {
-      setFormMessage("", "success");
-      setConfirmacionGuardadoVisible(true);
-      return;
-    }
-
     try {
+      guardandoRef.current = true;
       setGuardando(true);
-      setConfirmacionGuardadoVisible(false);
       setFormMessage("", "success");
 
       const payload = {
@@ -3172,7 +3548,6 @@ export default function VendedorRegistroWorkspace({
         limpiarFormulario(true);
       }
 
-      await cargarRegistrosRecientes();
     } catch {
       setFormMessage(
         registroEditando
@@ -3181,6 +3556,7 @@ export default function VendedorRegistroWorkspace({
         "error"
       );
     } finally {
+      guardandoRef.current = false;
       setGuardando(false);
     }
   };
@@ -3197,9 +3573,37 @@ export default function VendedorRegistroWorkspace({
         .map((nombre) => [nombre, nombre])
     ).values()
   );
+  const registros: RegistroResumen[] = [];
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/vendedor/registros", icon: "sales", label: "Ventas" },
+    { href: "/dashboard/radar", icon: "inventory", label: "Disponibilidad" },
+    { href: "/vendedor/lista-precios", icon: "reports", label: "Lista de precios" },
+    ...(puedeBuscarRegistros
+      ? [
+          {
+            href: "/vendedor/registros/buscar",
+            icon: "approvals" as const,
+            label: "Buscar registro",
+          },
+        ]
+      : []),
+  ];
+  const pasos: Array<{ numero: PasoVenta; titulo: string; detalle: string }> = [
+    { numero: 1, titulo: "Equipo", detalle: "Sede, IMEI y tipo" },
+    { numero: 2, titulo: "Cliente", detalle: "Datos y evidencias" },
+    { numero: 3, titulo: "Pago", detalle: "Ingresos y financieras" },
+    { numero: 4, titulo: "Confirmacion", detalle: "Revision y guardado" },
+  ];
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_34%),radial-gradient(circle_at_top_right,rgba(239,68,68,0.12),transparent_30%),linear-gradient(180deg,#f8fafc_0%,#e8eef6_100%)] px-4 py-8">
+    <div className="min-h-screen bg-[#f4f5f7] text-slate-950">
+      <DashboardSidebar
+        activeHref="/vendedor/registros"
+        coverageLabel={session.sedeNombre}
+        items={navigationItems}
+      />
+      <div className="lg:pl-[252px]">
       {registroDuplicadoAlerta && !duplicadoModalCerrado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6 backdrop-blur-sm">
           <section
@@ -3287,7 +3691,7 @@ export default function VendedorRegistroWorkspace({
             aria-modal="true"
             className="w-full max-w-2xl overflow-hidden rounded-[32px] border-2 border-red-300 bg-white shadow-[0_30px_90px_rgba(127,29,29,0.45)]"
           >
-            <div className="bg-[linear-gradient(135deg,#7f1d1d_0%,#dc2626_100%)] px-6 py-6 text-white">
+            <div className="bg-red-700 px-6 py-6 text-white">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.24em] text-red-100">
@@ -3350,17 +3754,17 @@ export default function VendedorRegistroWorkspace({
           </section>
         </div>
       )}
-      {confirmacionGuardadoVisible && (
+      {false && confirmacionGuardadoVisible && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617]/80 px-4 py-6 backdrop-blur-md">
           <section
             role="dialog"
             aria-modal="true"
             className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-[34px] border border-white/20 bg-white shadow-[0_34px_110px_rgba(2,6,23,0.55)]"
           >
-            <div className="border-b border-slate-800 bg-[linear-gradient(135deg,#020617_0%,#0f172a_54%,#0f766e_100%)] px-6 py-6 text-white md:px-8">
+            <div className="border-b border-slate-800 bg-slate-950 px-6 py-6 text-white md:px-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-teal-100">
+                  <p className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-red-100">
                     Revision antes de guardar
                   </p>
                   <h2 className="mt-3 text-3xl font-black leading-tight tracking-tight md:text-5xl">
@@ -3623,7 +4027,7 @@ export default function VendedorRegistroWorkspace({
                 </button>
                 <button
                   type="button"
-                  onClick={() => void guardarRegistro(true)}
+                  onClick={() => void guardarRegistro()}
                   disabled={guardando}
                   className="rounded-2xl bg-slate-950 px-6 py-4 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
@@ -3634,60 +4038,58 @@ export default function VendedorRegistroWorkspace({
           </section>
         </div>
       )}
-      <div className="mx-auto max-w-[1680px]">
-        <section className="overflow-hidden rounded-[36px] border border-white/20 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.34),transparent_34%),linear-gradient(135deg,#020617_0%,#0f172a_52%,#146b66_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.26)] md:px-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Hoja digital
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                {registroEditando ? "MODIFICAR REGISTRO" : "REGISTRAR VENTA"}
-              </h1>
-
-              <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                {registroEditandoConvertido
-                  ? "Corrige datos basicos del cliente y del tramite sin alterar la venta, el inventario ni los valores ya procesados."
-                  : registroEditando
-                  ? "Actualiza la informacion del tramite, las financieras, la validacion del cliente y la entrega del equipo."
-                  : "Captura digital del tramite, las financieras, la validacion del cliente y la entrega del equipo en un solo registro."}
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[410px]">
-              <Link
-                href="/vendedor/lista-precios"
-                className="rounded-[18px] border border-white/10 bg-white px-5 py-3 text-center text-sm font-black text-slate-900 transition hover:bg-slate-100"
-              >
-                LISTA DE PRECIOS
-              </Link>
-              {puedeBuscarRegistros && (
-                <Link
-                  href="/vendedor/registros/buscar"
-                  className="rounded-[18px] border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-                >
-                  Buscar registro
-                </Link>
-              )}
-              {registroEditando && (
-                <button
-                  type="button"
-                  onClick={() => limpiarFormulario(false)}
-                  className="rounded-[18px] border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-                >
-                  Cancelar edicion
-                </button>
-              )}
-              <Link
-                href="/dashboard"
-                className="rounded-[18px] border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                Volver a CONECTAMOS
-              </Link>
-            </div>
+      <div className="mx-auto max-w-[1560px] px-4 pb-10 pt-6 sm:px-6 lg:px-8">
+        <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#e30613]">
+              Ventas / Registro digital
+            </p>
+            <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+              {registroEditando ? "Modificar registro" : "Registrar venta"}
+            </h1>
+            <p className="mt-2 max-w-3xl text-base text-slate-600">
+              {registroEditandoConvertido
+                ? "Corrige los datos permitidos sin alterar la venta, el inventario ni los valores procesados."
+                : "Completa el registro paso a paso. La informacion se conserva hasta la confirmacion final."}
+            </p>
           </div>
-        </section>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/vendedor/lista-precios"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
+            >
+              Lista de precios
+            </Link>
+            {puedeBuscarRegistros && (
+              <Link
+                href="/vendedor/registros/buscar"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
+              >
+                Buscar registro
+              </Link>
+            )}
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950 text-sm font-black text-white">
+                {session.perfilNombre.slice(0, 2).toUpperCase()}
+              </span>
+              <div className="hidden sm:block">
+                <p className="max-w-44 truncate text-sm font-bold text-slate-950">
+                  {session.perfilNombre}
+                </p>
+                <p className="text-xs text-slate-500">{session.perfilTipoLabel}</p>
+              </div>
+            </div>
+            <LogoutButton variant="light" className="rounded-xl" />
+          </div>
+        </header>
+
+        {cargando && (
+          <div className="mt-6 flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-[#e30613]" />
+            Cargando sedes, jaladores y financieras...
+          </div>
+        )}
 
         {(registroEditando || cargandoEdicion) && (
           <section className="mt-6 rounded-[30px] border border-emerald-200 bg-emerald-50 px-5 py-4 shadow-sm">
@@ -3733,51 +4135,61 @@ export default function VendedorRegistroWorkspace({
           </div>
         )}
 
-        <section className="mt-6 overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
-          <div className="grid gap-px bg-slate-200 md:grid-cols-4">
-            {[
-              ["01", "Punto de venta", form.puntoVenta || "Sin seleccionar"],
-              ["02", "Cliente", form.clienteNombre || "Pendiente"],
-              ["03", "Equipo", form.serialImei || "Sin IMEI"],
-              ["04", "Venta", form.servicio || "Sin tipo"],
-            ].map(([numero, titulo, valor], index) => (
-              <div
-                key={numero}
-                className={`bg-white px-5 py-4 ${
-                  index === 0 ? "bg-teal-50" : ""
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black ${
-                      index === 0
-                        ? "bg-teal-600 text-white"
-                        : "bg-slate-950 text-white"
-                    }`}
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <ol className="grid gap-2 md:grid-cols-4" aria-label="Pasos del registro de venta">
+            {pasos.map((paso) => {
+              const activo = paso.numero === pasoActual;
+              const completado = paso.numero < pasoActual;
+
+              return (
+                <li key={paso.numero}>
+                  <button
+                    type="button"
+                    onClick={() => irAlPaso(paso.numero)}
+                    disabled={paso.numero > pasoActual}
+                    aria-current={activo ? "step" : undefined}
+                    className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${
+                      activo
+                        ? "border-red-200 bg-red-50"
+                        : completado
+                          ? "border-slate-200 bg-white hover:border-red-200"
+                          : "border-transparent bg-slate-50 text-slate-400"
+                    } disabled:cursor-not-allowed`}
                   >
-                    {numero}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
-                      {titulo}
-                    </p>
-                    <p className="mt-1 truncate text-sm font-black text-slate-950">
-                      {valor}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+                    <span
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-black ${
+                        activo
+                          ? "bg-[#e30613] text-white"
+                          : completado
+                            ? "bg-slate-950 text-white"
+                            : "bg-slate-200 text-slate-500"
+                      }`}
+                    >
+                      {completado ? "✓" : paso.numero}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-black text-slate-950">
+                        {paso.titulo}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-slate-500">
+                        {paso.detalle}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
         </section>
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-6">
+            {pasoActual === 1 && (
             <section className={`${formSectionClass} p-5`}>
               <div className={formSectionHeaderClass}>
-                <span>01 Cliente, punto e IMEI</span>
-                <span className="rounded-full bg-teal-100 px-3 py-1 text-teal-700">
-                  Datos base
+                <span>Paso 1 · Equipo</span>
+                <span className="rounded-full bg-red-50 px-3 py-1 text-[#c4000c]">
+                  Datos del equipo
                 </span>
               </div>
 
@@ -3791,6 +4203,7 @@ export default function VendedorRegistroWorkspace({
                     className={inputClass(registroEditandoConvertido)}
                     placeholder="Ciudad"
                   />
+                  <FieldError message={erroresCampos.ciudad} />
                 </label>
 
                 <label className={fieldLabelClass}>
@@ -3798,7 +4211,13 @@ export default function VendedorRegistroWorkspace({
                   <select
                     value={form.puntoVenta}
                     disabled={registroEditandoConvertido}
-                    onChange={(event) => setField("puntoVenta", event.target.value)}
+                    onChange={(event) => {
+                      const puntoVenta = event.target.value;
+                      setField("puntoVenta", puntoVenta);
+                      if (form.serialImei.length === 15) {
+                        void buscarImei(puntoVenta);
+                      }
+                    }}
                     className={inputClass(registroEditandoConvertido)}
                   >
                     {puntosVenta.map((item) => (
@@ -3807,9 +4226,10 @@ export default function VendedorRegistroWorkspace({
                       </option>
                     ))}
                   </select>
+                  <FieldError message={erroresCampos.puntoVenta} />
                 </label>
 
-                <div className="md:col-span-2 grid gap-3 rounded-[30px] border border-teal-100 bg-[linear-gradient(135deg,#ecfeff_0%,#f8fafc_100%)] p-4">
+                <div className="md:col-span-2 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-col gap-2 md:flex-row md:items-end">
                     <label className={`${fieldLabelClass} flex-1`}>
                       IMEI
@@ -3839,6 +4259,12 @@ export default function VendedorRegistroWorkspace({
                           setPayjoyCreditos({});
                           setPayjoyErrores({});
                           setImeiDetalle("");
+                          setEquipoEncontrado(null);
+                          setErroresCampos((current) => {
+                            const next = { ...current };
+                            delete next.serialImei;
+                            return next;
+                          });
                         }}
                         onBlur={() => {
                           if (!registroEditandoConvertido && form.serialImei.length === 15) {
@@ -3848,6 +4274,7 @@ export default function VendedorRegistroWorkspace({
                         className={inputClass(registroEditandoConvertido)}
                         placeholder="15 digitos"
                       />
+                      <FieldError message={erroresCampos.serialImei} />
                     </label>
 
                     <button
@@ -3858,16 +4285,43 @@ export default function VendedorRegistroWorkspace({
                         buscandoImei ||
                         form.serialImei.length !== 15
                       }
-                      className="rounded-[20px] bg-slate-950 px-6 py-3.5 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className="rounded-xl bg-slate-950 px-6 py-3.5 text-sm font-black text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
                       {buscandoImei ? "Consultando..." : "Buscar IMEI"}
                     </button>
                   </div>
 
-                  <div className="rounded-[22px] border border-dashed border-teal-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
-                    {imeiDetalle ||
-                      "Cuando el IMEI exista en cualquier sede o en bodega principal, se completara la informacion disponible del equipo."}
-                  </div>
+                  {equipoEncontrado ? (
+                    <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
+                      {[
+                        ["Referencia", equipoEncontrado.referencia],
+                        ["Color", equipoEncontrado.color || "Sin color"],
+                        ["Costo", formatMoney(equipoEncontrado.costo)],
+                        ["Estado", equipoEncontrado.estadoActual || "Sin estado"],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                            {label}
+                          </p>
+                          <p
+                            className={`mt-1 font-black ${
+                              label === "Estado" &&
+                              !esEstadoEquipoDisponible(equipoEncontrado.estadoActual)
+                                ? "text-[#c4000c]"
+                                : "text-slate-950"
+                            }`}
+                          >
+                            {value}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
+                      {imeiDetalle ||
+                        "Busca un IMEI para completar referencia, color, costo y estado."}
+                    </div>
+                  )}
                   {verificandoDuplicado && (
                     <p className="text-xs font-semibold text-amber-700">
                       Verificando si esta cedula e IMEI ya existen en el
@@ -3893,7 +4347,7 @@ export default function VendedorRegistroWorkspace({
                           className={`rounded-[24px] border px-5 py-5 text-left text-sm font-black transition ${
                             active
                               ? "border-slate-950 bg-slate-950 text-white shadow-[0_14px_30px_rgba(15,23,42,0.2)]"
-                              : "border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-teal-50"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50"
                           } disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500`}
                         >
                           {option.label}
@@ -3901,103 +4355,8 @@ export default function VendedorRegistroWorkspace({
                       );
                     })}
                   </div>
+                  <FieldError message={erroresCampos.servicio} />
                 </div>
-
-                <label className={`${fieldLabelClass} md:col-span-2`}>
-                  Nombre del cliente
-                  <input
-                    value={form.clienteNombre}
-                    onChange={(event) => setField("clienteNombre", event.target.value)}
-                    className={inputClass()}
-                    placeholder="Nombre completo"
-                  />
-                </label>
-
-                <label className={fieldLabelClass}>
-                  Tipo de documento
-                  <select
-                    value={form.tipoDocumento}
-                    onChange={(event) => setField("tipoDocumento", event.target.value)}
-                    className={inputClass()}
-                  >
-                    {TIPOS_DOCUMENTO_CLIENTE.filter(
-                      (item) =>
-                        esServicioContado(form.servicio) ||
-                        item !== TIPO_DOCUMENTO_CONTADO
-                    ).map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className={fieldLabelClass}>
-                  Numero de documento
-                  <input
-                    value={form.documentoNumero}
-                    onChange={(event) => {
-                      const documento = onlyDigits(event.target.value);
-
-                      setCreditosFinancierasCedula({});
-                      setCreditosCedulaError("");
-                      autoCreditosCedulaConsultaRef.current = "";
-                      setForm((current) => ({
-                        ...current,
-                        documentoNumero: documento,
-                        financierasDetalle: current.financierasDetalle.map(
-                          (item) =>
-                            esPlataformaConsultaCedula(item.plataformaCredito)
-                              ? {
-                                  ...item,
-                                  creditoAutorizado: "",
-                                  valorCuota: "",
-                                  numeroCuotas: "",
-                                  frecuenciaCuota: "",
-                                }
-                              : item
-                        ),
-                      }));
-                    }}
-                    className={inputClass()}
-                    placeholder="Documento"
-                  />
-                  {verificandoListaNegra && (
-                    <span className="text-xs font-semibold text-slate-500">
-                      Verificando lista negra...
-                    </span>
-                  )}
-                  {consultandoCreditosCedula && (
-                    <span className="text-xs font-semibold text-emerald-700">
-                      Consultando creditos financieros...
-                    </span>
-                  )}
-                  {Object.values(creditosFinancierasCedula).length > 0 && (
-                    <span className="text-xs font-semibold text-emerald-700">
-                      {Object.values(creditosFinancierasCedula)
-                        .map(
-                          (credito) =>
-                            `${credito.financiera}: ${formatMoney(
-                              credito.creditoAutorizado
-                            )}${
-                              credito.numeroCuotas
-                                ? ` | ${credito.numeroCuotas} cuotas`
-                                : ""
-                            }${
-                              credito.valorCuota
-                                ? ` | cuota ${formatMoney(credito.valorCuota)}`
-                                : ""
-                            }`
-                        )
-                        .join(" - ")}
-                    </span>
-                  )}
-                  {creditosCedulaError && (
-                    <span className="text-xs font-semibold text-amber-700">
-                      {creditosCedulaError}
-                    </span>
-                  )}
-                </label>
 
                 {(esServicioFinanciera(form.servicio) ||
                   esServicioContado(form.servicio)) && (
@@ -4013,6 +4372,7 @@ export default function VendedorRegistroWorkspace({
                         className={inputClass(registroEditandoConvertido)}
                         placeholder="Se completa desde el IMEI"
                       />
+                      <FieldError message={erroresCampos.referenciaEquipo} />
                     </label>
 
                     <label className={fieldLabelClass}>
@@ -4026,6 +4386,7 @@ export default function VendedorRegistroWorkspace({
                         className={inputClass(registroEditandoConvertido)}
                         placeholder="128 GB"
                       />
+                      <FieldError message={erroresCampos.almacenamiento} />
                     </label>
 
                     <label className={fieldLabelClass}>
@@ -4037,6 +4398,7 @@ export default function VendedorRegistroWorkspace({
                         className={inputClass(registroEditandoConvertido)}
                         placeholder="Color"
                       />
+                      <FieldError message={erroresCampos.color} />
                     </label>
 
                     <label className={fieldLabelClass}>
@@ -4056,6 +4418,7 @@ export default function VendedorRegistroWorkspace({
                           </option>
                         ))}
                       </select>
+                      <FieldError message={erroresCampos.tipoEquipo} />
                     </label>
 
                     <label className={fieldLabelClass}>
@@ -4074,13 +4437,14 @@ export default function VendedorRegistroWorkspace({
                           </option>
                         ))}
                       </select>
-                    </label>
+                  </label>
                   </>
                 )}
               </div>
             </section>
+            )}
 
-            {esServicioFinanciera(form.servicio) && !registroEditandoConvertido && (
+            {pasoActual === 3 && esServicioFinanciera(form.servicio) && !registroEditandoConvertido && (
             <section className={`${formSectionClass} p-5`}>
               <div className={formSectionHeaderClass}>
                 <span>02 Financiacion del tramite</span>
@@ -4170,7 +4534,7 @@ export default function VendedorRegistroWorkspace({
                   return (
                     <div
                       key={`financiera-${index}`}
-                      className="rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#fff_100%)] p-4 shadow-inner"
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -4214,6 +4578,9 @@ export default function VendedorRegistroWorkspace({
                               </option>
                             ))}
                           </select>
+                          <FieldError
+                            message={erroresCampos[`financiera-${index}-plataformaCredito`]}
+                          />
                         </label>
 
                         {financierasCatalogo.length === 0 && (
@@ -4249,6 +4616,9 @@ export default function VendedorRegistroWorkspace({
                                       ? `Se completa desde ${creditoCedula?.financiera}`
                                     : "$ 0"
                                 }
+                              />
+                              <FieldError
+                                message={erroresCampos[`financiera-${index}-creditoAutorizado`]}
                               />
                               {esPlataformaPayJoy(item.plataformaCredito) && (
                                 <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
@@ -4390,6 +4760,9 @@ export default function VendedorRegistroWorkspace({
                                     inputMode="numeric"
                                     placeholder="$ 0"
                                   />
+                                  <FieldError
+                                    message={erroresCampos[`financiera-${index}-cuotaInicial`]}
+                                  />
                                 </label>
 
                                 <label className={fieldLabelClass}>
@@ -4414,6 +4787,9 @@ export default function VendedorRegistroWorkspace({
                                       </option>
                                     ))}
                                   </select>
+                                  <FieldError
+                                    message={erroresCampos[`financiera-${index}-tipoPagoInicial`]}
+                                  />
                                 </label>
 
                                 {index === 0 && (
@@ -4448,6 +4824,7 @@ export default function VendedorRegistroWorkspace({
                                               inputMode="numeric"
                                               placeholder="$ 0"
                                             />
+                                            <FieldError message={erroresCampos.medioPago1Valor} />
                                           </label>
 
                                           <label className={fieldLabelClass}>
@@ -4464,6 +4841,7 @@ export default function VendedorRegistroWorkspace({
                                               inputMode="numeric"
                                               placeholder="$ 0"
                                             />
+                                            <FieldError message={erroresCampos.medioPago2Valor} />
                                           </label>
 
                                           <label className={fieldLabelClass}>
@@ -4482,6 +4860,7 @@ export default function VendedorRegistroWorkspace({
                                                 </option>
                                               ))}
                                             </select>
+                                            <FieldError message={erroresCampos.medioPago2Tipo} />
                                           </label>
                                         </div>
 
@@ -4490,6 +4869,7 @@ export default function VendedorRegistroWorkspace({
                                             Suma ingresos:{" "}
                                             {formatMoney(totalIngresosInicialFinanciera(form))}
                                           </div>
+                                          <FieldError message={erroresCampos.ingresosInicial} />
 
                                           <button
                                             type="button"
@@ -4547,6 +4927,9 @@ export default function VendedorRegistroWorkspace({
                                     : "$ 0"
                                 }
                               />
+                              <FieldError
+                                message={erroresCampos[`financiera-${index}-valorCuota`]}
+                              />
                             </label>
 
                             <label className={fieldLabelClass}>
@@ -4580,6 +4963,9 @@ export default function VendedorRegistroWorkspace({
                                   </option>
                                 ))}
                               </select>
+                              <FieldError
+                                message={erroresCampos[`financiera-${index}-numeroCuotas`]}
+                              />
                             </label>
 
                             <label className={fieldLabelClass}>
@@ -4613,6 +4999,9 @@ export default function VendedorRegistroWorkspace({
                                   </option>
                                 ))}
                               </select>
+                              <FieldError
+                                message={erroresCampos[`financiera-${index}-frecuenciaCuota`]}
+                              />
                             </label>
                           </>
                         )}
@@ -4650,7 +5039,7 @@ export default function VendedorRegistroWorkspace({
             </section>
             )}
 
-            {esServicioContado(form.servicio) && !registroEditandoConvertido && (
+            {pasoActual === 3 && esServicioContado(form.servicio) && !registroEditandoConvertido && (
               <section className={`${formSectionClass} p-5`}>
                 <div className={formSectionHeaderClass}>
                   <span>02 Ingresos del contado</span>
@@ -4671,6 +5060,7 @@ export default function VendedorRegistroWorkspace({
                       inputMode="numeric"
                       placeholder="$ 0"
                     />
+                    <FieldError message={erroresCampos.medioPago1Valor} />
                   </label>
 
                   <label className={fieldLabelClass}>
@@ -4686,6 +5076,7 @@ export default function VendedorRegistroWorkspace({
                         </option>
                       ))}
                     </select>
+                    <FieldError message={erroresCampos.medioPago1Tipo} />
                   </label>
 
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
@@ -4720,6 +5111,7 @@ export default function VendedorRegistroWorkspace({
                           inputMode="numeric"
                           placeholder="$ 0"
                         />
+                        <FieldError message={erroresCampos.medioPago2Valor} />
                       </label>
 
                       <label className={fieldLabelClass}>
@@ -4738,6 +5130,7 @@ export default function VendedorRegistroWorkspace({
                             </option>
                           ))}
                         </select>
+                        <FieldError message={erroresCampos.medioPago2Tipo} />
                       </label>
                     </div>
 
@@ -4757,15 +5150,120 @@ export default function VendedorRegistroWorkspace({
               </section>
             )}
 
+            {pasoActual === 2 && (
             <section className={`${formSectionClass} p-5`}>
               <div className={formSectionHeaderClass}>
-                <span>03 Contacto, fechas y referencias</span>
-                <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-700">
-                  Cliente
+                <span>Paso 2 · Cliente</span>
+                <span className="rounded-full bg-red-50 px-3 py-1 text-[#c4000c]">
+                  Datos y referencias
                 </span>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
+                <label className={`${fieldLabelClass} md:col-span-2`}>
+                  Nombre completo
+                  <input
+                    value={form.clienteNombre}
+                    onChange={(event) => setField("clienteNombre", event.target.value)}
+                    className={inputClass()}
+                    placeholder="Nombre completo"
+                  />
+                  <FieldError message={erroresCampos.clienteNombre} />
+                </label>
+
+                <label className={fieldLabelClass}>
+                  Tipo de documento
+                  <select
+                    value={form.tipoDocumento}
+                    onChange={(event) => setField("tipoDocumento", event.target.value)}
+                    className={inputClass()}
+                  >
+                    {TIPOS_DOCUMENTO_CLIENTE.filter(
+                      (item) =>
+                        esServicioContado(form.servicio) ||
+                        item !== TIPO_DOCUMENTO_CONTADO
+                    ).map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                  <FieldError message={erroresCampos.tipoDocumento} />
+                </label>
+
+                <label className={fieldLabelClass}>
+                  Numero de documento
+                  <input
+                    value={form.documentoNumero}
+                    onChange={(event) => {
+                      const documento = onlyDigits(event.target.value);
+
+                      setCreditosFinancierasCedula({});
+                      setCreditosCedulaError("");
+                      autoCreditosCedulaConsultaRef.current = "";
+                      setForm((current) => ({
+                        ...current,
+                        documentoNumero: documento,
+                        financierasDetalle: current.financierasDetalle.map(
+                          (item) =>
+                            esPlataformaConsultaCedula(item.plataformaCredito)
+                              ? {
+                                  ...item,
+                                  creditoAutorizado: "",
+                                  valorCuota: "",
+                                  numeroCuotas: "",
+                                  frecuenciaCuota: "",
+                                }
+                              : item
+                          ),
+                      }));
+                      setErroresCampos((current) => {
+                        const next = { ...current };
+                        delete next.documentoNumero;
+                        return next;
+                      });
+                    }}
+                    className={inputClass()}
+                    placeholder="Documento"
+                  />
+                  <FieldError message={erroresCampos.documentoNumero} />
+                  {verificandoListaNegra && (
+                    <span className="text-xs font-semibold text-slate-500">
+                      Verificando lista negra...
+                    </span>
+                  )}
+                  {consultandoCreditosCedula && (
+                    <span className="text-xs font-semibold text-emerald-700">
+                      Consultando creditos financieros...
+                    </span>
+                  )}
+                  {Object.values(creditosFinancierasCedula).length > 0 && (
+                    <span className="text-xs font-semibold text-emerald-700">
+                      {Object.values(creditosFinancierasCedula)
+                        .map(
+                          (credito) =>
+                            `${credito.financiera}: ${formatMoney(
+                              credito.creditoAutorizado
+                            )}${
+                              credito.numeroCuotas
+                                ? ` | ${credito.numeroCuotas} cuotas`
+                                : ""
+                            }${
+                              credito.valorCuota
+                                ? ` | cuota ${formatMoney(credito.valorCuota)}`
+                                : ""
+                            }`
+                        )
+                        .join(" - ")}
+                    </span>
+                  )}
+                  {creditosCedulaError && (
+                    <span className="text-xs font-semibold text-amber-700">
+                      {creditosCedulaError}
+                    </span>
+                  )}
+                </label>
+
                   <label className={fieldLabelClass}>
                     Correo
                     <input
@@ -4777,6 +5275,7 @@ export default function VendedorRegistroWorkspace({
                       className={inputClass()}
                       placeholder="cliente@gmail.com"
                     />
+                    <FieldError message={erroresCampos.correo} />
                   </label>
 
                   <label className={fieldLabelClass}>
@@ -4791,6 +5290,7 @@ export default function VendedorRegistroWorkspace({
                       className={inputClass()}
                       placeholder="3001234567"
                     />
+                    <FieldError message={erroresCampos.whatsapp} />
                   </label>
 
                 {esServicioFinanciera(form.servicio) && (
@@ -4805,6 +5305,7 @@ export default function VendedorRegistroWorkspace({
                         className={inputClass()}
                         placeholder="Telefono principal"
                       />
+                      <FieldError message={erroresCampos.telefono} />
                     </label>
 
                     <label className={fieldLabelClass}>
@@ -4815,6 +5316,7 @@ export default function VendedorRegistroWorkspace({
                         className={inputClass()}
                         placeholder="Barrio"
                       />
+                      <FieldError message={erroresCampos.barrio} />
                     </label>
                   </>
                 )}
@@ -4829,6 +5331,7 @@ export default function VendedorRegistroWorkspace({
                     }
                     className={inputClass()}
                   />
+                  <FieldError message={erroresCampos.fechaNacimiento} />
                 </label>
 
                 <label className={fieldLabelClass}>
@@ -4841,6 +5344,7 @@ export default function VendedorRegistroWorkspace({
                     }
                     className={inputClass()}
                   />
+                  <FieldError message={erroresCampos.fechaExpedicion} />
                 </label>
 
                 <label className={`${fieldLabelClass} md:col-span-2`}>
@@ -4851,10 +5355,11 @@ export default function VendedorRegistroWorkspace({
                     className={inputClass()}
                     placeholder="Direccion completa"
                   />
+                  <FieldError message={erroresCampos.direccion} />
                 </label>
 
                 {esServicioFinanciera(form.servicio) && (
-                  <div className="md:col-span-2 rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#fff_100%)] p-4">
+                  <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-sm font-bold text-slate-900">
                       Referencias familiares
                     </p>
@@ -4869,6 +5374,7 @@ export default function VendedorRegistroWorkspace({
                           className={inputClass()}
                           placeholder="Nombre completo"
                         />
+                        <FieldError message={erroresCampos.referenciaFamiliar1Nombre} />
                       </label>
 
                       <label className={fieldLabelClass}>
@@ -4884,6 +5390,7 @@ export default function VendedorRegistroWorkspace({
                           className={inputClass()}
                           placeholder="Telefono"
                         />
+                        <FieldError message={erroresCampos.referenciaFamiliar1Telefono} />
                       </label>
 
                       <label className={fieldLabelClass}>
@@ -4896,6 +5403,7 @@ export default function VendedorRegistroWorkspace({
                           className={inputClass()}
                           placeholder="Nombre completo"
                         />
+                        <FieldError message={erroresCampos.referenciaFamiliar2Nombre} />
                       </label>
 
                       <label className={fieldLabelClass}>
@@ -4911,6 +5419,7 @@ export default function VendedorRegistroWorkspace({
                           className={inputClass()}
                           placeholder="Telefono"
                         />
+                        <FieldError message={erroresCampos.referenciaFamiliar2Telefono} />
                       </label>
                     </div>
                   </div>
@@ -4926,6 +5435,7 @@ export default function VendedorRegistroWorkspace({
                     className={inputClass()}
                     placeholder="Opcional"
                   />
+                  <FieldError message={erroresCampos.simCardRegistro1} />
                 </label>
 
                 {esServicioFinanciera(form.servicio) && (
@@ -4943,12 +5453,13 @@ export default function VendedorRegistroWorkspace({
                 )}
               </div>
             </section>
+            )}
 
-            {!registroEditandoConvertido && (
+            {pasoActual === 2 && !registroEditandoConvertido && (
             <section className={`${formSectionClass} p-5`}>
               <div className={formSectionHeaderClass}>
-                <span>04 Confirmaciones y evidencias</span>
-                <span className="rounded-full bg-violet-100 px-3 py-1 text-violet-700">
+                <span>Paso 2 · Confirmaciones y evidencias</span>
+                <span className="rounded-full bg-red-50 px-3 py-1 text-[#c4000c]">
                   Firma y fotos
                 </span>
               </div>
@@ -4969,7 +5480,7 @@ export default function VendedorRegistroWorkspace({
                     return (
                       <label
                         key={field}
-                        className="flex items-start gap-4 rounded-[26px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-700"
+                        className="flex items-start gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-700"
                       >
                         <input
                           type="checkbox"
@@ -4979,7 +5490,10 @@ export default function VendedorRegistroWorkspace({
                           }
                           className="mt-1 h-4 w-4"
                         />
-                        <span className="leading-6">{texto}</span>
+                        <span className="leading-6">
+                          {texto}
+                          <FieldError message={erroresCampos[field]} />
+                        </span>
                       </label>
                     );
                   })}
@@ -4987,13 +5501,16 @@ export default function VendedorRegistroWorkspace({
               )}
 
               <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.92fr)]">
-                <SignaturePad
-                  key={signaturePadKey}
-                  value={form.firmaClienteDataUrl}
-                  onChange={(dataUrl) => setField("firmaClienteDataUrl", dataUrl)}
-                />
+                <div>
+                  <SignaturePad
+                    key={signaturePadKey}
+                    value={form.firmaClienteDataUrl}
+                    onChange={(dataUrl) => setField("firmaClienteDataUrl", dataUrl)}
+                  />
+                  <FieldError message={erroresCampos.firmaClienteDataUrl} />
+                </div>
 
-                <div className="rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#fff_100%)] p-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-semibold text-slate-700">
                     Foto con entrega del producto
                   </p>
@@ -5049,7 +5566,7 @@ export default function VendedorRegistroWorkspace({
                         <button
                           type="button"
                           onClick={capturarFotoDesdeCamara}
-                          className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500"
+                          className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#e30613]"
                         >
                           Capturar foto
                         </button>
@@ -5075,17 +5592,18 @@ export default function VendedorRegistroWorkspace({
                       />
                     </div>
                   )}
+                  <FieldError message={erroresCampos.fotoEntregaDataUrl} />
                 </div>
               </div>
 
               {esServicioContado(form.servicio) && (
-                <div className="mt-5 rounded-[28px] border border-emerald-200 bg-emerald-50 p-4">
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-sm font-black text-emerald-950">
+                      <p className="text-sm font-black text-slate-950">
                         Foto de la factura
                       </p>
-                      <p className="mt-1 text-xs text-emerald-800">
+                      <p className="mt-1 text-xs text-slate-600">
                         Obligatoria para ventas de contado.
                       </p>
                     </div>
@@ -5112,7 +5630,7 @@ export default function VendedorRegistroWorkspace({
                   </div>
 
                   {form.facturaFotoDataUrl && (
-                    <div className="mt-4 rounded-3xl border border-emerald-100 bg-white p-3">
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={form.facturaFotoDataUrl}
@@ -5121,11 +5639,12 @@ export default function VendedorRegistroWorkspace({
                       />
                     </div>
                   )}
+                  <FieldError message={erroresCampos.facturaFotoDataUrl} />
                 </div>
               )}
 
               {esServicioFinanciera(form.servicio) && (
-                <div className="mt-5 rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#fff_100%)] p-4">
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <p className="text-sm font-black text-slate-950">
@@ -5237,14 +5756,159 @@ export default function VendedorRegistroWorkspace({
                       </div>
                     </div>
                   )}
+                  <FieldError message={erroresCampos.cedula} />
                 </div>
               )}
             </section>
             )}
 
+            {pasoActual === 4 && (
+              <section className={`${formSectionClass} p-5`}>
+                <div className={formSectionHeaderClass}>
+                  <span>Paso 4 · Confirmacion</span>
+                  <span className="rounded-full bg-red-50 px-3 py-1 text-[#c4000c]">
+                    Revision final
+                  </span>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <h2 className="text-lg font-black text-slate-950">Cliente</h2>
+                    <dl className="mt-4 space-y-3 text-sm">
+                      {[
+                        ["Nombre", form.clienteNombre || "Pendiente"],
+                        [
+                          "Documento",
+                          `${form.tipoDocumento || ""} ${form.documentoNumero || "Pendiente"}`,
+                        ],
+                        ["Correo", form.correo || "Pendiente"],
+                        ["WhatsApp", form.whatsapp || "Pendiente"],
+                        ["Direccion", form.direccion || "Pendiente"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex justify-between gap-4">
+                          <dt className="text-slate-500">{label}</dt>
+                          <dd className="max-w-[65%] text-right font-bold text-slate-950">
+                            {value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <h2 className="text-lg font-black text-slate-950">Equipo y sede</h2>
+                    <dl className="mt-4 space-y-3 text-sm">
+                      {[
+                        ["Sede", form.puntoVenta || "Pendiente"],
+                        ["Ciudad", form.ciudad || "Pendiente"],
+                        ["IMEI", form.serialImei || "Pendiente"],
+                        ["Equipo", form.referenciaEquipo || "Pendiente"],
+                        ["Color", form.color || "Pendiente"],
+                        ["Estado", equipoEncontrado?.estadoActual || "Validado al guardar"],
+                        ["Costo inventario", formatMoney(equipoEncontrado?.costo ?? null)],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex justify-between gap-4">
+                          <dt className="text-slate-500">{label}</dt>
+                          <dd className="max-w-[65%] text-right font-bold text-slate-950">
+                            {value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 lg:col-span-2">
+                    <h2 className="text-lg font-black text-slate-950">Pago y equipo comercial</h2>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <dl className="space-y-3 text-sm">
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-slate-500">Tipo de venta</dt>
+                          <dd className="font-bold text-slate-950">
+                            {form.servicio || "Pendiente"}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-slate-500">Asesor</dt>
+                          <dd className="text-right font-bold text-slate-950">
+                            {form.asesorNombre || session.perfilNombre}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-slate-500">Jalador</dt>
+                          <dd className="text-right font-bold text-slate-950">
+                            {form.jaladorNombre || "Pendiente"}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-slate-500">Ingreso 1</dt>
+                          <dd className="text-right font-bold text-slate-950">
+                            {form.medioPago1Tipo || "Sin tipo"} · {formatMoney(
+                              moneyInputToNumber(form.medioPago1Valor)
+                            )}
+                          </dd>
+                        </div>
+                        {(ingresoContado2Visible || form.medioPago2Valor) && (
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-slate-500">Ingreso 2</dt>
+                            <dd className="text-right font-bold text-slate-950">
+                              {form.medioPago2Tipo || "Sin tipo"} · {formatMoney(
+                                moneyInputToNumber(form.medioPago2Valor)
+                              )}
+                            </dd>
+                          </div>
+                        )}
+                      </dl>
+
+                      <div className="space-y-3">
+                        {esServicioFinanciera(form.servicio) ? (
+                          form.financierasDetalle
+                            .slice(0, financierasVisibles)
+                            .filter(
+                              (item, index) =>
+                                index === 0 || detalleFinancieraTieneDatos(item)
+                            )
+                            .map((item, index) => (
+                              <div
+                                key={`${item.plataformaCredito}-${index}`}
+                                className="rounded-xl border border-slate-200 bg-white p-4 text-sm"
+                              >
+                                <p className="font-black text-slate-950">
+                                  Financiera {index + 1}: {item.plataformaCredito || "Pendiente"}
+                                </p>
+                                <p className="mt-2 text-slate-600">
+                                  Credito {formatMoney(
+                                    moneyInputToNumber(item.creditoAutorizado)
+                                  )} · Inicial {formatMoney(
+                                    moneyInputToNumber(item.cuotaInicial)
+                                  )} · {item.numeroCuotas || 0} cuotas
+                                </p>
+                              </div>
+                            ))
+                        ) : (
+                          <div className="rounded-xl border border-slate-200 bg-white p-4">
+                            <p className="text-sm text-slate-500">Total registrado</p>
+                            <p className="mt-1 text-2xl font-black text-slate-950">
+                              {formatMoney(totalIngresosContado(form))}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
+                  Caja, descuentos, comision, salida y utilidad no se inventan en este
+                  prerregistro: el sistema los calcula en el flujo actual cuando la venta
+                  se procesa definitivamente.
+                </div>
+              </section>
+            )}
+
+            {pasoActual === 3 && (
             <section className={`${formSectionClass} p-5`}>
               <div className={formSectionHeaderClass}>
-                <span>05 Equipo comercial y observaciones</span>
+                <span>Paso 3 · Equipo comercial y observaciones</span>
                 <span className="rounded-full bg-slate-200 px-3 py-1 text-slate-700">
                   Cierre
                 </span>
@@ -5272,6 +5936,7 @@ export default function VendedorRegistroWorkspace({
                         </option>
                       ))}
                     </select>
+                    <FieldError message={erroresCampos.jaladorNombre} />
                   </label>
                 ) : (
                   <label className={fieldLabelClass}>
@@ -5283,6 +5948,7 @@ export default function VendedorRegistroWorkspace({
                       className={inputClass(registroEditandoConvertido)}
                       placeholder="Nombre del jalador"
                     />
+                    <FieldError message={erroresCampos.jaladorNombre} />
                   </label>
                 )}
 
@@ -5294,18 +5960,35 @@ export default function VendedorRegistroWorkspace({
                     className={`${inputClass()} min-h-28 resize-y`}
                     placeholder="Comentarios adicionales del tramite"
                   />
+                  <FieldError message={erroresCampos.observacion} />
                 </label>
               </div>
             </section>
+            )}
           </div>
 
           <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
-            <section className="overflow-hidden rounded-[32px] border border-slate-900 bg-slate-950 text-white shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
+            <button
+              type="button"
+              onClick={() => setResumenMovilAbierto((current) => !current)}
+              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-4 text-left font-black text-slate-950 shadow-sm xl:hidden"
+              aria-expanded={resumenMovilAbierto}
+            >
+              Resumen de la venta
+              <DashboardIcon
+                name="arrow"
+                className={`h-5 w-5 transition ${
+                  resumenMovilAbierto ? "rotate-90" : ""
+                }`}
+              />
+            </button>
+            <div className={`${resumenMovilAbierto ? "block" : "hidden"} xl:block`}>
+            <section className="overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 text-white shadow-[0_16px_45px_rgba(2,6,23,0.18)]">
               <div className="border-b border-white/10 px-5 py-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="inline-flex rounded-full border border-teal-300/30 bg-teal-300/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-teal-100">
-                      Revision en vivo
+                    <div className="inline-flex rounded-full border border-red-300/30 bg-red-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-red-100">
+                      Resumen en vivo
                     </div>
                     <p className="mt-4 text-[11px] font-black uppercase tracking-[0.24em] text-slate-400">
                       Punto de venta
@@ -5381,24 +6064,11 @@ export default function VendedorRegistroWorkspace({
                   </div>
                 ) : null}
 
-              <button
-                type="button"
-                onClick={() => void guardarRegistro()}
-                disabled={guardando || cargando || cargandoEdicion}
-                className="mt-5 w-full rounded-[20px] bg-white px-5 py-4 text-sm font-black text-slate-950 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-300"
-              >
-                {guardando
-                  ? registroEditando
-                    ? "Guardando cambios..."
-                    : "Guardando..."
-                  : registroEditando
-                    ? "Guardar cambios del registro"
-                    : "Guardar registro digital"}
-              </button>
               </div>
             </section>
 
-            <section className={`${formSectionClass} p-5`}>
+            {false && (
+            <section className="hidden" aria-hidden="true">
               <div className={formSectionHeaderClass}>
                 <span>Registros recientes</span>
                 <span className="rounded-full bg-slate-200 px-3 py-1 text-slate-700">
@@ -5481,9 +6151,58 @@ export default function VendedorRegistroWorkspace({
                 ))}
               </div>
             </section>
+            )}
+            </div>
           </aside>
         </section>
+
+            <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <Link
+                href="/dashboard"
+                className="rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-center text-sm font-bold text-slate-700 transition hover:border-red-200 hover:text-[#e30613]"
+              >
+                Cancelar
+              </Link>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                {pasoActual > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => irAlPaso((pasoActual - 1) as PasoVenta)}
+                    disabled={guardando}
+                    className="rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-black text-slate-800 transition hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Anterior
+                  </button>
+                )}
+                {pasoActual < 4 ? (
+                  <button
+                    type="button"
+                    onClick={continuarPaso}
+                    disabled={cargando || cargandoEdicion}
+                    className="rounded-xl bg-slate-950 px-7 py-3.5 text-sm font-black text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {cargando || cargandoEdicion ? "Cargando..." : "Continuar"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void guardarRegistro()}
+                    disabled={guardando || cargando || cargandoEdicion}
+                    className="rounded-xl bg-[#e30613] px-7 py-3.5 text-sm font-black text-white transition hover:bg-[#bd0711] disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {guardando
+                      ? registroEditando
+                        ? "Guardando cambios..."
+                        : "Guardando venta..."
+                      : registroEditando
+                        ? "Guardar cambios"
+                        : "Guardar venta"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
   );
 }

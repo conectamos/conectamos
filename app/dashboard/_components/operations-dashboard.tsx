@@ -70,9 +70,11 @@ function initials(nombre: string) {
 }
 
 function SidebarContent({
+  activeHref,
   coverageLabel,
   items,
 }: {
+  activeHref?: string;
   coverageLabel: string;
   items: NavigationItem[];
 }) {
@@ -99,7 +101,7 @@ function SidebarContent({
 
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto py-5" aria-label="Navegación principal">
         {items.map((item, index) => {
-          const activo = index === 0;
+          const activo = activeHref ? item.href === activeHref : index === 0;
 
           return (
             <Link
@@ -141,16 +143,22 @@ function SidebarContent({
 }
 
 export function DashboardSidebar({
+  activeHref,
   coverageLabel,
   items,
 }: {
+  activeHref?: string;
   coverageLabel: string;
   items: NavigationItem[];
 }) {
   return (
     <>
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[252px] lg:block">
-        <SidebarContent coverageLabel={coverageLabel} items={items} />
+        <SidebarContent
+          activeHref={activeHref}
+          coverageLabel={coverageLabel}
+          items={items}
+        />
       </aside>
 
       <div className="sticky top-0 z-50 border-b border-slate-200 bg-[#11161d] lg:hidden">
@@ -176,7 +184,11 @@ export function DashboardSidebar({
             </span>
           </summary>
           <div className="absolute inset-x-0 top-full max-h-[calc(100vh-70px)] overflow-y-auto shadow-2xl">
-            <SidebarContent coverageLabel={coverageLabel} items={items} />
+            <SidebarContent
+              activeHref={activeHref}
+              coverageLabel={coverageLabel}
+              items={items}
+            />
           </div>
         </details>
       </div>

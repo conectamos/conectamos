@@ -887,6 +887,14 @@ async function validarEquipoExistenteParaRegistro(params: {
     };
   }
 
+  if (String(equipo.estadoActual || "").trim().toUpperCase() !== "BODEGA") {
+    return {
+      error: `El equipo no esta disponible para venta. Estado actual: ${
+        equipo.estadoActual || "sin estado"
+      }`,
+    };
+  }
+
   return { equipo };
 }
 
