@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { verifyFinancialPasswordForSede } from "@/lib/financial-access";
 import { getMonthlyCommercialSummary } from "@/lib/dashboard-commercial-summary";
-import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
+import { getDashboardCashSummary } from "@/lib/dashboard-financial-summary";
 import { getBogotaMonthRangeFromInput } from "@/lib/ventas-utils";
 
 export async function POST(req: Request) {
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
         period: periodRange?.key,
         sedeId: sedeIdResumen,
       }),
-      getFinancialDashboardSummary({
+      getDashboardCashSummary({
         sedeId: sedeIdResumen,
         fechaCorte: periodRange?.end ?? null,
       }),

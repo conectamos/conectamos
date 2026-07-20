@@ -47,7 +47,7 @@ export async function getDashboardOperationalSummary(
     prestamosPorAprobar,
     prestamosActivos,
     inventarioAtencion,
-    registrosVenta,
+    registrosVentaPorEstado,
     facturasPendientes,
   ] = await Promise.all([
     prisma.inventarioSede.count({
@@ -93,15 +93,16 @@ export async function getDashboardOperationalSummary(
       },
     }),
     options.puedeVerAprobacionesVenta
-      ? prisma.registroVendedorVenta.findMany({
+      ? prisma.registroVendedorVenta.groupBy({
+          by: ["estadoVentaRegistro"],
           where: {
             eliminadoEn: null,
             ventaIdRelacionada: null,
             ...scopeRegistros,
             ...scopeFecha,
           },
-          select: {
-            estadoVentaRegistro: true,
+          _count: {
+            _all: true,
           },
         })
       : Promise.resolve([]),
@@ -117,9 +118,13 @@ export async function getDashboardOperationalSummary(
       : Promise.resolve(0),
   ]);
 
-  const ventasPendientes = registrosVenta.filter((registro) =>
-    esVentaAbierta(registro.estadoVentaRegistro)
-  ).length;
+  const ventasPendientes = registrosVentaPorEstado.reduce(
+    (total, grupo) =>
+      esVentaAbierta(grupo.estadoVentaRegistro)
+        ? total + grupo._count._all
+        : total,
+    0
+  );
   const aprobacionesPendientes =
     prestamosPorAprobar + ventasPendientes + facturasPendientes;
   const pendientesTotal =

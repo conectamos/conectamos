@@ -25,7 +25,7 @@ import {
   getMonthlyCommercialSummary,
   type CommercialRankingItem,
 } from "@/lib/dashboard-commercial-summary";
-import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
+import { getDashboardCashSummary } from "@/lib/dashboard-financial-summary";
 import { getVendorEarningsSummary } from "@/lib/vendor-earnings";
 import { getDashboardOperationalSummary } from "@/lib/dashboard-overview";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
@@ -765,9 +765,12 @@ export default async function DashboardPage({
           sedeId: sedeDashboardId,
         }),
         esAdmin
-          ? getFinancialDashboardSummary({
+          ? getDashboardCashSummary({
               sedeId: sedeDashboardId,
               fechaCorte: mesActual.end,
+            }).catch((error) => {
+              console.error("ERROR CARGANDO CAJA DEL DASHBOARD:", error);
+              return null;
             })
           : Promise.resolve(null),
         getDashboardOperationalSummary({

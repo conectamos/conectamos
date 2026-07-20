@@ -81,6 +81,57 @@ function estadoFinancieroAlCorte(
   return estadoActual;
 }
 
+export async function getDashboardCashSummary(options?: {
+  sedeId?: number | null;
+  fechaCorte?: Date | null;
+}) {
+  const fechaCorte = options?.fechaCorte ?? null;
+  const whereSede = options?.sedeId ? { sedeId: options.sedeId } : {};
+
+  const [ventas, movimientosCaja] = await Promise.all([
+    prisma.venta.aggregate({
+      where: {
+        ...whereSede,
+        ...(fechaCorte ? { fecha: { lt: fechaCorte } } : {}),
+      },
+      _sum: {
+        cajaOficina: true,
+      },
+    }),
+    prisma.cajaMovimiento.groupBy({
+      by: ["tipo"],
+      where: {
+        ...whereSede,
+        ...(fechaCorte ? { createdAt: { lt: fechaCorte } } : {}),
+        tipo: {
+          in: ["INGRESO", "EGRESO"],
+        },
+        NOT: {
+          concepto: CONCEPTO_GASTO_CARTERA,
+        },
+      },
+      _sum: {
+        valor: true,
+      },
+    }),
+  ]);
+
+  const valorMovimiento = (tipo: "INGRESO" | "EGRESO") =>
+    n(
+      movimientosCaja.find((movimiento) => movimiento.tipo === tipo)?._sum
+        .valor
+    );
+  const cajaGeneralVentas = n(ventas._sum.cajaOficina);
+  const saldoCaja =
+    valorMovimiento("INGRESO") - valorMovimiento("EGRESO");
+
+  return {
+    cajaGeneralVentas,
+    saldoCaja,
+    cajaDisponible: cajaGeneralVentas + saldoCaja,
+  };
+}
+
 export async function getFinancialDashboardSummary(options?: {
   sedeId?: number | null;
   fechaCorte?: Date | null;

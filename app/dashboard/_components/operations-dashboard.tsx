@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { getMonthlyCommercialSummary } from "@/lib/dashboard-commercial-summary";
-import type { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
+import type { getDashboardCashSummary } from "@/lib/dashboard-financial-summary";
 import type { DashboardOperationalSummary } from "@/lib/dashboard-overview";
 import DashboardFilters from "./dashboard-filters";
 import DashboardIcon, { type DashboardIconName } from "./dashboard-icon";
@@ -10,7 +10,7 @@ import DashboardUtilityGate from "./dashboard-utility-gate";
 import LogoutButton from "./logout-button";
 
 type CommercialSummary = Awaited<ReturnType<typeof getMonthlyCommercialSummary>>;
-type FinancialSummary = Awaited<ReturnType<typeof getFinancialDashboardSummary>>;
+type FinancialSummary = Awaited<ReturnType<typeof getDashboardCashSummary>>;
 
 type NavigationItem = {
   href: string;
@@ -750,8 +750,16 @@ export default function OperationsDashboard({
                 />
                 <KpiCard
                   label="Caja acumulada"
-                  value={formatoPesos(financial?.cajaDisponible ?? 0)}
-                  detail={`Disponible al cierre de ${periodLabel}`}
+                  value={
+                    financial
+                      ? formatoPesos(financial.cajaDisponible)
+                      : "No disponible"
+                  }
+                  detail={
+                    financial
+                      ? `Disponible al cierre de ${periodLabel}`
+                      : "No se pudo actualizar este indicador"
+                  }
                   icon="cash"
                   iconClassName="bg-blue-50 text-blue-600"
                 />

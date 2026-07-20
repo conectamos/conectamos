@@ -201,7 +201,7 @@ export async function getMonthlyCommercialSummary(options?: {
       : null) ?? getCurrentBogotaMonthRange();
   const scope = options?.sedeId ? { sedeId: options.sedeId } : {};
 
-  const [ventas, ventasDetalle, ingresosCaja, egresosCaja] = await Promise.all([
+  const [ventas, ventasDetalle, movimientosCaja] = await Promise.all([
     prisma.venta.aggregate({
       where: {
         fecha: {
@@ -261,29 +261,16 @@ export async function getMonthlyCommercialSummary(options?: {
         gora: true,
       },
     }),
-    prisma.cajaMovimiento.aggregate({
+    prisma.cajaMovimiento.groupBy({
+      by: ["tipo"],
       where: {
         createdAt: {
           gte: periodo.start,
           lt: periodo.end,
         },
-        tipo: "INGRESO",
-        NOT: {
-          concepto: CONCEPTO_GASTO_CARTERA,
+        tipo: {
+          in: ["INGRESO", "EGRESO"],
         },
-        ...scope,
-      },
-      _sum: {
-        valor: true,
-      },
-    }),
-    prisma.cajaMovimiento.aggregate({
-      where: {
-        createdAt: {
-          gte: periodo.start,
-          lt: periodo.end,
-        },
-        tipo: "EGRESO",
         NOT: {
           concepto: CONCEPTO_GASTO_CARTERA,
         },
@@ -295,8 +282,14 @@ export async function getMonthlyCommercialSummary(options?: {
     }),
   ]);
 
+  const valorMovimiento = (tipo: "INGRESO" | "EGRESO") =>
+    n(
+      movimientosCaja.find((movimiento) => movimiento.tipo === tipo)?._sum
+        .valor
+    );
   const cajaVentas = n(ventas._sum.cajaOficina);
-  const cajaOperativa = n(ingresosCaja._sum.valor) - n(egresosCaja._sum.valor);
+  const cajaOperativa =
+    valorMovimiento("INGRESO") - valorMovimiento("EGRESO");
   const sedesJalador = new Map<string, CommercialRankingItem>();
   const ventasSede = new Map<string, CommercialRankingItem>();
   const jaladores = new Map<string, CommercialRankingItem>();
