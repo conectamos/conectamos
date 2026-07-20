@@ -161,6 +161,11 @@ type FormState = {
   financierasDetalle: FinancialFormState[];
 };
 
+type IngresoResumen = {
+  tipo: string;
+  valor: string;
+};
+
 type ImageFormField =
   | "fotoEntregaDataUrl"
   | "facturaFotoDataUrl"
@@ -684,6 +689,47 @@ function totalIngresosInicialFinanciera(form: Pick<FormState, "medioPago1Valor" 
   return totalIngresosContado(form);
 }
 
+function obtenerIngresosResumen(
+  form: FormState,
+  financierasVisibles: number,
+  inicialDividida: boolean
+): IngresoResumen[] {
+  if (esServicioContado(form.servicio)) {
+    return [
+      { tipo: form.medioPago1Tipo, valor: form.medioPago1Valor },
+      ...(inicialDividida || form.medioPago2Tipo || form.medioPago2Valor
+        ? [{ tipo: form.medioPago2Tipo, valor: form.medioPago2Valor }]
+        : []),
+    ];
+  }
+
+  if (!esServicioFinanciera(form.servicio)) {
+    return [];
+  }
+
+  const financierasActivas = form.financierasDetalle
+    .slice(0, financierasVisibles)
+    .filter((item, index) => index === 0 || detalleFinancieraTieneDatos(item));
+
+  if (inicialDividida) {
+    return [
+      {
+        tipo: financierasActivas[0]?.tipoPagoInicial ?? "",
+        valor: form.medioPago1Valor,
+      },
+      { tipo: form.medioPago2Tipo, valor: form.medioPago2Valor },
+    ];
+  }
+
+  return financierasActivas
+    .slice(0, 2)
+    .filter((item) => item.tipoPagoInicial || item.cuotaInicial)
+    .map((item) => ({
+      tipo: item.tipoPagoInicial,
+      valor: item.cuotaInicial,
+    }));
+}
+
 function debeMostrarSegundoIngreso(form: FormState) {
   const tieneSegundoIngreso = Boolean(form.medioPago2Tipo || form.medioPago2Valor);
 
@@ -1171,6 +1217,11 @@ export default function VendedorRegistroWorkspace({
   const cedulaFrenteInputRef = useRef<HTMLInputElement | null>(null);
   const cedulaReversoInputRef = useRef<HTMLInputElement | null>(null);
   const registroEditandoConvertido = esRegistroConvertido(registroEditando);
+  const ingresosResumen = obtenerIngresosResumen(
+    form,
+    financierasVisibles,
+    ingresoContado2Visible
+  );
 
   useEffect(() => {
     documentoActualRef.current = onlyDigits(form.documentoNumero, 15);
@@ -3955,6 +4006,9 @@ export default function VendedorRegistroWorkspace({
                                 <div className="flex justify-between gap-4">
                                   <span className="text-slate-500">Inicial</span>
                                   <strong className="text-right text-slate-950">
+                                    {item.tipoPagoInicial
+                                      ? `${item.tipoPagoInicial} · `
+                                      : ""}
                                     {formatMoney(moneyInputToNumber(item.cuotaInicial))}
                                   </strong>
                                 </div>
@@ -5857,22 +5911,24 @@ export default function VendedorRegistroWorkspace({
                             {form.jaladorNombre || "Pendiente"}
                           </dd>
                         </div>
-                        <div className="flex justify-between gap-4">
-                          <dt className="text-slate-500">Ingreso 1</dt>
-                          <dd className="text-right font-bold text-slate-950">
-                            {form.medioPago1Tipo || "Sin tipo"} · {formatMoney(
-                              moneyInputToNumber(form.medioPago1Valor)
-                            )}
-                          </dd>
-                        </div>
-                        {(ingresoContado2Visible || form.medioPago2Valor) && (
+                        {ingresosResumen.length > 0 ? (
+                          ingresosResumen.map((ingreso, index) => (
+                            <div
+                              key={`${ingreso.tipo}-${index}`}
+                              className="flex justify-between gap-4"
+                            >
+                              <dt className="text-slate-500">Ingreso {index + 1}</dt>
+                              <dd className="text-right font-bold text-slate-950">
+                                {ingreso.tipo || "Sin tipo"} · {formatMoney(
+                                  moneyInputToNumber(ingreso.valor)
+                                )}
+                              </dd>
+                            </div>
+                          ))
+                        ) : (
                           <div className="flex justify-between gap-4">
-                            <dt className="text-slate-500">Ingreso 2</dt>
-                            <dd className="text-right font-bold text-slate-950">
-                              {form.medioPago2Tipo || "Sin tipo"} · {formatMoney(
-                                moneyInputToNumber(form.medioPago2Valor)
-                              )}
-                            </dd>
+                            <dt className="text-slate-500">Ingresos</dt>
+                            <dd className="text-right font-bold text-slate-950">Pendiente</dd>
                           </div>
                         )}
                       </dl>
