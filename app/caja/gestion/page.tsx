@@ -1,7 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
 type Sede = {
@@ -53,6 +61,33 @@ function tipoBadgeClass(tipo: string) {
     : "border-red-200 bg-red-50 text-red-700";
 }
 
+function MetricCard({
+  detail,
+  icon,
+  label,
+  value,
+}: {
+  detail: string;
+  icon: DashboardIconName;
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <article className="flex min-h-[132px] items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+        <DashboardIcon name={icon} className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+          {label}
+        </p>
+        <p className="mt-1.5 break-words text-2xl font-black leading-tight">{value}</p>
+        <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+      </div>
+    </article>
+  );
+}
+
 export default function CajaGestionPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
@@ -92,7 +127,7 @@ export default function CajaGestionPage() {
         }
       }
     } catch {
-      setMensaje("Error cargando informacion inicial");
+      setMensaje("Error cargando información inicial");
     }
   };
 
@@ -261,304 +296,449 @@ export default function CajaGestionPage() {
     [movimientos]
   );
 
+  const cobertura = useMemo(
+    () =>
+      esAdmin
+        ? sedes.find((sede) => String(sede.id) === sedeId)?.nombre ||
+          "Sede seleccionada"
+        : user?.sedeNombre || "Sede actual",
+    [esAdmin, sedeId, sedes, user?.sedeNombre]
+  );
+
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdmin
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
+
+  const nombreUsuario = user?.nombre || user?.usuario || "Usuario";
+  const inicialesUsuario = nombreUsuario
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+  const automaticosProtegidos = movimientos.length - totalManualVisible;
+  const mensajeEsError = /error|no se pudo|debes|selecciona/i.test(mensaje);
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#eef2f7_28%,#edf2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1480px]">
-        <section className="relative overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,#0f172a_0%,#111827_48%,#7f1d1d_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(251,191,36,0.18),transparent_24%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/caja"
+        coverageLabel={cobertura}
+        items={navigationItems}
+      />
 
-          <div className="relative flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Caja / Gestion
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Ingresos y egresos
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <Link href="/caja" className="transition hover:text-[#e30613]">
+                  Caja
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-slate-600">Ingresos y egresos</span>
+              </nav>
+              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
+                Gestión de caja
               </h1>
-
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200 md:text-base">
-                Registra movimientos manuales de caja y, si eres administrador,
-                corrige o elimina los registros manuales sin tocar los movimientos
-                automaticos del sistema.
-              </p>
-
-              <div className="mt-5 flex flex-wrap gap-3 text-sm text-slate-200">
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Cobertura:{" "}
-                  <span className="font-semibold text-white">
-                    {esAdmin
-                      ? sedes.find((sede) => String(sede.id) === sedeId)?.nombre ||
-                        "Sede seleccionada"
-                      : user?.sedeNombre || "Sede actual"}
-                  </span>
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Manuales visibles:{" "}
-                  <span className="font-semibold text-white">
-                    {totalManualVisible}
-                  </span>
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Modo:{" "}
-                  <span className="font-semibold text-white">
-                    {editandoId ? "Edicion" : "Registro"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
-              <Link
-                href="/caja"
-                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-center text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
-              >
-                ← Volver
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {mensaje && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
-            {mensaje}
-          </div>
-        )}
-
-        <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <section className="overflow-hidden rounded-[32px] border border-[#e8e0d1] bg-[linear-gradient(180deg,#ffffff_0%,#fbf9f4_100%)] shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
-            <div className="border-b border-[#ece5d8] px-6 py-5">
-              <div className="inline-flex rounded-full border border-[#ddd2bf] bg-[#faf6ee] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7b5b2b]">
-                {editandoId ? "Edicion manual" : "Registro manual"}
-              </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                {editandoId ? "Editar movimiento" : "Registrar movimiento"}
-              </h2>
-              <p className="mt-2 text-sm text-slate-500">
-                {editandoId
-                  ? "Actualiza el movimiento seleccionado y guarda los cambios."
-                  : "Registra entradas o salidas de dinero directamente en caja."}
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+                Registra movimientos manuales y consulta el historial operativo sin
+                modificar los registros automáticos del sistema.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 p-6 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Tipo
-                </label>
-                <select
-                  value={tipo}
-                  onChange={(event) =>
-                    setTipo(event.target.value as "INGRESO" | "EGRESO")
-                  }
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                >
-                  <option value="INGRESO">INGRESO</option>
-                  <option value="EGRESO">EGRESO</option>
-                </select>
-              </div>
-
-              {esAdmin ? (
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Sede
-                  </label>
-                  <select
-                    value={sedeId}
-                    onChange={(event) => setSedeId(event.target.value)}
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                  >
-                    <option value="">Seleccionar sede</option>
-                    {sedes.map((sede) => (
-                      <option key={sede.id} value={sede.id}>
-                        {sede.nombre}
-                      </option>
-                    ))}
-                  </select>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || "US"}
+                </span>
+                <div className="min-w-0 pr-2">
+                  <p className="max-w-[170px] truncate text-sm font-bold">
+                    {nombreUsuario}
+                  </p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {user?.rolNombre || "Cargando"}
+                  </p>
                 </div>
-              ) : (
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Sede
-                  </label>
-                  <input
-                    value={user?.sedeNombre || ""}
-                    readOnly
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-700 outline-none"
-                  />
-                </div>
-              )}
-
-              <div className="md:col-span-2">
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Concepto
-                </label>
-                <input
-                  value={concepto}
-                  onChange={(event) => setConcepto(event.target.value)}
-                  placeholder="Ej: INGRESO EXTRA, PAGO TRANSPORTE, APOYO COMERCIAL..."
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                />
               </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Valor
-                </label>
-                <input
-                  value={valor ? formatoPesos(valor) : ""}
-                  onChange={(event) => setValor(limpiarNumero(event.target.value))}
-                  placeholder="$ 0"
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Descripcion
-                </label>
-                <input
-                  value={descripcion}
-                  onChange={(event) => setDescripcion(event.target.value)}
-                  placeholder="Detalle opcional"
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                />
-              </div>
+              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
             </div>
+          </header>
 
-            <div className="flex flex-col gap-3 border-t border-[#ece5d8] px-6 py-5 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => void guardar()}
-                disabled={guardando}
-                className="flex-1 rounded-2xl bg-red-600 px-6 py-4 text-lg font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {guardando
-                  ? "Guardando..."
-                  : editandoId
-                    ? "Guardar cambios"
-                    : `Registrar ${tipo.toLowerCase()}`}
-              </button>
-
-              <button
-                type="button"
-                onClick={limpiarFormulario}
-                className="flex-1 rounded-2xl border border-slate-300 bg-white px-6 py-4 text-lg font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                {editandoId ? "Cancelar edicion" : "Limpiar"}
-              </button>
-            </div>
+          <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon="cash"
+              label="Movimientos visibles"
+              value={movimientos.length}
+              detail="Registros dentro de la cobertura actual."
+            />
+            <MetricCard
+              icon="document"
+              label="Registros manuales"
+              value={totalManualVisible}
+              detail="Movimientos que permiten gestión administrativa."
+            />
+            <MetricCard
+              icon="lock"
+              label="Automáticos protegidos"
+              value={automaticosProtegidos}
+              detail="Movimientos originados por procesos del sistema."
+            />
+            <MetricCard
+              icon="store"
+              label="Modo actual"
+              value={editandoId ? "EDICIÓN" : "REGISTRO"}
+              detail={cobertura}
+            />
           </section>
 
-          <section className="overflow-hidden rounded-[32px] border border-[#e8e0d1] bg-[linear-gradient(180deg,#ffffff_0%,#fbf9f4_100%)] shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
-            <div className="flex flex-col gap-3 border-b border-[#ece5d8] px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="inline-flex rounded-full border border-[#ddd2bf] bg-[#faf6ee] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7b5b2b]">
-                  Historial visible
+          {mensaje && (
+            <div
+              role="status"
+              className={`mt-5 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${
+                mensajeEsError
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              <DashboardIcon
+                name={mensajeEsError ? "warning" : "approvals"}
+                className="mt-0.5 h-5 w-5 shrink-0"
+              />
+              <span>{mensaje}</span>
+            </div>
+          )}
+
+          <section className="mt-6 grid items-stretch gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.5fr)]">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+              <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-5 sm:px-6">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+                  <DashboardIcon name="cash" className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                    {editandoId ? "Edición manual" : "Nuevo movimiento"}
+                  </p>
+                  <h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">
+                    {editandoId
+                      ? `Editar movimiento #${editandoId}`
+                      : "Registrar ingreso o egreso"}
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    {editandoId
+                      ? "Actualiza únicamente el registro manual seleccionado."
+                      : "Completa los datos para afectar la caja de la sede seleccionada."}
+                  </p>
                 </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                  Movimientos recientes
-                </h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  {esAdmin
-                    ? "El administrador puede editar o eliminar solo movimientos manuales. Los automaticos quedan protegidos."
-                    : "Consulta los movimientos recientes registrados dentro de tu sede."}
-                </p>
               </div>
 
-              <div className="text-sm text-slate-500">
-                {movimientos.length} registro{movimientos.length === 1 ? "" : "s"}
+              <div className="p-5 sm:p-6">
+                <fieldset>
+                  <legend className="mb-2 text-sm font-bold text-slate-700">
+                    Tipo de movimiento
+                  </legend>
+                  <div className="grid gap-2 rounded-2xl bg-slate-100 p-1.5 sm:grid-cols-2">
+                    {(["INGRESO", "EGRESO"] as const).map((opcion) => (
+                      <button
+                        key={opcion}
+                        type="button"
+                        onClick={() => setTipo(opcion)}
+                        className={`min-h-[48px] rounded-xl px-4 text-xs font-black tracking-[0.08em] transition ${
+                          tipo === opcion
+                            ? opcion === "INGRESO"
+                              ? "bg-slate-950 text-white shadow-sm"
+                              : "bg-[#e30613] text-white shadow-sm"
+                            : "text-slate-600 hover:bg-white hover:text-slate-950"
+                        }`}
+                      >
+                        {opcion}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <div className="mt-5 grid gap-5 md:grid-cols-2">
+                  {esAdmin ? (
+                    <label className="flex flex-col gap-2 text-sm font-bold text-slate-700">
+                      Sede
+                      <select
+                        value={sedeId}
+                        onChange={(event) => setSedeId(event.target.value)}
+                        className="min-h-[52px] rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
+                      >
+                        <option value="">Seleccionar sede</option>
+                        {sedes.map((sede) => (
+                          <option key={sede.id} value={sede.id}>
+                            {sede.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <label className="flex flex-col gap-2 text-sm font-bold text-slate-700">
+                      Sede
+                      <input
+                        value={user?.sedeNombre || ""}
+                        readOnly
+                        className="min-h-[52px] rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-600 outline-none"
+                      />
+                    </label>
+                  )}
+
+                  <label className="flex flex-col gap-2 text-sm font-bold text-slate-700">
+                    Valor
+                    <input
+                      inputMode="numeric"
+                      value={valor ? formatoPesos(valor) : ""}
+                      onChange={(event) => setValor(limpiarNumero(event.target.value))}
+                      placeholder="$ 0"
+                      className="min-h-[52px] rounded-xl border border-slate-300 bg-white px-4 text-base font-black text-slate-950 outline-none transition placeholder:font-semibold placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-bold text-slate-700 md:col-span-2">
+                    Concepto
+                    <input
+                      value={concepto}
+                      onChange={(event) => setConcepto(event.target.value)}
+                      placeholder="Ej: INGRESO EXTRA, PAGO DE TRANSPORTE, APOYO COMERCIAL..."
+                      className="min-h-[52px] rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-950 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-2 text-sm font-bold text-slate-700 md:col-span-2">
+                    Descripción
+                    <textarea
+                      value={descripcion}
+                      onChange={(event) => setDescripcion(event.target.value)}
+                      placeholder="Detalle opcional del movimiento"
+                      rows={3}
+                      className="resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2.5 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+                <button
+                  type="button"
+                  onClick={limpiarFormulario}
+                  className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-slate-300 bg-white px-6 text-xs font-black tracking-[0.08em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
+                >
+                  {editandoId ? "CANCELAR EDICIÓN" : "LIMPIAR"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void guardar()}
+                  disabled={guardando}
+                  className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-[#e30613] px-7 text-xs font-black tracking-[0.08em] text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <DashboardIcon name="approvals" className="h-5 w-5" />
+                  {guardando
+                    ? "GUARDANDO..."
+                    : editandoId
+                      ? "GUARDAR CAMBIOS"
+                      : `REGISTRAR ${tipo}`}
+                </button>
+              </div>
+            </div>
+
+            <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                    Vista previa
+                  </p>
+                  <h2 className="mt-1 text-xl font-black tracking-tight">
+                    Movimiento actual
+                  </h2>
+                </div>
+                <span
+                  className={`rounded-full border px-3 py-1.5 text-[10px] font-black tracking-[0.12em] ${tipoBadgeClass(tipo)}`}
+                >
+                  {tipo}
+                </span>
+              </div>
+
+              <div className="mt-5 divide-y divide-slate-100 rounded-2xl border border-slate-200 px-4">
+                {[
+                  ["VALOR", valor ? formatoPesos(valor) : "$ 0"],
+                  ["SEDE", cobertura],
+                  ["CONCEPTO", concepto.trim() || "Sin completar"],
+                  ["DESCRIPCIÓN", descripcion.trim() || "Sin detalle"],
+                ].map(([label, value]) => (
+                  <div key={label} className="py-4">
+                    <p className="text-[10px] font-black tracking-[0.14em] text-slate-400">
+                      {label}
+                    </p>
+                    <p className="mt-1 break-words text-sm font-bold leading-5 text-slate-950">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex gap-3 rounded-xl bg-slate-50 p-4 text-xs leading-5 text-slate-500">
+                <DashboardIcon name="lock" className="h-5 w-5 shrink-0" />
+                <p>
+                  Los movimientos automáticos permanecen protegidos y no pueden
+                  editarse ni eliminarse desde esta pantalla.
+                </p>
+              </div>
+            </aside>
+          </section>
+
+          <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                  <DashboardIcon name="reports" className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                    Historial visible
+                  </p>
+                  <h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">
+                    Movimientos recientes
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    {esAdmin
+                      ? "Puedes gestionar únicamente los movimientos manuales permitidos por tu rol."
+                      : "Movimientos recientes registrados dentro de tu sede."}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">
+                  {movimientos.length} REGISTRO{movimientos.length === 1 ? "" : "S"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void cargarMovimientos()}
+                  className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black tracking-[0.08em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
+                >
+                  <DashboardIcon name="send" className="h-4 w-4" />
+                  ACTUALIZAR
+                </button>
               </div>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="min-w-[980px] text-sm">
-                <thead className="bg-[#f8f5ee] text-slate-600">
+              <table className="w-full min-w-[1120px] text-sm">
+                <thead className="bg-slate-50 text-slate-500">
                   <tr>
-                    <th className="px-5 py-4 text-left font-semibold">ID</th>
-                    <th className="px-5 py-4 text-left font-semibold">Tipo</th>
-                    <th className="px-5 py-4 text-left font-semibold">Concepto</th>
-                    <th className="px-5 py-4 text-left font-semibold">Valor</th>
-                    <th className="px-5 py-4 text-left font-semibold">Sede</th>
-                    <th className="px-5 py-4 text-left font-semibold">Descripcion</th>
-                    <th className="px-5 py-4 text-left font-semibold">Fecha</th>
+                    {[
+                      "ID",
+                      "TIPO",
+                      "CONCEPTO",
+                      "VALOR",
+                      "SEDE",
+                      "DESCRIPCIÓN",
+                      "FECHA",
+                    ].map((heading) => (
+                      <th
+                        key={heading}
+                        className="px-5 py-4 text-left text-[11px] font-black tracking-[0.1em]"
+                      >
+                        {heading}
+                      </th>
+                    ))}
                     {esAdmin && (
-                      <th className="px-5 py-4 text-left font-semibold">Acciones</th>
+                      <th className="px-5 py-4 text-left text-[11px] font-black tracking-[0.1em]">
+                        ACCIONES
+                      </th>
                     )}
                   </tr>
                 </thead>
-
                 <tbody>
                   {movimientos.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={esAdmin ? 8 : 7}
-                        className="px-6 py-16 text-center text-slate-500"
-                      >
-                        No hay movimientos visibles para esta sede.
+                      <td colSpan={esAdmin ? 8 : 7} className="px-6 py-20 text-center">
+                        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                          <DashboardIcon name="cash" className="h-6 w-6" />
+                        </span>
+                        <p className="mt-3 font-bold text-slate-700">
+                          No hay movimientos visibles
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          La sede seleccionada todavía no tiene registros para mostrar.
+                        </p>
                       </td>
                     </tr>
                   ) : (
                     movimientos.map((movimiento) => (
                       <tr
                         key={movimiento.id}
-                        className="border-t border-[#eee7da] align-top transition hover:bg-white/80"
+                        className="border-t border-slate-100 align-top transition hover:bg-slate-50/70"
                       >
-                        <td className="px-5 py-5">
-                          <span className="font-bold text-slate-950">
-                            #{movimiento.id}
-                          </span>
+                        <td className="whitespace-nowrap px-5 py-5 font-black">
+                          #{movimiento.id}
                         </td>
-
                         <td className="px-5 py-5">
                           <span
-                            className={[
-                              "inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]",
-                              tipoBadgeClass(movimiento.tipo),
-                            ].join(" ")}
+                            className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black tracking-[0.12em] ${tipoBadgeClass(movimiento.tipo)}`}
                           >
                             {movimiento.tipo}
                           </span>
                         </td>
-
                         <td className="px-5 py-5">
-                          <p className="font-semibold text-slate-950">
+                          <p className="max-w-[240px] font-bold leading-5">
                             {movimiento.concepto}
                           </p>
                           {!movimiento.editable && (
-                            <p className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                              Automatico del sistema
-                            </p>
+                            <span className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                              <DashboardIcon name="lock" className="h-3.5 w-3.5" />
+                              Automático
+                            </span>
                           )}
                         </td>
-
-                        <td className="px-5 py-5">
+                        <td className="whitespace-nowrap px-5 py-5">
                           <p
-                            className={[
-                              "text-lg font-black",
+                            className={`text-base font-black ${
                               movimiento.tipo === "INGRESO"
                                 ? "text-emerald-600"
-                                : "text-red-600",
-                            ].join(" ")}
+                                : "text-red-600"
+                            }`}
                           >
                             {formatoPesos(movimiento.valor)}
                           </p>
                         </td>
-
-                        <td className="px-5 py-5 text-slate-700">
-                          {movimiento.sede?.nombre || "Sede sin configurar"}
-                        </td>
-
                         <td className="px-5 py-5">
-                          <p className="max-w-[280px] leading-6 text-slate-600">
+                          <span className="inline-flex max-w-[170px] rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700">
+                            {movimiento.sede?.nombre || "Sede sin configurar"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-5">
+                          <p className="max-w-[330px] break-words leading-6 text-slate-600">
                             {movimiento.descripcion || "-"}
                           </p>
                         </td>
-
-                        <td className="px-5 py-5 text-slate-600">
+                        <td className="whitespace-nowrap px-5 py-5 text-xs font-semibold text-slate-600">
                           {formatoFecha(movimiento.createdAt)}
                         </td>
-
                         {esAdmin && (
                           <td className="px-5 py-5">
                             {movimiento.editable ? (
@@ -566,27 +746,27 @@ export default function CajaGestionPage() {
                                 <button
                                   type="button"
                                   onClick={() => iniciarEdicion(movimiento)}
-                                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                                  className="min-h-[36px] rounded-lg border border-slate-300 bg-white px-3 text-[10px] font-black tracking-[0.08em] text-slate-700 transition hover:bg-slate-100"
                                 >
-                                  Editar
+                                  EDITAR
                                 </button>
-
                                 {puedeEliminar && (
                                   <button
                                     type="button"
                                     onClick={() => void eliminar(movimiento)}
                                     disabled={eliminandoId === movimiento.id}
-                                    className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                                    className="min-h-[36px] rounded-lg border border-red-200 bg-red-50 px-3 text-[10px] font-black tracking-[0.08em] text-red-700 transition hover:bg-red-100 disabled:opacity-60"
                                   >
                                     {eliminandoId === movimiento.id
-                                      ? "Eliminando..."
-                                      : "Eliminar"}
+                                      ? "ELIMINANDO..."
+                                      : "ELIMINAR"}
                                   </button>
                                 )}
                               </div>
                             ) : (
-                              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                Protegido
+                              <span className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-[0.1em] text-slate-400">
+                                <DashboardIcon name="lock" className="h-4 w-4" />
+                                PROTEGIDO
                               </span>
                             )}
                           </td>
@@ -598,7 +778,7 @@ export default function CajaGestionPage() {
               </table>
             </div>
           </section>
-        </div>
+        </main>
       </div>
     </div>
   );
