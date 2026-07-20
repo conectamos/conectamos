@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
@@ -28,10 +27,12 @@ import {
 import { getDashboardCashSummary } from "@/lib/dashboard-financial-summary";
 import { getVendorEarningsSummary } from "@/lib/vendor-earnings";
 import { getDashboardOperationalSummary } from "@/lib/dashboard-overview";
+import { getSalesRoleActivitySummary } from "@/lib/dashboard-sales-role-summary";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 import OperationsDashboard, {
   type NavigationItem,
 } from "./_components/operations-dashboard";
+import SalesRoleDashboard from "./_components/sales-role-dashboard";
 
 type ModuleTone = "slate" | "emerald" | "sky" | "amber" | "violet" | "rose";
 type ActionTone = "primary" | "secondary" | "danger";
@@ -372,122 +373,6 @@ function CommercialRankingSection({
   );
 }
 
-function VendorEarningsSection({
-  bolsaHabilitada,
-  puestoActual,
-  ventasMes,
-  periodoLabel,
-  totalGanado,
-  totalVentasConComision,
-  valorBonoPorVenta,
-}: {
-  bolsaHabilitada: boolean;
-  puestoActual: number | null;
-  ventasMes: number;
-  periodoLabel: string;
-  totalGanado: number;
-  totalVentasConComision: number;
-  valorBonoPorVenta: number;
-}) {
-  const tituloTop5 = "\u{1F3C6} TOP 5";
-  const mensajeTop5 =
-    "\u{1F4B0} Est\u00e1s donde se recogen las recompensas.\nSigue esforz\u00e1ndote, mant\u00e9n tu posici\u00f3n y contin\u00faa disfrutando los beneficios de estar entre los mejores.";
-  const tituloFueraTop5 = "\u{1F534} FUERA DEL TOP 5";
-  const mensajeFueraTop5 =
-    "\u{1F4CA} Hoy observas c\u00f3mo otros recogen las recompensas.\n\n\u{1F4AA} Es momento de redoblar esfuerzos, subir tu nivel e ingresar al TOP 5.\n\n\u{1F4B0} La Bolsa de Ganancias est\u00e1 reservada para quienes generan resultados.";
-
-  return (
-    <section className="mt-6 overflow-hidden rounded-[28px] border border-[#e9e3d8] bg-white shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
-      {bolsaHabilitada ? (
-        <>
-          <div className="grid gap-6 p-5 sm:p-7 lg:p-8 xl:grid-cols-[minmax(0,1fr)_230px] xl:items-center">
-            <div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="inline-flex w-fit rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
-                  Bolsa de ganancias
-                </div>
-
-                <div className="w-fit rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Periodo: {periodoLabel}
-                </div>
-              </div>
-
-              <h2 className="mt-5 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-                {tituloTop5}
-              </h2>
-              <p className="mt-3 max-w-2xl whitespace-pre-line text-sm leading-7 text-slate-600 sm:text-base">
-                {mensajeTop5}
-              </p>
-            </div>
-
-            <div className="mx-auto w-full max-w-[230px] overflow-hidden rounded-[24px] border border-[#eadfce] bg-[#130707] shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
-              <div className="relative aspect-[0.9] w-full">
-                <Image
-                  src="/branding/bolsa-ganancias-top10.png"
-                  alt="Bolsa de ganancias Conectamos"
-                  fill
-                  sizes="230px"
-                  className="object-cover"
-                  priority
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 border-t border-[#ede6db] bg-[#fbfaf6] p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              label="Total acumulado"
-              value={formatoPesos(totalGanado)}
-              detail="Ganancias que ya sumaste a tu bolsa en este periodo."
-              valueClassName="text-emerald-600"
-            />
-            <MetricCard
-              label="Ventas con recompensa"
-              value={String(totalVentasConComision)}
-              detail="Ventas del periodo que ya activaron recompensa."
-            />
-            <MetricCard
-              label="Bono por venta"
-              value={formatoPesos(valorBonoPorVenta)}
-              detail={
-                puestoActual === 1
-                  ? "Estando en el Top 1, cada venta del periodo te paga recompensa x2."
-                  : "Cada venta del periodo te suma esta recompensa."
-              }
-            />
-            <MetricCard
-              label="Puesto actual"
-              value={puestoActual ? `#${puestoActual}` : "Sin puesto"}
-              detail={`Llevas ${ventasMes} venta${ventasMes === 1 ? "" : "s"} en el mes.`}
-            />
-          </div>
-        </>
-      ) : (
-        <div className="p-5 sm:p-7 lg:p-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="inline-flex w-fit rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-rose-700">
-              Bolsa de ganancias
-            </div>
-
-            <div className="w-fit rounded-full border border-[#e7dfd4] bg-[#f8f5ef] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Periodo: {periodoLabel}
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-5 text-rose-900 shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
-            <p className="text-2xl font-black tracking-tight text-rose-700">
-              {tituloFueraTop5}
-            </p>
-            <p className="mt-4 whitespace-pre-line text-base font-semibold leading-8 text-rose-900">
-              {mensajeFueraTop5}
-            </p>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function ModulePanel({
   title,
   eyebrow,
@@ -696,8 +581,9 @@ export default async function DashboardPage({
 
   const esAdmin = esRolAdministrativo(session.rolNombre);
   const esFacturador = esPerfilFacturador(session.perfilTipo);
+  const esPerfilVentas = esPerfilRegistroVenta(session.perfilTipo);
   const esApoyoOperativo = esPerfilApoyoOperativo(session.perfilTipo);
-  const esVendedor = esPerfilRegistroVenta(session.perfilTipo) && !esApoyoOperativo;
+  const esVendedor = esPerfilVentas && !esApoyoOperativo;
   const esSupervisor =
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
@@ -751,7 +637,7 @@ export default async function DashboardPage({
     ? sedeSeleccionada?.nombre ?? "Todas las sedes"
     : session.sedeNombre ?? "Tu sede";
   const mostrarDashboardOperativo =
-    !esPerfilRegistroVenta(session.perfilTipo) &&
+    !esPerfilVentas &&
     !esFacturador &&
     !esSedeSoloInventario;
   const [
@@ -786,12 +672,17 @@ export default async function DashboardPage({
         }),
       ])
     : ([null, null, null] as const);
-  const mensajeBienvenidaVendedor = esPerfilRegistroVenta(session.perfilTipo)
-    ? await getVendorWelcomeMessage()
-    : null;
-  const resumenGananciasVendedor = esPerfilRegistroVenta(session.perfilTipo)
-    ? await getVendorEarningsSummary(Number(session.perfilId || 0))
-    : null;
+  const [
+    mensajeBienvenidaVendedor,
+    resumenGananciasVendedor,
+    actividadPerfilVentas,
+  ] = esPerfilVentas
+    ? await Promise.all([
+        getVendorWelcomeMessage(),
+        getVendorEarningsSummary(Number(session.perfilId || 0)),
+        getSalesRoleActivitySummary(Number(session.perfilId || 0)),
+      ])
+    : ([null, null, null] as const);
   const financieraDestacada =
     resumenComercialMensual?.topFinancieras[0] ?? null;
 
@@ -861,6 +752,43 @@ export default async function DashboardPage({
           rolUsuario={rolUsuario}
           sedeId={sedeSeleccionada?.id ?? null}
           sedes={sedes}
+          usuario={nombreUsuario}
+        />
+      </>
+    );
+  }
+
+  if (
+    esPerfilVentas &&
+    resumenGananciasVendedor &&
+    actividadPerfilVentas
+  ) {
+    return (
+      <>
+        {mensajeBienvenidaVendedor && (
+          <VendorWelcomeModal
+            mensaje={mensajeBienvenidaVendedor}
+            sessionKey={
+              session.sessionKey ??
+              `${session.id}-${session.perfilId ?? "usuario"}`
+            }
+          />
+        )}
+        {puedeAccederModulosOperativos(session.perfilTipo) && session.sedeId && (
+          <PendingLoanAlertModal
+            sessionKey={
+              session.sessionKey ??
+              `${session.id}-${session.perfilId ?? "usuario"}`
+            }
+          />
+        )}
+        <SalesRoleDashboard
+          activity={actividadPerfilVentas}
+          coverageLabel={session.sedeNombre ?? "Sin sede"}
+          earnings={resumenGananciasVendedor}
+          perfilNombre={session.perfilNombre}
+          role={esApoyoOperativo ? "APOYO_OPERATIVO" : "VENDEDOR"}
+          roleLabel={rolUsuario}
           usuario={nombreUsuario}
         />
       </>
@@ -1187,12 +1115,6 @@ export default async function DashboardPage({
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] text-slate-950">
-      {esPerfilRegistroVenta(session.perfilTipo) && mensajeBienvenidaVendedor && (
-        <VendorWelcomeModal
-          mensaje={mensajeBienvenidaVendedor}
-          sessionKey={session.sessionKey ?? `${session.id}-${session.perfilId ?? "usuario"}`}
-        />
-      )}
       {puedeAccederModulosOperativos(session.perfilTipo) && session.sedeId && (
         <PendingLoanAlertModal
           sessionKey={session.sessionKey ?? `${session.id}-${session.perfilId ?? "usuario"}`}
@@ -1285,18 +1207,6 @@ export default async function DashboardPage({
           <div className="mt-6">
             <DashboardUtilityGate coverageLabel={sedeLabel} requiereClave={!esAdmin} />
           </div>
-        )}
-
-        {resumenGananciasVendedor && (
-          <VendorEarningsSection
-            bolsaHabilitada={resumenGananciasVendedor.bolsaHabilitada}
-            puestoActual={resumenGananciasVendedor.puestoActual}
-            ventasMes={resumenGananciasVendedor.ventasMes}
-            periodoLabel={resumenGananciasVendedor.periodoLabel}
-            totalGanado={resumenGananciasVendedor.totalGanado}
-            totalVentasConComision={resumenGananciasVendedor.totalVentasConComision}
-            valorBonoPorVenta={resumenGananciasVendedor.valorBonoPorVenta}
-          />
         )}
 
         <section className="mt-6">

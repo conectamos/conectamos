@@ -140,7 +140,7 @@ function SidebarContent({
   );
 }
 
-function DashboardSidebar({
+export function DashboardSidebar({
   coverageLabel,
   items,
 }: {
