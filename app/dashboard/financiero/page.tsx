@@ -90,18 +90,23 @@ function MetricCard({
   value,
   detail,
   tone = "neutral",
+  compactValue = false,
 }: {
   label: string;
   value: number | null;
   detail: string;
   tone?: Tone;
+  compactValue?: boolean;
 }) {
   const styles = toneClasses(tone);
+  const formattedValue = value === null ? "—" : formatoPesos(value);
+  const hasLongValue = compactValue && formattedValue.length >= 15;
 
   return (
     <div
       className={[
-        "min-w-0 rounded-2xl border px-5 py-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] transition",
+        "min-w-0 rounded-2xl border py-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] transition",
+        compactValue ? "px-4" : "px-5",
         styles.card,
       ].join(" ")}
     >
@@ -110,11 +115,16 @@ function MetricCard({
       </p>
       <p
         className={[
-          "mt-4 max-w-full overflow-hidden text-[clamp(1.2rem,1.25vw,2.1rem)] font-black leading-[1.02] tracking-tight tabular-nums [overflow-wrap:anywhere]",
+          "mt-4 max-w-full font-black leading-[1.04] tabular-nums",
+          hasLongValue
+            ? "whitespace-nowrap text-[clamp(0.95rem,0.9vw,1.08rem)] tracking-[-0.04em]"
+            : compactValue
+              ? "text-[clamp(1.15rem,1.15vw,1.6rem)] tracking-tight [overflow-wrap:anywhere]"
+              : "text-[clamp(1.2rem,1.25vw,2.1rem)] tracking-tight [overflow-wrap:anywhere]",
           styles.value,
         ].join(" ")}
       >
-        {value === null ? "—" : formatoPesos(value)}
+        {formattedValue}
       </p>
       <p className={["mt-3 text-sm leading-6", styles.detail].join(" ")}>
         {detail}
@@ -507,7 +517,7 @@ export default function PanelFinancieroPage() {
               description="Accede rapido a los movimientos financieros clave y controla la cobertura del panel."
             />
 
-            <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+            <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
               {esAdmin && (
                 <label className="flex min-w-[240px] flex-col gap-2 text-sm font-semibold text-slate-700">
                   Cobertura financiera
@@ -587,24 +597,28 @@ export default function PanelFinancieroPage() {
                     value={resumen.cajaDisponible}
                     detail="Ventas mas movimientos de caja."
                     tone={resumen.cajaDisponible >= 0 ? "positive" : "negative"}
+                    compactValue
                   />
                   <MetricCard
                     label="Transferencias saldo"
                     value={resumen.saldoTransferencias}
                     detail="Transferencias menos abonos registrados."
                     tone={resumen.saldoTransferencias >= 0 ? "positive" : "negative"}
+                    compactValue
                   />
                   <MetricCard
                     label="Financieras saldo"
                     value={totalFinancieras}
                     detail="Pendiente por recaudar en financieras."
                     tone={totalFinancieras >= 0 ? "positive" : "negative"}
+                    compactValue
                   />
                   <MetricCard
                     label="Prestamos por cobrar"
                     value={resumen.prestamosPorCobrar}
                     detail="Prestamos activos salientes pendientes por cierre o pago."
                     tone={resumen.prestamosPorCobrar >= 0 ? "positive" : "negative"}
+                    compactValue
                   />
                 </div>
               </section>
@@ -657,24 +671,28 @@ export default function PanelFinancieroPage() {
                     tone={
                       resumen.totalGastosCartera <= 0 ? "positive" : "negative"
                     }
+                    compactValue
                   />
                   <MetricCard
                     label="Deuda equipos"
                     value={resumen.deudaEquipos}
                     detail="Equipos con deuda financiera activa."
                     tone="negative"
+                    compactValue
                   />
                   <MetricCard
                     label="Pendiente"
                     value={resumen.valorPendiente}
                     detail="Inventario inmovilizado por pendiente."
                     tone="negative"
+                    compactValue
                   />
                   <MetricCard
                     label="Garantia"
                     value={resumen.valorGarantia}
                     detail="Valor comprometido en garantias."
                     tone="negative"
+                    compactValue
                   />
                 </div>
               </section>
