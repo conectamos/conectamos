@@ -702,6 +702,9 @@ export default function PrestamosPage() {
       };
     })
     .sort((a, b) => b.totalSeleccionado - a.totalSeleccionado || b.total - a.total);
+  const lotesConSeleccionPago = lotesSolicitudPago.filter(
+    (lote) => lote.seleccionados.length > 0
+  );
 
   const alternarSeleccionSolicitudPago = (id: number) => {
     setIdsSolicitudPago((actuales) =>
@@ -1275,9 +1278,9 @@ export default function PrestamosPage() {
               </div>
             </div>
 
-            {lotesSolicitudPago.length > 0 && (
+            {lotesConSeleccionPago.length > 0 && (
               <div className="mt-5 grid gap-4 xl:grid-cols-2">
-                {lotesSolicitudPago.map((lote) => {
+                {lotesConSeleccionPago.map((lote) => {
                   const expansionKey = `solicitud:${lote.key}`;
                   const imeisExpandidos = lotesImeisExpandidos.includes(expansionKey);
                   const resumenImeis = imeisResumenLote(lote.items, imeisExpandidos);
