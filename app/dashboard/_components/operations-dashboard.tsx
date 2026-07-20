@@ -231,9 +231,11 @@ function KpiCard({
 
 function SalesUtilityChart({
   data,
+  mostrarCantidadVentas,
   mostrarUtilidad,
 }: {
   data: CommercialSummary["tendenciaDiaria"];
+  mostrarCantidadVentas: boolean;
   mostrarUtilidad: boolean;
 }) {
   const width = 820;
@@ -241,7 +243,10 @@ function SalesUtilityChart({
   const padding = { top: 22, right: 24, bottom: 42, left: 72 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
-  const values = data.flatMap((item) => [item.ingresos, ...(mostrarUtilidad ? [item.utilidad] : [])]);
+  const values = data.flatMap((item) => [
+    mostrarCantidadVentas ? item.ventas : item.ingresos,
+    ...(mostrarUtilidad ? [item.utilidad] : []),
+  ]);
   const max = Math.max(0, ...values);
   const min = Math.min(0, ...values);
   const range = max - min || 1;
@@ -251,7 +256,9 @@ function SalesUtilityChart({
     const y = padding.top + ((max - value) / range) * innerHeight;
     return { x, y };
   };
-  const ingresosPoints = data.map((item, index) => point(item.ingresos, index));
+  const ventasPoints = data.map((item, index) =>
+    point(mostrarCantidadVentas ? item.ventas : item.ingresos, index)
+  );
   const utilidadPoints = data.map((item, index) => point(item.utilidad, index));
 
   if (!hasData) {
@@ -270,7 +277,11 @@ function SalesUtilityChart({
         viewBox={`0 0 ${width} ${height}`}
         className="min-h-[285px] min-w-[700px] w-full"
         role="img"
-        aria-label="Ventas y utilidad por día"
+        aria-label={
+          mostrarCantidadVentas
+            ? "Cantidad de ventas por día"
+            : "Ventas y utilidad por día"
+        }
       >
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
           const y = padding.top + ratio * innerHeight;
@@ -279,7 +290,9 @@ function SalesUtilityChart({
             <g key={ratio}>
               <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e5e7eb" strokeWidth="1" />
               <text x={padding.left - 12} y={y + 4} textAnchor="end" fill="#64748b" fontSize="11">
-                {formatoCompacto(value)}
+                {mostrarCantidadVentas
+                  ? String(Math.max(0, Math.round(value)))
+                  : formatoCompacto(value)}
               </text>
             </g>
           );
@@ -297,7 +310,7 @@ function SalesUtilityChart({
         })}
 
         <polyline
-          points={ingresosPoints.map(({ x, y }) => `${x},${y}`).join(" ")}
+          points={ventasPoints.map(({ x, y }) => `${x},${y}`).join(" ")}
           fill="none"
           stroke="#e30613"
           strokeWidth="3"
@@ -315,9 +328,13 @@ function SalesUtilityChart({
           />
         )}
 
-        {ingresosPoints.map(({ x, y }, index) => (
-          <circle key={`ingreso-${data[index].fecha}`} cx={x} cy={y} r="3.4" fill="#e30613">
-            <title>{`${data[index].fecha}: ventas ${formatoPesos(data[index].ingresos)}`}</title>
+        {ventasPoints.map(({ x, y }, index) => (
+          <circle key={`venta-${data[index].fecha}`} cx={x} cy={y} r="3.4" fill="#e30613">
+            <title>
+              {mostrarCantidadVentas
+                ? `${data[index].fecha}: ${data[index].ventas} ${data[index].ventas === 1 ? "venta" : "ventas"}`
+                : `${data[index].fecha}: ventas ${formatoPesos(data[index].ingresos)}`}
+            </title>
           </circle>
         ))}
         {mostrarUtilidad &&
@@ -374,9 +391,26 @@ function AlertRow({
   );
 }
 
-function PerformancePanel({ items }: { items: CommercialSummary["rendimientoPorSede"] }) {
-  const visibles = items.slice(0, 5);
-  const max = Math.max(1, ...visibles.map((item) => item.ingresos));
+function PerformancePanel({
+  items,
+  mostrarSoloVentas,
+}: {
+  items: CommercialSummary["rendimientoPorSede"];
+  mostrarSoloVentas: boolean;
+}) {
+  const visibles = (mostrarSoloVentas
+    ? [...items].sort(
+        (a, b) =>
+          b.ventas - a.ventas || a.nombre.localeCompare(b.nombre, "es")
+      )
+    : items
+  ).slice(0, 5);
+  const max = Math.max(
+    1,
+    ...visibles.map((item) =>
+      mostrarSoloVentas ? item.ventas : item.ingresos
+    )
+  );
 
   return (
     <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
@@ -399,10 +433,26 @@ function PerformancePanel({ items }: { items: CommercialSummary["rendimientoPorS
               </p>
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
-                  <div className="h-3 min-w-[5px] rounded-r bg-[#e30613]" style={{ width: `${Math.max(3, (item.ingresos / max) * 100)}%` }} />
-                  <span className="shrink-0 text-xs font-bold text-slate-700">{formatoPesos(item.ingresos)}</span>
+                  <div
+                    className="h-3 min-w-[5px] rounded-r bg-[#e30613]"
+                    style={{
+                      width: `${Math.max(
+                        3,
+                        ((mostrarSoloVentas ? item.ventas : item.ingresos) /
+                          max) *
+                          100
+                      )}%`,
+                    }}
+                  />
+                  <span className="shrink-0 text-xs font-bold text-slate-700">
+                    {mostrarSoloVentas
+                      ? `${item.ventas} ${item.ventas === 1 ? "venta" : "ventas"}`
+                      : formatoPesos(item.ingresos)}
+                  </span>
                 </div>
-                <p className="mt-1 text-[11px] text-slate-400">{item.ventas} {item.ventas === 1 ? "venta" : "ventas"}</p>
+                {!mostrarSoloVentas && (
+                  <p className="mt-1 text-[11px] text-slate-400">{item.ventas} {item.ventas === 1 ? "venta" : "ventas"}</p>
+                )}
               </div>
             </div>
           ))}
@@ -412,12 +462,18 @@ function PerformancePanel({ items }: { items: CommercialSummary["rendimientoPorS
   );
 }
 
-function LeadingFinancialPanel({ financieras }: { financieras: CommercialSummary["topFinancieras"] }) {
+function LeadingFinancialPanel({
+  financieras,
+  ocultarMonto,
+}: {
+  financieras: CommercialSummary["topFinancieras"];
+  ocultarMonto: boolean;
+}) {
   const lider = financieras[0] ?? null;
   const montoTotal = financieras.reduce((total, item) => total + item.monto, 0);
   const usosTotales = financieras.reduce((total, item) => total + item.total, 0);
   const participacion = lider
-    ? montoTotal > 0
+    ? !ocultarMonto && montoTotal > 0
       ? (lider.monto / montoTotal) * 100
       : usosTotales > 0
         ? (lider.total / usosTotales) * 100
@@ -437,15 +493,17 @@ function LeadingFinancialPanel({ financieras }: { financieras: CommercialSummary
             <p className="truncate text-[25px] font-black tracking-tight text-slate-950" title={lider.nombre}>
               {lider.nombre}
             </p>
-            <div className="mt-5 grid grid-cols-2 gap-4">
+            <div className={ocultarMonto ? "mt-5" : "mt-5 grid grid-cols-2 gap-4"}>
               <div>
                 <p className="text-xl font-black text-slate-950">{lider.total}</p>
                 <p className="mt-1 text-xs text-slate-500">Usos totales</p>
               </div>
-              <div>
-                <p className="text-base font-black text-slate-950">{formatoPesos(lider.monto)}</p>
-                <p className="mt-1 text-xs text-slate-500">Monto financiado</p>
-              </div>
+              {!ocultarMonto && (
+                <div>
+                  <p className="text-base font-black text-slate-950">{formatoPesos(lider.monto)}</p>
+                  <p className="mt-1 text-xs text-slate-500">Monto financiado</p>
+                </div>
+              )}
             </div>
           </div>
           <div
@@ -574,6 +632,7 @@ export default function OperationsDashboard({
   sedes: SedeOption[];
   usuario: string;
 }) {
+  const modoSupervisorSinMontos = esSupervisor && !esAdmin;
   const reportHref = esAdmin ? "/dashboard/reportes" : "/dashboard/analitico";
   const toolGroups: ToolGroup[] = [
     {
@@ -746,7 +805,11 @@ export default function OperationsDashboard({
             <KpiCard
               label="Ventas del periodo"
               value={String(commercial.ventas)}
-              detail={`${formatoPesos(commercial.ingresos)} en ingresos comerciales`}
+              detail={
+                modoSupervisorSinMontos
+                  ? "Registros comerciales del periodo"
+                  : `${formatoPesos(commercial.ingresos)} en ingresos comerciales`
+              }
               icon="sales"
               iconClassName="bg-red-50 text-[#e30613]"
             />
@@ -759,6 +822,32 @@ export default function OperationsDashboard({
                   icon="trend"
                   iconClassName="bg-emerald-50 text-emerald-600"
                   valueClassName="text-emerald-600"
+                />
+                <KpiCard
+                  label="Caja acumulada"
+                  value={
+                    financial
+                      ? formatoPesos(financial.cajaDisponible)
+                      : "No disponible"
+                  }
+                  detail={
+                    financial
+                      ? `Disponible al cierre de ${periodLabel}`
+                      : "No se pudo actualizar este indicador"
+                  }
+                  icon="cash"
+                  iconClassName="bg-blue-50 text-blue-600"
+                />
+              </>
+            ) : modoSupervisorSinMontos ? (
+              <>
+                <DashboardUtilityGate
+                  coverageLabel={coverageLabel}
+                  requiereClave
+                  period={period}
+                  periodLabel={periodLabel}
+                  variant="cards"
+                  showCashCard={false}
                 />
                 <KpiCard
                   label="Caja acumulada"
@@ -806,9 +895,14 @@ export default function OperationsDashboard({
             <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 className="text-xl font-black tracking-tight text-slate-950">Ventas y utilidad</h2>
+                  <h2 className="text-xl font-black tracking-tight text-slate-950">
+                    {modoSupervisorSinMontos ? "Ventas por día" : "Ventas y utilidad"}
+                  </h2>
                   <div className="mt-3 flex flex-wrap gap-4 text-xs font-semibold text-slate-600">
-                    <span className="flex items-center gap-2"><span className="h-0.5 w-6 bg-[#e30613]" />Ventas (ingresos)</span>
+                    <span className="flex items-center gap-2">
+                      <span className="h-0.5 w-6 bg-[#e30613]" />
+                      {modoSupervisorSinMontos ? "Ventas registradas" : "Ventas (ingresos)"}
+                    </span>
                     {esAdmin ? (
                       <span className="flex items-center gap-2"><span className="h-0.5 w-6 bg-emerald-600" />Utilidad</span>
                     ) : (
@@ -819,7 +913,11 @@ export default function OperationsDashboard({
                 <span className="w-fit rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold capitalize text-slate-600">{periodLabel}</span>
               </div>
               <div className="mt-4">
-                <SalesUtilityChart data={commercial.tendenciaDiaria} mostrarUtilidad={esAdmin} />
+                <SalesUtilityChart
+                  data={commercial.tendenciaDiaria}
+                  mostrarCantidadVentas={modoSupervisorSinMontos}
+                  mostrarUtilidad={esAdmin}
+                />
               </div>
             </article>
 
@@ -871,8 +969,14 @@ export default function OperationsDashboard({
           </section>
 
           <section className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_1fr_0.95fr]">
-            <PerformancePanel items={commercial.rendimientoPorSede} />
-            <LeadingFinancialPanel financieras={commercial.topFinancieras} />
+            <PerformancePanel
+              items={commercial.rendimientoPorSede}
+              mostrarSoloVentas={modoSupervisorSinMontos}
+            />
+            <LeadingFinancialPanel
+              financieras={commercial.topFinancieras}
+              ocultarMonto={modoSupervisorSinMontos}
+            />
             <QuickActions reportHref={reportHref} />
           </section>
 

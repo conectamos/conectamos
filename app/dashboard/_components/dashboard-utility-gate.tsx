@@ -39,12 +39,14 @@ export default function DashboardUtilityGate({
   requiereClave,
   period,
   periodLabel,
+  showCashCard = true,
   variant = "panel",
 }: {
   coverageLabel: string;
   requiereClave: boolean;
   period?: string;
   periodLabel?: string;
+  showCashCard?: boolean;
   variant?: "panel" | "cards";
 }) {
   const [abierto, setAbierto] = useState(false);
@@ -124,22 +126,24 @@ export default function DashboardUtilityGate({
             </div>
           </article>
 
-          <article className="min-h-[144px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-xl font-black text-blue-600">
-                $
+          {showCashCard && (
+            <article className="min-h-[144px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-xl font-black text-blue-600">
+                  $
+                </div>
+                <div className="min-w-0 pt-0.5">
+                  <p className="text-sm font-semibold text-slate-600">Caja acumulada</p>
+                  <p className="mt-1.5 break-words text-[27px] font-black leading-tight tracking-tight text-slate-950">
+                    {resumen ? formatoPesos(resumen.caja) : "Protegida"}
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    {resumen ? `Disponible al cierre de ${resumen.periodo}` : `${periodLabel || "Periodo"} · acceso financiero`}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0 pt-0.5">
-                <p className="text-sm font-semibold text-slate-600">Caja acumulada</p>
-                <p className="mt-1.5 break-words text-[27px] font-black leading-tight tracking-tight text-slate-950">
-                  {resumen ? formatoPesos(resumen.caja) : "Protegida"}
-                </p>
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  {resumen ? `Disponible al cierre de ${resumen.periodo}` : `${periodLabel || "Periodo"} · acceso financiero`}
-                </p>
-              </div>
-            </div>
-          </article>
+            </article>
+          )}
         </div>
       ) : (
       <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e7ddcd] bg-[linear-gradient(135deg,#fffdf8_0%,#f8f2e8_42%,#f3f6fb_100%)] shadow-[0_20px_55px_rgba(15,23,42,0.08)]">

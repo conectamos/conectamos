@@ -301,6 +301,7 @@ function CommercialRankingSection({
   topJaladores,
   topCerradores,
   topFinancieras,
+  mostrarAccionesMonetarias = true,
 }: {
   periodLabel: string;
   coverageLabel: string;
@@ -309,6 +310,7 @@ function CommercialRankingSection({
   topJaladores: CommercialRankingItem[];
   topCerradores: CommercialRankingItem[];
   topFinancieras: CommercialRankingItem[];
+  mostrarAccionesMonetarias?: boolean;
 }) {
   return (
     <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
@@ -353,7 +355,7 @@ function CommercialRankingSection({
           accent="bg-sky-500"
           items={topJaladores}
           countLabel="venta"
-          showCommissionToggle
+          showCommissionToggle={mostrarAccionesMonetarias}
         />
         <CommercialRankingPanel
           title="Ventas Cerrador"
@@ -366,7 +368,7 @@ function CommercialRankingSection({
           accent="bg-amber-500"
           items={topFinancieras}
           countLabel="uso"
-          showAmountToggle
+          showAmountToggle={mostrarAccionesMonetarias}
         />
       </div>
     </section>
@@ -650,7 +652,7 @@ export default async function DashboardPage({
           period: mesActual.key,
           sedeId: sedeDashboardId,
         }),
-        esAdmin
+        esAdmin || esSupervisor
           ? getDashboardCashSummary({
               sedeId: sedeDashboardId,
               fechaCorte: mesActual.end,
@@ -737,6 +739,7 @@ export default async function DashboardPage({
               topJaladores={resumenComercialMensual.topJaladores}
               topCerradores={resumenComercialMensual.topCerradores}
               topFinancieras={resumenComercialMensual.topFinancieras}
+              mostrarAccionesMonetarias={!esSupervisor || esAdmin}
             />
           }
           esAdmin={esAdmin}
