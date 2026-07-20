@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
 type CajaMovimiento = {
@@ -91,17 +99,37 @@ function tipoBadgeClass(tipo: string) {
     : "border-red-200 bg-red-50 text-red-700";
 }
 
-function metricToneClass(tone: "emerald" | "red" | "slate" | "amber") {
-  switch (tone) {
-    case "emerald":
-      return "border-emerald-200 bg-[linear-gradient(180deg,#ffffff_0%,#f2fbf6_100%)]";
-    case "red":
-      return "border-red-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff4f4_100%)]";
-    case "amber":
-      return "border-amber-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff8eb_100%)]";
-    default:
-      return "border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]";
-  }
+function CajaMetricCard({
+  detail,
+  icon,
+  iconClass,
+  label,
+  value,
+  valueClass,
+}: {
+  detail: string;
+  icon: DashboardIconName;
+  iconClass: string;
+  label: string;
+  value: string;
+  valueClass: string;
+}) {
+  return (
+    <article className="min-h-[144px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-4">
+        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
+          <DashboardIcon name={icon} className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-600">{label}</p>
+          <p className={`mt-1.5 break-words text-[27px] font-black leading-tight tracking-tight ${valueClass}`}>
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 export default function CajaPage() {
@@ -124,6 +152,7 @@ export default function CajaPage() {
   const [sedeEdicionId, setSedeEdicionId] = useState("");
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   const [exportandoExcel, setExportandoExcel] = useState(false);
+  const [cargandoCaja, setCargandoCaja] = useState(true);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
 
@@ -200,6 +229,8 @@ export default function CajaPage() {
       setMensaje("");
     } catch {
       setMensaje("Error cargando caja");
+    } finally {
+      setCargandoCaja(false);
     }
   }, [construirParametrosCaja, fechaDesde, fechaHasta]);
 
@@ -391,65 +422,110 @@ export default function CajaPage() {
   const saldo = resumenCaja?.saldo ?? totalIngresos - totalEgresos;
   const ultimoMovimiento = movimientos[0] ?? null;
   const totalMovimientos = resumenCaja?.totalMovimientos ?? movimientos.length;
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdmin
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#eef2f7_28%,#edf2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1680px]">
-        <section className="relative overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,#0f172a_0%,#111827_48%,#7f1d1d_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(251,191,36,0.18),transparent_24%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/caja"
+        coverageLabel={user?.sedeNombre || "Cargando cobertura"}
+        items={navigationItems}
+      />
 
-          <div className="relative flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Caja / Gestion
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                {esAdmin ? "Caja consolidada" : "Caja por sede"}
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
+                {esAdmin ? "Caja consolidada" : "Caja de la sede"}
               </h1>
-
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200 md:text-base">
-                {esAdmin
-                  ? sedeFiltroId === "TODAS"
-                    ? "Control consolidado del flujo de dinero en todas las sedes, con lectura inmediata de ingresos, egresos y saldo operativo."
-                    : `Control financiero filtrado de ${sedeFiltroNombre}, con lectura inmediata del flujo de caja.`
-                  : `Vista operativa de ${user?.sedeNombre || "tu sede"}, con seguimiento claro de ingresos, egresos y saldo disponible.`}
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                Control de ingresos, egresos y saldo operativo
               </p>
-
-              <div className="mt-5 flex flex-wrap gap-3 text-sm text-slate-200">
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Cobertura:{" "}
-                  <span className="font-semibold text-white">
-                    {esAdmin
-                      ? sedeFiltroId === "TODAS"
-                        ? "Todas las sedes"
-                        : sedeFiltroNombre
-                      : user?.sedeNombre || "Sede actual"}
-                  </span>
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Movimientos:{" "}
-                  <span className="font-semibold text-white">{totalMovimientos}</span>
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Ultimo registro:{" "}
-                  <span className="font-semibold text-white">
-                    {ultimoMovimiento
-                      ? formatoFecha(ultimoMovimiento.createdAt)
-                      : "Sin movimientos"}
-                  </span>
-                </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  Cobertura: {sedeFiltroNombre}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  {cargandoCaja ? "Actualizando movimientos" : `${totalMovimientos} movimientos`}
+                </span>
               </div>
             </div>
 
-            <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
-              {esAdmin && (
-                <label className="flex min-w-[260px] flex-col gap-2 text-sm font-semibold text-white">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/caja/gestion"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#bd0711]"
+              >
+                <span className="text-lg leading-none">+</span>
+                Registrar movimiento
+              </Link>
+              <Link
+                href="/caja/arqueo"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
+              >
+                Arqueo
+              </Link>
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {user?.nombre || user?.usuario || "Cargando usuario"}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {user?.rolNombre || "Sesión activa"}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
+            </div>
+          </header>
+
+          <section className="mt-6 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(210px,1fr)_180px_180px_auto_auto] xl:items-end">
+              {esAdmin ? (
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                   Cobertura
                   <select
                     value={sedeFiltroId}
-                    onChange={(event) => setSedeFiltroId(event.target.value)}
-                    className="rounded-2xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-white focus:ring-2 focus:ring-white/30"
+                    onChange={(event) => {
+                      setCargandoCaja(true);
+                      setSedeFiltroId(event.target.value);
+                    }}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                   >
                     <option value="TODAS">Todas las sedes</option>
                     {sedes.map((sede) => (
@@ -459,32 +535,45 @@ export default function CajaPage() {
                     ))}
                   </select>
                 </label>
+              ) : (
+                <div className="flex min-h-[46px] items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700">
+                  {user?.sedeNombre || "Sede actual"}
+                </div>
               )}
 
-              <label className="flex min-w-[180px] flex-col gap-2 text-sm font-semibold text-white">
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                 Desde
                 <input
                   type="date"
                   value={fechaDesde}
-                  onChange={(event) => setFechaDesde(event.target.value)}
-                  className="rounded-2xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-white focus:ring-2 focus:ring-white/30"
+                  onChange={(event) => {
+                    setCargandoCaja(true);
+                    setFechaDesde(event.target.value);
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 />
               </label>
 
-              <label className="flex min-w-[180px] flex-col gap-2 text-sm font-semibold text-white">
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
                 Hasta
                 <input
                   type="date"
                   value={fechaHasta}
-                  onChange={(event) => setFechaHasta(event.target.value)}
-                  className="rounded-2xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-white focus:ring-2 focus:ring-white/30"
+                  onChange={(event) => {
+                    setCargandoCaja(true);
+                    setFechaHasta(event.target.value);
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 />
               </label>
 
               <button
                 type="button"
-                onClick={limpiarFiltroFechas}
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                onClick={() => {
+                  setCargandoCaja(true);
+                  limpiarFiltroFechas();
+                }}
+                className="min-h-[46px] rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-red-200 hover:text-[#e30613]"
               >
                 Limpiar periodo
               </button>
@@ -493,27 +582,18 @@ export default function CajaPage() {
                 type="button"
                 onClick={() => void exportarExcel()}
                 disabled={exportandoExcel}
-                className="rounded-2xl border border-emerald-300/30 bg-emerald-400/15 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-emerald-400/25 disabled:cursor-not-allowed disabled:opacity-70"
+                className="min-h-[46px] rounded-xl bg-[#11161d] px-5 text-sm font-bold text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {exportandoExcel ? "Exportando..." : "Exportar Excel"}
               </button>
-
-              <Link
-                href="/caja/arqueo"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                Arqueo
-              </Link>
-
-              <Link
-                href="/dashboard"
-                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-center text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
-              >
-                ← Volver
-              </Link>
             </div>
-          </div>
-        </section>
+            <p className="mt-4 text-xs text-slate-500">
+              Periodo activo: <span className="font-bold text-slate-700">{periodoActivoTexto}</span>
+              {ultimoMovimiento && (
+                <> · Último registro: <span className="font-bold text-slate-700">{formatoFecha(ultimoMovimiento.createdAt)}</span></>
+              )}
+            </p>
+          </section>
 
         {mensaje && (
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
@@ -522,13 +602,13 @@ export default function CajaPage() {
         )}
 
         {esAdmin && editandoMovimiento && (
-          <section className="mt-6 overflow-hidden rounded-[30px] border border-[#e8e0d1] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <div className="flex flex-col gap-3 border-b border-[#ece5d8] px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
+          <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="inline-flex rounded-full border border-[#ddd2bf] bg-[#faf6ee] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7b5b2b]">
-                  Edicion de caja
+                <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                  Edición de caja
                 </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
                   Movimiento #{editandoMovimiento.id}
                 </h2>
                 <p className="mt-2 text-sm text-slate-500">
@@ -539,7 +619,7 @@ export default function CajaPage() {
               <button
                 type="button"
                 onClick={cancelarEdicion}
-                className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 Cancelar
               </button>
@@ -608,12 +688,12 @@ export default function CajaPage() {
               </label>
             </div>
 
-            <div className="flex justify-end border-t border-[#ece5d8] px-6 py-5">
+            <div className="flex justify-end border-t border-slate-200 px-6 py-5">
               <button
                 type="button"
                 onClick={() => void guardarEdicion()}
                 disabled={guardandoEdicion}
-                className="rounded-2xl bg-red-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className="rounded-xl bg-[#e30613] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#bd0711] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {guardandoEdicion ? "Guardando..." : "Guardar cambios"}
               </button>
@@ -621,80 +701,52 @@ export default function CajaPage() {
           </section>
         )}
 
-        <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div
-            className={`rounded-[30px] border px-5 py-5 shadow-sm ${metricToneClass("emerald")}`}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Ingresos
-            </p>
-            <p className="mt-3 text-3xl font-black text-emerald-600">
-              {formatoPesos(totalIngresos)}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Entradas registradas en caja.
-            </p>
-          </div>
-
-          <div
-            className={`rounded-[30px] border px-5 py-5 shadow-sm ${metricToneClass("red")}`}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Egresos
-            </p>
-            <p className="mt-3 text-3xl font-black text-red-600">
-              {formatoPesos(totalEgresos)}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Salidas operativas acumuladas.
-            </p>
-          </div>
-
-          <div
-            className={`rounded-[30px] border px-5 py-5 shadow-sm ${
-              saldo >= 0 ? metricToneClass("slate") : metricToneClass("amber")
-            }`}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Saldo
-            </p>
-            <p
-              className={[
-                "mt-3 text-3xl font-black",
-                saldo >= 0 ? "text-slate-950" : "text-amber-700",
-              ].join(" ")}
-            >
-              {formatoPesos(saldo)}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Balance neto de la vista actual.
-            </p>
-          </div>
-
-          <div
-            className={`rounded-[30px] border px-5 py-5 shadow-sm ${metricToneClass("slate")}`}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Ultimo movimiento
-            </p>
-            <p className="mt-3 text-lg font-black text-slate-950">
-              {ultimoMovimiento ? ultimoMovimiento.concepto : "Sin registros"}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              {ultimoMovimiento
+        <section className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <CajaMetricCard
+            label="Ingresos"
+            value={cargandoCaja ? "—" : formatoPesos(totalIngresos)}
+            detail="Entradas registradas en caja."
+            icon="trend"
+            iconClass="bg-emerald-50 text-emerald-600"
+            valueClass="text-emerald-600"
+          />
+          <CajaMetricCard
+            label="Egresos"
+            value={cargandoCaja ? "—" : formatoPesos(totalEgresos)}
+            detail="Salidas operativas acumuladas."
+            icon="cash"
+            iconClass="bg-red-50 text-[#e30613]"
+            valueClass="text-[#e30613]"
+          />
+          <CajaMetricCard
+            label="Saldo"
+            value={cargandoCaja ? "—" : formatoPesos(saldo)}
+            detail="Balance neto de la vista actual."
+            icon="cash"
+            iconClass={saldo >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600"}
+            valueClass={saldo >= 0 ? "text-emerald-600" : "text-orange-600"}
+          />
+          <CajaMetricCard
+            label="Último movimiento"
+            value={cargandoCaja ? "—" : ultimoMovimiento?.concepto || "Sin registros"}
+            detail={
+              ultimoMovimiento
                 ? formatoFecha(ultimoMovimiento.createdAt)
-                : "Todavia no hay actividad en caja."}
-            </p>
-          </div>
+                : "Todavía no hay actividad en caja."
+            }
+            icon="reports"
+            iconClass="bg-slate-100 text-slate-600"
+            valueClass="text-slate-950"
+          />
         </section>
 
-        <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e8e0d1] bg-[linear-gradient(180deg,#ffffff_0%,#fbf9f4_100%)] shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
-          <div className="flex flex-col gap-3 border-b border-[#ece5d8] px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
+        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+          <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-[#ddd2bf] bg-[#faf6ee] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7b5b2b]">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                 Detalle operativo
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
                 Movimientos de caja
               </h2>
               <p className="mt-2 text-sm text-slate-500">
@@ -719,7 +771,7 @@ export default function CajaPage() {
 
           <div className="overflow-x-auto">
             <table className="min-w-[1280px] text-sm">
-              <thead className="bg-[#f8f5ee] text-slate-600">
+              <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-5 py-4 text-left font-semibold">ID</th>
                   <th className="px-5 py-4 text-left font-semibold">Tipo</th>
@@ -735,7 +787,19 @@ export default function CajaPage() {
               </thead>
 
               <tbody>
-                {movimientos.length === 0 ? (
+                {cargandoCaja ? (
+                  <tr>
+                    <td
+                      colSpan={esAdmin ? 8 : 7}
+                      className="px-6 py-16 text-center text-slate-500"
+                    >
+                      <span className="inline-flex items-center gap-3 font-semibold">
+                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-[#e30613]" />
+                        Cargando movimientos de caja...
+                      </span>
+                    </td>
+                  </tr>
+                ) : movimientos.length === 0 ? (
                   <tr>
                     <td
                       colSpan={esAdmin ? 8 : 7}
@@ -756,7 +820,7 @@ export default function CajaPage() {
                   movimientos.map((item) => (
                     <tr
                       key={item.id}
-                      className="border-t border-[#eee7da] align-top transition hover:bg-white/80"
+                      className="border-t border-slate-100 align-top transition hover:bg-slate-50/80"
                     >
                       <td className="px-5 py-5">
                         <span className="font-bold text-slate-950">#{item.id}</span>
@@ -832,6 +896,7 @@ export default function CajaPage() {
             </table>
           </div>
         </section>
+        </main>
       </div>
     </div>
   );
