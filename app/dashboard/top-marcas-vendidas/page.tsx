@@ -1,5 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 import { esRolAdministrativo } from "@/lib/access-control";
 import { getMonthlyCommercialSummary } from "@/lib/dashboard-commercial-summary";
 import { requireSessionPage } from "@/lib/page-access";
@@ -11,24 +19,6 @@ type PercentageRankingItem = {
   porcentaje: number;
 };
 
-const BRAND_BAR_COLORS = [
-  { marca: "INFINIX", className: "bg-emerald-600" },
-  { marca: "XIAOMI", className: "bg-orange-500" },
-  { marca: "SAMSUNG", className: "bg-blue-900" },
-  { marca: "HONOR", className: "bg-sky-400" },
-  { marca: "TECNO", className: "bg-orange-300" },
-  { marca: "OPPO", className: "bg-green-600" },
-  { marca: "MOTOROLA", className: "bg-slate-950" },
-];
-
-function colorMarca(nombre: string) {
-  const marcaNormalizada = String(nombre || "").trim().toUpperCase();
-  return (
-    BRAND_BAR_COLORS.find(({ marca }) => marcaNormalizada.includes(marca))
-      ?.className ?? "bg-violet-600"
-  );
-}
-
 function formatoNumero(valor: number) {
   return Number(valor || 0).toLocaleString("es-CO");
 }
@@ -39,55 +29,84 @@ function formatoPorcentaje(valor: number) {
   })}%`;
 }
 
+function iniciales(nombre: string) {
+  return nombre
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+}
+
 function MetricCard({
+  detail,
+  icon,
+  iconClassName,
   label,
   value,
-  detail,
+  valueClassName = "text-slate-950",
 }: {
+  detail: string;
+  icon: DashboardIconName;
+  iconClassName: string;
   label: string;
   value: string;
-  detail: string;
+  valueClassName?: string;
 }) {
   return (
-    <div className="rounded-[26px] border border-[#e7e3da] bg-white px-5 py-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-        {label}
-      </p>
-      <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">
-        {value}
-      </p>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
-    </div>
+    <article className="min-h-[142px] min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-4">
+        <span
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
+        >
+          <DashboardIcon name={icon} className="h-6 w-6" />
+        </span>
+        <div className="min-w-0 pt-0.5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
+            {label}
+          </p>
+          <p
+            className={`mt-2 break-words text-[clamp(1.3rem,1.55vw,1.85rem)] font-black leading-tight tracking-tight ${valueClassName}`}
+          >
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+        </div>
+      </div>
+    </article>
   );
 }
 
-function RankingBar({
-  item,
-  index,
-}: {
-  item: PercentageRankingItem;
-  index: number;
-}) {
+function RankingBar({ item, index }: { item: PercentageRankingItem; index: number }) {
   const barWidth = `${Math.min(
     100,
     Math.max(item.porcentaje, item.total > 0 ? 2 : 0)
   )}%`;
-  const colorClass = colorMarca(item.nombre);
 
   return (
-    <div className="grid gap-2 rounded-2xl border border-[#eee6da] bg-[#fcfbf8] px-4 py-3 sm:grid-cols-[minmax(150px,220px)_minmax(0,1fr)_84px] sm:items-center">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-black text-slate-950">
-          {index + 1}. {item.nombre}
-        </p>
-        <p className="mt-1 text-xs text-slate-500">
-          {formatoNumero(item.total)} {item.total === 1 ? "venta" : "ventas"}
-        </p>
+    <div className="grid gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 transition hover:border-red-200 hover:shadow-sm sm:grid-cols-[minmax(170px,1fr)_minmax(140px,1.15fr)_76px] sm:items-center">
+      <div className="flex min-w-0 items-center gap-3">
+        <span
+          className={[
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-black",
+            index === 0
+              ? "bg-[#e30613] text-white"
+              : "bg-slate-100 text-slate-700",
+          ].join(" ")}
+        >
+          {index + 1}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-slate-950">{item.nombre}</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {formatoNumero(item.total)} {item.total === 1 ? "venta" : "ventas"}
+          </p>
+        </div>
       </div>
 
-      <div className="h-4 overflow-hidden rounded-full bg-slate-100">
+      <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
         <div
-          className={["h-full rounded-full", colorClass].join(" ")}
+          className={index === 0 ? "h-full rounded-full bg-[#e30613]" : "h-full rounded-full bg-[#ff6b75]"}
           style={{ width: barWidth }}
         />
       </div>
@@ -99,41 +118,39 @@ function RankingBar({
   );
 }
 
-function RankingPanel({
-  title,
-  eyebrow,
-  items,
-  emptyText,
-}: {
-  title: string;
-  eyebrow: string;
-  items: PercentageRankingItem[];
-  emptyText: string;
-}) {
+function BrandsPanel({ items }: { items: PercentageRankingItem[] }) {
   return (
-    <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="inline-flex rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
-            {eyebrow}
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+            <DashboardIcon name="trend" className="h-5 w-5" />
+          </span>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#e30613]">
+              Participación por marca
+            </p>
+            <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+              Marcas vendidas
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Distribución de las ventas del periodo seleccionado.
+            </p>
           </div>
-          <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-            {title}
-          </h2>
         </div>
-        <div className="w-max rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-          {items.length} registros
-        </div>
+        <span className="w-max rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
+          {items.length} marcas
+        </span>
       </div>
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-5 space-y-2.5">
         {items.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#e6ddcf] bg-[#fcfaf6] px-4 py-4 text-sm text-slate-500">
-            {emptyText}
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+            No hay marcas registradas durante este periodo.
           </div>
         ) : (
           items.map((item, index) => (
-            <RankingBar key={`${title}-${item.nombre}`} item={item} index={index} />
+            <RankingBar key={`marca-${item.nombre}`} item={item} index={index} />
           ))
         )}
       </div>
@@ -149,9 +166,7 @@ export default async function TopMarcasVendidasPage({
   const session = await requireSessionPage();
   const esAdmin = esRolAdministrativo(session.rolNombre);
 
-  if (!esAdmin) {
-    redirect("/dashboard");
-  }
+  if (!esAdmin) redirect("/dashboard");
 
   const params = await searchParams;
   const resumen = await getMonthlyCommercialSummary({
@@ -160,87 +175,162 @@ export default async function TopMarcasVendidasPage({
   });
   const marcaLider = resumen.topMarcasVendidas[0] ?? null;
   const referenciaLider = resumen.topReferenciasVendidas[0] ?? null;
+  const nombreUsuario = session.nombre || session.usuario || "Administrador";
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+    { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
+  ];
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] text-slate-950">
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <section className="relative overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#172033_52%,#0f766e_100%)] px-6 py-6 text-white shadow-[0_26px_85px_rgba(15,23,42,0.2)] sm:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_28%)]" />
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/dashboard/reportes"
+        coverageLabel="Todas las sedes"
+        items={navigationItems}
+      />
+
+      <div className="min-w-0 lg:pl-[252px]">
+        <main className="mx-auto w-full max-w-[1700px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/90">
-                Administracion
-              </div>
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+              <nav className="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-500" aria-label="Ruta de navegación">
+                <Link href="/dashboard/reportes" className="transition hover:text-[#e30613]">
+                  Reportes
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-slate-800">Top marcas vendidas</span>
+              </nav>
+              <h1 className="text-[30px] font-black tracking-tight text-slate-950 sm:text-[34px]">
                 Top marcas vendidas
               </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                Consulta mensual de marcas y referencias mas vendidas.
+              <p className="mt-1.5 text-sm text-slate-500 sm:text-base">
+                Rendimiento mensual de marcas y referencias comercializadas
               </p>
             </div>
 
-            <form className="flex flex-col gap-3 rounded-[24px] border border-white/12 bg-white/10 p-4 backdrop-blur sm:flex-row sm:items-end">
-              <label className="flex min-w-[220px] flex-col gap-2 text-sm font-semibold text-white">
-                Mes comercial
-                <input
-                  type="month"
-                  name="period"
-                  defaultValue={resumen.periodo.key}
-                  className="min-h-[46px] rounded-2xl border border-white/20 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none"
-                />
-              </label>
-              <button className="min-h-[46px] rounded-2xl bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-950 transition hover:bg-slate-100">
-                Consultar
-              </button>
-              <Link
-                href="/dashboard"
-                className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-white/15"
-              >
-                Volver
-              </Link>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 shadow-sm sm:min-w-[190px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {iniciales(nombreUsuario) || "AD"}
+                </span>
+                <div className="min-w-0">
+                  <p className="max-w-40 truncate text-sm font-bold text-slate-900">
+                    {nombreUsuario}
+                  </p>
+                  <p className="text-xs text-slate-500">{session.rolNombre}</p>
+                </div>
+              </div>
+              <LogoutButton
+                variant="light"
+                className="min-h-12 rounded-xl text-xs font-black uppercase tracking-[0.06em]"
+              />
+            </div>
+          </header>
+
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <form className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#e30613]">
+                  Consulta mensual
+                </p>
+                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
+                  Selecciona el periodo comercial
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Periodo actual: {resumen.periodo.label} · Cobertura: Todas las sedes
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="flex min-w-[210px] flex-col gap-2 text-xs font-bold text-slate-700">
+                  Mes comercial
+                  <span className="relative">
+                    <DashboardIcon
+                      name="calendar"
+                      className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    />
+                    <input
+                      type="month"
+                      name="period"
+                      defaultValue={resumen.periodo.key}
+                      className="min-h-[46px] w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3 text-sm font-bold text-slate-950 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
+                    />
+                  </span>
+                </label>
+                <button className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-[#bd0711]">
+                  <DashboardIcon name="search" className="h-4 w-4" />
+                  Consultar
+                </button>
+                <Link
+                  href="/dashboard/reportes"
+                  className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
+                >
+                  <DashboardIcon name="arrow" className="h-4 w-4 rotate-180" />
+                  Volver
+                </Link>
+              </div>
             </form>
+          </section>
+
+          <section className="mt-5 grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+            <MetricCard
+              icon="sales"
+              iconClassName="bg-red-50 text-[#e30613]"
+              label="Ventas del periodo"
+              value={formatoNumero(resumen.ventas)}
+              detail={`Registros comerciales de ${resumen.periodo.label}.`}
+            />
+            <MetricCard
+              icon="trend"
+              iconClassName="bg-emerald-50 text-emerald-600"
+              label="Marca líder"
+              value={marcaLider?.nombre ?? "Sin datos"}
+              detail={
+                marcaLider
+                  ? `${formatoNumero(marcaLider.total)} ventas · ${formatoPorcentaje(marcaLider.porcentaje)}`
+                  : "Sin ventas registradas."
+              }
+              valueClassName="text-emerald-700"
+            />
+            <MetricCard
+              icon="catalog"
+              iconClassName="bg-slate-100 text-slate-700"
+              label="Referencia líder"
+              value={referenciaLider?.nombre ?? "Sin datos"}
+              detail={
+                referenciaLider
+                  ? `${formatoNumero(referenciaLider.total)} ventas · ${formatoPorcentaje(referenciaLider.porcentaje)}`
+                  : "Sin ventas registradas."
+              }
+            />
+            <MetricCard
+              icon="inventory"
+              iconClassName="bg-orange-50 text-orange-600"
+              label="Referencias con ventas"
+              value={formatoNumero(resumen.referenciasVendidas.length)}
+              detail="Referencias diferentes registradas en el periodo."
+            />
+          </section>
+
+          <div className="mt-5 grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <BrandsPanel items={resumen.topMarcasVendidas} />
+            <ReferenceSalesPanel
+              topItems={resumen.topReferenciasVendidas}
+              allItems={resumen.referenciasVendidas}
+            />
           </div>
-        </section>
-
-        <section className="mt-6 grid gap-4 md:grid-cols-3">
-          <MetricCard
-            label="Periodo"
-            value={resumen.periodo.label}
-            detail="Corte mensual seleccionado."
-          />
-          <MetricCard
-            label="Marca lider"
-            value={marcaLider?.nombre ?? "Sin datos"}
-            detail={
-              marcaLider
-                ? `${formatoNumero(marcaLider.total)} ventas | ${formatoPorcentaje(marcaLider.porcentaje)}`
-                : "Sin ventas registradas."
-            }
-          />
-          <MetricCard
-            label="Referencia lider"
-            value={referenciaLider?.nombre ?? "Sin datos"}
-            detail={
-              referenciaLider
-                ? `${formatoNumero(referenciaLider.total)} ventas | ${formatoPorcentaje(referenciaLider.porcentaje)}`
-                : "Sin ventas registradas."
-            }
-          />
-        </section>
-
-        <div className="mt-6 grid gap-5 xl:grid-cols-2">
-          <RankingPanel
-            title="Marcas vendidas"
-            eyebrow="Grafica con porcentaje"
-            items={resumen.topMarcasVendidas}
-            emptyText="Sin marcas registradas en este periodo."
-          />
-          <ReferenceSalesPanel
-            topItems={resumen.topReferenciasVendidas}
-            allItems={resumen.referenciasVendidas}
-          />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
