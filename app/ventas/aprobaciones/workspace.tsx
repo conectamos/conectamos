@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 
 type SessionProps = {
   nombre: string;
@@ -153,63 +159,123 @@ export default function VentasAprobacionesWorkspace({
     });
   }, [busqueda, registros]);
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdmin
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
+  const inicialesUsuario = String(session.nombre || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+
   return (
-    <div className="min-h-screen bg-[#eef2f7] px-4 py-8">
-      <div className="mx-auto max-w-[1840px]">
-        <section className="overflow-hidden rounded-[34px] bg-[linear-gradient(135deg,#0f172a_0%,#111827_54%,#0f766e_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-4xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Aprobacion de ventas
-              </div>
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/dashboard/aprobaciones"
+        coverageLabel={esAdmin ? "Todas las sedes" : session.sedeNombre}
+        items={navigationItems}
+      />
+
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
                 Registros por aprobar
               </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-200 md:text-base">
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
                 {esAdmin
-                  ? "Consulta los registros digitales que subieron los vendedores y abre la venta real para completarla."
-                  : `Consulta los registros digitales de ${session.sedeNombre} y continua la venta real desde aqui.`}
+                  ? "Revisa los registros digitales y completa la venta real"
+                  : `Registros digitales pendientes de ${session.sedeNombre}`}
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  Cobertura: {esAdmin ? "Todas las sedes" : session.sedeNombre}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  {cargando
+                    ? "Actualizando registros"
+                    : `${registrosFiltrados.length} pendientes visibles`}
+                </span>
+              </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/ventas/nuevo"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#bd0711]"
+              >
+                <span className="text-lg leading-none">+</span>
+                Nueva venta
+              </Link>
               {esAdmin && (
                 <Link
                   href="/dashboard/registros"
-                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
                 >
                   Gestionar registros
                 </Link>
               )}
               <Link
-                href="/ventas/nuevo"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                Nueva venta
-              </Link>
-              <Link
                 href="/ventas"
-                className="rounded-2xl bg-white px-5 py-3 text-center text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
               >
                 Volver a ventas
               </Link>
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {session.nombre}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {session.rolNombre || session.perfilTipoLabel}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
             </div>
-          </div>
-        </section>
+          </header>
 
         {mensaje && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
+          <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm font-semibold text-red-800 shadow-sm" role="alert">
             {mensaje}
           </div>
         )}
 
-        <section className="mt-6 rounded-[30px] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <section className="mt-6 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Filtro rapido
-              </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                Filtro rápido
+              </p>
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
                 Buscar por cliente, cédula o IMEI
               </h2>
             </div>
@@ -219,12 +285,12 @@ export default function VentasAprobacionesWorkspace({
                 value={busqueda}
                 onChange={(event) => setBusqueda(event.target.value)}
                 placeholder="Cliente, cédula, IMEI o referencia"
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
               />
               <button
                 type="button"
                 onClick={() => void cargarRegistros(busqueda)}
-                className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                className="rounded-xl bg-[#11161d] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#e30613]"
               >
                 Buscar
               </button>
@@ -232,12 +298,12 @@ export default function VentasAprobacionesWorkspace({
           </div>
         </section>
 
-        <section className="mt-6 rounded-[30px] bg-white shadow-sm ring-1 ring-slate-200">
+        <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="border-b border-slate-200 px-6 py-5">
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
               Pendientes
-            </div>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+            </p>
+            <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
               Registros listos para completar
             </h2>
             <p className="mt-2 text-sm text-slate-500">
@@ -251,7 +317,7 @@ export default function VentasAprobacionesWorkspace({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1620px] text-sm">
+            <table className="w-full min-w-[1620px] text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-5 py-4 text-left font-semibold">Fecha</th>
@@ -383,7 +449,7 @@ export default function VentasAprobacionesWorkspace({
                       <td className="px-5 py-5">
                         <Link
                           href={`/ventas/nuevo?registroId=${registro.id}`}
-                          className="inline-flex rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700"
+                          className="inline-flex rounded-xl bg-[#e30613] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#bd0711]"
                         >
                           Completar venta
                         </Link>
@@ -395,6 +461,7 @@ export default function VentasAprobacionesWorkspace({
             </table>
           </div>
         </section>
+        </main>
       </div>
     </div>
   );
