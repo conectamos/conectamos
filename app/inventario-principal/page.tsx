@@ -47,6 +47,21 @@ type SessionUser = {
   rolNombre: string;
 };
 
+type FiltroEstado =
+  | "TODOS"
+  | "BODEGA"
+  | "ENVIADOS"
+  | "COBRO_PENDIENTE"
+  | "PAGADOS";
+
+const FILTROS_ESTADO: Array<{ value: FiltroEstado; label: string }> = [
+  { value: "TODOS", label: "Todos" },
+  { value: "BODEGA", label: "Bodega" },
+  { value: "ENVIADOS", label: "Enviados a sede" },
+  { value: "COBRO_PENDIENTE", label: "Deuda" },
+  { value: "PAGADOS", label: "Pagados" },
+];
+
 const PAGE_SIZE = 25;
 
 function formatoPesos(valor: number) {
@@ -274,6 +289,7 @@ export default function InventarioPrincipalPage() {
   const [cargando, setCargando] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [filtroSedeDestinoId, setFiltroSedeDestinoId] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("TODOS");
   const [pagina, setPagina] = useState(1);
   const [nuevaReferencia, setNuevaReferencia] = useState("");
   const [referenciaEditada, setReferenciaEditada] = useState("");
@@ -422,6 +438,20 @@ export default function InventarioPrincipalPage() {
     return items.filter((item) => {
       const sedeDestino =
         sedes.find((sede) => sede.id === item.sedeDestinoId)?.nombre || "";
+      const estadoNormalizado = String(item.estado || "BODEGA").toUpperCase();
+      const cobroNormalizado = String(item.estadoCobro || "").toUpperCase();
+      const cumpleEstado =
+        filtroEstado === "TODOS" ||
+        (filtroEstado === "BODEGA" && estadoNormalizado === "BODEGA") ||
+        (filtroEstado === "ENVIADOS" && estadoNormalizado !== "BODEGA") ||
+        (filtroEstado === "COBRO_PENDIENTE" &&
+          cobroNormalizado === "PENDIENTE") ||
+        (filtroEstado === "PAGADOS" &&
+          (estadoNormalizado === "PAGO" || cobroNormalizado === "PAGADO"));
+
+      if (!cumpleEstado) {
+        return false;
+      }
 
       if (
         filtroSedeDestinoId &&
@@ -449,7 +479,7 @@ export default function InventarioPrincipalPage() {
         .toLowerCase()
         .includes(termino);
     });
-  }, [busqueda, filtroSedeDestinoId, items, sedes]);
+  }, [busqueda, filtroEstado, filtroSedeDestinoId, items, sedes]);
 
   const totalPaginas = Math.max(1, Math.ceil(itemsFiltrados.length / PAGE_SIZE));
   const paginaActual = Math.min(pagina, totalPaginas);
@@ -479,7 +509,7 @@ export default function InventarioPrincipalPage() {
 
   useEffect(() => {
     setPagina(1);
-  }, [busqueda, filtroSedeDestinoId]);
+  }, [busqueda, filtroEstado, filtroSedeDestinoId]);
 
   useEffect(() => {
     if (pagina > totalPaginas) {
@@ -1488,6 +1518,25 @@ export default function InventarioPrincipalPage() {
                 {itemsFiltrados.length} resultado(s)
               </div>
             </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 border-b border-slate-200 px-6 py-3.5">
+            {FILTROS_ESTADO.map((filtro) => (
+              <button
+                key={filtro.value}
+                type="button"
+                onClick={() => setFiltroEstado(filtro.value)}
+                aria-pressed={filtroEstado === filtro.value}
+                className={[
+                  "rounded-xl border px-4 py-2 text-xs font-bold transition",
+                  filtroEstado === filtro.value
+                    ? "border-[#e30613] bg-[#e30613] text-white"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
+                ].join(" ")}
+              >
+                {filtro.label}
+              </button>
+            ))}
           </div>
 
           {idsSeleccionados.length > 0 && (
