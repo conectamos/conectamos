@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 
 const OPCIONES_PROVEEDOR_SEDE = [
   "Proveedor FINSER",
@@ -56,7 +62,7 @@ function formatearPesos(valor: string) {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <label className="mb-2 block text-[12px] font-bold uppercase tracking-[0.14em] text-slate-600">
+    <label className="mb-2 block text-sm font-bold text-slate-700">
       {children}
     </label>
   );
@@ -74,11 +80,11 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-sm">
-      <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+    <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
         {eyebrow}
-      </div>
-      <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">{title}</h2>
+      </p>
+      <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{title}</h2>
       <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
       <div className="mt-5">{children}</div>
     </section>
@@ -362,86 +368,107 @@ export default function NuevoInventarioPage() {
     }
   };
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdmin
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+  const destinoActual = esAdmin
+    ? "Bodega principal"
+    : user?.sedeNombre || "Tu sede";
+  const rutaCancelar = esAdmin ? "/inventario-principal" : "/inventario";
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1480px]">
-        <section className="relative overflow-hidden rounded-[36px] border border-[#1f2430] bg-[linear-gradient(135deg,#111318_0%,#1c2330_58%,#7c2d12_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] md:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(199,154,87,0.18),transparent_28%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/inventario"
+        coverageLabel={destinoActual}
+        items={navigationItems}
+      />
 
-          <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f2d7a6]">
-                {esAdmin ? "Bodega principal" : "Registro de sede"}
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                {esAdmin ? "Ingreso a inventario principal" : "Nuevo ingreso de inventario"}
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
+                Nuevo inventario
               </h1>
-
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                {esAdmin
-                  ? "Carga uno o varios equipos para bodega principal con una vista mas ordenada para IMEIs, factura y distribucion."
-                  : "Registra equipos en tu sede con control de costo, distribuidor y estado financiero desde una sola vista."}
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                Registra uno o varios equipos sin perder trazabilidad
               </p>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Usuario: <span className="font-semibold text-white">{user?.nombre || "Cargando..."}</span>
-                </div>
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Rol: <span className="font-semibold text-white">{user?.rolNombre || "-"}</span>
-                </div>
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Destino:{" "}
-                  <span className="font-semibold text-white">
-                    {esAdmin ? "Bodega principal" : user?.sedeNombre || "Tu sede"}
-                  </span>
-                </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  Destino: {destinoActual}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  Modo: {esCargaMasiva ? "Carga masiva" : "Carga individual"}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  {esCargaMasiva
+                    ? `${cantidadImeisMasivos} IMEI listos`
+                    : imei.length === 15
+                      ? "1 IMEI listo"
+                      : "IMEI pendiente"}
+                </span>
               </div>
             </div>
 
-            <div className="rounded-[30px] border border-white/10 bg-white/8 p-5 backdrop-blur">
-              <div className="inline-flex rounded-full border border-white/10 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-200">
-                Resumen de captura
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                    Modo de carga
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={rutaCancelar}
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
+              >
+                Volver al inventario
+              </Link>
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {user?.nombre || user?.usuario || "Cargando usuario"}
                   </p>
-                  <p className="mt-2 text-2xl font-black text-white">
-                    {esCargaMasiva ? "Masivo" : "Individual"}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-200">
-                    {esCargaMasiva
-                      ? `${cantidadImeisMasivos} IMEI(s) listos para guardar`
-                      : esAdmin
-                      ? "Carga por IMEI o lote"
-                      : "Registro con validacion financiera"}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                    Costo capturado
-                  </p>
-                  <p className="mt-2 text-2xl font-black text-white">
-                    {costo ? formatearPesos(costo) : "$ 0"}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-200">
-                    Valor base para el registro actual.
+                  <p className="truncate text-xs text-slate-500">
+                    {user?.rolNombre || "Sesión activa"}
                   </p>
                 </div>
               </div>
+              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
             </div>
-          </div>
-        </section>
+          </header>
 
         {mensaje && (
           <div
+            role="status"
             className={[
-              "mt-6 rounded-[26px] border px-5 py-4 text-sm font-medium shadow-sm",
+              "mt-6 rounded-2xl border px-5 py-4 text-sm font-semibold shadow-sm",
               mensajeEsOk
                 ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                 : "border-rose-200 bg-rose-50 text-rose-800",
@@ -451,7 +478,7 @@ export default function NuevoInventarioPage() {
           </div>
         )}
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_360px]">
+        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-6">
             <SectionCard
               eyebrow="Captura principal"
@@ -652,13 +679,41 @@ export default function NuevoInventarioPage() {
             )}
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
             <SectionCard
               eyebrow="Control de carga"
               title="Revision final"
               description="Haz una ultima verificacion antes de guardar el inventario."
             >
               <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                      Modo de carga
+                    </p>
+                    <p className="mt-2 text-xl font-black text-slate-950">
+                      {esCargaMasiva ? "Masiva" : "Individual"}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {esCargaMasiva
+                        ? `${cantidadImeisMasivos} IMEI para registrar`
+                        : "Registro de un equipo"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                      Costo capturado
+                    </p>
+                    <p className="mt-2 text-xl font-black text-slate-950">
+                      {costo ? formatearPesos(costo) : "$ 0"}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Valor base del registro actual.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Referencia actual
@@ -675,6 +730,22 @@ export default function NuevoInventarioPage() {
                   <p className="mt-2 text-lg font-bold text-slate-950">
                     {distribuidor || "Pendiente"}
                   </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    {esAdmin ? "Factura" : "Estado financiero"}
+                  </p>
+                  <p className="mt-2 text-lg font-bold text-slate-950">
+                    {esAdmin
+                      ? numeroFactura || "Pendiente"
+                      : estadoFinanciero || "Pendiente"}
+                  </p>
+                  {!esAdmin && estadoFinanciero === "DEUDA" && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Acreedor: {deboA || "Pendiente"}
+                    </p>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -696,12 +767,12 @@ export default function NuevoInventarioPage() {
               </div>
             </SectionCard>
 
-            <div className="rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
               <div className="flex flex-col gap-3">
                 <button
                   onClick={guardar}
                   disabled={guardando}
-                  className="inline-flex min-h-[58px] items-center justify-center rounded-2xl bg-[#111318] px-6 py-4 text-center text-[15px] font-bold text-white transition hover:bg-[#1d2330] disabled:cursor-not-allowed disabled:opacity-70"
+                  className="inline-flex min-h-[54px] items-center justify-center rounded-xl bg-[#e30613] px-6 py-4 text-center text-[15px] font-black text-white transition hover:bg-[#bd0711] disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {guardando
                     ? "Guardando..."
@@ -713,8 +784,8 @@ export default function NuevoInventarioPage() {
                 </button>
 
                 <Link
-                  href={esAdmin ? "/inventario-principal" : "/inventario"}
-                  className="inline-flex min-h-[58px] items-center justify-center rounded-2xl border border-slate-300 bg-white px-6 py-4 text-center text-[15px] font-bold text-slate-700 transition hover:bg-slate-50"
+                  href={rutaCancelar}
+                  className="inline-flex min-h-[54px] items-center justify-center rounded-xl border border-slate-300 bg-white px-6 py-4 text-center text-[15px] font-bold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
                 >
                   Cancelar
                 </Link>
@@ -722,6 +793,7 @@ export default function NuevoInventarioPage() {
             </div>
           </div>
         </div>
+        </main>
       </div>
     </div>
   );
