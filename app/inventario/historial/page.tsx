@@ -1,6 +1,14 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { etiquetaEstadoInventario } from "@/lib/prestamos";
@@ -175,11 +183,11 @@ function MetaGrid({ items }: { items: TimelineMeta[] }) {
   }
 
   return (
-    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
       {visibles.map((item) => (
         <div
           key={`${item.label}-${String(item.value)}`}
-          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
         >
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
             {item.label}
@@ -194,32 +202,39 @@ function MetaGrid({ items }: { items: TimelineMeta[] }) {
 }
 
 function MetricCard({
+  icon,
   label,
   value,
   detail,
   valueClass = "text-slate-950",
 }: {
+  icon: DashboardIconName;
   label: string;
   value: ReactNode;
   detail: string;
   valueClass?: string;
 }) {
   return (
-    <div className="rounded-[28px] border border-[#e2d9ca] bg-white p-5 shadow-sm">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-      <p className={["mt-3 text-3xl font-black tracking-tight", valueClass].join(" ")}>
-        {value}
-      </p>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
+    <div className="flex min-h-[142px] items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+        <DashboardIcon name={icon} className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          {label}
+        </p>
+        <p className={["mt-2 break-words text-[26px] font-black leading-tight tracking-tight", valueClass].join(" ")}>
+          {value}
+        </p>
+        <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+      </div>
     </div>
   );
 }
 
 function ControlAlertCard({ alerta }: { alerta: ControlAlert }) {
   return (
-    <article className={["rounded-[24px] border px-4 py-4", toneBadge(alerta.tone)].join(" ")}>
+    <article className={["rounded-2xl border px-4 py-4", toneBadge(alerta.tone)].join(" ")}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.16em]">
@@ -240,13 +255,14 @@ function QuickActionCard({ action }: { action: QuickAction }) {
     <Link
       href={action.href}
       className={[
-        "block rounded-[24px] border px-4 py-4 transition hover:-translate-y-0.5 hover:shadow-sm",
+        "group block rounded-2xl border px-4 py-4 transition hover:-translate-y-0.5 hover:shadow-sm",
         toneBadge(action.tone),
       ].join(" ")}
     >
-      <p className="text-[10px] font-black uppercase tracking-[0.16em]">
-        Abrir
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.16em]">ABRIR</p>
+        <DashboardIcon name="arrow" className="h-4 w-4 transition group-hover:translate-x-0.5" />
+      </div>
       <h3 className="mt-2 text-base font-black text-slate-950">{action.label}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-600">{action.detalle}</p>
     </Link>
@@ -255,7 +271,8 @@ function QuickActionCard({ action }: { action: QuickAction }) {
 
 function TimelineCard({ event, index }: { event: TimelineEvent; index: number }) {
   return (
-    <article className="relative rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+    <article className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_20px_rgba(15,23,42,0.035)]">
+      <span className="absolute inset-y-0 left-0 w-1 bg-[#e30613]" />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap gap-2">
@@ -975,96 +992,150 @@ export default async function HistorialInventarioPage(props: {
     });
   }
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdmin
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
+  const inicialesUsuario = String(user.nombre || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1500px]">
-        <section className="relative overflow-hidden rounded-[36px] border border-[#1f2430] bg-[linear-gradient(135deg,#111318_0%,#1c2330_58%,#7c2d12_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] md:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(199,154,87,0.18),transparent_28%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/inventario"
+        coverageLabel={cobertura}
+        items={navigationItems}
+      />
 
-          <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1fr)_220px]">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f2d7a6]">
-                Centro de control
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Control de IMEI
+              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <Link href="/inventario" className="transition hover:text-[#e30613]">
+                  Inventario
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-slate-600">Historial IMEI</span>
+              </nav>
+              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
+                Centro de trazabilidad
               </h1>
-
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                Ficha unica del equipo con inventario, prestamos, caja, registros
-                comerciales, ventas y alertas operativas.
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+                Consulta el ciclo completo de un equipo entre inventario, préstamos,
+                caja, registros comerciales y ventas.
               </p>
+              {imei && (
+                <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-bold text-[#e30613]">
+                  <DashboardIcon name="search" className="h-4 w-4" />
+                  IMEI {imei}
+                </div>
+              )}
+            </div>
 
-              <div className="mt-6 flex flex-wrap gap-3">
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Cobertura: <span className="font-semibold text-white">{cobertura}</span>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || "US"}
+                </span>
+                <div className="min-w-0 pr-2">
+                  <p className="max-w-[170px] truncate text-sm font-bold">{user.nombre}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {user.rolNombre}
+                  </p>
                 </div>
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Usuario: <span className="font-semibold text-white">{user.nombre}</span>
-                </div>
-                {imei && (
-                  <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                    IMEI consultado: <span className="font-semibold text-white">{imei}</span>
-                  </div>
-                )}
+              </div>
+              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
+            </div>
+          </header>
+
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+                <DashboardIcon name="search" className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                  Consulta directa
+                </p>
+                <h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">
+                  Buscar equipo por IMEI
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  Ingresa el serial para reconstruir su ubicación, movimientos,
+                  pagos, caja y estado comercial.
+                </p>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 xl:items-end">
-              <Link
-                href="/inventario"
-                className="inline-flex h-[56px] min-w-[180px] items-center justify-center rounded-2xl border border-white/12 bg-white/95 px-6 text-center text-[15px] font-bold text-slate-900 transition hover:bg-white"
+            <form className="mt-5 flex flex-col gap-3 lg:flex-row">
+              <div className="relative flex-1">
+                <DashboardIcon
+                  name="search"
+                  className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  name="imei"
+                  defaultValue={imei}
+                  placeholder="Escribe el IMEI de 15 dígitos"
+                  className="min-h-[54px] w-full rounded-xl border border-slate-300 bg-white pl-12 pr-4 text-base font-semibold text-slate-950 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="inline-flex min-h-[54px] min-w-[190px] items-center justify-center gap-2 rounded-xl bg-[#e30613] px-6 text-xs font-black tracking-[0.08em] text-white transition hover:bg-[#c9000b]"
               >
-                Volver
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-sm">
-          <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-            Busqueda
-          </div>
-          <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-            Consulta completa por IMEI
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Escribe un IMEI para ver donde entro, a que sede se movio, como se
-            pago, que caja afecto y si termino vendido.
-          </p>
-
-          <form className="mt-5 flex flex-col gap-4 xl:flex-row">
-            <input
-              type="text"
-              name="imei"
-              defaultValue={imei}
-              placeholder="Escribe el IMEI"
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-            />
-
-            <button
-              type="submit"
-              className="inline-flex h-[56px] min-w-[190px] items-center justify-center rounded-2xl bg-[#111318] px-6 text-[15px] font-bold text-white transition hover:bg-[#1d2330]"
-            >
-              Buscar IMEI
-            </button>
-          </form>
-        </section>
+                <DashboardIcon name="search" className="h-5 w-5" />
+                BUSCAR IMEI
+              </button>
+            </form>
+          </section>
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard
+            icon="reports"
             label="Eventos"
             value={totalEventos}
             detail={imei ? "Puntos de trazabilidad encontrados." : "Busca un IMEI para iniciar."}
           />
           <MetricCard
+            icon="store"
             label="Ubicacion actual"
             value={ubicacionActual}
             detail={`Estado: ${etiquetaEstadoInventario(estadoActual)}`}
             valueClass="text-slate-950 text-2xl"
           />
           <MetricCard
+            icon="cash"
             label="Financiero"
             value={estadoFinancieroActual}
             detail={`Valor base: ${formatoPesos(valorEquipo)}`}
@@ -1077,6 +1148,7 @@ export default async function HistorialInventarioPage(props: {
             }
           />
           <MetricCard
+            icon="trend"
             label="Caja real"
             value={`${formatoPesos(totalIngresoCaja)} / ${formatoPesos(totalEgresoCaja)}`}
             detail="Ingresos / egresos localizados por IMEI."
@@ -1086,13 +1158,13 @@ export default async function HistorialInventarioPage(props: {
 
         {imei && (
           <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-            <div className="rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
               <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                    Alertas
-                  </div>
-                  <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                    Alertas operativas
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
                     Lectura del equipo
                   </h2>
                 </div>
@@ -1111,11 +1183,11 @@ export default async function HistorialInventarioPage(props: {
               </div>
             </div>
 
-            <div className="rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Accesos
-              </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                Accesos relacionados
+              </p>
+              <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
                 Modulos relacionados
               </h2>
 
@@ -1129,13 +1201,13 @@ export default async function HistorialInventarioPage(props: {
         )}
 
         {imei && (
-          <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                   Ciclo detectado
-                </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                </p>
+                <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
                   Resumen operativo del equipo
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
@@ -1151,7 +1223,7 @@ export default async function HistorialInventarioPage(props: {
                     className={[
                       "rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em]",
                       paso.active
-                        ? "border-slate-950 bg-slate-950 text-white"
+                        ? "border-[#e30613] bg-[#e30613] text-white"
                         : "border-slate-200 bg-slate-50 text-slate-400",
                     ].join(" ")}
                   >
@@ -1199,13 +1271,13 @@ export default async function HistorialInventarioPage(props: {
           </section>
         )}
 
-        <section className="mt-6 rounded-[32px] border border-[#e2d9ca] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
           <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Linea de tiempo
-              </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                Línea de tiempo
+              </p>
+              <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
                 {imei ? `Ciclo del IMEI ${imei}` : "Ciclo del equipo"}
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -1213,19 +1285,27 @@ export default async function HistorialInventarioPage(props: {
               </p>
             </div>
 
-            <span className="text-sm font-medium text-slate-500">
-              {timelineOrdenado.length} evento(s)
+            <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
+              {timelineOrdenado.length} EVENTO{timelineOrdenado.length === 1 ? "" : "S"}
             </span>
           </div>
 
           <div className="mt-5 space-y-4">
             {!imei ? (
-              <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-slate-500">
-                Escribe un IMEI para abrir su centro de control.
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-14 text-center text-slate-500">
+                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm">
+                  <DashboardIcon name="search" className="h-6 w-6" />
+                </span>
+                <p className="mt-3 font-bold text-slate-700">Consulta un equipo</p>
+                <p className="mt-1 text-sm">Escribe un IMEI para abrir su centro de trazabilidad.</p>
               </div>
             ) : timelineOrdenado.length === 0 ? (
-              <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-slate-500">
-                No hay eventos relacionados con este IMEI.
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-14 text-center text-slate-500">
+                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm">
+                  <DashboardIcon name="inventory" className="h-6 w-6" />
+                </span>
+                <p className="mt-3 font-bold text-slate-700">Sin eventos relacionados</p>
+                <p className="mt-1 text-sm">No encontramos movimientos para este IMEI.</p>
               </div>
             ) : (
               timelineOrdenado.map((event, index) => (
@@ -1236,13 +1316,13 @@ export default async function HistorialInventarioPage(props: {
         </section>
 
         {movimientos.length > 0 && (
-          <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e2d9ca] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.10)]">
+          <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
             <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                   Movimientos base
-                </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                </p>
+                <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
                   Registro de MovimientoInventario
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -1273,7 +1353,7 @@ export default async function HistorialInventarioPage(props: {
                   {movimientos.map((item) => (
                     <tr
                       key={item.id}
-                      className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-[#faf7f1]"
+                      className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-slate-50/70"
                     >
                       <td className="px-4 py-4 font-bold text-slate-950">{item.id}</td>
                       <td className="px-4 py-4">
@@ -1317,6 +1397,7 @@ export default async function HistorialInventarioPage(props: {
             </div>
           </section>
         )}
+        </main>
       </div>
     </div>
   );
