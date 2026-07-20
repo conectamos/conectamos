@@ -62,6 +62,7 @@ No usar degradados azul-verde, violeta o rosado como decoración de base. Los es
 - **Secundario:** fondo blanco, borde gris, texto grafito.
 - **Peligro:** rojo sobre superficie roja suave; exigir confirmación cuando la acción sea destructiva.
 - Mantener altura, radio, peso y capitalización uniformes dentro de la pantalla.
+- En centros de herramientas, usar mayúsculas con espaciado moderado para los nombres de los accesos operativos; conservar títulos y descripciones en escritura normal.
 - Siempre incluir estados `hover`, `focus-visible`, `disabled` y `loading`.
 - El foco debe ser visible con anillo de alto contraste. No retirar el contorno sin reemplazarlo.
 
