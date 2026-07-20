@@ -12,6 +12,14 @@ import {
   getBogotaMonthRangeFromInput,
   getCurrentBogotaMonthInput,
 } from "@/lib/ventas-utils";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO", {
@@ -24,30 +32,46 @@ function formatoNumero(valor: number) {
 }
 
 function MetricCard({
+  icon,
+  iconClassName,
   label,
   value,
   detail,
   valueClassName = "text-slate-950",
 }: {
+  icon: DashboardIconName;
+  iconClassName: string;
   label: string;
   value: string;
   detail: string;
   valueClassName?: string;
 }) {
   return (
-    <div className="rounded-[26px] border border-[#e7e3da] bg-white px-5 py-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-        {label}
-      </p>
-      <p
-        className={[
-          "mt-3 break-words text-3xl font-black tracking-tight",
-          valueClassName,
-        ].join(" ")}
-      >
-        {value}
-      </p>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
+    <div className="min-h-[148px] min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-4">
+        <span
+          className={[
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-xl",
+            iconClassName,
+          ].join(" ")}
+        >
+          <DashboardIcon name={icon} className="h-6 w-6" />
+        </span>
+        <div className="min-w-0 pt-0.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            {label}
+          </p>
+          <p
+            className={[
+              "mt-2 max-w-full text-[clamp(1.3rem,1.55vw,1.9rem)] font-black leading-tight tracking-tight [overflow-wrap:anywhere]",
+              valueClassName,
+            ].join(" ")}
+          >
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -85,17 +109,17 @@ function FinancialMetricCard({
       detail: "text-slate-600",
     },
     principal: {
-      wrapper:
-        "border-slate-900 bg-[linear-gradient(135deg,#071122_0%,#111827_58%,#153f3c_100%)] text-white shadow-[0_20px_55px_rgba(15,23,42,0.18)]",
+      wrapper: "border-slate-900 bg-[#11161d] text-white",
       label: "text-slate-300",
       detail: "text-slate-100",
     },
   }[tone];
+  const valorExtenso = value.length >= 15;
 
   return (
     <div
       className={[
-        "rounded-[24px] border px-5 py-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]",
+        "min-w-0 rounded-2xl border px-5 py-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]",
         toneClasses.wrapper,
       ].join(" ")}
     >
@@ -107,7 +131,14 @@ function FinancialMetricCard({
       >
         {label}
       </p>
-      <p className="mt-3 break-words text-2xl font-black tracking-tight">
+      <p
+        className={[
+          "mt-3 max-w-full font-black leading-tight tabular-nums",
+          valorExtenso
+            ? "text-[clamp(0.95rem,1vw,1.2rem)] tracking-[-0.035em] [overflow-wrap:anywhere]"
+            : "text-2xl tracking-tight [overflow-wrap:anywhere]",
+        ].join(" ")}
+      >
         {value}
       </p>
       <p className={["mt-2 text-sm leading-6", toneClasses.detail].join(" ")}>
@@ -137,14 +168,14 @@ function RankingRows({
   return (
     <div className="space-y-3">
       {items.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-[#e6ddcf] bg-[#fcfaf6] px-4 py-4 text-sm text-slate-500">
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
           Sin movimientos registrados en este periodo.
         </div>
       ) : (
         items.map((item, index) => (
           <div
             key={`${title}-${item.nombre}-${index}`}
-            className="flex items-center justify-between gap-4 rounded-2xl border border-[#eee6da] bg-[#fcfbf8] px-4 py-3"
+            className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3"
           >
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-black text-white">
@@ -180,7 +211,7 @@ function RankingPanel({
   toggleLabel?: string;
 }) {
   return (
-    <div className="rounded-[26px] border border-[#ebe4d7] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-3">
         <p className="max-w-[10rem] text-sm font-black tracking-tight text-slate-950">
           {title}
@@ -191,7 +222,7 @@ function RankingPanel({
               <summary className="flex cursor-pointer list-none items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-amber-700 transition hover:bg-amber-100 [&::-webkit-details-marker]:hidden">
                 {toggleLabel}
               </summary>
-              <div className="absolute right-0 z-20 mt-2 max-h-80 w-72 overflow-auto rounded-2xl border border-[#e6ddcf] bg-white p-3 shadow-[0_18px_55px_rgba(15,23,42,0.16)]">
+              <div className="absolute right-0 z-20 mt-2 max-h-80 w-72 overflow-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_55px_rgba(15,23,42,0.16)]">
                 <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
                   Montos
                 </p>
@@ -204,7 +235,7 @@ function RankingPanel({
                     items.map((item) => (
                       <div
                         key={`monto-${item.nombre}`}
-                        className="flex items-center justify-between gap-3 rounded-xl bg-[#fcfbf8] px-3 py-2"
+                        className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2"
                       >
                         <span className="truncate text-xs font-bold text-slate-800">
                           {item.nombre}
@@ -224,7 +255,7 @@ function RankingPanel({
       </div>
 
       <details className="group mt-4">
-        <summary className="flex w-max cursor-pointer list-none items-center rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-700 transition hover:bg-white [&::-webkit-details-marker]:hidden">
+        <summary className="flex w-max cursor-pointer list-none items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] [&::-webkit-details-marker]:hidden">
           Todos
         </summary>
 
@@ -308,43 +339,100 @@ export default async function ReportesDashboardPage({
     financiero.valorGarantia +
     financiero.totalGastosCartera;
   const resultadoNeto = activos - pasivos;
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+    { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
+  ];
+  const inicialesUsuario = String(session.nombre || session.usuario || "Admin")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] px-4 py-8 text-slate-950">
-      <main className="mx-auto max-w-7xl space-y-6">
-        <section className="relative overflow-hidden rounded-[34px] border border-[#182233] bg-[linear-gradient(135deg,#101827_0%,#172033_48%,#7f1d1d_100%)] px-6 py-7 text-white shadow-[0_26px_85px_rgba(15,23,42,0.22)] sm:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(248,113,113,0.16),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_24%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/dashboard/reportes"
+        coverageLabel={coberturaLabel}
+        items={navigationItems}
+      />
 
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-red-100">
-                Panel admin
-              </div>
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                REPORTES
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
+                Reportes
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200 md:text-base">
-                Consulta mensual consolidada de utilidad, ventas, caja y
-                comportamiento comercial por ranking y cobertura.
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                Consolidado mensual comercial y financiero por cobertura
               </p>
             </div>
 
-            <form className="flex flex-col gap-3 rounded-[24px] border border-white/12 bg-white/10 p-4 backdrop-blur sm:flex-row sm:items-end">
-              <label className="flex flex-col gap-2 text-sm font-semibold text-white">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || (
+                    <DashboardIcon name="user" className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {session.nombre || session.usuario}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {session.rolNombre}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton
+                variant="light"
+                className="min-h-12 shrink-0 rounded-xl"
+              />
+            </div>
+          </header>
+
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <form className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                  Consulta mensual
+                </p>
+                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
+                  Selecciona el corte del reporte
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Periodo actual: {resumen.periodo.label} · Cobertura: {coberturaLabel}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+              <label className="flex min-w-[190px] flex-col gap-2 text-sm font-semibold text-slate-700">
                 Mes comercial
                 <input
                   type="month"
                   name="period"
                   defaultValue={resumen.periodo.key}
-                  className="min-h-[46px] rounded-2xl border border-white/20 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none"
+                  className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 />
               </label>
-              <label className="flex flex-col gap-2 text-sm font-semibold text-white">
+              <label className="flex min-w-[220px] flex-col gap-2 text-sm font-semibold text-slate-700">
                 Cobertura
                 <select
                   name="sedeId"
                   defaultValue={sedeSeleccionadaId ? String(sedeSeleccionadaId) : ""}
-                  className="min-h-[46px] rounded-2xl border border-white/20 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none"
+                  className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 >
                   <option value="">Todas las sedes</option>
                   {sedes.map((sede) => (
@@ -354,37 +442,45 @@ export default async function ReportesDashboardPage({
                   ))}
                 </select>
               </label>
-              <button className="min-h-[46px] rounded-2xl bg-white px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-slate-950 transition hover:bg-slate-100">
+              <button className="min-h-[46px] rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#bd0711]">
                 Consultar
               </button>
               <Link
                 href="/dashboard"
-                className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-white/15"
+                className="inline-flex min-h-[46px] items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
               >
                 Volver
               </Link>
+              </div>
             </form>
-          </div>
-        </section>
+          </section>
 
-        <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+        <section className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
           <MetricCard
+            icon="trend"
+            iconClassName="bg-emerald-50 text-emerald-600"
             label="Utilidad del mes"
             value={formatoPesos(resumen.utilidad)}
             detail={`Acumulado de ${resumen.periodo.label}.`}
             valueClassName="text-emerald-600"
           />
           <MetricCard
+            icon="sales"
+            iconClassName="bg-red-50 text-[#e30613]"
             label="Ventas del mes"
             value={formatoNumero(resumen.ventas)}
             detail="Registros comerciales del periodo."
           />
           <MetricCard
+            icon="cash"
+            iconClassName="bg-blue-50 text-blue-600"
             label="Caja acumulada"
             value={formatoPesos(financiero.cajaDisponible)}
             detail={`Caja disponible al cierre de ${resumen.periodo.label}.`}
           />
           <MetricCard
+            icon="loans"
+            iconClassName="bg-violet-50 text-violet-600"
             label="Financiera lider"
             value={financieraLider?.nombre ?? "Sin datos"}
             detail={
@@ -395,13 +491,13 @@ export default async function ReportesDashboardPage({
           />
         </section>
 
-        <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                 Centro financiero
               </div>
-              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+              <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
                 Lectura financiera {sedeSeleccionada ? "por sede" : "consolidada"}
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -415,7 +511,7 @@ export default async function ReportesDashboardPage({
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+            <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[580px]">
               <FinancialMetricCard
                 label="Resultado neto"
                 value={formatoPesos(resultadoNeto)}
@@ -495,13 +591,13 @@ export default async function ReportesDashboardPage({
           </div>
         </section>
 
-        <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                 Corte comercial
               </div>
-              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+              <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
                 Ranking del periodo
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -510,10 +606,10 @@ export default async function ReportesDashboardPage({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <div className="rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
                 Periodo: {resumen.periodo.label}
               </div>
-              <div className="rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
                 Cobertura: {coberturaLabel}
               </div>
             </div>
@@ -554,6 +650,7 @@ export default async function ReportesDashboardPage({
           </div>
         </section>
       </main>
+      </div>
     </div>
   );
 }
