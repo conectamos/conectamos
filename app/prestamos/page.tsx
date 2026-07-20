@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
 type Prestamo = {
@@ -86,23 +94,32 @@ function MetricCard({
   label,
   value,
   detail,
+  icon,
+  iconClass,
   valueClass = "text-slate-950",
 }: {
   label: string;
   value: string | number;
   detail: string;
+  icon: DashboardIconName;
+  iconClass: string;
   valueClass?: string;
 }) {
   return (
-    <div className="rounded-[28px] border border-[#e2d9ca] bg-white p-5 shadow-sm">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-      <p className={["mt-3 text-4xl font-black tracking-tight", valueClass].join(" ")}>
-        {value}
-      </p>
-      <p className="mt-2 text-sm text-slate-500">{detail}</p>
-    </div>
+    <article className="min-h-[138px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-4">
+        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
+          <DashboardIcon name={icon} className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-600">{label}</p>
+          <p className={["mt-1.5 text-[28px] font-black leading-tight tracking-tight", valueClass].join(" ")}>
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -110,6 +127,7 @@ export default function PrestamosPage() {
   const [prestamos, setPrestamos] = useState<Prestamo[]>([]);
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
+  const [cargandoListado, setCargandoListado] = useState(true);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
@@ -172,6 +190,8 @@ export default function PrestamosPage() {
       );
     } catch {
       setMensaje("Error cargando prestamos");
+    } finally {
+      setCargandoListado(false);
     }
   }, [esAdmin, sedeFiltroId]);
 
@@ -899,64 +919,102 @@ export default function PrestamosPage() {
     };
   };
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdmin
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1500px]">
-        <section className="relative overflow-hidden rounded-[36px] border border-[#1f2430] bg-[linear-gradient(135deg,#111318_0%,#1c2330_58%,#7c2d12_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] md:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(199,154,87,0.18),transparent_28%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/prestamos"
+        coverageLabel={user?.sedeNombre || "Cargando cobertura"}
+        items={navigationItems}
+      />
 
-          <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f2d7a6]">
-                Prestamos entre sedes
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Centro de prestamos
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
+                Gestión de préstamos
               </h1>
-
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                {user
-                  ? esAdmin
-                    ? sedeFiltroId === "TODAS"
-                      ? "Lectura general de todos los prestamos entre sedes, con foco en aprobacion, devolucion y pagos."
-                      : `Vista ejecutiva de prestamos para ${sedeFiltroNombre}.`
-                    : `Vista operativa de prestamos relacionados con ${user.sedeNombre}.`
-                  : "Cargando usuario..."}
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                Control de préstamos entre sedes, devoluciones y pagos
               </p>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Cobertura: <span className="font-semibold text-white">{sedeFiltroNombre}</span>
-                </div>
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Activos visibles: <span className="font-semibold text-white">{prestamosFiltrados.length}</span>
-                </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  Cobertura: {sedeFiltroNombre}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  {prestamosFiltrados.length} registros visibles
+                </span>
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:ml-auto xl:max-w-[380px]">
+            <div className="flex flex-wrap items-center gap-2">
               <Link
                 href="/prestamos/nuevo"
-                className="inline-flex h-[58px] w-full items-center justify-center rounded-2xl bg-[#cf2e2e] px-6 text-center text-[15px] font-bold leading-none tracking-[0.01em] text-white transition hover:bg-[#b92525]"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#bd0711]"
               >
-                + Nuevo prestamo
+                <span className="text-lg leading-none">+</span>
+                Nuevo préstamo
               </Link>
-
               <Link
                 href="/inventario"
-                className="inline-flex h-[58px] w-full items-center justify-center rounded-2xl border border-white/12 bg-white/95 px-6 text-center text-[15px] font-bold leading-none tracking-[0.01em] text-slate-900 transition hover:bg-white"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
               >
-                Volver
+                Ver inventario
               </Link>
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {user?.nombre || user?.usuario || "Cargando usuario"}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {user?.rolNombre || "Sesión activa"}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
             </div>
-          </div>
-        </section>
+          </header>
 
         {mensaje && (
           <div
             className={[
-              "mt-6 rounded-[26px] border px-5 py-4 text-sm font-medium shadow-sm",
+              "mt-5 rounded-xl border px-5 py-4 text-sm font-medium shadow-sm",
               mensajeEsError
                 ? "border-rose-200 bg-rose-50 text-rose-800"
                 : "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -966,62 +1024,74 @@ export default function PrestamosPage() {
           </div>
         )}
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           <MetricCard
             label="Total prestamos"
-            value={totalPrestamos}
+            value={cargandoListado ? "—" : totalPrestamos}
             detail="Solicitudes visibles en esta cobertura."
+            icon="loans"
+            iconClass="bg-red-50 text-[#e30613]"
           />
           <MetricCard
             label="Bodega principal"
-            value={totalDesdePrincipal}
+            value={cargandoListado ? "—" : totalDesdePrincipal}
             detail="Equipos enviados desde principal."
+            icon="inventory"
+            iconClass="bg-orange-50 text-orange-600"
             valueClass="text-amber-600"
           />
           <MetricCard
             label="Entre sedes"
-            value={totalEntreSedes}
+            value={cargandoListado ? "—" : totalEntreSedes}
             detail="Prestamos operativos sede a sede."
+            icon="store"
+            iconClass="bg-blue-50 text-blue-600"
             valueClass="text-sky-600"
           />
           <MetricCard
             label="Pendientes"
-            value={totalPendientes}
+            value={cargandoListado ? "—" : totalPendientes}
             detail="Solicitudes a la espera de aprobacion."
+            icon="approvals"
+            iconClass="bg-orange-50 text-orange-600"
             valueClass="text-amber-600"
           />
           <MetricCard
             label="Pago pendiente"
-            value={totalPagoPendiente}
+            value={cargandoListado ? "—" : totalPagoPendiente}
             detail="Casos a la espera de aprobacion."
+            icon="cash"
+            iconClass="bg-violet-50 text-violet-600"
             valueClass="text-amber-600"
           />
           <MetricCard
             label="Finalizados"
-            value={totalFinalizados}
+            value={cargandoListado ? "—" : totalFinalizados}
             detail="Ciclos ya cerrados por pago o devolucion."
+            icon="approvals"
+            iconClass="bg-emerald-50 text-emerald-600"
             valueClass="text-emerald-600"
           />
         </section>
 
-        <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-sm">
+        <section className="mt-5 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                 Control operativo
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Seguimiento de prestamos
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
+                Seguimiento de préstamos
               </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                Filtra por estado o texto libre para revisar prestamos, devoluciones y aprobaciones sin perder trazabilidad.
+              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">
+                Filtra por estado, IMEI, referencia o sede sin perder trazabilidad.
               </p>
             </div>
 
             <div className="grid w-full gap-4 xl:max-w-[760px] xl:grid-cols-[minmax(0,1fr)_260px]">
               <input
                 placeholder="Buscar IMEI, referencia, color, sede o estado..."
-                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 value={busqueda}
                 onChange={(event) => setBusqueda(event.target.value)}
               />
@@ -1029,8 +1099,11 @@ export default function PrestamosPage() {
               {esAdmin ? (
                 <select
                   value={sedeFiltroId}
-                  onChange={(event) => setSedeFiltroId(event.target.value)}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  onChange={(event) => {
+                    setCargandoListado(true);
+                    setSedeFiltroId(event.target.value);
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 >
                   <option value="TODAS">Todas las sedes</option>
                   {sedes.map((sede) => (
@@ -1040,7 +1113,7 @@ export default function PrestamosPage() {
                   ))}
                 </select>
               ) : (
-                <div className="flex items-center rounded-2xl border border-[#e4dccd] bg-[#faf7f1] px-4 py-3.5 text-sm font-semibold text-slate-700">
+                <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm font-semibold text-slate-700">
                   Cobertura: {user?.sedeNombre || "Tu sede"}
                 </div>
               )}
@@ -1054,10 +1127,10 @@ export default function PrestamosPage() {
                 type="button"
                 onClick={() => setFiltroEstado(estado)}
                 className={[
-                  "rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
+                  "rounded-lg px-3.5 py-2 text-xs font-bold transition",
                   filtroEstado === estado
-                    ? "border border-[#111318] bg-[#111318] text-white shadow-sm"
-                    : "border border-[#d9cfbe] bg-white text-slate-700 hover:bg-[#faf7f1]",
+                    ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
+                    : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50",
                 ].join(" ")}
               >
                 {estado}
@@ -1065,27 +1138,29 @@ export default function PrestamosPage() {
             ))}
           </div>
 
-          <div className="mt-6 rounded-[28px] border border-slate-200 bg-white p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Valor total en prestamos
-            </p>
-            <p className="mt-3 text-4xl font-black tracking-tight text-rose-600">
+          <div className="mt-5 flex flex-col gap-3 rounded-xl border border-red-100 bg-red-50/45 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                Valor total en préstamos
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Exposición económica acumulada de la cartera visible.
+              </p>
+            </div>
+            <p className="text-[28px] font-black tracking-tight text-[#e30613]">
               $ {valorTotalPrestamos.toLocaleString("es-CO")}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Exposicion economica acumulada de la cartera de prestamos visible.
             </p>
           </div>
         </section>
 
         {prestamosSeleccionablesPago.length > 0 && (
-          <section className="mt-6 rounded-[32px] border border-[#e2d9ca] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+          <section className="mt-5 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                   Enviar a pagar
                 </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
                   Lote de pagos seleccionado
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
@@ -1130,7 +1205,7 @@ export default function PrestamosPage() {
             </div>
 
             <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Pagables visibles
                 </p>
@@ -1139,7 +1214,7 @@ export default function PrestamosPage() {
                 </p>
               </div>
 
-              <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
                   Seleccionados
                 </p>
@@ -1148,7 +1223,7 @@ export default function PrestamosPage() {
                 </p>
               </div>
 
-              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
                   Total a enviar
                 </p>
@@ -1166,7 +1241,7 @@ export default function PrestamosPage() {
                   return (
                     <article
                       key={lote.key}
-                      className="rounded-[28px] border border-amber-100 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf0_100%)] p-5 shadow-sm"
+                      className="rounded-xl border border-amber-100 bg-amber-50/35 p-5 shadow-sm"
                     >
                       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                         <div>
@@ -1217,13 +1292,13 @@ export default function PrestamosPage() {
         )}
 
         {lotesPagoPendiente.length > 0 && (
-          <section className="mt-6 rounded-[32px] border border-[#e2d9ca] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+          <section className="mt-5 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                   Lotes por recibir
                 </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
                   Pagos agrupados para aprobar
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
@@ -1255,7 +1330,7 @@ export default function PrestamosPage() {
                 return (
                   <article
                     key={lote.key}
-                    className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf7_100%)] p-5 shadow-sm"
+                    className="rounded-xl border border-slate-200 bg-slate-50/35 p-5 shadow-sm"
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                       <div>
@@ -1385,14 +1460,14 @@ export default function PrestamosPage() {
           </section>
         )}
 
-        <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e2d9ca] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.10)]">
+        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                 Solicitudes
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Prestamos registrados
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
+                Préstamos registrados
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 Consulta cada solicitud, revisa su estado y ejecuta acciones segun tu alcance.
@@ -1430,7 +1505,16 @@ export default function PrestamosPage() {
               </thead>
 
               <tbody>
-                {prestamosFiltrados.length === 0 ? (
+                {cargandoListado ? (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
+                      <span className="inline-flex items-center gap-3 font-semibold">
+                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-[#e30613]" />
+                        Cargando préstamos...
+                      </span>
+                    </td>
+                  </tr>
+                ) : prestamosFiltrados.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
                       No hay prestamos registrados en esta vista.
@@ -1445,7 +1529,7 @@ export default function PrestamosPage() {
                     return (
                       <tr
                         key={item.id}
-                        className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-[#faf7f1]"
+                        className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-slate-50/80"
                       >
                         <td className="px-4 py-4">
                           <input
@@ -1663,6 +1747,7 @@ export default function PrestamosPage() {
             </table>
           </div>
         </section>
+        </main>
       </div>
     </div>
   );
