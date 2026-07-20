@@ -4,6 +4,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
   detalleIngresosTexto,
   financierasTexto,
   formatoFechaHoraVenta,
@@ -42,17 +50,42 @@ type Sede = {
 
 type VistaFiltro = "HOY" | "FECHA" | "TODAS";
 
-function metricToneClass(tone: "slate" | "emerald" | "amber" | "blue") {
-  switch (tone) {
-    case "emerald":
-      return "bg-emerald-50 text-emerald-700 ring-emerald-100";
-    case "amber":
-      return "bg-amber-50 text-amber-700 ring-amber-100";
-    case "blue":
-      return "bg-blue-50 text-blue-700 ring-blue-100";
-    default:
-      return "bg-white text-slate-900 ring-slate-200";
-  }
+function SalesMetricCard({
+  detail,
+  icon,
+  iconClass,
+  label,
+  value,
+  valueClass = "text-slate-950",
+}: {
+  detail: string;
+  icon: DashboardIconName;
+  iconClass: string;
+  label: string;
+  value: string | number;
+  valueClass?: string;
+}) {
+  return (
+    <article className="min-h-[138px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-4">
+        <span
+          className={[
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+            iconClass,
+          ].join(" ")}
+        >
+          <DashboardIcon name={icon} className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-slate-700">{label}</p>
+          <p className={["mt-1 text-[27px] font-black leading-tight", valueClass].join(" ")}>
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 function servicioBadge(servicio: string) {
@@ -84,6 +117,9 @@ export default function VentasPage() {
   const [fechaFiltro, setFechaFiltro] = useState(() => getTodayBogotaDateKey());
   const [vistaSedeId, setVistaSedeId] = useState("TODAS");
   const [eliminandoVentaId, setEliminandoVentaId] = useState<number | null>(null);
+  const [cargandoVentas, setCargandoVentas] = useState(false);
+  const [ventasCargadas, setVentasCargadas] = useState(false);
+  const [cajaResumenCargada, setCajaResumenCargada] = useState(false);
   const rolActual = user?.rolNombre?.toUpperCase() || "";
   const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
   const puedeEliminar = rolActual === "ADMIN";
@@ -101,6 +137,7 @@ export default function VentasPage() {
 
   const cargarVentas = useCallback(async () => {
     try {
+      setCargandoVentas(true);
       const params = new URLSearchParams();
 
       if (esAdmin && vistaSedeId !== "TODAS") {
@@ -114,8 +151,11 @@ export default function VentasPage() {
       const res = await fetch(endpoint, { cache: "no-store" });
       const data = await res.json();
       setVentas(Array.isArray(data) ? data : []);
+      setVentasCargadas(true);
     } catch {
       setMensaje("Error cargando ventas");
+    } finally {
+      setCargandoVentas(false);
     }
   }, [esAdmin, vistaSedeId]);
 
@@ -137,6 +177,7 @@ export default function VentasPage() {
       const res = await fetch(endpoint, { cache: "no-store" });
       const data = (await res.json()) as CajaResumenResponse;
       setCajaNetaMovimientos(Number(data.resumen?.saldo || 0));
+      setCajaResumenCargada(true);
     } catch {
       setCajaNetaMovimientos(0);
     }
@@ -291,55 +332,90 @@ export default function VentasPage() {
     }
   };
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdmin
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+  const coberturaActual = esAdmin
+    ? vistaSedeId === "TODAS"
+      ? "Todas las sedes"
+      : vistaSedeNombre
+    : user?.sedeNombre || "Tu sede";
+  const valorMetrica = (valor: string | number) =>
+    ventasCargadas ? valor : "—";
+  const valorCajaAcumulada =
+    ventasCargadas && cajaResumenCargada
+      ? formatoPesos(totalCajaAcumulada)
+      : "—";
+
   return (
-    <div className="min-h-screen bg-[#eef2f7] px-4 py-8">
-      <div className="mx-auto max-w-[1840px]">
-        <section className="relative overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,#0f172a_0%,#111827_48%,#7f1d1d_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.14),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(248,113,113,0.18),transparent_24%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/ventas"
+        coverageLabel={coberturaActual}
+        items={navigationItems}
+      />
 
-          <div className="relative flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-4xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Ventas
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
                 Panel de ventas
               </h1>
-
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200 md:text-base">
-                {user
-                  ? ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase())
-                    ? vistaSedeId === "TODAS"
-                      ? "Vision operativa de todas las sedes, con foco en el corte del dia y el rendimiento comercial."
-                      : `Vision comercial filtrada de ${vistaSedeNombre}.`
-                    : `Vision de ${user.sedeNombre}, con corte del dia y detalle completo de las ventas registradas.`
-                  : "Cargando informacion de usuario..."}
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                Seguimiento del corte diario y rendimiento comercial
               </p>
-
-              <div className="mt-5 flex flex-wrap gap-3 text-sm text-slate-200">
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Corte del dia: {new Date().toLocaleDateString("es-CO")}
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Ventas hoy: {ventasHoy.length}
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Utilidad hoy: {formatoPesos(totalUtilidadHoy)}
-                </div>
-                {esAdmin && (
-                  <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                    Cobertura: {vistaSedeId === "TODAS" ? "Todas las sedes" : vistaSedeNombre}
-                  </div>
-                )}
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  Cobertura: {coberturaActual}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  Corte: {new Date().toLocaleDateString("es-CO")}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  {cargandoVentas
+                    ? "Actualizando ventas"
+                    : ventasCargadas
+                      ? `${ventasHoy.length} ventas hoy`
+                      : "Ventas sin cargar"}
+                </span>
               </div>
             </div>
 
-            <div className="relative z-10 flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-wrap items-center gap-2">
               {esAdmin && (
                 <Link
                   href="/ventas/perfiles"
-                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
                 >
                   Perfiles vendedores
                 </Link>
@@ -348,35 +424,48 @@ export default function VentasPage() {
               {esAdmin && (
                 <Link
                   href="/ventas/equipo-comercial"
-                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
                 >
-                  Catalogos de ventas
+                  Catálogos
                 </Link>
               )}
 
               <Link
                 href="/ventas/aprobaciones"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
               >
-                Aprobacion de ventas
+                Aprobaciones
               </Link>
 
               <Link
                 href="/ventas/nuevo"
-                className="rounded-2xl bg-red-600 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-red-700"
+                className="order-first inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#bd0711]"
               >
                 + Nueva venta
               </Link>
 
               <Link
                 href="/dashboard"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613] xl:hidden"
               >
-                ← Volver
+                Volver
               </Link>
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {user?.nombre || user?.usuario || "Cargando usuario"}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {user?.rolNombre || "Sesión activa"}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
             </div>
-          </div>
-        </section>
+          </header>
 
         {mensaje && (
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
@@ -384,38 +473,36 @@ export default function VentasPage() {
           </div>
         )}
 
-        <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[28px] bg-white px-5 py-5 shadow-sm ring-1 ring-inset ring-slate-200">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Ventas del dia
-            </p>
-            <p className="mt-3 text-3xl font-black text-slate-950">{ventasHoy.length}</p>
-            <p className="mt-2 text-sm text-slate-500">Corte operativo actual.</p>
-          </div>
-
-          <div className={`rounded-[28px] px-5 py-5 shadow-sm ring-1 ring-inset ${metricToneClass("blue")}`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em]">
-              Ingresos del dia
-            </p>
-            <p className="mt-3 text-3xl font-black">{formatoPesos(totalIngresosHoy)}</p>
-            <p className="mt-2 text-sm opacity-80">Ingreso neto registrado hoy.</p>
-          </div>
-
-          <div className={`rounded-[28px] px-5 py-5 shadow-sm ring-1 ring-inset ${metricToneClass("slate")}`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em]">
-              Caja del dia
-            </p>
-            <p className="mt-3 text-3xl font-black">{formatoPesos(totalCajaHoy)}</p>
-            <p className="mt-2 text-sm text-slate-500">Disponible segun ventas del dia.</p>
-          </div>
-
-          <div className={`rounded-[28px] px-5 py-5 shadow-sm ring-1 ring-inset ${metricToneClass("emerald")}`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em]">
-              Utilidad del dia
-            </p>
-            <p className="mt-3 text-3xl font-black">{formatoPesos(totalUtilidadHoy)}</p>
-            <p className="mt-2 text-sm opacity-80">Resultado neto del corte diario.</p>
-          </div>
+        <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <SalesMetricCard
+            icon="sales"
+            iconClass="bg-red-50 text-[#e30613]"
+            label="Ventas del día"
+            value={valorMetrica(ventasHoy.length)}
+            detail="Registros del corte operativo actual."
+          />
+          <SalesMetricCard
+            icon="trend"
+            iconClass="bg-red-50 text-[#e30613]"
+            label="Ingresos del día"
+            value={valorMetrica(formatoPesos(totalIngresosHoy))}
+            detail="Ingreso neto registrado hoy."
+          />
+          <SalesMetricCard
+            icon="cash"
+            iconClass="bg-slate-100 text-slate-700"
+            label="Caja del día"
+            value={valorMetrica(formatoPesos(totalCajaHoy))}
+            detail="Disponible según las ventas del día."
+          />
+          <SalesMetricCard
+            icon="trend"
+            iconClass="bg-emerald-50 text-emerald-600"
+            label="Utilidad del día"
+            value={valorMetrica(formatoPesos(totalUtilidadHoy))}
+            valueClass="text-emerald-600"
+            detail="Resultado neto del corte diario."
+          />
         </section>
 
         <section
@@ -423,44 +510,40 @@ export default function VentasPage() {
             esAdmin ? "lg:grid-cols-3" : "lg:grid-cols-2"
           }`}
         >
-          <div className="rounded-[28px] bg-white px-5 py-5 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Acumulado ventas
-            </p>
-            <p className="mt-3 text-2xl font-black text-slate-950">{ventas.length}</p>
-          </div>
+          <SalesMetricCard
+            icon="reports"
+            iconClass="bg-violet-50 text-violet-600"
+            label="Ventas acumuladas"
+            value={valorMetrica(ventas.length)}
+            detail="Total visible dentro de la cobertura actual."
+          />
 
           {esAdmin && (
-            <div className="rounded-[28px] bg-white px-5 py-5 shadow-sm ring-1 ring-slate-200">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Ingresos acumulados
-              </p>
-              <p className="mt-3 text-2xl font-black text-slate-950">
-                {formatoPesos(totalIngresos)}
-              </p>
-            </div>
+            <SalesMetricCard
+              icon="sales"
+              iconClass="bg-red-50 text-[#e30613]"
+              label="Ingresos acumulados"
+              value={valorMetrica(formatoPesos(totalIngresos))}
+              detail="Ingresos comerciales de la cobertura actual."
+            />
           )}
 
-          <div className="rounded-[28px] bg-white px-5 py-5 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Caja acumulada
-            </p>
-            <p className="mt-3 text-2xl font-black text-slate-950">
-              {formatoPesos(totalCajaAcumulada)}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Suma la caja de ventas mas el neto de ingresos y egresos de caja en esta vista.
-            </p>
-          </div>
+          <SalesMetricCard
+            icon="cash"
+            iconClass="bg-slate-100 text-slate-700"
+            label="Caja acumulada"
+            value={valorCajaAcumulada}
+            detail="Caja de ventas más el neto de movimientos de Caja."
+          />
         </section>
 
-        <section className="mt-6 rounded-[30px] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <section className="mt-6 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Filtros
-              </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                Filtros comerciales
+              </p>
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
                 Seguimiento comercial
               </h2>
               <p className="mt-2 text-sm text-slate-500">
@@ -476,10 +559,10 @@ export default function VentasPage() {
                     type="button"
                     onClick={() => setVista(opcion)}
                     className={[
-                      "rounded-2xl px-4 py-2 text-sm font-semibold transition",
+                      "rounded-xl px-4 py-2.5 text-sm font-bold transition",
                       vista === opcion
-                        ? "bg-slate-950 text-white"
-                        : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                        ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
+                        : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
                     ].join(" ")}
                   >
                     {opcion === "HOY" ? "Solo hoy" : "Todas"}
@@ -496,9 +579,9 @@ export default function VentasPage() {
                   setVista("FECHA");
                 }}
                 className={[
-                  "w-full rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 lg:w-[180px]",
+                  "w-full rounded-xl border bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100 lg:w-[180px]",
                   vista === "FECHA"
-                    ? "border-slate-950 ring-2 ring-slate-200"
+                    ? "border-[#e30613] ring-3 ring-red-100"
                     : "border-slate-300",
                 ].join(" ")}
               />
@@ -507,7 +590,7 @@ export default function VentasPage() {
                 <select
                   value={vistaSedeId}
                   onChange={(event) => setVistaSedeId(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 lg:w-[260px]"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100 lg:w-[260px]"
                 >
                   <option value="TODAS">Todas las sedes</option>
                   {sedesReporte.map((sede) => (
@@ -522,19 +605,19 @@ export default function VentasPage() {
                 value={busqueda}
                 onChange={(event) => setBusqueda(event.target.value)}
                 placeholder="Buscar por venta, IMEI, servicio, sede o asesor..."
-                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 lg:w-[360px]"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100 lg:w-[360px]"
               />
             </div>
           </div>
         </section>
 
-        <section className="mt-6 overflow-hidden rounded-[32px] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.10)] ring-1 ring-slate-200">
+        <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Listado
-              </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                Listado comercial
+              </p>
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
                 Ventas registradas
               </h2>
               <p className="mt-2 text-sm text-slate-500">
@@ -556,7 +639,7 @@ export default function VentasPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1460px] text-sm">
+            <table className="w-full min-w-[1460px] text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-5 py-4 text-left font-semibold">Venta</th>
@@ -577,10 +660,14 @@ export default function VentasPage() {
                     <td colSpan={esAdmin ? 9 : 8} className="px-6 py-16 text-center">
                       <div className="mx-auto max-w-md">
                         <p className="text-base font-semibold text-slate-900">
-                          No hay ventas para esta vista
+                          {cargandoVentas && !ventasCargadas
+                            ? "Cargando ventas"
+                            : "No hay ventas para esta vista"}
                         </p>
                         <p className="mt-2 text-sm text-slate-500">
-                          Ajusta la busqueda o cambia entre corte del dia e historico.
+                          {cargandoVentas && !ventasCargadas
+                            ? "Estamos consultando la cobertura seleccionada."
+                            : "Ajusta la búsqueda o cambia entre corte del día e histórico."}
                         </p>
                       </div>
                     </td>
@@ -710,6 +797,7 @@ export default function VentasPage() {
             </table>
           </div>
         </section>
+        </main>
       </div>
     </div>
   );
