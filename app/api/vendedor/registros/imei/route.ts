@@ -83,7 +83,16 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      equipo,
+      equipo: {
+        imei: equipo.imei,
+        referencia: equipo.referencia,
+        color: equipo.color,
+        tipoProducto: equipo.tipoProducto,
+        origen: equipo.origen,
+        sedeId: equipo.sedeId,
+        sedeNombre: equipo.sedeNombre,
+        estadoActual: equipo.estadoActual,
+      },
     });
   } catch (error) {
     console.error("ERROR LOOKUP IMEI REGISTRO VENDEDOR:", error);

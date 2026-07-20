@@ -173,7 +173,6 @@ type ImeiLookupResponse = {
     referencia: string;
     color: string | null;
     tipoProducto: string;
-    costo: number | null;
     origen: "SEDE" | "BODEGA_PRINCIPAL";
     sedeId: number | null;
     sedeNombre: string | null;
@@ -4343,11 +4342,10 @@ export default function VendedorRegistroWorkspace({
                       </div>
                     </div>
                     <div>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="grid gap-4 sm:grid-cols-3">
                         {[
                           ["Referencia", equipoEncontrado?.referencia || "— — —"],
                           ["Color", equipoEncontrado?.color || "— — —"],
-                          ["Costo", equipoEncontrado ? formatMoney(equipoEncontrado.costo) : "— — —"],
                           ["Estado", equipoEncontrado?.estadoActual || "— — —"],
                         ].map(([label, value]) => (
                           <div key={label}>
@@ -5826,7 +5824,6 @@ export default function VendedorRegistroWorkspace({
                         ["Equipo", form.referenciaEquipo || "Pendiente"],
                         ["Color", form.color || "Pendiente"],
                         ["Estado", equipoEncontrado?.estadoActual || "Validado al guardar"],
-                        ["Costo inventario", formatMoney(equipoEncontrado?.costo ?? null)],
                       ].map(([label, value]) => (
                         <div key={label} className="flex justify-between gap-4">
                           <dt className="text-slate-500">{label}</dt>
