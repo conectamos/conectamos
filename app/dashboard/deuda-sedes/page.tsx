@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
 type DeudaItem = {
@@ -78,26 +86,35 @@ function imeisResumenLote(items: DeudaItem[]) {
 }
 
 function MetricCard({
+  icon,
+  iconClass,
   label,
   value,
   detail,
   valueClass = "text-slate-950",
 }: {
+  icon: DashboardIconName;
+  iconClass: string;
   label: string;
   value: string | number;
   detail: string;
   valueClass?: string;
 }) {
   return (
-    <div className="rounded-[28px] border border-[#e2d9ca] bg-white p-5 shadow-sm">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-      <p className={["mt-3 text-4xl font-black tracking-tight", valueClass].join(" ")}>
-        {value}
-      </p>
-      <p className="mt-2 text-sm text-slate-500">{detail}</p>
-    </div>
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-4">
+        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
+          <DashboardIcon name={icon} className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-600">{label}</p>
+          <p className={["mt-1.5 break-words text-3xl font-black leading-tight tracking-tight", valueClass].join(" ")}>
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -359,56 +376,92 @@ export default function DeudaSedesPage() {
       ),
     [lotesPagoPendiente]
   );
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    {
+      href: "/dashboard/deuda-sedes",
+      icon: "cash",
+      label: "Deuda entre sedes",
+    },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+  ];
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1500px]">
-        <section className="relative overflow-hidden rounded-[36px] border border-[#1f2430] bg-[linear-gradient(135deg,#111318_0%,#1c2330_58%,#7c2d12_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] md:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(199,154,87,0.18),transparent_28%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950 [&_button]:uppercase">
+      <DashboardSidebar
+        activeHref="/dashboard/deuda-sedes"
+        coverageLabel={sedeFiltroNombre}
+        items={navigationItems}
+      />
 
-          <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1fr)_260px]">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f2d7a6]">
-                Deuda entre sedes
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <Link href="/dashboard" className="transition hover:text-[#e30613]">
+                  Inicio
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-slate-600">Deuda entre sedes</span>
+              </nav>
+              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
                 Pagos pendientes por aprobar
               </h1>
-
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
                 {esAdmin
                   ? sedeFiltroId === "TODAS"
-                    ? "Monitorea solicitudes de pago entre sedes en toda la operacion y aprueba movimientos pendientes."
+                    ? "Monitorea solicitudes de pago entre sedes y aprueba los movimientos pendientes."
                     : `Vista ejecutiva de pagos pendientes relacionados con ${sedeFiltroNombre}.`
-                  : "Revisa los pagos entre sedes que siguen esperando aprobacion dentro de tu alcance."}
+                  : "Revisa los pagos entre sedes que siguen esperando aprobación dentro de tu alcance."}
               </p>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Cobertura: <span className="font-semibold text-white">{sedeFiltroNombre}</span>
-                </div>
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Solicitudes visibles: <span className="font-semibold text-white">{items.length}</span>
-                </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
+                  Cobertura: {sedeFiltroNombre}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
+                  Actualización automática: 10 segundos
+                </span>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 xl:items-end">
-              <Link
-                href="/dashboard"
-                className="inline-flex h-[56px] min-w-[180px] items-center justify-center rounded-2xl border border-white/12 bg-white/95 px-6 text-center text-[15px] font-bold text-slate-900 transition hover:bg-white"
-              >
-                Volver
-              </Link>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || "US"}
+                </span>
+                <div className="min-w-0 pr-2">
+                  <p className="max-w-[170px] truncate text-sm font-bold">
+                    {user?.nombre || user?.usuario || "Usuario"}
+                  </p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {user?.rolNombre || "Operación"}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
             </div>
-          </div>
-        </section>
+          </header>
 
         {mensaje && (
           <div
             className={[
-              "mt-6 rounded-[26px] border px-5 py-4 text-sm font-medium shadow-sm",
+              "mt-5 rounded-xl border px-4 py-3 text-sm font-semibold shadow-sm",
               mensajeEsError
                 ? "border-rose-200 bg-rose-50 text-rose-800"
                 : "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -420,35 +473,46 @@ export default function DeudaSedesPage() {
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <MetricCard
+            icon="cash"
+            iconClass="bg-amber-50 text-amber-600"
             label="Total pendiente"
             value={formatoPesos(totalPendiente)}
             detail="Capital pendiente por aprobar entre sedes."
             valueClass="text-amber-600"
           />
           <MetricCard
+            icon="approvals"
+            iconClass="bg-red-50 text-red-600"
             label="Solicitudes activas"
             value={totalSolicitudes}
             detail="Movimientos listos para aprobacion."
           />
           <MetricCard
+            icon="trend"
+            iconClass="bg-blue-50 text-blue-600"
             label="Promedio por solicitud"
             value={formatoPesos(promedioPendiente)}
             detail="Valor medio pendiente en esta vista."
           />
         </section>
 
-        <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-sm">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Control de cobertura
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
+                <DashboardIcon name="store" className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
+                  Control de cobertura
+                </p>
+                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                  Foco de aprobación
+                </h2>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
+                  Filtra los pagos pendientes por sede sin perder el contexto de la operación.
+                </p>
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Foco de aprobacion
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                Revisa pagos pendientes por sede y concentra la aprobacion donde realmente hay exposicion financiera.
-              </p>
             </div>
 
             {esAdmin ? (
@@ -456,7 +520,7 @@ export default function DeudaSedesPage() {
                 <select
                   value={sedeFiltroId}
                   onChange={(event) => setSedeFiltroId(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  className="min-h-[50px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
                 >
                   <option value="TODAS">Todas las sedes</option>
                   {sedes.map((sede) => (
@@ -471,7 +535,7 @@ export default function DeudaSedesPage() {
         </section>
 
         {lotesPagoPendiente.length > 0 && (
-          <section className="mt-6 rounded-[32px] border border-[#e2d9ca] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
@@ -485,7 +549,7 @@ export default function DeudaSedesPage() {
                 </p>
               </div>
 
-              <div className="rounded-3xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-right">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-right">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
                   Total en lotes
                 </p>
@@ -508,7 +572,7 @@ export default function DeudaSedesPage() {
                 return (
                   <article
                     key={lote.key}
-                    className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf7_100%)] p-5 shadow-sm"
+                    className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5"
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                       <div>
@@ -526,7 +590,7 @@ export default function DeudaSedesPage() {
                         </p>
                       </div>
 
-                      <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                           Valor a recibir
                         </p>
@@ -537,7 +601,7 @@ export default function DeudaSedesPage() {
                     </div>
 
                     <div className="mt-5 grid gap-3 md:grid-cols-2">
-                      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3">
+                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
                         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
                           Recibe
                         </p>
@@ -546,7 +610,7 @@ export default function DeudaSedesPage() {
                         </p>
                       </div>
 
-                      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3">
+                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
                         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
                           Paga
                         </p>
@@ -556,7 +620,7 @@ export default function DeudaSedesPage() {
                       </div>
                     </div>
 
-                    <div className="mt-5 rounded-3xl border border-slate-200 bg-white px-4 py-4">
+                    <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-4">
                       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
                           Resumen de IMEIs
@@ -588,7 +652,7 @@ export default function DeudaSedesPage() {
                       <button
                         type="button"
                         onClick={() => alternarDetalleLote(lote.key)}
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+                        className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
                       >
                         {detalleAbierto ? "Ocultar detalle" : "Ver detalle"}
                       </button>
@@ -597,14 +661,14 @@ export default function DeudaSedesPage() {
                         type="button"
                         onClick={() => void aprobarPagoLote(lote)}
                         disabled={cargando}
-                        className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="rounded-xl bg-[#e30613] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         Aprobar lote
                       </button>
                     </div>
 
                     {detalleAbierto && (
-                      <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200">
+                      <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
                         <table className="w-full text-sm">
                           <thead className="bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
                             <tr>
@@ -642,27 +706,32 @@ export default function DeudaSedesPage() {
           </section>
         )}
 
-        <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e2d9ca] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.10)]">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Solicitudes pendientes
+        <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                <DashboardIcon name="approvals" className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
+                  Solicitudes pendientes
+                </p>
+                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                  Movimientos listos para aprobar
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  Pagos en espera de validación por la sede de origen o administración.
+                </p>
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Movimientos listos para aprobar
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Pagos entre sedes en espera de validacion por parte del origen o administrador.
-              </p>
             </div>
 
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="w-fit rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">
               {totalSolicitudes} registro{totalSolicitudes === 1 ? "" : "s"}
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1120px] text-sm">
+            <table className="w-full min-w-[1120px] text-sm">
               <thead className="sticky top-0 bg-[#f8fafc]">
                 <tr className="border-b border-slate-200 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-slate-500">
                   <th className="px-6 py-4">Prestamo</th>
@@ -687,7 +756,7 @@ export default function DeudaSedesPage() {
                   items.map((item) => (
                     <tr
                       key={item.id}
-                      className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-[#faf7f1]"
+                      className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-slate-50/80"
                     >
                       <td className="px-6 py-4 font-bold text-slate-950">#{item.prestamoId}</td>
                       <td className="px-6 py-4 font-semibold text-slate-950">{item.imei}</td>
@@ -710,7 +779,7 @@ export default function DeudaSedesPage() {
                       </td>
                       <td className="px-6 py-4">
                         {item.puedeAprobar && idsEnLotesMultiples.has(item.id) ? (
-                          <span className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700">
+                          <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
                             Aprobar desde lote
                           </span>
                         ) : item.puedeAprobar ? (
@@ -718,7 +787,7 @@ export default function DeudaSedesPage() {
                             type="button"
                             onClick={() => void aprobarPago(item)}
                             disabled={cargando}
-                            className="rounded-2xl bg-[#111318] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d2330] disabled:cursor-not-allowed disabled:opacity-60"
+                            className="rounded-lg bg-[#e30613] px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Aprobar pago
                           </button>
@@ -735,6 +804,7 @@ export default function DeudaSedesPage() {
             </table>
           </div>
         </section>
+        </main>
       </div>
     </div>
   );

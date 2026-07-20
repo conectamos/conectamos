@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 import {
   ARQUEO_DENOMINACIONES,
@@ -343,53 +349,71 @@ export default function CajaArqueoPage() {
       setGuardando(false);
     }
   };
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    { href: "/caja/gestion", icon: "reports", label: "Ingresos y egresos" },
+    { href: "/caja/arqueo", icon: "approvals", label: "Arqueo" },
+    { href: "/caja/cierre-dia", icon: "calendar", label: "Cierre del día" },
+  ];
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#eef2f7_30%,#edf2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1680px]">
-        <section className="relative overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,#0f172a_0%,#111827_50%,#7f1d1d_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(251,191,36,0.16),transparent_24%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950 [&_button]:uppercase">
+      <DashboardSidebar
+        activeHref="/caja/arqueo"
+        coverageLabel={sedeActualNombre}
+        items={navigationItems}
+      />
 
-          <div className="relative flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Caja / Arqueo
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <Link href="/caja" className="transition hover:text-[#e30613]">
+                  Caja
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-slate-600">Arqueo diario</span>
+              </nav>
+              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
                 Arqueo diario
               </h1>
-
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200 md:text-base">
-                Cuenta el dinero fisico por denominacion, suma voucher y cheques,
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+                Cuenta el dinero físico por denominación, suma voucher y cheques,
                 cruza contra la caja del mes y deja el registro diario de sobrante,
                 faltante o cuadrado.
               </p>
-
-              <div className="mt-5 flex flex-wrap gap-3 text-sm text-slate-200">
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Sede: <span className="font-semibold text-white">{sedeActualNombre}</span>
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Fecha: <span className="font-semibold text-white">{fecha}</span>
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2">
-                  Estado:{" "}
-                  <span className="font-semibold text-white">
-                    {registroActual?.estado || estadoCalculado}
-                  </span>
-                </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
+                  Sede: {sedeActualNombre}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
+                  Fecha: {fecha}
+                </span>
+                <span className={`rounded-full border px-3 py-1.5 text-xs font-bold ${estadoTone(registroActual?.estado || estadoCalculado)}`}>
+                  Estado: {registroActual?.estado || estadoCalculado}
+                </span>
               </div>
             </div>
 
-            <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
+            <div className="flex flex-wrap items-end gap-2.5">
               {esAdmin && (
-                <label className="flex min-w-[260px] flex-col gap-2 text-sm font-semibold text-white">
+                <label className="flex min-w-[220px] flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                   Sede
                   <select
                     value={sedeId}
                     onChange={(event) => setSedeId(event.target.value)}
-                    className="rounded-2xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-white focus:ring-2 focus:ring-white/30"
+                    className="min-h-[50px] rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
                   >
                     {sedes.map((sede) => (
                       <option key={sede.id} value={String(sede.id)}>
@@ -400,94 +424,110 @@ export default function CajaArqueoPage() {
                 </label>
               )}
 
-              <label className="flex min-w-[220px] flex-col gap-2 text-sm font-semibold text-white">
+              <label className="flex min-w-[190px] flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                 Fecha corte
                 <input
                   type="date"
                   value={fecha}
                   onChange={(event) => setFecha(event.target.value)}
-                  className="rounded-2xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-white focus:ring-2 focus:ring-white/30"
+                  className="min-h-[50px] rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
                 />
               </label>
 
-              <Link
-                href="/caja"
-                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-center text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
-              >
-                Volver
-              </Link>
+              <div className="flex min-h-[50px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || "US"}
+                </span>
+                <div className="min-w-0 pr-1">
+                  <p className="max-w-[140px] truncate text-sm font-bold">
+                    {user?.nombre || user?.usuario || "Usuario"}
+                  </p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    {user?.rolNombre || "Operación"}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-[50px] uppercase" />
             </div>
-          </div>
-        </section>
+          </header>
 
         {mensaje && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
+          <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
             {mensaje}
           </div>
         )}
 
         <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="rounded-[30px] border border-emerald-200 bg-[linear-gradient(180deg,#ffffff_0%,#f2fbf6_100%)] px-5 py-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Caja acumulada
-            </p>
-            <p className="mt-3 text-3xl font-black text-emerald-600">
-              {formatoPesos(cajaSistema)}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Base acumulada del sistema para cruzar el arqueo diario.
-            </p>
-          </div>
-
-          <div className="rounded-[30px] border border-slate-200 bg-white px-5 py-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Total contado
-            </p>
-            <p className="mt-3 text-3xl font-black text-slate-950">
-              {formatoPesos(totalContado)}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Suma de efectivo, voucher y cheques.
-            </p>
-          </div>
-
-          <div
-            className={[
-              "rounded-[30px] border px-5 py-5 shadow-sm",
-              estadoTone(estadoCalculado),
-            ].join(" ")}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.18em]">
-              Diferencia
-            </p>
-            <p className="mt-3 text-3xl font-black">{formatoPesos(diferencia)}</p>
-            <p className="mt-2 text-sm">
-              Estado actual:{" "}
-              <span className="font-semibold">{estadoCalculado}</span>
-            </p>
-          </div>
+          {[
+            {
+              icon: "cash" as const,
+              iconClass: "bg-emerald-50 text-emerald-600",
+              label: "Caja acumulada",
+              value: formatoPesos(cajaSistema),
+              valueClass: "text-emerald-600",
+              detail: "Base del sistema para cruzar el arqueo.",
+            },
+            {
+              icon: "approvals" as const,
+              iconClass: "bg-blue-50 text-blue-600",
+              label: "Total contado",
+              value: formatoPesos(totalContado),
+              valueClass: "text-slate-950",
+              detail: "Efectivo, voucher y cheques registrados.",
+            },
+            {
+              icon: "warning" as const,
+              iconClass: estadoCalculado === "CUADRADO" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600",
+              label: "Diferencia",
+              value: formatoPesos(diferencia),
+              valueClass: estadoCalculado === "CUADRADO" ? "text-emerald-600" : "text-red-600",
+              detail: `Estado actual: ${estadoCalculado}`,
+            },
+          ].map((metric) => (
+            <article
+              key={metric.label}
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
+            >
+              <div className="flex items-start gap-4">
+                <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${metric.iconClass}`}>
+                  <DashboardIcon name={metric.icon} className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-600">{metric.label}</p>
+                  <p className={`mt-1.5 break-words text-3xl font-black leading-tight tracking-tight ${metric.valueClass}`}>
+                    {metric.value}
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">{metric.detail}</p>
+                </div>
+              </div>
+            </article>
+          ))}
         </section>
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <section className="rounded-[32px] border border-[#e8e0d1] bg-[linear-gradient(180deg,#ffffff_0%,#fbf9f4_100%)] p-6 shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
-            <div className="flex flex-col gap-3 border-b border-[#ece5d8] pb-5">
-              <div className="inline-flex w-fit rounded-full border border-[#ddd2bf] bg-[#faf6ee] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7b5b2b]">
-                Conteo fisico
+        <div className="mt-6 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
+            <div className="flex items-start gap-3 border-b border-slate-200 pb-5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
+                <DashboardIcon name="cash" className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
+                  Conteo físico
+                </p>
+                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                  Registro por denominación
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  Ingresa unidades por billete o moneda y completa los valores adicionales.
+                </p>
               </div>
-              <h2 className="text-2xl font-black tracking-tight text-slate-950">
-                Registro por denominacion
-              </h2>
-              <p className="text-sm leading-6 text-slate-500">
-                Ingresa unidades por billete o moneda, luego agrega voucher,
-                cheques y cualquier observacion del cierre.
-              </p>
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {ARQUEO_DENOMINACIONES.map((item) => (
                 <label
                   key={item.key}
-                  className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm"
+                  className="rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-4 transition focus-within:border-red-200 focus-within:bg-white"
                 >
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     {item.label}
@@ -498,7 +538,7 @@ export default function CajaArqueoPage() {
                     step="1"
                     value={form[item.key]}
                     onChange={(event) => actualizarCantidad(item.key, event.target.value)}
-                    className="mt-3 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-lg font-bold text-slate-950 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                    className="mt-3 min-h-[48px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-bold text-slate-950 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
                   />
                   <p className="mt-2 text-xs text-slate-500">
                     Subtotal: {formatoPesos(form[item.key] * item.valor)}
@@ -508,7 +548,7 @@ export default function CajaArqueoPage() {
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <label className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+              <label className="rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Voucher
                 </p>
@@ -518,11 +558,11 @@ export default function CajaArqueoPage() {
                   value={form.voucher > 0 ? formatoPesos(form.voucher) : ""}
                   onChange={(event) => actualizarDinero("voucher", event.target.value)}
                   placeholder="$ 0"
-                  className="mt-3 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-lg font-bold text-slate-950 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  className="mt-3 min-h-[48px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-bold text-slate-950 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
                 />
               </label>
 
-              <label className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+              <label className="rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Cheques
                 </p>
@@ -532,12 +572,12 @@ export default function CajaArqueoPage() {
                   value={form.cheques > 0 ? formatoPesos(form.cheques) : ""}
                   onChange={(event) => actualizarDinero("cheques", event.target.value)}
                   placeholder="$ 0"
-                  className="mt-3 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-lg font-bold text-slate-950 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  className="mt-3 min-h-[48px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-bold text-slate-950 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
                 />
               </label>
             </div>
 
-            <label className="mt-6 block rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+            <label className="mt-6 block rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Observacion
               </p>
@@ -553,17 +593,18 @@ export default function CajaArqueoPage() {
                   }
                 }
                 rows={4}
-                className="mt-3 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
                 placeholder="Notas del arqueo, faltantes explicados o sobrantes justificados..."
               />
             </label>
           </section>
 
-          <aside className="space-y-6">
-            <section className="rounded-[32px] border border-[#e7ddcd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-[0_20px_55px_rgba(15,23,42,0.08)]">
-              <div className="inline-flex rounded-full border border-[#e7dccb] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Cierre del dia
-              </div>
+          <aside className="space-y-5 xl:sticky xl:top-6">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
+                Cierre del día
+              </p>
+              <h2 className="mt-1 text-xl font-black">Resumen del arqueo</h2>
 
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
@@ -604,13 +645,13 @@ export default function CajaArqueoPage() {
                 type="button"
                 onClick={() => void guardarArqueo()}
                 disabled={guardando || cargando}
-                className="mt-5 inline-flex w-full items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="mt-5 inline-flex min-h-[50px] w-full items-center justify-center rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {guardando ? "Guardando arqueo..." : "Guardar arqueo diario"}
               </button>
             </section>
 
-            <section className="rounded-[32px] border border-[#e7ddcd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-[0_20px_55px_rgba(15,23,42,0.08)]">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -686,6 +727,7 @@ export default function CajaArqueoPage() {
             </section>
           </aside>
         </div>
+        </main>
       </div>
     </div>
   );
