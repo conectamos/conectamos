@@ -6,6 +6,12 @@ import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import { esSedeOperativaInventario } from "@/lib/sedes";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 
 type ItemPrincipal = {
   id: number;
@@ -31,6 +37,12 @@ type ReferenciaCatalogo = {
   nombre: string;
   activo: boolean;
   eliminado?: boolean;
+};
+
+type SessionUser = {
+  nombre: string;
+  usuario: string;
+  rolNombre: string;
 };
 
 type FiltroEstado = "TODOS" | "BODEGA" | "ENVIADOS" | "COBRO_PENDIENTE" | "PAGADOS";
@@ -75,11 +87,16 @@ function MetricCard({
   valueClass?: string;
 }) {
   return (
-    <div className="rounded-[28px] border border-[#e2d9ca] bg-white p-5 shadow-sm">
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         {label}
       </p>
-      <p className={["mt-3 text-4xl font-black tracking-tight", valueClass].join(" ")}>
+      <p
+        className={[
+          "mt-3 max-w-full text-[clamp(1.45rem,1.7vw,2rem)] font-black leading-tight tracking-tight [overflow-wrap:anywhere]",
+          valueClass,
+        ].join(" ")}
+      >
         {value}
       </p>
       <p className="mt-2 text-sm text-slate-500">{detail}</p>
@@ -240,6 +257,7 @@ function ActionIconButton({
 
 export default function InventarioPrincipalPage() {
   const [items, setItems] = useState<ItemPrincipal[]>([]);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [referenciasCatalogo, setReferenciasCatalogo] = useState<ReferenciaCatalogo[]>([]);
   const [mensaje, setMensaje] = useState("");
@@ -302,6 +320,17 @@ export default function InventarioPrincipalPage() {
     } catch {}
   }, []);
 
+  const cargarSession = useCallback(async () => {
+    try {
+      const res = await fetch("/api/session", { cache: "no-store" });
+      const data = await res.json();
+
+      if (res.ok) {
+        setUser(data);
+      }
+    } catch {}
+  }, []);
+
   const cargarReferenciasCatalogo = useCallback(async () => {
     try {
       const res = await fetch("/api/inventario-principal/referencias", {
@@ -323,11 +352,17 @@ export default function InventarioPrincipalPage() {
 
   useEffect(() => {
     void cargarInventarioPrincipal();
+    void cargarSession();
     void cargarSedes();
     void cargarReferenciasCatalogo();
-  }, [cargarInventarioPrincipal, cargarReferenciasCatalogo, cargarSedes]);
+  }, [
+    cargarInventarioPrincipal,
+    cargarReferenciasCatalogo,
+    cargarSedes,
+    cargarSession,
+  ]);
 
-  useLiveRefresh(cargarInventarioPrincipal, { intervalMs: 10000 });
+  useLiveRefresh(cargarInventarioPrincipal, { intervalMs: 30000 });
 
   useEffect(() => {
     setIdsSeleccionados((actuales) =>
@@ -1081,64 +1116,116 @@ export default function InventarioPrincipalPage() {
     }
   };
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+    { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
+  ];
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#edf2f7_100%)] px-4 py-8">
-      <div className="mx-auto max-w-[1500px]">
-        <section className="relative overflow-hidden rounded-[36px] border border-[#1f2430] bg-[linear-gradient(135deg,#111318_0%,#1c2330_58%,#7c2d12_100%)] px-6 py-7 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] md:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(199,154,87,0.18),transparent_28%)]" />
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/inventario"
+        coverageLabel="Bodega principal"
+        items={navigationItems}
+      />
 
-          <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#f2d7a6]">
-                Bodega principal
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Centro de inventario principal
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
+                Inventario principal
               </h1>
-
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                Controla el stock de bodega antes de enviarlo a sedes, revisa valor disponible y gestiona salidas con una vista mas ejecutiva.
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                Control de stock, referencias y despachos desde bodega principal
               </p>
+            </div>
 
-              <div className="mt-6 flex flex-wrap gap-3">
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Equipos visibles:{" "}
-                  <span className="font-semibold text-white">{itemsFiltrados.length}</span>
-                </div>
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Disponibles:{" "}
-                  <span className="font-semibold text-white">{equiposDisponibles.length}</span>
-                </div>
-                <div className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-slate-100">
-                  Pendientes de cobro:{" "}
-                  <span className="font-semibold text-white">{pendientesCobro.length}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || (
+                    <DashboardIcon name="user" className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {user?.nombre || user?.usuario || "Cargando usuario"}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {user?.rolNombre || "Sesión activa"}
+                  </p>
                 </div>
               </div>
+              <LogoutButton
+                variant="light"
+                className="min-h-12 shrink-0 rounded-xl"
+              />
             </div>
+          </header>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:ml-auto xl:max-w-[380px]">
-              <Link
-                href="/inventario/nuevo"
-                className="inline-flex h-[58px] w-full items-center justify-center rounded-2xl bg-[#cf2e2e] px-6 text-center text-[15px] font-bold leading-none tracking-[0.01em] text-white transition hover:bg-[#b92525]"
-              >
-                + Nuevo inventario
-              </Link>
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                  Bodega principal
+                </p>
+                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+                  Control de inventario
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                  Administra el stock disponible antes de enviarlo a sedes y conserva la trazabilidad de cada equipo.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+                    {itemsFiltrados.length} equipos visibles
+                  </span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+                    {equiposDisponibles.length} disponibles
+                  </span>
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-amber-700">
+                    {pendientesCobro.length} cobros pendientes
+                  </span>
+                </div>
+              </div>
 
-              <Link
-                href="/dashboard"
-                className="inline-flex h-[58px] w-full items-center justify-center rounded-2xl border border-white/12 bg-white/95 px-6 text-center text-[15px] font-bold leading-none tracking-[0.01em] text-slate-900 transition hover:bg-white"
-              >
-                Volver
-              </Link>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/inventario/nuevo"
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#e30613] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#bd0711]"
+                >
+                  + Nuevo inventario
+                </Link>
+                <Link
+                  href="/dashboard"
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
+                >
+                  Volver
+                </Link>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
 
         {mensaje && (
           <div
             className={[
-              "mt-6 rounded-[26px] border px-5 py-4 text-sm font-medium shadow-sm",
+              "mt-5 rounded-2xl border px-5 py-4 text-sm font-medium shadow-sm",
               mensajeEsError
                 ? "border-rose-200 bg-rose-50 text-rose-800"
                 : "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -1174,13 +1261,13 @@ export default function InventarioPrincipalPage() {
           />
         </section>
 
-        <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-white p-5 shadow-sm">
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                 Catalogo
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
                 Referencias de bodega
               </h2>
               <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.14em]">
@@ -1200,20 +1287,20 @@ export default function InventarioPrincipalPage() {
                   value={nuevaReferencia}
                   onChange={(event) => setNuevaReferencia(event.target.value)}
                   placeholder="Nueva referencia..."
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 />
                 <button
                   type="button"
                   onClick={() => void agregarReferencia()}
                   disabled={cargando}
-                  className="rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Agregar
                 </button>
                 <button
                   type="button"
                   onClick={() => setMostrarCatalogoReferencias((actual) => !actual)}
-                  className="rounded-2xl border border-slate-300 bg-[#fbf8f2] px-5 py-3.5 text-sm font-bold text-slate-800 transition hover:bg-white"
+                  className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-800 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
                 >
                   {mostrarCatalogoReferencias ? "Ocultar lista" : "Ver catalogo"}
                 </button>
@@ -1222,7 +1309,7 @@ export default function InventarioPrincipalPage() {
           </div>
 
           {mostrarCatalogoReferencias && (
-            <div className="mt-5 max-w-[760px] rounded-[26px] border border-slate-200 bg-[#f8fafc] p-3 shadow-inner">
+            <div className="mt-5 max-w-[760px] rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
                 {referenciasCatalogo.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-500">
@@ -1333,13 +1420,13 @@ export default function InventarioPrincipalPage() {
           )}
         </section>
 
-        <section className="mt-6 rounded-[30px] border border-[#e4dccd] bg-[linear-gradient(180deg,#ffffff_0%,#fbf8f2_100%)] p-5 shadow-sm">
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                 Exploracion de bodega
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
                 Stock de inventario principal
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
@@ -1354,12 +1441,12 @@ export default function InventarioPrincipalPage() {
                   value={busqueda}
                   onChange={(event) => setBusqueda(event.target.value)}
                   placeholder="Buscar por IMEI, referencia, factura o distribuidor..."
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 />
                 <select
                   value={filtroSedeDestinoId}
                   onChange={(event) => setFiltroSedeDestinoId(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 >
                   <option value="">Todas las sedes</option>
                   {sedesDestinoOperativas.map((sede) => (
@@ -1378,8 +1465,8 @@ export default function InventarioPrincipalPage() {
                     className={[
                       "rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.12em] transition",
                       filtroEstado === filtro.value
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                        ? "border-[#e30613] bg-[#e30613] text-white"
+                        : "border-slate-300 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
                     ].join(" ")}
                   >
                     {filtro.label}
@@ -1390,13 +1477,13 @@ export default function InventarioPrincipalPage() {
           </div>
         </section>
 
-        <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e2d9ca] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.10)]">
+        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                 Listado
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
                 Equipos en bodega principal
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -1409,7 +1496,7 @@ export default function InventarioPrincipalPage() {
                 type="button"
                 onClick={() => void exportarInventarioExcel()}
                 disabled={exportandoExcel || itemsFiltrados.length === 0}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {exportandoExcel ? "Exportando..." : "Exportar Excel"}
               </button>
@@ -1420,7 +1507,7 @@ export default function InventarioPrincipalPage() {
           </div>
 
           {idsSeleccionados.length > 0 && (
-            <div className="border-b border-slate-200 bg-[#fbf8f2] px-6 py-4">
+            <div className="border-b border-red-100 bg-red-50/60 px-6 py-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-sm font-bold text-slate-950">
@@ -1492,7 +1579,7 @@ export default function InventarioPrincipalPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="min-w-[1240px] text-sm">
+            <table className="w-full min-w-[1240px] text-sm">
               <thead className="sticky top-0 bg-[#f8fafc]">
                 <tr className="border-b border-slate-200 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-slate-500">
                   <th className="px-4 py-4">
@@ -1537,7 +1624,7 @@ export default function InventarioPrincipalPage() {
                     return (
                       <tr
                         key={item.id}
-                        className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-[#faf7f1]"
+                        className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-slate-50"
                       >
                         <td className="px-4 py-4">
                           <input
@@ -1638,12 +1725,13 @@ export default function InventarioPrincipalPage() {
             </table>
           </div>
         </section>
+        </main>
       </div>
 
       {mostrarModalEdicion && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl rounded-[30px] border border-[#e2d9ca] bg-white p-6 shadow-2xl">
-            <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
               Edicion masiva
             </div>
             <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
@@ -1766,8 +1854,8 @@ export default function InventarioPrincipalPage() {
 
       {mostrarModalMasivo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-[30px] border border-[#e2d9ca] bg-white p-6 shadow-2xl">
-            <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
               Envio masivo
             </div>
             <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
@@ -1836,8 +1924,8 @@ export default function InventarioPrincipalPage() {
 
       {mostrarModal && itemSeleccionado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-[30px] border border-[#e2d9ca] bg-white p-6 shadow-2xl">
-            <div className="inline-flex rounded-full border border-[#e4dccd] bg-[#faf7f1] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
               Envio a sede
             </div>
             <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
