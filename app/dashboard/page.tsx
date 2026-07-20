@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 import {
   esPerfilApoyoOperativo,
   esPerfilFacturador,
@@ -15,7 +16,10 @@ import DashboardUtilityGate from "./_components/dashboard-utility-gate";
 import LogoutButton from "./_components/logout-button";
 import VendorWelcomeModal from "./_components/vendor-welcome-modal";
 import PendingLoanAlertModal from "./_components/pending-loan-alert-modal";
-import { getCurrentBogotaMonthRange } from "@/lib/ventas-utils";
+import {
+  getBogotaMonthRangeFromInput,
+  getCurrentBogotaMonthRange,
+} from "@/lib/ventas-utils";
 import { getVendorWelcomeMessage } from "@/lib/vendor-welcome-message";
 import {
   getMonthlyCommercialSummary,
@@ -23,6 +27,11 @@ import {
 } from "@/lib/dashboard-commercial-summary";
 import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
 import { getVendorEarningsSummary } from "@/lib/vendor-earnings";
+import { getDashboardOperationalSummary } from "@/lib/dashboard-overview";
+import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
+import OperationsDashboard, {
+  type NavigationItem,
+} from "./_components/operations-dashboard";
 
 type ModuleTone = "slate" | "emerald" | "sky" | "amber" | "violet" | "rose";
 type ActionTone = "primary" | "secondary" | "danger";
@@ -674,7 +683,11 @@ function resolveSaludo({
   return `Bienvenido, ${nombreUsuario}.`;
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ period?: string; sedeId?: string }>;
+}) {
   const session = await getSessionUser();
 
   if (!session) {
@@ -714,18 +727,62 @@ export default async function DashboardPage() {
     sedeLabel,
   });
 
-  const mesActual = getCurrentBogotaMonthRange();
-  const [resumenComercialMensual, resumenFinanciero] =
-    esPerfilRegistroVenta(session.perfilTipo) || esFacturador || esSedeSoloInventario
-      ? ([null, null] as const)
-      : await Promise.all([
-          getMonthlyCommercialSummary({
-            sedeId: esAdmin ? null : session.sedeId ?? null,
-          }),
-          getFinancialDashboardSummary({
-            sedeId: esAdmin ? null : session.sedeId ?? null,
-          }),
-        ]);
+  const params = await searchParams;
+  const periodoSolicitado = String(params?.period || "").trim();
+  const mesActual =
+    getBogotaMonthRangeFromInput(periodoSolicitado) ??
+    getCurrentBogotaMonthRange();
+  const sedes = esAdmin
+    ? await prisma.sede.findMany({
+        where: { activa: true },
+        select: { id: true, nombre: true },
+        orderBy: { nombre: "asc" },
+      })
+    : [];
+  const sedeSolicitadaId = Number(params?.sedeId || 0);
+  const sedeSeleccionada =
+    esAdmin && Number.isInteger(sedeSolicitadaId) && sedeSolicitadaId > 0
+      ? sedes.find((sede) => sede.id === sedeSolicitadaId) ?? null
+      : null;
+  const sedeDashboardId = esAdmin
+    ? sedeSeleccionada?.id ?? null
+    : session.sedeId ?? null;
+  const coberturaDashboard = esAdmin
+    ? sedeSeleccionada?.nombre ?? "Todas las sedes"
+    : session.sedeNombre ?? "Tu sede";
+  const mostrarDashboardOperativo =
+    !esPerfilRegistroVenta(session.perfilTipo) &&
+    !esFacturador &&
+    !esSedeSoloInventario;
+  const [
+    resumenComercialMensual,
+    resumenFinanciero,
+    resumenOperativo,
+  ] = mostrarDashboardOperativo
+    ? await Promise.all([
+        getMonthlyCommercialSummary({
+          period: mesActual.key,
+          sedeId: sedeDashboardId,
+        }),
+        esAdmin
+          ? getFinancialDashboardSummary({
+              sedeId: sedeDashboardId,
+              fechaCorte: mesActual.end,
+            })
+          : Promise.resolve(null),
+        getDashboardOperationalSummary({
+          sedeId: sedeDashboardId,
+          incluirBodegaPrincipal:
+            esAdmin &&
+            (!sedeSeleccionada ||
+              sedeSeleccionada.nombre.trim().toUpperCase() ===
+                NOMBRE_SEDE_BODEGA),
+          puedeVerAprobacionesVenta: esAdmin || esSupervisor,
+          puedeVerFacturacion,
+          fechaCorte: mesActual.end,
+        }),
+      ])
+    : ([null, null, null] as const);
   const mensajeBienvenidaVendedor = esPerfilRegistroVenta(session.perfilTipo)
     ? await getVendorWelcomeMessage()
     : null;
@@ -734,6 +791,78 @@ export default async function DashboardPage() {
     : null;
   const financieraDestacada =
     resumenComercialMensual?.topFinancieras[0] ?? null;
+
+  if (
+    mostrarDashboardOperativo &&
+    resumenComercialMensual &&
+    resumenOperativo
+  ) {
+    const navigationItems: NavigationItem[] = [
+      { href: "/dashboard", icon: "home", label: "Inicio" },
+      { href: "/ventas", icon: "sales", label: "Ventas" },
+      { href: "/inventario", icon: "inventory", label: "Inventario" },
+      { href: "/prestamos", icon: "loans", label: "Préstamos" },
+      { href: "/caja", icon: "cash", label: "Caja" },
+      {
+        href: "/dashboard/aprobaciones",
+        icon: "approvals",
+        label: "Aprobaciones",
+      },
+      {
+        href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+        icon: "reports",
+        label: "Reportes",
+      },
+      ...(esAdmin
+        ? ([
+            {
+              href: "/dashboard/sedes",
+              icon: "settings",
+              label: "Configuración",
+            },
+          ] satisfies NavigationItem[])
+        : []),
+    ];
+
+    return (
+      <>
+        {puedeAccederModulosOperativos(session.perfilTipo) && session.sedeId && (
+          <PendingLoanAlertModal
+            sessionKey={session.sessionKey ?? `${session.id}-${session.perfilId ?? "usuario"}`}
+          />
+        )}
+        <OperationsDashboard
+          commercial={resumenComercialMensual}
+          coverageLabel={coberturaDashboard}
+          detailedRankings={
+            <CommercialRankingSection
+              periodLabel={mesActual.label}
+              coverageLabel={coberturaDashboard}
+              topSedesJalador={resumenComercialMensual.topSedesJalador}
+              topVentasSede={resumenComercialMensual.topVentasSede}
+              topJaladores={resumenComercialMensual.topJaladores}
+              topCerradores={resumenComercialMensual.topCerradores}
+              topFinancieras={resumenComercialMensual.topFinancieras}
+            />
+          }
+          esAdmin={esAdmin}
+          esSupervisor={esSupervisor}
+          financial={resumenFinanciero}
+          navigationItems={navigationItems}
+          operational={resumenOperativo}
+          period={mesActual.key}
+          periodLabel={mesActual.label}
+          puedeVerEquality={puedeVerEquality}
+          puedeVerFacturacion={puedeVerFacturacion}
+          puedeVerReporteSiigo={puedeVerReporteSiigo}
+          rolUsuario={rolUsuario}
+          sedeId={sedeSeleccionada?.id ?? null}
+          sedes={sedes}
+          usuario={nombreUsuario}
+        />
+      </>
+    );
+  }
 
   const sessionBadges: SessionBadge[] = [
     { label: "Usuario", value: nombreUsuario },

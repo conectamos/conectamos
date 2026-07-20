@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import {
+  getBogotaDateKey,
   getBogotaMonthRangeFromInput,
   getCurrentBogotaMonthRange,
 } from "@/lib/ventas-utils";
@@ -29,6 +30,22 @@ export type CommercialBrandRankingItem = CommercialRankingItem & {
 
 export type CommercialReferenceRankingItem = CommercialRankingItem & {
   porcentaje: number;
+};
+
+export type DailyCommercialPoint = {
+  fecha: string;
+  etiqueta: string;
+  ventas: number;
+  ingresos: number;
+  utilidad: number;
+};
+
+export type SedePerformanceItem = {
+  sedeId: number;
+  nombre: string;
+  ventas: number;
+  ingresos: number;
+  utilidad: number;
 };
 
 function n(value: unknown) {
@@ -211,6 +228,9 @@ export async function getMonthlyCommercialSummary(options?: {
         ...scope,
       },
       select: {
+        fecha: true,
+        ingreso: true,
+        utilidad: true,
         descripcion: true,
         jalador: true,
         cerrador: true,
@@ -222,6 +242,7 @@ export async function getMonthlyCommercialSummary(options?: {
         },
         sede: {
           select: {
+            id: true,
             nombre: true,
           },
         },
@@ -283,8 +304,24 @@ export async function getMonthlyCommercialSummary(options?: {
   const financieras = new Map<string, CommercialRankingItem>();
   const marcasVendidas = new Map<string, CommercialRankingItem>();
   const referenciasVendidas = new Map<string, CommercialRankingItem>();
+  const rendimientoDiario = new Map<string, DailyCommercialPoint>();
+  const rendimientoSedes = new Map<number, SedePerformanceItem>();
 
   for (const venta of ventasDetalle) {
+    const fecha = getBogotaDateKey(venta.fecha);
+    const puntoDiario = rendimientoDiario.get(fecha) ?? {
+      fecha,
+      etiqueta: String(Number(fecha.slice(-2))),
+      ventas: 0,
+      ingresos: 0,
+      utilidad: 0,
+    };
+
+    puntoDiario.ventas += 1;
+    puntoDiario.ingresos += n(venta.ingreso);
+    puntoDiario.utilidad += n(venta.utilidad);
+    rendimientoDiario.set(fecha, puntoDiario);
+
     const referencia = normalizeReference(
       venta.inventarioSede?.referencia || venta.descripcion
     ) || "SIN REFERENCIA";
@@ -294,6 +331,19 @@ export async function getMonthlyCommercialSummary(options?: {
 
     if (venta.sede?.nombre) {
       pushRanking(ventasSede, venta.sede.nombre);
+
+      const rendimientoSede = rendimientoSedes.get(venta.sede.id) ?? {
+        sedeId: venta.sede.id,
+        nombre: venta.sede.nombre,
+        ventas: 0,
+        ingresos: 0,
+        utilidad: 0,
+      };
+
+      rendimientoSede.ventas += 1;
+      rendimientoSede.ingresos += n(venta.ingreso);
+      rendimientoSede.utilidad += n(venta.utilidad);
+      rendimientoSedes.set(venta.sede.id, rendimientoSede);
     }
 
     if (venta.jalador) {
@@ -318,6 +368,38 @@ export async function getMonthlyCommercialSummary(options?: {
   }
 
   const referenciasRanking = sortedReferenceRanking(referenciasVendidas);
+  const tendenciaDiaria: DailyCommercialPoint[] = [];
+
+  for (
+    const cursor = new Date(periodo.start);
+    cursor.getTime() < periodo.end.getTime();
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  ) {
+    const fecha = getBogotaDateKey(cursor);
+    tendenciaDiaria.push(
+      rendimientoDiario.get(fecha) ?? {
+        fecha,
+        etiqueta: String(Number(fecha.slice(-2))),
+        ventas: 0,
+        ingresos: 0,
+        utilidad: 0,
+      }
+    );
+  }
+
+  const rendimientoPorSede = Array.from(rendimientoSedes.values()).sort(
+    (a, b) => {
+      if (b.ingresos !== a.ingresos) {
+        return b.ingresos - a.ingresos;
+      }
+
+      if (b.utilidad !== a.utilidad) {
+        return b.utilidad - a.utilidad;
+      }
+
+      return a.nombre.localeCompare(b.nombre, "es");
+    }
+  );
 
   return {
     periodo,
@@ -335,5 +417,7 @@ export async function getMonthlyCommercialSummary(options?: {
     topMarcasVendidas: sortedBrandRanking(marcasVendidas),
     topReferenciasVendidas: referenciasRanking.slice(0, 10),
     referenciasVendidas: referenciasRanking,
+    tendenciaDiaria,
+    rendimientoPorSede,
   };
 }

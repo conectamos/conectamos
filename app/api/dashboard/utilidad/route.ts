@@ -4,6 +4,7 @@ import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { verifyFinancialPasswordForSede } from "@/lib/financial-access";
 import { getMonthlyCommercialSummary } from "@/lib/dashboard-commercial-summary";
 import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
+import { getBogotaMonthRangeFromInput } from "@/lib/ventas-utils";
 
 export async function POST(req: Request) {
   try {
@@ -25,6 +26,8 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as Record<string, unknown>;
     const clave = String(body.clave ?? "").trim();
+    const periodInput = String(body.period ?? "").trim();
+    const periodRange = getBogotaMonthRangeFromInput(periodInput);
     const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
     if (!esAdmin && !clave) {
@@ -65,10 +68,12 @@ export async function POST(req: Request) {
     const sedeIdResumen = esAdmin ? null : user.sedeId;
     const [resumenMensual, resumenFinanciero] = await Promise.all([
       getMonthlyCommercialSummary({
+        period: periodRange?.key,
         sedeId: sedeIdResumen,
       }),
       getFinancialDashboardSummary({
         sedeId: sedeIdResumen,
+        fechaCorte: periodRange?.end ?? null,
       }),
     ]);
 

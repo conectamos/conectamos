@@ -37,9 +37,15 @@ function formatoPesos(valor: number) {
 export default function DashboardUtilityGate({
   coverageLabel,
   requiereClave,
+  period,
+  periodLabel,
+  variant = "panel",
 }: {
   coverageLabel: string;
   requiereClave: boolean;
+  period?: string;
+  periodLabel?: string;
+  variant?: "panel" | "cards";
 }) {
   const [abierto, setAbierto] = useState(false);
   const [clave, setClave] = useState("");
@@ -57,7 +63,7 @@ export default function DashboardUtilityGate({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ clave }),
+        body: JSON.stringify({ clave, period }),
       });
 
       const data = await res.json();
@@ -77,8 +83,65 @@ export default function DashboardUtilityGate({
     }
   };
 
+  const solicitarAcceso = () => {
+    setError("");
+
+    if (requiereClave) {
+      setAbierto(true);
+      return;
+    }
+
+    void consultarUtilidad();
+  };
+
   return (
     <>
+      {variant === "cards" ? (
+        <div className="contents">
+          <article className="min-h-[144px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-xl font-black text-emerald-600">
+                {resumen ? "↗" : "•"}
+              </div>
+              <div className="min-w-0 pt-0.5">
+                <p className="text-sm font-semibold text-slate-600">Utilidad del periodo</p>
+                <p className={[
+                  "mt-1.5 break-words text-[27px] font-black leading-tight tracking-tight",
+                  resumen ? "text-emerald-600" : "text-slate-950",
+                ].join(" ")}>
+                  {resumen ? formatoPesos(resumen.utilidad) : "Protegida"}
+                </p>
+                {resumen ? (
+                  <button type="button" onClick={() => setResumen(null)} className="mt-2 text-xs font-bold text-slate-500 hover:text-slate-800">
+                    Ocultar valores
+                  </button>
+                ) : (
+                  <button type="button" onClick={solicitarAcceso} className="mt-2 text-xs font-black text-[#e30613] hover:underline">
+                    Desbloquear con clave
+                  </button>
+                )}
+              </div>
+            </div>
+          </article>
+
+          <article className="min-h-[144px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-xl font-black text-blue-600">
+                $
+              </div>
+              <div className="min-w-0 pt-0.5">
+                <p className="text-sm font-semibold text-slate-600">Caja acumulada</p>
+                <p className="mt-1.5 break-words text-[27px] font-black leading-tight tracking-tight text-slate-950">
+                  {resumen ? formatoPesos(resumen.caja) : "Protegida"}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  {resumen ? `Disponible al cierre de ${resumen.periodo}` : `${periodLabel || "Periodo"} · acceso financiero`}
+                </p>
+              </div>
+            </div>
+          </article>
+        </div>
+      ) : (
       <section className="mt-6 overflow-hidden rounded-[32px] border border-[#e7ddcd] bg-[linear-gradient(135deg,#fffdf8_0%,#f8f2e8_42%,#f3f6fb_100%)] shadow-[0_20px_55px_rgba(15,23,42,0.08)]">
         <div className="px-6 py-6 sm:px-8">
           <div className="inline-flex rounded-full border border-[#dfcfb3] bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f5b24]">
@@ -109,15 +172,7 @@ export default function DashboardUtilityGate({
               <div className="mt-6">
                 <button
                   type="button"
-                  onClick={() => {
-                    setError("");
-                    if (requiereClave) {
-                      setAbierto(true);
-                      return;
-                    }
-
-                    void consultarUtilidad();
-                  }}
+                  onClick={solicitarAcceso}
                   className="inline-flex rounded-2xl bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
                 >
                   {cargando && !requiereClave ? "Consultando..." : "UTILIDAD"}
@@ -182,6 +237,7 @@ export default function DashboardUtilityGate({
           )}
         </div>
       </section>
+      )}
 
       {abierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
