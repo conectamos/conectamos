@@ -796,13 +796,33 @@ export default function Home() {
       <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
         <section className="relative hidden min-h-screen overflow-hidden bg-[#05070c] lg:block">
           <Image
-            src="/branding/conectamos-login-layout-2026.png"
+            src="/branding/conectamos-login-robot-2026.png"
             alt="Mascota de CONECTAMOS en el centro de operaciones"
             fill
             priority
-            sizes="50vw"
-            className="object-cover object-left"
+            sizes="100vw"
+            quality={100}
+            className="object-cover object-center"
           />
+          <div className="absolute inset-x-0 bottom-0 h-[45%] bg-[linear-gradient(180deg,rgba(5,7,12,0)_0%,rgba(5,7,12,0.96)_32%,#05070c_48%)]" />
+          <div className="absolute left-8 top-8 flex items-center sm:left-10 sm:top-10 xl:left-12 xl:top-12">
+            <span className="relative text-6xl font-black leading-none text-[#ef1018]">
+              C
+              <span className="absolute bottom-0 left-[70%] h-0.5 w-7 bg-[#ef1018]" />
+            </span>
+            <span className="ml-1 text-3xl font-black text-white xl:text-4xl">
+              ONECTAMOS
+            </span>
+            <svg
+              viewBox="0 0 36 36"
+              className="ml-1 h-9 w-9 self-start text-[#ef1018] xl:h-10 xl:w-10"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path d="M5 14a12 12 0 0 1 12 12" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+              <path d="M5 6a20 20 0 0 1 20 20" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+            </svg>
+          </div>
         </section>
 
         <section className="relative flex min-h-screen min-w-0 items-center justify-center bg-[#fbfbfc] px-5 py-24 sm:px-8 lg:px-12">
