@@ -13,7 +13,6 @@ type DashboardOperationalSummaryOptions = {
   sedeId?: number | null;
   incluirBodegaPrincipal?: boolean;
   puedeVerAprobacionesVenta?: boolean;
-  puedeVerFacturacion?: boolean;
   fechaCorte?: Date | null;
 };
 
@@ -48,7 +47,6 @@ export async function getDashboardOperationalSummary(
     prestamosActivos,
     inventarioAtencion,
     registrosVentaPorEstado,
-    facturasPendientes,
   ] = await Promise.all([
     prisma.inventarioSede.count({
       where: {
@@ -106,16 +104,6 @@ export async function getDashboardOperationalSummary(
           },
         })
       : Promise.resolve([]),
-    options.puedeVerFacturacion
-      ? prisma.registroVendedorVenta.count({
-          where: {
-            eliminadoEn: null,
-            estadoFacturacion: "PENDIENTE",
-            ...scopeRegistros,
-            ...scopeFecha,
-          },
-        })
-      : Promise.resolve(0),
   ]);
 
   const ventasPendientes = registrosVentaPorEstado.reduce(
@@ -125,8 +113,7 @@ export async function getDashboardOperationalSummary(
         : total,
     0
   );
-  const aprobacionesPendientes =
-    prestamosPorAprobar + ventasPendientes + facturasPendientes;
+  const aprobacionesPendientes = prestamosPorAprobar + ventasPendientes;
   const pendientesTotal =
     aprobacionesPendientes + prestamosActivos + inventarioAtencion;
 
@@ -139,7 +126,6 @@ export async function getDashboardOperationalSummary(
     detalleAprobaciones: {
       prestamos: prestamosPorAprobar,
       ventas: ventasPendientes,
-      facturacion: facturasPendientes,
     },
   };
 }

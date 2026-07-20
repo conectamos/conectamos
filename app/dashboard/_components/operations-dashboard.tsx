@@ -952,7 +952,7 @@ export default function OperationsDashboard({
                   <AlertRow
                     count={operational.aprobacionesPendientes}
                     title="aprobaciones pendientes"
-                    detail={`${operational.detalleAprobaciones.prestamos} de préstamos, ${operational.detalleAprobaciones.ventas} de ventas y ${operational.detalleAprobaciones.facturacion} de facturación`}
+                    detail={`${operational.detalleAprobaciones.prestamos} de préstamos y ${operational.detalleAprobaciones.ventas} de ventas`}
                     href="/dashboard/aprobaciones"
                     icon="approvals"
                     tone="red"

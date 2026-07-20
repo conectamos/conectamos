@@ -669,7 +669,6 @@ export default async function DashboardPage({
               sedeSeleccionada.nombre.trim().toUpperCase() ===
                 NOMBRE_SEDE_BODEGA),
           puedeVerAprobacionesVenta: esAdmin || esSupervisor,
-          puedeVerFacturacion,
           fechaCorte: mesActual.end,
         }),
       ])
