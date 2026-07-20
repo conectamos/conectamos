@@ -8,6 +8,7 @@ import DashboardFilters from "./dashboard-filters";
 import DashboardIcon, { type DashboardIconName } from "./dashboard-icon";
 import DashboardUtilityGate from "./dashboard-utility-gate";
 import LogoutButton from "./logout-button";
+import OperationsToolCenter, { type OperationsToolGroup } from "./operations-tool-center";
 
 type CommercialSummary = Awaited<ReturnType<typeof getMonthlyCommercialSummary>>;
 type FinancialSummary = Awaited<ReturnType<typeof getDashboardCashSummary>>;
@@ -16,18 +17,6 @@ type NavigationItem = {
   href: string;
   icon: DashboardIconName;
   label: string;
-};
-
-type ToolLink = {
-  href: string;
-  label: string;
-};
-
-type ToolGroup = {
-  description: string;
-  icon: DashboardIconName;
-  links: ToolLink[];
-  title: string;
 };
 
 type SedeOption = {
@@ -564,93 +553,6 @@ function QuickActions({ reportHref }: { reportHref: string }) {
   );
 }
 
-function ToolsSection({ groups }: { groups: ToolGroup[] }) {
-  if (groups.length === 0) return null;
-
-  const iconTones = [
-    "bg-red-50 text-[#e30613]",
-    "bg-orange-50 text-orange-600",
-    "bg-violet-50 text-violet-600",
-    "bg-slate-100 text-slate-700",
-  ];
-
-  return (
-    <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.17em] text-[#e30613]">Centro de herramientas</p>
-          <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">Accesos operativos</h2>
-          <p className="mt-1.5 text-sm text-slate-500">Encuentra cada función agrupada por el trabajo que necesitas realizar.</p>
-        </div>
-        <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600">
-          {groups.length} categorías disponibles
-        </span>
-      </div>
-      <div className="mt-6 columns-1 gap-4 md:columns-2 2xl:columns-4">
-        {groups.map((group, index) => {
-          const [primaryLink, ...secondaryLinks] = group.links;
-
-          return (
-            <article
-              key={group.title}
-              className="mb-4 break-inside-avoid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.045)] transition hover:border-slate-300 hover:shadow-[0_10px_26px_rgba(15,23,42,0.07)]"
-            >
-              <div className="p-4 pb-3">
-                <div className="flex items-start gap-3">
-                  <span
-                    className={[
-                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                      iconTones[index % iconTones.length],
-                    ].join(" ")}
-                  >
-                    <DashboardIcon name={group.icon} className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-[15px] font-black leading-5 text-slate-950">{group.title}</h3>
-                      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-500">
-                        {group.links.length}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">{group.description}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 p-3">
-                {primaryLink && (
-                  <Link
-                    href={primaryLink.href}
-                    className="group flex min-h-11 w-full items-center justify-between gap-3 rounded-xl bg-[#11161d] px-3.5 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-[#e30613]"
-                  >
-                    <span className="leading-4">{primaryLink.label}</span>
-                    <DashboardIcon name="arrow" className="h-4 w-4 shrink-0 transition group-hover:translate-x-0.5" />
-                  </Link>
-                )}
-
-                {secondaryLinks.length > 0 && (
-                  <div className="mt-2 grid auto-rows-fr gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-                    {secondaryLinks.map((link) => (
-                      <Link
-                        key={`${group.title}-${link.href}-${link.label}`}
-                        href={link.href}
-                        className="group flex min-h-11 h-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
-                      >
-                        <span className="leading-4">{link.label}</span>
-                        <DashboardIcon name="arrow" className="h-4 w-4 shrink-0 transition group-hover:translate-x-0.5" />
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </article>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 export default function OperationsDashboard({
   commercial,
   coverageLabel,
@@ -690,7 +592,7 @@ export default function OperationsDashboard({
 }) {
   const modoSupervisorSinMontos = esSupervisor && !esAdmin;
   const reportHref = esAdmin ? "/dashboard/reportes" : "/dashboard/analitico";
-  const toolGroups: ToolGroup[] = [
+  const toolGroups: OperationsToolGroup[] = [
     {
       title: "Inventario y préstamos",
       description: "Bodega, historial y movimientos entre sedes.",
@@ -1037,7 +939,7 @@ export default function OperationsDashboard({
           </section>
 
           <div className="mt-5">
-            <ToolsSection groups={toolGroups} />
+            <OperationsToolCenter groups={toolGroups} storageUserKey={usuario} />
           </div>
 
           {detailedRankings && (
