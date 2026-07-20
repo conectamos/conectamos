@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 
 type SessionUser = {
   id: number;
@@ -115,22 +121,30 @@ function soloDigitos(valor: string) {
 function esSedeOnline(sede: SedeAdminItem) {
   return (
     sede.nombre.trim().toUpperCase() === "ONLINE" ||
-    String(sede.codigo || "").trim().toUpperCase() === "ONLINE"
+    String(sede.codigo || "")
+      .trim()
+      .toUpperCase() === "ONLINE"
   );
 }
 
 function usaResolucionOnline(sede: SedeAdminItem) {
   const nombre = sede.nombre.trim().toUpperCase();
-  const codigo = String(sede.codigo || "").trim().toUpperCase();
+  const codigo = String(sede.codigo || "")
+    .trim()
+    .toUpperCase();
 
-  return esSedeOnline(sede) || nombre.startsWith("STAND ") || codigo.startsWith("STAND-");
+  return (
+    esSedeOnline(sede) ||
+    nombre.startsWith("STAND ") ||
+    codigo.startsWith("STAND-")
+  );
 }
 
 function extraerItemsCatalogo(valor: unknown) {
   if (Array.isArray(valor)) {
     return valor.filter(
       (item): item is Record<string, unknown> =>
-        Boolean(item) && typeof item === "object"
+        Boolean(item) && typeof item === "object",
     );
   }
 
@@ -144,7 +158,7 @@ function extraerItemsCatalogo(valor: unknown) {
     if (Array.isArray(record[key])) {
       return record[key].filter(
         (item): item is Record<string, unknown> =>
-          Boolean(item) && typeof item === "object"
+          Boolean(item) && typeof item === "object",
       );
     }
   }
@@ -165,7 +179,12 @@ function textoCatalogo(item: Record<string, unknown>, keys: string[]) {
 }
 
 function nombreUsuarioSiigo(item: Record<string, unknown>) {
-  const direct = textoCatalogo(item, ["name", "full_name", "username", "email"]);
+  const direct = textoCatalogo(item, [
+    "name",
+    "full_name",
+    "username",
+    "email",
+  ]);
 
   if (direct) {
     return direct;
@@ -180,7 +199,7 @@ function nombreUsuarioSiigo(item: Record<string, unknown>) {
 function valorDetalleCatalogo(
   item: Record<string, unknown>,
   label: string,
-  keys: string[]
+  keys: string[],
 ) {
   const value = textoCatalogo(item, keys);
 
@@ -243,12 +262,9 @@ function codigoDocumentoParaSede(sede: SedeAdminItem) {
   return numero >= 1 && numero <= 7 ? String(numero) : "";
 }
 
-function buscarIdPorCodigo(
-  items: Record<string, unknown>[],
-  codigo: string
-) {
+function buscarIdPorCodigo(items: Record<string, unknown>[], codigo: string) {
   const item = items.find(
-    (catalogo) => textoCatalogo(catalogo, ["code"]) === codigo
+    (catalogo) => textoCatalogo(catalogo, ["code"]) === codigo,
   );
 
   return item ? textoCatalogo(item, ["id"]) : "";
@@ -263,8 +279,8 @@ function buscarUsuarioAndres(items: Record<string, unknown>[]) {
         textoCatalogo(catalogo, ["username"]),
         textoCatalogo(catalogo, ["email"]),
         nombreUsuarioSiigo(catalogo),
-      ].join(" ")
-    ).includes("ANDRES03BK@GMAIL.COM")
+      ].join(" "),
+    ).includes("ANDRES03BK@GMAIL.COM"),
   );
 
   return item ? textoCatalogo(item, ["id"]) : "103";
@@ -272,7 +288,7 @@ function buscarUsuarioAndres(items: Record<string, unknown>[]) {
 
 function buscarPagoEfectivo(items: Record<string, unknown>[]) {
   const item = items.find((catalogo) =>
-    normalizarTexto(textoCatalogo(catalogo, ["name"])).includes("EFECTIVO")
+    normalizarTexto(textoCatalogo(catalogo, ["name"])).includes("EFECTIVO"),
   );
 
   return item ? textoCatalogo(item, ["id"]) : "910";
@@ -280,12 +296,12 @@ function buscarPagoEfectivo(items: Record<string, unknown>[]) {
 
 function buscarProductoExento(items: Record<string, unknown>[]) {
   const porCodigo = items.find(
-    (catalogo) => textoCatalogo(catalogo, ["code"]) === "002"
+    (catalogo) => textoCatalogo(catalogo, ["code"]) === "002",
   );
   const porNombre = items.find((catalogo) =>
     normalizarTexto(textoCatalogo(catalogo, ["name", "description"])).includes(
-      "EXENT"
-    )
+      "EXENT",
+    ),
   );
 
   return textoCatalogo(porCodigo || porNombre || {}, ["code"]) || "002";
@@ -304,7 +320,7 @@ function esCatalogoActivo(item: Record<string, unknown>) {
 
 function buscarCentroCostoParaSede(
   items: Record<string, unknown>[],
-  sede: SedeAdminItem
+  sede: SedeAdminItem,
 ) {
   const codigoSede = codigoDocumentoParaSede(sede);
 
@@ -329,7 +345,7 @@ function buscarCentroCostoParaSede(
       [
         textoCatalogo(catalogo, ["code"]),
         textoCatalogo(catalogo, ["name", "description"]),
-      ].join(" ")
+      ].join(" "),
     );
 
     return patrones.some((patron) => texto.includes(patron));
@@ -382,7 +398,7 @@ export default function GestionSedesPage() {
   const [cargandoCatalogosSiigo, setCargandoCatalogosSiigo] = useState(false);
   const [guardandoSiigoMasivo, setGuardandoSiigoMasivo] = useState(false);
   const [catalogosSiigo, setCatalogosSiigo] = useState<CatalogosSiigo | null>(
-    null
+    null,
   );
   const [catalogosSiigoError, setCatalogosSiigoError] = useState("");
 
@@ -395,10 +411,12 @@ export default function GestionSedesPage() {
 
   const [ediciones, setEdiciones] = useState<Record<number, SedeEdicion>>({});
 
-  const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(
+    user?.rolNombre?.toUpperCase() || "",
+  );
   const documentosSiigo = extraerItemsCatalogo(catalogosSiigo?.documentTypes);
   const notasCreditoSiigo = extraerItemsCatalogo(
-    catalogosSiigo?.creditNoteDocumentTypes
+    catalogosSiigo?.creditNoteDocumentTypes,
   );
   const usuariosSiigo = extraerItemsCatalogo(catalogosSiigo?.users);
   const pagosSiigo = extraerItemsCatalogo(catalogosSiigo?.paymentTypes);
@@ -428,8 +446,8 @@ export default function GestionSedesPage() {
               acc[sede.id] = crearEdicionDesdeSede(sede);
               return acc;
             },
-            {}
-          )
+            {},
+          ),
         );
       } else {
         setMensaje(sedesData.error || "No se pudo cargar la gestion de sedes");
@@ -454,7 +472,7 @@ export default function GestionSedesPage() {
   const actualizarEdicion = <Campo extends keyof SedeEdicion>(
     sedeId: number,
     campo: Campo,
-    valor: SedeEdicion[Campo]
+    valor: SedeEdicion[Campo],
   ) => {
     setEdiciones((actual) => ({
       ...actual,
@@ -516,7 +534,9 @@ export default function GestionSedesPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setCatalogosSiigoError(data.error || "No se pudieron consultar los catalogos de Siigo");
+        setCatalogosSiigoError(
+          data.error || "No se pudieron consultar los catalogos de Siigo",
+        );
         return;
       }
 
@@ -575,7 +595,8 @@ export default function GestionSedesPage() {
   };
 
   const aplicarSiigoSugerido = () => {
-    const { configuradas, faltantes, siguientes } = crearEdicionesSiigoSugeridas();
+    const { configuradas, faltantes, siguientes } =
+      crearEdicionesSiigoSugeridas();
 
     setEdiciones(siguientes);
     setMensaje(
@@ -587,7 +608,7 @@ export default function GestionSedesPage() {
         "Revisa y guarda los cambios.",
       ]
         .filter(Boolean)
-        .join(" ")
+        .join(" "),
     );
   };
 
@@ -596,10 +617,13 @@ export default function GestionSedesPage() {
       setGuardandoSiigoMasivo(true);
       setMensaje("");
 
-      const { configuradas, faltantes, siguientes } = crearEdicionesSiigoSugeridas();
+      const { configuradas, faltantes, siguientes } =
+        crearEdicionesSiigoSugeridas();
 
       if (configuradas.length === 0) {
-        setMensaje("No encontre sedes para configurar con los catalogos actuales.");
+        setMensaje(
+          "No encontre sedes para configurar con los catalogos actuales.",
+        );
         return;
       }
 
@@ -630,13 +654,13 @@ export default function GestionSedesPage() {
             : "",
         ]
           .filter(Boolean)
-          .join(" ")
+          .join(" "),
       );
     } catch (error) {
       setMensaje(
         error instanceof Error
           ? error.message
-          : "Error guardando la configuracion Siigo"
+          : "Error guardando la configuracion Siigo",
       );
     } finally {
       setGuardandoSiigoMasivo(false);
@@ -700,7 +724,8 @@ export default function GestionSedesPage() {
             Solo el administrador puede gestionar sedes
           </h1>
           <p className="mt-3 text-sm text-slate-500">
-            Esta pantalla permite crear sedes y administrar sus credenciales de acceso.
+            Esta pantalla permite crear sedes y administrar sus credenciales de
+            acceso.
           </p>
           <div className="mt-6">
             <Link
@@ -715,667 +740,831 @@ export default function GestionSedesPage() {
     );
   }
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+    { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
+  ];
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "Admin")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+
   return (
-    <div className="min-h-screen bg-[#eef2f7] px-4 py-8">
-      <div className="mx-auto max-w-7xl">
-        <section className="overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,#0f172a_0%,#111827_48%,#7f1d1d_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Administracion
-              </div>
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/dashboard/sedes"
+        coverageLabel="Todas las sedes"
+        items={navigationItems}
+      />
 
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Gestion de sedes
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
+                Gestión de sedes
               </h1>
-
-              <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                Crea sedes nuevas, asigna su usuario de acceso y cambia la clave de las sedes existentes.
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                Accesos, configuración operativa e integración Siigo
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/dashboard"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                Volver al dashboard
-              </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || (
+                    <DashboardIcon name="user" className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {user?.nombre || user?.usuario}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {user?.rolNombre}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton
+                variant="light"
+                className="min-h-12 shrink-0 rounded-xl"
+              />
             </div>
-          </div>
-        </section>
+          </header>
 
-        {mensaje && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
-            {mensaje}
-          </div>
-        )}
-
-        <section className="mt-6 rounded-[30px] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Siigo
-              </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Catalogos para configurar sedes
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Consulta resoluciones, vendedores, formas de pago, productos y centros de costo directamente desde Siigo.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void cargarCatalogosSiigo()}
-                disabled={cargandoCatalogosSiigo}
-                className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                {cargandoCatalogosSiigo ? "Consultando..." : "Consultar catalogos"}
-              </button>
-              {catalogosSiigo && (
-                <>
-                  <button
-                    type="button"
-                    onClick={aplicarSiigoSugerido}
-                    disabled={guardandoSiigoMasivo}
-                    className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    Autocompletar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void guardarSiigoSugerido()}
-                    disabled={guardandoSiigoMasivo}
-                    className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {guardandoSiigoMasivo ? "Guardando..." : "Guardar Siigo sugerido"}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {catalogosSiigoError && (
-            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-              {catalogosSiigoError}
-            </div>
-          )}
-
-          {catalogosSiigo && (
-            <div className="mt-5 grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                  Resoluciones
+          <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <article className="flex min-h-[112px] items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <DashboardIcon name="store" className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  Sedes registradas
                 </p>
-                <div className="mt-3 space-y-2 text-sm">
-                  {documentosSiigo.slice(0, 12).map((item, index) => (
-                    <div key={`siigo-doc-${index}`}>
-                      <p className="font-semibold text-slate-800">
-                        {tituloDocumentoSiigo(item)}
-                      </p>
-                      {detalleDocumentoSiigo(item) && (
-                        <p className="mt-0.5 text-xs font-medium text-slate-500">
-                          {detalleDocumentoSiigo(item)}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                  Notas credito
+                <p className="mt-1 text-2xl font-black text-slate-950">
+                  {sedes.length}
                 </p>
-                <div className="mt-3 space-y-2 text-sm">
-                  {notasCreditoSiigo.slice(0, 12).map((item, index) => (
-                    <div key={`siigo-credit-note-${index}`}>
-                      <p className="font-semibold text-slate-800">
-                        {tituloDocumentoSiigo(item)}
-                      </p>
-                      {detalleDocumentoSiigo(item) && (
-                        <p className="mt-0.5 text-xs font-medium text-slate-500">
-                          {detalleDocumentoSiigo(item)}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
               </div>
+            </article>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                  Vendedores
+            <article className="flex min-h-[112px] items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+                <DashboardIcon name="user" className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  Accesos activos
                 </p>
-                <div className="mt-3 space-y-2 text-sm">
-                  {usuariosSiigo.slice(0, 12).map((item, index) => (
-                    <p key={`siigo-user-${index}`} className="font-semibold text-slate-800">
-                      {textoCatalogo(item, ["id"])} - {nombreUsuarioSiigo(item)}
-                    </p>
-                  ))}
-                </div>
+                <p className="mt-1 text-2xl font-black text-slate-950">
+                  {sedes.filter((sede) => Boolean(sede.acceso)).length}
+                </p>
               </div>
+            </article>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                  Formas de pago
+            <article className="flex min-h-[112px] items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                <DashboardIcon name="document" className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  Siigo activo
                 </p>
-                <div className="mt-3 space-y-2 text-sm">
-                  {pagosSiigo.slice(0, 12).map((item, index) => (
-                    <p key={`siigo-payment-${index}`} className="font-semibold text-slate-800">
-                      {textoCatalogo(item, ["id"])} - {textoCatalogo(item, ["name"])}
-                    </p>
-                  ))}
-                </div>
+                <p className="mt-1 text-2xl font-black text-slate-950">
+                  {sedes.filter((sede) => sede.siigoEnabled).length}
+                </p>
               </div>
+            </article>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                  Productos
+            <article className="flex min-h-[112px] items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                <DashboardIcon name="inventory" className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  Solo por cobrar
                 </p>
-                <div className="mt-3 space-y-2 text-sm">
-                  {productosSiigo.slice(0, 12).map((item, index) => (
-                    <p key={`siigo-product-${index}`} className="font-semibold text-slate-800">
-                      {textoCatalogo(item, ["code"])} - {textoCatalogo(item, ["name", "description"])}
-                    </p>
-                  ))}
-                </div>
+                <p className="mt-1 text-2xl font-black text-slate-950">
+                  {sedes.filter((sede) => sede.soloInventarioPorCobrar).length}
+                </p>
               </div>
+            </article>
+          </section>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                  Centros de costo
-                </p>
-                <div className="mt-3 space-y-2 text-sm">
-                  {centrosCostoSiigo.slice(0, 12).map((item, index) => (
-                    <p key={`siigo-cost-center-${index}`} className="font-semibold text-slate-800">
-                      {tituloCentroCostoSiigo(item)}
-                    </p>
-                  ))}
-                </div>
-              </div>
+          {mensaje && (
+            <div
+              role="status"
+              className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm"
+            >
+              <DashboardIcon
+                name="approvals"
+                className="mt-0.5 h-5 w-5 shrink-0 text-[#e30613]"
+              />
+              {mensaje}
             </div>
           )}
-        </section>
 
-        <section className="mt-6 rounded-[30px] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Nueva sede
+          <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
+                  Integración Siigo
+                </div>
+                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+                  Catálogos para configurar sedes
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Consulta resoluciones, vendedores, formas de pago, productos y
+                  centros de costo directamente desde Siigo.
+                </p>
               </div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Crear sede con acceso
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void cargarCatalogosSiigo()}
+                  disabled={cargandoCatalogosSiigo}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  <DashboardIcon name="reports" className="h-4 w-4" />
+                  {cargandoCatalogosSiigo
+                    ? "Consultando..."
+                    : "Consultar catálogos"}
+                </button>
+                {catalogosSiigo && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={aplicarSiigoSugerido}
+                      disabled={guardandoSiigoMasivo}
+                      className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      Autocompletar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void guardarSiigoSugerido()}
+                      disabled={guardandoSiigoMasivo}
+                      className="min-h-11 rounded-xl bg-[#e30613] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {guardandoSiigoMasivo
+                        ? "Guardando..."
+                        : "Guardar Siigo sugerido"}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {catalogosSiigoError && (
+              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                {catalogosSiigoError}
+              </div>
+            )}
+
+            {catalogosSiigo && (
+              <div className="mt-5 grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                    Resoluciones
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {documentosSiigo.slice(0, 12).map((item, index) => (
+                      <div key={`siigo-doc-${index}`}>
+                        <p className="font-semibold text-slate-800">
+                          {tituloDocumentoSiigo(item)}
+                        </p>
+                        {detalleDocumentoSiigo(item) && (
+                          <p className="mt-0.5 text-xs font-medium text-slate-500">
+                            {detalleDocumentoSiigo(item)}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                    Notas crédito
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {notasCreditoSiigo.slice(0, 12).map((item, index) => (
+                      <div key={`siigo-credit-note-${index}`}>
+                        <p className="font-semibold text-slate-800">
+                          {tituloDocumentoSiigo(item)}
+                        </p>
+                        {detalleDocumentoSiigo(item) && (
+                          <p className="mt-0.5 text-xs font-medium text-slate-500">
+                            {detalleDocumentoSiigo(item)}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                    Vendedores
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {usuariosSiigo.slice(0, 12).map((item, index) => (
+                      <p
+                        key={`siigo-user-${index}`}
+                        className="font-semibold text-slate-800"
+                      >
+                        {textoCatalogo(item, ["id"])} -{" "}
+                        {nombreUsuarioSiigo(item)}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                    Formas de pago
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {pagosSiigo.slice(0, 12).map((item, index) => (
+                      <p
+                        key={`siigo-payment-${index}`}
+                        className="font-semibold text-slate-800"
+                      >
+                        {textoCatalogo(item, ["id"])} -{" "}
+                        {textoCatalogo(item, ["name"])}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                    Productos
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {productosSiigo.slice(0, 12).map((item, index) => (
+                      <p
+                        key={`siigo-product-${index}`}
+                        className="font-semibold text-slate-800"
+                      >
+                        {textoCatalogo(item, ["code"])} -{" "}
+                        {textoCatalogo(item, ["name", "description"])}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                    Centros de costo
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {centrosCostoSiigo.slice(0, 12).map((item, index) => (
+                      <p
+                        key={`siigo-cost-center-${index}`}
+                        className="font-semibold text-slate-800"
+                      >
+                        {tituloCentroCostoSiigo(item)}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
+                  Nueva sede
+                </div>
+                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+                  Crear sede con acceso
+                </h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  El usuario de acceso se usa directamente en el login del
+                  sistema.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Nombre de sede
+                <input
+                  value={nuevaSedeNombre}
+                  onChange={(event) => setNuevaSedeNombre(event.target.value)}
+                  placeholder="Ej: Stand PuntoNet"
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Código
+                <input
+                  value={nuevaSedeCodigo}
+                  onChange={(event) => setNuevaSedeCodigo(event.target.value)}
+                  placeholder="Opcional"
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Usuario de acceso
+                <input
+                  value={nuevoUsuario}
+                  onChange={(event) =>
+                    setNuevoUsuario(slugUsuarioSede(event.target.value))
+                  }
+                  placeholder="sede8"
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                Clave inicial
+                <input
+                  type="password"
+                  value={nuevaClave}
+                  onChange={(event) => setNuevaClave(event.target.value)}
+                  placeholder="Asignar clave"
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
+                />
+              </label>
+
+              <label className="flex min-h-[76px] items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 md:col-span-1 xl:col-span-3">
+                <input
+                  type="checkbox"
+                  checked={nuevaSoloInventarioPorCobrar}
+                  onChange={(event) =>
+                    setNuevaSoloInventarioPorCobrar(event.target.checked)
+                  }
+                  className="h-4 w-4 rounded border-amber-300 text-amber-700"
+                />
+                <span>
+                  Solo inventario por cobrar
+                  <span className="mt-1 block text-xs font-medium leading-5 text-amber-700">
+                    Al pagar, el equipo se oculta del stand.
+                  </span>
+                </span>
+              </label>
+
+              <div className="flex flex-col justify-end">
+                <button
+                  type="button"
+                  onClick={() => void crearSede()}
+                  disabled={guardandoNueva}
+                  className="min-h-12 rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {guardandoNueva ? "Creando..." : "Crear sede"}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
+                Accesos existentes
+              </div>
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+                Sedes registradas
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                El usuario de acceso se usa directamente en el login del sistema.
+                Puedes cambiar nombre, código, usuario de acceso y asignar una
+                nueva clave.
               </p>
             </div>
-          </div>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.6fr_0.9fr_0.9fr_1fr_180px]">
-            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-              Nombre de sede
-              <input
-                value={nuevaSedeNombre}
-                onChange={(event) => setNuevaSedeNombre(event.target.value)}
-                placeholder="Ej: Stand PuntoNet"
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
+            <div className="mt-5 grid gap-4 2xl:grid-cols-2">
+              {sedes.map((sede) => {
+                const edicion =
+                  ediciones[sede.id] || crearEdicionDesdeSede(sede);
+                const facturaComoOnline =
+                  usaResolucionOnline(sede) && !esSedeOnline(sede);
 
-            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-              Codigo
-              <input
-                value={nuevaSedeCodigo}
-                onChange={(event) => setNuevaSedeCodigo(event.target.value)}
-                placeholder="Opcional"
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-              Usuario de acceso
-              <input
-                value={nuevoUsuario}
-                onChange={(event) => setNuevoUsuario(slugUsuarioSede(event.target.value))}
-                placeholder="sede8"
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-              Clave inicial
-              <input
-                type="password"
-                value={nuevaClave}
-                onChange={(event) => setNuevaClave(event.target.value)}
-                placeholder="Asignar clave"
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label className="flex min-h-[76px] items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-              <input
-                type="checkbox"
-                checked={nuevaSoloInventarioPorCobrar}
-                onChange={(event) =>
-                  setNuevaSoloInventarioPorCobrar(event.target.checked)
-                }
-                className="h-4 w-4 rounded border-amber-300 text-amber-700"
-              />
-              <span>
-                Solo inventario por cobrar
-                <span className="mt-1 block text-xs font-medium leading-5 text-amber-700">
-                  Al pagar, el equipo se oculta del stand.
-                </span>
-              </span>
-            </label>
-
-            <div className="flex flex-col justify-end">
-              <button
-                type="button"
-                onClick={() => void crearSede()}
-                disabled={guardandoNueva}
-                className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {guardandoNueva ? "Creando..." : "Crear sede"}
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-[30px] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <div>
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Accesos existentes
-            </div>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-              Sedes registradas
-            </h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Puedes cambiar nombre, codigo, usuario de acceso y asignar una nueva clave.
-            </p>
-          </div>
-
-          <div className="mt-6 grid gap-4 xl:grid-cols-2">
-            {sedes.map((sede) => {
-              const edicion = ediciones[sede.id] || crearEdicionDesdeSede(sede);
-              const facturaComoOnline = usaResolucionOnline(sede) && !esSedeOnline(sede);
-
-              return (
-                <section
-                  key={sede.id}
-                  className="rounded-[28px] border border-slate-200 bg-slate-50/70 p-5"
-                >
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <div className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                        Sede #{sede.id}
+                return (
+                  <section
+                    key={sede.id}
+                    className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5"
+                  >
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <div className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                          Sede #{sede.id}
+                        </div>
+                        <h3 className="mt-2 text-xl font-black text-slate-950">
+                          {sede.nombre}
+                        </h3>
+                        <p className="mt-2 text-sm text-slate-500">
+                          {sede.acceso
+                            ? `Acceso actual: ${sede.acceso.usuario}`
+                            : "Esta sede aún no tiene usuario de acceso."}
+                        </p>
                       </div>
-                      <h3 className="mt-3 text-2xl font-black text-slate-950">
-                        {sede.nombre}
-                      </h3>
-                      <p className="mt-2 text-sm text-slate-500">
-                        {sede.acceso
-                          ? `Acceso actual: ${sede.acceso.usuario}`
-                          : "Esta sede aun no tiene usuario de acceso."}
-                      </p>
+
+                      <div className="min-w-[170px] rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">
+                        <p className="font-semibold text-slate-900">
+                          {sede.acceso ? "Acceso activo" : "Sin acceso"}
+                        </p>
+                        <p className="mt-1 text-slate-500">
+                          {sede.codigo
+                            ? `Código: ${sede.codigo}`
+                            : "Sin código"}
+                        </p>
+                        {sede.soloInventarioPorCobrar && (
+                          <p className="mt-1 font-semibold text-amber-700">
+                            Solo inventario por cobrar
+                          </p>
+                        )}
+                        {sede.siigoEnabled && (
+                          <p className="mt-1 font-semibold text-emerald-700">
+                            Siigo activo
+                          </p>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
-                      <p className="font-semibold text-slate-900">
-                        {sede.acceso ? "Acceso activo" : "Sin acceso"}
-                      </p>
-                      <p className="mt-1 text-slate-500">
-                        {sede.codigo ? `Codigo: ${sede.codigo}` : "Sin codigo"}
-                      </p>
-                      {sede.soloInventarioPorCobrar && (
-                        <p className="mt-1 font-semibold text-amber-700">
-                          Solo inventario por cobrar
-                        </p>
-                      )}
-                      {sede.siigoEnabled && (
-                        <p className="mt-1 font-semibold text-emerald-700">
-                          Siigo activo
-                        </p>
-                      )}
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Nombre de sede
+                        <input
+                          value={edicion.nombre}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "nombre",
+                              event.target.value,
+                            )
+                          }
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Código
+                        <input
+                          value={edicion.codigo}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "codigo",
+                              event.target.value.toUpperCase(),
+                            )
+                          }
+                          placeholder="Opcional"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Usuario de acceso
+                        <input
+                          value={edicion.usuario}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "usuario",
+                              slugUsuarioSede(event.target.value),
+                            )
+                          }
+                          placeholder="usuario de login"
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
+
+                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                        Nueva clave
+                        <input
+                          type="password"
+                          value={edicion.clave}
+                          onChange={(event) =>
+                            actualizarEdicion(
+                              sede.id,
+                              "clave",
+                              event.target.value,
+                            )
+                          }
+                          placeholder={
+                            sede.acceso
+                              ? "Dejar vacio para conservarla"
+                              : "Clave inicial"
+                          }
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        />
+                      </label>
                     </div>
-                  </div>
 
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Nombre de sede
+                    <label className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
                       <input
-                        value={edicion.nombre}
-                        onChange={(event) =>
-                          actualizarEdicion(sede.id, "nombre", event.target.value)
-                        }
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                      />
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Codigo
-                      <input
-                        value={edicion.codigo}
-                        onChange={(event) =>
-                          actualizarEdicion(sede.id, "codigo", event.target.value.toUpperCase())
-                        }
-                        placeholder="Opcional"
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                      />
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Usuario de acceso
-                      <input
-                        value={edicion.usuario}
+                        type="checkbox"
+                        checked={Boolean(edicion.soloInventarioPorCobrar)}
                         onChange={(event) =>
                           actualizarEdicion(
                             sede.id,
-                            "usuario",
-                            slugUsuarioSede(event.target.value)
+                            "soloInventarioPorCobrar",
+                            event.target.checked,
                           )
                         }
-                        placeholder="usuario de login"
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                        className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-700"
                       />
-                    </label>
-
-                    <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                      Nueva clave
-                      <input
-                        type="password"
-                        value={edicion.clave}
-                        onChange={(event) =>
-                          actualizarEdicion(sede.id, "clave", event.target.value)
-                        }
-                        placeholder={
-                          sede.acceso ? "Dejar vacio para conservarla" : "Clave inicial"
-                        }
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                      />
-                    </label>
-                  </div>
-
-                  <label className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(edicion.soloInventarioPorCobrar)}
-                      onChange={(event) =>
-                        actualizarEdicion(
-                          sede.id,
-                          "soloInventarioPorCobrar",
-                          event.target.checked
-                        )
-                      }
-                      className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-700"
-                    />
-                    <span>
-                      Solo inventario por cobrar
-                      <span className="mt-1 block text-xs font-medium leading-5 text-amber-700">
-                        Para stands que no operan ventas ni caja propia de inventario. Al aprobar el pago, el IMEI se borra de la vista del stand.
-                      </span>
-                    </span>
-                  </label>
-
-                  <div className="mt-6 border-t border-slate-200 pt-5">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <p className="text-sm font-black uppercase tracking-[0.16em] text-slate-700">
-                          Siigo por sede
-                        </p>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">
-                          {facturaComoOnline
-                            ? "Este stand factura usando la configuracion Siigo de ONLINE."
-                            : "Estos parametros determinan la resolucion y el comportamiento de facturacion de esta sede."}
-                        </p>
-                      </div>
-
-                      <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(edicion.siigoEnabled)}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoEnabled",
-                              event.target.checked
-                            )
-                          }
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                        />
-                        Activar Siigo
-                      </label>
-                    </div>
-
-                    <div className="mt-5 grid gap-4 md:grid-cols-3">
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Documento / resolucion
-                        <input
-                          inputMode="numeric"
-                          value={edicion.siigoInvoiceDocumentId}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoInvoiceDocumentId",
-                              soloDigitos(event.target.value)
-                            )
-                          }
-                          placeholder="ID document-types FV"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Vendedor Siigo
-                        <input
-                          inputMode="numeric"
-                          value={edicion.siigoSellerId}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoSellerId",
-                              soloDigitos(event.target.value)
-                            )
-                          }
-                          placeholder="ID users"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Forma de pago
-                        <input
-                          inputMode="numeric"
-                          value={edicion.siigoPaymentTypeId}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoPaymentTypeId",
-                              soloDigitos(event.target.value)
-                            )
-                          }
-                          placeholder="ID payment-types"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Codigo producto telefonia
-                        <input
-                          value={edicion.siigoItemCode}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoItemCode",
-                              event.target.value
-                            )
-                          }
-                          placeholder="Opcional"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                        <span className="text-xs font-medium leading-5 text-slate-500">
-                          Electrodomestico tambien usa 002, pero con IVA 19%.
+                      <span>
+                        Solo inventario por cobrar
+                        <span className="mt-1 block text-xs font-medium leading-5 text-amber-700">
+                          Para stands que no operan ventas ni caja propia de
+                          inventario. Al aprobar el pago, el IMEI se borra de la
+                          vista del stand.
                         </span>
-                      </label>
+                      </span>
+                    </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Centro de costo
-                        <input
-                          inputMode="numeric"
-                          value={edicion.siigoCostCenterId}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoCostCenterId",
-                              soloDigitos(event.target.value)
-                            )
-                          }
-                          placeholder="Opcional"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
+                    <details className="group mt-5 border-t border-slate-200 pt-4">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-xl px-1 py-2 text-sm font-bold text-slate-800 marker:content-none">
+                        <span className="flex items-center gap-2">
+                          <DashboardIcon
+                            name="settings"
+                            className="h-5 w-5 text-[#e30613]"
+                          />
+                          Configuración Siigo
+                        </span>
+                        <span className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-500 shadow-sm ring-1 ring-slate-200 group-open:hidden">
+                          Mostrar
+                        </span>
+                        <span className="hidden rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-500 shadow-sm ring-1 ring-slate-200 group-open:inline-flex">
+                          Ocultar
+                        </span>
+                      </summary>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Dias vencimiento
-                        <input
-                          inputMode="numeric"
-                          value={edicion.siigoPaymentDueDays}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoPaymentDueDays",
-                              soloDigitos(event.target.value)
-                            )
-                          }
-                          placeholder="0"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <p className="text-sm font-black uppercase tracking-[0.16em] text-slate-700">
+                              Siigo por sede
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-slate-500">
+                              {facturaComoOnline
+                                ? "Este stand factura usando la configuración Siigo de ONLINE."
+                                : "Estos parámetros determinan la resolución y el comportamiento de facturación de esta sede."}
+                            </p>
+                          </div>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Pais
-                        <input
-                          value={edicion.siigoDefaultCountryCode}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoDefaultCountryCode",
-                              event.target.value.toUpperCase()
-                            )
-                          }
-                          placeholder="CO"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium uppercase text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
+                          <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(edicion.siigoEnabled)}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoEnabled",
+                                  event.target.checked,
+                                )
+                              }
+                              className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                            />
+                            Activar Siigo
+                          </label>
+                        </div>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Departamento
-                        <input
-                          value={edicion.siigoDefaultStateCode}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoDefaultStateCode",
-                              soloDigitos(event.target.value)
-                            )
-                          }
-                          placeholder="Ej: 73"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
+                        <div className="mt-5 grid gap-4 md:grid-cols-3">
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Documento / resolución
+                            <input
+                              inputMode="numeric"
+                              value={edicion.siigoInvoiceDocumentId}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoInvoiceDocumentId",
+                                  soloDigitos(event.target.value),
+                                )
+                              }
+                              placeholder="ID document-types FV"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Ciudad
-                        <input
-                          value={edicion.siigoDefaultCityCode}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoDefaultCityCode",
-                              soloDigitos(event.target.value)
-                            )
-                          }
-                          placeholder="Ej: 73001"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Vendedor Siigo
+                            <input
+                              inputMode="numeric"
+                              value={edicion.siigoSellerId}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoSellerId",
+                                  soloDigitos(event.target.value),
+                                )
+                              }
+                              placeholder="ID users"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
 
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Codigo postal
-                        <input
-                          value={edicion.siigoDefaultPostalCode}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoDefaultPostalCode",
-                              soloDigitos(event.target.value)
-                            )
-                          }
-                          placeholder="Opcional"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Forma de pago
+                            <input
+                              inputMode="numeric"
+                              value={edicion.siigoPaymentTypeId}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoPaymentTypeId",
+                                  soloDigitos(event.target.value),
+                                )
+                              }
+                              placeholder="ID payment-types"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Código producto telefonía
+                            <input
+                              value={edicion.siigoItemCode}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoItemCode",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Opcional"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                            <span className="text-xs font-medium leading-5 text-slate-500">
+                              Electrodomestico tambien usa 002, pero con IVA
+                              19%.
+                            </span>
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Centro de costo
+                            <input
+                              inputMode="numeric"
+                              value={edicion.siigoCostCenterId}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoCostCenterId",
+                                  soloDigitos(event.target.value),
+                                )
+                              }
+                              placeholder="Opcional"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Días vencimiento
+                            <input
+                              inputMode="numeric"
+                              value={edicion.siigoPaymentDueDays}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoPaymentDueDays",
+                                  soloDigitos(event.target.value),
+                                )
+                              }
+                              placeholder="0"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Pais
+                            <input
+                              value={edicion.siigoDefaultCountryCode}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoDefaultCountryCode",
+                                  event.target.value.toUpperCase(),
+                                )
+                              }
+                              placeholder="CO"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium uppercase text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Departamento
+                            <input
+                              value={edicion.siigoDefaultStateCode}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoDefaultStateCode",
+                                  soloDigitos(event.target.value),
+                                )
+                              }
+                              placeholder="Ej: 73"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Ciudad
+                            <input
+                              value={edicion.siigoDefaultCityCode}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoDefaultCityCode",
+                                  soloDigitos(event.target.value),
+                                )
+                              }
+                              placeholder="Ej: 73001"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Código postal
+                            <input
+                              value={edicion.siigoDefaultPostalCode}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoDefaultPostalCode",
+                                  soloDigitos(event.target.value),
+                                )
+                              }
+                              placeholder="Opcional"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(edicion.siigoStampSend)}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoStampSend",
+                                  event.target.checked,
+                                )
+                              }
+                              className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                            />
+                            Enviar a DIAN al crear
+                          </label>
+
+                          <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(edicion.siigoMailSend)}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "siigoMailSend",
+                                  event.target.checked,
+                                )
+                              }
+                              className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                            />
+                            Enviar correo desde Siigo
+                          </label>
+                        </div>
+                      </div>
+                    </details>
+
+                    <div className="mt-5 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => void guardarSede(sede.id)}
+                        disabled={procesandoId === sede.id}
+                        className="min-h-11 rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {procesandoId === sede.id
+                          ? "Guardando..."
+                          : sede.acceso
+                            ? "Guardar cambios"
+                            : "Crear acceso"}
+                      </button>
                     </div>
-
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(edicion.siigoStampSend)}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoStampSend",
-                              event.target.checked
-                            )
-                          }
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                        />
-                        Enviar a DIAN al crear
-                      </label>
-
-                      <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(edicion.siigoMailSend)}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "siigoMailSend",
-                              event.target.checked
-                            )
-                          }
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                        />
-                        Enviar correo desde Siigo
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => void guardarSede(sede.id)}
-                      disabled={procesandoId === sede.id}
-                      className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {procesandoId === sede.id
-                        ? "Guardando..."
-                        : sede.acceso
-                          ? "Guardar cambios"
-                          : "Crear acceso"}
-                    </button>
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-        </section>
+                  </section>
+                );
+              })}
+            </div>
+          </section>
+        </main>
       </div>
     </div>
   );
