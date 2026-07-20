@@ -2,7 +2,14 @@ import { requireVendorPage } from "@/lib/page-access";
 import ListaPreciosVendedorWorkspace from "./workspace";
 
 export default async function ListaPreciosVendedorPage() {
-  await requireVendorPage();
+  const session = await requireVendorPage();
 
-  return <ListaPreciosVendedorWorkspace />;
+  return (
+    <ListaPreciosVendedorWorkspace
+      session={{
+        perfilNombre: session.perfilNombre ?? session.nombre,
+        sedeNombre: session.sedeNombre ?? "Tu sede",
+      }}
+    />
+  );
 }

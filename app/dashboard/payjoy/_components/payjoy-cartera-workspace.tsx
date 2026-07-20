@@ -331,7 +331,7 @@ function getRowAppearance(status: RowStatus) {
   switch (status) {
     case "MORA":
       return {
-        row: "border-l-4 border-red-500 bg-white hover:bg-red-50/60",
+        row: "bg-white hover:bg-red-50/60 [&>td:first-child]:shadow-[inset_4px_0_0_#ef4444]",
         surface: "text-slate-800",
         input:
           "border-red-200 bg-white text-slate-900 focus:border-red-500 focus:ring-red-100",
@@ -339,7 +339,7 @@ function getRowAppearance(status: RowStatus) {
       };
     case "GESTIONAR":
       return {
-        row: "border-l-4 border-amber-400 bg-white hover:bg-amber-50/60",
+        row: "bg-white hover:bg-amber-50/60 [&>td:first-child]:shadow-[inset_4px_0_0_#f59e0b]",
         surface: "text-slate-800",
         input:
           "border-amber-200 bg-white text-slate-900 focus:border-amber-400 focus:ring-amber-100",
@@ -347,7 +347,7 @@ function getRowAppearance(status: RowStatus) {
       };
     case "PAGO":
       return {
-        row: "border-l-4 border-emerald-400 bg-white hover:bg-emerald-50/40",
+        row: "bg-white hover:bg-emerald-50/40 [&>td:first-child]:shadow-[inset_4px_0_0_#34d399]",
         surface: "text-slate-800",
         input:
           "border-emerald-200 bg-white text-slate-900 focus:border-emerald-400 focus:ring-emerald-100",
@@ -355,7 +355,7 @@ function getRowAppearance(status: RowStatus) {
       };
     case "PAGO X":
       return {
-        row: "border-l-4 border-sky-400 bg-white hover:bg-sky-50/40",
+        row: "bg-white hover:bg-sky-50/40 [&>td:first-child]:shadow-[inset_4px_0_0_#38bdf8]",
         surface: "text-slate-800",
         input:
           "border-sky-200 bg-white text-slate-900 focus:border-sky-400 focus:ring-sky-100",
@@ -568,16 +568,16 @@ const cellInputClass =
 const cellReadonlyClass =
   "text-sm font-semibold leading-5";
 
-const tableColCorteClass = "w-[130px] min-w-[130px] px-3 py-4";
-const tableColTransactionClass = "w-[175px] min-w-[175px] px-3 py-4";
-const tableColMerchantClass = "w-[220px] min-w-[220px] px-3 py-4";
-const tableColDeviceClass = "w-[115px] min-w-[115px] px-3 py-4";
-const tableColDeviceFamilyClass = "w-[175px] min-w-[175px] px-3 py-4";
-const tableColImeiClass = "w-[165px] min-w-[165px] px-3 py-4";
-const tableColNationalIdClass = "w-[135px] min-w-[135px] px-3 py-4";
-const tableColInstallmentClass = "w-[125px] min-w-[125px] px-3 py-4";
-const tableColDateClass = "w-[135px] min-w-[135px] px-3 py-4";
-const tableColStatusClass = "w-[190px] min-w-[190px] px-3 py-4";
+const tableColCorteClass = "w-[150px] min-w-[150px] px-4 py-5";
+const tableColTransactionClass = "w-[190px] min-w-[190px] px-4 py-5";
+const tableColMerchantClass = "w-[240px] min-w-[240px] px-4 py-5";
+const tableColDeviceClass = "w-[135px] min-w-[135px] px-4 py-5";
+const tableColDeviceFamilyClass = "w-[200px] min-w-[200px] px-4 py-5";
+const tableColImeiClass = "w-[185px] min-w-[185px] px-4 py-5";
+const tableColNationalIdClass = "w-[150px] min-w-[150px] px-4 py-5";
+const tableColInstallmentClass = "w-[140px] min-w-[140px] px-4 py-5";
+const tableColDateClass = "w-[150px] min-w-[150px] px-4 py-5";
+const tableColStatusClass = "w-[210px] min-w-[210px] px-4 py-5";
 
 export default function PayJoyCarteraWorkspace({
   puedeEliminar,
@@ -2046,7 +2046,7 @@ export default function PayJoyCarteraWorkspace({
               </div>
 
               <div className="overflow-x-auto overscroll-x-contain">
-                <table className="min-w-[1780px] divide-y divide-slate-200">
+                <table className="min-w-[2050px] divide-y divide-slate-200">
                   <thead className="sticky top-0 z-10 bg-slate-50">
                     <tr className="text-left text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
                       <th className={tableColTransactionClass}>
