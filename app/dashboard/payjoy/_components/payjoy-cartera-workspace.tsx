@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 
 type RowStatus = "MORA" | "GESTIONAR" | "PAGO" | "PAGO X";
 
@@ -575,8 +581,15 @@ const tableColStatusClass = "w-[170px] min-w-[170px] px-4 py-4";
 
 export default function PayJoyCarteraWorkspace({
   puedeEliminar,
+  user,
 }: {
   puedeEliminar: boolean;
+  user: {
+    nombre: string;
+    usuario: string;
+    rolNombre: string;
+    sedeNombre: string;
+  };
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const reloadSummaryRef = useRef<HTMLElement | null>(null);
@@ -643,6 +656,30 @@ export default function PayJoyCarteraWorkspace({
   const totalSelectedFiles = files.length;
   const canSaveCut = Boolean(data && rows.length);
   const savedCutsCount = savedCuts.length;
+  const inicialesUsuario = String(user.nombre || user.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+    {
+      href: "/dashboard/sedes",
+      icon: "settings",
+      label: "Configuración",
+    },
+  ];
 
   const exportVisibleRowsToExcel = async () => {
     if (!filteredRows.length) {
@@ -1103,81 +1140,109 @@ export default function PayJoyCarteraWorkspace({
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb] px-4 py-4">
-      <div className="mx-auto w-full max-w-none">
-        <section className="rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-slate-950 shadow-sm sm:px-6">
-          <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="max-w-4xl">
-              <div className="flex flex-wrap gap-2">
-                <div className="inline-flex rounded-full border border-[#dfcfb3] bg-[#fff8ec] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8f5b24]">
-                  PayJoy cartera
-                </div>
-                <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                  Solo admin
-                </div>
-              </div>
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950 [&_button]:uppercase">
+      <DashboardSidebar
+        activeHref="/caja"
+        coverageLabel="Todas las sedes"
+        items={navigationItems}
+      />
 
-              <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <Link href="/dashboard" className="transition hover:text-[#e30613]">
+                  Inicio
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-slate-600">Cartera PayJoy</span>
+              </nav>
+              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
                 Cartera PayJoy
               </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                Consolida cortes, revisa cartera por tienda y administra el
-                historial desde un panel mas limpio para operacion.
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+                Consolida archivos, revisa la cartera por tienda y administra el historial de cortes.
               </p>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <div className="min-w-[145px] rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Archivos listos
-                  </p>
-                  <p className="mt-1 text-xl font-black text-slate-950">
-                    {totalSelectedFiles}
-                  </p>
-                </div>
-                <div className="min-w-[145px] rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Cortes guardados
-                  </p>
-                  <p className="mt-1 text-xl font-black text-slate-950">
-                    {savedCutsCount}
-                  </p>
-                </div>
-                <div className="min-w-[145px] rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Filas activas
-                  </p>
-                  <p className="mt-1 text-xl font-black text-slate-950">
-                    {rows.length}
-                  </p>
-                </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
+                  Acceso: ADMIN / AUDITOR
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
+                  Formatos: XLSX, CSV y TXT
+                </span>
               </div>
             </div>
 
-            <div className="relative flex flex-wrap gap-3">
-              <Link
-                href="/dashboard/payjoy"
-                className="rounded-2xl border border-slate-200 bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-              >
-                Cartera PayJoy
-              </Link>
+            <div className="flex flex-wrap items-center gap-2.5">
               <Link
                 href="/dashboard/payjoy/40-60"
-                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                className="inline-flex min-h-[52px] items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
               >
-                40/60
+                PayJoy 40/60
               </Link>
-              <Link
-                href="/dashboard"
-                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Volver
-              </Link>
+              <div className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || "US"}
+                </span>
+                <div className="min-w-0 pr-2">
+                  <p className="max-w-[170px] truncate text-sm font-bold">
+                    {user.nombre || user.usuario}
+                  </p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {user.rolNombre}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
             </div>
-          </div>
-        </section>
+          </header>
+
+          <section className="mt-6 grid gap-4 md:grid-cols-3">
+            {[
+              {
+                icon: "document" as const,
+                label: "Archivos listos",
+                value: totalSelectedFiles,
+                detail: "Archivos seleccionados para el proceso actual.",
+                tone: "bg-blue-50 text-blue-600",
+              },
+              {
+                icon: "catalog" as const,
+                label: "Cortes guardados",
+                value: savedCutsCount,
+                detail: "Registros persistentes disponibles en el historial.",
+                tone: "bg-violet-50 text-violet-600",
+              },
+              {
+                icon: "sales" as const,
+                label: "Filas activas",
+                value: rows.length,
+                detail: "Transacciones consolidadas en la vista actual.",
+                tone: "bg-red-50 text-[#e30613]",
+              },
+            ].map((metric) => (
+              <article
+                key={metric.label}
+                className="flex min-h-[132px] items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
+              >
+                <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${metric.tone}`}>
+                  <DashboardIcon name={metric.icon} className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                    {metric.label}
+                  </p>
+                  <p className="mt-1.5 text-3xl font-black">{metric.value}</p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">{metric.detail}</p>
+                </div>
+              </article>
+            ))}
+          </section>
 
         {message && (
-          <div className="mb-4 mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+          <div className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
+            <DashboardIcon name="bell" className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
             {message}
           </div>
         )}
@@ -1185,7 +1250,7 @@ export default function PayJoyCarteraWorkspace({
         {reloadSummary && (
           <section
             ref={reloadSummaryRef}
-            className="mb-5 rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm"
+            className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
           >
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
@@ -1258,10 +1323,10 @@ export default function PayJoyCarteraWorkspace({
           </section>
         )}
 
-        <section className="mt-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
-              <div className="inline-flex rounded-full border border-[#dfcfb3] bg-[#fff8ec] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8f5b24]">
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
+              <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-[#e30613]">
                 Operacion actual
               </div>
 
@@ -1284,21 +1349,21 @@ export default function PayJoyCarteraWorkspace({
                 }
               />
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-5 flex flex-wrap gap-2.5">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="rounded-xl bg-[#111318] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b1f27]"
+                  className="min-h-[44px] rounded-xl bg-[#e30613] px-5 text-xs font-black tracking-[0.06em] text-white shadow-sm transition hover:bg-[#c9000b]"
                 >
                   Seleccionar archivos
                 </button>
                 <button
                   onClick={() => void processSources()}
                   disabled={loading}
-                  className="rounded-xl border border-[#d2c4ad] bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-[#fcfaf5] disabled:opacity-70"
+                  className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-5 text-xs font-black tracking-[0.06em] text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
                 >
                   {loading ? "Procesando..." : "Procesar cargas"}
                 </button>
-                <div className="rounded-xl border border-[#e2d8c7] bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-700">
+                <div className="flex min-h-[44px] items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600">
                   {files.length
                     ? `${files.length} archivo(s) listo(s)`
                     : "Aun no has seleccionado archivos"}
@@ -1310,7 +1375,7 @@ export default function PayJoyCarteraWorkspace({
                   {files.map((file) => (
                     <span
                       key={`${file.name}-${file.size}`}
-                      className="rounded-full border border-[#ddd3c2] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
                     >
                       {file.name}
                     </span>
@@ -1319,7 +1384,7 @@ export default function PayJoyCarteraWorkspace({
               )}
             </div>
 
-            <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
@@ -1332,7 +1397,7 @@ export default function PayJoyCarteraWorkspace({
 
                 <button
                   onClick={() => setRulesExpanded((current) => !current)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="min-h-[42px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-100"
                 >
                   {rulesExpanded ? "Ocultar" : "Ver reglas"}
                 </button>
@@ -1373,9 +1438,9 @@ export default function PayJoyCarteraWorkspace({
           </div>
         </section>
 
-        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.22fr)]">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+        <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.22fr)]">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+            <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
               Guardar corte
             </div>
 
@@ -1397,11 +1462,11 @@ export default function PayJoyCarteraWorkspace({
                     value={saveName}
                     onChange={(event) => setSaveName(event.target.value)}
                     placeholder="Ej: Corte abril 4 PayJoy"
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-[#c79a57] focus:ring-2 focus:ring-[#f4dfbc]"
+                    className="min-h-[52px] w-full rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
                   />
                 </label>
 
-                <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Cortes incluidos
                   </p>
@@ -1421,7 +1486,7 @@ export default function PayJoyCarteraWorkspace({
                   <button
                     onClick={() => void saveCurrentCut()}
                     disabled={savingCut}
-                    className="rounded-2xl bg-[#111318] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b1f27] disabled:opacity-70"
+                    className="min-h-[46px] rounded-xl bg-[#e30613] px-5 text-xs font-black tracking-[0.06em] text-white shadow-sm transition hover:bg-[#c9000b] disabled:opacity-60"
                   >
                     {savingCut ? "Guardando..." : "Guardar corte"}
                   </button>
@@ -1429,7 +1494,7 @@ export default function PayJoyCarteraWorkspace({
                     <button
                       onClick={() => void updateCurrentStoredCut(activeSavedCutId)}
                       disabled={updatingCut}
-                      className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-5 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
+                      className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-5 text-xs font-black text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
                     >
                       {updatingCut
                         ? "Actualizando..."
@@ -1442,17 +1507,17 @@ export default function PayJoyCarteraWorkspace({
                 </div>
               </>
             ) : (
-              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+              <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
                 Procesa una cartera primero y luego podras guardarla en el
                 historial.
               </div>
             )}
           </div>
 
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
                   Historial de cortes
                 </div>
                 <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
@@ -1471,14 +1536,14 @@ export default function PayJoyCarteraWorkspace({
                 <button
                   onClick={() => setSavedCutsExpanded((current) => !current)}
                   disabled={!savedCutsCount}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {savedCutsExpanded ? "Ocultar cortes" : "Visualizar cortes"}
                 </button>
                 <button
                   onClick={() => void loadSavedCuts()}
                   disabled={savedCutsLoading}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+                  className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
                 >
                   {savedCutsLoading ? "Actualizando..." : "Actualizar"}
                 </button>
@@ -1492,17 +1557,17 @@ export default function PayJoyCarteraWorkspace({
             )}
 
             {savedCutsLoading && !savedCuts.length ? (
-              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+              <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
                 Cargando historial de cortes guardados...
               </div>
             ) : !savedCuts.length ? (
-              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+              <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
                 Aun no hay cortes guardados. Cuando uses{" "}
                 <span className="font-semibold">Guardar corte</span>, te
                 quedaran listados aqui para futuras consultas.
               </div>
             ) : !savedCutsExpanded ? (
-              <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-950">
@@ -1528,9 +1593,9 @@ export default function PayJoyCarteraWorkspace({
                   <article
                     key={cut.id}
                     className={[
-                      "rounded-[24px] border px-4 py-4 transition",
+                      "rounded-2xl border px-4 py-4 transition",
                       activeSavedCutId === cut.id
-                        ? "border-[#d8b476] bg-[#fff9ef] shadow-sm"
+                        ? "border-red-200 bg-red-50/40 shadow-sm"
                         : "border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]",
                     ].join(" ")}
                   >
@@ -1597,7 +1662,7 @@ export default function PayJoyCarteraWorkspace({
                               <button
                                 onClick={() => void updateCurrentStoredCut(cut.id)}
                                 disabled={updatingCut}
-                                className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-4 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
+                                className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-black text-red-700 transition hover:bg-red-100 disabled:opacity-60"
                               >
                                 {updatingCut
                                   ? "Guardando..."
@@ -2166,6 +2231,7 @@ export default function PayJoyCarteraWorkspace({
             </section>
           </>
         )}
+        </main>
       </div>
     </div>
   );

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import {
+  esPerfilSupervisor,
+  puedeAccederModulosOperativos,
+} from "@/lib/access-control";
 import {
   createFinancialAccessToken,
   FINANCIAL_ACCESS_COOKIE_NAME,
@@ -21,6 +24,13 @@ export async function POST(req: Request) {
         { error: "Este perfil no tiene acceso al panel analitico" },
         { status: 403 }
       );
+    }
+
+    if (!esPerfilSupervisor(user.perfilTipo)) {
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Este perfil tiene acceso directo al panel analitico",
+      });
     }
 
     const body = (await req.json()) as Record<string, unknown>;

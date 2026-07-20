@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import {
   esPerfilFacturador,
   esPerfilRegistroVenta,
+  esPerfilSupervisor,
   esRolAdministrativo,
 } from "@/lib/access-control";
 import { getMonthlyAnalyticSummary } from "@/lib/dashboard-analytics";
@@ -27,19 +28,21 @@ export async function GET(req: Request) {
       );
     }
 
-    const access = await getFinancialAccessState({
-      allowAdminBypass: false,
-    });
+    if (esPerfilSupervisor(user.perfilTipo)) {
+      const access = await getFinancialAccessState({
+        allowAdminBypass: false,
+      });
 
-    if (!access.authorized) {
-      return NextResponse.json(
-        {
-          error: access.sede?.claveAsignada
-            ? "Debes ingresar la clave de la sede para acceder al panel analitico"
-            : "El administrador debe asignar la clave de esta sede para habilitar el panel analitico",
-        },
-        { status: 403 }
-      );
+      if (!access.authorized) {
+        return NextResponse.json(
+          {
+            error: access.sede?.claveAsignada
+              ? "Debes ingresar la clave de la sede para acceder al panel analitico"
+              : "El administrador debe asignar la clave de esta sede para habilitar el panel analitico",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const url = new URL(req.url);
