@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
   calcularValorNetoFinanciera,
   type CatalogoFinanciera,
 } from "@/lib/ventas-financieras";
@@ -55,8 +61,6 @@ type RegistroVentaRelacionado = {
   referenciaEquipo: string | null;
   asesorNombre: string | null;
   jaladorNombre: string | null;
-  numeroFactura: string | null;
-  estadoFacturacion: string;
   observacion: string | null;
   plataformaCredito: string | null;
   creditoAutorizado: string | number | null;
@@ -76,8 +80,13 @@ type CatalogoPersonalResponse = {
 };
 
 type SessionResponse = {
+  nombre?: string | null;
+  usuario?: string | null;
+  sedeNombre?: string | null;
   rolNombre?: string | null;
+  perfilNombre?: string | null;
   perfilTipo?: string | null;
+  perfilTipoLabel?: string | null;
 };
 
 function limpiarNumero(v: string) {
@@ -186,9 +195,6 @@ function normalizarRegistroVenta(value: unknown): RegistroVentaRelacionado | nul
     asesorNombre: typeof row.asesorNombre === "string" ? row.asesorNombre : null,
     jaladorNombre:
       typeof row.jaladorNombre === "string" ? row.jaladorNombre : null,
-    numeroFactura:
-      typeof row.numeroFactura === "string" ? row.numeroFactura : null,
-    estadoFacturacion: String(row.estadoFacturacion || "PENDIENTE"),
     observacion: typeof row.observacion === "string" ? row.observacion : null,
     plataformaCredito:
       typeof row.plataformaCredito === "string" ? row.plataformaCredito : null,
@@ -303,10 +309,10 @@ function pagosDesdeRegistro(registro: RegistroVentaRelacionado) {
 }
 
 function inputBaseClass(readOnly = false) {
-  return `w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${
+  return `min-h-11 w-full rounded-xl border px-4 py-3 text-sm outline-none transition ${
     readOnly
       ? "border-slate-200 bg-slate-50 text-slate-700"
-      : "border-slate-300 bg-white text-slate-900 shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+      : "border-slate-300 bg-white text-slate-900 shadow-sm focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
   }`;
 }
 
@@ -315,11 +321,11 @@ function tipoPagoNormalizado(value: string) {
 }
 
 function sectionTitleClass() {
-  return "mb-5 text-xs font-bold uppercase tracking-[0.22em] text-slate-500";
+  return "mb-5 text-xs font-black uppercase tracking-[0.18em] text-[#e30613]";
 }
 
 function sectionCardClass() {
-  return "rounded-[30px] border border-slate-200/80 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)]";
+  return "rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6";
 }
 
 export default function NuevaVentaPage() {
@@ -362,6 +368,7 @@ export default function NuevaVentaPage() {
   const [confirmoTransferenciaValidada, setConfirmoTransferenciaValidada] =
     useState(false);
   const [esAdminActual, setEsAdminActual] = useState(false);
+  const [sessionActual, setSessionActual] = useState<SessionResponse | null>(null);
   const registroIdParam = searchParams.get("registroId");
 
   const ventaDesdeRegistro = Boolean(registroVendedor);
@@ -504,6 +511,7 @@ export default function NuevaVentaPage() {
           return;
         }
 
+        setSessionActual(data);
         setEsAdminActual(
           ["ADMIN", "AUDITOR"].includes(String(data.rolNombre || "").trim().toUpperCase()) ||
             String(data.perfilTipo || "").trim().toUpperCase() === "ADMINISTRADOR"
@@ -907,50 +915,193 @@ export default function NuevaVentaPage() {
     window.location.href = "/dashboard";
   };
 
-  return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#fff7eb_0%,#f3f6fb_36%,#eef2f7_100%)] px-4 py-10 lg:px-8 2xl:px-10">
-      <div className="mx-auto max-w-[1920px]">
-        <div className="overflow-hidden rounded-[36px] border border-white/50 bg-white/90 shadow-[0_30px_90px_rgba(15,23,42,0.12)] backdrop-blur-sm">
-          <div className="bg-[linear-gradient(135deg,#0f172a_0%,#111827_55%,#57534e_100%)] px-8 py-8 md:px-10">
-            <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/90">
-                  Venta
-                </div>
-                <h1 className="mt-4 text-4xl font-black tracking-tight text-white md:text-5xl">
-                  Nueva venta
-                </h1>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-200 md:text-base">
-                  Registro comercial y financiero de la operacion con una vista
-                  mas clara para equipo, ingresos, financieras y cierre.
-                </p>
-              </div>
+  const esModoAprobacion = Boolean(registroIdParam);
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    {
+      href: esAdminActual ? "/dashboard/reportes" : "/dashboard/analitico",
+      icon: "reports",
+      label: "Reportes",
+    },
+    ...(esAdminActual
+      ? ([
+          {
+            href: "/dashboard/sedes",
+            icon: "settings",
+            label: "Configuración",
+          },
+        ] satisfies NavigationItem[])
+      : []),
+  ];
+  const usuarioActual =
+    sessionActual?.perfilNombre ||
+    sessionActual?.nombre ||
+    sessionActual?.usuario ||
+    "Usuario";
+  const rolActual =
+    sessionActual?.perfilTipoLabel ||
+    sessionActual?.rolNombre ||
+    (esAdminActual ? "Administrador" : "Supervisor");
+  const coberturaActual = sessionActual?.sedeNombre || "Tu sede";
+  const inicialesUsuario = usuarioActual
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+  const equipoValidado = Boolean(serial.length === 15 && referencia);
+  const pagoConfirmado = Boolean(
+    registroVendedor && !confirmacionesIngresoPendientes
+  );
+  const mensajeEsExito = /(correctamente|encontrado)/i.test(mensaje);
 
-              <div className="flex flex-col gap-3 md:items-end">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-semibold tracking-[0.12em] text-white/90">
-                  PASO 1: EQUIPO · PASO 2: VENTA · PASO 3: PAGO
-                </div>
-                <div className="text-xs uppercase tracking-[0.2em] text-slate-300">
-                  Flujo guiado en tiempo real
-                </div>
+  return (
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/ventas"
+        coverageLabel={esAdminActual ? "Todas las sedes" : coberturaActual}
+        items={navigationItems}
+      />
+
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                <span>Ventas</span>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-[#e30613]">
+                  {esModoAprobacion ? "Aprobación" : "Nueva venta"}
+                </span>
+              </div>
+              <h1 className="mt-2 text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
+                {esModoAprobacion ? "Aprobar venta" : "Nueva venta"}
+              </h1>
+              <p className="mt-1 max-w-3xl text-sm text-slate-500 sm:text-base">
+                {esModoAprobacion
+                  ? "Revisa el registro del vendedor, confirma los ingresos y completa el cierre"
+                  : "Registra la información comercial y financiera de la operación"}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  <DashboardIcon name="store" className="h-4 w-4 text-slate-500" />
+                  {esAdminActual ? "Todas las sedes" : coberturaActual}
+                </span>
+                {esModoAprobacion && (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-amber-700">
+                    Registro #{registroIdParam}
+                  </span>
+                )}
               </div>
             </div>
-          </div>
 
-          <div className="p-6 md:p-8 xl:p-10">
-            {cargandoRegistroInicial && (
-              <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm font-medium text-blue-800">
-                Cargando aprobacion seleccionada...
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/ventas/aprobaciones"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
+              >
+                <DashboardIcon name="approvals" className="h-4 w-4" />
+                Ver pendientes
+              </Link>
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[205px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || (
+                    <DashboardIcon name="user" className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {usuarioActual}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">{rolActual}</p>
+                </div>
               </div>
-            )}
+              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
+            </div>
+          </header>
 
-            {mensaje && (
-              <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-700">
-                {mensaje}
+          {esModoAprobacion && (
+            <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-5">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    completed: Boolean(registroVendedor),
+                    label: "Registro recibido",
+                    number: 1,
+                  },
+                  {
+                    completed: equipoValidado,
+                    label: "Equipo validado",
+                    number: 2,
+                  },
+                  {
+                    completed: pagoConfirmado,
+                    label: "Ingresos confirmados",
+                    number: 3,
+                  },
+                  {
+                    completed: false,
+                    label: "Aprobar y guardar",
+                    number: 4,
+                  },
+                ].map((step) => (
+                  <div
+                    key={step.number}
+                    className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
+                  >
+                    <span
+                      className={[
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black",
+                        step.completed
+                          ? "bg-emerald-100 text-emerald-700"
+                          : step.number === 4
+                            ? "bg-red-100 text-[#e30613]"
+                            : "bg-white text-slate-500 ring-1 ring-slate-200",
+                      ].join(" ")}
+                    >
+                      {step.number}
+                    </span>
+                    <span className="text-xs font-bold text-slate-700">{step.label}</span>
+                  </div>
+                ))}
               </div>
-            )}
+            </section>
+          )}
 
-            <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.85fr)_420px] xl:gap-10">
+          {cargandoRegistroInicial && (
+            <div className="mt-5 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-blue-500" />
+              Cargando aprobación seleccionada...
+            </div>
+          )}
+
+          {mensaje && (
+            <div
+              className={[
+                "mt-5 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold",
+                mensajeEsExito
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-amber-200 bg-amber-50 text-amber-800",
+              ].join(" ")}
+            >
+              <DashboardIcon
+                name={mensajeEsExito ? "approvals" : "warning"}
+                className="h-5 w-5 shrink-0"
+              />
+              {mensaje}
+            </div>
+          )}
+
+          <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
               <div className="space-y-6">
                 <div className={sectionCardClass()}>
                   <h3 className={sectionTitleClass()}>Equipo</h3>
@@ -1076,28 +1227,18 @@ export default function NuevaVentaPage() {
                         </p>
                       </div>
 
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 md:col-span-2">
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                           Asesor y sede
                         </p>
-                        <p className="mt-2 text-sm font-semibold text-slate-900">
-                          {registroVendedor.asesorNombre || "Sin asesor"}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {registroVendedor.puntoVenta || "Sin punto de venta"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Facturacion
-                        </p>
-                        <p className="mt-2 text-sm font-semibold text-slate-900">
-                          {registroVendedor.estadoFacturacion}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          Factura: {registroVendedor.numeroFactura || "Pendiente"}
-                        </p>
+                        <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                          <p className="text-sm font-semibold text-slate-900">
+                            {registroVendedor.asesorNombre || "Sin asesor"}
+                          </p>
+                          <p className="text-sm font-bold text-slate-600">
+                            {registroVendedor.puntoVenta || "Sin punto de venta"}
+                          </p>
+                        </div>
                       </div>
 
                       <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
@@ -1423,53 +1564,60 @@ export default function NuevaVentaPage() {
                 </div>
               </div>
 
-              <div className="space-y-6 xl:sticky xl:top-8 xl:self-start">
-                <div className="overflow-hidden rounded-[30px] border border-slate-200/80 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-                  <div className="border-b border-white/5 bg-[linear-gradient(135deg,#111827_0%,#0f172a_60%,#374151_100%)] px-5 py-5 text-white">
-                    <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-300">
+              <div className="space-y-5 xl:sticky xl:top-5 xl:self-start">
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+                  <div className="border-b border-slate-200 px-5 py-5">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+                        <DashboardIcon name="sales" className="h-5 w-5" />
+                      </span>
+                      <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-[#e30613]">
                       Resumen de venta
                     </p>
-                    <h3 className="mt-3 text-2xl font-black tracking-tight">
+                    <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">
                       Cierre proyectado
                     </h3>
-                    <p className="mt-2 text-sm text-slate-300">
-                      El resumen se actualiza a medida que completas la venta.
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-500">
+                      Valores calculados en tiempo real antes de aprobar.
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 p-5">
-                    <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200/80">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="grid grid-cols-2 gap-3 p-4">
+                    <div className="rounded-xl bg-slate-50 p-3.5 ring-1 ring-slate-200/80">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
                         Caja oficina
                       </p>
-                      <p className="mt-2 text-3xl font-black text-slate-900">
+                      <p className="mt-2 break-words text-xl font-black leading-tight text-slate-900">
                         {formatoPesos(cajaOficina)}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <div className="rounded-xl bg-emerald-50 p-3.5 ring-1 ring-emerald-100">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700">
                         Utilidad
                       </p>
-                      <p className="mt-2 text-3xl font-black text-emerald-600">
+                      <p className="mt-2 break-words text-xl font-black leading-tight text-emerald-600">
                         {formatoPesos(utilidad)}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl bg-blue-50 p-4 ring-1 ring-blue-100">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <div className="rounded-xl bg-blue-50 p-3.5 ring-1 ring-blue-100">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-blue-700">
                         Ingresos netos
                       </p>
-                      <p className="mt-2 text-2xl font-bold text-blue-700">
+                      <p className="mt-2 break-words text-lg font-black leading-tight text-blue-700">
                         {formatoPesos(totalIngresosNetos)}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl bg-indigo-50 p-4 ring-1 ring-indigo-100">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <div className="rounded-xl bg-violet-50 p-3.5 ring-1 ring-violet-100">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-violet-700">
                         Financieras netas
                       </p>
-                      <p className="mt-2 text-2xl font-bold text-indigo-700">
+                      <p className="mt-2 break-words text-lg font-black leading-tight text-violet-700">
                         {formatoPesos(totalFinancierasNetas)}
                       </p>
                     </div>
@@ -1482,23 +1630,27 @@ export default function NuevaVentaPage() {
                   <div className="flex flex-col gap-3">
                     <Link
                       href="/ventas/aprobaciones"
-                      className="rounded-2xl border border-slate-300 bg-white px-6 py-4 text-center text-base font-semibold text-slate-700 transition hover:bg-slate-50"
+                      className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-center text-xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
                     >
-                      Aprobacion de ventas
+                      Volver a pendientes
                     </Link>
 
                     <button
                       onClick={guardar}
                       disabled={guardando || confirmacionesIngresoPendientes}
-                      className="rounded-2xl bg-gradient-to-r from-red-600 to-red-500 px-6 py-4 text-base font-semibold text-white shadow-sm transition hover:from-red-700 hover:to-red-600 disabled:cursor-not-allowed disabled:opacity-70"
+                      className="inline-flex min-h-12 items-center justify-center rounded-xl bg-[#e30613] px-5 text-xs font-black uppercase tracking-[0.08em] text-white shadow-sm transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {guardando ? "Guardando..." : "Guardar venta"}
+                      {guardando
+                        ? "Guardando..."
+                        : esModoAprobacion
+                          ? "Aprobar y guardar venta"
+                          : "Guardar venta"}
                     </button>
 
                     <button
                       type="button"
                       onClick={salirFormulario}
-                      className="rounded-2xl bg-slate-100 px-6 py-4 text-base font-semibold text-slate-700 transition hover:bg-slate-200"
+                      className="inline-flex min-h-12 items-center justify-center rounded-xl bg-slate-100 px-5 text-xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:bg-slate-200"
                     >
                       Cancelar
                     </button>
@@ -1547,8 +1699,7 @@ export default function NuevaVentaPage() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          </main>
       </div>
     </div>
   );
