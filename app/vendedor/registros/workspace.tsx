@@ -30,7 +30,6 @@ import {
   type NavigationItem,
 } from "@/app/dashboard/_components/operations-dashboard";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
 import type { RegistroVendedorDetalle } from "./types";
 
 type SessionProps = {
@@ -374,21 +373,21 @@ function createInitialState(session: SessionProps): FormState {
 }
 
 function inputClass(readOnly = false) {
-  return `w-full rounded-xl border px-4 py-3.5 text-base font-semibold outline-none transition ${
+  return `w-full rounded-lg border px-4 py-3.5 text-base font-medium outline-none transition ${
     readOnly
       ? "border-slate-200 bg-slate-100 text-slate-500"
-      : "border-slate-200 bg-white text-slate-950 focus:border-[#e30613] focus:ring-4 focus:ring-red-100"
+      : "border-slate-300 bg-white text-slate-950 focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
   }`;
 }
 
 const formSectionClass =
-  "overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.055)]";
+  "overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.055)]";
 
 const formSectionHeaderClass =
-  "-mx-5 -mt-5 mb-6 flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4 text-xs font-black uppercase tracking-[0.15em] text-slate-700";
+  "mb-7 flex items-center justify-between gap-4 text-xl font-black tracking-tight text-slate-950 [&>span:last-child]:hidden";
 
 const fieldLabelClass =
-  "flex flex-col gap-2 text-sm font-bold text-slate-700";
+  "flex flex-col gap-2 text-sm font-semibold text-slate-700";
 
 function esEstadoEquipoDisponible(estado: string | null | undefined) {
   return String(estado || "").trim().toUpperCase() === "BODEGA";
@@ -3593,7 +3592,7 @@ export default function VendedorRegistroWorkspace({
     { numero: 1, titulo: "Equipo", detalle: "Sede, IMEI y tipo" },
     { numero: 2, titulo: "Cliente", detalle: "Datos y evidencias" },
     { numero: 3, titulo: "Pago", detalle: "Ingresos y financieras" },
-    { numero: 4, titulo: "Confirmacion", detalle: "Revision y guardado" },
+    { numero: 4, titulo: "Confirmación", detalle: "Revisión y guardado" },
   ];
 
   return (
@@ -3601,6 +3600,7 @@ export default function VendedorRegistroWorkspace({
       <DashboardSidebar
         activeHref="/vendedor/registros"
         coverageLabel={session.sedeNombre}
+        footerMode="logout"
         items={navigationItems}
       />
       <div className="lg:pl-[252px]">
@@ -4038,49 +4038,47 @@ export default function VendedorRegistroWorkspace({
           </section>
         </div>
       )}
-      <div className="mx-auto max-w-[1560px] px-4 pb-10 pt-6 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-center xl:justify-between">
+      <div className="mx-auto max-w-[1580px] px-4 pb-10 pt-6 sm:px-6 lg:px-8">
+        <header className="flex flex-col gap-5 pb-2 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#e30613]">
-              Ventas / Registro digital
-            </p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+            <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-[34px]">
               {registroEditando ? "Modificar registro" : "Registrar venta"}
             </h1>
-            <p className="mt-2 max-w-3xl text-base text-slate-600">
+            <p className="mt-2 max-w-3xl text-[15px] text-slate-500">
               {registroEditandoConvertido
                 ? "Corrige los datos permitidos sin alterar la venta, el inventario ni los valores procesados."
-                : "Completa el registro paso a paso. La informacion se conserva hasta la confirmacion final."}
+                : "Completa la información para crear un nuevo registro"}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href="/vendedor/lista-precios"
-              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
-            >
-              Lista de precios
-            </Link>
             {puedeBuscarRegistros && (
               <Link
                 href="/vendedor/registros/buscar"
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
+                className="inline-flex min-h-12 items-center gap-2 rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-slate-800 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
               >
+                <DashboardIcon name="approvals" className="h-5 w-5" />
                 Buscar registro
               </Link>
             )}
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950 text-sm font-black text-white">
-                {session.perfilNombre.slice(0, 2).toUpperCase()}
+            <Link
+              href="/vendedor/lista-precios"
+              className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-[#11161d] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#e30613]"
+            >
+              <DashboardIcon name="approvals" className="h-5 w-5" />
+              Lista de precios
+            </Link>
+            <div className="ml-1 flex min-h-12 items-center gap-3 px-1">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-600 text-white">
+                <DashboardIcon name="user" className="h-7 w-7" />
               </span>
-              <div className="hidden sm:block">
-                <p className="max-w-44 truncate text-sm font-bold text-slate-950">
-                  {session.perfilNombre}
+              <div className="hidden md:block">
+                <p className="max-w-56 truncate text-sm font-bold text-slate-950">
+                  {session.perfilTipoLabel} · {session.sedeNombre}
                 </p>
-                <p className="text-xs text-slate-500">{session.perfilTipoLabel}</p>
               </div>
+              <DashboardIcon name="arrow" className="hidden h-4 w-4 rotate-90 text-slate-600 md:block" />
             </div>
-            <LogoutButton variant="light" className="rounded-xl" />
           </div>
         </header>
 
@@ -4135,77 +4133,66 @@ export default function VendedorRegistroWorkspace({
           </div>
         )}
 
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <ol className="grid gap-2 md:grid-cols-4" aria-label="Pasos del registro de venta">
-            {pasos.map((paso) => {
-              const activo = paso.numero === pasoActual;
-              const completado = paso.numero < pasoActual;
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_7px_22px_rgba(15,23,42,0.045)] sm:px-7">
+          <div className="grid gap-5 md:grid-cols-[130px_minmax(0,1fr)] md:items-center">
+            <p className="text-sm font-bold text-slate-800">
+              Paso {pasoActual} de 4
+            </p>
+            <ol className="grid grid-cols-4" aria-label="Pasos del registro de venta">
+              {pasos.map((paso, index) => {
+                const activo = paso.numero === pasoActual;
+                const completado = paso.numero < pasoActual;
 
-              return (
-                <li key={paso.numero}>
-                  <button
-                    type="button"
-                    onClick={() => irAlPaso(paso.numero)}
-                    disabled={paso.numero > pasoActual}
-                    aria-current={activo ? "step" : undefined}
-                    className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${
-                      activo
-                        ? "border-red-200 bg-red-50"
-                        : completado
-                          ? "border-slate-200 bg-white hover:border-red-200"
-                          : "border-transparent bg-slate-50 text-slate-400"
-                    } disabled:cursor-not-allowed`}
-                  >
-                    <span
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-black ${
-                        activo
-                          ? "bg-[#e30613] text-white"
-                          : completado
-                            ? "bg-slate-950 text-white"
-                            : "bg-slate-200 text-slate-500"
-                      }`}
+                return (
+                  <li key={paso.numero} className="relative flex justify-center">
+                    {index < pasos.length - 1 && (
+                      <span className="absolute left-[calc(50%+24px)] right-[calc(-50%+24px)] top-5 h-px bg-slate-200" />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => irAlPaso(paso.numero)}
+                      disabled={paso.numero > pasoActual}
+                      aria-current={activo ? "step" : undefined}
+                      className="relative z-10 flex min-w-0 flex-col items-center gap-2 text-center disabled:cursor-not-allowed"
                     >
-                      {completado ? "✓" : paso.numero}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-black text-slate-950">
+                      <span
+                        className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-black shadow-sm transition ${
+                          activo
+                            ? "bg-[#e30613] text-white"
+                            : completado
+                              ? "bg-slate-950 text-white"
+                              : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {completado ? "✓" : paso.numero}
+                      </span>
+                      <span
+                        className={`truncate text-xs font-semibold sm:text-sm ${
+                          activo ? "text-[#e30613]" : "text-slate-600"
+                        }`}
+                      >
                         {paso.titulo}
                       </span>
-                      <span className="mt-0.5 block truncate text-xs text-slate-500">
-                        {paso.detalle}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
         </section>
 
-        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
           <div className="space-y-6">
             {pasoActual === 1 && (
-            <section className={`${formSectionClass} p-5`}>
+            <section className={`${formSectionClass} p-6`}>
               <div className={formSectionHeaderClass}>
-                <span>Paso 1 · Equipo</span>
+                <span>Equipo y tipo de venta</span>
                 <span className="rounded-full bg-red-50 px-3 py-1 text-[#c4000c]">
                   Datos del equipo
                 </span>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className={fieldLabelClass}>
-                  Ciudad
-                  <input
-                    value={form.ciudad}
-                    disabled={registroEditandoConvertido}
-                    onChange={(event) => setField("ciudad", event.target.value)}
-                    className={inputClass(registroEditandoConvertido)}
-                    placeholder="Ciudad"
-                  />
-                  <FieldError message={erroresCampos.ciudad} />
-                </label>
-
+              <div className="grid gap-x-5 gap-y-5 md:grid-cols-2">
                 <label className={fieldLabelClass}>
                   Punto de venta
                   <select
@@ -4229,10 +4216,22 @@ export default function VendedorRegistroWorkspace({
                   <FieldError message={erroresCampos.puntoVenta} />
                 </label>
 
-                <div className="md:col-span-2 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex flex-col gap-2 md:flex-row md:items-end">
+                <label className={fieldLabelClass}>
+                  Ciudad
+                  <input
+                    value={form.ciudad}
+                    disabled={registroEditandoConvertido}
+                    onChange={(event) => setField("ciudad", event.target.value)}
+                    className={inputClass(registroEditandoConvertido)}
+                    placeholder="Selecciona la ciudad"
+                  />
+                  <FieldError message={erroresCampos.ciudad} />
+                </label>
+
+                <div className="grid gap-2 md:col-span-2">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end">
                     <label className={`${fieldLabelClass} flex-1`}>
-                      IMEI
+                      IMEI del equipo
                       <input
                         value={form.serialImei}
                         disabled={registroEditandoConvertido}
@@ -4272,7 +4271,7 @@ export default function VendedorRegistroWorkspace({
                           }
                         }}
                         className={inputClass(registroEditandoConvertido)}
-                        placeholder="15 digitos"
+                        placeholder="Ingresa los 15 dígitos"
                       />
                       <FieldError message={erroresCampos.serialImei} />
                     </label>
@@ -4285,43 +4284,15 @@ export default function VendedorRegistroWorkspace({
                         buscandoImei ||
                         form.serialImei.length !== 15
                       }
-                      className="rounded-xl bg-slate-950 px-6 py-3.5 text-sm font-black text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className="min-h-[50px] rounded-lg border border-[#e30613] bg-white px-8 text-sm font-black text-[#e30613] transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       {buscandoImei ? "Consultando..." : "Buscar IMEI"}
                     </button>
                   </div>
-
-                  {equipoEncontrado ? (
-                    <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
-                      {[
-                        ["Referencia", equipoEncontrado.referencia],
-                        ["Color", equipoEncontrado.color || "Sin color"],
-                        ["Costo", formatMoney(equipoEncontrado.costo)],
-                        ["Estado", equipoEncontrado.estadoActual || "Sin estado"],
-                      ].map(([label, value]) => (
-                        <div key={label}>
-                          <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                            {label}
-                          </p>
-                          <p
-                            className={`mt-1 font-black ${
-                              label === "Estado" &&
-                              !esEstadoEquipoDisponible(equipoEncontrado.estadoActual)
-                                ? "text-[#c4000c]"
-                                : "text-slate-950"
-                            }`}
-                          >
-                            {value}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
-                      {imeiDetalle ||
-                        "Busca un IMEI para completar referencia, color, costo y estado."}
-                    </div>
-                  )}
+                  <p className="flex items-center gap-2 text-xs leading-5 text-slate-500">
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-400 text-[10px] font-bold">i</span>
+                    La información del equipo se completará automáticamente si el IMEI está registrado.
+                  </p>
                   {verificandoDuplicado && (
                     <p className="text-xs font-semibold text-amber-700">
                       Verificando si esta cedula e IMEI ya existen en el
@@ -4331,7 +4302,7 @@ export default function VendedorRegistroWorkspace({
                 </div>
 
                 <div className="md:col-span-2">
-                  <p className="mb-2 text-[13px] font-black uppercase tracking-[0.08em] text-slate-500">
+                  <p className="mb-2 text-sm font-semibold text-slate-700">
                     Tipo de venta
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -4344,12 +4315,16 @@ export default function VendedorRegistroWorkspace({
                           type="button"
                           disabled={registroEditandoConvertido}
                           onClick={() => seleccionarServicio(option.value)}
-                          className={`rounded-[24px] border px-5 py-5 text-left text-sm font-black transition ${
+                          className={`flex min-h-12 items-center justify-center gap-3 rounded-lg border px-5 text-sm font-bold transition ${
                             active
-                              ? "border-slate-950 bg-slate-950 text-white shadow-[0_14px_30px_rgba(15,23,42,0.2)]"
-                              : "border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50"
+                              ? "border-[#e30613] bg-red-50/40 text-[#e30613]"
+                              : "border-slate-300 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50"
                           } disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500`}
                         >
+                          <DashboardIcon
+                            name={option.value === "CONTADO" ? "cash" : "sales"}
+                            className="h-5 w-5"
+                          />
                           {option.label}
                         </button>
                       );
@@ -4358,9 +4333,55 @@ export default function VendedorRegistroWorkspace({
                   <FieldError message={erroresCampos.servicio} />
                 </div>
 
+                <section className="rounded-xl border border-slate-200 bg-white p-4 md:col-span-2">
+                  <p className="text-sm font-semibold text-slate-700">Información del equipo</p>
+                  <div className="mt-4 grid items-center gap-5 sm:grid-cols-[105px_minmax(0,1fr)]">
+                    <div className="mx-auto flex h-28 w-20 items-center justify-center rounded-[18px] border-2 border-slate-500 bg-slate-50 shadow-[0_8px_18px_rgba(15,23,42,0.09)]">
+                      <div className="relative h-[104px] w-[72px] rounded-[15px] bg-[linear-gradient(145deg,#ffffff_0%,#f1f3f5_70%,#ffffff_100%)]">
+                        <span className="absolute left-1/2 top-1.5 h-1.5 w-8 -translate-x-1/2 rounded-full bg-slate-500" />
+                        <span className="absolute bottom-2 left-1/2 h-0.5 w-6 -translate-x-1/2 bg-slate-500" />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {[
+                          ["Referencia", equipoEncontrado?.referencia || "— — —"],
+                          ["Color", equipoEncontrado?.color || "— — —"],
+                          ["Costo", equipoEncontrado ? formatMoney(equipoEncontrado.costo) : "— — —"],
+                          ["Estado", equipoEncontrado?.estadoActual || "— — —"],
+                        ].map(([label, value]) => (
+                          <div key={label}>
+                            <p className="text-xs font-bold text-slate-600">{label}</p>
+                            <p
+                              className={`mt-3 text-sm font-black ${
+                                label === "Estado" &&
+                                equipoEncontrado &&
+                                !esEstadoEquipoDisponible(equipoEncontrado.estadoActual)
+                                  ? "text-[#c4000c]"
+                                  : "text-slate-900"
+                              }`}
+                            >
+                              {value}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-5 text-xs text-slate-500">
+                        {imeiDetalle ||
+                          (equipoEncontrado
+                            ? "Información encontrada en el inventario."
+                            : "La información se mostrará después de buscar el IMEI.")}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
                 {(esServicioFinanciera(form.servicio) ||
                   esServicioContado(form.servicio)) && (
-                  <>
+                  <div className="grid gap-4 border-t border-slate-100 pt-5 md:col-span-2 md:grid-cols-2">
+                    <h3 className="text-sm font-bold text-slate-800 md:col-span-2">
+                      Detalles del producto
+                    </h3>
                     <label className={fieldLabelClass}>
                       Referencia
                       <input
@@ -4437,8 +4458,8 @@ export default function VendedorRegistroWorkspace({
                           </option>
                         ))}
                       </select>
-                  </label>
-                  </>
+                    </label>
+                  </div>
                 )}
               </div>
             </section>
@@ -5965,6 +5986,55 @@ export default function VendedorRegistroWorkspace({
               </div>
             </section>
             )}
+
+            <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:flex-row sm:items-center sm:justify-between">
+              <Link
+                href="/dashboard"
+                className="rounded-lg border border-slate-300 bg-white px-7 py-3.5 text-center text-sm font-bold text-slate-800 transition hover:border-red-200 hover:text-[#e30613]"
+              >
+                Cancelar
+              </Link>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                {pasoActual > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => irAlPaso((pasoActual - 1) as PasoVenta)}
+                    disabled={guardando}
+                    className="rounded-lg border border-slate-300 bg-white px-7 py-3.5 text-sm font-black text-slate-800 transition hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Anterior
+                  </button>
+                )}
+                {pasoActual < 4 ? (
+                  <button
+                    type="button"
+                    onClick={continuarPaso}
+                    disabled={cargando || cargandoEdicion}
+                    className="inline-flex min-w-[200px] items-center justify-center gap-3 rounded-lg bg-[#e30613] px-8 py-3.5 text-sm font-black text-white transition hover:bg-[#bd0711] disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {cargando || cargandoEdicion ? "Cargando..." : "Continuar"}
+                    {!cargando && !cargandoEdicion && (
+                      <DashboardIcon name="arrow" className="h-5 w-5" />
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void guardarRegistro()}
+                    disabled={guardando || cargando || cargandoEdicion}
+                    className="rounded-lg bg-[#e30613] px-8 py-3.5 text-sm font-black text-white transition hover:bg-[#bd0711] disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {guardando
+                      ? registroEditando
+                        ? "Guardando cambios..."
+                        : "Guardando venta..."
+                      : registroEditando
+                        ? "Guardar cambios"
+                        : "Guardar venta"}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
@@ -5983,87 +6053,83 @@ export default function VendedorRegistroWorkspace({
               />
             </button>
             <div className={`${resumenMovilAbierto ? "block" : "hidden"} xl:block`}>
-            <section className="overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 text-white shadow-[0_16px_45px_rgba(2,6,23,0.18)]">
-              <div className="border-b border-white/10 px-5 py-5">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="inline-flex rounded-full border border-red-300/30 bg-red-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-red-100">
-                      Resumen en vivo
-                    </div>
-                    <p className="mt-4 text-[11px] font-black uppercase tracking-[0.24em] text-slate-400">
-                      Punto de venta
-                    </p>
-                    <p className="mt-1 text-3xl font-black tracking-tight">
-                      {form.puntoVenta || "Sin seleccionar"}
-                    </p>
-                  </div>
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-xl font-black">
-                    OK
-                  </div>
+            <section className="min-h-[665px] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-[0_8px_24px_rgba(15,23,42,0.055)]">
+              <div className="px-6 pb-4 pt-6">
+                <h2 className="text-xl font-black tracking-tight">Resumen de la venta</h2>
+                <div className="mt-5 flex items-center justify-between gap-3">
+                  <p className="text-xl font-black">
+                    {form.puntoVenta || session.sedeNombre || "Sin seleccionar"}
+                  </p>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    {pasoActual === 4 ? "Por confirmar" : "En proceso"}
+                  </span>
                 </div>
               </div>
 
-              <div className="space-y-3 p-5 text-sm text-slate-200">
-                <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-[20px] border border-white/10 bg-white/[0.08] px-4 py-3">
-                  <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                    Tipo
-                  </span>
-                  <span className="mt-1 block font-black text-white">
-                    {form.servicio || "Pendiente"}
-                  </span>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-white/[0.08] px-4 py-3">
-                  <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                    Financieras
-                  </span>
-                  <span className="mt-1 block font-black text-white">
-                    {esServicioContado(form.servicio)
+              <div className="border-t border-slate-200 px-6">
+                {[
+                  {
+                    icon: "cash" as const,
+                    label: "Tipo de venta",
+                    value: form.servicio || "Pendiente",
+                  },
+                  {
+                    icon: "user" as const,
+                    label: "Cliente",
+                    value: form.clienteNombre || "Pendiente",
+                  },
+                  {
+                    icon: "reports" as const,
+                    label: "IMEI",
+                    value: form.serialImei || "Sin registrar",
+                  },
+                  {
+                    icon: "approvals" as const,
+                    label: "Financieras",
+                    value: esServicioContado(form.servicio)
                       ? "No aplica"
-                      : `${financierasVisibles} / ${MAX_FINANCIERAS_REGISTRO}`}
-                  </span>
-                </div>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-white px-4 py-3 text-slate-900">
-                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
-                    Cliente
-                  </span>
-                  <span className="mt-1 block font-semibold text-slate-900">
-                    {form.clienteNombre || "Pendiente"}
-                  </span>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-white px-4 py-3 text-slate-900">
-                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
-                    IMEI
-                  </span>
-                  <span className="mt-1 block font-semibold text-slate-900">
-                    {form.serialImei || "Pendiente"}
-                  </span>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-white px-4 py-3 text-slate-900">
-                  <span className="block text-xs uppercase tracking-[0.18em] text-slate-500">
-                    Jalador
-                  </span>
-                  <span className="mt-1 block font-semibold text-slate-900">
-                    {form.jaladorNombre || "Pendiente"}
-                  </span>
-                </div>
-
-                {esServicioContado(form.servicio) ? (
-                  <div className="rounded-[20px] border border-emerald-300/60 bg-emerald-100 px-4 py-3 text-emerald-950">
-                    <span className="block text-xs uppercase tracking-[0.18em] text-emerald-700">
-                      Ingresos
+                      : `${form.financierasDetalle
+                          .slice(0, financierasVisibles)
+                          .filter((item) => detalleFinancieraTieneDatos(item)).length} de ${MAX_FINANCIERAS_REGISTRO}`,
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex min-h-[80px] items-center gap-4 border-b border-slate-200 py-4"
+                  >
+                    <DashboardIcon name={item.icon} className="h-6 w-6 shrink-0 text-slate-600" />
+                    <span className="flex-1 text-sm font-medium text-slate-700">{item.label}</span>
+                    <span className="max-w-[48%] truncate text-right text-sm font-medium text-slate-600" title={item.value}>
+                      {item.value}
                     </span>
-                    <span className="mt-1 block font-semibold text-emerald-800">
+                  </div>
+                ))}
+
+                {form.jaladorNombre && (
+                  <div className="flex min-h-[72px] items-center gap-4 border-b border-slate-200 py-4">
+                    <DashboardIcon name="user" className="h-6 w-6 shrink-0 text-slate-600" />
+                    <span className="flex-1 text-sm font-medium text-slate-700">Jalador</span>
+                    <span className="max-w-[48%] truncate text-right text-sm font-medium text-slate-600">
+                      {form.jaladorNombre}
+                    </span>
+                  </div>
+                )}
+
+                {esServicioContado(form.servicio) && totalIngresosContado(form) > 0 && (
+                  <div className="flex min-h-[72px] items-center gap-4 border-b border-slate-200 py-4">
+                    <DashboardIcon name="cash" className="h-6 w-6 shrink-0 text-slate-600" />
+                    <span className="flex-1 text-sm font-medium text-slate-700">Ingresos</span>
+                    <span className="text-right text-sm font-bold text-slate-800">
                       {formatMoney(totalIngresosContado(form))}
                     </span>
                   </div>
-                ) : null}
+                )}
 
+                <div className="my-6 flex gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-500">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-400 text-xs font-bold">i</span>
+                  <p>El resumen se actualizará mientras completas el registro.</p>
+                </div>
               </div>
             </section>
 
@@ -6155,52 +6221,6 @@ export default function VendedorRegistroWorkspace({
             </div>
           </aside>
         </section>
-
-            <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-              <Link
-                href="/dashboard"
-                className="rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-center text-sm font-bold text-slate-700 transition hover:border-red-200 hover:text-[#e30613]"
-              >
-                Cancelar
-              </Link>
-              <div className="flex flex-col-reverse gap-3 sm:flex-row">
-                {pasoActual > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => irAlPaso((pasoActual - 1) as PasoVenta)}
-                    disabled={guardando}
-                    className="rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-black text-slate-800 transition hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    Anterior
-                  </button>
-                )}
-                {pasoActual < 4 ? (
-                  <button
-                    type="button"
-                    onClick={continuarPaso}
-                    disabled={cargando || cargandoEdicion}
-                    className="rounded-xl bg-slate-950 px-7 py-3.5 text-sm font-black text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {cargando || cargandoEdicion ? "Cargando..." : "Continuar"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void guardarRegistro()}
-                    disabled={guardando || cargando || cargandoEdicion}
-                    className="rounded-xl bg-[#e30613] px-7 py-3.5 text-sm font-black text-white transition hover:bg-[#bd0711] disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {guardando
-                      ? registroEditando
-                        ? "Guardando cambios..."
-                        : "Guardando venta..."
-                      : registroEditando
-                        ? "Guardar cambios"
-                        : "Guardar venta"}
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
         </div>
       </div>

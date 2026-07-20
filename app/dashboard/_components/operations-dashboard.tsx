@@ -72,10 +72,12 @@ function initials(nombre: string) {
 function SidebarContent({
   activeHref,
   coverageLabel,
+  footerMode,
   items,
 }: {
   activeHref?: string;
   coverageLabel: string;
+  footerMode: "coverage" | "logout";
   items: NavigationItem[];
 }) {
   return (
@@ -130,13 +132,17 @@ function SidebarContent({
       </nav>
 
       <div className="shrink-0 border-t border-white/10 p-5">
-        <div className="flex items-center gap-3 rounded-xl bg-white/[0.045] px-3 py-3">
-          <DashboardIcon name="store" className="h-6 w-6 shrink-0 text-slate-300" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-white">{coverageLabel}</p>
-            <p className="mt-0.5 text-xs text-slate-400">Cobertura activa</p>
+        {footerMode === "logout" ? (
+          <LogoutButton className="w-full justify-start rounded-xl border-0 bg-transparent px-2 text-slate-200 shadow-none hover:bg-white/[0.06]" />
+        ) : (
+          <div className="flex items-center gap-3 rounded-xl bg-white/[0.045] px-3 py-3">
+            <DashboardIcon name="store" className="h-6 w-6 shrink-0 text-slate-300" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-white">{coverageLabel}</p>
+              <p className="mt-0.5 text-xs text-slate-400">Cobertura activa</p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -145,10 +151,12 @@ function SidebarContent({
 export function DashboardSidebar({
   activeHref,
   coverageLabel,
+  footerMode = "coverage",
   items,
 }: {
   activeHref?: string;
   coverageLabel: string;
+  footerMode?: "coverage" | "logout";
   items: NavigationItem[];
 }) {
   return (
@@ -157,6 +165,7 @@ export function DashboardSidebar({
         <SidebarContent
           activeHref={activeHref}
           coverageLabel={coverageLabel}
+          footerMode={footerMode}
           items={items}
         />
       </aside>
@@ -187,6 +196,7 @@ export function DashboardSidebar({
             <SidebarContent
               activeHref={activeHref}
               coverageLabel={coverageLabel}
+              footerMode={footerMode}
               items={items}
             />
           </div>
