@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 
 type AuditSeverity = "CRITICO" | "ALERTA" | "INFO";
 type AuditRow = Record<string, unknown>;
@@ -38,6 +46,29 @@ type AuditResponse = {
   };
   tablas: AuditTableCount[];
 };
+
+type SessionSummary = {
+  nombre: string;
+  usuario: string;
+  rolNombre: string;
+  sedeNombre: string;
+};
+
+const navigationItems: NavigationItem[] = [
+  { href: "/dashboard", icon: "home", label: "Inicio" },
+  { href: "/ventas", icon: "sales", label: "Ventas" },
+  { href: "/inventario", icon: "inventory", label: "Inventario" },
+  { href: "/prestamos", icon: "loans", label: "Préstamos" },
+  { href: "/caja", icon: "cash", label: "Caja" },
+  {
+    href: "/dashboard/aprobaciones",
+    icon: "approvals",
+    label: "Aprobaciones",
+  },
+  { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+  { href: "/dashboard/auditoria", icon: "search", label: "Auditoría" },
+  { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
+];
 
 const filterOptions: Array<{ label: string; value: AuditFilter }> = [
   { label: "Hallazgos", value: "hallazgos" },
@@ -97,19 +128,28 @@ function MetricCard({
   label,
   value,
   tone,
+  icon,
 }: {
   label: string;
   value: number;
   tone: string;
+  icon: DashboardIconName;
 }) {
   return (
-    <div className="rounded-[26px] border border-[#e6ded1] bg-white p-5 shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-        {label}
-      </p>
-      <p className={["mt-3 text-4xl font-black tracking-tight", tone].join(" ")}>
-        {formatNumber(value)}
-      </p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex items-start gap-4">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+          <DashboardIcon name={icon} className="h-5 w-5" />
+        </span>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            {label}
+          </p>
+          <p className={["mt-2 text-3xl font-black tracking-tight", tone].join(" ")}>
+            {formatNumber(value)}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -176,7 +216,7 @@ function CheckCard({ check }: { check: AuditCheck }) {
   return (
     <section
       className={[
-        "rounded-[26px] border bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.05)]",
+        "rounded-2xl border bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)]",
         hasRows ? "border-slate-200" : "border-emerald-100",
       ].join(" ")}
     >
@@ -235,7 +275,7 @@ function CheckCard({ check }: { check: AuditCheck }) {
   );
 }
 
-export function AuditoriaWorkspace() {
+export function AuditoriaWorkspace({ user }: { user: SessionSummary }) {
   const [data, setData] = useState<AuditResponse | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<AuditFilter>("hallazgos");
@@ -281,44 +321,67 @@ export function AuditoriaWorkspace() {
   }, [data?.checks, filter]);
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f4ee_0%,#eef2f7_100%)] px-4 py-8 text-slate-950">
-      <main className="mx-auto max-w-7xl space-y-6">
-        <section className="overflow-hidden rounded-[34px] border border-slate-900 bg-[linear-gradient(135deg,#111827_0%,#1f2937_54%,#7f1d1d_100%)] px-6 py-7 text-white shadow-[0_26px_85px_rgba(15,23,42,0.22)] sm:px-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950 [&_button]:uppercase">
+      <DashboardSidebar
+        activeHref="/dashboard/auditoria"
+        coverageLabel={user.sedeNombre || "Todas las sedes"}
+        items={navigationItems}
+      />
+
+      <div className="lg:pl-[252px]">
+      <main className="w-full space-y-6 px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+        <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/90">
-                Control interno
-              </div>
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Auditoria de datos
+              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <Link href="/dashboard" className="transition hover:text-[#e30613]">
+                  Inicio
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-slate-600">Auditoría</span>
+              </nav>
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+                Auditoría de datos
               </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                Inventario, prestamos, ventas, caja y configuracion revisados en
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+                Inventario, préstamos, ventas, caja y configuración revisados en
                 modo solo lectura.
               </p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                <DashboardIcon name="lock" className="h-3.5 w-3.5" />
+                Sin modificaciones de datos
+              </div>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
                 onClick={() => void cargarAuditoria()}
                 disabled={loading}
-                className="rounded-2xl border border-white/15 bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100 disabled:opacity-70"
+                className="inline-flex min-h-[52px] items-center gap-2 rounded-xl bg-[#e30613] px-5 text-xs font-bold uppercase tracking-[0.04em] text-white shadow-sm transition hover:bg-red-700 disabled:opacity-70"
               >
+                <DashboardIcon name="trend" className="h-4 w-4" />
                 {loading ? "Actualizando..." : "Actualizar"}
               </button>
-              <Link
-                href="/dashboard"
-                className="rounded-2xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                Volver
-              </Link>
+              <div className="flex min-h-[52px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {(user.nombre || user.usuario || "A").slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0 pr-2 leading-tight">
+                  <p className="max-w-[170px] truncate text-sm font-bold">
+                    {user.nombre || user.usuario}
+                  </p>
+                  <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    {user.rolNombre}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
             </div>
-          </div>
-        </section>
+        </header>
 
         {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+          <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+            <DashboardIcon name="warning" className="h-5 w-5 shrink-0" />
             {error}
           </div>
         ) : null}
@@ -328,36 +391,45 @@ export function AuditoriaWorkspace() {
             label="Criticos"
             value={data?.resumen.criticos || 0}
             tone="text-red-700"
+            icon="warning"
           />
           <MetricCard
             label="Alertas"
             value={data?.resumen.alertas || 0}
             tone="text-amber-700"
+            icon="bell"
           />
           <MetricCard
             label="Informativos"
             value={data?.resumen.informativos || 0}
             tone="text-sky-700"
+            icon="document"
           />
           <MetricCard
             label="Revisiones OK"
             value={data?.resumen.revisionesOk || 0}
             tone="text-emerald-700"
+            icon="approvals"
           />
         </section>
 
-        <section className="rounded-[28px] border border-[#e4dccd] bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="inline-flex rounded-full border border-[#e5ddd0] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+                <DashboardIcon name="search" className="h-5 w-5" />
+              </span>
+              <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                 Estado general
-              </div>
+              </p>
               <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
                 {loading ? "Cargando revisiones..." : "Revisiones ejecutadas"}
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 Ultima lectura: {formatGeneratedAt(data?.generatedAt || null)}
               </p>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -367,9 +439,9 @@ export function AuditoriaWorkspace() {
                   type="button"
                   onClick={() => setFilter(option.value)}
                   className={[
-                    "rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.14em] transition",
+                    "min-h-10 rounded-xl border px-4 py-2 text-xs font-black uppercase tracking-[0.1em] transition",
                     filter === option.value
-                      ? "border-slate-950 bg-slate-950 text-white"
+                      ? "border-[#e30613] bg-[#e30613] text-white"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                   ].join(" ")}
                 >
@@ -381,15 +453,23 @@ export function AuditoriaWorkspace() {
         </section>
 
         {data?.tablas?.length ? (
-          <section className="rounded-[28px] border border-[#e4dccd] bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-            <div className="inline-flex rounded-full border border-[#e5ddd0] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Tablas
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <DashboardIcon name="catalog" className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                  Tablas verificadas
+                </p>
+                <h2 className="mt-1 text-xl font-black">Cobertura de la revisión</h2>
+              </div>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {data.tablas.map((tabla) => (
                 <div
                   key={tabla.tabla}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4"
                 >
                   <p className="truncate text-sm font-black text-slate-950">
                     {tabla.tabla}
@@ -405,7 +485,7 @@ export function AuditoriaWorkspace() {
 
         <section className="space-y-4">
           {!loading && checks.length === 0 ? (
-            <div className="rounded-[28px] border border-emerald-100 bg-emerald-50 px-6 py-8 text-center text-emerald-800">
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-6 py-8 text-center text-emerald-800">
               <p className="text-lg font-black">Sin hallazgos en este filtro.</p>
             </div>
           ) : null}
@@ -415,6 +495,7 @@ export function AuditoriaWorkspace() {
           ))}
         </section>
       </main>
+      </div>
     </div>
   );
 }

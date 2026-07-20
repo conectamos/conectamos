@@ -10,5 +10,14 @@ export default async function AuditoriaPage() {
     redirect("/dashboard");
   }
 
-  return <AuditoriaWorkspace />;
+  return (
+    <AuditoriaWorkspace
+      user={{
+        nombre: session.nombre,
+        usuario: session.usuario,
+        rolNombre: session.rolNombre,
+        sedeNombre: session.sedeNombre,
+      }}
+    />
+  );
 }

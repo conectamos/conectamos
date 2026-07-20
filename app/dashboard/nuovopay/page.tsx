@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
 type QueryType = "imei" | "device";
@@ -157,6 +165,47 @@ type CarteraResponse = {
 
 const CARTERA_BLOCKING_MORA_MIN_DAYS = 2;
 
+const carteraNavigationItems: NavigationItem[] = [
+  { href: "/dashboard", icon: "home", label: "Inicio" },
+  { href: "/ventas", icon: "sales", label: "Ventas" },
+  { href: "/inventario", icon: "inventory", label: "Inventario" },
+  { href: "/prestamos", icon: "loans", label: "Préstamos" },
+  { href: "/caja", icon: "cash", label: "Caja" },
+  {
+    href: "/dashboard/nuovopay/cartera",
+    icon: "reports",
+    label: "Cartera Nuovo",
+  },
+  {
+    href: "/dashboard/aprobaciones",
+    icon: "approvals",
+    label: "Aprobaciones",
+  },
+  { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+  { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
+];
+
+function CarteraMetricIcon({
+  icon,
+  tone,
+}: {
+  icon: DashboardIconName;
+  tone: "red" | "amber" | "violet" | "slate";
+}) {
+  const tones = {
+    red: "bg-red-50 text-red-600",
+    amber: "bg-amber-50 text-amber-600",
+    violet: "bg-violet-50 text-violet-600",
+    slate: "bg-slate-100 text-slate-700",
+  };
+
+  return (
+    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${tones[tone]}`}>
+      <DashboardIcon name={icon} className="h-5 w-5" />
+    </span>
+  );
+}
+
 function limpiarImei(valor: string) {
   return String(valor || "").replace(/\D/g, "").slice(0, 15);
 }
@@ -213,31 +262,31 @@ function moraBucketStyles(id: string) {
   switch (id) {
     case "al_dia":
       return {
-        card: "border-emerald-200 bg-[linear-gradient(180deg,#ffffff_0%,#f2fbf6_100%)]",
+        card: "border-emerald-200 bg-white",
         badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
         bar: "bg-emerald-500",
       };
     case "mora_leve":
       return {
-        card: "border-sky-200 bg-[linear-gradient(180deg,#ffffff_0%,#eff6ff_100%)]",
+        card: "border-sky-200 bg-white",
         badge: "border-sky-200 bg-sky-50 text-sky-700",
         bar: "bg-sky-500",
       };
     case "mora_media":
       return {
-        card: "border-amber-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff8eb_100%)]",
+        card: "border-amber-200 bg-white",
         badge: "border-amber-200 bg-amber-50 text-amber-700",
         bar: "bg-amber-500",
       };
     case "mora_alta":
       return {
-        card: "border-orange-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff2eb_100%)]",
+        card: "border-orange-200 bg-white",
         badge: "border-orange-200 bg-orange-50 text-orange-700",
         bar: "bg-orange-500",
       };
     case "mora_critica":
       return {
-        card: "border-red-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff1f2_100%)]",
+        card: "border-red-200 bg-white",
         badge: "border-red-200 bg-red-50 text-red-700",
         bar: "bg-red-500",
       };
@@ -672,30 +721,47 @@ export function NuovoPayWorkspace({
   const analytics = latestImport?.analytics ?? null;
 
   return (
-    <div className="min-h-screen bg-[#f5f6fa] px-4 py-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div
+      className={
+        panel === "cartera"
+          ? "min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950 [&_button]:uppercase"
+          : "min-h-screen bg-[#f5f6fa] px-4 py-8"
+      }
+    >
+      {panel === "cartera" && (
+        <DashboardSidebar
+          activeHref="/dashboard/nuovopay/cartera"
+          coverageLabel="Administración"
+          items={carteraNavigationItems}
+        />
+      )}
+
+      <div className={panel === "cartera" ? "lg:pl-[252px]" : ""}>
+        <main
+          className={
+            panel === "cartera"
+              ? "w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9"
+              : "mx-auto max-w-7xl"
+          }
+        >
+        {panel === "devices" && (
+          <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-              {panel === "devices" ? "Nuovo dispositivos" : "Nuovo cartera"}
+              Nuovo dispositivos
             </div>
-            {panel === "cartera" && (
-              <div className="mt-3 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
-                Solo admin
-              </div>
-            )}
             <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-950">
-              {panel === "devices" ? "Nuovo dispositivos" : "Nuovo cartera"}
+              Nuovo dispositivos
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-600 md:text-base">
-              {panel === "devices"
-                ? "Consulta dispositivos directamente desde Nuovo, valida si la inscripcion quedo aprobada y ejecuta bloqueo o desbloqueo desde tu sistema."
-                : `Carga el archivo de cartera, detecta mora de ${CARTERA_BLOCKING_MORA_MIN_DAYS} o mas dias y revisa analitica comercial exclusiva de Nuovo Pay.`}
+              Consulta dispositivos directamente desde Nuovo, valida si la
+              inscripcion quedo aprobada y ejecuta bloqueo o desbloqueo desde tu
+              sistema.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
-            {panel === "devices" && esAdmin && (
+            {esAdmin && (
               <Link
                 href="/dashboard/nuovopay/cartera"
                 className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
@@ -704,19 +770,10 @@ export function NuovoPayWorkspace({
               </Link>
             )}
 
-            {panel === "devices" && sessionUser && !esAdmin && (
+            {sessionUser && !esAdmin && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-800 shadow-sm">
                 Nuovo / Cartera solo admin
               </div>
-            )}
-
-            {panel === "cartera" && (
-              <Link
-                href="/dashboard/nuovopay"
-                className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-              >
-                Nuovo dispositivos
-              </Link>
             )}
             <Link
               href="/dashboard"
@@ -726,9 +783,53 @@ export function NuovoPayWorkspace({
             </Link>
           </div>
         </div>
+        )}
+
+        {panel === "cartera" && (
+          <header className="mb-6 flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-red-100 bg-red-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-red-600">
+                <DashboardIcon name="reports" className="h-3.5 w-3.5" />
+                Cartera Nuovo Pay
+              </div>
+              <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+                Analítica de cartera
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm text-slate-500 sm:text-base">
+                Carga el corte, identifica la mora y gestiona bloqueos sin perder
+                el historial operativo.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Link
+                href="/dashboard/nuovopay"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                <DashboardIcon name="inventory" className="h-4 w-4" />
+                Dispositivos
+              </Link>
+              <div className="flex min-h-11 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 shadow-sm">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {(sessionUser?.nombre || "A").slice(0, 1).toUpperCase()}
+                </span>
+                <div className="leading-tight">
+                  <p className="text-xs font-bold text-slate-900">
+                    {sessionUser?.nombre || "Administrador"}
+                  </p>
+                  <p className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-500">
+                    {sessionUser?.rolNombre || "ADMIN"}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-11 uppercase" />
+            </div>
+          </header>
+        )}
 
         {mensaje && (
-          <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
+          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm font-medium text-amber-900 shadow-sm">
+            <DashboardIcon name="warning" className="h-5 w-5 shrink-0 text-amber-600" />
             {mensaje}
           </div>
         )}
@@ -832,19 +933,20 @@ export function NuovoPayWorkspace({
         )}
 
         {panel === "cartera" && (
-          <div className="mb-6 overflow-hidden rounded-[32px] border border-[#dbe5ff] bg-[linear-gradient(135deg,#ffffff_0%,#eef4ff_46%,#f8fafc_100%)] p-6 shadow-[0_24px_60px_rgba(37,99,235,0.10)]">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-6">
+          <section className="flex flex-col gap-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-3xl">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex rounded-full border border-slate-200 bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  Panel Nuovo exclusivo
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  <DashboardIcon name="document" className="h-3.5 w-3.5" />
+                  Corte de cartera
                 </div>
                 <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
                   Acceso solo admin
                 </div>
               </div>
               <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-                Cargar archivo de cartera y analitica de riesgo
+                Cargar archivo y analizar riesgo
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 Sube el archivo TXT de cartera para conservar el historico del
@@ -858,7 +960,7 @@ export function NuovoPayWorkspace({
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="grid w-full gap-2.5 xl:max-w-sm">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -870,8 +972,9 @@ export function NuovoPayWorkspace({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={subiendoCartera}
-                className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-xs font-bold uppercase tracking-[0.04em] text-white transition hover:bg-slate-800 disabled:opacity-70"
               >
+                <DashboardIcon name="download" className="h-4 w-4" />
                 {subiendoCartera
                   ? "Cargando archivo..."
                   : "CARGAR ARCHIVO DE CARTERA"}
@@ -884,8 +987,9 @@ export function NuovoPayWorkspace({
                     !latestImport?.id ||
                     !Boolean(carteraData?.configured)
                   }
-                  className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-xs font-bold uppercase tracking-[0.04em] text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
+                  <DashboardIcon name="lock" className="h-4 w-4" />
                   {accionCarteraEnProceso === "lock"
                     ? "Procesando bloqueo..."
                     : `Generar bloqueo mora desde ${CARTERA_BLOCKING_MORA_MIN_DAYS} dias`}
@@ -898,18 +1002,22 @@ export function NuovoPayWorkspace({
                     !latestImport?.id ||
                     !Boolean(carteraData?.configured)
                   }
-                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-xs font-bold uppercase tracking-[0.04em] text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
+                  <DashboardIcon name="close" className="h-4 w-4 rotate-45" />
                   {accionCarteraEnProceso === "unlock"
                     ? "Procesando desbloqueo..."
                     : "Desbloquear clientes con 0 o menos dias"}
                 </button>
               </div>
-            </div>
+          </section>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-600">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-start gap-4">
+                <CarteraMetricIcon icon="warning" tone="red" />
+                <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Clientes con mora de {CARTERA_BLOCKING_MORA_MIN_DAYS} o mas dias
               </p>
               <p className="mt-3 text-3xl font-black text-red-700">
@@ -918,10 +1026,15 @@ export function NuovoPayWorkspace({
               <p className="mt-2 text-sm text-red-700/80">
                 Cedulas unicas listas para bloqueo desde el ultimo cargue.
               </p>
+                </div>
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+            <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-start gap-4">
+                <CarteraMetricIcon icon="warning" tone="amber" />
+                <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Con errores
               </p>
               <p className="mt-3 text-3xl font-black text-amber-700">
@@ -930,10 +1043,15 @@ export function NuovoPayWorkspace({
               <p className="mt-2 text-sm text-amber-700/80">
                 Cedulas que quedaron con error durante el proceso masivo.
               </p>
+                </div>
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+            <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-start gap-4">
+                <CarteraMetricIcon icon="trend" tone="violet" />
+                <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Top 20 por finalizar
               </p>
               <p className="mt-3 text-3xl font-black text-indigo-700">
@@ -942,11 +1060,13 @@ export function NuovoPayWorkspace({
               <p className="mt-2 text-sm text-indigo-700/80">
                 Clientes con 1 o 2 cuotas pendientes de su credito.
               </p>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 xl:grid-cols-[0.94fr_1.06fr]">
-            <div className="rounded-[28px] border border-sky-200 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_52%,#f8fafc_100%)] p-5 shadow-sm">
+          <div className="grid gap-4 xl:grid-cols-[0.94fr_1.06fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
               <div className="inline-flex rounded-full border border-sky-200 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
                 Radar de mora
               </div>
@@ -1013,7 +1133,7 @@ export function NuovoPayWorkspace({
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -1899,6 +2019,7 @@ export function NuovoPayWorkspace({
             </section>
           </>
         )}
+        </main>
       </div>
     </div>
   );
