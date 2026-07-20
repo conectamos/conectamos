@@ -749,7 +749,7 @@ export default function Home() {
           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[linear-gradient(180deg,transparent_0%,rgba(127,16,24,0.32)_100%)]" />
           <div className="relative z-10 flex w-full max-w-[860px] justify-center">
             <Image
-              src="/branding/conectamos-login-futbol.png"
+              src="/branding/conectamos-login-robot-2026.png"
               alt="CONECTAMOS"
               width={1536}
               height={1024}
