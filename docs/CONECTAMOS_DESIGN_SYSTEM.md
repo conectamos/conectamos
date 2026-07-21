@@ -90,6 +90,13 @@ No usar degradados azul-verde, violeta o rosado como decoración de base. Los es
 - **Éxito:** confirmación breve, sin bloquear el siguiente paso.
 - **Protegido:** mostrar que el dato está restringido sin exponer el valor ni alterar el permiso.
 
+## Gráficas
+
+- Etiquetar claramente cada serie y su unidad.
+- Cuando se comparen conteos con dinero, usar escalas independientes visibles; no mezclar ambas magnitudes en un mismo eje.
+- Usar rojo CONECTAMOS para la serie comercial principal y verde únicamente para resultados positivos como utilidad.
+- Los puntos deben ofrecer el valor exacto mediante tooltip y conservar un estado vacío legible.
+
 ## Navegación
 
 - Sidebar grafito fijo en escritorio y menú desplegable en móvil.

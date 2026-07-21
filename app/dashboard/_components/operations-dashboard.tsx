@@ -230,35 +230,36 @@ function KpiCard({
 
 function SalesUtilityChart({
   data,
-  mostrarCantidadVentas,
   mostrarUtilidad,
 }: {
   data: CommercialSummary["tendenciaDiaria"];
-  mostrarCantidadVentas: boolean;
   mostrarUtilidad: boolean;
 }) {
-  const width = 820;
+  const width = 860;
   const height = 285;
-  const padding = { top: 22, right: 24, bottom: 42, left: 72 };
+  const padding = { top: 28, right: 84, bottom: 42, left: 58 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
-  const values = data.flatMap((item) => [
-    mostrarCantidadVentas ? item.ventas : item.ingresos,
-    ...(mostrarUtilidad ? [item.utilidad] : []),
-  ]);
-  const max = Math.max(0, ...values);
-  const min = Math.min(0, ...values);
-  const range = max - min || 1;
-  const hasData = data.some((item) => item.ventas > 0 || item.ingresos !== 0 || item.utilidad !== 0);
-  const point = (value: number, index: number) => {
-    const x = padding.left + (index / Math.max(1, data.length - 1)) * innerWidth;
-    const y = padding.top + ((max - value) / range) * innerHeight;
+  const rawSalesMax = Math.max(0, ...data.map((item) => item.ventas));
+  const salesMax = Math.max(4, Math.ceil(rawSalesMax / 4) * 4);
+  const utilityMax = Math.max(0, ...data.map((item) => item.utilidad));
+  const utilityMin = Math.min(0, ...data.map((item) => item.utilidad));
+  const utilityRange = utilityMax - utilityMin || 1;
+  const hasData = data.some((item) => item.ventas > 0 || (mostrarUtilidad && item.utilidad !== 0));
+  const xAt = (index: number) =>
+    padding.left + (index / Math.max(1, data.length - 1)) * innerWidth;
+  const salesPoint = (value: number, index: number) => {
+    const x = xAt(index);
+    const y = padding.top + ((salesMax - value) / salesMax) * innerHeight;
     return { x, y };
   };
-  const ventasPoints = data.map((item, index) =>
-    point(mostrarCantidadVentas ? item.ventas : item.ingresos, index)
-  );
-  const utilidadPoints = data.map((item, index) => point(item.utilidad, index));
+  const utilityPoint = (value: number, index: number) => {
+    const x = padding.left + (index / Math.max(1, data.length - 1)) * innerWidth;
+    const y = padding.top + ((utilityMax - value) / utilityRange) * innerHeight;
+    return { x, y };
+  };
+  const ventasPoints = data.map((item, index) => salesPoint(item.ventas, index));
+  const utilidadPoints = data.map((item, index) => utilityPoint(item.utilidad, index));
 
   if (!hasData) {
     return (
@@ -276,23 +277,40 @@ function SalesUtilityChart({
         viewBox={`0 0 ${width} ${height}`}
         className="min-h-[285px] min-w-[700px] w-full"
         role="img"
-        aria-label={
-          mostrarCantidadVentas
-            ? "Cantidad de ventas por día"
-            : "Ventas y utilidad por día"
-        }
+        aria-label={mostrarUtilidad ? "Número de ventas y utilidad por día" : "Número de ventas por día"}
       >
+        <text x={padding.left} y="13" fill="#e30613" fontSize="9" fontWeight="700" letterSpacing="0.08em">
+          VENTAS
+        </text>
+        {mostrarUtilidad && (
+          <text
+            x={width - padding.right}
+            y="13"
+            textAnchor="end"
+            fill="#159455"
+            fontSize="9"
+            fontWeight="700"
+            letterSpacing="0.08em"
+          >
+            UTILIDAD ($)
+          </text>
+        )}
+
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
           const y = padding.top + ratio * innerHeight;
-          const value = max - ratio * range;
+          const salesValue = Math.round(salesMax * (1 - ratio));
+          const utilityValue = utilityMax - ratio * utilityRange;
           return (
             <g key={ratio}>
               <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e5e7eb" strokeWidth="1" />
-              <text x={padding.left - 12} y={y + 4} textAnchor="end" fill="#64748b" fontSize="11">
-                {mostrarCantidadVentas
-                  ? String(Math.max(0, Math.round(value)))
-                  : formatoCompacto(value)}
+              <text x={padding.left - 10} y={y + 4} textAnchor="end" fill="#64748b" fontSize="11">
+                {salesValue}
               </text>
+              {mostrarUtilidad && (
+                <text x={width - padding.right + 10} y={y + 4} textAnchor="start" fill="#64748b" fontSize="10">
+                  {formatoCompacto(utilityValue)}
+                </text>
+              )}
             </g>
           );
         })}
@@ -300,7 +318,7 @@ function SalesUtilityChart({
         {data.map((item, index) => {
           const shouldLabel = index === 0 || index === data.length - 1 || index % 5 === 4;
           if (!shouldLabel) return null;
-          const { x } = point(0, index);
+          const x = xAt(index);
           return (
             <text key={item.fecha} x={x} y={height - 13} textAnchor="middle" fill="#64748b" fontSize="11">
               {item.etiqueta}
@@ -329,11 +347,7 @@ function SalesUtilityChart({
 
         {ventasPoints.map(({ x, y }, index) => (
           <circle key={`venta-${data[index].fecha}`} cx={x} cy={y} r="3.4" fill="#e30613">
-            <title>
-              {mostrarCantidadVentas
-                ? `${data[index].fecha}: ${data[index].ventas} ${data[index].ventas === 1 ? "venta" : "ventas"}`
-                : `${data[index].fecha}: ventas ${formatoPesos(data[index].ingresos)}`}
-            </title>
+            <title>{`${data[index].fecha}: ${data[index].ventas} ${data[index].ventas === 1 ? "venta" : "ventas"}`}</title>
           </circle>
         ))}
         {mostrarUtilidad &&
@@ -854,15 +868,15 @@ export default function OperationsDashboard({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 className="text-xl font-black tracking-tight text-slate-950">
-                    {modoSupervisorSinMontos ? "Ventas por día" : "Ventas y utilidad"}
+                    {esAdmin ? "Ventas y utilidad" : "Ventas por día"}
                   </h2>
                   <div className="mt-3 flex flex-wrap gap-4 text-xs font-semibold text-slate-600">
                     <span className="flex items-center gap-2">
                       <span className="h-0.5 w-6 bg-[#e30613]" />
-                      {modoSupervisorSinMontos ? "Ventas registradas" : "Ventas (ingresos)"}
+                      Número de ventas
                     </span>
                     {esAdmin ? (
-                      <span className="flex items-center gap-2"><span className="h-0.5 w-6 bg-emerald-600" />Utilidad</span>
+                      <span className="flex items-center gap-2"><span className="h-0.5 w-6 bg-emerald-600" />Utilidad ($)</span>
                     ) : (
                       <span className="flex items-center gap-2 text-slate-400"><DashboardIcon name="lock" className="h-3.5 w-3.5" />Utilidad protegida</span>
                     )}
@@ -873,7 +887,6 @@ export default function OperationsDashboard({
               <div className="mt-4">
                 <SalesUtilityChart
                   data={commercial.tendenciaDiaria}
-                  mostrarCantidadVentas={modoSupervisorSinMontos}
                   mostrarUtilidad={esAdmin}
                 />
               </div>
