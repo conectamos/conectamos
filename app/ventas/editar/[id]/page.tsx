@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 import {
   calcularValorNetoFinanciera,
   extraerFinancierasDetalle,
@@ -19,6 +25,15 @@ type CatalogoPersonalResponse = {
   jaladores: Array<{ nombre: string }>;
   cerradores: Array<{ nombre: string }>;
   financieras: CatalogoFinanciera[];
+};
+
+type SessionResponse = {
+  nombre?: string | null;
+  usuario?: string | null;
+  sedeNombre?: string | null;
+  rolNombre?: string | null;
+  perfilNombre?: string | null;
+  perfilTipoLabel?: string | null;
 };
 
 type VentaDetalle = {
@@ -87,15 +102,15 @@ function ocultaFinancieras(servicio: string) {
 }
 
 function inputBaseClass(readOnly = false) {
-  return `w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${
+  return `min-h-12 w-full rounded-xl border px-4 py-3 text-sm font-medium outline-none transition ${
     readOnly
-      ? "border-slate-200 bg-slate-50 text-slate-700"
-      : "border-slate-300 bg-white text-slate-900 shadow-sm focus:border-red-500 focus:ring-2 focus:ring-red-200"
+      ? "cursor-default border-slate-200 bg-slate-50 text-slate-600"
+      : "border-slate-300 bg-white text-slate-950 shadow-sm focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
   }`;
 }
 
 function sectionTitleClass() {
-  return "mb-4 text-xs font-bold uppercase tracking-[0.18em] text-slate-500";
+  return "text-lg font-black tracking-tight text-slate-950";
 }
 
 function normalizeServicio(servicio: string) {
@@ -144,6 +159,7 @@ export default function EditarVentaPage() {
   const [mensaje, setMensaje] = useState("");
   const [ventaIdTexto, setVentaIdTexto] = useState("");
   const [puedeEditar, setPuedeEditar] = useState(false);
+  const [sessionActual, setSessionActual] = useState<SessionResponse | null>(null);
   const [jaladores, setJaladores] = useState<string[]>([]);
   const [cerradores, setCerradores] = useState<string[]>([]);
   const [financierasCatalogo, setFinancierasCatalogo] = useState<CatalogoFinanciera[]>([]);
@@ -247,6 +263,7 @@ export default function EditarVentaPage() {
           return;
         }
 
+        setSessionActual(sessionData as SessionResponse);
         setPuedeEditar(true);
 
         const res = await fetch(`/api/ventas?id=${ventaId}`, { cache: "no-store" });
@@ -420,429 +437,494 @@ export default function EditarVentaPage() {
     }
   };
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+    {
+      href: "/dashboard/sedes",
+      icon: "settings",
+      label: "Configuración",
+    },
+  ];
+  const usuarioActual =
+    sessionActual?.perfilNombre ||
+    sessionActual?.nombre ||
+    sessionActual?.usuario ||
+    "Administrador";
+  const rolActual = sessionActual?.rolNombre || "Administrador";
+  const inicialesUsuario = usuarioActual
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+  const coberturaActual = sessionActual?.sedeNombre || "Todas las sedes";
+  const cardClass =
+    "rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6";
+  const fieldLabelClass = "mb-2 block text-sm font-bold text-slate-700";
+
   if (cargando) {
     return (
-      <div className="min-h-screen bg-[#f4f6f8] px-4 py-10">
-        <div className="mx-auto max-w-6xl rounded-[30px] bg-white px-8 py-12 shadow-xl ring-1 ring-slate-200">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Ventas
-          </p>
-          <h1 className="mt-3 text-3xl font-black text-slate-950">Cargando venta...</h1>
+      <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+        <DashboardSidebar
+          activeHref="/ventas"
+          coverageLabel="Todas las sedes"
+          items={navigationItems}
+        />
+        <div className="lg:pl-[252px]">
+          <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+            <div className="animate-pulse space-y-5" aria-live="polite">
+              <div className="h-8 w-56 rounded-lg bg-slate-200" />
+              <div className="h-4 w-96 max-w-full rounded bg-slate-200" />
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="h-[430px] rounded-2xl border border-slate-200 bg-white" />
+                <div className="h-[360px] rounded-2xl border border-slate-200 bg-white" />
+              </div>
+              <span className="sr-only">Cargando venta</span>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (!puedeEditar) {
+    return (
+      <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+        <DashboardSidebar
+          activeHref="/ventas"
+          coverageLabel={coberturaActual}
+          items={navigationItems}
+        />
+        <div className="lg:pl-[252px]">
+          <main className="flex min-h-screen items-center justify-center px-4 py-10">
+            <section className="w-full max-w-xl rounded-2xl border border-red-200 bg-white p-8 text-center shadow-sm">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+                <DashboardIcon name="lock" className="h-6 w-6" />
+              </div>
+              <h1 className="mt-5 text-2xl font-black">No se puede editar esta venta</h1>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                {mensaje || "No tienes permisos para acceder a esta operación."}
+              </p>
+              <Link
+                href="/ventas"
+                className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#11161d] px-5 text-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-800"
+              >
+                Volver a ventas
+              </Link>
+            </section>
+          </main>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f6f8] px-4 py-10">
-      <div className="mx-auto max-w-6xl">
-        <div className="overflow-hidden rounded-[30px] bg-white shadow-2xl ring-1 ring-slate-200">
-          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-red-700 px-8 py-7">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/90">
-                  Venta
-                </div>
-                <h1 className="mt-3 text-3xl font-black text-white">Editar venta</h1>
-                <p className="mt-2 text-sm text-slate-200">
-                  Ajuste administrativo de la venta {ventaIdTexto || `#${ventaId}`}.
-                </p>
-              </div>
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/ventas"
+        coverageLabel="Todas las sedes"
+        items={navigationItems}
+      />
 
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href="/ventas"
-                  className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
-                >
-                  Volver a ventas
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                <Link href="/ventas" className="transition hover:text-[#e30613]">
+                  Ventas
                 </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-[#e30613]">Editar venta</span>
+              </div>
+              <h1 className="mt-2 text-[29px] font-black tracking-tight sm:text-[34px]">
+                Editar venta
+              </h1>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
+                Actualiza la información comercial y financiera del registro sin alterar su trazabilidad.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  {ventaIdTexto || `Venta #${ventaId}`}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  {sedeNombre || "Sede sin asignar"}
+                </span>
               </div>
             </div>
-          </div>
 
-          <div className="p-6 md:p-8">
-            {mensaje && (
-              <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-700">
-                {mensaje}
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/ventas"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                <DashboardIcon name="arrow" className="h-4 w-4 rotate-180" />
+                Volver a ventas
+              </Link>
+              <div className="flex min-h-11 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || "AD"}
+                </span>
+                <span className="min-w-0 pr-1">
+                  <span className="block max-w-40 truncate text-xs font-black text-slate-900">
+                    {usuarioActual}
+                  </span>
+                  <span className="block text-[11px] text-slate-500">{rolActual}</span>
+                </span>
               </div>
-            )}
+              <LogoutButton variant="light" className="min-h-11 rounded-xl text-xs font-black uppercase tracking-[0.06em]" />
+            </div>
+          </header>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-              <div className="space-y-6 xl:col-span-2">
-                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                  <h3 className={sectionTitleClass()}>Equipo</h3>
+          {mensaje && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mt-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3.5 text-sm font-semibold text-red-700"
+            >
+              <DashboardIcon name="warning" className="mt-0.5 h-5 w-5 shrink-0" />
+              <span>{mensaje}</span>
+            </div>
+          )}
 
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        ID venta
-                      </label>
-                      <input value={ventaIdTexto} readOnly className={inputBaseClass(true)} />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        IMEI
-                      </label>
-                      <input value={serial} readOnly className={inputBaseClass(true)} />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Servicio
-                      </label>
-                      <select
-                        value={servicio}
-                        onChange={(event) => setServicio(event.target.value)}
-                        className={inputBaseClass()}
-                      >
-                        <option value="">Seleccionar</option>
-                        {SERVICIOS.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Sede
-                      </label>
-                      <input value={sedeNombre} readOnly className={inputBaseClass(true)} />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Descripción
-                      </label>
-                      <input
-                        value={descripcion}
-                        onChange={(event) => setDescripcion(event.target.value)}
-                        className={inputBaseClass()}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Costo equipo
-                      </label>
-                      <input
-                        value={costoEquipo ? formatoPesos(costoEquipo) : ""}
-                        readOnly
-                        className={inputBaseClass(true)}
-                      />
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Color
-                      </label>
-                      <input
-                        value={color || referencia || ""}
-                        readOnly
-                        className={inputBaseClass(true)}
-                      />
-                    </div>
+          <div className="mt-6 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="min-w-0 space-y-5">
+              <section className={cardClass}>
+                <div className="mb-5 flex items-start gap-3 border-b border-slate-100 pb-4">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+                    <DashboardIcon name="inventory" className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className={sectionTitleClass()}>Equipo y operación</h2>
+                    <p className="mt-1 text-sm text-slate-500">Datos base del equipo asociado a la venta.</p>
                   </div>
                 </div>
 
-                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                  <h3 className={sectionTitleClass()}>Equipo comercial</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className={fieldLabelClass}>ID venta</label>
+                    <input value={ventaIdTexto} readOnly className={inputBaseClass(true)} />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass}>IMEI</label>
+                    <input value={serial} readOnly className={inputBaseClass(true)} />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass}>Servicio</label>
+                    <select
+                      value={servicio}
+                      onChange={(event) => setServicio(event.target.value)}
+                      className={inputBaseClass()}
+                    >
+                      <option value="">Seleccionar servicio</option>
+                      {SERVICIOS.map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass}>Sede</label>
+                    <input value={sedeNombre} readOnly className={inputBaseClass(true)} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className={fieldLabelClass}>Descripción</label>
+                    <input
+                      value={descripcion}
+                      onChange={(event) => setDescripcion(event.target.value)}
+                      className={inputBaseClass()}
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass}>Referencia</label>
+                    <input value={referencia || descripcion} readOnly className={inputBaseClass(true)} />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass}>Color</label>
+                    <input value={color || "Sin dato"} readOnly className={inputBaseClass(true)} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className={fieldLabelClass}>Costo del equipo</label>
+                    <input
+                      value={costoEquipo ? formatoPesos(costoEquipo) : formatoPesos(0)}
+                      readOnly
+                      className={inputBaseClass(true)}
+                    />
+                    <p className="mt-2 text-xs text-slate-500">Información financiera visible solo para perfiles autorizados.</p>
+                  </div>
+                </div>
+              </section>
 
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Jalador
-                      </label>
-                      <select
-                        value={jalador}
-                        onChange={(event) => setJalador(event.target.value)}
-                        className={inputBaseClass()}
-                      >
-                        <option value="">Seleccionar</option>
-                        {jaladores.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+              <section className={cardClass}>
+                <div className="mb-5 flex items-start gap-3 border-b border-slate-100 pb-4">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                    <DashboardIcon name="user" className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className={sectionTitleClass()}>Equipo comercial</h2>
+                    <p className="mt-1 text-sm text-slate-500">Responsables comerciales registrados en la operación.</p>
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className={fieldLabelClass}>Jalador</label>
+                    <select value={jalador} onChange={(event) => setJalador(event.target.value)} className={inputBaseClass()}>
+                      <option value="">Seleccionar jalador</option>
+                      {jaladores.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass}>Cerrador</label>
+                    <select value={cerrador} onChange={(event) => setCerrador(event.target.value)} className={inputBaseClass()}>
+                      <option value="">Seleccionar cerrador</option>
+                      {cerradores.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </section>
 
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Cerrador
-                      </label>
-                      <select
-                        value={cerrador}
-                        onChange={(event) => setCerrador(event.target.value)}
-                        className={inputBaseClass()}
-                      >
-                        <option value="">Seleccionar</option>
-                        {cerradores.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+              <section className={cardClass}>
+                <div className="mb-5 flex items-start gap-3 border-b border-slate-100 pb-4">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                    <DashboardIcon name="cash" className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className={sectionTitleClass()}>Ingresos</h2>
+                    <p className="mt-1 text-sm text-slate-500">El neto y el efecto en caja se recalculan automáticamente.</p>
                   </div>
                 </div>
 
-                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                  <h3 className={sectionTitleClass()}>Ingresos</h3>
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Ingreso 1
-                      </label>
-                      <input
-                        value={ingreso1Base ? formatoPesos(ingreso1Base) : ""}
-                        onChange={(event) => setIngreso1Base(limpiarNumero(event.target.value))}
-                        className={inputBaseClass()}
-                        placeholder="$ 0"
-                      />
-                      <p className="mt-1 text-xs text-slate-500">Tipo fijo: EFECTIVO</p>
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Ingreso 1 neto
-                      </label>
-                      <input value={formatoPesos(ingreso1Neto)} readOnly className={inputBaseClass(true)} />
-                    </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className={fieldLabelClass}>Ingreso 1</label>
+                    <input
+                      inputMode="numeric"
+                      value={ingreso1Base ? formatoPesos(ingreso1Base) : ""}
+                      onChange={(event) => setIngreso1Base(limpiarNumero(event.target.value))}
+                      className={inputBaseClass()}
+                      placeholder="$ 0"
+                    />
+                    <p className="mt-2 text-xs font-semibold text-slate-500">Tipo fijo: EFECTIVO</p>
                   </div>
+                  <div>
+                    <label className={fieldLabelClass}>Ingreso 1 neto</label>
+                    <input value={formatoPesos(ingreso1Neto)} readOnly className={inputBaseClass(true)} />
+                  </div>
+                </div>
 
-                  <div className="mt-4">
-                    {!usarIngreso2 ? (
-                      <button
-                        type="button"
-                        onClick={() => setUsarIngreso2(true)}
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                      >
-                        + Agregar ingreso 2
-                      </button>
-                    ) : (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                          <div>
-                            <label className="mb-2 block text-sm font-semibold text-slate-700">
-                              Ingreso 2
-                            </label>
-                            <input
-                              value={ingreso2Mostrado}
-                              onChange={(event) =>
-                                setIngreso2Base(limpiarNumero(event.target.value))
-                              }
-                              className={inputBaseClass()}
-                              placeholder="$ 0"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="mb-2 block text-sm font-semibold text-slate-700">
-                              Tipo ingreso 2
-                            </label>
-                            <select
-                              value={tipoIngreso2}
-                              onChange={(event) => setTipoIngreso2(event.target.value)}
-                              className={inputBaseClass()}
-                            >
-                              <option value="">Seleccionar</option>
-                              <option value="VOUCHER">VOUCHER</option>
-                              <option value="TRANSFERENCIA">TRANSFERENCIA</option>
-                            </select>
-                          </div>
+                <div className="mt-4">
+                  {!usarIngreso2 ? (
+                    <button
+                      type="button"
+                      onClick={() => setUsarIngreso2(true)}
+                      className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Agregar ingreso 2
+                    </button>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                          <label className={fieldLabelClass}>Ingreso 2</label>
+                          <input
+                            inputMode="numeric"
+                            value={ingreso2Mostrado}
+                            onChange={(event) => setIngreso2Base(limpiarNumero(event.target.value))}
+                            className={inputBaseClass()}
+                            placeholder="$ 0"
+                          />
                         </div>
-
-                        <div className="mt-4 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setUsarIngreso2(false)}
-                            className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                          >
-                            Quitar ingreso 2
-                          </button>
+                        <div>
+                          <label className={fieldLabelClass}>Tipo de ingreso 2</label>
+                          <select value={tipoIngreso2} onChange={(event) => setTipoIngreso2(event.target.value)} className={inputBaseClass()}>
+                            <option value="">Seleccionar tipo</option>
+                            <option value="VOUCHER">VOUCHER</option>
+                            <option value="TRANSFERENCIA">TRANSFERENCIA</option>
+                          </select>
                         </div>
                       </div>
-                    )}
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setUsarIngreso2(false)}
+                          className="min-h-10 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Quitar ingreso 2
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className={cardClass}>
+                <div className="mb-5 flex items-start gap-3 border-b border-slate-100 pb-4">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                    <DashboardIcon name="store" className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className={sectionTitleClass()}>Financieras</h2>
+                    <p className="mt-1 text-sm text-slate-500">Hasta cuatro financieras, según el servicio seleccionado.</p>
                   </div>
                 </div>
 
-                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                  <h3 className={sectionTitleClass()}>Financieras</h3>
-
-                  {!mostrarFinancieras ? (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                      Este servicio no utiliza financieras.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-3">
-                      {[0, 1, 2, 3].map((index) =>
-                        visibleFin(index) ? (
-                          <div key={index} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {!mostrarFinancieras ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                    Este servicio no utiliza financieras.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {[0, 1, 2, 3].map((index) =>
+                      visibleFin(index) ? (
+                        <div key={index} className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <label className={fieldLabelClass}>Financiera {index + 1}</label>
                             <select
                               value={finanzas[index].nombre}
-                              onChange={(event) =>
-                                actualizarFin(index, "nombre", event.target.value)
-                              }
+                              onChange={(event) => actualizarFin(index, "nombre", event.target.value)}
                               className={inputBaseClass()}
                             >
                               <option value="">Seleccionar financiera</option>
                               {financierasCatalogo.map((item) => (
-                                <option key={item.id} value={item.nombre}>
-                                  {item.nombre}
-                                </option>
+                                <option key={item.id} value={item.nombre}>{item.nombre}</option>
                               ))}
                             </select>
-
+                          </div>
+                          <div>
+                            <label className={fieldLabelClass}>Valor financiado</label>
                             <input
+                              inputMode="numeric"
                               value={finanzas[index].valor ? formatoPesos(finanzas[index].valor) : ""}
-                              onChange={(event) =>
-                                actualizarFin(index, "valor", limpiarNumero(event.target.value))
-                              }
+                              onChange={(event) => actualizarFin(index, "valor", limpiarNumero(event.target.value))}
                               className={inputBaseClass()}
                               placeholder="$ 0"
                             />
                           </div>
-                        ) : null
-                      )}
-                    </div>
-                  )}
-                </div>
+                        </div>
+                      ) : null
+                    )}
+                  </div>
+                )}
+              </section>
 
-                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                  <h3 className={sectionTitleClass()}>Descuentos y salida</h3>
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Comisión
-                      </label>
-                      <input
-                        value={comision ? formatoPesos(comision) : ""}
-                        onChange={(event) => setComision(limpiarNumero(event.target.value))}
-                        className={inputBaseClass()}
-                        placeholder="$ 0"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Salida
-                      </label>
-                      <input
-                        value={salida ? formatoPesos(salida) : ""}
-                        onChange={(event) => setSalida(limpiarNumero(event.target.value))}
-                        className={inputBaseClass()}
-                        placeholder="$ 0"
-                      />
-                    </div>
+              <section className={cardClass}>
+                <div className="mb-5 flex items-start gap-3 border-b border-slate-100 pb-4">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                    <DashboardIcon name="trend" className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className={sectionTitleClass()}>Ajustes de la operación</h2>
+                    <p className="mt-1 text-sm text-slate-500">Comisión y salida aplicadas al resultado final.</p>
                   </div>
                 </div>
-              </div>
-
-              <div className="space-y-6">
-                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                  <h3 className={sectionTitleClass()}>Resumen</h3>
-
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="rounded-2xl bg-slate-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Caja oficina
-                      </p>
-                      <p className="mt-2 text-3xl font-black text-slate-900">
-                        {formatoPesos(cajaOficina)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-emerald-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Utilidad
-                      </p>
-                      <p className="mt-2 text-3xl font-black text-emerald-600">
-                        {formatoPesos(utilidad)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-blue-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Ingresos netos
-                      </p>
-                      <p className="mt-2 text-2xl font-bold text-blue-700">
-                        {formatoPesos(totalIngresosNetos)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-indigo-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Financieras netas
-                      </p>
-                      <p className="mt-2 text-2xl font-bold text-indigo-700">
-                        {formatoPesos(totalFinancierasNetas)}
-                      </p>
-                    </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className={fieldLabelClass}>Comisión</label>
+                    <input
+                      inputMode="numeric"
+                      value={comision ? formatoPesos(comision) : ""}
+                      onChange={(event) => setComision(limpiarNumero(event.target.value))}
+                      className={inputBaseClass()}
+                      placeholder="$ 0"
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass}>Salida</label>
+                    <input
+                      inputMode="numeric"
+                      value={salida ? formatoPesos(salida) : ""}
+                      onChange={(event) => setSalida(limpiarNumero(event.target.value))}
+                      className={inputBaseClass()}
+                      placeholder="$ 0"
+                    />
                   </div>
                 </div>
-
-                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                  <h3 className={sectionTitleClass()}>Acciones</h3>
-
-                  <div className="flex flex-col gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void guardar()}
-                      disabled={guardando || !puedeEditar}
-                      className="rounded-2xl bg-red-600 px-6 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {guardando ? "Guardando..." : "Guardar cambios"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => router.push("/ventas")}
-                      className="rounded-2xl bg-slate-100 px-6 py-4 text-base font-semibold text-slate-700 transition hover:bg-slate-200"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-                  <h3 className={sectionTitleClass()}>Vista rápida</h3>
-
-                  <div className="space-y-3 text-sm text-slate-600">
-                    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                      <span>Servicio</span>
-                      <span className="font-semibold text-slate-900">{servicio || "-"}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                      <span>Jalador</span>
-                      <span className="font-semibold text-slate-900">{jalador || "-"}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                      <span>Cerrador</span>
-                      <span className="font-semibold text-slate-900">{cerrador || "-"}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                      <span>Equipo</span>
-                      <span className="font-semibold text-slate-900">{descripcion || referencia || "-"}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                      <span>IMEI</span>
-                      <span className="font-semibold text-slate-900">{serial || "-"}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </section>
             </div>
+
+            <aside className="min-w-0 space-y-5 xl:sticky xl:top-6">
+              <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
+                <div className="border-b border-slate-200 bg-[#11161d] px-5 py-5 text-white">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Resumen de la venta</p>
+                  <h2 className="mt-2 text-xl font-black">Resultado actualizado</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">Los valores cambian en tiempo real.</p>
+                </div>
+
+                <div className="divide-y divide-slate-100 px-5">
+                  <div className="py-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">Caja oficina</p>
+                    <p className="mt-1 break-words text-2xl font-black text-slate-950">{formatoPesos(cajaOficina)}</p>
+                  </div>
+                  <div className="py-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">Utilidad</p>
+                    <p className={`mt-1 break-words text-2xl font-black ${utilidad >= 0 ? "text-emerald-600" : "text-[#e30613]"}`}>
+                      {formatoPesos(utilidad)}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 py-4">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Ingresos netos</p>
+                      <p className="mt-1 break-words text-lg font-black text-slate-950">{formatoPesos(totalIngresosNetos)}</p>
+                    </div>
+                    <div className="min-w-0 border-l border-slate-100 pl-4">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Financieras netas</p>
+                      <p className="mt-1 break-words text-lg font-black text-slate-950">{formatoPesos(totalFinancierasNetas)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <dl className="border-t border-slate-200 bg-slate-50/70 px-5 py-4 text-sm">
+                  {[
+                    ["Servicio", servicio || "Pendiente"],
+                    ["Equipo", descripcion || referencia || "Sin dato"],
+                    ["Jalador", jalador || "Pendiente"],
+                    ["Cerrador", cerrador || "Pendiente"],
+                    ["IMEI", serial || "Sin dato"],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex items-start justify-between gap-4 py-2">
+                      <dt className="shrink-0 text-slate-500">{label}</dt>
+                      <dd className="min-w-0 break-words text-right font-bold text-slate-900">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#e30613]">Acciones</p>
+                <div className="mt-4 flex flex-col gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void guardar()}
+                    disabled={guardando || !puedeEditar}
+                    className="min-h-12 rounded-xl bg-[#e30613] px-5 text-sm font-black uppercase tracking-[0.06em] text-white shadow-sm transition hover:bg-[#c90511] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {guardando ? "Guardando..." : "Guardar cambios"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/ventas")}
+                    disabled={guardando}
+                    className="min-h-12 rounded-xl border border-slate-300 bg-white px-5 text-sm font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+                <p className="mt-4 text-xs leading-5 text-slate-500">
+                  Los cambios se guardarán sobre la venta existente. No se creará un registro nuevo.
+                </p>
+              </section>
+            </aside>
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );
