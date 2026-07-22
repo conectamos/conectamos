@@ -32,6 +32,9 @@ import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 import OperationsDashboard, {
   type NavigationItem,
 } from "./_components/operations-dashboard";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "./_components/dashboard-icon";
 import SalesRoleDashboard from "./_components/sales-role-dashboard";
 
 type ModuleTone = "slate" | "emerald" | "sky" | "amber" | "violet" | "rose";
@@ -140,14 +143,16 @@ function MetricCard({
 
 function CommercialRankingPanel({
   title,
-  accent,
+  description,
+  icon,
   items,
   countLabel,
   showCommissionToggle = false,
   showAmountToggle = false,
 }: {
   title: string;
-  accent: string;
+  description: string;
+  icon: DashboardIconName;
   items: CommercialRankingItem[];
   countLabel: string;
   showCommissionToggle?: boolean;
@@ -161,43 +166,73 @@ function CommercialRankingPanel({
     return total === 1 ? "venta" : "ventas";
   };
   const topItems = items.slice(0, 5);
+  const maxTotal = Math.max(1, ...items.map((item) => Number(item.total || 0)));
   const renderItems = (rankingItems: CommercialRankingItem[]) =>
     rankingItems.map((item, index) => (
       <div
         key={`${title}-${item.nombre}-${index}`}
-        className="flex items-start justify-between gap-4 rounded-2xl border border-[#eee6da] bg-[#fcfbf8] px-4 py-3"
+        className="group/row grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-1 py-3.5 last:border-b-0"
       >
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-black text-white">
-            {index + 1}
-          </div>
+        <div
+          className={[
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-black",
+            index === 0
+              ? "bg-[#e30613] text-white"
+              : "bg-slate-100 text-slate-700",
+          ].join(" ")}
+        >
+          {index + 1}
+        </div>
 
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-slate-950">
-              {item.nombre}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {item.total} {countText(item.total)}
-            </p>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-slate-900">
+            {item.nombre}
+          </p>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={[
+                "h-full rounded-full transition-all",
+                index === 0 ? "bg-[#e30613]" : "bg-slate-300 group-hover/row:bg-slate-400",
+              ].join(" ")}
+              style={{ width: `${Math.max(5, (Number(item.total || 0) / maxTotal) * 100)}%` }}
+            />
           </div>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <p className="text-base font-black tabular-nums text-slate-950">
+            {item.total}
+          </p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+            {countText(item.total)}
+          </p>
         </div>
       </div>
     ));
 
   return (
-    <div className="rounded-[26px] border border-[#ebe4d7] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-black tracking-tight text-slate-950">
-          {title}
-        </p>
-        <div className="flex items-center gap-2">
+    <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+            <DashboardIcon name={icon} className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h4 className="text-base font-black tracking-tight text-slate-950">
+              {title}
+            </h4>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
           {showCommissionToggle && (
             <details className="relative">
-              <summary className="flex cursor-pointer list-none items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700 transition hover:bg-emerald-100 [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] [&::-webkit-details-marker]:hidden">
                 Comisiones
               </summary>
-              <div className="absolute right-0 z-20 mt-2 max-h-80 w-72 overflow-auto rounded-2xl border border-[#e6ddcf] bg-white p-3 shadow-[0_18px_55px_rgba(15,23,42,0.16)]">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              <div className="absolute right-0 z-20 mt-2 max-h-80 w-72 overflow-auto rounded-xl border border-slate-200 bg-white p-3 shadow-[0_18px_55px_rgba(15,23,42,0.16)]">
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
                   Comisiones recibidas
                 </p>
                 <div className="space-y-2">
@@ -209,12 +244,12 @@ function CommercialRankingPanel({
                     items.map((item) => (
                       <div
                         key={`comision-${item.nombre}`}
-                        className="flex items-center justify-between gap-3 rounded-xl bg-[#fcfbf8] px-3 py-2"
+                        className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
                       >
                         <span className="truncate text-xs font-bold text-slate-800">
                           {item.nombre}
                         </span>
-                        <span className="shrink-0 text-xs font-black text-emerald-700">
+                        <span className="shrink-0 text-xs font-black text-slate-950">
                           {formatoPesos(item.monto)}
                         </span>
                       </div>
@@ -226,11 +261,11 @@ function CommercialRankingPanel({
           )}
           {showAmountToggle && (
             <details className="relative">
-              <summary className="flex cursor-pointer list-none items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-amber-700 transition hover:bg-amber-100 [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] [&::-webkit-details-marker]:hidden">
                 Montos
               </summary>
-              <div className="absolute right-0 z-20 mt-2 max-h-80 w-72 overflow-auto rounded-2xl border border-[#e6ddcf] bg-white p-3 shadow-[0_18px_55px_rgba(15,23,42,0.16)]">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              <div className="absolute right-0 z-20 mt-2 max-h-80 w-72 overflow-auto rounded-xl border border-slate-200 bg-white p-3 shadow-[0_18px_55px_rgba(15,23,42,0.16)]">
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
                   Montos por financiera
                 </p>
                 <div className="space-y-2">
@@ -242,12 +277,12 @@ function CommercialRankingPanel({
                     items.map((item) => (
                       <div
                         key={`monto-${item.nombre}`}
-                        className="flex items-center justify-between gap-3 rounded-xl bg-[#fcfbf8] px-3 py-2"
+                        className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
                       >
                         <span className="truncate text-xs font-bold text-slate-800">
                           {item.nombre}
                         </span>
-                        <span className="shrink-0 text-xs font-black text-amber-700">
+                        <span className="shrink-0 text-xs font-black text-slate-950">
                           {formatoPesos(item.monto)}
                         </span>
                       </div>
@@ -257,18 +292,25 @@ function CommercialRankingPanel({
               </div>
             </details>
           )}
-          <span className={["h-2.5 w-2.5 rounded-full", accent].join(" ")} />
         </div>
       </div>
 
       <details className="group mt-4">
-        <summary className="flex w-max cursor-pointer list-none items-center rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-700 transition hover:bg-white [&::-webkit-details-marker]:hidden">
-          Todos
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl bg-slate-50 px-3.5 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
+          <span>
+            <span className="group-open:hidden">Top 5</span>
+            <span className="hidden group-open:inline">Ranking completo</span>
+          </span>
+          <span className="flex items-center gap-2 text-[#e30613]">
+            <span className="group-open:hidden">Ver todos</span>
+            <span className="hidden group-open:inline">Ver menos</span>
+            <span className="text-base transition group-open:rotate-45">+</span>
+          </span>
         </summary>
 
-        <div className="mt-3 hidden space-y-3 group-open:block">
+        <div className="mt-2 hidden group-open:block">
           {items.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#e6ddcf] bg-[#fcfaf6] px-4 py-4 text-sm text-slate-500">
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
               Sin movimientos registrados en este periodo.
             </div>
           ) : (
@@ -276,12 +318,9 @@ function CommercialRankingPanel({
           )}
         </div>
 
-        <div className="mt-3 space-y-3 group-open:hidden">
-          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
-            Top 5
-          </p>
+        <div className="mt-2 group-open:hidden">
           {items.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#e6ddcf] bg-[#fcfaf6] px-4 py-4 text-sm text-slate-500">
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
               Sin movimientos registrados en este periodo.
             </div>
           ) : (
@@ -289,7 +328,7 @@ function CommercialRankingPanel({
           )}
         </div>
       </details>
-    </div>
+    </article>
   );
 }
 
@@ -313,59 +352,64 @@ function CommercialRankingSection({
   mostrarAccionesMonetarias?: boolean;
 }) {
   return (
-    <section className="rounded-[30px] border border-[#e9e3d8] bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
+    <section>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="inline-flex rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+          <div className="text-[11px] font-black uppercase tracking-[0.16em] text-[#e30613]">
             Corte comercial
           </div>
-          <h3 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-            Ranking del periodo
+          <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-[28px]">
+            Ranking comercial
           </h3>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Resumen compacto del comportamiento comercial del mes.
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            Compara sedes, equipos comerciales y financieras del periodo seleccionado.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <div className="rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+          <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">
             Periodo: {periodLabel}
           </div>
-          <div className="rounded-full border border-[#e9e1d4] bg-[#f8f5ef] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+          <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">
             Cobertura: {coverageLabel}
           </div>
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
+      <div className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
         <CommercialRankingPanel
           title="Ventas de Oficina"
-          accent="bg-sky-500"
+          description="Origen comercial de los registros."
+          icon="store"
           items={topSedesJalador}
           countLabel="venta"
         />
         <CommercialRankingPanel
           title="Ventas Sede"
-          accent="bg-emerald-500"
+          description="Resultado consolidado por sede."
+          icon="inventory"
           items={topVentasSede}
           countLabel="venta"
         />
         <CommercialRankingPanel
           title="Ventas Jalador"
-          accent="bg-sky-500"
+          description="Participación de jaladores en ventas."
+          icon="sales"
           items={topJaladores}
           countLabel="venta"
           showCommissionToggle={mostrarAccionesMonetarias}
         />
         <CommercialRankingPanel
           title="Ventas Cerrador"
-          accent="bg-rose-500"
+          description="Cierres comerciales registrados."
+          icon="user"
           items={topCerradores}
           countLabel="venta"
         />
         <CommercialRankingPanel
           title="Ventas Financieras"
-          accent="bg-amber-500"
+          description="Uso de financieras en el periodo."
+          icon="cash"
           items={topFinancieras}
           countLabel="uso"
           showAmountToggle={mostrarAccionesMonetarias}
