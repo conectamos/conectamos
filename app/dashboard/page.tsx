@@ -225,7 +225,7 @@ function CommercialRankingPanel({
             minimumFractionDigits: 1,
             maximumFractionDigits: 1,
           }
-        )}% participación`
+        )}%`
       : null;
   const renderItems = (rankingItems: CommercialRankingItem[]) =>
     rankingItems.map((item, index) => {
