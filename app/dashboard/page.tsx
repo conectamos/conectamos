@@ -37,6 +37,13 @@ import DashboardIcon, {
 } from "./_components/dashboard-icon";
 import SalesRoleDashboard from "./_components/sales-role-dashboard";
 
+type MonthlyCommercialSummary = Awaited<
+  ReturnType<typeof getMonthlyCommercialSummary>
+>;
+type OperationalSummary = Awaited<
+  ReturnType<typeof getDashboardOperationalSummary>
+>;
+
 type ModuleTone = "slate" | "emerald" | "sky" | "amber" | "violet" | "rose";
 type ActionTone = "primary" | "secondary" | "danger";
 
@@ -84,6 +91,44 @@ type SessionBadge = {
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
+}
+
+function createEmptyCommercialSummary(
+  periodo: MonthlyCommercialSummary["periodo"]
+): MonthlyCommercialSummary {
+  return {
+    periodo,
+    utilidad: 0,
+    caja: 0,
+    ingresos: 0,
+    ventas: 0,
+    cajaVentas: 0,
+    cajaOperativa: 0,
+    topSedesJalador: [],
+    topVentasSede: [],
+    topJaladores: [],
+    topCerradores: [],
+    topFinancieras: [],
+    topMarcasVendidas: [],
+    topReferenciasVendidas: [],
+    referenciasVendidas: [],
+    tendenciaDiaria: [],
+    rendimientoPorSede: [],
+  };
+}
+
+function createEmptyOperationalSummary(): OperationalSummary {
+  return {
+    equiposEnBodega: 0,
+    aprobacionesPendientes: 0,
+    prestamosActivos: 0,
+    inventarioAtencion: 0,
+    pendientesTotal: 0,
+    detalleAprobaciones: {
+      prestamos: 0,
+      ventas: 0,
+    },
+  };
 }
 
 function BrandBadge() {
@@ -147,6 +192,7 @@ function CommercialRankingPanel({
   icon,
   items,
   countLabel,
+  participationBase,
   showCommissionToggle = false,
   showAmountToggle = false,
 }: {
@@ -155,6 +201,7 @@ function CommercialRankingPanel({
   icon: DashboardIconName;
   items: CommercialRankingItem[];
   countLabel: string;
+  participationBase?: number;
   showCommissionToggle?: boolean;
   showAmountToggle?: boolean;
 }) {
@@ -166,13 +213,29 @@ function CommercialRankingPanel({
     return total === 1 ? "venta" : "ventas";
   };
   const topItems = items.slice(0, 5);
-  const maxTotal = Math.max(1, ...items.map((item) => Number(item.total || 0)));
+  const maxTotal = items.reduce(
+    (maximo, item) => Math.max(maximo, Number(item.total || 0)),
+    1
+  );
+  const participationText = (total: number) =>
+    participationBase && participationBase > 0
+      ? `${((Number(total || 0) / participationBase) * 100).toLocaleString(
+          "es-CO",
+          {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          }
+        )}% participación`
+      : null;
   const renderItems = (rankingItems: CommercialRankingItem[]) =>
-    rankingItems.map((item, index) => (
-      <div
-        key={`${title}-${item.nombre}-${index}`}
-        className="group/row grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-1 py-3.5 last:border-b-0"
-      >
+    rankingItems.map((item, index) => {
+      const participation = participationText(item.total);
+
+      return (
+        <div
+          key={`${title}-${item.nombre}-${index}`}
+          className="group/row grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-1 py-3.5 last:border-b-0"
+        >
         <div
           className={[
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-black",
@@ -199,16 +262,22 @@ function CommercialRankingPanel({
           </div>
         </div>
 
-        <div className="shrink-0 text-right">
-          <p className="text-base font-black tabular-nums text-slate-950">
-            {item.total}
-          </p>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
-            {countText(item.total)}
-          </p>
+          <div className="shrink-0 text-right">
+            <p className="text-base font-black tabular-nums text-slate-950">
+              {item.total}
+            </p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+              {countText(item.total)}
+            </p>
+            {participation && (
+              <p className="mt-1 text-xs font-black tabular-nums text-[#e30613]">
+                {participation}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
-    ));
+      );
+    });
 
   return (
     <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
@@ -335,6 +404,7 @@ function CommercialRankingPanel({
 function CommercialRankingSection({
   periodLabel,
   coverageLabel,
+  totalVentas,
   topSedesJalador,
   topVentasSede,
   topJaladores,
@@ -344,6 +414,7 @@ function CommercialRankingSection({
 }: {
   periodLabel: string;
   coverageLabel: string;
+  totalVentas: number;
   topSedesJalador: CommercialRankingItem[];
   topVentasSede: CommercialRankingItem[];
   topJaladores: CommercialRankingItem[];
@@ -390,6 +461,7 @@ function CommercialRankingSection({
           icon="inventory"
           items={topVentasSede}
           countLabel="venta"
+          participationBase={totalVentas}
         />
         <CommercialRankingPanel
           title="Ventas Jalador"
@@ -397,6 +469,7 @@ function CommercialRankingSection({
           icon="sales"
           items={topJaladores}
           countLabel="venta"
+          participationBase={totalVentas}
           showCommissionToggle={mostrarAccionesMonetarias}
         />
         <CommercialRankingPanel
@@ -405,6 +478,7 @@ function CommercialRankingSection({
           icon="user"
           items={topCerradores}
           countLabel="venta"
+          participationBase={totalVentas}
         />
         <CommercialRankingPanel
           title="Ventas Financieras"
@@ -669,6 +743,9 @@ export default async function DashboardPage({
         where: { activa: true },
         select: { id: true, nombre: true },
         orderBy: { nombre: "asc" },
+      }).catch((error) => {
+        console.error("ERROR CARGANDO SEDES DEL DASHBOARD:", error);
+        return [];
       })
     : [];
   const sedeSolicitadaId = Number(params?.sedeId || 0);
@@ -686,12 +763,8 @@ export default async function DashboardPage({
     !esPerfilVentas &&
     !esFacturador &&
     !esSedeSoloInventario;
-  const [
-    resumenComercialMensual,
-    resumenFinanciero,
-    resumenOperativo,
-  ] = mostrarDashboardOperativo
-    ? await Promise.all([
+  const resultadosDashboard = mostrarDashboardOperativo
+    ? await Promise.allSettled([
         getMonthlyCommercialSummary({
           period: mesActual.key,
           sedeId: sedeDashboardId,
@@ -700,9 +773,6 @@ export default async function DashboardPage({
           ? getDashboardCashSummary({
               sedeId: sedeDashboardId,
               fechaCorte: mesActual.end,
-            }).catch((error) => {
-              console.error("ERROR CARGANDO CAJA DEL DASHBOARD:", error);
-              return null;
             })
           : Promise.resolve(null),
         getDashboardOperationalSummary({
@@ -716,7 +786,39 @@ export default async function DashboardPage({
           fechaCorte: mesActual.end,
         }),
       ])
-    : ([null, null, null] as const);
+    : null;
+  const resultadoComercial = resultadosDashboard?.[0] ?? null;
+  const resultadoFinanciero = resultadosDashboard?.[1] ?? null;
+  const resultadoOperativo = resultadosDashboard?.[2] ?? null;
+  const resumenComercialDisponible = resultadoComercial?.status === "fulfilled";
+  const resumenFinancieroDisponible = resultadoFinanciero?.status === "fulfilled";
+  const resumenOperativoDisponible = resultadoOperativo?.status === "fulfilled";
+
+  if (resultadoComercial?.status === "rejected") {
+    console.error("ERROR CARGANDO RESUMEN COMERCIAL DEL DASHBOARD:", resultadoComercial.reason);
+  }
+  if (resultadoFinanciero?.status === "rejected") {
+    console.error("ERROR CARGANDO CAJA DEL DASHBOARD:", resultadoFinanciero.reason);
+  }
+  if (resultadoOperativo?.status === "rejected") {
+    console.error("ERROR CARGANDO RESUMEN OPERATIVO DEL DASHBOARD:", resultadoOperativo.reason);
+  }
+
+  const resumenComercialMensual = mostrarDashboardOperativo
+    ? resultadoComercial?.status === "fulfilled"
+      ? resultadoComercial.value
+      : createEmptyCommercialSummary(mesActual)
+    : null;
+  const resumenFinanciero = mostrarDashboardOperativo
+    ? resultadoFinanciero?.status === "fulfilled"
+      ? resultadoFinanciero.value
+      : null
+    : null;
+  const resumenOperativo = mostrarDashboardOperativo
+    ? resultadoOperativo?.status === "fulfilled"
+      ? resultadoOperativo.value
+      : createEmptyOperationalSummary()
+    : null;
   const [
     mensajeBienvenidaVendedor,
     resumenGananciasVendedor,
@@ -772,24 +874,30 @@ export default async function DashboardPage({
         )}
         <OperationsDashboard
           commercial={resumenComercialMensual}
+          commercialAvailable={resumenComercialDisponible}
           coverageLabel={coberturaDashboard}
           detailedRankings={
-            <CommercialRankingSection
-              periodLabel={mesActual.label}
-              coverageLabel={coberturaDashboard}
-              topSedesJalador={resumenComercialMensual.topSedesJalador}
-              topVentasSede={resumenComercialMensual.topVentasSede}
-              topJaladores={resumenComercialMensual.topJaladores}
-              topCerradores={resumenComercialMensual.topCerradores}
-              topFinancieras={resumenComercialMensual.topFinancieras}
-              mostrarAccionesMonetarias={!esSupervisor || esAdmin}
-            />
+            resumenComercialDisponible ? (
+              <CommercialRankingSection
+                periodLabel={mesActual.label}
+                coverageLabel={coberturaDashboard}
+                totalVentas={resumenComercialMensual.ventas}
+                topSedesJalador={resumenComercialMensual.topSedesJalador}
+                topVentasSede={resumenComercialMensual.topVentasSede}
+                topJaladores={resumenComercialMensual.topJaladores}
+                topCerradores={resumenComercialMensual.topCerradores}
+                topFinancieras={resumenComercialMensual.topFinancieras}
+                mostrarAccionesMonetarias={!esSupervisor || esAdmin}
+              />
+            ) : null
           }
           esAdmin={esAdmin}
           esSupervisor={esSupervisor}
           financial={resumenFinanciero}
+          financialAvailable={resumenFinancieroDisponible}
           navigationItems={navigationItems}
           operational={resumenOperativo}
+          operationalAvailable={resumenOperativoDisponible}
           period={mesActual.key}
           periodLabel={mesActual.label}
           puedeVerEquality={puedeVerEquality}
@@ -1306,6 +1414,7 @@ export default async function DashboardPage({
             <CommercialRankingSection
               periodLabel={mesActual.label}
               coverageLabel={esAdmin ? "Todas las sedes" : sedeLabel}
+              totalVentas={resumenComercialMensual.ventas}
               topSedesJalador={resumenComercialMensual.topSedesJalador}
               topVentasSede={resumenComercialMensual.topVentasSede}
               topJaladores={resumenComercialMensual.topJaladores}

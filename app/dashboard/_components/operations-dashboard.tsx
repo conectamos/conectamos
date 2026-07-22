@@ -569,13 +569,16 @@ function QuickActions({ reportHref }: { reportHref: string }) {
 
 export default function OperationsDashboard({
   commercial,
+  commercialAvailable = true,
   coverageLabel,
   detailedRankings,
   esAdmin,
   esSupervisor,
   financial,
+  financialAvailable = true,
   navigationItems,
   operational,
+  operationalAvailable = true,
   period,
   periodLabel,
   puedeVerEquality,
@@ -587,13 +590,16 @@ export default function OperationsDashboard({
   usuario,
 }: {
   commercial: CommercialSummary;
+  commercialAvailable?: boolean;
   coverageLabel: string;
   detailedRankings?: ReactNode;
   esAdmin: boolean;
   esSupervisor: boolean;
   financial: FinancialSummary | null;
+  financialAvailable?: boolean;
   navigationItems: NavigationItem[];
   operational: DashboardOperationalSummary;
+  operationalAvailable?: boolean;
   period: string;
   periodLabel: string;
   puedeVerEquality: boolean;
@@ -605,6 +611,8 @@ export default function OperationsDashboard({
   usuario: string;
 }) {
   const modoSupervisorSinMontos = esSupervisor && !esAdmin;
+  const datosParciales =
+    !commercialAvailable || !financialAvailable || !operationalAvailable;
   const reportHref = esAdmin ? "/dashboard/reportes" : "/dashboard/analitico";
   const toolGroups: OperationsToolGroup[] = [
     {
@@ -748,11 +756,15 @@ export default function OperationsDashboard({
                 <div className="flex items-center gap-2">
                   <Link
                     href="/dashboard/aprobaciones"
-                    aria-label={`${operational.pendientesTotal} alertas operativas`}
+                    aria-label={
+                      operationalAvailable
+                        ? `${operational.pendientesTotal} alertas operativas`
+                        : "Alertas operativas no disponibles"
+                    }
                     className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:text-[#e30613]"
                   >
                     <DashboardIcon name="bell" className="h-6 w-6" />
-                    {operational.pendientesTotal > 0 && (
+                    {operationalAvailable && operational.pendientesTotal > 0 && (
                       <span className="absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#e30613] px-1 text-[10px] font-black text-white">
                         {operational.pendientesTotal > 99 ? "99+" : operational.pendientesTotal}
                       </span>
@@ -773,12 +785,33 @@ export default function OperationsDashboard({
             </div>
           </header>
 
+          {datosParciales && (
+            <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-black">Actualización parcial del dashboard</p>
+                <p className="mt-0.5 text-xs leading-5 text-amber-800">
+                  Algunos indicadores no se pudieron actualizar. El resto del panel sigue disponible y ningún dato fue modificado.
+                </p>
+              </div>
+              <Link
+                href={`/dashboard?period=${encodeURIComponent(period)}${
+                  sedeId ? `&sedeId=${sedeId}` : ""
+                }`}
+                className="w-fit shrink-0 rounded-xl border border-amber-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.08em] text-amber-900 transition hover:bg-amber-100"
+              >
+                Reintentar datos
+              </Link>
+            </div>
+          )}
+
           <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5" aria-label="Indicadores principales">
             <KpiCard
               label="Ventas del periodo"
-              value={String(commercial.ventas)}
+              value={commercialAvailable ? String(commercial.ventas) : "No disponible"}
               detail={
-                modoSupervisorSinMontos
+                !commercialAvailable
+                  ? "No se pudo actualizar este indicador"
+                  : modoSupervisorSinMontos
                   ? "Registros comerciales del periodo"
                   : `${formatoPesos(commercial.ingresos)} en ingresos comerciales`
               }
@@ -789,8 +822,8 @@ export default function OperationsDashboard({
               <>
                 <KpiCard
                   label="Utilidad del periodo"
-                  value={formatoPesos(commercial.utilidad)}
-                  detail={`Acumulado de ${periodLabel}`}
+                  value={commercialAvailable ? formatoPesos(commercial.utilidad) : "No disponible"}
+                  detail={commercialAvailable ? `Acumulado de ${periodLabel}` : "No se pudo actualizar este indicador"}
                   icon="trend"
                   iconClassName="bg-emerald-50 text-emerald-600"
                   valueClassName="text-emerald-600"
@@ -798,12 +831,12 @@ export default function OperationsDashboard({
                 <KpiCard
                   label="Caja acumulada"
                   value={
-                    financial
+                    financialAvailable && financial
                       ? formatoPesos(financial.cajaDisponible)
                       : "No disponible"
                   }
                   detail={
-                    financial
+                    financialAvailable && financial
                       ? `Disponible al cierre de ${periodLabel}`
                       : "No se pudo actualizar este indicador"
                   }
@@ -824,12 +857,12 @@ export default function OperationsDashboard({
                 <KpiCard
                   label="Caja acumulada"
                   value={
-                    financial
+                    financialAvailable && financial
                       ? formatoPesos(financial.cajaDisponible)
                       : "No disponible"
                   }
                   detail={
-                    financial
+                    financialAvailable && financial
                       ? `Disponible al cierre de ${periodLabel}`
                       : "No se pudo actualizar este indicador"
                   }
@@ -848,18 +881,24 @@ export default function OperationsDashboard({
             )}
             <KpiCard
               label="Equipos en bodega"
-              value={String(operational.equiposEnBodega)}
-              detail="Unidades disponibles actualmente"
+              value={operationalAvailable ? String(operational.equiposEnBodega) : "No disponible"}
+              detail={operationalAvailable ? "Unidades disponibles actualmente" : "No se pudo actualizar este indicador"}
               icon="inventory"
               iconClassName="bg-violet-50 text-violet-600"
             />
             <KpiCard
               label="Pendientes o alertas"
-              value={String(operational.pendientesTotal)}
-              detail={operational.pendientesTotal > 0 ? "Requieren atención operativa" : "Operación sin alertas activas"}
+              value={operationalAvailable ? String(operational.pendientesTotal) : "No disponible"}
+              detail={
+                !operationalAvailable
+                  ? "No se pudo actualizar este indicador"
+                  : operational.pendientesTotal > 0
+                    ? "Requieren atención operativa"
+                    : "Operación sin alertas activas"
+              }
               icon="warning"
               iconClassName="bg-orange-50 text-orange-600"
-              valueClassName={operational.pendientesTotal > 0 ? "text-orange-600" : "text-slate-950"}
+              valueClassName={operationalAvailable && operational.pendientesTotal > 0 ? "text-orange-600" : "text-slate-950"}
             />
           </section>
 
@@ -885,10 +924,16 @@ export default function OperationsDashboard({
                 <span className="w-fit rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold capitalize text-slate-600">{periodLabel}</span>
               </div>
               <div className="mt-4">
-                <SalesUtilityChart
-                  data={commercial.tendenciaDiaria}
-                  mostrarUtilidad={esAdmin}
-                />
+                {commercialAvailable ? (
+                  <SalesUtilityChart
+                    data={commercial.tendenciaDiaria}
+                    mostrarUtilidad={esAdmin}
+                  />
+                ) : (
+                  <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 text-center text-sm font-semibold text-slate-500">
+                    La tendencia comercial no está disponible en este momento.
+                  </div>
+                )}
               </div>
             </article>
 
@@ -900,7 +945,15 @@ export default function OperationsDashboard({
                 </div>
                 <Link href="/dashboard/aprobaciones" className="text-xs font-black text-[#e30613] hover:underline">Ver todas</Link>
               </div>
-              {operational.pendientesTotal === 0 ? (
+              {!operationalAvailable ? (
+                <div className="border-t border-slate-100 px-5 py-14 text-center">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                    <DashboardIcon name="warning" className="h-6 w-6" />
+                  </div>
+                  <p className="mt-3 text-sm font-bold text-slate-700">Alertas no disponibles</p>
+                  <p className="mt-1 text-xs text-slate-500">Reintenta la actualización para consultar el estado operativo.</p>
+                </div>
+              ) : operational.pendientesTotal === 0 ? (
                 <div className="border-t border-slate-100 px-5 py-14 text-center">
                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
                     <DashboardIcon name="approvals" className="h-6 w-6" />
@@ -940,14 +993,28 @@ export default function OperationsDashboard({
           </section>
 
           <section className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_1fr_0.95fr]">
-            <PerformancePanel
-              items={commercial.rendimientoPorSede}
-              mostrarSoloVentas={modoSupervisorSinMontos}
-            />
-            <LeadingFinancialPanel
-              financieras={commercial.topFinancieras}
-              ocultarMonto={modoSupervisorSinMontos}
-            />
+            {commercialAvailable ? (
+              <PerformancePanel
+                items={commercial.rendimientoPorSede}
+                mostrarSoloVentas={modoSupervisorSinMontos}
+              />
+            ) : (
+              <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+                <h2 className="text-xl font-black tracking-tight text-slate-950">Rendimiento por sede</h2>
+                <p className="mt-8 text-sm font-semibold text-slate-500">Datos no disponibles temporalmente.</p>
+              </article>
+            )}
+            {commercialAvailable ? (
+              <LeadingFinancialPanel
+                financieras={commercial.topFinancieras}
+                ocultarMonto={modoSupervisorSinMontos}
+              />
+            ) : (
+              <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+                <h2 className="text-xl font-black tracking-tight text-slate-950">Financiera líder</h2>
+                <p className="mt-8 text-sm font-semibold text-slate-500">Datos no disponibles temporalmente.</p>
+              </article>
+            )}
             <QuickActions reportHref={reportHref} />
           </section>
 
