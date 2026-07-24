@@ -63,11 +63,13 @@ function SidebarContent({
   coverageLabel,
   footerMode,
   items,
+  panelLabel,
 }: {
   activeHref?: string;
   coverageLabel: string;
   footerMode: "coverage" | "logout";
   items: NavigationItem[];
+  panelLabel: string;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#11161d] text-white">
@@ -85,7 +87,7 @@ function SidebarContent({
         <div>
           <p className="text-[17px] font-black tracking-[0.035em]">CONECTAMOS</p>
           <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.19em] text-white/45">
-            Panel operativo
+            {panelLabel}
           </p>
         </div>
       </div>
@@ -142,11 +144,13 @@ export function DashboardSidebar({
   coverageLabel,
   footerMode = "coverage",
   items,
+  panelLabel = "Panel operativo",
 }: {
   activeHref?: string;
   coverageLabel: string;
   footerMode?: "coverage" | "logout";
   items: NavigationItem[];
+  panelLabel?: string;
 }) {
   return (
     <>
@@ -156,6 +160,7 @@ export function DashboardSidebar({
           coverageLabel={coverageLabel}
           footerMode={footerMode}
           items={items}
+          panelLabel={panelLabel}
         />
       </aside>
 
@@ -187,6 +192,7 @@ export function DashboardSidebar({
               coverageLabel={coverageLabel}
               footerMode={footerMode}
               items={items}
+              panelLabel={panelLabel}
             />
           </div>
         </details>
@@ -535,13 +541,16 @@ function LeadingFinancialPanel({
   );
 }
 
-function QuickActions({ reportHref }: { reportHref: string }) {
-  const actions: Array<NavigationItem> = [
+function QuickActions({
+  actions = [
     { href: "/ventas/nuevo", icon: "sales", label: "Nueva venta" },
     { href: "/inventario/nuevo", icon: "inventory", label: "Nuevo inventario" },
     { href: "/caja/gestion", icon: "cash", label: "Registrar egreso" },
-    { href: reportHref, icon: "reports", label: "Ver reportes" },
-  ];
+    { href: "/dashboard/analitico", icon: "reports", label: "Ver reportes" },
+  ],
+}: {
+  actions?: NavigationItem[];
+}) {
 
   return (
     <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
@@ -573,6 +582,7 @@ export default function OperationsDashboard({
   coverageLabel,
   detailedRankings,
   esAdmin,
+  esStand = false,
   esSupervisor,
   financial,
   financialAvailable = true,
@@ -594,6 +604,7 @@ export default function OperationsDashboard({
   coverageLabel: string;
   detailedRankings?: ReactNode;
   esAdmin: boolean;
+  esStand?: boolean;
   esSupervisor: boolean;
   financial: FinancialSummary | null;
   financialAvailable?: boolean;
@@ -614,7 +625,7 @@ export default function OperationsDashboard({
   const datosParciales =
     !commercialAvailable || !financialAvailable || !operationalAvailable;
   const reportHref = esAdmin ? "/dashboard/reportes" : "/dashboard/analitico";
-  const toolGroups: OperationsToolGroup[] = [
+  const defaultToolGroups: OperationsToolGroup[] = [
     {
       title: "Inventario y préstamos",
       description: "Bodega, historial y movimientos entre sedes.",
@@ -731,17 +742,81 @@ export default function OperationsDashboard({
           ]
         : []),
   ];
+  const standToolGroups: OperationsToolGroup[] = [
+    {
+      title: "Inventario",
+      description: "Existencias, cargas y trazabilidad del stand.",
+      icon: "inventory",
+      links: [
+        { href: "/inventario", label: "Ver inventario" },
+        { href: "/inventario/nuevo", label: "Nuevo inventario" },
+        { href: "/inventario/historial", label: "Historial IMEI" },
+      ],
+    },
+    {
+      title: "Ventas",
+      description: "Registro y seguimiento comercial del stand.",
+      icon: "sales",
+      links: [
+        { href: "/ventas", label: "Ver ventas" },
+        { href: "/ventas/nuevo", label: "Nueva venta" },
+      ],
+    },
+    {
+      title: "Caja",
+      description: "Movimientos, cierre y control diario del stand.",
+      icon: "cash",
+      links: [
+        { href: "/caja", label: "Ver caja" },
+        { href: "/caja/cierre-dia", label: "Cierre del día" },
+        { href: "/caja/gestion", label: "Ingresos / gastos" },
+        { href: "/caja/arqueo", label: "Arqueo" },
+        { href: "/dashboard/financiero", label: "Panel financiero" },
+        { href: "/caja/cartera", label: "Cartera" },
+      ],
+    },
+    {
+      title: "Análisis",
+      description: "Indicadores y comparativos de la operación.",
+      icon: "reports",
+      links: [{ href: "/dashboard/analitico", label: "Panel analítico" }],
+    },
+  ];
+  const toolGroups = esStand ? standToolGroups : defaultToolGroups;
+  const quickActions: NavigationItem[] = esStand
+    ? [
+        { href: "/ventas/nuevo", icon: "sales", label: "Nueva venta" },
+        { href: "/inventario/nuevo", icon: "inventory", label: "Nuevo inventario" },
+        { href: "/caja/gestion", icon: "cash", label: "Registrar movimiento" },
+        { href: "/caja/cierre-dia", icon: "reports", label: "Cierre del día" },
+      ]
+    : [
+        { href: "/ventas/nuevo", icon: "sales", label: "Nueva venta" },
+        { href: "/inventario/nuevo", icon: "inventory", label: "Nuevo inventario" },
+        { href: "/caja/gestion", icon: "cash", label: "Registrar egreso" },
+        { href: reportHref, icon: "reports", label: "Ver reportes" },
+      ];
 
   return (
     <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar coverageLabel={coverageLabel} items={navigationItems} />
+      <DashboardSidebar
+        coverageLabel={coverageLabel}
+        items={navigationItems}
+        panelLabel={esStand ? "Panel del stand" : "Panel operativo"}
+      />
 
       <div className="lg:pl-[252px]">
         <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
           <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <h1 className="text-[27px] font-black tracking-tight text-slate-950 sm:text-[31px]">Panel administrativo</h1>
-              <p className="mt-1 text-sm text-slate-500 sm:text-base">Resumen general de la operación</p>
+              <h1 className="text-[27px] font-black tracking-tight text-slate-950 sm:text-[31px]">
+                {esStand ? "Panel del stand" : "Panel administrativo"}
+              </h1>
+              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                {esStand
+                  ? `Resumen operativo de ${coverageLabel}`
+                  : "Resumen general de la operación"}
+              </p>
             </div>
 
             <div className="flex flex-col gap-3 xl:items-end">
@@ -754,22 +829,24 @@ export default function OperationsDashboard({
                   sedes={sedes}
                 />
                 <div className="flex items-center gap-2">
-                  <Link
-                    href="/dashboard/aprobaciones"
-                    aria-label={
-                      operationalAvailable
-                        ? `${operational.pendientesTotal} alertas operativas`
-                        : "Alertas operativas no disponibles"
-                    }
-                    className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:text-[#e30613]"
-                  >
-                    <DashboardIcon name="bell" className="h-6 w-6" />
-                    {operationalAvailable && operational.pendientesTotal > 0 && (
-                      <span className="absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#e30613] px-1 text-[10px] font-black text-white">
-                        {operational.pendientesTotal > 99 ? "99+" : operational.pendientesTotal}
-                      </span>
-                    )}
-                  </Link>
+                  {!esStand && (
+                    <Link
+                      href="/dashboard/aprobaciones"
+                      aria-label={
+                        operationalAvailable
+                          ? `${operational.pendientesTotal} alertas operativas`
+                          : "Alertas operativas no disponibles"
+                      }
+                      className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:text-[#e30613]"
+                    >
+                      <DashboardIcon name="bell" className="h-6 w-6" />
+                      {operationalAvailable && operational.pendientesTotal > 0 && (
+                        <span className="absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#e30613] px-1 text-[10px] font-black text-white">
+                          {operational.pendientesTotal > 99 ? "99+" : operational.pendientesTotal}
+                        </span>
+                      )}
+                    </Link>
+                  )}
                   <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[190px]">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
                       {initials(usuario) || <DashboardIcon name="user" className="h-5 w-5" />}
@@ -943,7 +1020,12 @@ export default function OperationsDashboard({
                   <h2 className="text-xl font-black tracking-tight text-slate-950">Alertas operativas</h2>
                   <p className="mt-1 text-xs text-slate-500">Estado actual de {coverageLabel.toLowerCase()}</p>
                 </div>
-                <Link href="/dashboard/aprobaciones" className="text-xs font-black text-[#e30613] hover:underline">Ver todas</Link>
+                <Link
+                  href={esStand ? "/alertas/prestamos" : "/dashboard/aprobaciones"}
+                  className="text-xs font-black text-[#e30613] hover:underline"
+                >
+                  Ver todas
+                </Link>
               </div>
               {!operationalAvailable ? (
                 <div className="border-t border-slate-100 px-5 py-14 text-center">
@@ -963,14 +1045,16 @@ export default function OperationsDashboard({
                 </div>
               ) : (
                 <div className="border-t border-slate-100">
-                  <AlertRow
-                    count={operational.aprobacionesPendientes}
-                    title="aprobaciones pendientes"
-                    detail={`${operational.detalleAprobaciones.prestamos} de préstamos y ${operational.detalleAprobaciones.ventas} de ventas`}
-                    href="/dashboard/aprobaciones"
-                    icon="approvals"
-                    tone="red"
-                  />
+                  {!esStand && (
+                    <AlertRow
+                      count={operational.aprobacionesPendientes}
+                      title="aprobaciones pendientes"
+                      detail={`${operational.detalleAprobaciones.prestamos} de préstamos y ${operational.detalleAprobaciones.ventas} de ventas`}
+                      href="/dashboard/aprobaciones"
+                      icon="approvals"
+                      tone="red"
+                    />
+                  )}
                   <AlertRow
                     count={operational.prestamosActivos}
                     title="préstamos sin cierre"
@@ -1015,7 +1099,7 @@ export default function OperationsDashboard({
                 <p className="mt-8 text-sm font-semibold text-slate-500">Datos no disponibles temporalmente.</p>
               </article>
             )}
-            <QuickActions reportHref={reportHref} />
+            <QuickActions actions={quickActions} />
           </section>
 
           <div className="mt-5">

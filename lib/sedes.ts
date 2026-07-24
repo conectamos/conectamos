@@ -12,8 +12,12 @@ export function esSedeOperativaInventario(nombre: string | null | undefined) {
   return !esSedeVentas(nombre);
 }
 
+export function esSedeStand(nombre: string | null | undefined) {
+  return normalizarNombreSede(nombre).includes("STAND");
+}
+
 export function esSedeRetiradaParaSupervisor(nombre: string | null | undefined) {
   const sede = normalizarNombreSede(nombre);
 
-  return sede === "TROPAS" || sede === "SEDE 4" || sede.includes("STAND");
+  return sede === "TROPAS" || sede === "SEDE 4" || esSedeStand(sede);
 }

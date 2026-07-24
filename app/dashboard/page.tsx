@@ -29,6 +29,7 @@ import { getVendorEarningsSummary } from "@/lib/vendor-earnings";
 import { getDashboardOperationalSummary } from "@/lib/dashboard-overview";
 import { getSalesRoleActivitySummary } from "@/lib/dashboard-sales-role-summary";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
+import { esSedeStand } from "@/lib/sedes";
 import OperationsDashboard, {
   type NavigationItem,
 } from "./_components/operations-dashboard";
@@ -708,6 +709,12 @@ export default async function DashboardPage({
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
   const esSedeSoloInventario = !esAdmin && Boolean(session.sedeSoloInventarioPorCobrar);
+  const esStand =
+    !esAdmin &&
+    !esSupervisor &&
+    !esPerfilVentas &&
+    !esFacturador &&
+    esSedeStand(session.sedeNombre);
   const puedeVerEquality = !esSedeSoloInventario && (esAdmin || esSupervisor);
   const puedeVerFacturacion = puedeAccederPanelFacturador(
     session.perfilTipo,
@@ -838,32 +845,44 @@ export default async function DashboardPage({
     resumenComercialMensual &&
     resumenOperativo
   ) {
-    const navigationItems: NavigationItem[] = [
-      { href: "/dashboard", icon: "home", label: "Inicio" },
-      { href: "/ventas", icon: "sales", label: "Ventas" },
-      { href: "/inventario", icon: "inventory", label: "Inventario" },
-      { href: "/prestamos", icon: "loans", label: "Préstamos" },
-      { href: "/caja", icon: "cash", label: "Caja" },
-      {
-        href: "/dashboard/aprobaciones",
-        icon: "approvals",
-        label: "Aprobaciones",
-      },
-      {
-        href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
-        icon: "reports",
-        label: "Reportes",
-      },
-      ...(esAdmin
-        ? ([
-            {
-              href: "/dashboard/sedes",
-              icon: "settings",
-              label: "Configuración",
-            },
-          ] satisfies NavigationItem[])
-        : []),
-    ];
+    const navigationItems: NavigationItem[] = esStand
+      ? [
+          { href: "/dashboard", icon: "home", label: "Inicio" },
+          { href: "/ventas", icon: "sales", label: "Ventas" },
+          { href: "/inventario", icon: "inventory", label: "Inventario" },
+          { href: "/caja", icon: "cash", label: "Caja" },
+          {
+            href: "/dashboard/analitico",
+            icon: "reports",
+            label: "Reportes",
+          },
+        ]
+      : [
+          { href: "/dashboard", icon: "home", label: "Inicio" },
+          { href: "/ventas", icon: "sales", label: "Ventas" },
+          { href: "/inventario", icon: "inventory", label: "Inventario" },
+          { href: "/prestamos", icon: "loans", label: "Préstamos" },
+          { href: "/caja", icon: "cash", label: "Caja" },
+          {
+            href: "/dashboard/aprobaciones",
+            icon: "approvals",
+            label: "Aprobaciones",
+          },
+          {
+            href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
+            icon: "reports",
+            label: "Reportes",
+          },
+          ...(esAdmin
+            ? ([
+                {
+                  href: "/dashboard/sedes",
+                  icon: "settings",
+                  label: "Configuración",
+                },
+              ] satisfies NavigationItem[])
+            : []),
+        ];
 
     return (
       <>
@@ -892,6 +911,7 @@ export default async function DashboardPage({
             ) : null
           }
           esAdmin={esAdmin}
+          esStand={esStand}
           esSupervisor={esSupervisor}
           financial={resumenFinanciero}
           financialAvailable={resumenFinancieroDisponible}
