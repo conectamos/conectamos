@@ -709,12 +709,15 @@ export default async function DashboardPage({
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
   const esSedeSoloInventario = !esAdmin && Boolean(session.sedeSoloInventarioPorCobrar);
+  const esStandSoloInventario =
+    esSedeSoloInventario && esSedeStand(session.sedeNombre);
   const esStand =
-    !esAdmin &&
-    !esSupervisor &&
-    !esPerfilVentas &&
-    !esFacturador &&
-    esSedeStand(session.sedeNombre);
+    esStandSoloInventario ||
+    (!esAdmin &&
+      !esSupervisor &&
+      !esPerfilVentas &&
+      !esFacturador &&
+      esSedeStand(session.sedeNombre));
   const puedeVerEquality = !esSedeSoloInventario && (esAdmin || esSupervisor);
   const puedeVerFacturacion = puedeAccederPanelFacturador(
     session.perfilTipo,
@@ -769,14 +772,16 @@ export default async function DashboardPage({
   const mostrarDashboardOperativo =
     !esPerfilVentas &&
     !esFacturador &&
-    !esSedeSoloInventario;
+    (!esSedeSoloInventario || esStandSoloInventario);
   const resultadosDashboard = mostrarDashboardOperativo
     ? await Promise.allSettled([
-        getMonthlyCommercialSummary({
-          period: mesActual.key,
-          sedeId: sedeDashboardId,
-        }),
-        esAdmin || esSupervisor
+        esStandSoloInventario
+          ? Promise.resolve(createEmptyCommercialSummary(mesActual))
+          : getMonthlyCommercialSummary({
+              period: mesActual.key,
+              sedeId: sedeDashboardId,
+            }),
+        (esAdmin || esSupervisor) && !esStandSoloInventario
           ? getDashboardCashSummary({
               sedeId: sedeDashboardId,
               fechaCorte: mesActual.end,
@@ -789,7 +794,8 @@ export default async function DashboardPage({
             (!sedeSeleccionada ||
               sedeSeleccionada.nombre.trim().toUpperCase() ===
                 NOMBRE_SEDE_BODEGA),
-          puedeVerAprobacionesVenta: esAdmin || esSupervisor,
+          puedeVerAprobacionesVenta:
+            !esStandSoloInventario && (esAdmin || esSupervisor),
           fechaCorte: mesActual.end,
         }),
       ])
@@ -845,8 +851,14 @@ export default async function DashboardPage({
     resumenComercialMensual &&
     resumenOperativo
   ) {
-    const navigationItems: NavigationItem[] = esStand
+    const navigationItems: NavigationItem[] = esStandSoloInventario
       ? [
+          { href: "/dashboard", icon: "home", label: "Inicio" },
+          { href: "/inventario", icon: "inventory", label: "Inventario" },
+          { href: "/prestamos", icon: "loans", label: "Préstamos" },
+        ]
+      : esStand
+        ? [
           { href: "/dashboard", icon: "home", label: "Inicio" },
           { href: "/ventas", icon: "sales", label: "Ventas" },
           { href: "/inventario", icon: "inventory", label: "Inventario" },
@@ -856,8 +868,8 @@ export default async function DashboardPage({
             icon: "reports",
             label: "Reportes",
           },
-        ]
-      : [
+          ]
+        : [
           { href: "/dashboard", icon: "home", label: "Inicio" },
           { href: "/ventas", icon: "sales", label: "Ventas" },
           { href: "/inventario", icon: "inventory", label: "Inventario" },
@@ -896,7 +908,7 @@ export default async function DashboardPage({
           commercialAvailable={resumenComercialDisponible}
           coverageLabel={coberturaDashboard}
           detailedRankings={
-            resumenComercialDisponible ? (
+            resumenComercialDisponible && !esStandSoloInventario ? (
               <CommercialRankingSection
                 periodLabel={mesActual.label}
                 coverageLabel={coberturaDashboard}
@@ -912,6 +924,7 @@ export default async function DashboardPage({
           }
           esAdmin={esAdmin}
           esStand={esStand}
+          esStandSoloInventario={esStandSoloInventario}
           esSupervisor={esSupervisor}
           financial={resumenFinanciero}
           financialAvailable={resumenFinancieroDisponible}

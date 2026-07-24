@@ -576,6 +576,213 @@ function QuickActions({
   );
 }
 
+function StandInventoryContent({
+  coverageLabel,
+  operational,
+  operationalAvailable,
+  quickActions,
+  toolGroups,
+  usuario,
+}: {
+  coverageLabel: string;
+  operational: DashboardOperationalSummary;
+  operationalAvailable: boolean;
+  quickActions: NavigationItem[];
+  toolGroups: OperationsToolGroup[];
+  usuario: string;
+}) {
+  return (
+    <>
+      <section
+        className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+        aria-label="Indicadores del stand"
+      >
+        <KpiCard
+          label="Equipos en bodega"
+          value={
+            operationalAvailable
+              ? String(operational.equiposEnBodega)
+              : "No disponible"
+          }
+          detail={
+            operationalAvailable
+              ? "Unidades disponibles en el stand"
+              : "No se pudo actualizar este indicador"
+          }
+          icon="inventory"
+          iconClassName="bg-slate-100 text-slate-700"
+        />
+        <KpiCard
+          label="Préstamos activos"
+          value={
+            operationalAvailable
+              ? String(operational.prestamosActivos)
+              : "No disponible"
+          }
+          detail={
+            operationalAvailable
+              ? "Equipos pendientes de cierre o devolución"
+              : "No se pudo actualizar este indicador"
+          }
+          icon="loans"
+          iconClassName="bg-orange-50 text-orange-600"
+        />
+        <KpiCard
+          label="Equipos por revisar"
+          value={
+            operationalAvailable
+              ? String(operational.inventarioAtencion)
+              : "No disponible"
+          }
+          detail={
+            operationalAvailable
+              ? "Inventario en estado pendiente o garantía"
+              : "No se pudo actualizar este indicador"
+          }
+          icon="warning"
+          iconClassName="bg-red-50 text-[#e30613]"
+          valueClassName={
+            operationalAvailable && operational.inventarioAtencion > 0
+              ? "text-[#e30613]"
+              : "text-slate-950"
+          }
+        />
+      </section>
+
+      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
+        <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+              <DashboardIcon name="store" className="h-6 w-6" />
+            </span>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#e30613]">
+                Operación activa
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                Gestión de {coverageLabel}
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Accede al inventario y controla los préstamos asignados a este
+                stand.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <Link
+              href="/inventario"
+              className="group flex min-h-[112px] items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-5 transition hover:border-[#e30613]/30 hover:bg-red-50/40"
+            >
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.13em] text-slate-500">
+                  Control
+                </p>
+                <p className="mt-2 text-lg font-black text-slate-950">
+                  Inventario
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Existencias y trazabilidad
+                </p>
+              </div>
+              <DashboardIcon
+                name="inventory"
+                className="h-7 w-7 text-slate-500 transition group-hover:text-[#e30613]"
+              />
+            </Link>
+            <Link
+              href="/prestamos"
+              className="group flex min-h-[112px] items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-5 transition hover:border-[#e30613]/30 hover:bg-red-50/40"
+            >
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.13em] text-slate-500">
+                  Seguimiento
+                </p>
+                <p className="mt-2 text-lg font-black text-slate-950">
+                  Préstamos
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Entregas, pagos y devoluciones
+                </p>
+              </div>
+              <DashboardIcon
+                name="loans"
+                className="h-7 w-7 text-slate-500 transition group-hover:text-[#e30613]"
+              />
+            </Link>
+          </div>
+        </article>
+
+        <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center justify-between gap-3 px-5 py-5">
+            <div>
+              <h2 className="text-xl font-black tracking-tight text-slate-950">
+                Alertas operativas
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Pendientes de {coverageLabel.toLowerCase()}
+              </p>
+            </div>
+            <Link
+              href="/alertas/prestamos"
+              className="text-xs font-black text-[#e30613] hover:underline"
+            >
+              Ver todas
+            </Link>
+          </div>
+          {!operationalAvailable ? (
+            <div className="border-t border-slate-100 px-5 py-14 text-center">
+              <p className="text-sm font-bold text-slate-700">
+                Alertas no disponibles
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Reintenta la actualización para consultar el estado.
+              </p>
+            </div>
+          ) : operational.prestamosActivos === 0 &&
+            operational.inventarioAtencion === 0 ? (
+            <div className="border-t border-slate-100 px-5 py-14 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                <DashboardIcon name="approvals" className="h-6 w-6" />
+              </div>
+              <p className="mt-3 text-sm font-bold text-slate-700">
+                Sin alertas activas
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                No hay préstamos o equipos pendientes de revisión.
+              </p>
+            </div>
+          ) : (
+            <div className="border-t border-slate-100">
+              <AlertRow
+                count={operational.prestamosActivos}
+                title="préstamos sin cierre"
+                detail="Préstamos aprobados que continúan activos"
+                href="/prestamos"
+                icon="loans"
+                tone="orange"
+              />
+              <AlertRow
+                count={operational.inventarioAtencion}
+                title="equipos requieren revisión"
+                detail="Inventario en estado PENDIENTE o GARANTÍA"
+                href="/inventario"
+                icon="warning"
+                tone="amber"
+              />
+            </div>
+          )}
+        </article>
+      </section>
+
+      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(300px,0.75fr)_minmax(0,1.25fr)]">
+        <QuickActions actions={quickActions} />
+        <OperationsToolCenter groups={toolGroups} storageUserKey={usuario} />
+      </section>
+    </>
+  );
+}
+
 export default function OperationsDashboard({
   commercial,
   commercialAvailable = true,
@@ -583,6 +790,7 @@ export default function OperationsDashboard({
   detailedRankings,
   esAdmin,
   esStand = false,
+  esStandSoloInventario = false,
   esSupervisor,
   financial,
   financialAvailable = true,
@@ -605,6 +813,7 @@ export default function OperationsDashboard({
   detailedRankings?: ReactNode;
   esAdmin: boolean;
   esStand?: boolean;
+  esStandSoloInventario?: boolean;
   esSupervisor: boolean;
   financial: FinancialSummary | null;
   financialAvailable?: boolean;
@@ -623,7 +832,9 @@ export default function OperationsDashboard({
 }) {
   const modoSupervisorSinMontos = esSupervisor && !esAdmin;
   const datosParciales =
-    !commercialAvailable || !financialAvailable || !operationalAvailable;
+    esStandSoloInventario
+      ? !operationalAvailable
+      : !commercialAvailable || !financialAvailable || !operationalAvailable;
   const reportHref = esAdmin ? "/dashboard/reportes" : "/dashboard/analitico";
   const defaultToolGroups: OperationsToolGroup[] = [
     {
@@ -782,8 +993,46 @@ export default function OperationsDashboard({
       links: [{ href: "/dashboard/analitico", label: "Panel analítico" }],
     },
   ];
-  const toolGroups = esStand ? standToolGroups : defaultToolGroups;
-  const quickActions: NavigationItem[] = esStand
+  const standInventoryToolGroups: OperationsToolGroup[] = [
+    {
+      title: "Inventario",
+      description: "Existencias y trazabilidad de equipos del stand.",
+      icon: "inventory",
+      links: [
+        { href: "/inventario", label: "Ver inventario" },
+        { href: "/inventario/nuevo", label: "Nuevo inventario" },
+        { href: "/inventario/historial", label: "Historial IMEI" },
+      ],
+    },
+    {
+      title: "Préstamos",
+      description: "Traslados, pagos, devoluciones y alertas pendientes.",
+      icon: "loans",
+      links: [
+        { href: "/prestamos", label: "Ver préstamos" },
+        { href: "/prestamos/nuevo", label: "Nuevo préstamo" },
+        { href: "/dashboard/deuda-sedes", label: "Deuda entre sedes" },
+        { href: "/alertas/prestamos", label: "Alertas" },
+      ],
+    },
+  ];
+  const toolGroups = esStandSoloInventario
+    ? standInventoryToolGroups
+    : esStand
+      ? standToolGroups
+      : defaultToolGroups;
+  const quickActions: NavigationItem[] = esStandSoloInventario
+    ? [
+        { href: "/inventario", icon: "inventory", label: "Ver inventario" },
+        {
+          href: "/inventario/nuevo",
+          icon: "inventory",
+          label: "Nuevo inventario",
+        },
+        { href: "/prestamos", icon: "loans", label: "Ver préstamos" },
+        { href: "/prestamos/nuevo", icon: "loans", label: "Nuevo préstamo" },
+      ]
+    : esStand
     ? [
         { href: "/ventas/nuevo", icon: "sales", label: "Nueva venta" },
         { href: "/inventario/nuevo", icon: "inventory", label: "Nuevo inventario" },
@@ -821,13 +1070,30 @@ export default function OperationsDashboard({
 
             <div className="flex flex-col gap-3 xl:items-end">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                <DashboardFilters
-                  esAdmin={esAdmin}
-                  period={period}
-                  sedeId={sedeId}
-                  sedeLabel={coverageLabel}
-                  sedes={sedes}
-                />
+                {esStandSoloInventario ? (
+                  <div className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 shadow-sm">
+                    <DashboardIcon
+                      name="store"
+                      className="h-5 w-5 text-slate-500"
+                    />
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                        Cobertura
+                      </p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {coverageLabel}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <DashboardFilters
+                    esAdmin={esAdmin}
+                    period={period}
+                    sedeId={sedeId}
+                    sedeLabel={coverageLabel}
+                    sedes={sedes}
+                  />
+                )}
                 <div className="flex items-center gap-2">
                   {!esStand && (
                     <Link
@@ -881,6 +1147,17 @@ export default function OperationsDashboard({
             </div>
           )}
 
+          {esStandSoloInventario ? (
+            <StandInventoryContent
+              coverageLabel={coverageLabel}
+              operational={operational}
+              operationalAvailable={operationalAvailable}
+              quickActions={quickActions}
+              toolGroups={toolGroups}
+              usuario={usuario}
+            />
+          ) : (
+            <>
           <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5" aria-label="Indicadores principales">
             <KpiCard
               label="Ventas del periodo"
@@ -1114,6 +1391,8 @@ export default function OperationsDashboard({
               </summary>
               <div className="border-t border-slate-100 p-4 sm:p-5">{detailedRankings}</div>
             </details>
+          )}
+            </>
           )}
         </main>
       </div>
