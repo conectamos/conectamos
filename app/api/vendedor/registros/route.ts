@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
   esPerfilAdministrativo,
+  esPerfilAuditor,
   esPerfilRegistroVenta,
   esRolAdministrativo,
   esRolAuditor,
@@ -176,16 +177,20 @@ function puedeGestionarRegistrosConsultados(session: {
 
 function construirScopeRegistros(session: {
   perfilId?: number | null;
+  perfilTipo?: unknown;
   rolNombre?: string | null;
 }) {
+  if (
+    esRolAdministrativo(session.rolNombre) ||
+    esPerfilAdministrativo(session.perfilTipo)
+  ) {
+    return {};
+  }
+
   if (session.perfilId) {
     return {
       perfilVendedorId: session.perfilId,
     };
-  }
-
-  if (esRolAdministrativo(session.rolNombre)) {
-    return {};
   }
 
   return {
@@ -1427,7 +1432,10 @@ export async function PATCH(req: Request) {
         );
       }
 
-      if (esRolAuditor(access.session.rolNombre)) {
+      if (
+        esRolAuditor(access.session.rolNombre) ||
+        esPerfilAuditor(access.session.perfilTipo)
+      ) {
         return NextResponse.json(
           { error: "El rol AUDITOR no puede eliminar registros" },
           { status: 403 }
@@ -1460,7 +1468,7 @@ export async function PATCH(req: Request) {
         return NextResponse.json(
           {
             error:
-              "Este registro ya fue convertido en venta y solo el administrador puede corregir datos basicos",
+              "Este registro ya fue convertido en venta y solo el administrador o auditor puede corregir datos basicos",
           },
           { status: 400 }
         );
