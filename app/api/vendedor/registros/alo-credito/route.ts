@@ -6,7 +6,6 @@ import {
   AloConsultaLookupError,
   obtenerCreditoAloPorCedula,
 } from "@/lib/aloconsulta";
-import { normalizarImei } from "@/lib/vendor-sale-records";
 
 async function requireVendor() {
   const session = await getSessionUser();
@@ -45,8 +44,6 @@ export async function GET(req: Request) {
     )
       .replace(/\D/g, "")
       .slice(0, 15);
-    const imei = normalizarImei(requestUrl.searchParams.get("imei"));
-
     if (documento.length < 5) {
       return NextResponse.json(
         { error: "La cedula debe tener entre 5 y 15 digitos" },
@@ -54,13 +51,13 @@ export async function GET(req: Request) {
       );
     }
 
-    const credito = await obtenerCreditoAloPorCedula(documento, imei || undefined);
+    const credito = await obtenerCreditoAloPorCedula(documento);
 
     if (!credito) {
       return NextResponse.json(
         {
           error:
-            "No se encontro un credito ALO CREDIT creado hoy o ayer para esta cedula y este IMEI",
+            "No se encontro un credito ALO CREDIT creado hoy o ayer para esta cedula",
         },
         { status: 404 }
       );

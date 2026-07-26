@@ -244,10 +244,7 @@ async function consultarCredito(item: ItemRevision): Promise<ResultadoConsulta> 
     } else if (item.proveedor === "FINSER") {
       credito = await obtenerCreditoFinserpayPorImei(identificador);
     } else if (item.proveedor === "ALO CREDIT") {
-      credito = await obtenerCreditoAloPorCedula(
-        identificador,
-        item.serialImei || undefined
-      );
+      credito = await obtenerCreditoAloPorCedula(identificador);
     } else if (item.proveedor === "SUMASPAY") {
       credito = await obtenerCreditoSumasPayPorCedula(identificador);
     } else if (item.proveedor === "ESMIO") {
@@ -300,10 +297,6 @@ function claveConsulta(item: ItemRevision) {
   const identificador = PROVEEDORES_POR_CEDULA.has(item.proveedor)
     ? soloDigitos(item.documentoNumero)
     : soloDigitos(item.serialImei);
-
-  if (item.proveedor === "ALO CREDIT") {
-    return `${item.proveedor}:${identificador}:${soloDigitos(item.serialImei)}`;
-  }
 
   return `${item.proveedor}:${identificador}`;
 }
@@ -494,7 +487,7 @@ export async function GET(req: Request) {
         estado = "INCONSISTENTE";
         razones.push(
           item.proveedor === "ALO CREDIT"
-            ? "No se encontro en ALO CREDIT un credito reciente que coincida con esta cedula y este IMEI."
+            ? "No se encontro en ALO CREDIT un credito reciente para esta cedula."
             : `No se encontro en ${item.proveedor} un credito reciente para este ${
                 PROVEEDORES_POR_CEDULA.has(item.proveedor)
                   ? "documento"
@@ -542,6 +535,7 @@ export async function GET(req: Request) {
         }
 
         if (
+          item.proveedor !== "ALO CREDIT" &&
           creditoPlataforma.imei &&
           soloDigitos(item.serialImei) !== creditoPlataforma.imei
         ) {
@@ -570,7 +564,6 @@ export async function GET(req: Request) {
 
       if (
         PROVEEDORES_POR_CEDULA.has(item.proveedor) &&
-        item.proveedor !== "ALO CREDIT" &&
         cantidadRegistrosMismaClave > 1
       ) {
         razones.push(

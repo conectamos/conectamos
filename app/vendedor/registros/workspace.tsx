@@ -1158,7 +1158,7 @@ export default function VendedorRegistroWorkspace({
     ((index: number, imeiValue?: string) => Promise<void>) | null
   >(null);
   const consultarAloAutomaticoRef = useRef<
-    ((index: number, imeiValue?: string) => Promise<void>) | null
+    ((index: number) => Promise<void>) | null
   >(null);
   const consultarFinserpayAutomaticoRef = useRef<
     ((index: number, imeiValue?: string) => Promise<void>) | null
@@ -1526,7 +1526,7 @@ export default function VendedorRegistroWorkspace({
       return;
     }
 
-    const consultaKey = `${documento}:${form.serialImei}:financieras`;
+    const consultaKey = `${documento}:financieras`;
 
     if (autoCreditosCedulaConsultaRef.current === consultaKey) {
       return;
@@ -1544,7 +1544,6 @@ export default function VendedorRegistroWorkspace({
     };
   }, [
     form.documentoNumero,
-    form.serialImei,
     form.servicio,
     modoManual,
     registroEditandoConvertido,
@@ -1862,21 +1861,12 @@ export default function VendedorRegistroWorkspace({
   };
   consultarPayJoyAutomaticoRef.current = consultarCreditoPayjoy;
 
-  const consultarCreditoAlo = async (index: number, imeiValue?: string) => {
+  const consultarCreditoAlo = async (index: number) => {
     if (modoManualRef.current) {
       return;
     }
 
-    const imei = onlyDigits(imeiValue || form.serialImei, 15);
     const documento = onlyDigits(form.documentoNumero, 15);
-
-    if (imei.length !== 15) {
-      setAloErrores((current) => ({
-        ...current,
-        [index]: "Busca primero un IMEI valido de 15 digitos",
-      }));
-      return;
-    }
 
     if (documento.length < 5) {
       setAloErrores((current) => ({
@@ -1894,7 +1884,7 @@ export default function VendedorRegistroWorkspace({
         return next;
       });
 
-      const params = new URLSearchParams({ documento, imei });
+      const params = new URLSearchParams({ documento });
       const response = await fetch(
         `/api/vendedor/registros/alo-credito?${params.toString()}`,
         { cache: "no-store" }
@@ -1918,7 +1908,7 @@ export default function VendedorRegistroWorkspace({
           ...current,
           [index]:
             data.error ||
-            "No se encontro un credito ALO CREDIT para esta cedula y este IMEI",
+            "No se encontro un credito ALO CREDIT para esta cedula",
         }));
         return;
       }
@@ -1930,10 +1920,7 @@ export default function VendedorRegistroWorkspace({
         [index]: creditoAlo,
       }));
       setForm((current) => {
-        if (
-          onlyDigits(current.serialImei, 15) !== imei ||
-          onlyDigits(current.documentoNumero, 15) !== documento
-        ) {
+        if (onlyDigits(current.documentoNumero, 15) !== documento) {
           return current;
         }
 
@@ -2505,11 +2492,6 @@ export default function VendedorRegistroWorkspace({
       setCreditosCedulaError("");
 
       const params = new URLSearchParams({ documento });
-      const imei = onlyDigits(form.serialImei, 15);
-
-      if (imei.length === 15) {
-        params.set("imei", imei);
-      }
       const response = await fetch(
         `/api/vendedor/registros/creditos-financieras?${params.toString()}`,
         { cache: "no-store" }
@@ -2879,7 +2861,7 @@ export default function VendedorRegistroWorkspace({
 
         if (financierasAloSeleccionadas.length) {
           financierasAloSeleccionadas.forEach(({ index }) => {
-            void consultarCreditoAlo(index, equipo.imei);
+            void consultarCreditoAlo(index);
           });
         }
 

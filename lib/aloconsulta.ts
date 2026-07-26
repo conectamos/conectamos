@@ -3023,7 +3023,7 @@ function findCreditosInWorkbookByDocumento(
       const headerRow = findHeaderRow(matrix, rowIndex);
       const imei = findImei(row, headerRow);
 
-      if (imei.length !== 15 || findDocument(row, headerRow, imei) !== documento) {
+      if (findDocument(row, headerRow, imei) !== documento) {
         continue;
       }
 
@@ -3079,21 +3079,13 @@ export async function obtenerCreditoAloPorImei(imeiValue: unknown) {
   return completarCuotaPlazoDesdeCartera(session, credito);
 }
 
-export async function obtenerCreditoAloPorCedula(
-  documentoValue: unknown,
-  imeiValue?: unknown
-) {
+export async function obtenerCreditoAloPorCedula(documentoValue: unknown) {
   const documento = onlyDigits(documentoValue).slice(0, 15);
-  const imeiEsperado = normalizeImei(imeiValue);
 
   if (documento.length < 5) {
     throw new AloConsultaLookupError(
       "La cedula debe tener entre 5 y 15 digitos."
     );
-  }
-
-  if (imeiValue && imeiEsperado.length !== 15) {
-    throw new AloConsultaLookupError("El IMEI debe tener 15 digitos.");
   }
 
   const session = await loginAlo();
@@ -3107,10 +3099,7 @@ export async function obtenerCreditoAloPorCedula(
     reportBuffer,
     documento
   );
-  const credito =
-    imeiEsperado.length === 15
-      ? creditos.find((item) => item.imei === imeiEsperado) ?? null
-      : creditos[0] ?? null;
+  const credito = creditos[0] ?? null;
 
   if (!credito) {
     return null;
