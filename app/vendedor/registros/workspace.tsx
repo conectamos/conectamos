@@ -4223,6 +4223,15 @@ export default function VendedorRegistroWorkspace({
             )}
             {puedeBuscarRegistros && (
               <Link
+                href="/vendedor/registros/inconsistencias"
+                className="inline-flex min-h-12 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-5 text-sm font-bold text-amber-900 shadow-sm transition hover:border-amber-300 hover:bg-amber-100"
+              >
+                <DashboardIcon name="warning" className="h-5 w-5" />
+                Inconsistencias
+              </Link>
+            )}
+            {puedeBuscarRegistros && (
+              <Link
                 href="/vendedor/registros/buscar"
                 className="inline-flex min-h-12 items-center gap-2 rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-slate-800 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
               >

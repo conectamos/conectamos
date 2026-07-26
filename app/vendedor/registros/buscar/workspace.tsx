@@ -368,6 +368,13 @@ export default function BuscarRegistroWorkspace({ session }: { session: SessionP
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
+                href="/vendedor/registros/inconsistencias"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-5 text-xs font-black uppercase tracking-[0.08em] text-amber-900 shadow-sm transition hover:border-amber-300 hover:bg-amber-100"
+              >
+                <DashboardIcon name="warning" className="h-4 w-4" />
+                Inconsistencias
+              </Link>
+              <Link
                 href="/vendedor/registros"
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-xs font-black uppercase tracking-[0.08em] text-white shadow-sm transition hover:bg-[#c80511]"
               >
