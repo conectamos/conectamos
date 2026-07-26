@@ -8,7 +8,6 @@ import {
   findRecentAloDate,
   matchesAloReportDocument,
   matchesAloReportImei,
-  selectAloCreditForSale,
   selectCompatibleAloHeader,
 } from "@/lib/alo-report-parser";
 
@@ -2937,7 +2936,7 @@ async function consultarCuotaPlazoAloCartera(
 ) {
   const searchValues = Array.from(
     new Set(
-      [credito.imei, credito.documento]
+      [credito.documento]
         .map(onlyDigits)
         .filter((value) => value.length >= 6)
     )
@@ -3385,12 +3384,9 @@ export async function obtenerCreditoAloPorImei(
 
 export async function obtenerCreditoAloPorCedula(
   documentoValue: unknown,
-  imeiValue?: unknown,
   sessionArg?: AloSession
 ) {
   const documento = onlyDigits(documentoValue).slice(0, 15);
-  const imeiDigits = onlyDigits(imeiValue);
-  const imei = imeiDigits.length === 15 ? imeiDigits : "";
 
   if (documento.length < 5) {
     throw new AloConsultaLookupError(
@@ -3415,36 +3411,21 @@ export async function obtenerCreditoAloPorCedula(
     documento,
     report.fallbackHeaders
   );
-  const seleccion = selectAloCreditForSale(creditos, imei);
+  const credito = creditos[0] ?? null;
 
-  if (seleccion.status === "AMBIGUOUS") {
-    throw new AloConsultaLookupError(
-      "ALO CREDIT encontro varios creditos recientes para esta cedula. Se requiere un IMEI valido para identificar la venta."
-    );
-  }
-
-  if (seleccion.status === "IMEI_MISMATCH") {
-    throw new AloConsultaLookupError(
-      "ALO CREDIT encontro creditos para esta cedula, pero ninguno coincide con el IMEI de la venta."
-    );
-  }
-
-  if (seleccion.status === "NOT_FOUND") {
+  if (!credito) {
     throw new AloConsultaLookupError(
       "ALO CREDIT devolvio esta cedula en el reporte, pero no fue posible interpretar una venta reciente con fecha y monto validos."
     );
   }
 
-  return completarCuotaPlazoDesdeCartera(session, seleccion.credit);
+  return completarCuotaPlazoDesdeCartera(session, credito);
 }
 
 async function obtenerCreditoAloParaRegistroUnlocked(
-  documentoValue: unknown,
-  imeiValue?: unknown
+  documentoValue: unknown
 ): Promise<AloCreditoImei | null> {
   const documento = onlyDigits(documentoValue).slice(0, 15);
-  const imeiDigits = onlyDigits(imeiValue);
-  const imei = imeiDigits.length === 15 ? imeiDigits : "";
 
   if (documento.length < 5) {
     throw new AloConsultaLookupError(
@@ -3452,48 +3433,11 @@ async function obtenerCreditoAloParaRegistroUnlocked(
     );
   }
 
-  const session = await loginAlo();
-  let errorConsultaImei: unknown = null;
-
-  if (imei.length === 15) {
-    try {
-      const creditoPorImei = await obtenerCreditoAloPorImei(
-        imei,
-        documento,
-        session
-      );
-
-      if (creditoPorImei) {
-        return {
-          ...creditoPorImei,
-          origen: `${creditoPorImei.origen}+registro_venta_imei`,
-        } satisfies AloCreditoImei;
-      }
-    } catch (error) {
-      errorConsultaImei = error;
-    }
-  }
-
-  const creditoPorCedula = await obtenerCreditoAloPorCedula(
-    documento,
-    imei,
-    session
-  );
-
-  if (creditoPorCedula) {
-    return creditoPorCedula;
-  }
-
-  if (errorConsultaImei) {
-    throw errorConsultaImei;
-  }
-
-  return null;
+  return obtenerCreditoAloPorCedula(documento);
 }
 
 export async function obtenerCreditoAloParaRegistro(
-  documentoValue: unknown,
-  imeiValue?: unknown
+  documentoValue: unknown
 ): Promise<AloCreditoImei | null> {
   const previous = aloLookupQueue;
   let releaseQueue!: () => void;
@@ -3505,10 +3449,7 @@ export async function obtenerCreditoAloParaRegistro(
   await previous;
 
   try {
-    return await obtenerCreditoAloParaRegistroUnlocked(
-      documentoValue,
-      imeiValue
-    );
+    return await obtenerCreditoAloParaRegistroUnlocked(documentoValue);
   } finally {
     releaseQueue();
   }

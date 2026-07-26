@@ -244,10 +244,7 @@ async function consultarCredito(item: ItemRevision): Promise<ResultadoConsulta> 
     } else if (item.proveedor === "FINSER") {
       credito = await obtenerCreditoFinserpayPorImei(identificador);
     } else if (item.proveedor === "ALO CREDIT") {
-      credito = await obtenerCreditoAloParaRegistro(
-        identificador,
-        item.serialImei
-      );
+      credito = await obtenerCreditoAloParaRegistro(identificador);
     } else if (item.proveedor === "SUMASPAY") {
       credito = await obtenerCreditoSumasPayPorCedula(identificador);
     } else if (item.proveedor === "ESMIO") {
@@ -300,10 +297,6 @@ function claveConsulta(item: ItemRevision) {
   const identificador = PROVEEDORES_POR_CEDULA.has(item.proveedor)
     ? soloDigitos(item.documentoNumero)
     : soloDigitos(item.serialImei);
-
-  if (item.proveedor === "ALO CREDIT") {
-    return `${item.proveedor}:${identificador}:${soloDigitos(item.serialImei)}`;
-  }
 
   return `${item.proveedor}:${identificador}`;
 }
@@ -542,6 +535,7 @@ export async function GET(req: Request) {
         }
 
         if (
+          item.proveedor !== "ALO CREDIT" &&
           creditoPlataforma.imei &&
           soloDigitos(item.serialImei) !== creditoPlataforma.imei
         ) {

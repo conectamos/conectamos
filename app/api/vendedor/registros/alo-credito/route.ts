@@ -51,10 +51,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const imei = String(requestUrl.searchParams.get("imei") || "")
-      .replace(/\D/g, "")
-      .slice(0, 15);
-    const credito = await obtenerCreditoAloParaRegistro(documento, imei);
+    const credito = await obtenerCreditoAloParaRegistro(documento);
 
     if (!credito) {
       return NextResponse.json(
