@@ -36,6 +36,7 @@ type ConsultedReportsPage = Awaited<ReturnType<typeof fetchTextFollowingRedirect
 
 type MatrixCell = string | number | boolean | Date | null | undefined;
 type ReportSource = Buffer | string;
+type ReportSourceMatcher = (source: ReportSource, identifier: string) => boolean;
 
 type CachedReport = {
   source: ReportSource;
@@ -1790,11 +1791,16 @@ async function fetchReportBufferFromUrl(
   };
 }
 
-async function downloadFirstReport(imei?: string, sessionArg?: AloSession) {
+async function downloadFirstReport(
+  identifier?: string,
+  sessionArg?: AloSession,
+  sourceMatcher: ReportSourceMatcher = sourceContainsImei,
+  identifierLabel = "IMEI"
+) {
   if (
     cachedReport &&
     cachedReport.expiresAt > Date.now() &&
-    (!imei || sourceContainsImei(cachedReport.source, imei))
+    (!identifier || sourceMatcher(cachedReport.source, identifier))
   ) {
     return cachedReport.source;
   }
@@ -1818,12 +1824,16 @@ async function downloadFirstReport(imei?: string, sessionArg?: AloSession) {
       rows: firstTableRows(reportsPage.text, 10).length,
       muestras: debugHtmlRows(reportsPage.text),
     });
-    cachedReport = {
-      source: reportsPage.text,
-      expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
-    };
+    if (!identifier || sourceMatcher(reportsPage.text, identifier)) {
+      cachedReport = {
+        source: reportsPage.text,
+        expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
+      };
 
-    return reportsPage.text;
+      return reportsPage.text;
+    }
+
+    return null;
   }
 
   console.info("ALO CREDIT candidatos de descarga", {
@@ -1886,7 +1896,7 @@ async function downloadFirstReport(imei?: string, sessionArg?: AloSession) {
     const buffer = download.buffer;
 
     if (!isHtmlResponse(buffer)) {
-      if (!imei || sourceContainsImei(buffer, imei)) {
+      if (!identifier || sourceMatcher(buffer, identifier)) {
         cachedReport = {
           source: buffer,
           expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
@@ -1908,22 +1918,25 @@ async function downloadFirstReport(imei?: string, sessionArg?: AloSession) {
             ...candidates.filter((item) => !triedCandidates.has(candidateKey(item))),
             ...nestedCandidates,
           ]);
-          console.info("ALO CREDIT respuesta textual sin IMEI con rutas candidatas", {
+          console.info("ALO CREDIT respuesta textual sin identificador con rutas candidatas", {
             origen: describeDownloadCandidate(candidate),
+            tipoIdentificador: identifierLabel,
             rutas: nestedCandidates.slice(0, 5).map(describeDownloadCandidate),
           });
           continue;
         }
       }
 
-      console.info("ALO CREDIT descarga descartada porque no contiene el IMEI", {
+      console.info("ALO CREDIT descarga descartada porque no contiene el identificador", {
         origen: describeDownloadCandidate(candidate),
-        imei: `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}`,
+        tipoIdentificador: identifierLabel,
+        identificador: maskNumericIdentifier(identifier),
         fuente: "archivo",
       });
       logAloInfo("ALO CREDIT descarga descartada detalle", {
         origen: describeDownloadCandidate(candidate),
-        imei: `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}`,
+        tipoIdentificador: identifierLabel,
+        identificador: maskNumericIdentifier(identifier),
         fuente: "archivo",
       });
 
@@ -1935,7 +1948,7 @@ async function downloadFirstReport(imei?: string, sessionArg?: AloSession) {
 
     lastHtml = buffer.toString("utf8");
 
-    if (!imei || sourceContainsImei(lastHtml, imei)) {
+    if (!identifier || sourceMatcher(lastHtml, identifier)) {
       cachedReport = {
         source: lastHtml,
         expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
@@ -1963,7 +1976,8 @@ async function downloadFirstReport(imei?: string, sessionArg?: AloSession) {
       candidatos: candidates.slice(0, 5).map(describeDownloadCandidate),
       filas: firstTableRows(lastHtml, 10).length,
       muestras: debugHtmlRows(lastHtml),
-      descartadoSinImei: Boolean(imei),
+      descartadoSinIdentificador: Boolean(identifier),
+      tipoIdentificador: identifierLabel,
     });
 
     if (candidates.length === 0) {
@@ -1977,8 +1991,9 @@ async function downloadFirstReport(imei?: string, sessionArg?: AloSession) {
     );
   }
 
-  console.info("ALO CREDIT no encontro una descarga que contenga el IMEI", {
-    imei: imei ? `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}` : null,
+  console.info("ALO CREDIT no encontro una descarga que contenga el identificador", {
+    tipoIdentificador: identifierLabel,
+    identificador: identifier ? maskNumericIdentifier(identifier) : null,
     intentos: triedCandidates.size,
     ultimoHtml: {
       filas: firstTableRows(lastHtml, 10).length,
@@ -1986,7 +2001,8 @@ async function downloadFirstReport(imei?: string, sessionArg?: AloSession) {
     },
   });
   logAloInfo("ALO CREDIT sin descarga valida detalle", {
-    imei: imei ? `${"*".repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}` : null,
+    tipoIdentificador: identifierLabel,
+    identificador: identifier ? maskNumericIdentifier(identifier) : null,
     intentos: triedCandidates.size,
     ultimoHtml: {
       filas: firstTableRows(lastHtml, 10).length,
@@ -2042,6 +2058,72 @@ function sourceContainsImei(source: ReportSource, imei: string) {
     });
 
     return false;
+  }
+}
+
+function maskNumericIdentifier(value: string) {
+  return `${"*".repeat(Math.max(0, value.length - 4))}${value.slice(-4)}`;
+}
+
+function documentDigitsFromCell(cell: MatrixCell) {
+  if (typeof cell === "number" && Number.isSafeInteger(cell)) {
+    return String(cell);
+  }
+
+  const text = visibleText(cell).trim();
+  const decimalInteger = text.match(/^(\d+)[,.]0+$/);
+
+  if (decimalInteger) {
+    return decimalInteger[1];
+  }
+
+  if (/^\d+(?:[,.]\d+)?e[+-]?\d+$/i.test(text)) {
+    const numericValue = Number(text.replace(",", "."));
+
+    if (Number.isSafeInteger(numericValue)) {
+      return String(numericValue);
+    }
+  }
+
+  return onlyDigits(text);
+}
+
+function rowContainsDocumento(row: MatrixCell[], documento: string) {
+  return row.some((cell) => {
+    if (documentDigitsFromCell(cell) === documento) {
+      return true;
+    }
+
+    const groups =
+      visibleText(cell).match(/\d+(?:[.\s-]\d+)*(?:[,.]0+)?/g) ?? [];
+
+    return groups.some(
+      (group) => documentDigitsFromCell(group as MatrixCell) === documento
+    );
+  });
+}
+
+function sourceContainsDocumento(source: ReportSource, documento: string) {
+  try {
+    return readWorkbookMatrix(source).some(({ matrix }) =>
+      matrix.some((row) => rowContainsDocumento(row || [], documento))
+    );
+  } catch (error) {
+    const text = Buffer.isBuffer(source) ? source.toString("utf8") : source;
+    const groups = text.match(/\d+(?:[.\s-]\d+)*(?:[,.]0+)?/g) ?? [];
+    const matched = groups.some(
+      (group) => documentDigitsFromCell(group as MatrixCell) === documento
+    );
+
+    if (!matched) {
+      console.info("ALO CREDIT no pudo validar cedula en descarga", {
+        documento: maskNumericIdentifier(documento),
+        fuente: Buffer.isBuffer(source) ? "archivo" : "html",
+        error: error instanceof Error ? error.message : "error desconocido",
+      });
+    }
+
+    return matched;
   }
 }
 
@@ -3023,11 +3105,14 @@ function findCreditosInWorkbookByDocumento(
       const headerRow = findHeaderRow(matrix, rowIndex);
       const imei = findImei(row, headerRow);
 
-      if (findDocument(row, headerRow, imei) !== documento) {
+      if (!rowContainsDocumento(row, documento)) {
         continue;
       }
 
-      const credito = parseCreditoFromRow(row, headerRow, imei);
+      const creditoEncontrado = parseCreditoFromRow(row, headerRow, imei);
+      const credito = creditoEncontrado
+        ? { ...creditoEncontrado, documento }
+        : null;
 
       if (!credito) {
         continue;
@@ -3064,7 +3149,12 @@ export async function obtenerCreditoAloPorImei(imeiValue: unknown) {
   }
 
   const session = await loginAlo();
-  const reportBuffer = await downloadFirstReport(imei, session);
+  const reportBuffer = await downloadFirstReport(
+    imei,
+    session,
+    sourceContainsImei,
+    "IMEI"
+  );
 
   if (!reportBuffer) {
     return null;
@@ -3089,7 +3179,12 @@ export async function obtenerCreditoAloPorCedula(documentoValue: unknown) {
   }
 
   const session = await loginAlo();
-  const reportBuffer = await downloadFirstReport(undefined, session);
+  const reportBuffer = await downloadFirstReport(
+    documento,
+    session,
+    sourceContainsDocumento,
+    "cedula"
+  );
 
   if (!reportBuffer) {
     return null;
