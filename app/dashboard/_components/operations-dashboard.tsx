@@ -876,10 +876,16 @@ export default function OperationsDashboard({
     ...(esAdmin || esSupervisor
       ? [
           {
-            title: "Radar de inventario",
-            description: "Disponibilidad por referencia y sede.",
+            title: "Funciones",
+            description: "Consultas y revisiones operativas.",
             icon: "reports" as const,
-            links: [{ href: "/dashboard/radar", label: "Abrir radar" }],
+            links: [
+              { href: "/dashboard/radar", label: "Abrir radar" },
+              {
+                href: "/vendedor/registros/inconsistencias",
+                label: "Inconsistencias de créditos",
+              },
+            ],
           },
         ]
       : []),
