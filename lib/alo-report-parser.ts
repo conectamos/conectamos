@@ -27,6 +27,10 @@ export type AloAmountParserOptions = {
   allowLegacyColumn10?: boolean;
 };
 
+export type AloDateParserOptions = {
+  allowLegacyColumn0?: boolean;
+};
+
 export type AloReportParseDiagnostic = {
   code: "DATE_INVALID" | "AMOUNT_INVALID";
   headerKeys: string[];
@@ -329,7 +333,8 @@ function dateHeaderScore(header: unknown) {
 export function findRecentAloDate(
   row: AloReportCell[],
   header: AloReportCell[] | null = null,
-  todayKey = todayKeyInBogota()
+  todayKey = todayKeyInBogota(),
+  options: AloDateParserOptions = {}
 ) {
   const yesterdayKey = shiftDateKey(todayKey, -1);
   const recent = new Set([todayKey, yesterdayKey].filter(Boolean));
@@ -371,7 +376,20 @@ export function findRecentAloDate(
     return left.columnIndex - right.columnIndex;
   });
 
-  return candidates[0]?.key ?? null;
+  if (candidates.length > 0) {
+    return candidates[0].key;
+  }
+
+  if (
+    options.allowLegacyColumn0 &&
+    isAllowedLegacyDateHeader(header?.[0])
+  ) {
+    return (
+      dateKeysFromAloValue(row[0]).find((key) => recent.has(key)) ?? null
+    );
+  }
+
+  return null;
 }
 
 export function parseAloCurrencyAmount(value: unknown) {
@@ -503,6 +521,51 @@ function amountHeaderScore(header: unknown) {
   return -1;
 }
 
+function isExplicitlyExcludedAmountHeader(header: unknown) {
+  const key = normalizeHeader(header);
+
+  return (
+    key.includes("CUOTA") ||
+    key.includes("INICIAL") ||
+    key.includes("SALDO") ||
+    key.includes("ACCESORIO") ||
+    key.includes("MORA") ||
+    key.includes("PENDIENTE")
+  );
+}
+
+function isAllowedLegacyDateHeader(header: unknown) {
+  const key = normalizeHeader(header);
+
+  if (!key) {
+    return true;
+  }
+
+  if (
+    key.includes("PAGO") ||
+    key.includes("VENC") ||
+    key.includes("NACIM") ||
+    key.includes("EXPED") ||
+    key.includes("INICIAL") ||
+    key.includes("FINAL") ||
+    key.includes("HASTA")
+  ) {
+    return false;
+  }
+
+  return (
+    key.includes("FEC") ||
+    key.includes("DATE") ||
+    key.includes("CREA") ||
+    key.includes("REGIST") ||
+    key.includes("VENTA") ||
+    key.includes("CREDITO") ||
+    key.includes("DESEMBOLS") ||
+    key.includes("APROB") ||
+    key.includes("OTORG")
+  );
+}
+
 export function findAloAuthorizedAmount(
   row: AloReportCell[],
   header: AloReportCell[] | null = null,
@@ -542,16 +605,20 @@ export function findAloAuthorizedAmount(
     return candidates[0].amount;
   }
 
-  if (!header || header.length === 0) {
-    // Solo el Excel historico de ALO tiene el contrato fijo de columna 10.
-    if (options.allowLegacyColumn10) {
-      const fallback = parseAloCurrencyAmount(row[10]);
+  // Contrato del Excel historico de ALO: el monto total esta en columna 11,
+  // incluso cuando el archivo trae encabezados con nombres no reconocidos.
+  if (
+    options.allowLegacyColumn10 &&
+    !isExplicitlyExcludedAmountHeader(header?.[10])
+  ) {
+    const fallback = parseAloCurrencyAmount(row[10]);
 
-      if (fallback !== null && fallback > 0) {
-        return fallback;
-      }
+    if (fallback !== null && fallback > 0) {
+      return fallback;
     }
+  }
 
+  if (!header || header.length === 0) {
     const inferred = row
       .flatMap((cell) => {
         const amount = parseAloCurrencyAmount(cell);
@@ -604,7 +671,11 @@ export function diagnoseAloReportRow(
         )
     );
 
-  if (!findRecentAloDate(row, header, todayKey)) {
+  if (
+    !findRecentAloDate(row, header, todayKey, {
+      allowLegacyColumn0: amountOptions.allowLegacyColumn10,
+    })
+  ) {
     return {
       code: "DATE_INVALID",
       headerKeys,
@@ -969,6 +1040,43 @@ export function findAloReportDocument(
   }
 
   return null;
+}
+
+export function matchesAloReportImei(
+  row: AloReportCell[],
+  imeiValue: unknown,
+  header: AloReportCell[] | null,
+  options: { allowLegacyAnyCell?: boolean } = {}
+) {
+  const expectedImei = imeiDigits(imeiValue);
+
+  if (!expectedImei) {
+    return false;
+  }
+
+  const semanticIndexes = (header ?? [])
+    .map((cell, index) => ({ cell, index }))
+    .filter(({ cell }) => isImeiHeader(cell))
+    .map(({ index }) => index);
+
+  if (semanticIndexes.length > 0) {
+    return semanticIndexes.some(
+      (index) => imeiDigits(row[index]) === expectedImei
+    );
+  }
+
+  if (!options.allowLegacyAnyCell) {
+    return false;
+  }
+
+  return row.some((cell) => {
+    if (imeiDigits(cell) === expectedImei) {
+      return true;
+    }
+
+    const groups: string[] = visibleText(cell).match(/\d{15}/g) ?? [];
+    return groups.includes(expectedImei);
+  });
 }
 
 function findImei(row: AloReportCell[], header: AloReportCell[] | null) {

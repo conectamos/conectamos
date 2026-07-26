@@ -7,6 +7,7 @@ import {
   findAloAuthorizedAmount,
   findRecentAloDate,
   matchesAloReportDocument,
+  matchesAloReportImei,
   selectAloCreditForSale,
   selectCompatibleAloHeader,
 } from "@/lib/alo-report-parser";
@@ -3054,7 +3055,12 @@ function parseCreditoFromRow(
   allowLegacyColumn10 = false,
   documentoEsperado = ""
 ) {
-  const fechaCreacionCredito = findRecentAloDate(row, headerRow);
+  const fechaCreacionCredito = findRecentAloDate(
+    row,
+    headerRow,
+    undefined,
+    { allowLegacyColumn0: allowLegacyColumn10 }
+  );
 
   if (!fechaCreacionCredito) {
     return null;
@@ -3148,15 +3154,19 @@ function findCreditoInWorkbook(
   for (const { matrix } of matrices) {
     for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
       const row = matrix[rowIndex] || [];
+      const headerRow =
+        findHeaderRow(matrix, rowIndex) ||
+        findFallbackHeaderRow(fallbackHeaders, row);
 
-      if (!rowContainsImei(row, imei)) {
+      if (
+        !matchesAloReportImei(row, imei, headerRow, {
+          allowLegacyAnyCell: allowLegacyColumn10,
+        })
+      ) {
         continue;
       }
 
       filasConImei += 1;
-      const headerRow =
-        findHeaderRow(matrix, rowIndex) ||
-        findFallbackHeaderRow(fallbackHeaders, row);
 
       if (
         documentoEsperado &&
@@ -3363,8 +3373,7 @@ export async function obtenerCreditoAloPorImei(
   const credito = findCreditoInWorkbook(
     report.source,
     imei,
-    report.fallbackHeaders,
-    documento
+    report.fallbackHeaders
   );
 
   if (!credito) {
@@ -3457,7 +3466,6 @@ async function obtenerCreditoAloParaRegistroUnlocked(
       if (creditoPorImei) {
         return {
           ...creditoPorImei,
-          documento,
           origen: `${creditoPorImei.origen}+registro_venta_imei`,
         } satisfies AloCreditoImei;
       }

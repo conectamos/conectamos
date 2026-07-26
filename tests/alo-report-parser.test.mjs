@@ -6,6 +6,7 @@ import {
   extractAloHtmlHeaderCandidates,
   findAloAuthorizedAmount,
   findRecentAloDate,
+  matchesAloReportImei,
   parseAloReportCredits,
   selectAloCreditByImei,
   selectAloCreditForSale,
@@ -312,6 +313,84 @@ test("reserva la columna 10 como fallback para reportes sin encabezado", () => {
       allowLegacyColumn10: true,
     }),
     1_140_000
+  );
+  assert.equal(
+    findAloAuthorizedAmount(
+      legacyExcelRow,
+      Array(11).fill("Dato legacy"),
+      { allowLegacyColumn10: true }
+    ),
+    1_140_000
+  );
+  const excludedAmountHeader = Array(11).fill("Dato legacy");
+  excludedAmountHeader[10] = "Cuota inicial";
+  assert.equal(
+    findAloAuthorizedAmount(legacyExcelRow, excludedAmountHeader, {
+      allowLegacyColumn10: true,
+    }),
+    null
+  );
+  assert.equal(
+    findRecentAloDate(
+      row,
+      ["Fec. registro", "Documento", "IMEI"],
+      TODAY
+    ),
+    null
+  );
+  assert.equal(
+    findRecentAloDate(
+      row,
+      ["Fec. registro", "Documento", "IMEI"],
+      TODAY,
+      { allowLegacyColumn0: true }
+    ),
+    "2026-07-25"
+  );
+  assert.equal(
+    findRecentAloDate(
+      row,
+      ["Fecha de pago", "Documento", "IMEI"],
+      TODAY,
+      { allowLegacyColumn0: true }
+    ),
+    null
+  );
+  assert.equal(
+    findRecentAloDate(
+      row,
+      ["Fec. pago", "Documento", "IMEI"],
+      TODAY,
+      { allowLegacyColumn0: true }
+    ),
+    null
+  );
+});
+
+test("exige la columna semantica IMEI salvo en el Excel legacy", () => {
+  const row = [
+    "359999999999995",
+    "359999999999994",
+  ];
+  const header = ["Referencia externa", "IMEI"];
+
+  assert.equal(
+    matchesAloReportImei(row, "359999999999995", header),
+    false
+  );
+  assert.equal(
+    matchesAloReportImei(row, "359999999999994", header),
+    true
+  );
+  assert.equal(
+    matchesAloReportImei(row, "359999999999995", null),
+    false
+  );
+  assert.equal(
+    matchesAloReportImei(row, "359999999999995", null, {
+      allowLegacyAnyCell: true,
+    }),
+    true
   );
 });
 
