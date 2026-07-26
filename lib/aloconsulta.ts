@@ -2992,8 +2992,7 @@ function findCreditoInWorkbook(source: ReportSource, imei: string) {
 
 export function isAloConsultaConfigured() {
   return Boolean(
-    String(process.env.ALOCONSULTA_URL || "").trim() &&
-      String(process.env.ALOCONSULTA_USUARIO || "").trim() &&
+    String(process.env.ALOCONSULTA_USUARIO || "").trim() &&
       String(process.env.ALOCONSULTA_CLAVE || "").trim()
   );
 }

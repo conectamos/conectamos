@@ -475,12 +475,6 @@ export async function GET(req: Request) {
         );
         compararNumero(
           razones,
-          "Inicial",
-          item.cuotaInicial,
-          creditoPlataforma.cuotaInicial
-        );
-        compararNumero(
-          razones,
           "Valor cuota",
           item.valorCuota,
           creditoPlataforma.valorCuota
