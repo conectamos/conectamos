@@ -1399,7 +1399,8 @@ function withDateFields(
 
 function exactAloReportCandidates(
   baseUrl: string,
-  submittedFields = new URLSearchParams()
+  submittedFields = new URLSearchParams(),
+  identifier = ""
 ) {
   const weeklyDates = currentWeeklyDateValues();
   const isoFields = withDateFields(
@@ -1422,7 +1423,10 @@ function exactAloReportCandidates(
   ajaxFields.set("draw", ajaxFields.get("draw") || "1");
   ajaxFields.set("start", ajaxFields.get("start") || "0");
   ajaxFields.set("length", ajaxFields.get("length") || "5000");
-  ajaxFields.set("search[value]", ajaxFields.get("search[value]") || "");
+  ajaxFields.set(
+    "search[value]",
+    identifier || ajaxFields.get("search[value]") || ""
+  );
   ajaxFields.set("search[regex]", ajaxFields.get("search[regex]") || "false");
   ajaxFields.set("order[0][column]", ajaxFields.get("order[0][column]") || "0");
   ajaxFields.set("order[0][dir]", ajaxFields.get("order[0][dir]") || "desc");
@@ -1455,8 +1459,14 @@ function exactAloReportCandidates(
     {
       url: new URL("/admin_reportes/ajax", baseUrl).toString(),
       method: "GET" as const,
-      body: new URLSearchParams(submittedFields),
+      body: new URLSearchParams(ajaxFields),
       score: 1000,
+    },
+    {
+      url: new URL("/admin_reportes/ajax", baseUrl).toString(),
+      method: "POST" as const,
+      body: new URLSearchParams(ajaxFields),
+      score: 990,
     },
     {
       url: new URL("/admin_reportes/export", baseUrl).toString(),
@@ -1556,9 +1566,14 @@ function directWeeklyDownloadCandidates(
 function findWeeklyReportDownloadCandidates(
   html: string,
   baseUrl: string,
-  submittedFields = new URLSearchParams()
+  submittedFields = new URLSearchParams(),
+  identifier = ""
 ) {
-  const exactCandidates = exactAloReportCandidates(baseUrl, submittedFields);
+  const exactCandidates = exactAloReportCandidates(
+    baseUrl,
+    submittedFields,
+    identifier
+  );
   const rows = firstTableRows(html, 80).filter(looksLikeWeeklyReportRow);
   const row = rows.find(rowIncludesToday);
 
@@ -1810,7 +1825,8 @@ async function downloadFirstReport(
   const weeklyCandidates = findWeeklyReportDownloadCandidates(
     reportsPage.text,
     reportsPage.url,
-    reportsPage.submittedFields
+    reportsPage.submittedFields,
+    identifier
   );
   let candidates =
     weeklyCandidates.length > 0
@@ -1960,7 +1976,7 @@ async function downloadFirstReport(
     referer = candidate.url;
     const nestedFields = candidate.body || reportsPage.submittedFields;
     const nestedCandidates = dedupeDownloadCandidates([
-      ...exactAloReportCandidates(referer, nestedFields),
+      ...exactAloReportCandidates(referer, nestedFields, identifier),
       ...routeHintDownloadCandidates(lastHtml, referer, nestedFields),
       ...findDownloadCandidates(lastHtml, referer),
     ]);
@@ -2033,6 +2049,33 @@ function readWorkbookMatrix(source: ReportSource) {
   return matrices;
 }
 
+function readReportMatrices(source: ReportSource) {
+  const text =
+    typeof source === "string"
+      ? source
+      : bufferLooksText(source)
+        ? source.toString("utf8")
+        : null;
+  const trimmed = text?.trim() || "";
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const jsonMatrices = jsonMatricesFromValue(JSON.parse(trimmed));
+
+      if (jsonMatrices.length > 0) {
+        return jsonMatrices.map((matrix, index) => ({
+          sheetName: `JSON ${index + 1}`,
+          matrix,
+        }));
+      }
+    } catch {
+      // Si no es JSON valido, se intenta con los lectores de Excel/HTML/CSV.
+    }
+  }
+
+  return readWorkbookMatrix(source);
+}
+
 function sourceContainsImei(source: ReportSource, imei: string) {
   if (typeof source === "string" && !source.replace(/\D/g, "").includes(imei)) {
     return false;
@@ -2047,7 +2090,7 @@ function sourceContainsImei(source: ReportSource, imei: string) {
   }
 
   try {
-    return readWorkbookMatrix(source).some(({ matrix }) =>
+    return readReportMatrices(source).some(({ matrix }) =>
       matrix.some((row) => rowContainsImei(row || [], imei))
     );
   } catch (error) {
@@ -2105,7 +2148,7 @@ function rowContainsDocumento(row: MatrixCell[], documento: string) {
 
 function sourceContainsDocumento(source: ReportSource, documento: string) {
   try {
-    return readWorkbookMatrix(source).some(({ matrix }) =>
+    return readReportMatrices(source).some(({ matrix }) =>
       matrix.some((row) => rowContainsDocumento(row || [], documento))
     );
   } catch (error) {
@@ -2346,11 +2389,27 @@ function isInstallmentValueKey(key: string) {
 }
 
 function isCreditDateKey(key: string) {
+  const isCreditLifecycleDate =
+    key.includes("FECHA") &&
+    (key.includes("VENTA") ||
+      key.includes("CREDITO") ||
+      key.includes("CREACION") ||
+      key.includes("REGISTRO") ||
+      key.includes("FINANCIACION") ||
+      key.includes("DESEMBOLS") ||
+      key.includes("APROBACION") ||
+      key.includes("OTORGAMIENTO"));
+
+  if (isCreditLifecycleDate) {
+    return true;
+  }
+
   if (
     key.includes("NACIM") ||
     key.includes("EXPED") ||
     key.includes("INICIO") ||
-    key.includes("FIN") ||
+    key.includes("FECHAFINAL") ||
+    key.includes("HASTA") ||
     key.includes("VENC") ||
     key.includes("PAGO")
   ) {
@@ -2359,18 +2418,62 @@ function isCreditDateKey(key: string) {
 
   return (
     key === "FECHA" ||
-    key.includes("FECHAVENTA") ||
-    key.includes("FECHACREDITO") ||
-    key.includes("FECHACREACION") ||
+    key.includes("FECHA") ||
     key.includes("CREATEDAT") ||
-    key.includes("CREATEDDATE")
+    key.includes("CREATEDDATE") ||
+    key.endsWith("DATE")
   );
 }
 
 function findCreditDate(row: MatrixCell[], headerRow: MatrixCell[] | null) {
+  const fromHeader = normalizeDateKey(
+    getByHeader(row, headerRow, isCreditDateKey)
+  );
+
+  if (fromHeader) {
+    return fromHeader;
+  }
+
+  const fromFirstCell = normalizeDateKey(getCell(row, 0));
+
+  if (fromFirstCell && isTodayOrYesterdayDateKey(fromFirstCell)) {
+    return fromFirstCell;
+  }
+
   return (
-    normalizeDateKey(getByHeader(row, headerRow, isCreditDateKey)) ||
-    normalizeDateKey(getCell(row, 0))
+    row
+      .map((cell) => normalizeDateKey(cell))
+      .find((dateKey) => isTodayOrYesterdayDateKey(dateKey)) || null
+  );
+}
+
+function isAuthorizedCreditAmountKey(key: string) {
+  if (
+    key.includes("CUOTA") ||
+    key.includes("INICIAL") ||
+    key.includes("ACCESORIO") ||
+    key.includes("SALDO") ||
+    key.includes("MORA") ||
+    key.includes("PENDIENTE")
+  ) {
+    return false;
+  }
+
+  return (
+    key.includes("MONTOTOTAL") ||
+    key.includes("VALORTOTAL") ||
+    key.includes("CREDITOAUTORIZ") ||
+    key.includes("CREDITOAPROBAD") ||
+    key.includes("CREDITOFINANCIAD") ||
+    key.includes("CREDITODESEMBOLS") ||
+    ((key.includes("MONTO") || key.includes("VALOR") || key.includes("CUPO")) &&
+      (key.includes("TOTAL") ||
+        key.includes("CREDITO") ||
+        key.includes("AUTORIZ") ||
+        key.includes("APROBAD") ||
+        key.includes("FINANCIAD") ||
+        key.includes("DESEMBOLS") ||
+        key.includes("OTORGAD")))
   );
 }
 
@@ -2718,6 +2821,46 @@ function findCarteraTermsInText(
   return null;
 }
 
+function findRecentCreditInCarteraText(
+  text: string,
+  documento: string,
+  fallbackHeaders: MatrixCell[][] = []
+) {
+  const matrices = readCarteraMatrices(text);
+  const headers = [...extractTableHeaderCandidates(text), ...fallbackHeaders];
+
+  for (const matrix of matrices) {
+    for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
+      const row = matrix[rowIndex] || [];
+
+      if (!rowContainsDocumento(row, documento)) {
+        continue;
+      }
+
+      const headerRow =
+        findHeaderRow(matrix, rowIndex) ||
+        headers.find((header) => header.length >= row.length) ||
+        headers[0] ||
+        null;
+      const credito = parseCreditoFromRow(
+        row,
+        headerRow,
+        findImei(row, headerRow)
+      );
+
+      if (credito) {
+        return {
+          ...credito,
+          documento,
+          origen: "admin_cartera",
+        } satisfies AloCreditoImei;
+      }
+    }
+  }
+
+  return null;
+}
+
 function carteraSearchFields(searchValue: string, baseFields = new URLSearchParams()) {
   const fields = new URLSearchParams(baseFields);
   const searchKeys = [
@@ -2939,6 +3082,74 @@ async function consultarCuotaPlazoAloCartera(
   return null;
 }
 
+async function consultarCreditoAloCarteraPorDocumento(
+  session: AloSession,
+  documento: string
+) {
+  const carteraUrl = new URL(ALO_CARTERA_PATH, session.reportUrl.origin);
+  const page = await fetchTextFollowingRedirects(
+    carteraUrl.toString(),
+    {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "es-CO,es;q=0.9",
+        "User-Agent": ALO_USER_AGENT,
+      },
+    },
+    session.jar
+  );
+
+  if (looksLikeLoginPage(page.text)) {
+    return null;
+  }
+
+  const pageHeaders = extractTableHeaderCandidates(page.text);
+  const pageCredit = findRecentCreditInCarteraText(
+    page.text,
+    documento,
+    pageHeaders
+  );
+
+  if (pageCredit) {
+    return pageCredit;
+  }
+
+  const candidates = aloCarteraSearchCandidates(
+    page.text,
+    page.url,
+    documento
+  ).slice(0, 12);
+
+  for (const candidate of candidates) {
+    const result = await fetchAloTextCandidate(
+      session.jar,
+      candidate,
+      page.url
+    );
+
+    if (!result.ok) {
+      continue;
+    }
+
+    const credito = findRecentCreditInCarteraText(
+      result.text,
+      documento,
+      pageHeaders
+    );
+
+    if (credito) {
+      console.info("ALO CREDIT encontro credito reciente en cartera por cedula", {
+        documento: maskNumericIdentifier(documento),
+        origen: describeDownloadCandidate(candidate),
+      });
+
+      return credito;
+    }
+  }
+
+  return null;
+}
+
 async function completarCuotaPlazoDesdeCartera(
   session: AloSession,
   credito: AloCreditoImei
@@ -2976,16 +3187,8 @@ function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, 
   }
 
   const creditoAutorizado =
-    parseAmount(
-      getByHeader(
-        row,
-        headerRow,
-        (key) =>
-          key.includes("MONTOTOTAL") ||
-          (key.includes("MONTO") && key.includes("TOTAL")) ||
-          key.includes("VALORTOTAL")
-      )
-    ) ?? parseAmount(getCell(row, 10));
+    parseAmount(getByHeader(row, headerRow, isAuthorizedCreditAmountKey)) ??
+    parseAmount(getCell(row, 10));
 
   if (creditoAutorizado === null || creditoAutorizado <= 0) {
     return null;
@@ -3051,7 +3254,7 @@ function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, 
 }
 
 function findCreditoInWorkbook(source: ReportSource, imei: string) {
-  const matrices = readWorkbookMatrix(source);
+  const matrices = readReportMatrices(source);
 
   for (const { matrix } of matrices) {
     for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
@@ -3096,7 +3299,7 @@ function findCreditosInWorkbookByDocumento(
   source: ReportSource,
   documento: string
 ) {
-  const matrices = readWorkbookMatrix(source);
+  const matrices = readReportMatrices(source);
   const encontrados = new Map<string, AloCreditoImei>();
 
   for (const { matrix } of matrices) {
@@ -3187,7 +3390,7 @@ export async function obtenerCreditoAloPorCedula(documentoValue: unknown) {
   );
 
   if (!reportBuffer) {
-    return null;
+    return consultarCreditoAloCarteraPorDocumento(session, documento);
   }
 
   const creditos = findCreditosInWorkbookByDocumento(
@@ -3197,7 +3400,18 @@ export async function obtenerCreditoAloPorCedula(documentoValue: unknown) {
   const credito = creditos[0] ?? null;
 
   if (!credito) {
-    return null;
+    const creditoCartera = await consultarCreditoAloCarteraPorDocumento(
+      session,
+      documento
+    );
+
+    if (creditoCartera) {
+      return creditoCartera;
+    }
+
+    throw new AloConsultaLookupError(
+      "ALO CREDIT devolvio esta cedula en el reporte, pero no fue posible interpretar una venta reciente con fecha y monto validos."
+    );
   }
 
   return completarCuotaPlazoDesdeCartera(session, credito);
