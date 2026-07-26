@@ -301,6 +301,10 @@ function claveConsulta(item: ItemRevision) {
     ? soloDigitos(item.documentoNumero)
     : soloDigitos(item.serialImei);
 
+  if (item.proveedor === "ALO CREDIT") {
+    return `${item.proveedor}:${identificador}:${soloDigitos(item.serialImei)}`;
+  }
+
   return `${item.proveedor}:${identificador}`;
 }
 
@@ -538,7 +542,6 @@ export async function GET(req: Request) {
         }
 
         if (
-          item.proveedor !== "ALO CREDIT" &&
           creditoPlataforma.imei &&
           soloDigitos(item.serialImei) !== creditoPlataforma.imei
         ) {

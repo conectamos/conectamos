@@ -1,14 +1,22 @@
 import * as XLSX from "xlsx";
 import {
-  isTodayOrYesterdayDateKey,
-  normalizeDateKey,
-} from "@/lib/credit-date-utils";
+  diagnoseAloReportRow,
+  extractAloHtmlHeaderCandidates,
+  extractAloReportTables,
+  findAloReportDocument,
+  findAloAuthorizedAmount,
+  findRecentAloDate,
+  matchesAloReportDocument,
+  selectAloCreditForSale,
+  selectCompatibleAloHeader,
+} from "@/lib/alo-report-parser";
 
 const ALO_DEFAULT_REPORT_URL = "https://consola.alocredit.co/admin_reportes";
 const ALO_LOGIN_PATH = "/login";
 const ALO_REPORT_PATH = "/admin_reportes";
 const ALO_CARTERA_PATH = "/admin_cartera";
 const ALO_REPORT_CACHE_MS = 60_000;
+const ALO_SESSION_CACHE_MS = 45_000;
 const COLOMBIA_CURRENCY = "COP";
 const ALO_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -38,14 +46,24 @@ type MatrixCell = string | number | boolean | Date | null | undefined;
 type ReportSource = Buffer | string;
 type ReportSourceMatcher = (source: ReportSource, identifier: string) => boolean;
 
-type CachedReport = {
+type ReportBundle = {
   source: ReportSource;
+  fallbackHeaders: MatrixCell[][];
+};
+
+type CachedReport = {
+  report: ReportBundle;
   expiresAt: number;
 };
 
 type AloSession = {
   jar: CookieJar;
   reportUrl: URL;
+};
+
+type CachedAloSession = {
+  session: AloSession;
+  expiresAt: number;
 };
 
 type AloCarteraTerms = {
@@ -86,6 +104,10 @@ export class AloConsultaLookupError extends Error {
 }
 
 let cachedReport: CachedReport | null = null;
+let cachedReportInFlight: Promise<ReportBundle | null> | null = null;
+let aloLoginInFlight: Promise<AloSession> | null = null;
+let aloLookupQueue: Promise<void> = Promise.resolve();
+let cachedAloSession: CachedAloSession | null = null;
 
 function normalizeImei(value: unknown) {
   return String(value || "").replace(/\D/g, "").slice(0, 15);
@@ -638,6 +660,37 @@ function looksLikeLoginPage(html: string) {
 }
 
 async function loginAlo(): Promise<AloSession> {
+  if (
+    cachedAloSession &&
+    cachedAloSession.expiresAt > Date.now()
+  ) {
+    return cachedAloSession.session;
+  }
+
+  if (aloLoginInFlight) {
+    return aloLoginInFlight;
+  }
+
+  const pending = performLoginAlo().then((session) => {
+    cachedAloSession = {
+      session,
+      expiresAt: Date.now() + ALO_SESSION_CACHE_MS,
+    };
+
+    return session;
+  });
+  aloLoginInFlight = pending;
+
+  try {
+    return await pending;
+  } finally {
+    if (aloLoginInFlight === pending) {
+      aloLoginInFlight = null;
+    }
+  }
+}
+
+async function performLoginAlo(): Promise<AloSession> {
   const config = getCredentials();
   const jar: CookieJar = new Map();
   const loginPage = await fetchTextFollowingRedirects(
@@ -721,16 +774,73 @@ function scoreDownloadCandidate(text: string, href: string) {
   return score;
 }
 
-function maskDebugText(value: string, maxLength = 220) {
-  return decodeHtml(value)
-    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "***@***")
-    .replace(/\d/g, "#")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, maxLength);
+function debugSignals(value: string) {
+  const normalized = normalizeText(value);
+  const signals = [
+    "DESCARGAR",
+    "DOWNLOAD",
+    "EXCEL",
+    "XLS",
+    "EXPORT",
+    "CSV",
+    "REPORTE",
+    "BUSCAR",
+    "CONSULTAR",
+    "FACTURACION",
+  ];
+
+  return signals.filter((signal) => normalized.includes(signal));
+}
+
+function debugKey(value: string) {
+  const key = normalizeKey(value).slice(0, 80);
+
+  return key && !/\d{5,}/.test(key) ? key : null;
+}
+
+function debugUrl(value: string, baseUrl: string) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(decodeHtml(value), baseUrl);
+
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return {
+        path: `<${url.protocol.replace(":", "")}>`,
+        queryKeys: [] as string[],
+      };
+    }
+
+    const path = url.pathname
+      .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":uuid")
+      .replace(/\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/g, ":date")
+      .replace(/\d{5,}/g, ":id")
+      .split("/")
+      .map((part) => {
+        if (
+          part.length > 24 ||
+          /^[0-9a-f]{12,}$/i.test(part) ||
+          (part.length >= 12 && /[A-Z]/i.test(part) && /\d/.test(part))
+        ) {
+          return ":value";
+        }
+
+        return part;
+      })
+      .join("/");
+
+    return {
+      path,
+      queryKeys: Array.from(new Set(url.searchParams.keys())).sort(),
+    };
+  } catch {
+    return {
+      path: "<invalid>",
+      queryKeys: [] as string[],
+    };
+  }
 }
 
 function firstTableRows(html: string, maxRows = 3) {
@@ -744,9 +854,16 @@ function firstTableRows(html: string, maxRows = 3) {
 }
 
 function debugHtmlRows(html: string, maxRows = 4) {
-  return firstTableRows(html, maxRows)
-    .map((row) => maskDebugText(row))
-    .filter(Boolean);
+  return firstTableRows(html, maxRows).map((row) => ({
+    th: (row.match(/<th\b/gi) ?? []).length,
+    td: (row.match(/<td\b/gi) ?? []).length,
+    controls: (row.match(/<(?:a|button|input)\b/gi) ?? []).length,
+    downloadSignals: debugSignals(row).filter((signal) =>
+      ["DESCARGAR", "DOWNLOAD", "EXCEL", "XLS", "EXPORT", "CSV"].includes(
+        signal
+      )
+    ),
+  }));
 }
 
 function logAloInfo(message: string, data: Record<string, unknown>) {
@@ -781,20 +898,26 @@ function debugHtmlStructure(html: string, baseUrl: string) {
       [];
 
     return {
-      actionPath: new URL(form.action).pathname,
+      action: debugUrl(form.action, baseUrl),
       method: form.method,
-      fieldKeys: Array.from(form.fields.keys()).sort(),
+      fieldKeys: Array.from(form.fields.keys())
+        .map(debugKey)
+        .filter(Boolean)
+        .sort(),
       controls: controls.slice(0, 8).map((control) => {
         const attrs = getHtmlAttributes(control);
 
         return {
-          text: maskDebugText(control, 80),
+          signals: debugSignals(control),
           type: attrs.get("type") || "",
-          name: attrs.get("name") || "",
-          id: attrs.get("id") || "",
-          href: attrs.get("href") || "",
-          onclick: attrs.get("onclick") ? maskDebugText(attrs.get("onclick") || "", 120) : "",
-          dataUrl: attrs.get("data-url") || attrs.get("data-href") || "",
+          name: debugKey(attrs.get("name") || ""),
+          id: debugKey(attrs.get("id") || ""),
+          href: debugUrl(attrs.get("href") || "", baseUrl),
+          hasOnclick: Boolean(attrs.get("onclick")),
+          dataUrl: debugUrl(
+            attrs.get("data-url") || attrs.get("data-href") || "",
+            baseUrl
+          ),
         };
       }),
     };
@@ -805,7 +928,6 @@ function debugHtmlStructure(html: string, baseUrl: string) {
     .map((match) => {
       const elementHtml = match[0];
       const attrs = getHtmlAttributes(elementHtml);
-      const text = maskDebugText(elementHtml, 120);
       const combined = normalizeText(
         `${elementHtml} ${Array.from(attrs.values()).join(" ")}`
       );
@@ -821,11 +943,14 @@ function debugHtmlStructure(html: string, baseUrl: string) {
 
       return {
         tag: match[1].toLowerCase(),
-        text,
-        href: attrs.get("href") || "",
-        onclick: attrs.get("onclick") ? maskDebugText(attrs.get("onclick") || "", 160) : "",
-        dataUrl: attrs.get("data-url") || attrs.get("data-href") || "",
-        formaction: attrs.get("formaction") || "",
+        signals: debugSignals(elementHtml),
+        href: debugUrl(attrs.get("href") || "", baseUrl),
+        hasOnclick: Boolean(attrs.get("onclick")),
+        dataUrl: debugUrl(
+          attrs.get("data-url") || attrs.get("data-href") || "",
+          baseUrl
+        ),
+        formaction: debugUrl(attrs.get("formaction") || "", baseUrl),
       };
     })
     .filter(Boolean)
@@ -834,7 +959,9 @@ function debugHtmlStructure(html: string, baseUrl: string) {
   return {
     forms,
     downloadElements,
-    routeHints: extractRouteHints(html).slice(0, 20),
+    routeHints: extractRouteHints(html)
+      .slice(0, 20)
+      .map((route) => debugUrl(route, baseUrl)),
     muestras: debugHtmlRows(html, 6),
   };
 }
@@ -1629,35 +1756,26 @@ function findWeeklyReportDownloadCandidates(
 }
 
 function describeDownloadCandidate(candidate: DownloadCandidate) {
-  const bodyPreview = candidate.body
-    ? Array.from(candidate.body.entries())
-        .filter(([, value]) => /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value))
-        .map(([key, value]) => [key, value])
+  const bodyKeys = candidate.body
+    ? Array.from(candidate.body.keys())
+        .map(debugKey)
+        .filter(Boolean)
+        .sort()
     : [];
+  const bodyHasDateValues = candidate.body
+    ? Array.from(candidate.body.values()).some((value) =>
+        /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value)
+      )
+    : false;
 
-  try {
-    const url = new URL(candidate.url);
-
-    return {
-      path: url.pathname,
-      queryKeys: Array.from(url.searchParams.keys()).sort(),
-      pathConFecha: /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(url.pathname),
-      method: candidate.method || "GET",
-      bodyKeys: candidate.body ? Array.from(candidate.body.keys()).sort() : [],
-      bodyPreview,
-      score: candidate.score,
-    };
-  } catch {
-    return {
-      path: candidate.url.slice(0, 80),
-      queryKeys: [],
-      pathConFecha: /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(candidate.url),
-      method: candidate.method || "GET",
-      bodyKeys: candidate.body ? Array.from(candidate.body.keys()).sort() : [],
-      bodyPreview,
-      score: candidate.score,
-    };
-  }
+  return {
+    url: debugUrl(candidate.url, ALO_DEFAULT_REPORT_URL),
+    pathConFecha: /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(candidate.url),
+    method: candidate.method || "GET",
+    bodyKeys,
+    bodyHasDateValues,
+    score: candidate.score,
+  };
 }
 
 function chooseConsultForm(forms: HtmlForm[]) {
@@ -1690,6 +1808,10 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
   );
 
   if (looksLikeLoginPage(page.text)) {
+    if (cachedAloSession?.session.jar === jar) {
+      cachedAloSession = null;
+    }
+
     throw new AloConsultaConfigError("La sesion de ALO CREDIT no quedo activa.");
   }
 
@@ -1734,7 +1856,7 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
   );
 
   console.info("ALO CREDIT consulta reporte semanal", {
-    actionPath: action.pathname,
+    action: debugUrl(action.toString(), page.url),
     method: consultForm.method === "GET" ? "GET" : "POST",
     fieldKeys: Array.from(fields.keys()).sort(),
     dateFieldPairs: findDateFieldPairs(fields),
@@ -1742,13 +1864,14 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
     muestras: debugHtmlRows(result.text),
   });
   logAloInfo("ALO CREDIT consulta reporte semanal detalle", {
-    actionPath: action.pathname,
+    action: debugUrl(action.toString(), page.url),
     method: consultForm.method === "GET" ? "GET" : "POST",
     fieldKeys: Array.from(fields.keys()).sort(),
-    fieldValues: Array.from(fields.entries()).map(([key, value]) => [
-      key,
-      /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value) ? value : "***",
-    ]),
+    fieldShape: Array.from(fields.entries()).map(([key, value]) => ({
+      key: debugKey(key),
+      hasValue: Boolean(value),
+      looksDate: /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value),
+    })),
     dateFieldPairs: findDateFieldPairs(fields),
     rows: firstTableRows(result.text, 10).length,
     muestras: debugHtmlRows(result.text),
@@ -1806,22 +1929,107 @@ async function fetchReportBufferFromUrl(
   };
 }
 
+function createReportBundle(
+  source: ReportSource,
+  ...headerSources: string[]
+): ReportBundle {
+  const headers = headerSources.flatMap((html) =>
+    extractAloHtmlHeaderCandidates(html)
+  );
+  const uniqueHeaders = Array.from(
+    new Map(
+      headers.map((header) => [
+        header.map((cell) => normalizeKey(cell)).join("\u0000"),
+        header,
+      ])
+    ).values()
+  );
+
+  return {
+    source,
+    fallbackHeaders: uniqueHeaders,
+  };
+}
+
 async function downloadFirstReport(
   identifier?: string,
   sessionArg?: AloSession,
   sourceMatcher: ReportSourceMatcher = sourceContainsImei,
   identifierLabel = "IMEI"
-) {
+): Promise<ReportBundle | null> {
+  const matches = (report: ReportBundle) =>
+    !identifier || sourceMatcher(report.source, identifier);
+
   if (
     cachedReport &&
     cachedReport.expiresAt > Date.now() &&
-    (!identifier || sourceMatcher(cachedReport.source, identifier))
+    matches(cachedReport.report)
   ) {
-    return cachedReport.source;
+    return cachedReport.report;
   }
 
-  const session = sessionArg ?? (await loginAlo());
-  const reportsPage = await getConsultedReportsPage(session.jar, session.reportUrl);
+  if (cachedReportInFlight) {
+    const pending = cachedReportInFlight;
+    const report = await pending;
+
+    if (report && matches(report)) {
+      return report;
+    }
+
+    if (cachedReportInFlight === pending) {
+      cachedReportInFlight = null;
+    }
+
+    return downloadFirstReport(
+      identifier,
+      sessionArg,
+      sourceMatcher,
+      identifierLabel
+    );
+  }
+
+  const pending = downloadAndCacheFirstReport(
+    identifier,
+    sessionArg,
+    sourceMatcher,
+    identifierLabel
+  );
+  cachedReportInFlight = pending;
+
+  try {
+    return await pending;
+  } finally {
+    if (cachedReportInFlight === pending) {
+      cachedReportInFlight = null;
+    }
+  }
+}
+
+async function downloadAndCacheFirstReport(
+  identifier?: string,
+  sessionArg?: AloSession,
+  sourceMatcher: ReportSourceMatcher = sourceContainsImei,
+  identifierLabel = "IMEI"
+): Promise<ReportBundle | null> {
+  let session = sessionArg ?? (await loginAlo());
+  let reportsPage: ConsultedReportsPage;
+
+  try {
+    reportsPage = await getConsultedReportsPage(
+      session.jar,
+      session.reportUrl
+    );
+  } catch (error) {
+    if (!(error instanceof AloConsultaConfigError)) {
+      throw error;
+    }
+
+    session = await loginAlo();
+    reportsPage = await getConsultedReportsPage(
+      session.jar,
+      session.reportUrl
+    );
+  }
   const weeklyCandidates = findWeeklyReportDownloadCandidates(
     reportsPage.text,
     reportsPage.url,
@@ -1835,18 +2043,19 @@ async function downloadFirstReport(
 
   if (candidates.length === 0) {
     console.info("ALO CREDIT sin candidatos de descarga; se intentara leer HTML", {
-      reportPath: new URL(reportsPage.url).pathname,
+      report: debugUrl(reportsPage.url, session.reportUrl.toString()),
       forms: parseForms(reportsPage.text, reportsPage.url).length,
       rows: firstTableRows(reportsPage.text, 10).length,
       muestras: debugHtmlRows(reportsPage.text),
     });
     if (!identifier || sourceMatcher(reportsPage.text, identifier)) {
+      const report = createReportBundle(reportsPage.text, reportsPage.text);
       cachedReport = {
-        source: reportsPage.text,
+        report,
         expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
       };
 
-      return reportsPage.text;
+      return report;
     }
 
     return null;
@@ -1913,12 +2122,13 @@ async function downloadFirstReport(
 
     if (!isHtmlResponse(buffer)) {
       if (!identifier || sourceMatcher(buffer, identifier)) {
+        const report = createReportBundle(buffer, reportsPage.text);
         cachedReport = {
-          source: buffer,
+          report,
           expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
         };
 
-        return buffer;
+        return report;
       }
 
       if (bufferLooksText(buffer)) {
@@ -1965,12 +2175,17 @@ async function downloadFirstReport(
     lastHtml = buffer.toString("utf8");
 
     if (!identifier || sourceMatcher(lastHtml, identifier)) {
+      const report = createReportBundle(
+        lastHtml,
+        lastHtml,
+        reportsPage.text
+      );
       cachedReport = {
-        source: lastHtml,
+        report,
         expiresAt: Date.now() + ALO_REPORT_CACHE_MS,
       };
 
-      return lastHtml;
+      return report;
     }
 
     referer = candidate.url;
@@ -2059,17 +2274,15 @@ function readReportMatrices(source: ReportSource) {
   const trimmed = text?.trim() || "";
 
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    try {
-      const jsonMatrices = jsonMatricesFromValue(JSON.parse(trimmed));
+    const jsonTables = extractAloReportTables(trimmed);
 
-      if (jsonMatrices.length > 0) {
-        return jsonMatrices.map((matrix, index) => ({
-          sheetName: `JSON ${index + 1}`,
-          matrix,
-        }));
-      }
-    } catch {
-      // Si no es JSON valido, se intenta con los lectores de Excel/HTML/CSV.
+    if (jsonTables.length > 0) {
+      return jsonTables.map((table, index) => ({
+        sheetName: `JSON ${index + 1}`,
+        matrix: table.header
+          ? [table.header, ...table.rows]
+          : table.rows,
+      }));
     }
   }
 
@@ -2131,25 +2344,19 @@ function documentDigitsFromCell(cell: MatrixCell) {
   return onlyDigits(text);
 }
 
-function rowContainsDocumento(row: MatrixCell[], documento: string) {
-  return row.some((cell) => {
-    if (documentDigitsFromCell(cell) === documento) {
-      return true;
-    }
-
-    const groups =
-      visibleText(cell).match(/\d+(?:[.\s-]\d+)*(?:[,.]0+)?/g) ?? [];
-
-    return groups.some(
-      (group) => documentDigitsFromCell(group as MatrixCell) === documento
-    );
-  });
-}
-
 function sourceContainsDocumento(source: ReportSource, documento: string) {
   try {
     return readReportMatrices(source).some(({ matrix }) =>
-      matrix.some((row) => rowContainsDocumento(row || [], documento))
+      matrix.some((row, rowIndex) => {
+        const currentRow = row || [];
+        const headerRow = findHeaderRow(matrix, rowIndex);
+
+        return matchesAloReportDocument(
+          currentRow,
+          documento,
+          headerRow
+        );
+      })
     );
   } catch (error) {
     const text = Buffer.isBuffer(source) ? source.toString("utf8") : source;
@@ -2168,15 +2375,6 @@ function sourceContainsDocumento(source: ReportSource, documento: string) {
 
     return matched;
   }
-}
-
-function debugMatrixRows(matrix: MatrixCell[][], maxRows = 5) {
-  return matrix
-    .slice(0, maxRows)
-    .map((row) =>
-      maskDebugText(row.map((cell) => visibleText(cell)).join(" | "))
-    )
-    .filter(Boolean);
 }
 
 function rowContainsImei(row: MatrixCell[], imei: string) {
@@ -2219,6 +2417,13 @@ function findHeaderRow(matrix: MatrixCell[][], rowIndex: number) {
   }
 
   return bestScore >= 2 ? matrix[bestIndex] : null;
+}
+
+function findFallbackHeaderRow(
+  fallbackHeaders: MatrixCell[][],
+  row: MatrixCell[]
+) {
+  return selectCompatibleAloHeader(fallbackHeaders, row.length);
 }
 
 function findHeaderIndex(
@@ -2271,18 +2476,6 @@ function findEmail(row: MatrixCell[]) {
   return (
     row.map(visibleText).find((cell) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(cell)) ||
     null
-  );
-}
-
-function isDocumentKey(key: string) {
-  return (
-    key.includes("CEDULA") ||
-    key.includes("DOCUMENTO") ||
-    key.includes("IDENTIFICACION") ||
-    key === "CC" ||
-    key.includes("NUMERODOC") ||
-    key.includes("NRODOC") ||
-    key.includes("DOCCLIENTE")
   );
 }
 
@@ -2388,95 +2581,6 @@ function isInstallmentValueKey(key: string) {
   );
 }
 
-function isCreditDateKey(key: string) {
-  const isCreditLifecycleDate =
-    key.includes("FECHA") &&
-    (key.includes("VENTA") ||
-      key.includes("CREDITO") ||
-      key.includes("CREACION") ||
-      key.includes("REGISTRO") ||
-      key.includes("FINANCIACION") ||
-      key.includes("DESEMBOLS") ||
-      key.includes("APROBACION") ||
-      key.includes("OTORGAMIENTO"));
-
-  if (isCreditLifecycleDate) {
-    return true;
-  }
-
-  if (
-    key.includes("NACIM") ||
-    key.includes("EXPED") ||
-    key.includes("INICIO") ||
-    key.includes("FECHAFINAL") ||
-    key.includes("HASTA") ||
-    key.includes("VENC") ||
-    key.includes("PAGO")
-  ) {
-    return false;
-  }
-
-  return (
-    key === "FECHA" ||
-    key.includes("FECHA") ||
-    key.includes("CREATEDAT") ||
-    key.includes("CREATEDDATE") ||
-    key.endsWith("DATE")
-  );
-}
-
-function findCreditDate(row: MatrixCell[], headerRow: MatrixCell[] | null) {
-  const fromHeader = normalizeDateKey(
-    getByHeader(row, headerRow, isCreditDateKey)
-  );
-
-  if (fromHeader) {
-    return fromHeader;
-  }
-
-  const fromFirstCell = normalizeDateKey(getCell(row, 0));
-
-  if (fromFirstCell && isTodayOrYesterdayDateKey(fromFirstCell)) {
-    return fromFirstCell;
-  }
-
-  return (
-    row
-      .map((cell) => normalizeDateKey(cell))
-      .find((dateKey) => isTodayOrYesterdayDateKey(dateKey)) || null
-  );
-}
-
-function isAuthorizedCreditAmountKey(key: string) {
-  if (
-    key.includes("CUOTA") ||
-    key.includes("INICIAL") ||
-    key.includes("ACCESORIO") ||
-    key.includes("SALDO") ||
-    key.includes("MORA") ||
-    key.includes("PENDIENTE")
-  ) {
-    return false;
-  }
-
-  return (
-    key.includes("MONTOTOTAL") ||
-    key.includes("VALORTOTAL") ||
-    key.includes("CREDITOAUTORIZ") ||
-    key.includes("CREDITOAPROBAD") ||
-    key.includes("CREDITOFINANCIAD") ||
-    key.includes("CREDITODESEMBOLS") ||
-    ((key.includes("MONTO") || key.includes("VALOR") || key.includes("CUPO")) &&
-      (key.includes("TOTAL") ||
-        key.includes("CREDITO") ||
-        key.includes("AUTORIZ") ||
-        key.includes("APROBAD") ||
-        key.includes("FINANCIAD") ||
-        key.includes("DESEMBOLS") ||
-        key.includes("OTORGAD")))
-  );
-}
-
 function isAccessoryValueKey(key: string) {
   if (key.includes("CANTIDAD") || key.includes("NUMERO") || key.includes("QTY")) {
     return false;
@@ -2489,10 +2593,6 @@ function isAccessoryValueKey(key: string) {
     (key.includes("PRECIO") && key.includes("ACCESORIO")) ||
     (key.includes("VALOR") && key.includes("ACCESORIO"))
   );
-}
-
-function isDocumentCandidate(digits: string, imei: string) {
-  return digits.length >= 6 && digits.length <= 12 && digits !== imei;
 }
 
 function findImei(row: MatrixCell[], headerRow: MatrixCell[] | null) {
@@ -2513,24 +2613,6 @@ function findImei(row: MatrixCell[], headerRow: MatrixCell[] | null) {
   }
 
   return "";
-}
-
-function findDocument(row: MatrixCell[], headerRow: MatrixCell[] | null, imei: string) {
-  const fromHeader = onlyDigits(getByHeader(row, headerRow, isDocumentKey));
-
-  if (isDocumentCandidate(fromHeader, imei)) {
-    return fromHeader;
-  }
-
-  const candidates = row
-    .map((cell, index) => ({
-      digits: onlyDigits(cell),
-      key: getHeaderKey(headerRow, index),
-    }))
-    .filter(({ digits }) => isDocumentCandidate(digits, imei))
-    .filter(({ key }) => !key.includes("MONTO") && !key.includes("VALOR"));
-
-  return candidates.find(({ key }) => isDocumentKey(key))?.digits || "";
 }
 
 function normalizeColombianPhone(value: unknown, documento: string | null, imei: string) {
@@ -2628,105 +2710,13 @@ function maskNumericValue(value: string) {
   return value ? `${"*".repeat(Math.max(0, value.length - 4))}${value.slice(-4)}` : "";
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isJsonCell(value: unknown) {
-  return (
-    value === null ||
-    ["string", "number", "boolean"].includes(typeof value)
-  );
-}
-
-function toMatrixCell(value: unknown): MatrixCell {
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-
-  return JSON.stringify(value);
-}
-
-function jsonMatricesFromValue(value: unknown) {
-  const matrices: MatrixCell[][][] = [];
-  const seen = new Set<unknown>();
-
-  const visit = (node: unknown, depth: number) => {
-    if (depth > 8 || !node || seen.has(node)) {
-      return;
-    }
-
-    if (typeof node === "object") {
-      seen.add(node);
-    }
-
-    if (Array.isArray(node)) {
-      const records = node.filter(isPlainRecord);
-      const arrays = node.filter(Array.isArray);
-
-      if (records.length > 0) {
-        const keys = Array.from(
-          new Set(
-            records.flatMap((record) =>
-              Object.keys(record).filter((key) => isJsonCell(record[key]))
-            )
-          )
-        );
-
-        if (keys.length > 0) {
-          matrices.push([
-            keys,
-            ...records.map((record) => keys.map((key) => toMatrixCell(record[key]))),
-          ]);
-        }
-      }
-
-      if (arrays.length > 0) {
-        matrices.push(
-          arrays.map((row) =>
-            row.map((cell) => toMatrixCell(cell))
-          )
-        );
-      }
-
-      node.forEach((item) => visit(item, depth + 1));
-      return;
-    }
-
-    if (isPlainRecord(node)) {
-      const primitiveEntries = Object.entries(node).filter(([, cell]) =>
-        isJsonCell(cell)
-      );
-
-      if (primitiveEntries.length >= 2) {
-        matrices.push([
-          primitiveEntries.map(([key]) => key),
-          primitiveEntries.map(([, cell]) => toMatrixCell(cell)),
-        ]);
-      }
-
-      Object.values(node).forEach((item) => visit(item, depth + 1));
-    }
-  };
-
-  visit(value, 0);
-
-  return matrices;
-}
-
 function readCarteraMatrices(text: string) {
   const trimmed = text.trim();
 
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    try {
-      return jsonMatricesFromValue(JSON.parse(trimmed));
-    } catch {
-      return [];
-    }
+    return extractAloReportTables(trimmed).map((table) =>
+      table.header ? [table.header, ...table.rows] : table.rows
+    );
   }
 
   if (!/<(?:table|tr|td|th)\b/i.test(text)) {
@@ -2774,27 +2764,13 @@ function parseCarteraTermsFromRow(
   };
 }
 
-function extractTableHeaderCandidates(html: string) {
-  return Array.from(html.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi))
-    .map((match) => {
-      const rowHtml = match[0];
-      const cells = Array.from(
-        rowHtml.matchAll(/<t[hd]\b[^>]*>[\s\S]*?<\/t[hd]>/gi)
-      ).map((cell) => visibleText(cell[0]));
-
-      return cells;
-    })
-    .filter((cells) => cells.length > 0)
-    .sort((left, right) => headerScore(right) - headerScore(left));
-}
-
 function findCarteraTermsInText(
   text: string,
   searchValues: string[],
   fallbackHeaders: MatrixCell[][] = []
 ) {
   const matrices = readCarteraMatrices(text);
-  const headers = [...extractTableHeaderCandidates(text), ...fallbackHeaders];
+  const headers = [...extractAloHtmlHeaderCandidates(text), ...fallbackHeaders];
 
   for (const matrix of matrices) {
     for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
@@ -2814,46 +2790,6 @@ function findCarteraTermsInText(
 
       if (terms.valorCuota !== null || terms.numeroCuotas !== null) {
         return terms;
-      }
-    }
-  }
-
-  return null;
-}
-
-function findRecentCreditInCarteraText(
-  text: string,
-  documento: string,
-  fallbackHeaders: MatrixCell[][] = []
-) {
-  const matrices = readCarteraMatrices(text);
-  const headers = [...extractTableHeaderCandidates(text), ...fallbackHeaders];
-
-  for (const matrix of matrices) {
-    for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
-      const row = matrix[rowIndex] || [];
-
-      if (!rowContainsDocumento(row, documento)) {
-        continue;
-      }
-
-      const headerRow =
-        findHeaderRow(matrix, rowIndex) ||
-        headers.find((header) => header.length >= row.length) ||
-        headers[0] ||
-        null;
-      const credito = parseCreditoFromRow(
-        row,
-        headerRow,
-        findImei(row, headerRow)
-      );
-
-      if (credito) {
-        return {
-          ...credito,
-          documento,
-          origen: "admin_cartera",
-        } satisfies AloCreditoImei;
       }
     }
   }
@@ -3027,7 +2963,7 @@ async function consultarCuotaPlazoAloCartera(
     return null;
   }
 
-  const pageHeaders = extractTableHeaderCandidates(page.text);
+  const pageHeaders = extractAloHtmlHeaderCandidates(page.text);
   const pageTerms = findCarteraTermsInText(page.text, searchValues, pageHeaders);
 
   if (pageTerms) {
@@ -3082,74 +3018,6 @@ async function consultarCuotaPlazoAloCartera(
   return null;
 }
 
-async function consultarCreditoAloCarteraPorDocumento(
-  session: AloSession,
-  documento: string
-) {
-  const carteraUrl = new URL(ALO_CARTERA_PATH, session.reportUrl.origin);
-  const page = await fetchTextFollowingRedirects(
-    carteraUrl.toString(),
-    {
-      headers: {
-        Accept: "text/html,application/xhtml+xml",
-        "Accept-Language": "es-CO,es;q=0.9",
-        "User-Agent": ALO_USER_AGENT,
-      },
-    },
-    session.jar
-  );
-
-  if (looksLikeLoginPage(page.text)) {
-    return null;
-  }
-
-  const pageHeaders = extractTableHeaderCandidates(page.text);
-  const pageCredit = findRecentCreditInCarteraText(
-    page.text,
-    documento,
-    pageHeaders
-  );
-
-  if (pageCredit) {
-    return pageCredit;
-  }
-
-  const candidates = aloCarteraSearchCandidates(
-    page.text,
-    page.url,
-    documento
-  ).slice(0, 12);
-
-  for (const candidate of candidates) {
-    const result = await fetchAloTextCandidate(
-      session.jar,
-      candidate,
-      page.url
-    );
-
-    if (!result.ok) {
-      continue;
-    }
-
-    const credito = findRecentCreditInCarteraText(
-      result.text,
-      documento,
-      pageHeaders
-    );
-
-    if (credito) {
-      console.info("ALO CREDIT encontro credito reciente en cartera por cedula", {
-        documento: maskNumericIdentifier(documento),
-        origen: describeDownloadCandidate(candidate),
-      });
-
-      return credito;
-    }
-  }
-
-  return null;
-}
-
 async function completarCuotaPlazoDesdeCartera(
   session: AloSession,
   credito: AloCreditoImei
@@ -3179,16 +3047,22 @@ async function completarCuotaPlazoDesdeCartera(
   }
 }
 
-function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, imei: string) {
-  const fechaCreacionCredito = findCreditDate(row, headerRow);
+function parseCreditoFromRow(
+  row: MatrixCell[],
+  headerRow: MatrixCell[] | null,
+  imei: string,
+  allowLegacyColumn10 = false,
+  documentoEsperado = ""
+) {
+  const fechaCreacionCredito = findRecentAloDate(row, headerRow);
 
-  if (!isTodayOrYesterdayDateKey(fechaCreacionCredito)) {
+  if (!fechaCreacionCredito) {
     return null;
   }
 
-  const creditoAutorizado =
-    parseAmount(getByHeader(row, headerRow, isAuthorizedCreditAmountKey)) ??
-    parseAmount(getCell(row, 10));
+  const creditoAutorizado = findAloAuthorizedAmount(row, headerRow, {
+    allowLegacyColumn10,
+  });
 
   if (creditoAutorizado === null || creditoAutorizado <= 0) {
     return null;
@@ -3197,7 +3071,8 @@ function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, 
   const accesorios =
     parseAmount(getByHeader(row, headerRow, isAccessoryValueKey)) ??
     (headerRow ? null : parseAmount(getCell(row, 8)));
-  const documento = findDocument(row, headerRow, imei);
+  const documento =
+    findAloReportDocument(row, headerRow, documentoEsperado) || "";
   const plazo = findTermValue(row, headerRow);
   const valorCuotaRaw = getByHeader(
     row,
@@ -3228,8 +3103,8 @@ function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, 
         valorCuota: !valorCuota,
         numeroCuotas: !numeroCuotas,
       },
-      encabezados: headerRow?.map((cell) => maskDebugText(visibleText(cell), 80)) ?? [],
-      fila: row.map((cell) => maskDebugText(visibleText(cell), 80)),
+      encabezadosDetectados: headerRow?.length ?? 0,
+      columnas: row.length,
     });
   }
 
@@ -3253,8 +3128,22 @@ function parseCreditoFromRow(row: MatrixCell[], headerRow: MatrixCell[] | null, 
   } satisfies AloCreditoImei;
 }
 
-function findCreditoInWorkbook(source: ReportSource, imei: string) {
+function findCreditoInWorkbook(
+  source: ReportSource,
+  imei: string,
+  fallbackHeaders: MatrixCell[][] = [],
+  documentoEsperado = ""
+) {
   const matrices = readReportMatrices(source);
+  const allowLegacyColumn10 =
+    Buffer.isBuffer(source) && !bufferLooksText(source);
+  let filasConImei = 0;
+  let filasConDocumentoDistinto = 0;
+  let filasNoInterpretadas = 0;
+  const diagnosticos: Array<{
+    code: "DATE_INVALID" | "AMOUNT_INVALID";
+    headerKeys: string[];
+  }> = [];
 
   for (const { matrix } of matrices) {
     for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
@@ -3264,14 +3153,57 @@ function findCreditoInWorkbook(source: ReportSource, imei: string) {
         continue;
       }
 
+      filasConImei += 1;
+      const headerRow =
+        findHeaderRow(matrix, rowIndex) ||
+        findFallbackHeaderRow(fallbackHeaders, row);
+
+      if (
+        documentoEsperado &&
+        !matchesAloReportDocument(row, documentoEsperado, headerRow)
+      ) {
+        filasConDocumentoDistinto += 1;
+        continue;
+      }
+
       const credito = parseCreditoFromRow(
         row,
-        findHeaderRow(matrix, rowIndex),
-        imei
+        headerRow,
+        imei,
+        allowLegacyColumn10,
+        documentoEsperado
       );
 
       if (credito) {
+        if (
+          documentoEsperado &&
+          onlyDigits(credito.documento) !== documentoEsperado
+        ) {
+          filasConDocumentoDistinto += 1;
+          continue;
+        }
+
         return credito;
+      }
+
+      filasNoInterpretadas += 1;
+      const diagnostico = diagnoseAloReportRow(
+        row,
+        headerRow,
+        undefined,
+        { allowLegacyColumn10 }
+      );
+
+      if (
+        diagnostico &&
+        diagnosticos.length < 3 &&
+        !diagnosticos.some(
+          (item) =>
+            item.code === diagnostico.code &&
+            item.headerKeys.join("|") === diagnostico.headerKeys.join("|")
+        )
+      ) {
+        diagnosticos.push(diagnostico);
       }
     }
   }
@@ -3281,14 +3213,16 @@ function findCreditoInWorkbook(source: ReportSource, imei: string) {
     fuente: Buffer.isBuffer(source) ? "archivo" : "html",
     htmlContieneImei:
       typeof source === "string" ? source.replace(/\D/g, "").includes(imei) : null,
-    hojas: matrices.slice(0, 5).map(({ sheetName, matrix }) => ({
-      sheetName,
+    filasConImei,
+    filasConDocumentoDistinto,
+    filasNoInterpretadas,
+    diagnosticos,
+    hojas: matrices.slice(0, 5).map(({ matrix }) => ({
       filas: matrix.length,
       columnas: matrix.reduce(
         (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
         0
       ),
-      muestras: debugMatrixRows(matrix, 3),
     })),
   });
 
@@ -3297,41 +3231,92 @@ function findCreditoInWorkbook(source: ReportSource, imei: string) {
 
 function findCreditosInWorkbookByDocumento(
   source: ReportSource,
-  documento: string
+  documento: string,
+  fallbackHeaders: MatrixCell[][] = []
 ) {
   const matrices = readReportMatrices(source);
+  const allowLegacyColumn10 =
+    Buffer.isBuffer(source) && !bufferLooksText(source);
   const encontrados = new Map<string, AloCreditoImei>();
+  let filasConDocumento = 0;
+  let filasNoInterpretadas = 0;
+  const diagnosticos: Array<{
+    code: "DATE_INVALID" | "AMOUNT_INVALID";
+    headerKeys: string[];
+  }> = [];
 
-  for (const { matrix } of matrices) {
+  for (const { matrix, sheetName } of matrices) {
     for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
       const row = matrix[rowIndex] || [];
-      const headerRow = findHeaderRow(matrix, rowIndex);
+      const headerRow =
+        findHeaderRow(matrix, rowIndex) ||
+        findFallbackHeaderRow(fallbackHeaders, row);
+
+      if (!matchesAloReportDocument(row, documento, headerRow)) {
+        continue;
+      }
+
+      filasConDocumento += 1;
       const imei = findImei(row, headerRow);
+      const credito = parseCreditoFromRow(
+        row,
+        headerRow,
+        imei,
+        allowLegacyColumn10,
+        documento
+      );
 
-      if (!rowContainsDocumento(row, documento)) {
+      if (!credito || onlyDigits(credito.documento) !== documento) {
+        filasNoInterpretadas += 1;
+        const diagnostico = diagnoseAloReportRow(
+          row,
+          headerRow,
+          undefined,
+          { allowLegacyColumn10 }
+        );
+
+        if (
+          diagnostico &&
+          diagnosticos.length < 3 &&
+          !diagnosticos.some(
+            (item) =>
+              item.code === diagnostico.code &&
+              item.headerKeys.join("|") === diagnostico.headerKeys.join("|")
+          )
+        ) {
+          diagnosticos.push(diagnostico);
+        }
         continue;
       }
 
-      const creditoEncontrado = parseCreditoFromRow(row, headerRow, imei);
-      const credito = creditoEncontrado
-        ? { ...creditoEncontrado, documento }
-        : null;
-
-      if (!credito) {
-        continue;
-      }
-
-      const key = [
-        credito.documento,
-        credito.imei,
-        credito.fechaCreacionCredito,
-        credito.creditoAutorizado,
-      ].join(":");
+      const key = credito.imei
+        ? [
+            credito.documento,
+            credito.imei,
+            credito.fechaCreacionCredito,
+            credito.creditoAutorizado,
+          ].join(":")
+        : [
+            credito.documento,
+            credito.fechaCreacionCredito,
+            credito.creditoAutorizado,
+            sheetName,
+            rowIndex,
+          ].join(":");
 
       if (!encontrados.has(key)) {
         encontrados.set(key, credito);
       }
     }
+  }
+
+  if (filasNoInterpretadas > 0) {
+    logAloInfo("ALO CREDIT filas por cedula no interpretadas", {
+      documento: maskNumericIdentifier(documento),
+      filasConDocumento,
+      filasNoInterpretadas,
+      diagnosticos,
+    });
   }
 
   return Array.from(encontrados.values());
@@ -3344,26 +3329,43 @@ export function isAloConsultaConfigured() {
   );
 }
 
-export async function obtenerCreditoAloPorImei(imeiValue: unknown) {
-  const imei = normalizeImei(imeiValue);
+export async function obtenerCreditoAloPorImei(
+  imeiValue: unknown,
+  documentoValue?: unknown,
+  sessionArg?: AloSession
+) {
+  const imeiDigits = onlyDigits(imeiValue);
+  const imei = imeiDigits.length === 15 ? imeiDigits : "";
+  const documento = onlyDigits(documentoValue).slice(0, 15);
 
   if (imei.length !== 15) {
     throw new AloConsultaLookupError("El IMEI debe tener 15 digitos.");
   }
 
-  const session = await loginAlo();
-  const reportBuffer = await downloadFirstReport(
+  if (documento && documento.length < 5) {
+    throw new AloConsultaLookupError(
+      "La cedula debe tener entre 5 y 15 digitos."
+    );
+  }
+
+  const session = sessionArg ?? (await loginAlo());
+  const report = await downloadFirstReport(
     imei,
     session,
     sourceContainsImei,
     "IMEI"
   );
 
-  if (!reportBuffer) {
+  if (!report) {
     return null;
   }
 
-  const credito = findCreditoInWorkbook(reportBuffer, imei);
+  const credito = findCreditoInWorkbook(
+    report.source,
+    imei,
+    report.fallbackHeaders,
+    documento
+  );
 
   if (!credito) {
     return null;
@@ -3372,8 +3374,68 @@ export async function obtenerCreditoAloPorImei(imeiValue: unknown) {
   return completarCuotaPlazoDesdeCartera(session, credito);
 }
 
-export async function obtenerCreditoAloPorCedula(documentoValue: unknown) {
+export async function obtenerCreditoAloPorCedula(
+  documentoValue: unknown,
+  imeiValue?: unknown,
+  sessionArg?: AloSession
+) {
   const documento = onlyDigits(documentoValue).slice(0, 15);
+  const imeiDigits = onlyDigits(imeiValue);
+  const imei = imeiDigits.length === 15 ? imeiDigits : "";
+
+  if (documento.length < 5) {
+    throw new AloConsultaLookupError(
+      "La cedula debe tener entre 5 y 15 digitos."
+    );
+  }
+
+  const session = sessionArg ?? (await loginAlo());
+  const report = await downloadFirstReport(
+    documento,
+    session,
+    sourceContainsDocumento,
+    "cedula"
+  );
+
+  if (!report) {
+    return null;
+  }
+
+  const creditos = findCreditosInWorkbookByDocumento(
+    report.source,
+    documento,
+    report.fallbackHeaders
+  );
+  const seleccion = selectAloCreditForSale(creditos, imei);
+
+  if (seleccion.status === "AMBIGUOUS") {
+    throw new AloConsultaLookupError(
+      "ALO CREDIT encontro varios creditos recientes para esta cedula. Se requiere un IMEI valido para identificar la venta."
+    );
+  }
+
+  if (seleccion.status === "IMEI_MISMATCH") {
+    throw new AloConsultaLookupError(
+      "ALO CREDIT encontro creditos para esta cedula, pero ninguno coincide con el IMEI de la venta."
+    );
+  }
+
+  if (seleccion.status === "NOT_FOUND") {
+    throw new AloConsultaLookupError(
+      "ALO CREDIT devolvio esta cedula en el reporte, pero no fue posible interpretar una venta reciente con fecha y monto validos."
+    );
+  }
+
+  return completarCuotaPlazoDesdeCartera(session, seleccion.credit);
+}
+
+async function obtenerCreditoAloParaRegistroUnlocked(
+  documentoValue: unknown,
+  imeiValue?: unknown
+): Promise<AloCreditoImei | null> {
+  const documento = onlyDigits(documentoValue).slice(0, 15);
+  const imeiDigits = onlyDigits(imeiValue);
+  const imei = imeiDigits.length === 15 ? imeiDigits : "";
 
   if (documento.length < 5) {
     throw new AloConsultaLookupError(
@@ -3382,95 +3444,64 @@ export async function obtenerCreditoAloPorCedula(documentoValue: unknown) {
   }
 
   const session = await loginAlo();
-  const reportBuffer = await downloadFirstReport(
-    documento,
-    session,
-    sourceContainsDocumento,
-    "cedula"
-  );
+  let errorConsultaImei: unknown = null;
 
-  if (!reportBuffer) {
-    return consultarCreditoAloCarteraPorDocumento(session, documento);
-  }
+  if (imei.length === 15) {
+    try {
+      const creditoPorImei = await obtenerCreditoAloPorImei(
+        imei,
+        documento,
+        session
+      );
 
-  const creditos = findCreditosInWorkbookByDocumento(
-    reportBuffer,
-    documento
-  );
-  const credito = creditos[0] ?? null;
-
-  if (!credito) {
-    const creditoCartera = await consultarCreditoAloCarteraPorDocumento(
-      session,
-      documento
-    );
-
-    if (creditoCartera) {
-      return creditoCartera;
+      if (creditoPorImei) {
+        return {
+          ...creditoPorImei,
+          documento,
+          origen: `${creditoPorImei.origen}+registro_venta_imei`,
+        } satisfies AloCreditoImei;
+      }
+    } catch (error) {
+      errorConsultaImei = error;
     }
-
-    throw new AloConsultaLookupError(
-      "ALO CREDIT devolvio esta cedula en el reporte, pero no fue posible interpretar una venta reciente con fecha y monto validos."
-    );
   }
 
-  return completarCuotaPlazoDesdeCartera(session, credito);
+  const creditoPorCedula = await obtenerCreditoAloPorCedula(
+    documento,
+    imei,
+    session
+  );
+
+  if (creditoPorCedula) {
+    return creditoPorCedula;
+  }
+
+  if (errorConsultaImei) {
+    throw errorConsultaImei;
+  }
+
+  return null;
 }
 
 export async function obtenerCreditoAloParaRegistro(
   documentoValue: unknown,
   imeiValue?: unknown
-) {
-  const documento = onlyDigits(documentoValue).slice(0, 15);
-  const imei = normalizeImei(imeiValue);
+): Promise<AloCreditoImei | null> {
+  const previous = aloLookupQueue;
+  let releaseQueue!: () => void;
 
-  if (documento.length < 5) {
-    throw new AloConsultaLookupError(
-      "La cedula debe tener entre 5 y 15 digitos."
-    );
-  }
+  aloLookupQueue = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
 
-  let errorConsultaCedula: unknown = null;
+  await previous;
 
   try {
-    const creditoPorCedula = await obtenerCreditoAloPorCedula(documento);
-
-    if (creditoPorCedula) {
-      return creditoPorCedula;
-    }
-  } catch (error) {
-    errorConsultaCedula = error;
-  }
-
-  if (imei.length !== 15) {
-    if (errorConsultaCedula) {
-      throw errorConsultaCedula;
-    }
-
-    return null;
-  }
-
-  const creditoPorImei = await obtenerCreditoAloPorImei(imei);
-
-  if (!creditoPorImei) {
-    if (errorConsultaCedula) {
-      throw errorConsultaCedula;
-    }
-
-    return null;
-  }
-
-  const documentoCredito = onlyDigits(creditoPorImei.documento).slice(0, 15);
-
-  if (!documentoCredito || documentoCredito !== documento) {
-    throw new AloConsultaLookupError(
-      "ALO CREDIT encontro el IMEI, pero la cedula del credito no coincide con la venta."
+    return await obtenerCreditoAloParaRegistroUnlocked(
+      documentoValue,
+      imeiValue
     );
+  } finally {
+    releaseQueue();
   }
-
-  return {
-    ...creditoPorImei,
-    documento,
-    origen: `${creditoPorImei.origen}+respaldo_registro_venta`,
-  } satisfies AloCreditoImei;
 }
