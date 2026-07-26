@@ -3416,3 +3416,61 @@ export async function obtenerCreditoAloPorCedula(documentoValue: unknown) {
 
   return completarCuotaPlazoDesdeCartera(session, credito);
 }
+
+export async function obtenerCreditoAloParaRegistro(
+  documentoValue: unknown,
+  imeiValue?: unknown
+) {
+  const documento = onlyDigits(documentoValue).slice(0, 15);
+  const imei = normalizeImei(imeiValue);
+
+  if (documento.length < 5) {
+    throw new AloConsultaLookupError(
+      "La cedula debe tener entre 5 y 15 digitos."
+    );
+  }
+
+  let errorConsultaCedula: unknown = null;
+
+  try {
+    const creditoPorCedula = await obtenerCreditoAloPorCedula(documento);
+
+    if (creditoPorCedula) {
+      return creditoPorCedula;
+    }
+  } catch (error) {
+    errorConsultaCedula = error;
+  }
+
+  if (imei.length !== 15) {
+    if (errorConsultaCedula) {
+      throw errorConsultaCedula;
+    }
+
+    return null;
+  }
+
+  const creditoPorImei = await obtenerCreditoAloPorImei(imei);
+
+  if (!creditoPorImei) {
+    if (errorConsultaCedula) {
+      throw errorConsultaCedula;
+    }
+
+    return null;
+  }
+
+  const documentoCredito = onlyDigits(creditoPorImei.documento).slice(0, 15);
+
+  if (!documentoCredito || documentoCredito !== documento) {
+    throw new AloConsultaLookupError(
+      "ALO CREDIT encontro el IMEI, pero la cedula del credito no coincide con la venta."
+    );
+  }
+
+  return {
+    ...creditoPorImei,
+    documento,
+    origen: `${creditoPorImei.origen}+respaldo_registro_venta`,
+  } satisfies AloCreditoImei;
+}

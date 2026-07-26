@@ -4,7 +4,7 @@ import { puedeAccederPanelVendedor } from "@/lib/access-control";
 import {
   AloConsultaConfigError,
   AloConsultaLookupError,
-  obtenerCreditoAloPorCedula,
+  obtenerCreditoAloParaRegistro,
 } from "@/lib/aloconsulta";
 
 async function requireVendor() {
@@ -51,7 +51,10 @@ export async function GET(req: Request) {
       );
     }
 
-    const credito = await obtenerCreditoAloPorCedula(documento);
+    const imei = String(requestUrl.searchParams.get("imei") || "")
+      .replace(/\D/g, "")
+      .slice(0, 15);
+    const credito = await obtenerCreditoAloParaRegistro(documento, imei);
 
     if (!credito) {
       return NextResponse.json(

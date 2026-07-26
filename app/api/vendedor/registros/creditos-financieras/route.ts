@@ -26,7 +26,7 @@ import {
   AloConsultaConfigError,
   AloConsultaLookupError,
   isAloConsultaConfigured,
-  obtenerCreditoAloPorCedula,
+  obtenerCreditoAloParaRegistro,
   type AloCreditoImei,
 } from "@/lib/aloconsulta";
 
@@ -165,11 +165,14 @@ async function lookupEsmioOpcion(documento: string): Promise<LookupResult> {
   }
 }
 
-async function lookupAloCredit(documento: string): Promise<LookupResult> {
+async function lookupAloCredit(
+  documento: string,
+  imei?: string
+): Promise<LookupResult> {
   try {
     return {
       financiera: "ALO CREDIT",
-      credito: await obtenerCreditoAloPorCedula(documento),
+      credito: await obtenerCreditoAloParaRegistro(documento, imei),
     };
   } catch (error) {
     if (
@@ -215,6 +218,9 @@ export async function GET(req: Request) {
 
     const requestUrl = new URL(req.url);
     documento = normalizarDocumento(requestUrl.searchParams.get("documento"));
+    const imei = String(requestUrl.searchParams.get("imei") || "")
+      .replace(/\D/g, "")
+      .slice(0, 15);
     if (documento.length < 5) {
       return NextResponse.json(
         { error: "La cedula debe tener entre 5 y 15 digitos" },
@@ -237,7 +243,7 @@ export async function GET(req: Request) {
     }
 
     if (isAloConsultaConfigured()) {
-      lookups.push(lookupAloCredit(documento));
+      lookups.push(lookupAloCredit(documento, imei));
     }
 
     if (lookups.length === 0) {

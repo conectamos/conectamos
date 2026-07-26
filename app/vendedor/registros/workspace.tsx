@@ -1885,6 +1885,11 @@ export default function VendedorRegistroWorkspace({
       });
 
       const params = new URLSearchParams({ documento });
+      const imei = onlyDigits(form.serialImei, 15);
+
+      if (imei.length === 15) {
+        params.set("imei", imei);
+      }
       const response = await fetch(
         `/api/vendedor/registros/alo-credito?${params.toString()}`,
         { cache: "no-store" }
@@ -2492,6 +2497,11 @@ export default function VendedorRegistroWorkspace({
       setCreditosCedulaError("");
 
       const params = new URLSearchParams({ documento });
+      const imei = onlyDigits(form.serialImei, 15);
+
+      if (imei.length === 15) {
+        params.set("imei", imei);
+      }
       const response = await fetch(
         `/api/vendedor/registros/creditos-financieras?${params.toString()}`,
         { cache: "no-store" }

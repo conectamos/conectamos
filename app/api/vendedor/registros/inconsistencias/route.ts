@@ -23,7 +23,7 @@ import {
 } from "@/lib/finserpayconsulta";
 import {
   isAloConsultaConfigured,
-  obtenerCreditoAloPorCedula,
+  obtenerCreditoAloParaRegistro,
 } from "@/lib/aloconsulta";
 import {
   isSumasConsultaConfigured,
@@ -244,7 +244,10 @@ async function consultarCredito(item: ItemRevision): Promise<ResultadoConsulta> 
     } else if (item.proveedor === "FINSER") {
       credito = await obtenerCreditoFinserpayPorImei(identificador);
     } else if (item.proveedor === "ALO CREDIT") {
-      credito = await obtenerCreditoAloPorCedula(identificador);
+      credito = await obtenerCreditoAloParaRegistro(
+        identificador,
+        item.serialImei
+      );
     } else if (item.proveedor === "SUMASPAY") {
       credito = await obtenerCreditoSumasPayPorCedula(identificador);
     } else if (item.proveedor === "ESMIO") {
