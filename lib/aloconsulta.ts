@@ -3419,10 +3419,7 @@ export async function obtenerCreditoAloPorCedula(
     );
   }
 
-  return {
-    ...credito,
-    valorCuota: null,
-  } satisfies AloCreditoImei;
+  return completarCuotaPlazoDesdeCartera(session, credito);
 }
 
 async function obtenerCreditoAloParaRegistroUnlocked(

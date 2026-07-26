@@ -502,12 +502,14 @@ export async function GET(req: Request) {
           item.creditoAutorizado,
           creditoPlataforma.creditoAutorizado
         );
-        compararNumero(
-          razones,
-          "Valor cuota",
-          item.valorCuota,
-          creditoPlataforma.valorCuota
-        );
+        if (item.proveedor !== "ALO CREDIT") {
+          compararNumero(
+            razones,
+            "Valor cuota",
+            item.valorCuota,
+            creditoPlataforma.valorCuota
+          );
+        }
         compararNumero(
           razones,
           "Numero de cuotas",

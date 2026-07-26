@@ -155,24 +155,6 @@ function queryParameterNames(parsed) {
   ).map((call) => call.arguments[0].text.toLowerCase());
 }
 
-function objectPropertyName(property) {
-  if (
-    !ts.isPropertyAssignment(property) &&
-    !ts.isShorthandPropertyAssignment(property)
-  ) {
-    return null;
-  }
-
-  if (
-    ts.isIdentifier(property.name) ||
-    ts.isStringLiteralLike(property.name)
-  ) {
-    return property.name.text;
-  }
-
-  return null;
-}
-
 test("el helper de registro ALO recibe solo cedula y solo consulta PorCedula", () => {
   const parsed = parseSource(ALO_SOURCE_PATH);
   const unlocked = functionNamed(
@@ -220,60 +202,20 @@ test("el helper de registro ALO recibe solo cedula y solo consulta PorCedula", (
   );
 });
 
-test("ALO por cedula no consulta cartera y limpia la cuota sin alterar el credito autorizado", () => {
+test("el registro ALO por cedula conserva el enriquecimiento de cuota y plazo", () => {
   const parsed = parseSource(ALO_SOURCE_PATH);
   const byDocument = functionNamed(parsed, "obtenerCreditoAloPorCedula");
-  const carteraCalls = descendants(
+  const carteraCalls = callsNamed(
     byDocument,
-    (node) =>
-      ts.isCallExpression(node) &&
-      String(calleeName(node) || "").toLowerCase().includes("cartera")
+    "completarCuotaPlazoDesdeCartera"
   );
 
-  assert.equal(
-    carteraCalls.length,
-    0,
-    "La consulta por cedula no debe descargar ni complementar datos desde cartera"
-  );
-
-  const sanitizedCredits = descendants(
-    byDocument,
-    (node) => {
-      if (!ts.isObjectLiteralExpression(node)) {
-        return false;
-      }
-
-      const spreadsCredit = node.properties.some(
-        (property) =>
-          ts.isSpreadAssignment(property) &&
-          property.expression.getText(parsed.sourceFile) === "credito"
-      );
-      const clearsInstallment = node.properties.some(
-        (property) =>
-          ts.isPropertyAssignment(property) &&
-          objectPropertyName(property) === "valorCuota" &&
-          property.initializer.kind === ts.SyntaxKind.NullKeyword
-      );
-
-      return spreadsCredit && clearsInstallment;
-    }
-  );
-
-  assert.equal(
-    sanitizedCredits.length,
-    1,
-    "La respuesta por cedula debe copiar el credito del reporte y fijar valorCuota en null"
-  );
-
-  const sanitizedCredit = sanitizedCredits[0];
-  const authorizedCreditOverrides = sanitizedCredit.properties.filter(
-    (property) => objectPropertyName(property) === "creditoAutorizado"
-  );
-
-  assert.equal(
-    authorizedCreditOverrides.length,
-    0,
-    "creditoAutorizado debe conservar el valor original del reporte"
+  assert.equal(carteraCalls.length, 1);
+  assert.deepEqual(
+    carteraCalls[0].arguments.map((argument) =>
+      argument.getText(parsed.sourceFile)
+    ),
+    ["session", "credito"]
   );
 });
 
@@ -405,5 +347,34 @@ test("el auditor excluye ALO de la comparacion de IMEI", () => {
     aloExclusions.length,
     1,
     "La comparacion de IMEI debe estar protegida por proveedor !== ALO CREDIT"
+  );
+});
+
+test("el auditor excluye solo a ALO de la comparacion del valor de cuota", () => {
+  const parsed = parseSource(AUDITOR_ROUTE_PATH);
+  const installmentComparisons = callsNamed(
+    parsed.sourceFile,
+    "compararNumero"
+  ).filter(
+    (call) =>
+      call.arguments.length >= 2 &&
+      ts.isStringLiteralLike(call.arguments[1]) &&
+      call.arguments[1].text === "Valor cuota"
+  );
+
+  assert.equal(installmentComparisons.length, 1);
+
+  let parent = installmentComparisons[0].parent;
+  while (parent && !ts.isIfStatement(parent)) {
+    parent = parent.parent;
+  }
+
+  assert.ok(
+    parent && ts.isIfStatement(parent),
+    "La comparacion del valor de cuota debe estar protegida por una condicion"
+  );
+  assert.equal(
+    parent.expression.getText(parsed.sourceFile),
+    'item.proveedor !== "ALO CREDIT"'
   );
 });
