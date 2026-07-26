@@ -22,11 +22,19 @@ import {
   SumasConsultaLookupError,
   type SumasPayCreditoCedula,
 } from "@/lib/sumasconsulta";
+import {
+  AloConsultaConfigError,
+  AloConsultaLookupError,
+  isAloConsultaConfigured,
+  obtenerCreditoAloPorCedula,
+  type AloCreditoImei,
+} from "@/lib/aloconsulta";
 
 type CreditoFinancieraCedula =
   | SumasPayCreditoCedula
   | AddiCreditoCedula
-  | EsmioOpcionCreditoCedula;
+  | EsmioOpcionCreditoCedula
+  | AloCreditoImei;
 
 type LookupResult = {
   financiera: CreditoFinancieraCedula["financiera"];
@@ -157,10 +165,44 @@ async function lookupEsmioOpcion(documento: string): Promise<LookupResult> {
   }
 }
 
+async function lookupAloCredit(
+  documento: string,
+  imei: string
+): Promise<LookupResult> {
+  try {
+    return {
+      financiera: "ALO CREDIT",
+      credito: await obtenerCreditoAloPorCedula(documento, imei),
+    };
+  } catch (error) {
+    if (
+      error instanceof AloConsultaConfigError ||
+      error instanceof AloConsultaLookupError
+    ) {
+      return {
+        financiera: "ALO CREDIT",
+        credito: null,
+        error: error.message,
+      };
+    }
+
+    console.error("ERROR CONSULTANDO CREDITO ALO CREDIT:", error);
+    return {
+      financiera: "ALO CREDIT",
+      credito: null,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Error consultando el credito ALO CREDIT",
+    };
+  }
+}
+
 function orderCredito(credito: CreditoFinancieraCedula) {
   if (credito.financiera === "SUMASPAY") return 1;
   if (credito.financiera === "ADDI") return 2;
   if (credito.financiera === "ESMIOPCION") return 3;
+  if (credito.financiera === "ALO CREDIT") return 4;
   return 99;
 }
 
@@ -176,6 +218,9 @@ export async function GET(req: Request) {
 
     const requestUrl = new URL(req.url);
     documento = normalizarDocumento(requestUrl.searchParams.get("documento"));
+    const imei = String(requestUrl.searchParams.get("imei") || "")
+      .replace(/\D/g, "")
+      .slice(0, 15);
 
     if (documento.length < 5) {
       return NextResponse.json(
@@ -198,11 +243,15 @@ export async function GET(req: Request) {
       lookups.push(lookupEsmioOpcion(documento));
     }
 
+    if (isAloConsultaConfigured() && imei.length === 15) {
+      lookups.push(lookupAloCredit(documento, imei));
+    }
+
     if (lookups.length === 0) {
       return NextResponse.json(
         {
           error:
-            "Falta configurar las variables de consulta de SUMASPAY, ADDI o ESMIOPCION en el servidor",
+            "Falta configurar las variables de consulta de SUMASPAY, ADDI, ESMIOPCION o ALO CREDIT en el servidor",
         },
         { status: 503 }
       );
@@ -231,7 +280,7 @@ export async function GET(req: Request) {
           creditos: [],
           errores,
           error:
-            "No se encontro un credito SUMASPAY, ADDI o ESMIOPCION creado hoy o ayer para esta cedula",
+            "No se encontro un credito SUMASPAY, ADDI, ESMIOPCION o ALO CREDIT creado hoy o ayer para esta cedula",
         },
         { status: 404 }
       );

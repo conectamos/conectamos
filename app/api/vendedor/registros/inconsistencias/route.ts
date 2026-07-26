@@ -23,7 +23,7 @@ import {
 } from "@/lib/finserpayconsulta";
 import {
   isAloConsultaConfigured,
-  obtenerCreditoAloPorImei,
+  obtenerCreditoAloPorCedula,
 } from "@/lib/aloconsulta";
 import {
   isSumasConsultaConfigured,
@@ -46,7 +46,12 @@ type Proveedor =
   | "ESMIO"
   | "ADDI";
 
-type EstadoRevision = "COINCIDE" | "INCONSISTENTE" | "REVISAR" | "SIN_VERIFICAR";
+type EstadoRevision =
+  | "COINCIDE"
+  | "INCONSISTENTE"
+  | "REVISAR"
+  | "SIN_VERIFICAR"
+  | "REVISADO";
 
 type DetalleRegistrado = {
   plataformaCredito: string;
@@ -85,6 +90,7 @@ type ResultadoConsulta =
   | { ok: false; error: string };
 
 const PROVEEDORES_POR_CEDULA = new Set<Proveedor>([
+  "ALO CREDIT",
   "SUMASPAY",
   "ESMIO",
   "ADDI",
@@ -238,7 +244,10 @@ async function consultarCredito(item: ItemRevision): Promise<ResultadoConsulta> 
     } else if (item.proveedor === "FINSER") {
       credito = await obtenerCreditoFinserpayPorImei(identificador);
     } else if (item.proveedor === "ALO CREDIT") {
-      credito = await obtenerCreditoAloPorImei(identificador);
+      credito = await obtenerCreditoAloPorCedula(
+        identificador,
+        item.serialImei || undefined
+      );
     } else if (item.proveedor === "SUMASPAY") {
       credito = await obtenerCreditoSumasPayPorCedula(identificador);
     } else if (item.proveedor === "ESMIO") {
@@ -291,6 +300,10 @@ function claveConsulta(item: ItemRevision) {
   const identificador = PROVEEDORES_POR_CEDULA.has(item.proveedor)
     ? soloDigitos(item.documentoNumero)
     : soloDigitos(item.serialImei);
+
+  if (item.proveedor === "ALO CREDIT") {
+    return `${item.proveedor}:${identificador}:${soloDigitos(item.serialImei)}`;
+  }
 
   return `${item.proveedor}:${identificador}`;
 }
@@ -422,6 +435,25 @@ export async function GET(req: Request) {
         })
         .filter((item): item is ItemRevision => Boolean(item))
     );
+    const revisiones = await prisma.revisionInconsistenciaCredito.findMany({
+      where: {
+        registroId: {
+          in: registrosRevisables.map((registro) => registro.id),
+        },
+      },
+      select: {
+        registroId: true,
+        proveedor: true,
+        revisadoPor: true,
+        updatedAt: true,
+      },
+    });
+    const revisionesPorItem = new Map(
+      revisiones.map((revision) => [
+        `${revision.registroId}:${revision.proveedor}`,
+        revision,
+      ])
+    );
 
     const consultasUnicas = Array.from(
       new Map(items.map((item) => [claveConsulta(item), item])).entries()
@@ -461,9 +493,13 @@ export async function GET(req: Request) {
       } else if (!respuesta.credito) {
         estado = "INCONSISTENTE";
         razones.push(
-          `No se encontro en ${item.proveedor} un credito reciente para este ${
-            PROVEEDORES_POR_CEDULA.has(item.proveedor) ? "documento" : "IMEI"
-          }.`
+          item.proveedor === "ALO CREDIT"
+            ? "No se encontro en ALO CREDIT un credito reciente que coincida con esta cedula y este IMEI."
+            : `No se encontro en ${item.proveedor} un credito reciente para este ${
+                PROVEEDORES_POR_CEDULA.has(item.proveedor)
+                  ? "documento"
+                  : "IMEI"
+              }.`
         );
       } else {
         creditoPlataforma = respuesta.credito;
@@ -534,6 +570,7 @@ export async function GET(req: Request) {
 
       if (
         PROVEEDORES_POR_CEDULA.has(item.proveedor) &&
+        item.proveedor !== "ALO CREDIT" &&
         cantidadRegistrosMismaClave > 1
       ) {
         razones.push(
@@ -542,6 +579,19 @@ export async function GET(req: Request) {
         if (estado === "COINCIDE") {
           estado = "REVISAR";
         }
+      }
+
+      const revision = revisionesPorItem.get(
+        `${item.registroId}:${item.proveedor}`
+      );
+
+      if (revision && estado !== "COINCIDE") {
+        estado = "REVISADO";
+        razones.unshift(
+          `Marcado como revisado por ${revision.revisadoPor} el ${revision.updatedAt.toLocaleString("es-CO", {
+            timeZone: "America/Bogota",
+          })}.`
+        );
       }
 
       return {
@@ -584,6 +634,8 @@ export async function GET(req: Request) {
         sinVerificar: resultados.filter(
           (item) => item.estado === "SIN_VERIFICAR"
         ).length,
+        revisados: resultados.filter((item) => item.estado === "REVISADO")
+          .length,
       },
       resultados,
     });
@@ -591,6 +643,100 @@ export async function GET(req: Request) {
     console.error("ERROR REVISANDO INCONSISTENCIAS DE CREDITOS:", error);
     return NextResponse.json(
       { error: "No se pudo completar la revision de inconsistencias" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const session = await getSessionUser();
+
+    if (!session) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (
+      !puedeAccederPanelVendedor(session.perfilTipo, session.rolNombre) ||
+      (esPerfilRegistroVenta(session.perfilTipo) &&
+        !esRolAdministrativo(session.rolNombre))
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Solo supervisor, auditor o administrador pueden revisar inconsistencias",
+        },
+        { status: 403 }
+      );
+    }
+
+    const body = (await req.json()) as Record<string, unknown>;
+    const registroId = Number(body.registroId);
+    const proveedor = identificarProveedor(body.proveedor);
+
+    if (!Number.isInteger(registroId) || registroId <= 0 || !proveedor) {
+      return NextResponse.json(
+        { error: "Registro o financiera no validos" },
+        { status: 400 }
+      );
+    }
+
+    await ensureVendorProfilesSchema();
+
+    const registro = await prisma.registroVendedorVenta.findFirst({
+      where: {
+        id: registroId,
+        ...construirScope(session),
+        eliminadoEn: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!registro) {
+      return NextResponse.json(
+        { error: "No se encontro el registro autorizado" },
+        { status: 404 }
+      );
+    }
+
+    const revisadoPor =
+      session.perfilNombre || session.nombre || "Usuario desconocido";
+    const revision = await prisma.revisionInconsistenciaCredito.upsert({
+      where: {
+        registroId_proveedor: {
+          registroId,
+          proveedor,
+        },
+      },
+      create: {
+        registroId,
+        proveedor,
+        revisadoPor,
+      },
+      update: {
+        revisadoPor,
+      },
+      select: {
+        registroId: true,
+        proveedor: true,
+        revisadoPor: true,
+        updatedAt: true,
+      },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      revision: {
+        ...revision,
+        updatedAt: revision.updatedAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("ERROR MARCANDO INCONSISTENCIA COMO REVISADA:", error);
+    return NextResponse.json(
+      { error: "No se pudo guardar la revision" },
       { status: 500 }
     );
   }

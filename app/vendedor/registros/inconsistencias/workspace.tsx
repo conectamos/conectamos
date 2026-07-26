@@ -17,7 +17,12 @@ type SessionProps = {
   perfilTipoLabel: string;
 };
 
-type EstadoRevision = "COINCIDE" | "INCONSISTENTE" | "REVISAR" | "SIN_VERIFICAR";
+type EstadoRevision =
+  | "COINCIDE"
+  | "INCONSISTENTE"
+  | "REVISAR"
+  | "SIN_VERIFICAR"
+  | "REVISADO";
 
 type ResultadoRevision = {
   registroId: number;
@@ -49,6 +54,7 @@ type ReporteRevision = {
     inconsistencias: number;
     revisar: number;
     sinVerificar: number;
+    revisados: number;
   };
   resultados: ResultadoRevision[];
 };
@@ -78,6 +84,7 @@ function etiquetaEstado(estado: EstadoRevision) {
   if (estado === "INCONSISTENTE") return "Inconsistente";
   if (estado === "REVISAR") return "Revisar";
   if (estado === "SIN_VERIFICAR") return "Sin verificar";
+  if (estado === "REVISADO") return "Revisado";
   return "Coincide";
 }
 
@@ -108,6 +115,7 @@ export default function InconsistenciasCreditosWorkspace({
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
   const [filtro, setFiltro] = useState<FiltroEstado>("REVISION");
+  const [marcandoRevision, setMarcandoRevision] = useState("");
 
   const esAdministrador = ["ADMIN", "AUDITOR"].includes(
     String(session.rolNombre || "").trim().toUpperCase()
@@ -148,7 +156,9 @@ export default function InconsistenciasCreditosWorkspace({
     }
 
     if (filtro === "REVISION") {
-      return reporte.resultados.filter((item) => item.estado !== "COINCIDE");
+      return reporte.resultados.filter(
+        (item) => item.estado !== "COINCIDE" && item.estado !== "REVISADO"
+      );
     }
 
     return reporte.resultados.filter((item) => item.estado === filtro);
@@ -178,6 +188,78 @@ export default function InconsistenciasCreditosWorkspace({
       setError("Error consultando las plataformas de credito.");
     } finally {
       setCargando(false);
+    }
+  };
+
+  const marcarComoRevisado = async (item: ResultadoRevision) => {
+    const key = `${item.registroId}:${item.proveedor}`;
+
+    try {
+      setMarcandoRevision(key);
+      setError("");
+
+      const response = await fetch(
+        "/api/vendedor/registros/inconsistencias",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            registroId: item.registroId,
+            proveedor: item.proveedor,
+          }),
+        }
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || "No se pudo guardar la revision.");
+        return;
+      }
+
+      setReporte((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const resultados = current.resultados.map((resultado) =>
+          resultado.registroId === item.registroId &&
+          resultado.proveedor === item.proveedor
+            ? {
+                ...resultado,
+                estado: "REVISADO" as const,
+                razones: [
+                  `Marcado como revisado por ${
+                    data.revision?.revisadoPor || "el usuario actual"
+                  }.`,
+                  ...resultado.razones,
+                ],
+              }
+            : resultado
+        );
+
+        return {
+          ...current,
+          resumen: {
+            ...current.resumen,
+            inconsistencias:
+              current.resumen.inconsistencias -
+              (item.estado === "INCONSISTENTE" ? 1 : 0),
+            revisar:
+              current.resumen.revisar - (item.estado === "REVISAR" ? 1 : 0),
+            sinVerificar:
+              current.resumen.sinVerificar -
+              (item.estado === "SIN_VERIFICAR" ? 1 : 0),
+            revisados: current.resumen.revisados + 1,
+          },
+          resultados,
+        };
+      });
+    } catch {
+      setError("No se pudo guardar la revision.");
+    } finally {
+      setMarcandoRevision("");
     }
   };
 
@@ -310,7 +392,7 @@ export default function InconsistenciasCreditosWorkspace({
 
           {reporte && !cargando && (
             <>
-              <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
                 {[
                   {
                     label: "Creditos revisados",
@@ -336,6 +418,11 @@ export default function InconsistenciasCreditosWorkspace({
                     label: "Sin verificar",
                     value: reporte.resumen.sinVerificar,
                     className: "text-slate-600",
+                  },
+                  {
+                    label: "Revisados",
+                    value: reporte.resumen.revisados,
+                    className: "text-emerald-600",
                   },
                 ].map((item) => (
                   <article
@@ -380,6 +467,7 @@ export default function InconsistenciasCreditosWorkspace({
                       <option value="INCONSISTENTE">Inconsistentes</option>
                       <option value="REVISAR">Duplicidad por revisar</option>
                       <option value="SIN_VERIFICAR">Sin verificar</option>
+                      <option value="REVISADO">Revisados</option>
                       <option value="COINCIDE">Coinciden</option>
                       <option value="TODOS">Todos</option>
                     </select>
@@ -401,7 +489,7 @@ export default function InconsistenciasCreditosWorkspace({
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="min-w-[1180px] w-full text-left">
+                    <table className="min-w-[1240px] w-full text-left">
                       <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
                         <tr>
                           <th className="px-5 py-3.5">Registro</th>
@@ -482,12 +570,40 @@ export default function InconsistenciasCreditosWorkspace({
                               )}
                             </td>
                             <td className="px-5 py-4 text-right">
-                              <Link
-                                href={`/vendedor/registros?editar=${item.registroId}`}
-                                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
-                              >
-                                Ver registro
-                              </Link>
+                              <div className="flex items-center justify-end gap-2">
+                                {item.estado !== "COINCIDE" &&
+                                  item.estado !== "REVISADO" && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void marcarComoRevisado(item)
+                                      }
+                                      disabled={
+                                        marcandoRevision ===
+                                        `${item.registroId}:${item.proveedor}`
+                                      }
+                                      aria-label={`Marcar como revisada la alerta de ${item.proveedor} del registro ${item.registroId}`}
+                                      title="Marcar como revisado"
+                                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {marcandoRevision ===
+                                      `${item.registroId}:${item.proveedor}` ? (
+                                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-emerald-700" />
+                                      ) : (
+                                        <DashboardIcon
+                                          name="approvals"
+                                          className="h-5 w-5"
+                                        />
+                                      )}
+                                    </button>
+                                  )}
+                                <Link
+                                  href={`/vendedor/registros?editar=${item.registroId}`}
+                                  className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
+                                >
+                                  Ver registro
+                                </Link>
+                              </div>
                             </td>
                           </tr>
                         ))}

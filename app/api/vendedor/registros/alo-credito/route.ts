@@ -4,7 +4,7 @@ import { puedeAccederPanelVendedor } from "@/lib/access-control";
 import {
   AloConsultaConfigError,
   AloConsultaLookupError,
-  obtenerCreditoAloPorImei,
+  obtenerCreditoAloPorCedula,
 } from "@/lib/aloconsulta";
 import { normalizarImei } from "@/lib/vendor-sale-records";
 
@@ -40,20 +40,28 @@ export async function GET(req: Request) {
     }
 
     const requestUrl = new URL(req.url);
+    const documento = String(
+      requestUrl.searchParams.get("documento") || ""
+    )
+      .replace(/\D/g, "")
+      .slice(0, 15);
     const imei = normalizarImei(requestUrl.searchParams.get("imei"));
 
-    if (!imei) {
+    if (documento.length < 5) {
       return NextResponse.json(
-        { error: "El IMEI debe tener 15 digitos" },
+        { error: "La cedula debe tener entre 5 y 15 digitos" },
         { status: 400 }
       );
     }
 
-    const credito = await obtenerCreditoAloPorImei(imei);
+    const credito = await obtenerCreditoAloPorCedula(documento, imei || undefined);
 
     if (!credito) {
       return NextResponse.json(
-        { error: "No se encontro un credito ALO CREDIT creado hoy o ayer para este IMEI" },
+        {
+          error:
+            "No se encontro un credito ALO CREDIT creado hoy o ayer para esta cedula y este IMEI",
+        },
         { status: 404 }
       );
     }

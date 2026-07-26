@@ -199,6 +199,25 @@ async function runEnsureVendorProfilesSchema() {
   `);
 
   await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "RevisionInconsistenciaCredito" (
+      "id" SERIAL NOT NULL,
+      "registroId" INTEGER NOT NULL,
+      "proveedor" TEXT NOT NULL,
+      "revisadoPor" TEXT NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "RevisionInconsistenciaCredito_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "RevisionInconsistenciaCredito_registroId_proveedor_key"
+        UNIQUE ("registroId", "proveedor")
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "RevisionInconsistenciaCredito_createdAt_idx"
+    ON "RevisionInconsistenciaCredito"("createdAt");
+  `);
+
+  await prisma.$executeRawUnsafe(`
     ALTER TABLE "Inventario"
       ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
   `);
@@ -414,6 +433,21 @@ async function runEnsureVendorProfilesSchema() {
         ADD CONSTRAINT "RegistroVendedorVenta_sedeId_fkey"
         FOREIGN KEY ("sedeId")
         REFERENCES "Sede"("id")
+        ON DELETE CASCADE
+        ON UPDATE CASCADE;
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      ALTER TABLE "RevisionInconsistenciaCredito"
+        ADD CONSTRAINT "RevisionInconsistenciaCredito_registroId_fkey"
+        FOREIGN KEY ("registroId")
+        REFERENCES "RegistroVendedorVenta"("id")
         ON DELETE CASCADE
         ON UPDATE CASCADE;
     EXCEPTION

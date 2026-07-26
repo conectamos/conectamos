@@ -260,18 +260,21 @@ type FinserpayCreditoResponse = {
 
 type CreditoFinancieraCedula = {
   documento: string;
-  financiera: "SUMASPAY" | "ADDI" | "ESMIOPCION";
+  financiera: "SUMASPAY" | "ADDI" | "ESMIOPCION" | "ALO CREDIT";
+  imei?: string | null;
   clienteNombre: string | null;
   correoElectronico: string | null;
   telefonoCliente: string | null;
-  direccionCliente: string | null;
+  direccionCliente?: string | null;
   fechaCreacionCredito: string | null;
-  puntoCredito: string | null;
+  puntoCredito?: string | null;
   creditoAutorizado: number;
   numeroCuotas: number | null;
   valorCuota: number | null;
   frecuenciaCuota: string | null;
   origen: string;
+  valorAccesorios?: number | null;
+  observacionAccesorios?: string | null;
   estado?: string | null;
   ordenId?: string | null;
   encontradoEnSumasPay?: boolean;
@@ -534,7 +537,8 @@ function esPlataformaConsultaCedula(value: unknown) {
   return (
     esPlataformaSumasPay(value) ||
     esPlataformaAddi(value) ||
-    esPlataformaEsmioOpcion(value)
+    esPlataformaEsmioOpcion(value) ||
+    esPlataformaAloCredit(value)
   );
 }
 
@@ -558,6 +562,10 @@ function creditoCoincideConPlataforma(
     return esPlataformaEsmioOpcion(plataformaCredito);
   }
 
+  if (credito.financiera === "ALO CREDIT") {
+    return esPlataformaAloCredit(plataformaCredito);
+  }
+
   return false;
 }
 
@@ -570,7 +578,9 @@ function resolvePlatformName(
       ? esPlataformaSumasPay
       : financiera === "ADDI"
         ? esPlataformaAddi
-        : esPlataformaEsmioOpcion;
+        : financiera === "ALO CREDIT"
+          ? esPlataformaAloCredit
+          : esPlataformaEsmioOpcion;
   const option = catalogo.find((item) => matcher(item.nombre));
 
   return option?.nombre ?? financiera;
@@ -589,6 +599,7 @@ function getPlataformaConsultaLabel(value: unknown) {
   if (esPlataformaSumasPay(value)) return "SUMASPAY";
   if (esPlataformaAddi(value)) return "ADDI";
   if (esPlataformaEsmioOpcion(value)) return "ESMIOPCION";
+  if (esPlataformaAloCredit(value)) return "ALO CREDIT";
   return "la financiera";
 }
 
@@ -1515,7 +1526,7 @@ export default function VendedorRegistroWorkspace({
       return;
     }
 
-    const consultaKey = `${documento}:financieras`;
+    const consultaKey = `${documento}:${form.serialImei}:financieras`;
 
     if (autoCreditosCedulaConsultaRef.current === consultaKey) {
       return;
@@ -1533,6 +1544,7 @@ export default function VendedorRegistroWorkspace({
     };
   }, [
     form.documentoNumero,
+    form.serialImei,
     form.servicio,
     modoManual,
     registroEditandoConvertido,
@@ -1856,11 +1868,20 @@ export default function VendedorRegistroWorkspace({
     }
 
     const imei = onlyDigits(imeiValue || form.serialImei, 15);
+    const documento = onlyDigits(form.documentoNumero, 15);
 
     if (imei.length !== 15) {
       setAloErrores((current) => ({
         ...current,
         [index]: "Busca primero un IMEI valido de 15 digitos",
+      }));
+      return;
+    }
+
+    if (documento.length < 5) {
+      setAloErrores((current) => ({
+        ...current,
+        [index]: "Ingresa primero una cedula valida",
       }));
       return;
     }
@@ -1873,7 +1894,7 @@ export default function VendedorRegistroWorkspace({
         return next;
       });
 
-      const params = new URLSearchParams({ imei });
+      const params = new URLSearchParams({ documento, imei });
       const response = await fetch(
         `/api/vendedor/registros/alo-credito?${params.toString()}`,
         { cache: "no-store" }
@@ -1897,7 +1918,7 @@ export default function VendedorRegistroWorkspace({
           ...current,
           [index]:
             data.error ||
-            "No se encontro un credito ALO CREDIT creado hoy o ayer para este IMEI",
+            "No se encontro un credito ALO CREDIT para esta cedula y este IMEI",
         }));
         return;
       }
@@ -1909,7 +1930,10 @@ export default function VendedorRegistroWorkspace({
         [index]: creditoAlo,
       }));
       setForm((current) => {
-        if (onlyDigits(current.serialImei, 15) !== imei) {
+        if (
+          onlyDigits(current.serialImei, 15) !== imei ||
+          onlyDigits(current.documentoNumero, 15) !== documento
+        ) {
           return current;
         }
 
@@ -2166,69 +2190,6 @@ export default function VendedorRegistroWorkspace({
     }));
   };
 
-  const aplicarCreditoAloPrincipal = (
-    credito: NonNullable<AloCreditoResponse["credito"]>
-  ) => {
-    setFinancierasVisibles((current) => Math.max(current, 1));
-    setIngresoContado2Visible(false);
-    setPayjoyCreditos((current) => {
-      const next = { ...current };
-      delete next[0];
-      return next;
-    });
-    setPayjoyErrores((current) => {
-      const next = { ...current };
-      delete next[0];
-      return next;
-    });
-    setFinserpayCreditos((current) => {
-      const next = { ...current };
-      delete next[0];
-      return next;
-    });
-    setFinserpayErrores((current) => {
-      const next = { ...current };
-      delete next[0];
-      return next;
-    });
-    setAloCreditos((current) => ({
-      ...current,
-      0: credito,
-    }));
-    setAloErrores((current) => {
-      const next = { ...current };
-      delete next[0];
-      return next;
-    });
-    setForm((current) => {
-      const telefonoCredito = onlyDigits(credito.telefonoCliente || "", 10);
-      const documentoCredito = onlyDigits(credito.documento || "", 15);
-      const whatsappCredito =
-        telefonoCredito.length === 10 ? telefonoCredito : "";
-
-      return {
-        ...current,
-        servicio: "FINANCIERA",
-        clienteNombre:
-          current.clienteNombre || credito.clienteNombre || current.clienteNombre,
-        documentoNumero:
-          current.documentoNumero || documentoCredito || current.documentoNumero,
-        correo: current.correo || credito.correoElectronico || current.correo,
-        whatsapp: current.whatsapp || whatsappCredito || current.whatsapp,
-        telefono: current.telefono || telefonoCredito || current.telefono,
-        observacion: mergeObservacionAccesorios(
-          current.observacion,
-          credito.observacionAccesorios
-        ),
-        medioPago2Tipo: "",
-        medioPago2Valor: "",
-        financierasDetalle: current.financierasDetalle.map((item, itemIndex) =>
-          itemIndex === 0 ? applyAloCreditoToFinancialState(item, credito) : item
-        ),
-      };
-    });
-  };
-
   const aplicarCreditoFinserpayPrincipal = (
     credito: NonNullable<FinserpayCreditoResponse["credito"]>
   ) => {
@@ -2366,7 +2327,6 @@ export default function VendedorRegistroWorkspace({
 
     setConsultandoPayjoyIndex(0);
     setConsultandoFinserpayIndex(0);
-    setConsultandoAloIndex(0);
 
     await Promise.allSettled([
       (async () => {
@@ -2429,36 +2389,6 @@ export default function VendedorRegistroWorkspace({
           setConsultandoFinserpayIndex(null);
         }
       })(),
-      (async () => {
-        try {
-          const response = await fetch(
-            `/api/vendedor/registros/alo-credito?${params.toString()}`,
-            { cache: "no-store" }
-          );
-          const data = (await response.json()) as AloCreditoResponse;
-
-          if (response.ok && data.credito) {
-            aplicarPrimerCredito(() => {
-              aplicarCreditoAloPrincipal(data.credito!);
-              setFormMessage(
-                `Este IMEI esta activo en ALO CREDIT. Se selecciono ALO CREDIT automaticamente por ${formatMoney(
-                  data.credito!.creditoAutorizado
-                )}.`,
-                "success"
-              );
-            });
-            return;
-          }
-
-          registrarError("ALO CREDIT", response, data.error);
-        } catch {
-          if (!creditoAplicado) {
-            errores.push("Error consultando ALO CREDIT por IMEI");
-          }
-        } finally {
-          setConsultandoAloIndex(null);
-        }
-      })(),
     ]);
 
     if (!modoManualRef.current && !creditoAplicado && errores.length) {
@@ -2495,6 +2425,9 @@ export default function VendedorRegistroWorkspace({
     const creditoDireccion = creditosAplicables.find(
       (credito) => credito.direccionCliente
     );
+    const creditoAlo = creditosAplicables.find(
+      (credito) => credito.financiera === "ALO CREDIT"
+    );
     const creditosPorIndex = Object.fromEntries(
       creditosAplicables.map((credito, index) => [index, credito])
     ) as Record<number, CreditoFinancieraCedula>;
@@ -2528,6 +2461,10 @@ export default function VendedorRegistroWorkspace({
           whatsappCredito.length === 10 ? whatsappCredito : current.whatsapp,
         telefono: telefonoCredito || current.telefono,
         direccion: creditoDireccion?.direccionCliente || current.direccion,
+        observacion: mergeObservacionAccesorios(
+          current.observacion,
+          creditoAlo?.observacionAccesorios
+        ),
         medioPago2Tipo: "",
         medioPago2Valor: "",
         financierasDetalle: current.financierasDetalle.map((item, itemIndex) => {
@@ -2568,6 +2505,11 @@ export default function VendedorRegistroWorkspace({
       setCreditosCedulaError("");
 
       const params = new URLSearchParams({ documento });
+      const imei = onlyDigits(form.serialImei, 15);
+
+      if (imei.length === 15) {
+        params.set("imei", imei);
+      }
       const response = await fetch(
         `/api/vendedor/registros/creditos-financieras?${params.toString()}`,
         { cache: "no-store" }
@@ -2712,10 +2654,6 @@ export default function VendedorRegistroWorkspace({
       void consultarCreditosFinancierasCedula();
     }
 
-    if (esAloCredit && form.serialImei.length === 15) {
-      void consultarCreditoAlo(index);
-    }
-
     if (esFinserpay && form.serialImei.length === 15) {
       void consultarCreditoFinserpay(index);
     }
@@ -2734,10 +2672,9 @@ export default function VendedorRegistroWorkspace({
       .slice(0, financierasVisibles)
       .forEach((item, index) => {
         const esPayjoy = esPlataformaPayJoy(item.plataformaCredito);
-        const esAloCredit = esPlataformaAloCredit(item.plataformaCredito);
         const esFinserpay = esPlataformaFinserpay(item.plataformaCredito);
 
-        if (!esPayjoy && !esAloCredit && !esFinserpay) {
+        if (!esPayjoy && !esFinserpay) {
           return;
         }
 
@@ -2760,15 +2697,6 @@ export default function VendedorRegistroWorkspace({
 
           autoPayJoyConsultaRef.current[index] = consultaKey;
           void consultarPayJoyAutomaticoRef.current?.(index, form.serialImei);
-        }
-
-        if (esAloCredit) {
-          if (autoAloConsultaRef.current[index] === consultaKey) {
-            return;
-          }
-
-          autoAloConsultaRef.current[index] = consultaKey;
-          void consultarAloAutomaticoRef.current?.(index, form.serialImei);
         }
 
         if (esFinserpay) {
@@ -4889,7 +4817,10 @@ export default function VendedorRegistroWorkspace({
                                 </div>
                               )}
                               {!modoManual &&
-                                esPlataformaAloCredit(item.plataformaCredito) && (
+                                esPlataformaAloCredit(item.plataformaCredito) &&
+                                !esPlataformaConsultaCedula(
+                                  item.plataformaCredito
+                                ) && (
                                 <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
                                   <div className="flex items-center justify-between gap-2">
                                     <span>

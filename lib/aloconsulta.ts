@@ -2310,6 +2310,26 @@ function isDocumentCandidate(digits: string, imei: string) {
   return digits.length >= 6 && digits.length <= 12 && digits !== imei;
 }
 
+function findImei(row: MatrixCell[], headerRow: MatrixCell[] | null) {
+  const fromHeader = normalizeImei(
+    getByHeader(row, headerRow, (key) => key.includes("IMEI"))
+  );
+
+  if (fromHeader.length === 15) {
+    return fromHeader;
+  }
+
+  for (const cell of row) {
+    const normalized = normalizeImei(cell);
+
+    if (normalized.length === 15) {
+      return normalized;
+    }
+  }
+
+  return "";
+}
+
 function findDocument(row: MatrixCell[], headerRow: MatrixCell[] | null, imei: string) {
   const fromHeader = onlyDigits(getByHeader(row, headerRow, isDocumentKey));
 
@@ -2990,6 +3010,45 @@ function findCreditoInWorkbook(source: ReportSource, imei: string) {
   return null;
 }
 
+function findCreditosInWorkbookByDocumento(
+  source: ReportSource,
+  documento: string
+) {
+  const matrices = readWorkbookMatrix(source);
+  const encontrados = new Map<string, AloCreditoImei>();
+
+  for (const { matrix } of matrices) {
+    for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
+      const row = matrix[rowIndex] || [];
+      const headerRow = findHeaderRow(matrix, rowIndex);
+      const imei = findImei(row, headerRow);
+
+      if (imei.length !== 15 || findDocument(row, headerRow, imei) !== documento) {
+        continue;
+      }
+
+      const credito = parseCreditoFromRow(row, headerRow, imei);
+
+      if (!credito) {
+        continue;
+      }
+
+      const key = [
+        credito.documento,
+        credito.imei,
+        credito.fechaCreacionCredito,
+        credito.creditoAutorizado,
+      ].join(":");
+
+      if (!encontrados.has(key)) {
+        encontrados.set(key, credito);
+      }
+    }
+  }
+
+  return Array.from(encontrados.values());
+}
+
 export function isAloConsultaConfigured() {
   return Boolean(
     String(process.env.ALOCONSULTA_USUARIO || "").trim() &&
@@ -3012,6 +3071,46 @@ export async function obtenerCreditoAloPorImei(imeiValue: unknown) {
   }
 
   const credito = findCreditoInWorkbook(reportBuffer, imei);
+
+  if (!credito) {
+    return null;
+  }
+
+  return completarCuotaPlazoDesdeCartera(session, credito);
+}
+
+export async function obtenerCreditoAloPorCedula(
+  documentoValue: unknown,
+  imeiValue?: unknown
+) {
+  const documento = onlyDigits(documentoValue).slice(0, 15);
+  const imeiEsperado = normalizeImei(imeiValue);
+
+  if (documento.length < 5) {
+    throw new AloConsultaLookupError(
+      "La cedula debe tener entre 5 y 15 digitos."
+    );
+  }
+
+  if (imeiValue && imeiEsperado.length !== 15) {
+    throw new AloConsultaLookupError("El IMEI debe tener 15 digitos.");
+  }
+
+  const session = await loginAlo();
+  const reportBuffer = await downloadFirstReport(undefined, session);
+
+  if (!reportBuffer) {
+    return null;
+  }
+
+  const creditos = findCreditosInWorkbookByDocumento(
+    reportBuffer,
+    documento
+  );
+  const credito =
+    imeiEsperado.length === 15
+      ? creditos.find((item) => item.imei === imeiEsperado) ?? null
+      : creditos[0] ?? null;
 
   if (!credito) {
     return null;

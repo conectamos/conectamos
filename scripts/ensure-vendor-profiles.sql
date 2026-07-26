@@ -152,6 +152,21 @@ ALTER TABLE "RegistroVendedorVenta"
   ADD COLUMN IF NOT EXISTS "bolsaGananciaEstado" TEXT,
   ADD COLUMN IF NOT EXISTS "bolsaGananciaEvaluadaEn" TIMESTAMP(3);
 
+CREATE TABLE IF NOT EXISTS "RevisionInconsistenciaCredito" (
+  "id" SERIAL NOT NULL,
+  "registroId" INTEGER NOT NULL,
+  "proveedor" TEXT NOT NULL,
+  "revisadoPor" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "RevisionInconsistenciaCredito_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "RevisionInconsistenciaCredito_registroId_proveedor_key"
+    UNIQUE ("registroId", "proveedor")
+);
+
+CREATE INDEX IF NOT EXISTS "RevisionInconsistenciaCredito_createdAt_idx"
+  ON "RevisionInconsistenciaCredito"("createdAt");
+
 ALTER TABLE "Inventario"
   ADD COLUMN IF NOT EXISTS "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA';
 
@@ -272,6 +287,19 @@ BEGIN
     ADD CONSTRAINT "PerfilVendedorSede_perfilVendedorId_fkey"
     FOREIGN KEY ("perfilVendedorId")
     REFERENCES "PerfilVendedor"("id")
+    ON DELETE CASCADE
+    ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END
+$$;
+
+DO $$
+BEGIN
+  ALTER TABLE "RevisionInconsistenciaCredito"
+    ADD CONSTRAINT "RevisionInconsistenciaCredito_registroId_fkey"
+    FOREIGN KEY ("registroId")
+    REFERENCES "RegistroVendedorVenta"("id")
     ON DELETE CASCADE
     ON UPDATE CASCADE;
 EXCEPTION
