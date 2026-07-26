@@ -1104,6 +1104,8 @@ export default function VendedorRegistroWorkspace({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [form, setForm] = useState<FormState>(() => createInitialState(session));
+  const [modoManual, setModoManual] = useState(false);
+  const modoManualRef = useRef(false);
   const [sedes, setSedes] = useState<SedeOption[]>([]);
   const [jaladores, setJaladores] = useState<JaladorOption[]>([]);
   const [financierasCatalogo, setFinancierasCatalogo] = useState<
@@ -1232,7 +1234,14 @@ export default function VendedorRegistroWorkspace({
     setMensajeTipo(tipo);
   };
 
-  const limpiarFormulario = (preservarContexto = false) => {
+  const limpiarFormulario = (
+    preservarContexto = false,
+    mantenerModoManual = false
+  ) => {
+    if (!mantenerModoManual) {
+      modoManualRef.current = false;
+      setModoManual(false);
+    }
     setImeiDetalle("");
     setEquipoEncontrado(null);
     setPasoActual(1);
@@ -1254,8 +1263,12 @@ export default function VendedorRegistroWorkspace({
     setAloCreditos({});
     setAloErrores({});
     setConsultandoAloIndex(null);
+    setFinserpayCreditos({});
+    setFinserpayErrores({});
+    setConsultandoFinserpayIndex(null);
     autoPayJoyConsultaRef.current = {};
     autoAloConsultaRef.current = {};
+    autoFinserpayConsultaRef.current = {};
     autoCreditosCedulaConsultaRef.current = "";
     contadoDraftRef.current = null;
     financieraDraftRef.current = null;
@@ -1273,6 +1286,23 @@ export default function VendedorRegistroWorkspace({
       return createInitialState(session);
     });
     router.replace("/vendedor/registros", { scroll: false });
+  };
+
+  const alternarModoManual = () => {
+    if (registroEditando) {
+      return;
+    }
+
+    if (modoManual) {
+      limpiarFormulario(true);
+      setFormMessage("Consulta automatica de creditos activada", "success");
+      return;
+    }
+
+    modoManualRef.current = true;
+    setModoManual(true);
+    limpiarFormulario(true, true);
+    setFormMessage("", "success");
   };
 
   useEffect(() => {
@@ -1471,6 +1501,7 @@ export default function VendedorRegistroWorkspace({
     const documento = onlyDigits(form.documentoNumero, 15);
 
     if (
+      modoManual ||
       registroEditandoConvertido ||
       esServicioContado(form.servicio) ||
       documento.length < 5
@@ -1500,7 +1531,12 @@ export default function VendedorRegistroWorkspace({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [form.documentoNumero, form.servicio, registroEditandoConvertido]);
+  }, [
+    form.documentoNumero,
+    form.servicio,
+    modoManual,
+    registroEditandoConvertido,
+  ]);
 
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((current) => ({
@@ -1729,6 +1765,10 @@ export default function VendedorRegistroWorkspace({
   };
 
   const consultarCreditoPayjoy = async (index: number, imeiValue?: string) => {
+    if (modoManualRef.current) {
+      return;
+    }
+
     const imei = onlyDigits(imeiValue || form.serialImei, 15);
 
     if (imei.length !== 15) {
@@ -1753,6 +1793,10 @@ export default function VendedorRegistroWorkspace({
         { cache: "no-store" }
       );
       const data = (await response.json()) as PayJoyCreditoResponse;
+
+      if (modoManualRef.current) {
+        return;
+      }
 
       if (!response.ok || !data.credito) {
         const creditoAnterior = payjoyCreditos[index];
@@ -1793,6 +1837,9 @@ export default function VendedorRegistroWorkspace({
         };
       });
     } catch {
+      if (modoManualRef.current) {
+        return;
+      }
       setPayjoyErrores((current) => ({
         ...current,
         [index]: "Error consultando el credito PayJoy",
@@ -1804,6 +1851,10 @@ export default function VendedorRegistroWorkspace({
   consultarPayJoyAutomaticoRef.current = consultarCreditoPayjoy;
 
   const consultarCreditoAlo = async (index: number, imeiValue?: string) => {
+    if (modoManualRef.current) {
+      return;
+    }
+
     const imei = onlyDigits(imeiValue || form.serialImei, 15);
 
     if (imei.length !== 15) {
@@ -1828,6 +1879,10 @@ export default function VendedorRegistroWorkspace({
         { cache: "no-store" }
       );
       const data = (await response.json()) as AloCreditoResponse;
+
+      if (modoManualRef.current) {
+        return;
+      }
 
       if (!response.ok || !data.credito) {
         const creditoAnterior = aloCreditos[index];
@@ -1887,6 +1942,9 @@ export default function VendedorRegistroWorkspace({
         };
       });
     } catch {
+      if (modoManualRef.current) {
+        return;
+      }
       setAloErrores((current) => ({
         ...current,
         [index]: "Error consultando el credito ALO CREDIT",
@@ -1898,6 +1956,10 @@ export default function VendedorRegistroWorkspace({
   consultarAloAutomaticoRef.current = consultarCreditoAlo;
 
   const consultarCreditoFinserpay = async (index: number, imeiValue?: string) => {
+    if (modoManualRef.current) {
+      return;
+    }
+
     const imei = onlyDigits(imeiValue || form.serialImei, 15);
 
     if (imei.length !== 15) {
@@ -1922,6 +1984,10 @@ export default function VendedorRegistroWorkspace({
         { cache: "no-store" }
       );
       const data = (await response.json()) as FinserpayCreditoResponse;
+
+      if (modoManualRef.current) {
+        return;
+      }
 
       if (!response.ok || !data.credito) {
         const creditoAnterior = finserpayCreditos[index];
@@ -2040,6 +2106,9 @@ export default function VendedorRegistroWorkspace({
         };
       });
     } catch {
+      if (modoManualRef.current) {
+        return;
+      }
       setFinserpayErrores((current) => ({
         ...current,
         [index]: "Error consultando el credito FINSERPAY",
@@ -2261,6 +2330,10 @@ export default function VendedorRegistroWorkspace({
   };
 
   const detectarCreditoPayjoyPorImei = async (imeiValue: string) => {
+    if (modoManualRef.current) {
+      return;
+    }
+
     const imei = onlyDigits(imeiValue, 15);
 
     if (imei.length !== 15) {
@@ -2272,7 +2345,7 @@ export default function VendedorRegistroWorkspace({
     let creditoAplicado = false;
 
     const aplicarPrimerCredito = (callback: () => void) => {
-      if (creditoAplicado) {
+      if (modoManualRef.current || creditoAplicado) {
         return false;
       }
 
@@ -2388,7 +2461,7 @@ export default function VendedorRegistroWorkspace({
       })(),
     ]);
 
-    if (!creditoAplicado && errores.length) {
+    if (!modoManualRef.current && !creditoAplicado && errores.length) {
       setFormMessage(errores[0], "error");
     }
   };
@@ -2397,6 +2470,10 @@ export default function VendedorRegistroWorkspace({
     creditos: CreditoFinancieraCedula[],
     documentoEsperado?: string
   ) => {
+    if (modoManualRef.current) {
+      return false;
+    }
+
     if (
       documentoEsperado &&
       documentoActualRef.current &&
@@ -2475,6 +2552,10 @@ export default function VendedorRegistroWorkspace({
     documentoValue?: string,
     options?: { silent?: boolean }
   ) => {
+    if (modoManualRef.current) {
+      return;
+    }
+
     const documento = onlyDigits(documentoValue || form.documentoNumero, 15);
 
     if (documento.length < 5) {
@@ -2492,6 +2573,10 @@ export default function VendedorRegistroWorkspace({
         { cache: "no-store" }
       );
       const data = (await response.json()) as CreditosFinancierasResponse;
+
+      if (modoManualRef.current) {
+        return;
+      }
 
       if (!response.ok || !Array.isArray(data.creditos) || data.creditos.length === 0) {
         setCreditosFinancierasCedula({});
@@ -2538,6 +2623,9 @@ export default function VendedorRegistroWorkspace({
         "success"
       );
     } catch {
+      if (modoManualRef.current) {
+        return;
+      }
       setCreditosCedulaError("Error consultando los creditos por cedula");
     } finally {
       setConsultandoCreditosCedula(false);
@@ -2620,7 +2708,7 @@ export default function VendedorRegistroWorkspace({
       ),
     }));
 
-    if (esConsultaCedula && form.documentoNumero.length >= 5) {
+    if (!modoManual && esConsultaCedula && form.documentoNumero.length >= 5) {
       void consultarCreditosFinancierasCedula();
     }
 
@@ -2634,7 +2722,11 @@ export default function VendedorRegistroWorkspace({
   };
 
   useEffect(() => {
-    if (registroEditandoConvertido || form.serialImei.length !== 15) {
+    if (
+      modoManual ||
+      registroEditandoConvertido ||
+      form.serialImei.length !== 15
+    ) {
       return;
     }
 
@@ -2692,6 +2784,7 @@ export default function VendedorRegistroWorkspace({
     form.financierasDetalle,
     form.serialImei,
     financierasVisibles,
+    modoManual,
     registroEditandoConvertido,
   ]);
 
@@ -2831,44 +2924,46 @@ export default function VendedorRegistroWorkspace({
         return;
       }
 
-      const financierasPayJoySeleccionadas = form.financierasDetalle
-        .slice(0, financierasVisibles)
-        .map((item, index) => ({ item, index }))
-        .filter(({ item }) => esPlataformaPayJoy(item.plataformaCredito));
-      const financierasAloSeleccionadas = form.financierasDetalle
-        .slice(0, financierasVisibles)
-        .map((item, index) => ({ item, index }))
-        .filter(({ item }) => esPlataformaAloCredit(item.plataformaCredito));
-      const financierasFinserpaySeleccionadas = form.financierasDetalle
-        .slice(0, financierasVisibles)
-        .map((item, index) => ({ item, index }))
-        .filter(({ item }) => esPlataformaFinserpay(item.plataformaCredito));
+      if (!modoManualRef.current) {
+        const financierasPayJoySeleccionadas = form.financierasDetalle
+          .slice(0, financierasVisibles)
+          .map((item, index) => ({ item, index }))
+          .filter(({ item }) => esPlataformaPayJoy(item.plataformaCredito));
+        const financierasAloSeleccionadas = form.financierasDetalle
+          .slice(0, financierasVisibles)
+          .map((item, index) => ({ item, index }))
+          .filter(({ item }) => esPlataformaAloCredit(item.plataformaCredito));
+        const financierasFinserpaySeleccionadas = form.financierasDetalle
+          .slice(0, financierasVisibles)
+          .map((item, index) => ({ item, index }))
+          .filter(({ item }) => esPlataformaFinserpay(item.plataformaCredito));
 
-      const consultaFinancierasSeleccionadas =
-        financierasPayJoySeleccionadas.length > 0 ||
-        financierasAloSeleccionadas.length > 0 ||
-        financierasFinserpaySeleccionadas.length > 0;
+        const consultaFinancierasSeleccionadas =
+          financierasPayJoySeleccionadas.length > 0 ||
+          financierasAloSeleccionadas.length > 0 ||
+          financierasFinserpaySeleccionadas.length > 0;
 
-      if (financierasPayJoySeleccionadas.length) {
-        financierasPayJoySeleccionadas.forEach(({ index }) => {
-          void consultarCreditoPayjoy(index, equipo.imei);
-        });
-      }
+        if (financierasPayJoySeleccionadas.length) {
+          financierasPayJoySeleccionadas.forEach(({ index }) => {
+            void consultarCreditoPayjoy(index, equipo.imei);
+          });
+        }
 
-      if (financierasAloSeleccionadas.length) {
-        financierasAloSeleccionadas.forEach(({ index }) => {
-          void consultarCreditoAlo(index, equipo.imei);
-        });
-      }
+        if (financierasAloSeleccionadas.length) {
+          financierasAloSeleccionadas.forEach(({ index }) => {
+            void consultarCreditoAlo(index, equipo.imei);
+          });
+        }
 
-      if (financierasFinserpaySeleccionadas.length) {
-        financierasFinserpaySeleccionadas.forEach(({ index }) => {
-          void consultarCreditoFinserpay(index, equipo.imei);
-        });
-      }
+        if (financierasFinserpaySeleccionadas.length) {
+          financierasFinserpaySeleccionadas.forEach(({ index }) => {
+            void consultarCreditoFinserpay(index, equipo.imei);
+          });
+        }
 
-      if (!consultaFinancierasSeleccionadas) {
-        void detectarCreditoPayjoyPorImei(equipo.imei);
+        if (!consultaFinancierasSeleccionadas) {
+          void detectarCreditoPayjoyPorImei(equipo.imei);
+        }
       }
     } catch {
       setImeiDetalle("");
@@ -4105,6 +4200,27 @@ export default function VendedorRegistroWorkspace({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {!registroEditando && (
+              <button
+                type="button"
+                onClick={alternarModoManual}
+                aria-pressed={modoManual}
+                className={[
+                  "inline-flex min-h-12 items-center gap-2 rounded-lg border px-5 text-sm font-black uppercase tracking-[0.08em] shadow-sm transition focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-red-200",
+                  modoManual
+                    ? "border-[#e30613] bg-[#e30613] text-white hover:bg-[#c90511]"
+                    : "border-slate-300 bg-white text-slate-900 hover:border-[#e30613] hover:text-[#e30613]",
+                ].join(" ")}
+              >
+                <DashboardIcon name="document" className="h-5 w-5" />
+                Manual
+                {modoManual && (
+                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
+                    Activo
+                  </span>
+                )}
+              </button>
+            )}
             {puedeBuscarRegistros && (
               <Link
                 href="/vendedor/registros/buscar"
@@ -4134,6 +4250,38 @@ export default function VendedorRegistroWorkspace({
             </div>
           </div>
         </header>
+
+        {modoManual && !registroEditando && (
+          <section
+            role="status"
+            className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 shadow-sm"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+                  <DashboardIcon name="document" className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-sm font-black uppercase tracking-[0.08em] text-amber-900">
+                    Modo manual activo
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-amber-800">
+                    Ingresa los datos de esta venta desde cero. No se consultaran
+                    ni cargaran clientes o creditos desde las APIs. El IMEI se
+                    validara normalmente contra el inventario.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={alternarModoManual}
+                className="min-h-11 shrink-0 rounded-xl border border-amber-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-amber-900 transition hover:border-amber-400 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-200"
+              >
+                Volver a automatico
+              </button>
+            </div>
+          </section>
+        )}
 
         {cargando && (
           <div className="mt-6 flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm">
@@ -4526,6 +4674,13 @@ export default function VendedorRegistroWorkspace({
                 </span>
               </div>
 
+              {modoManual && (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                  Consultas de credito desactivadas. Selecciona la financiera y
+                  digita manualmente todos los valores de esta venta.
+                </div>
+              )}
+
               <div className="space-y-4">
                 {form.financierasDetalle.map((item, index) => {
                   const shouldShow = index < financierasVisibles;
@@ -4693,7 +4848,8 @@ export default function VendedorRegistroWorkspace({
                               <FieldError
                                 message={erroresCampos[`financiera-${index}-creditoAutorizado`]}
                               />
-                              {esPlataformaPayJoy(item.plataformaCredito) && (
+                              {!modoManual &&
+                                esPlataformaPayJoy(item.plataformaCredito) && (
                                 <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
                                   <div className="flex items-center justify-between gap-2">
                                     <span>
@@ -4723,7 +4879,8 @@ export default function VendedorRegistroWorkspace({
                                   </div>
                                 </div>
                               )}
-                              {esPlataformaAloCredit(item.plataformaCredito) && (
+                              {!modoManual &&
+                                esPlataformaAloCredit(item.plataformaCredito) && (
                                 <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
                                   <div className="flex items-center justify-between gap-2">
                                     <span>
@@ -4753,7 +4910,8 @@ export default function VendedorRegistroWorkspace({
                                   </div>
                                 </div>
                               )}
-                              {esPlataformaFinserpay(item.plataformaCredito) && (
+                              {!modoManual &&
+                                esPlataformaFinserpay(item.plataformaCredito) && (
                                 <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
                                   <div className="flex items-center justify-between gap-2">
                                     <span>
@@ -4783,9 +4941,10 @@ export default function VendedorRegistroWorkspace({
                                   </div>
                                 </div>
                               )}
-                              {esPlataformaConsultaCedula(
-                                item.plataformaCredito
-                              ) && (
+                              {!modoManual &&
+                                esPlataformaConsultaCedula(
+                                  item.plataformaCredito
+                                ) && (
                                 <div className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
                                   <div className="flex items-center justify-between gap-2">
                                     <span>
