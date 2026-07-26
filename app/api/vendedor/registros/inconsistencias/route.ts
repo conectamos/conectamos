@@ -116,14 +116,6 @@ function texto(value: unknown) {
   return parsed || null;
 }
 
-function normalizarFrecuencia(value: unknown) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z]/gi, "")
-    .toUpperCase();
-}
-
 function identificarProveedor(value: unknown): Proveedor | null {
   const key = String(value || "")
     .normalize("NFD")
@@ -502,30 +494,6 @@ export async function GET(req: Request) {
           item.creditoAutorizado,
           creditoPlataforma.creditoAutorizado
         );
-        if (item.proveedor !== "ALO CREDIT") {
-          compararNumero(
-            razones,
-            "Valor cuota",
-            item.valorCuota,
-            creditoPlataforma.valorCuota
-          );
-        }
-        compararNumero(
-          razones,
-          "Numero de cuotas",
-          item.numeroCuotas,
-          creditoPlataforma.numeroCuotas
-        );
-
-        if (
-          creditoPlataforma.frecuenciaCuota &&
-          normalizarFrecuencia(item.frecuenciaCuota) !==
-            normalizarFrecuencia(creditoPlataforma.frecuenciaCuota)
-        ) {
-          razones.push(
-            `Frecuencia: Conectamos ${item.frecuenciaCuota || "sin dato"} / plataforma ${creditoPlataforma.frecuenciaCuota}.`
-          );
-        }
 
         if (
           creditoPlataforma.documento &&
@@ -537,7 +505,7 @@ export async function GET(req: Request) {
         }
 
         if (
-          item.proveedor !== "ALO CREDIT" &&
+          !PROVEEDORES_POR_CEDULA.has(item.proveedor) &&
           creditoPlataforma.imei &&
           soloDigitos(item.serialImei) !== creditoPlataforma.imei
         ) {

@@ -314,7 +314,7 @@ test("el auditor agrupa ALO por financiera y cedula, nunca por IMEI", () => {
   );
 });
 
-test("el auditor excluye ALO de la comparacion de IMEI", () => {
+test("el auditor compara IMEI solo en proveedores consultados por IMEI", () => {
   const parsed = parseSource(AUDITOR_ROUTE_PATH);
   const imeiComparisons = descendants(
     parsed.sourceFile,
@@ -332,49 +332,34 @@ test("el auditor excluye ALO de la comparacion de IMEI", () => {
   );
 
   assert.equal(imeiComparisons.length, 1);
-
-  const aloExclusions = descendants(
-    imeiComparisons[0].expression,
-    (node) =>
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken &&
-      node.left.getText(parsed.sourceFile) === "item.proveedor" &&
-      ts.isStringLiteralLike(node.right) &&
-      node.right.text === "ALO CREDIT"
-  );
-
-  assert.equal(
-    aloExclusions.length,
-    1,
-    "La comparacion de IMEI debe estar protegida por proveedor !== ALO CREDIT"
+  assert.ok(
+    imeiComparisons[0].expression
+      .getText(parsed.sourceFile)
+      .includes("!PROVEEDORES_POR_CEDULA.has(item.proveedor)"),
+    "La comparacion de IMEI debe excluir todos los proveedores consultados por cedula"
   );
 });
 
-test("el auditor excluye solo a ALO de la comparacion del valor de cuota", () => {
+test("el auditor solo compara el credito autorizado como dato financiero", () => {
   const parsed = parseSource(AUDITOR_ROUTE_PATH);
-  const installmentComparisons = callsNamed(
+  const financialComparisons = callsNamed(
     parsed.sourceFile,
     "compararNumero"
-  ).filter(
-    (call) =>
-      call.arguments.length >= 2 &&
-      ts.isStringLiteralLike(call.arguments[1]) &&
-      call.arguments[1].text === "Valor cuota"
+  ).map((call) =>
+    call.arguments.length >= 2 && ts.isStringLiteralLike(call.arguments[1])
+      ? call.arguments[1].text
+      : null
   );
 
-  assert.equal(installmentComparisons.length, 1);
-
-  let parent = installmentComparisons[0].parent;
-  while (parent && !ts.isIfStatement(parent)) {
-    parent = parent.parent;
-  }
-
-  assert.ok(
-    parent && ts.isIfStatement(parent),
-    "La comparacion del valor de cuota debe estar protegida por una condicion"
-  );
   assert.equal(
-    parent.expression.getText(parsed.sourceFile),
-    'item.proveedor !== "ALO CREDIT"'
+    financialComparisons.length,
+    1,
+    "El auditor no debe comparar cuota, plazo ni otros valores financieros"
+  );
+  assert.deepEqual(financialComparisons, ["Credito autorizado"]);
+  assert.equal(
+    parsed.sourceText.includes("Frecuencia: Conectamos"),
+    false,
+    "El auditor no debe comparar la frecuencia de pago"
   );
 });
