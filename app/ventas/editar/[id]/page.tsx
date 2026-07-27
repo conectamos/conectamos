@@ -46,6 +46,8 @@ type VentaDetalle = {
   serial: string;
   jalador: string | null;
   cerrador: string | null;
+  ingreso: string | number | null;
+  tipoIngreso: string | null;
   ingreso1: string | null;
   ingreso2: string | null;
   primerValor: string | number | null;
@@ -177,7 +179,7 @@ export default function EditarVentaPage() {
 
   const [ingreso1Base, setIngreso1Base] = useState("");
   const [ingreso2Base, setIngreso2Base] = useState("");
-  const [tipoIngreso1] = useState("EFECTIVO");
+  const [tipoIngreso1, setTipoIngreso1] = useState("EFECTIVO");
   const [tipoIngreso2, setTipoIngreso2] = useState("");
   const [usarIngreso2, setUsarIngreso2] = useState(false);
 
@@ -286,7 +288,17 @@ export default function EditarVentaPage() {
         setColor(venta.inventarioSede?.color || "");
         setCostoEquipo(Number(venta.inventarioSede?.costo || 0));
         setSedeNombre(venta.sede?.nombre || "");
-        setIngreso1Base(String(Math.round(Number(venta.primerValor || 0))));
+        const tipoPrincipal =
+          venta.ingreso1 ||
+          String(venta.tipoIngreso || "").split("/")[0]?.trim() ||
+          "EFECTIVO";
+        setTipoIngreso1(tipoPrincipal);
+        setIngreso1Base(
+          reverseIngresoBase(
+            venta.primerValor ?? venta.ingreso,
+            tipoPrincipal
+          )
+        );
 
         const baseIngreso2 = reverseIngresoBase(venta.segundoValor, venta.ingreso2);
         setIngreso2Base(baseIngreso2);
@@ -406,6 +418,7 @@ export default function EditarVentaPage() {
           jalador,
           cerrador,
           ingreso1Base: Number(ingreso1Base || 0),
+          tipoIngreso1,
           ingreso2Base: usarIngreso2 ? Number(ingreso2Base || 0) : 0,
           tipoIngreso2: usarIngreso2 ? tipoIngreso2 : "",
           comision: Number(comision || 0),
@@ -713,7 +726,9 @@ export default function EditarVentaPage() {
                       className={inputBaseClass()}
                       placeholder="$ 0"
                     />
-                    <p className="mt-2 text-xs font-semibold text-slate-500">Tipo fijo: EFECTIVO</p>
+                    <p className="mt-2 text-xs font-semibold text-slate-500">
+                      Tipo conservado: {tipoIngreso1}
+                    </p>
                   </div>
                   <div>
                     <label className={fieldLabelClass}>Ingreso 1 neto</label>

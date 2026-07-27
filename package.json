@@ -8,6 +8,7 @@
     "start": "next start",
     "start:standalone": "node .next/standalone/server.js",
     "test:alo": "node --test tests/alo-report-parser.test.mjs tests/alo-cedula-only-contract.test.mjs",
+    "test:cierre": "node --test tests/cierre-sale-source-contract.test.mjs",
     "db:push": "npx prisma db push",
     "db:ensure-vendor-profiles": "npx prisma db execute --file scripts/ensure-vendor-profiles.sql",
     "seed:initial": "npx prisma db execute --file scripts/seed-initial-data.sql",

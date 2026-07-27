@@ -198,33 +198,11 @@ function joinParts(parts: Array<string | null | undefined>, fallback = "-") {
   return valid.length ? valid.join(" | ") : fallback;
 }
 
-function moneyPart(label: string, value: unknown) {
-  const amount = n(value);
-  return amount > 0 ? `${label}: ${formatoPesos(amount)}` : null;
-}
-
 function financierasVentaTexto(source: Record<string, unknown>) {
   const detalle = extraerFinancierasDetalle(source);
 
   return joinParts(
     detalle.map((item) => `${item.nombre}: ${formatoPesos(item.valorBruto)}`)
-  );
-}
-
-function financierasRegistroTexto(value: unknown) {
-  if (!Array.isArray(value)) return null;
-
-  return joinParts(
-    value.map((item) => {
-      if (!item || typeof item !== "object") return null;
-
-      const row = item as Record<string, unknown>;
-      const plataforma = textoLimpio(row.plataformaCredito);
-      const credito = moneyPart("Aut", row.creditoAutorizado);
-      const inicial = moneyPart("Inicial", row.cuotaInicial);
-
-      return joinParts([plataforma, credito, inicial], "");
-    })
   );
 }
 
@@ -306,53 +284,13 @@ function buildFinancialColumns(catalogo?: CatalogoFinanciera[]) {
   });
 }
 
-function financierasRegistroDetalle(value: unknown) {
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-
-      const row = item as Record<string, unknown>;
-      const nombre = financieraLabel(row.plataformaCredito);
-      const valor = n(row.creditoAutorizado);
-
-      return nombre && valor > 0 ? { nombre, valor } : null;
-    })
-    .filter((item): item is { nombre: string; valor: number } => Boolean(item));
-}
-
-function financierasVentaDetalle(
-  venta: Record<string, unknown>,
-  registro?: Record<string, unknown>
-) {
-  const detalle = extraerFinancierasDetalle(venta)
+function financierasVentaDetalle(venta: Record<string, unknown>) {
+  return extraerFinancierasDetalle(venta)
     .map((item) => ({
       nombre: financieraLabel(item.nombre),
       valor: n(item.valorBruto),
     }))
     .filter((item) => item.nombre && item.valor > 0);
-
-  return detalle.length
-    ? detalle
-    : financierasRegistroDetalle(registro?.financierasDetalle);
-}
-
-function buildRegistroPaymentSources(registro?: Record<string, unknown>) {
-  if (!registro) return [];
-
-  return [
-    {
-      tipo: normalizePaymentType(registro.medioPago1Tipo),
-      valor: n(registro.medioPago1Valor || registro.cuotaInicial),
-      usado: false,
-    },
-    {
-      tipo: normalizePaymentType(registro.medioPago2Tipo),
-      valor: n(registro.medioPago2Valor),
-      usado: false,
-    },
-  ].filter((item) => item.tipo && item.valor > 0);
 }
 
 function buildIngresoDetalle(label: string, neto: number, bruto?: number) {
@@ -369,10 +307,7 @@ function buildIngresoDetalle(label: string, neto: number, bruto?: number) {
   return `${tipo}: ${formatoPesos(neto)}`;
 }
 
-function buildIngresosVenta(
-  venta: Record<string, unknown>,
-  registro?: Record<string, unknown>
-) {
+function buildIngresosVenta(venta: Record<string, unknown>) {
   const primerIngresoNombre =
     textoLimpio(venta.ingreso1) || textoLimpio(venta.tipoIngreso) || "Ingreso";
   const segundoIngresoNombre = textoLimpio(venta.ingreso2) || "Ingreso 2";
@@ -386,21 +321,15 @@ function buildIngresosVenta(
       valor: n(venta.segundoValor),
     },
   ].filter((item) => item.tipo && item.valor > 0);
-  const pagosRegistro = buildRegistroPaymentSources(registro);
   const detalles = pagosVenta.map((pago) => {
     const tipo = normalizePaymentType(pago.tipo);
-    const pagoRegistro = pagosRegistro.find((item) => !item.usado && item.tipo === tipo);
+    const valorBruto =
+      tipo === "VOUCHER"
+        ? Math.round((pago.valor / 0.95) * 100) / 100
+        : pago.valor;
 
-    if (pagoRegistro) {
-      pagoRegistro.usado = true;
-    }
-
-    return buildIngresoDetalle(pago.tipo, pago.valor, pagoRegistro?.valor);
+    return buildIngresoDetalle(pago.tipo, pago.valor, valorBruto);
   });
-
-  for (const pagoRegistro of pagosRegistro.filter((item) => !item.usado)) {
-    detalles.push(buildIngresoDetalle(pagoRegistro.tipo, pagoRegistro.valor));
-  }
 
   return joinParts(detalles, "NO HAY INGRESO");
 }
@@ -411,7 +340,7 @@ function buildEquipoVenta(
 ) {
   return joinParts([
     textoLimpio(venta.servicio),
-    textoLimpio(registro?.referenciaEquipo) || textoLimpio(venta.descripcion),
+    textoLimpio(venta.descripcion) || textoLimpio(registro?.referenciaEquipo),
     textoLimpio(venta.serial || registro?.serialImei)
       ? `IMEI ${textoLimpio(venta.serial || registro?.serialImei)}`
       : null,
@@ -426,7 +355,7 @@ function buildSaleTableRows(
   const rows: SaleTableRow[] = ventas.map((venta) => {
     const registro = registrosPorVenta.get(venta.id);
     const pagos = buildPaymentBreakdown(venta);
-    const financieras = financierasVentaDetalle(venta, registro).reduce(
+    const financieras = financierasVentaDetalle(venta).reduce(
       (acc, item) => {
         acc[item.nombre] = (acc[item.nombre] || 0) + item.valor;
         return acc;
@@ -441,7 +370,7 @@ function buildSaleTableRows(
       imei: textoLimpio(venta.serial || registro?.serialImei),
       jalador: textoLimpio(venta.jalador || registro?.jaladorNombre),
       ingresos: n(venta.ingreso),
-      detalleIngresos: buildIngresosVenta(venta, registro),
+      detalleIngresos: buildIngresosVenta(venta),
       financieras,
       efectivo: pagos.efectivo,
       transferencia: pagos.transferencia,
@@ -2187,16 +2116,6 @@ export async function GET(req: Request) {
             ventaIdRelacionada: true,
             clienteNombre: true,
             documentoNumero: true,
-            plataformaCredito: true,
-            financierasDetalle: true,
-            creditoAutorizado: true,
-            cuotaInicial: true,
-            valorCuota: true,
-            numeroCuotas: true,
-            medioPago1Tipo: true,
-            medioPago1Valor: true,
-            medioPago2Tipo: true,
-            medioPago2Valor: true,
             asesorNombre: true,
             jaladorNombre: true,
             referenciaEquipo: true,
@@ -2268,18 +2187,14 @@ export async function GET(req: Request) {
       const registro = registrosPorVenta.get(venta.id) as
         (Record<string, unknown> & { ventaIdRelacionada?: number | null }) | undefined;
       const financierasVenta = financierasVentaTexto(ventaRecord);
-      const financierasRegistro = financierasRegistroTexto(
-        registro?.financierasDetalle
-      );
 
       return {
         codigo: textoLimpio(venta.idVenta),
         cliente: textoLimpio(registro?.clienteNombre) || "Venta sin registro vendedor vinculado",
         equipo: buildEquipoVenta(ventaRecord, registro),
         sede: venta.sede?.nombre || "-",
-        ingresos: buildIngresosVenta(ventaRecord, registro),
-        financieras:
-          financierasVenta === "-" ? financierasRegistro || "-" : financierasVenta,
+        ingresos: buildIngresosVenta(ventaRecord),
+        financieras: financierasVenta,
       };
     });
     const catalogoPersonal =
