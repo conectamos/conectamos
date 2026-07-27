@@ -5,7 +5,6 @@ import {
   getCurrentBogotaMonthInput,
   getTodayBogotaDateKey,
 } from "@/lib/ventas-utils";
-import { shiftDateKey } from "@/lib/credit-date-utils";
 import InconsistenciasCreditosWorkspace from "./workspace";
 
 export default async function InconsistenciasCreditosPage() {
@@ -20,7 +19,6 @@ export default async function InconsistenciasCreditosPage() {
   return (
     <InconsistenciasCreditosWorkspace
       fechaHoy={fechaHoy}
-      fechaAyer={shiftDateKey(fechaHoy, -1)}
       mesActual={getCurrentBogotaMonthInput()}
       session={{
         nombre: session.nombre,

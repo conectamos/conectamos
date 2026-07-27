@@ -43,12 +43,14 @@ type ResultadoRevision = {
   razones: string[];
 };
 
-type ModoRevision = "MENSUAL" | "DIARIA";
+type TipoPeriodo = "DIA" | "RANGO" | "MES";
+type ProveedorMensual = "PAYJOY" | "SUMASPAY" | "ESMIO" | "ADDI";
 
 type ReporteRevision = {
-  modo: ModoRevision;
-  fecha?: string;
-  mes?: string;
+  modo: "RANGO";
+  desde: string;
+  hasta: string;
+  proveedores: ProveedorMensual[];
   limitado: boolean;
   maxRegistros: number;
   resumen: {
@@ -63,9 +65,12 @@ type ReporteRevision = {
   resultados: ResultadoRevision[];
 };
 
-type RespuestaMensual = Omit<ReporteRevision, "modo"> & {
-  modo: "MENSUAL";
-  proveedor: string;
+type RespuestaRango = {
+  modo: "RANGO";
+  desde: string;
+  hasta: string;
+  proveedor: ProveedorMensual;
+  resultados: ResultadoRevision[];
   paginacion: {
     snapshot: string;
     cursor: number;
@@ -79,6 +84,35 @@ type RespuestaMensual = Omit<ReporteRevision, "modo"> & {
 
 type FiltroEstado = "REVISION" | "TODOS" | EstadoRevision;
 const PROVEEDORES_MENSUALES = ["PAYJOY", "SUMASPAY", "ESMIO", "ADDI"] as const;
+const ETIQUETAS_PROVEEDOR: Record<ProveedorMensual, string> = {
+  PAYJOY: "PAYJOY",
+  SUMASPAY: "SUMASPAY",
+  ESMIO: "ESMIOPCION",
+  ADDI: "ADDI",
+};
+
+function rangoDelMes(mes: string, fechaHoy: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(mes);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+
+  if (!Number.isInteger(year) || month < 1 || month > 12) {
+    return null;
+  }
+
+  const ultimoDia = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const hastaMes = `${mes}-${String(ultimoDia).padStart(2, "0")}`;
+
+  return {
+    desde: `${mes}-01`,
+    hasta: hastaMes > fechaHoy ? fechaHoy : hastaMes,
+  };
+}
 
 function formatMoney(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
@@ -97,6 +131,11 @@ function formatDate(value: string) {
   } catch {
     return value;
   }
+}
+
+function formatDateKey(value: string) {
+  const [year, month, day] = value.split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
 function etiquetaEstado(estado: EstadoRevision) {
@@ -144,19 +183,22 @@ function resumirResultados(resultados: ResultadoRevision[]) {
 }
 
 export default function InconsistenciasCreditosWorkspace({
-  fechaAyer,
   fechaHoy,
   mesActual,
   session,
 }: {
-  fechaAyer: string;
   fechaHoy: string;
   mesActual: string;
   session: SessionProps;
 }) {
-  const [modo, setModo] = useState<ModoRevision>("MENSUAL");
-  const [fecha, setFecha] = useState(fechaHoy);
+  const [tipoPeriodo, setTipoPeriodo] = useState<TipoPeriodo>("MES");
+  const [fechaDia, setFechaDia] = useState(fechaHoy);
+  const [fechaDesde, setFechaDesde] = useState(`${mesActual}-01`);
+  const [fechaHasta, setFechaHasta] = useState(fechaHoy);
   const [mes, setMes] = useState(mesActual);
+  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState<
+    ProveedorMensual[]
+  >([...PROVEEDORES_MENSUALES]);
   const [reporte, setReporte] = useState<ReporteRevision | null>(null);
   const [cargando, setCargando] = useState(false);
   const [progreso, setProgreso] = useState("");
@@ -218,95 +260,101 @@ export default function InconsistenciasCreditosWorkspace({
       setReporte(null);
       setProgreso("");
 
-      if (modo === "MENSUAL") {
-        const resultados = new Map<string, ResultadoRevision>();
-        let snapshotRevision = "";
-
-        for (const proveedor of PROVEEDORES_MENSUALES) {
-          let cursor: number | null = 0;
-          const cursoresProcesados = new Set<number>();
-
-          while (cursor !== null) {
-            if (cursoresProcesados.has(cursor)) {
-              throw new Error(
-                `La consulta de ${proveedor} no pudo avanzar al siguiente bloque.`
-              );
-            }
-
-            cursoresProcesados.add(cursor);
-            setProgreso(
-              `Consultando ${proveedor} para ${mes}${
-                cursor > 0 ? ` · bloque ${cursoresProcesados.size}` : ""
-              }`
-            );
-
-            const params = new URLSearchParams({
-              mes,
-              proveedor,
-              cursor: String(cursor),
-            });
-
-            if (snapshotRevision) {
-              params.set("snapshot", snapshotRevision);
-            }
-
-            const response = await fetch(
-              `/api/vendedor/registros/inconsistencias?${params.toString()}`,
-              { cache: "no-store" }
-            );
-            const data = await response.json();
-
-            if (!response.ok) {
-              throw new Error(
-                data.error ||
-                  `No se pudo completar la revision mensual de ${proveedor}.`
-              );
-            }
-
-            const pagina = data as RespuestaMensual;
-            snapshotRevision =
-              snapshotRevision || pagina.paginacion.snapshot;
-
-            for (const resultado of pagina.resultados) {
-              resultados.set(
-                `${resultado.registroId}:${resultado.proveedor}`,
-                resultado
-              );
-            }
-
-            cursor = pagina.paginacion.cursorSiguiente;
-          }
-        }
-
-        const resultadosCompletos = Array.from(resultados.values());
-
-        setReporte({
-          modo: "MENSUAL",
-          mes,
-          limitado: false,
-          maxRegistros: 0,
-          resumen: resumirResultados(resultadosCompletos),
-          resultados: resultadosCompletos,
-        });
-      } else {
-        setProgreso("Consultando las financieras del dia seleccionado");
-        const params = new URLSearchParams({ fecha });
-        const response = await fetch(
-          `/api/vendedor/registros/inconsistencias?${params.toString()}`,
-          { cache: "no-store" }
-        );
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "No se pudo completar la revision.");
-        }
-
-        setReporte({
-          ...(data as Omit<ReporteRevision, "modo">),
-          modo: "DIARIA",
-        });
+      if (proveedoresSeleccionados.length === 0) {
+        throw new Error("Selecciona al menos una financiera para continuar.");
       }
 
+      const rangoConsulta =
+        tipoPeriodo === "DIA"
+          ? { desde: fechaDia, hasta: fechaDia }
+          : tipoPeriodo === "RANGO"
+            ? { desde: fechaDesde, hasta: fechaHasta }
+            : rangoDelMes(mes, fechaHoy);
+
+      if (
+        !rangoConsulta ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(rangoConsulta.desde) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(rangoConsulta.hasta) ||
+        rangoConsulta.desde > rangoConsulta.hasta ||
+        rangoConsulta.hasta > fechaHoy
+      ) {
+        throw new Error(
+          "Selecciona un periodo valido, sin fechas futuras y con la fecha inicial antes de la final."
+        );
+      }
+
+      const { desde, hasta } = rangoConsulta;
+      const resultadosCompletos: ResultadoRevision[] = [];
+      let snapshotRevision = "";
+
+      for (const proveedor of proveedoresSeleccionados) {
+        let cursor: number | null = 0;
+        const cursoresProcesados = new Set<number>();
+        const indiceProveedor =
+          proveedoresSeleccionados.indexOf(proveedor) + 1;
+
+        while (cursor !== null) {
+          if (cursoresProcesados.has(cursor)) {
+            throw new Error(
+              `La consulta de ${proveedor} no pudo avanzar al siguiente bloque.`
+            );
+          }
+
+          cursoresProcesados.add(cursor);
+          setProgreso(
+            `Consultando ${ETIQUETAS_PROVEEDOR[proveedor]} · financiera ${indiceProveedor} de ${proveedoresSeleccionados.length}${
+              cursor > 0 ? ` · bloque ${cursoresProcesados.size}` : ""
+            }`
+          );
+
+          const params = new URLSearchParams({
+            desde,
+            hasta,
+            proveedor,
+            cursor: String(cursor),
+          });
+
+          if (snapshotRevision) {
+            params.set("snapshot", snapshotRevision);
+          }
+
+          const response = await fetch(
+            `/api/vendedor/registros/inconsistencias?${params.toString()}`,
+            { cache: "no-store" }
+          );
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              data.error ||
+                `No se pudo completar la revision de ${ETIQUETAS_PROVEEDOR[proveedor]}.`
+            );
+          }
+
+          const pagina = data as RespuestaRango;
+          snapshotRevision =
+            snapshotRevision || pagina.paginacion.snapshot;
+          resultadosCompletos.push(...pagina.resultados);
+          cursor = pagina.paginacion.cursorSiguiente;
+        }
+      }
+
+      resultadosCompletos.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ||
+          b.registroId - a.registroId
+      );
+
+      setReporte({
+        modo: "RANGO",
+        desde,
+        hasta,
+        proveedores: [...proveedoresSeleccionados],
+        limitado: false,
+        maxRegistros: 0,
+        resumen: resumirResultados(resultadosCompletos),
+        resultados: resultadosCompletos,
+      });
       setFiltro("REVISION");
     } catch (cause) {
       setError(
@@ -392,6 +440,27 @@ export default function InconsistenciasCreditosWorkspace({
     }
   };
 
+  const limpiarInforme = () => {
+    setReporte(null);
+    setError("");
+  };
+
+  const alternarProveedor = (proveedor: ProveedorMensual) => {
+    setProveedoresSeleccionados((actuales) =>
+      actuales.includes(proveedor)
+        ? actuales.filter((item) => item !== proveedor)
+        : PROVEEDORES_MENSUALES.filter(
+            (item) => item === proveedor || actuales.includes(item)
+          )
+    );
+    limpiarInforme();
+  };
+
+  const periodoIncompleto =
+    (tipoPeriodo === "DIA" && !fechaDia) ||
+    (tipoPeriodo === "RANGO" && (!fechaDesde || !fechaHasta)) ||
+    (tipoPeriodo === "MES" && !mes);
+
   return (
     <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
       <DashboardSidebar
@@ -418,8 +487,8 @@ export default function InconsistenciasCreditosWorkspace({
                 Inconsistencias de creditos
               </h1>
               <p className="mt-2 max-w-3xl text-[15px] leading-6 text-slate-500">
-                Revisa las ventas contra las plataformas de credito, por dia o
-                durante todo el mes.
+                Elige cualquier dia, rango o mes y las financieras que deseas
+                comparar.
               </p>
             </div>
 
@@ -449,70 +518,107 @@ export default function InconsistenciasCreditosWorkspace({
           </header>
 
           <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_220px_220px_auto] xl:items-end">
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(280px,1fr)_190px_minmax(320px,1fr)_auto] xl:items-end">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-[#e30613]">
                   Revision en linea
                 </p>
                 <h2 className="mt-2 text-xl font-black">
-                  {modo === "MENSUAL"
-                    ? "Selecciona el mes que deseas revisar"
-                    : "Selecciona el dia que deseas revisar"}
+                  Selecciona el periodo y las financieras
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  {modo === "MENSUAL"
-                    ? "Compara PAYJOY, SUMASPAY, ESMIOPCION y ADDI durante todo el mes. Solo se valida el valor del credito; no se comparan cuota, plazo, inicial ni frecuencia."
-                    : "La revision diaria conserva la consulta de hoy y ayer para todas las financieras. No modifica ninguna venta."}
+                  Solo se valida el valor del credito; no se comparan cuota, plazo, inicial ni frecuencia.
+                  Este informe no modifica las ventas.
                 </p>
               </div>
 
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Tipo de revision
+                Tipo de periodo
                 <select
-                  value={modo}
+                  value={tipoPeriodo}
                   disabled={cargando}
                   onChange={(event) => {
-                    setModo(event.target.value as ModoRevision);
-                    setReporte(null);
-                    setError("");
+                    setTipoPeriodo(event.target.value as TipoPeriodo);
+                    limpiarInforme();
                   }}
                   className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 >
-                  <option value="MENSUAL">Mensual · 4 financieras</option>
-                  <option value="DIARIA">Diaria · todas</option>
+                  <option value="DIA">Dia</option>
+                  <option value="RANGO">Rango</option>
+                  <option value="MES">Mes</option>
                 </select>
               </label>
 
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                {modo === "MENSUAL" ? "Mes de registros" : "Fecha de registros"}
-                {modo === "MENSUAL" ? (
+              {tipoPeriodo === "MES" ? (
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Mes de registros
                   <input
                     type="month"
                     value={mes}
                     max={mesActual}
                     disabled={cargando}
-                    onChange={(event) => setMes(event.target.value)}
+                    onChange={(event) => {
+                      setMes(event.target.value);
+                      limpiarInforme();
+                    }}
                     className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                   />
-                ) : (
+                </label>
+              ) : tipoPeriodo === "DIA" ? (
+                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                  Fecha de registros
                   <input
                     type="date"
-                    value={fecha}
-                    min={fechaAyer}
+                    value={fechaDia}
                     max={fechaHoy}
                     disabled={cargando}
-                    onChange={(event) => setFecha(event.target.value)}
+                    onChange={(event) => {
+                      setFechaDia(event.target.value);
+                      limpiarInforme();
+                    }}
                     className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                   />
-                )}
-              </label>
+                </label>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    Desde
+                    <input
+                      type="date"
+                      value={fechaDesde}
+                      max={fechaHoy}
+                      disabled={cargando}
+                      onChange={(event) => {
+                        setFechaDesde(event.target.value);
+                        limpiarInforme();
+                      }}
+                      className="min-h-12 min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                    Hasta
+                    <input
+                      type="date"
+                      value={fechaHasta}
+                      max={fechaHoy}
+                      disabled={cargando}
+                      onChange={(event) => {
+                        setFechaHasta(event.target.value);
+                        limpiarInforme();
+                      }}
+                      className="min-h-12 min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                    />
+                  </label>
+                </div>
+              )}
 
               <button
                 type="button"
                 onClick={() => void analizar()}
                 disabled={
                   cargando ||
-                  (modo === "MENSUAL" ? !mes : !fecha)
+                  periodoIncompleto ||
+                  proveedoresSeleccionados.length === 0
                 }
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-6 text-sm font-black uppercase tracking-[0.06em] text-white shadow-sm transition hover:bg-[#c90511] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -522,6 +628,72 @@ export default function InconsistenciasCreditosWorkspace({
                 />
                 {cargando ? "Consultando..." : "Analizar creditos"}
               </button>
+            </div>
+
+            <div className="mt-6 border-t border-slate-200 pt-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-slate-900">
+                    Financieras
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Puedes elegir una, varias o las cuatro.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-bold">
+                  <button
+                    type="button"
+                    disabled={cargando}
+                    onClick={() => {
+                      setProveedoresSeleccionados([
+                        ...PROVEEDORES_MENSUALES,
+                      ]);
+                      limpiarInforme();
+                    }}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-slate-700 transition hover:border-red-200 hover:text-[#e30613] disabled:opacity-50"
+                  >
+                    Seleccionar todas
+                  </button>
+                  <button
+                    type="button"
+                    disabled={cargando}
+                    onClick={() => {
+                      setProveedoresSeleccionados([]);
+                      limpiarInforme();
+                    }}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-slate-700 transition hover:border-red-200 hover:text-[#e30613] disabled:opacity-50"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {PROVEEDORES_MENSUALES.map((proveedor) => {
+                  const seleccionado =
+                    proveedoresSeleccionados.includes(proveedor);
+
+                  return (
+                    <label
+                      key={proveedor}
+                      className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-black transition ${
+                        seleccionado
+                          ? "border-red-200 bg-red-50 text-[#c90511]"
+                          : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+                      } ${cargando ? "cursor-not-allowed opacity-60" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={seleccionado}
+                        disabled={cargando}
+                        onChange={() => alternarProveedor(proveedor)}
+                        className="h-4 w-4 rounded border-slate-300 accent-[#e30613]"
+                      />
+                      {ETIQUETAS_PROVEEDOR[proveedor]}
+                    </label>
+                  );
+                })}
+              </div>
             </div>
           </section>
 
@@ -547,9 +719,8 @@ export default function InconsistenciasCreditosWorkspace({
                     {progreso || "Comparando registros con las plataformas"}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {modo === "MENSUAL"
-                      ? "Se recorreran todos los bloques del mes; puedes mantener esta pagina abierta."
-                      : "El tiempo depende de la respuesta de cada financiera."}
+                    Se recorreran todos los bloques del periodo. El tiempo
+                    depende del rango y de la respuesta de cada financiera.
                   </p>
                 </div>
               </div>
@@ -605,12 +776,22 @@ export default function InconsistenciasCreditosWorkspace({
                 ))}
               </section>
 
-              {reporte.modo === "DIARIA" && reporte.limitado && (
-                <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-                  La revision se limito a los {reporte.maxRegistros} registros
-                  mas recientes del dia.
+              <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+                <span className="font-black text-slate-900">
+                  Consulta ejecutada:
+                </span>{" "}
+                {formatDateKey(reporte.desde)}
+                {reporte.desde !== reporte.hasta
+                  ? ` al ${formatDateKey(reporte.hasta)}`
+                  : ""}{" "}
+                ·{" "}
+                {reporte.proveedores
+                  .map((proveedor) => ETIQUETAS_PROVEEDOR[proveedor])
+                  .join(", ")}
+                <div className="mt-1 text-xs text-slate-500">
+                  Comparacion exclusiva del valor del credito autorizado.
                 </div>
-              )}
+              </div>
 
               <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
                 <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">

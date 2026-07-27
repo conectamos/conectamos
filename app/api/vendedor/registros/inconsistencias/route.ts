@@ -626,7 +626,7 @@ async function consultarCreditosMensuales(
   return { consultas, diasFallidos };
 }
 
-async function revisarInconsistenciasMensuales(
+async function revisarInconsistenciasPorRango(
   url: URL,
   session: {
     perfilId?: number | null;
@@ -635,9 +635,26 @@ async function revisarInconsistenciasMensuales(
   }
 ) {
   const mes = String(url.searchParams.get("mes") || "").trim();
+  let desde = String(url.searchParams.get("desde") || "").trim();
+  let hasta = String(url.searchParams.get("hasta") || "").trim();
   const proveedor = identificarProveedor(url.searchParams.get("proveedor"));
-  const rango = getBogotaMonthRangeFromInput(mes);
+  const rangoMes = mes ? getBogotaMonthRangeFromInput(mes) : null;
   const mesActual = getTodayBogotaDateKey().slice(0, 7);
+  const hoy = getTodayBogotaDateKey();
+
+  if (rangoMes && !desde && !hasta && mes <= mesActual) {
+    desde = `${mes}-01`;
+    hasta = getBogotaDateKey(
+      new Date(Math.min(rangoMes.end.getTime() - 1, Date.now()))
+    );
+  }
+
+  const rangoDesde = getBogotaDayRangeFromInput(desde);
+  const rangoHasta = getBogotaDayRangeFromInput(hasta);
+  const rango =
+    rangoDesde && rangoHasta
+      ? { start: rangoDesde.start, end: rangoHasta.end }
+      : null;
   const cursorRaw = String(url.searchParams.get("cursor") || "0");
   const cursor = Number(cursorRaw);
   const snapshotRaw = String(url.searchParams.get("snapshot") || "").trim();
@@ -648,9 +665,18 @@ async function revisarInconsistenciasMensuales(
       ? ahora
       : snapshotSolicitado;
 
-  if (!rango || mes > mesActual) {
+  if (
+    !rango ||
+    getBogotaDateKey(rango.start) !== desde ||
+    getBogotaDateKey(new Date(rango.end.getTime() - 1)) !== hasta ||
+    desde > hasta ||
+    hasta > hoy
+  ) {
     return NextResponse.json(
-      { error: "Selecciona un mes valido, igual o anterior al mes actual." },
+      {
+        error:
+          "Selecciona un rango valido: la fecha inicial no puede superar la final ni incluir fechas futuras.",
+      },
       { status: 400 }
     );
   }
@@ -659,7 +685,7 @@ async function revisarInconsistenciasMensuales(
     return NextResponse.json(
       {
         error:
-          "La revision mensual esta disponible para PAYJOY, SUMASPAY, ESMIO y ADDI.",
+          "La revision por rango esta disponible para PAYJOY, SUMASPAY, ESMIO y ADDI.",
       },
       { status: 400 }
     );
@@ -667,14 +693,14 @@ async function revisarInconsistenciasMensuales(
 
   if (!Number.isInteger(cursor) || cursor < 0) {
     return NextResponse.json(
-      { error: "El cursor de la revision mensual no es valido." },
+      { error: "El cursor de la revision por rango no es valido." },
       { status: 400 }
     );
   }
 
   if (Number.isNaN(snapshot.getTime())) {
     return NextResponse.json(
-      { error: "La referencia temporal de la revision mensual no es valida." },
+      { error: "La referencia temporal de la revision por rango no es valida." },
       { status: 400 }
     );
   }
@@ -754,18 +780,13 @@ async function revisarInconsistenciasMensuales(
       itemsPagina.map(identificadorConsulta).filter((item) => Boolean(item))
     )
   );
-  const fechaDesde = `${mes}-01`;
-  const finConsulta = new Date(
-    Math.min(rango.end.getTime() - 1, Date.now())
-  );
-  const fechaHasta = getBogotaDateKey(finConsulta);
   const plataforma = await consultarCreditosMensuales(
     proveedor,
     identificadores,
     rango.start,
     rango.end,
-    fechaDesde,
-    fechaHasta
+    desde,
+    hasta
   );
   const revisiones = await prisma.revisionInconsistenciaCredito.findMany({
     where: {
@@ -824,12 +845,12 @@ async function revisarInconsistenciasMensuales(
       ) {
         estado = "SIN_VERIFICAR";
         razones.push(
-          `PAYJOY no pudo completar ${plataforma.diasFallidos.size} dia(s) del mes. No se marca una diferencia hasta consultar el rango completo.`
+          `PAYJOY no pudo completar ${plataforma.diasFallidos.size} dia(s) del rango. No se marca una diferencia hasta consultar el periodo completo.`
         );
       } else if (!creditoPlataforma) {
         estado = "INCONSISTENTE";
         razones.push(
-          `No se encontro en ${proveedor} un credito disponible dentro del mes para este ${
+          `No se encontro en ${proveedor} un credito disponible dentro del rango para este ${
             proveedor === "PAYJOY" ? "IMEI" : "documento"
           }.`
         );
@@ -890,8 +911,9 @@ async function revisarInconsistenciasMensuales(
 
   return NextResponse.json({
     ok: true,
-    modo: "MENSUAL",
-    mes,
+    modo: "RANGO",
+    desde,
+    hasta,
     proveedor,
     alcance: "CREDITO_AUTORIZADO",
     limitado: false,
@@ -931,9 +953,13 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
 
-    if (url.searchParams.has("mes")) {
+    if (
+      url.searchParams.has("desde") ||
+      url.searchParams.has("hasta") ||
+      url.searchParams.has("mes")
+    ) {
       await ensureVendorProfilesSchema();
-      return revisarInconsistenciasMensuales(url, session);
+      return revisarInconsistenciasPorRango(url, session);
     }
 
     const hoy = getTodayBogotaDateKey();

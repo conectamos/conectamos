@@ -54,6 +54,26 @@ function functionNamed(parsed, name) {
   return matches[0];
 }
 
+function functionContainingAll(parsed, fragments) {
+  const matches = descendants(
+    parsed.sourceFile,
+    (node) =>
+      ts.isFunctionDeclaration(node) &&
+      fragments.every((fragment) =>
+        node.getText(parsed.sourceFile).includes(fragment)
+      )
+  );
+
+  assert.equal(
+    matches.length,
+    1,
+    `Se esperaba una funcion en ${parsed.relativePath} que contenga ${fragments.join(
+      ", "
+    )}`
+  );
+  return matches[0];
+}
+
 function variableNamed(parsed, name) {
   const matches = descendants(
     parsed.sourceFile,
@@ -92,7 +112,7 @@ function callsNamed(node, name) {
   );
 }
 
-test("el modo mensual incluye exactamente las cuatro financieras solicitadas", () => {
+test("la revision por periodo incluye exactamente las cuatro financieras solicitadas", () => {
   const parsed = parseSource(
     "app/api/vendedor/registros/inconsistencias/route.ts"
   );
@@ -105,54 +125,103 @@ test("el modo mensual incluye exactamente las cuatro financieras solicitadas", (
   assert.deepEqual(values, ["PAYJOY", "SUMASPAY", "ESMIO", "ADDI"]);
 });
 
-test("la revision mensual usa mes completo, pagina grupos y no aplica el tope diario", () => {
+test("la API acepta desde, hasta y una financiera por solicitud", () => {
   const parsed = parseSource(
     "app/api/vendedor/registros/inconsistencias/route.ts"
   );
-  const monthly = functionNamed(parsed, "revisarInconsistenciasMensuales");
-  const text = monthly.getText(parsed.sourceFile);
+  const flexible = functionContainingAll(parsed, [
+    'url.searchParams.get("desde")',
+    'url.searchParams.get("hasta")',
+    'url.searchParams.get("proveedor")',
+  ]);
+  const text = flexible.getText(parsed.sourceFile);
   const takeProperties = descendants(
-    monthly,
+    flexible,
     (node) =>
       ts.isPropertyAssignment(node) &&
       node.name.getText(parsed.sourceFile) === "take"
   );
 
-  assert.ok(text.includes("getBogotaMonthRangeFromInput(mes)"));
+  assert.ok(text.includes("gte: rango.start"));
+  assert.ok(text.includes("lt: rango.end"));
   assert.ok(text.includes('url.searchParams.get("cursor")'));
-  assert.ok(text.includes("claveGrupoMensual(item)"));
+  assert.ok(text.includes('url.searchParams.get("snapshot")'));
+  assert.ok(text.includes("proveedorDetalle !== proveedor"));
   assert.equal(
     takeProperties.length,
     0,
-    "El modo mensual no puede truncar silenciosamente a 60 registros"
+    "La revision por rango no puede truncar silenciosamente los registros"
   );
 });
 
-test("en mensual solo el valor autorizado puede generar diferencia financiera", () => {
+test("GET enruta desde y hasta al informe flexible sin limitarlo a hoy o ayer", () => {
   const parsed = parseSource(
     "app/api/vendedor/registros/inconsistencias/route.ts"
   );
-  const monthly = functionNamed(parsed, "revisarInconsistenciasMensuales");
-  const comparisons = callsNamed(monthly, "compararNumero");
+  const get = functionNamed(parsed, "GET");
+  const text = get.getText(parsed.sourceFile);
+
+  assert.ok(text.includes('url.searchParams.has("desde")'));
+  assert.ok(text.includes('url.searchParams.has("hasta")'));
+  assert.ok(
+    text.indexOf('url.searchParams.has("desde")') <
+      text.indexOf("const hoy = getTodayBogotaDateKey()"),
+    "La ruta flexible debe evaluarse antes del flujo historico de hoy/ayer"
+  );
+});
+
+test("en cualquier periodo solo el valor autorizado puede generar diferencia financiera", () => {
+  const parsed = parseSource(
+    "app/api/vendedor/registros/inconsistencias/route.ts"
+  );
+  const flexible = functionContainingAll(parsed, [
+    'url.searchParams.get("desde")',
+    'url.searchParams.get("hasta")',
+    'url.searchParams.get("proveedor")',
+  ]);
+  const comparisons = callsNamed(flexible, "compararNumero");
 
   assert.equal(comparisons.length, 1);
   assert.equal(comparisons[0].arguments[1].getText(parsed.sourceFile), '"Credito autorizado"');
 
-  const text = monthly.getText(parsed.sourceFile);
+  const text = flexible.getText(parsed.sourceFile);
   assert.equal(text.includes("La cedula del registro no coincide"), false);
   assert.equal(text.includes("El IMEI del registro no coincide"), false);
   assert.equal(text.includes("Fecha del credito:"), false);
+  assert.equal(text.includes('"Valor cuota"'), false);
+  assert.equal(text.includes('"Cuota inicial"'), false);
+  assert.equal(text.includes('"Numero de cuotas"'), false);
+  assert.equal(text.includes('"Frecuencia"'), false);
 });
 
-test("la pantalla solicita cada financiera por mes y conserva el modo diario", () => {
+test("la pantalla permite DIA, RANGO o MES y seleccion multiple de financieras", () => {
   const parsed = parseSource(
     "app/vendedor/registros/inconsistencias/workspace.tsx"
   );
 
   assert.ok(parsed.sourceText.includes('type="month"'));
   assert.ok(parsed.sourceText.includes('type="date"'));
+  assert.ok(parsed.sourceText.includes('"DIA"'));
+  assert.ok(parsed.sourceText.includes('"RANGO"'));
+  assert.ok(parsed.sourceText.includes('"MES"'));
   assert.ok(parsed.sourceText.includes("PROVEEDORES_MENSUALES"));
-  assert.ok(parsed.sourceText.includes("mes,"));
+  assert.ok(parsed.sourceText.includes("proveedoresSeleccionados"));
+  assert.ok(parsed.sourceText.includes("setProveedoresSeleccionados"));
+  assert.ok(parsed.sourceText.includes('type="checkbox"'));
+  assert.ok(
+    parsed.sourceText.includes(
+      "for (const proveedor of proveedoresSeleccionados)"
+    )
+  );
+});
+
+test("la pantalla normaliza dia, rango y mes a parametros desde/hasta", () => {
+  const parsed = parseSource(
+    "app/vendedor/registros/inconsistencias/workspace.tsx"
+  );
+
+  assert.ok(parsed.sourceText.includes("desde,"));
+  assert.ok(parsed.sourceText.includes("hasta,"));
   assert.ok(parsed.sourceText.includes("proveedor,"));
   assert.ok(parsed.sourceText.includes("cursor: String(cursor)"));
   assert.ok(
@@ -162,7 +231,7 @@ test("la pantalla solicita cada financiera por mes y conserva el modo diario", (
   );
 });
 
-test("los helpers mensuales son separados de los helpers del registro", () => {
+test("los helpers por rango son separados de los helpers del registro", () => {
   const contracts = [
     [
       "lib/payjoy-retail.ts",
@@ -194,7 +263,7 @@ test("los helpers mensuales son separados de los helpers del registro", () => {
   }
 });
 
-test("PayJoy mensual no consulta cuotas ni el credito activo del cliente", () => {
+test("PayJoy por rango no consulta cuotas ni el credito activo del cliente", () => {
   const parsed = parseSource("lib/payjoy-retail.ts");
   const monthly = functionNamed(parsed, "obtenerCreditosPayJoyEnRango");
 
