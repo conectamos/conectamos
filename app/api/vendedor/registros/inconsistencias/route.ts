@@ -125,7 +125,7 @@ const GRUPOS_POR_PAGINA_MENSUAL: Record<
   ProveedorMensual,
   number
 > = {
-  PAYJOY: Number.MAX_SAFE_INTEGER,
+  PAYJOY: 8,
   SUMASPAY: 4,
   ESMIO: 80,
   ADDI: 8,
@@ -133,7 +133,7 @@ const GRUPOS_POR_PAGINA_MENSUAL: Record<
 const MAX_REGISTROS_REVISION = 60;
 const MAX_CONCURRENCIA = 4;
 
-function soloDigitos(value: unknown, maxLength = 15) {
+function soloDigitos(value: unknown, maxLength = 16) {
   return String(value || "").replace(/\D/g, "").slice(0, maxLength);
 }
 
@@ -515,21 +515,32 @@ async function consultarCreditosMensuales(
   try {
     if (proveedor === "PAYJOY") {
       const respuesta = await obtenerCreditosPayJoyEnRango(
+        identificadores,
         fechaInicio,
         fechaFin
       );
+      const erroresPorImei = new Map(
+        respuesta.imeisFallidos.map((fallo) => [fallo.imei, fallo.error])
+      );
 
       for (const identificador of identificadores) {
-        consultas.set(identificador, {
-          ok: true,
-          creditos: respuesta.creditos
-            .filter((credito) => credito.imei === identificador)
-            .map((credito) => ({
-              creditoAutorizado: credito.creditoAutorizado,
-              fechaCreacionCredito: credito.fechaCreacionCredito,
-              ordenId: credito.ordenId,
-            })),
-        });
+        const error = erroresPorImei.get(identificador);
+
+        consultas.set(
+          identificador,
+          error
+            ? { ok: false, error }
+            : {
+                ok: true,
+                creditos: respuesta.creditos
+                  .filter((credito) => credito.imei === identificador)
+                  .map((credito) => ({
+                    creditoAutorizado: credito.creditoAutorizado,
+                    fechaCreacionCredito: credito.fechaCreacionCredito,
+                    ordenId: credito.ordenId,
+                  })),
+              }
+        );
       }
 
       for (const fallo of respuesta.diasFallidos) {
@@ -826,6 +837,17 @@ async function revisarInconsistenciasPorRango(
     return grupo.map((item, itemIndex) => {
       const razones: string[] = [];
       const creditoPlataforma = asignaciones.get(itemIndex) || null;
+      const creditoYaAsignado =
+        !creditoPlataforma && consulta?.ok && consulta.creditos.length > 0
+          ? consulta.creditos.find(
+              (credito) =>
+                item.creditoAutorizado !== null &&
+                Math.round(credito.creditoAutorizado) ===
+                  Math.round(item.creditoAutorizado)
+            ) || consulta.creditos[0]
+          : null;
+      const creditoParaMostrar =
+        creditoPlataforma || creditoYaAsignado;
       let estado: EstadoRevision = "COINCIDE";
 
       if (!consulta || !consulta.ok) {
@@ -846,6 +868,13 @@ async function revisarInconsistenciasPorRango(
         estado = "SIN_VERIFICAR";
         razones.push(
           `PAYJOY no pudo completar ${plataforma.diasFallidos.size} dia(s) del rango. No se marca una diferencia hasta consultar el periodo completo.`
+        );
+      } else if (creditoYaAsignado) {
+        estado = "REVISAR";
+        razones.push(
+          `${proveedor} si devolvio el credito, pero ya fue asignado a otro registro de Conectamos con este ${
+            proveedor === "PAYJOY" ? "IMEI" : "documento"
+          }. Hay ${grupo.length} registro(s) y ${consulta.creditos.length} credito(s) en la plataforma; revisa posible duplicidad.`
         );
       } else if (!creditoPlataforma) {
         estado = "INCONSISTENTE";
@@ -895,10 +924,11 @@ async function revisarInconsistenciasPorRango(
         identificadorTipo: proveedor === "PAYJOY" ? "IMEI" : "CEDULA",
         plataformaCredito: item.plataformaCredito,
         creditoRegistrado: item.creditoAutorizado,
-        creditoPlataforma: creditoPlataforma?.creditoAutorizado ?? null,
+        creditoPlataforma:
+          creditoParaMostrar?.creditoAutorizado ?? null,
         fechaCreditoPlataforma:
-          creditoPlataforma?.fechaCreacionCredito ?? null,
-        ordenId: creditoPlataforma?.ordenId ?? null,
+          creditoParaMostrar?.fechaCreacionCredito ?? null,
+        ordenId: creditoParaMostrar?.ordenId ?? null,
         estado,
         razones,
       };

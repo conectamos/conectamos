@@ -263,7 +263,7 @@ test("los helpers por rango son separados de los helpers del registro", () => {
   }
 });
 
-test("PayJoy por rango no consulta cuotas ni el credito activo del cliente", () => {
+test("PayJoy por rango no consulta cuotas y limita el respaldo de cliente al periodo", () => {
   const parsed = parseSource("lib/payjoy-retail.ts");
   const monthly = functionNamed(parsed, "obtenerCreditosPayJoyEnRango");
 
@@ -274,4 +274,108 @@ test("PayJoy por rango no consulta cuotas ni el credito activo del cliente", () 
     monthly.getText(parsed.sourceFile).includes('"list-transactions.php"'),
     true
   );
+  assert.equal(
+    monthly.getText(parsed.sourceFile).includes('"lookup-customer.php"'),
+    true
+  );
+  assert.ok(
+    monthly
+      .getText(parsed.sourceFile)
+      .includes("fechaCreacionCredito >= fechaDesde")
+  );
+  assert.ok(
+    monthly
+      .getText(parsed.sourceFile)
+      .includes("fechaCreacionCredito <= fechaHasta")
+  );
+});
+
+test("PayJoy por rango consulta cada IMEI objetivo con el filtro oficial", () => {
+  const payjoy = parseSource("lib/payjoy-retail.ts");
+  const rangeLookup = functionNamed(
+    payjoy,
+    "obtenerCreditosPayJoyEnRango"
+  );
+
+  assert.equal(
+    rangeLookup.parameters.length,
+    3,
+    "El helper por rango debe recibir identificadores, fecha inicial y fecha final"
+  );
+  assert.equal(
+    rangeLookup.parameters[0].name.getText(payjoy.sourceFile),
+    "identificadores",
+    "El primer argumento debe ser la lista de IMEIs que se revisaran"
+  );
+
+  const transactionCalls = callsNamed(rangeLookup, "fetchPayJoy").filter(
+    (call) =>
+      call.arguments[0]?.getText(payjoy.sourceFile) ===
+      '"list-transactions.php"'
+  );
+
+  assert.ok(
+    transactionCalls.length > 0,
+    "El helper por rango debe consultar list-transactions.php"
+  );
+
+  for (const call of transactionCalls) {
+    const params = call.arguments[1];
+
+    assert.ok(
+      params && ts.isObjectLiteralExpression(params),
+      "La consulta PayJoy debe declarar sus parametros de forma verificable"
+    );
+
+    const filter = params.properties.find(
+      (property) =>
+        ts.isPropertyAssignment(property) &&
+        property.name.getText(payjoy.sourceFile) === "filter"
+    );
+
+    assert.ok(
+      filter && ts.isPropertyAssignment(filter),
+      "Cada consulta por rango debe filtrar en la API por el IMEI objetivo"
+    );
+    assert.match(
+      filter.initializer.getText(payjoy.sourceFile),
+      /device\.imei:/,
+      "Debe usarse el filtro oficial filter=device.imei:<imei>"
+    );
+  }
+
+  const route = parseSource(
+    "app/api/vendedor/registros/inconsistencias/route.ts"
+  );
+  const providerLookup = functionNamed(route, "consultarCreditosMensuales");
+  const rangeCalls = callsNamed(
+    providerLookup,
+    "obtenerCreditosPayJoyEnRango"
+  );
+
+  assert.equal(rangeCalls.length, 1);
+  assert.deepEqual(
+    rangeCalls[0].arguments.map((argument) =>
+      argument.getText(route.sourceFile)
+    ),
+    ["identificadores", "fechaInicio", "fechaFin"],
+    "La ruta debe entregar al helper exactamente los IMEIs incluidos en el informe"
+  );
+});
+
+test("un credito existente ya consumido por otro registro se muestra como duplicidad", () => {
+  const parsed = parseSource(
+    "app/api/vendedor/registros/inconsistencias/route.ts"
+  );
+  const flexible = functionContainingAll(parsed, [
+    'url.searchParams.get("desde")',
+    'url.searchParams.get("hasta")',
+    'url.searchParams.get("proveedor")',
+  ]);
+  const text = flexible.getText(parsed.sourceFile);
+
+  assert.ok(text.includes("const creditoYaAsignado"));
+  assert.ok(text.includes('estado = "REVISAR"'));
+  assert.ok(text.includes("si devolvio el credito"));
+  assert.ok(text.includes("creditoParaMostrar"));
 });

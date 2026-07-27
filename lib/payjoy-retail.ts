@@ -81,6 +81,10 @@ export type PayJoyAuditoriaMensualResultado = {
     fecha: string;
     error: string;
   }>;
+  imeisFallidos: Array<{
+    imei: string;
+    error: string;
+  }>;
 };
 
 export class PayJoyRetailConfigError extends Error {
@@ -486,6 +490,7 @@ async function fetchPayJoy<T>(
 }
 
 export async function obtenerCreditosPayJoyEnRango(
+  identificadores: string[],
   fechaInicio: Date,
   fechaFin: Date
 ): Promise<PayJoyAuditoriaMensualResultado> {
@@ -504,66 +509,64 @@ export async function obtenerCreditosPayJoyEnRango(
 
   getApiKey();
 
-  const ahoraUnix = getUnixNow();
-  const unDiaMs = 24 * 60 * 60 * 1000;
-  const dias: Array<{
-    fecha: string;
-    starttime: number;
-    endtime: number;
-  }> = [];
+  const starttime = Math.floor(inicioMs / 1000);
+  const endtime = Math.min(
+    Math.ceil(finMs / 1000) - 1,
+    getUnixNow()
+  );
+  const fechaDesde = dateKeyFromUnixTimestamp(starttime);
+  const fechaHasta = dateKeyFromUnixTimestamp(endtime);
+  const imeis = Array.from(
+    new Set(
+      identificadores
+        .map(normalizeImei)
+        .filter((imei) => /^\d{15,16}$/.test(imei))
+    )
+  );
 
-  for (
-    let inicioDiaMs = inicioMs;
-    inicioDiaMs < finMs;
-    inicioDiaMs += unDiaMs
+  if (
+    endtime < starttime ||
+    !fechaDesde ||
+    !fechaHasta ||
+    imeis.length === 0
   ) {
-    const starttime = Math.floor(inicioDiaMs / 1000);
-
-    if (starttime > ahoraUnix) {
-      break;
-    }
-
-    const finDiaExclusivoMs = Math.min(inicioDiaMs + unDiaMs, finMs);
-    const endtime = Math.min(
-      Math.ceil(finDiaExclusivoMs / 1000) - 1,
-      ahoraUnix
-    );
-    const fecha = dateKeyFromUnixTimestamp(starttime);
-
-    if (!fecha || endtime < starttime) {
-      continue;
-    }
-
-    dias.push({
-      fecha,
-      starttime,
-      endtime,
-    });
+    return {
+      creditos: [],
+      diasFallidos: [],
+      imeisFallidos: [],
+    };
   }
 
   const resultados = new Array<{
-    fecha: string;
+    imei: string;
     creditos: Array<
       PayJoyCreditoAuditoriaMensual & {
         claveDedupe: string;
       }
     >;
     error: string | null;
-  }>(dias.length);
-  let siguienteDia = 0;
+  }>(imeis.length);
+  let siguienteImei = 0;
 
-  const consultarDia = async () => {
-    while (siguienteDia < dias.length) {
-      const index = siguienteDia;
-      siguienteDia += 1;
-      const dia = dias[index];
+  const consultarImei = async () => {
+    while (siguienteImei < imeis.length) {
+      const index = siguienteImei;
+      siguienteImei += 1;
+      const imeiObjetivo = imeis[index];
+      let errorTransacciones: string | null = null;
+      let creditos: Array<
+        PayJoyCreditoAuditoriaMensual & {
+          claveDedupe: string;
+        }
+      > = [];
 
       try {
         const data = await fetchPayJoy<PayJoyTransactionResponse>(
           "list-transactions.php",
           {
-            starttime: dia.starttime,
-            endtime: dia.endtime,
+            starttime,
+            endtime,
+            filter: `device.imei:${imeiObjetivo}`,
           },
           { timeoutMs: 20_000 }
         );
@@ -571,24 +574,27 @@ export async function obtenerCreditosPayJoyEnRango(
         if (!data.valid || !Array.isArray(data.transactions)) {
           throw new PayJoyRetailLookupError(
             data.message ||
-              `PayJoy no devolvio las transacciones del ${dia.fecha}.`
+              `PayJoy no devolvio las transacciones del IMEI ${imeiObjetivo}.`
           );
         }
 
-        const creditos = data.transactions.flatMap((transaction) => {
+        creditos = data.transactions.flatMap((transaction) => {
           const type = String(transaction.type || "").trim().toLowerCase();
           const imei = normalizeImei(transaction.device?.imei);
-          const fechaCreacionCredito = dateKeyFromUnixTimestamp(
-            transaction.time
-          );
+          const fechaCreacionCredito =
+            dateKeyFromUnixTimestamp(transaction.time) ||
+            getPayJoyDateFromRecord(transaction.financeOrder) ||
+            getPayJoyDateFromRecord(transaction as Record<string, unknown>);
           const creditoAutorizado =
             parseAmount(transaction.financeOrder?.financeAmount) ??
             parseAmount(transaction.amount);
 
           if (
             type !== "finance" ||
-            !/^\d{15}$/.test(imei) ||
-            fechaCreacionCredito !== dia.fecha ||
+            imei !== imeiObjetivo ||
+            !fechaCreacionCredito ||
+            fechaCreacionCredito < fechaDesde ||
+            fechaCreacionCredito > fechaHasta ||
             creditoAutorizado === null ||
             creditoAutorizado <= 0
           ) {
@@ -615,29 +621,83 @@ export async function obtenerCreditosPayJoyEnRango(
             },
           ];
         });
-
-        resultados[index] = {
-          fecha: dia.fecha,
-          creditos,
-          error: null,
-        };
       } catch (error) {
-        resultados[index] = {
-          fecha: dia.fecha,
-          creditos: [],
-          error:
-            error instanceof Error
-              ? error.message
-              : `No se pudo consultar PayJoy para el ${dia.fecha}.`,
-        };
+        errorTransacciones =
+          error instanceof Error
+            ? error.message
+            : `No se pudo consultar PayJoy para el IMEI ${imeiObjetivo}.`;
       }
+
+      if (creditos.length === 0) {
+        try {
+          const cliente = await fetchPayJoy<PayJoyCustomerLookupResponse>(
+            "lookup-customer.php",
+            {
+              customerLocator: imeiObjetivo,
+              fields: "device.description",
+            },
+            { timeoutMs: 20_000 }
+          );
+          const fechaCreacionCredito =
+            getPayJoyDateFromRecord(cliente.financeOrder) ||
+            getPayJoyDateFromRecord(cliente as Record<string, unknown>);
+          const creditoAutorizado = parseAmount(
+            cliente.financeOrder?.financeAmount
+          );
+
+          if (
+            cliente.valid &&
+            cliente.financeOrder &&
+            fechaCreacionCredito &&
+            fechaCreacionCredito >= fechaDesde &&
+            fechaCreacionCredito <= fechaHasta &&
+            creditoAutorizado !== null &&
+            creditoAutorizado > 0
+          ) {
+            const ordenId =
+              cliente.financeOrder.id === null ||
+              cliente.financeOrder.id === undefined
+                ? null
+                : String(cliente.financeOrder.id).trim() || null;
+
+            creditos = [
+              {
+                imei: imeiObjetivo,
+                creditoAutorizado,
+                fechaCreacionCredito,
+                ordenId,
+                claveDedupe: ordenId
+                  ? `orden:${ordenId}`
+                  : `cliente:${imeiObjetivo}:${fechaCreacionCredito}:${creditoAutorizado}`,
+              },
+            ];
+          }
+        } catch (error) {
+          resultados[index] = {
+            imei: imeiObjetivo,
+            creditos: [],
+            error:
+              error instanceof Error
+                ? error.message
+                : errorTransacciones ||
+                  `No se pudo consultar PayJoy para el IMEI ${imeiObjetivo}.`,
+          };
+          continue;
+        }
+      }
+
+      resultados[index] = {
+        imei: imeiObjetivo,
+        creditos,
+        error: creditos.length === 0 ? errorTransacciones : null,
+      };
     }
   };
 
   await Promise.all(
     Array.from(
-      { length: Math.min(3, dias.length) },
-      consultarDia
+      { length: Math.min(4, imeis.length) },
+      consultarImei
     )
   );
 
@@ -661,10 +721,11 @@ export async function obtenerCreditosPayJoyEnRango(
         a.imei.localeCompare(b.imei) ||
         b.creditoAutorizado - a.creditoAutorizado
     ),
-    diasFallidos: resultados
+    diasFallidos: [],
+    imeisFallidos: resultados
       .filter((resultado) => Boolean(resultado.error))
       .map((resultado) => ({
-        fecha: resultado.fecha,
+        imei: resultado.imei,
         error: resultado.error as string,
       })),
   };
