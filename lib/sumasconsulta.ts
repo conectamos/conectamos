@@ -54,6 +54,19 @@ export type SumasPayCreditoCedulaBatchItem = {
   error?: string;
 };
 
+export type SumasPayCreditoAuditoriaMensual = {
+  documento: string;
+  creditoAutorizado: number;
+  fechaCreacionCredito: string;
+  ordenId: string | null;
+};
+
+export type SumasPayAuditoriaMensualBatchItem = {
+  documento: string;
+  creditos: SumasPayCreditoAuditoriaMensual[];
+  error?: string;
+};
+
 export type EsmioOpcionCreditoCedula = SumasCreditoCedulaBase & {
   financiera: "ESMIOPCION";
   encontradoEnEsmioOpcion: boolean;
@@ -86,12 +99,22 @@ type SumasCredentials = {
 type Candidate = {
   record: Record<string, unknown>;
   source: string;
+  loanId: string | null;
   creditoAutorizado: number;
   numeroCuotas: number | null;
   valorCuota: number | null;
   fechaCreacionCredito: string | null;
   puntoCredito: string | null;
   activeScore: number;
+};
+
+type SumasPayMonthlyAuditCandidate = {
+  source: string;
+  sequence: number;
+  loanId: string | null;
+  creditoAutorizado: number;
+  fechaCreacionCredito: string | null;
+  puntoCredito: string | null;
 };
 
 type SumasPayload = { source: string; data: unknown; loanId?: string };
@@ -101,6 +124,11 @@ type SumasCreditoLookupOptions = {
   maxCreditAgeMonths?: number;
   requireConectamosPoint?: boolean;
   allowMissingCreditCreationDate?: boolean;
+};
+
+type SumasContextOptions = {
+  requireHistoricalStatus?: boolean;
+  includeAllLoanDetails?: boolean;
 };
 
 const DEFAULT_SUMAS_CREDITO_LOOKUP_OPTIONS = {
@@ -1731,7 +1759,7 @@ function getCreditCreationDateByLoanId(payloads: SumasPayload[]) {
 
   for (const payload of payloads) {
     for (const { record } of collectRecords(payload.data, payload.source)) {
-      const loanId = getLoanIdFromRecord(record) || payload.loanId;
+      const loanId = getLoanIdFromRecord(record) || payload.loanId || null;
       const fechaCreacionCredito = getCreditCreationDate(record);
 
       if (loanId && fechaCreacionCredito && !datesByLoanId.has(loanId)) {
@@ -1800,7 +1828,7 @@ function buildCandidates(payloads: SumasPayload[]) {
       }
 
       const valorCuota = getInstallmentValue(record);
-      const loanId = getLoanIdFromRecord(record) || payload.loanId;
+      const loanId = getLoanIdFromRecord(record) || payload.loanId || null;
       const numeroCuotas =
         (loanId ? termsByLoanId.get(loanId) || null : null) || getTerm(record);
       const fechaCreacionCredito =
@@ -1821,6 +1849,7 @@ function buildCandidates(payloads: SumasPayload[]) {
       candidates.push({
         record,
         source,
+        loanId,
         creditoAutorizado,
         numeroCuotas,
         valorCuota,
@@ -1846,6 +1875,150 @@ function buildCandidates(payloads: SumasPayload[]) {
     }
 
     return b.creditoAutorizado - a.creditoAutorizado;
+  });
+}
+
+function isStrictDateKey(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && normalizeDateInput(value) === value;
+}
+
+function getMonthlyAuditSourcePriority(source: string) {
+  if (source === "loan-detail") return 600;
+  if (source === "credits-by-client") return 500;
+  if (source === "list-credit-y2") return 400;
+  if (source.startsWith("client-credit")) return 300;
+  if (source === "client-pos") return 200;
+  if (source === "accounts") return 100;
+  return 0;
+}
+
+function buildSumasPayMonthlyAuditCandidates(payloads: SumasPayload[]) {
+  const creationDatesByLoanId = getCreditCreationDateByLoanId(payloads);
+  const pointCreditNamesByLoanId = getPointCreditNameByLoanId(payloads);
+  const candidates: SumasPayMonthlyAuditCandidate[] = [];
+  let sequence = 0;
+
+  for (const payload of payloads) {
+    for (const { record, source } of collectRecords(payload.data, payload.source)) {
+      const creditoAutorizado = getCreditAmount(record, source);
+
+      if (creditoAutorizado === null || creditoAutorizado <= 0) {
+        continue;
+      }
+
+      const loanId = getLoanIdFromRecord(record) || payload.loanId || null;
+
+      candidates.push({
+        source,
+        sequence,
+        loanId,
+        creditoAutorizado,
+        fechaCreacionCredito:
+          getCreditCreationDate(record) ||
+          (loanId ? creationDatesByLoanId.get(loanId) || null : null),
+        puntoCredito:
+          getPointCreditName(record) ||
+          (loanId ? pointCreditNamesByLoanId.get(loanId) || null : null),
+      });
+      sequence += 1;
+    }
+  }
+
+  return candidates;
+}
+
+function getMonthlyAuditFallbackKey(candidate: SumasPayMonthlyAuditCandidate) {
+  return [
+    candidate.fechaCreacionCredito || "",
+    candidate.creditoAutorizado.toFixed(2),
+    normalizeText(candidate.puntoCredito),
+  ].join("|");
+}
+
+function buildSumasPayMonthlyAuditCredits(
+  documento: string,
+  payloads: SumasPayload[],
+  fechaDesde: string,
+  fechaHasta: string
+): SumasPayCreditoAuditoriaMensual[] {
+  const candidates = buildSumasPayMonthlyAuditCandidates(payloads)
+    .filter((candidate) => {
+      const fecha = candidate.fechaCreacionCredito;
+
+      return (
+        Boolean(fecha) &&
+        String(fecha) >= fechaDesde &&
+        String(fecha) <= fechaHasta &&
+        isConectamosPointCredit(candidate.puntoCredito)
+      );
+    })
+    .sort((a, b) => {
+      const bySource =
+        getMonthlyAuditSourcePriority(b.source) -
+        getMonthlyAuditSourcePriority(a.source);
+
+      return bySource || a.sequence - b.sequence;
+    });
+  const candidatesByLoanId = new Map<string, SumasPayMonthlyAuditCandidate>();
+  const candidatesByFallback = new Map<
+    string,
+    SumasPayMonthlyAuditCandidate
+  >();
+
+  for (const candidate of candidates) {
+    if (candidate.loanId) {
+      if (!candidatesByLoanId.has(candidate.loanId)) {
+        candidatesByLoanId.set(candidate.loanId, candidate);
+      }
+
+      continue;
+    }
+
+    const fallbackKey = getMonthlyAuditFallbackKey(candidate);
+
+    if (!candidatesByFallback.has(fallbackKey)) {
+      candidatesByFallback.set(fallbackKey, candidate);
+    }
+  }
+
+  const selectedCandidates = Array.from(candidatesByLoanId.values());
+  const seenFallbackKeys = new Set(
+    selectedCandidates.map(getMonthlyAuditFallbackKey)
+  );
+
+  for (const [fallbackKey, candidate] of candidatesByFallback) {
+    if (!seenFallbackKeys.has(fallbackKey)) {
+      selectedCandidates.push(candidate);
+      seenFallbackKeys.add(fallbackKey);
+    }
+  }
+
+  const creditos: SumasPayCreditoAuditoriaMensual[] = [];
+
+  for (const candidate of selectedCandidates) {
+    const fechaCreacionCredito = candidate.fechaCreacionCredito;
+
+    if (fechaCreacionCredito) {
+      creditos.push({
+        documento,
+        creditoAutorizado: candidate.creditoAutorizado,
+        fechaCreacionCredito,
+        ordenId: candidate.loanId,
+      });
+    }
+  }
+
+  return creditos.sort((a, b) => {
+    const byDate = a.fechaCreacionCredito.localeCompare(b.fechaCreacionCredito);
+
+    if (byDate !== 0) {
+      return byDate;
+    }
+
+    return (
+      String(a.ordenId || "").localeCompare(String(b.ordenId || "")) ||
+      a.creditoAutorizado - b.creditoAutorizado
+    );
   });
 }
 
@@ -2013,7 +2186,10 @@ function getLoanIdFromRecord(record: Record<string, unknown>) {
   return direct.replace(/\s+/g, "").trim();
 }
 
-function collectLoanIds(payloads: SumasPayload[]) {
+function collectLoanIds(
+  payloads: SumasPayload[],
+  maxLoanIds: number | null = 8
+) {
   const ids = new Set<string>();
 
   for (const payload of payloads) {
@@ -2026,15 +2202,18 @@ function collectLoanIds(payloads: SumasPayload[]) {
     }
   }
 
-  return Array.from(ids).slice(0, 8);
+  const loanIds = Array.from(ids);
+
+  return maxLoanIds === null ? loanIds : loanIds.slice(0, maxLoanIds);
 }
 
 async function appendLoanDetailPayloads(
   session: SumasSession,
   payloads: SumasPayload[],
-  provider: SumasConsultaProvider = SUMASPAY_PROVIDER
+  provider: SumasConsultaProvider = SUMASPAY_PROVIDER,
+  maxLoanIds: number | null = 8
 ) {
-  for (const loanId of collectLoanIds(payloads)) {
+  for (const loanId of collectLoanIds(payloads, maxLoanIds)) {
     const loan = await tryProtectedJson(
       session.apiBaseUrl,
       session.accessToken,
@@ -2219,6 +2398,116 @@ export async function obtenerCreditosSumasPayPorCedulas(
   return resultados;
 }
 
+export async function obtenerCreditosSumasPayPorCedulasEnRango(
+  documentosInput: unknown[],
+  fechaDesde: string,
+  fechaHasta: string
+): Promise<SumasPayAuditoriaMensualBatchItem[]> {
+  const desde = String(fechaDesde || "").trim();
+  const hasta = String(fechaHasta || "").trim();
+
+  if (
+    !isStrictDateKey(desde) ||
+    !isStrictDateKey(hasta) ||
+    desde > hasta
+  ) {
+    throw new SumasConsultaLookupError(
+      "El rango de auditoria SUMASPAY debe usar fechas validas YYYY-MM-DD."
+    );
+  }
+
+  const documentos = Array.from(
+    new Set(
+      documentosInput
+        .map((documentoInput) => normalizeDocumento(documentoInput))
+        .filter((documento) => documento.length >= 5 && documento.length <= 15)
+    )
+  );
+
+  if (documentos.length === 0) {
+    return [];
+  }
+
+  const resultados: SumasPayAuditoriaMensualBatchItem[] = [];
+
+  for (const bloque of chunkArray(
+    documentos,
+    SUMASPAY_BATCH_DOCUMENTS_PER_SESSION
+  )) {
+    let session: SumasSession;
+
+    try {
+      session = await loginSumas(SUMASPAY_PROVIDER);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "SUMASPAY no pudo iniciar una sesion para este bloque";
+
+      for (const documento of bloque) {
+        resultados.push({
+          documento,
+          creditos: [],
+          error: message,
+        });
+      }
+
+      continue;
+    }
+
+    for (const documento of bloque) {
+      try {
+        const creditos =
+          await obtenerCreditosSumasPayPorCedulaEnRangoConSesion(
+            documento,
+            session,
+            desde,
+            hasta
+          );
+
+        resultados.push({ documento, creditos });
+      } catch (error) {
+        if (isSumasServerProcessError(error)) {
+          try {
+            session = await loginSumas(SUMASPAY_PROVIDER);
+            const creditos =
+              await obtenerCreditosSumasPayPorCedulaEnRangoConSesion(
+                documento,
+                session,
+                desde,
+                hasta
+              );
+
+            resultados.push({ documento, creditos });
+            continue;
+          } catch (retryError) {
+            resultados.push({
+              documento,
+              creditos: [],
+              error:
+                retryError instanceof Error
+                  ? retryError.message
+                  : "SUMASPAY no pudo procesar esta cedula",
+            });
+            continue;
+          }
+        }
+
+        resultados.push({
+          documento,
+          creditos: [],
+          error:
+            error instanceof Error
+              ? error.message
+              : "Error consultando creditos SUMASPAY",
+        });
+      }
+    }
+  }
+
+  return resultados;
+}
+
 export async function obtenerCreditoEsmioOpcionPorCedula(
   documentoInput: unknown
 ): Promise<EsmioOpcionCreditoCedula | null> {
@@ -2253,13 +2542,15 @@ async function obtenerCreditoSumaLikePorCedula(
   );
 }
 
-async function obtenerCreditoSumaLikePorCedulaConSesion(
+async function obtenerContextoSumaLikePorCedulaConSesion(
   documento: string,
   provider: SumasConsultaProvider,
   session: SumasSession,
-  options: SumasCreditoLookupOptions = {}
-): Promise<SumasLikeCreditoCedula | null> {
+  options: SumasContextOptions = {}
+) {
   const payloads: SumasPayload[] = [];
+  let historicalSourceReliable = options.requireHistoricalStatus !== true;
+  let historicalSourceError: string | null = null;
 
   const listCreditY2 = await tryProtectedJson(
     session.apiBaseUrl,
@@ -2338,21 +2629,128 @@ async function obtenerCreditoSumaLikePorCedulaConSesion(
     }
   }
 
-  const allCredits = await tryProtectedJson(
-    session.apiBaseUrl,
-    session.accessToken,
+  const allCreditsPath =
     `service-credit/manage/core-bridge/credits-by-client/all?identification=${encodeURIComponent(
       documento
-    )}`,
-    undefined,
-    provider
-  );
+    )}`;
 
-  if (allCredits) {
-    payloads.push({ source: "credits-by-client", data: allCredits });
+  if (options.requireHistoricalStatus === true) {
+    try {
+      const response = await requestProtectedJsonWithStatus(
+        session.apiBaseUrl,
+        session.accessToken,
+        allCreditsPath,
+        { method: "GET" },
+        provider
+      );
+
+      if (response.ok) {
+        historicalSourceReliable = true;
+
+        if (response.payload) {
+          payloads.push({
+            source: "credits-by-client",
+            data: response.payload,
+          });
+        }
+      } else if (response.status === 404) {
+        historicalSourceReliable = true;
+      } else {
+        historicalSourceError =
+          `${provider.logLabel} no pudo consultar el historial de creditos ` +
+          `(estado ${response.status}).`;
+      }
+    } catch (error) {
+      historicalSourceError =
+        error instanceof Error
+          ? error.message
+          : `${provider.logLabel} no pudo consultar el historial de creditos.`;
+    }
+  } else {
+    const allCredits = await tryProtectedJson(
+      session.apiBaseUrl,
+      session.accessToken,
+      allCreditsPath,
+      undefined,
+      provider
+    );
+
+    if (allCredits) {
+      payloads.push({ source: "credits-by-client", data: allCredits });
+    }
   }
 
-  await appendLoanDetailPayloads(session, payloads, provider);
+  await appendLoanDetailPayloads(
+    session,
+    payloads,
+    provider,
+    options.includeAllLoanDetails === true ? null : 8
+  );
+
+  return {
+    payloads,
+    clientSecure,
+    clientOnline,
+    clientPos,
+    clientId,
+    historicalSourceReliable,
+    historicalSourceError,
+  };
+}
+
+async function obtenerCreditosSumasPayPorCedulaEnRangoConSesion(
+  documento: string,
+  session: SumasSession,
+  fechaDesde: string,
+  fechaHasta: string
+) {
+  const {
+    payloads,
+    historicalSourceReliable,
+    historicalSourceError,
+  } = await obtenerContextoSumaLikePorCedulaConSesion(
+    documento,
+    SUMASPAY_PROVIDER,
+    session,
+    {
+      requireHistoricalStatus: true,
+      includeAllLoanDetails: true,
+    }
+  );
+  const creditos = buildSumasPayMonthlyAuditCredits(
+    documento,
+    payloads,
+    fechaDesde,
+    fechaHasta
+  );
+
+  if (!historicalSourceReliable && creditos.length === 0) {
+    throw new SumasConsultaLookupError(
+      historicalSourceError ||
+        "SUMASPAY no pudo consultar una fuente historica confiable."
+    );
+  }
+
+  return creditos;
+}
+
+async function obtenerCreditoSumaLikePorCedulaConSesion(
+  documento: string,
+  provider: SumasConsultaProvider,
+  session: SumasSession,
+  options: SumasCreditoLookupOptions = {}
+): Promise<SumasLikeCreditoCedula | null> {
+  const {
+    payloads,
+    clientSecure,
+    clientOnline,
+    clientPos,
+    clientId,
+  } = await obtenerContextoSumaLikePorCedulaConSesion(
+    documento,
+    provider,
+    session
+  );
 
   if (payloads.length === 0) {
     console.info(`${provider.logLabel} consulta sin payloads`, {

@@ -31,6 +31,23 @@ export type AddiCreditoCedula = {
   origen: string;
 };
 
+export type AddiCreditoAuditoriaMensual = {
+  documento: string;
+  creditoAutorizado: number;
+  fechaCreacionCredito: string;
+  ordenId: string | null;
+};
+
+export type AddiAuditoriaMensualBatchItem = {
+  documento: string;
+  creditos: AddiCreditoAuditoriaMensual[];
+  error?: string;
+};
+
+type AddiCreditoAuditoriaMensualInterno = AddiCreditoAuditoriaMensual & {
+  sortTime: number;
+};
+
 type AddiConfig = {
   authBaseUrl: string;
   audience: string;
@@ -778,6 +795,30 @@ async function getProtectedJson(
   );
 }
 
+async function getProtectedJsonStrict(
+  baseUrl: string,
+  session: AddiSession,
+  path: string,
+  timeoutMs = 20000
+) {
+  const url = new URL(path.replace(/^\/+/, ""), baseUrl).toString();
+
+  return unwrapData(
+    await requestJson(
+      url,
+      {
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          "x-addi-token": session.accessToken,
+          "Content-Type": "application/json",
+          ...(session.authCookie ? { Cookie: session.authCookie } : {}),
+        },
+      },
+      { timeoutMs }
+    )
+  );
+}
+
 function collectRecords(
   value: unknown,
   source: string,
@@ -1238,6 +1279,280 @@ export function isAddiConsultaConfigured() {
       String(process.env.ADDICONSULTA_USUARIO || "").trim() &&
       String(process.env.ADDICONSULTA_CLAVE || "").trim()
   );
+}
+
+function isValidAddiAuditDateKey(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
+function validateAddiAuditRange(fechaDesde: string, fechaHasta: string) {
+  if (
+    !isValidAddiAuditDateKey(fechaDesde) ||
+    !isValidAddiAuditDateKey(fechaHasta) ||
+    fechaDesde > fechaHasta
+  ) {
+    throw new AddiConsultaLookupError(
+      "El rango de auditoria ADDI debe usar fechas validas YYYY-MM-DD."
+    );
+  }
+}
+
+function toAddiAuditDateTime(dateKey: string, endOfDay = false) {
+  return `${dateKey}T${endOfDay ? "23:59:59" : "00:00:00"}-05:00`;
+}
+
+function dedupeAddiMonthlyAuditCredits(
+  creditos: AddiCreditoAuditoriaMensualInterno[]
+) {
+  const seen = new Set<string>();
+
+  return creditos
+    .filter((credito) => {
+      const key = credito.ordenId
+        ? `id:${credito.ordenId}`
+        : [
+            "fallback",
+            credito.documento,
+            credito.fechaCreacionCredito,
+            credito.creditoAutorizado,
+            credito.sortTime,
+          ].join("|");
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    })
+    .sort(
+      (a, b) =>
+        b.sortTime - a.sortTime ||
+        b.fechaCreacionCredito.localeCompare(a.fechaCreacionCredito)
+    )
+    .map((credito) => ({
+      documento: credito.documento,
+      creditoAutorizado: credito.creditoAutorizado,
+      fechaCreacionCredito: credito.fechaCreacionCredito,
+      ordenId: credito.ordenId,
+    }));
+}
+
+function buildAddiMonthlyAuditCredits(
+  payloads: AddiPayload[],
+  documento: string,
+  fechaDesde: string,
+  fechaHasta: string
+) {
+  const creditos = buildCandidates(payloads, documento)
+    .filter((candidate) => getDocument(candidate.record) === documento)
+    .filter((candidate) => isSuccessfulStatus(candidate.estado))
+    .filter((candidate) => isConectamosStore(candidate.puntoCredito))
+    .map((candidate): AddiCreditoAuditoriaMensualInterno | null => {
+      const { dateKey } = parseCreditDate(candidate.fechaCreacionCredito);
+
+      if (!dateKey || dateKey < fechaDesde || dateKey > fechaHasta) {
+        return null;
+      }
+
+      return {
+        documento,
+        creditoAutorizado: candidate.creditoAutorizado,
+        fechaCreacionCredito: dateKey,
+        ordenId: candidate.ordenId,
+        sortTime: candidate.sortTime,
+      };
+    })
+    .filter(
+      (credito): credito is AddiCreditoAuditoriaMensualInterno =>
+        Boolean(credito)
+    );
+
+  return dedupeAddiMonthlyAuditCredits(creditos);
+}
+
+async function fetchAddiMonthlyAuditByDocument(
+  session: AddiSession,
+  documento: string,
+  fechaDesde: string,
+  fechaHasta: string
+) {
+  const query = new URLSearchParams({
+    limit: "5000",
+    offset: "0",
+    searchField: documento,
+    createdAtFrom: toAddiAuditDateTime(fechaDesde),
+    createdAtTo: toAddiAuditDateTime(fechaHasta, true),
+    status: "APPROVED",
+  });
+  const requests = [
+    {
+      source: "ally-portal-transactions-monthly-audit",
+      baseUrl: ADDI_PORTAL_API_BASE_URL,
+      path: `/transactions?${query.toString()}`,
+    },
+    {
+      source: "ally-portal-external-transactions-monthly-audit",
+      baseUrl: ADDI_PORTAL_EXTERNAL_API_BASE_URL,
+      path: `/v1/transactions?${query.toString()}`,
+    },
+  ];
+  const payloads = await Promise.all(
+    requests.map(async (request): Promise<AddiPayload> => {
+      const data = await getProtectedJsonStrict(
+        request.baseUrl,
+        session,
+        request.path
+      );
+
+      if (data === null || data === undefined) {
+        throw new AddiConsultaLookupError(
+          `ADDI no devolvio contenido en ${request.source}.`
+        );
+      }
+
+      if (!Array.isArray(data) && !isRecord(data)) {
+        throw new AddiConsultaLookupError(
+          `ADDI devolvio un formato inesperado en ${request.source}.`
+        );
+      }
+
+      return {
+        source: request.source,
+        data,
+      };
+    })
+  );
+
+  return buildAddiMonthlyAuditCredits(
+    payloads,
+    documento,
+    fechaDesde,
+    fechaHasta
+  );
+}
+
+async function mapAddiAuditConcurrency<T, R>(
+  items: T[],
+  worker: (item: T) => Promise<R>,
+  concurrency = 3
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const run = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index]);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, run)
+  );
+
+  return results;
+}
+
+export async function obtenerCreditosAddiPorCedulasEnRango(
+  documentosInput: unknown[],
+  fechaDesde: string,
+  fechaHasta: string
+): Promise<AddiAuditoriaMensualBatchItem[]> {
+  validateAddiAuditRange(fechaDesde, fechaHasta);
+
+  const documentos = Array.from(
+    new Set(documentosInput.map((documento) => normalizeDocumento(documento)))
+  );
+  const invalidos = documentos.filter(
+    (documento) => documento.length < 5 || documento.length > 15
+  );
+  const validos = documentos.filter(
+    (documento) => documento.length >= 5 && documento.length <= 15
+  );
+  const resultadosInvalidos: AddiAuditoriaMensualBatchItem[] = invalidos.map(
+    (documento) => ({
+      documento,
+      creditos: [],
+      error: "La cedula debe tener entre 5 y 15 digitos.",
+    })
+  );
+
+  if (validos.length === 0) {
+    return resultadosInvalidos;
+  }
+
+  let session: AddiSession;
+
+  try {
+    session = await loginAddi();
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "No se pudo iniciar sesion en ADDI.";
+
+    return [
+      ...resultadosInvalidos,
+      ...validos.map((documento) => ({
+        documento,
+        creditos: [],
+        error: message,
+      })),
+    ];
+  }
+
+  const resultadosValidos = await mapAddiAuditConcurrency(
+    validos,
+    async (documento): Promise<AddiAuditoriaMensualBatchItem> => {
+      try {
+        return {
+          documento,
+          creditos: await fetchAddiMonthlyAuditByDocument(
+            session,
+            documento,
+            fechaDesde,
+            fechaHasta
+          ),
+        };
+      } catch (error) {
+        return {
+          documento,
+          creditos: [],
+          error:
+            error instanceof Error
+              ? error.message
+              : "No se pudo consultar ADDI para esta cedula.",
+        };
+      }
+    }
+  );
+  const resultadosPorDocumento = new Map(
+    [...resultadosInvalidos, ...resultadosValidos].map((item) => [
+      item.documento,
+      item,
+    ])
+  );
+
+  return documentos
+    .map((documento) => resultadosPorDocumento.get(documento))
+    .filter((item): item is AddiAuditoriaMensualBatchItem => Boolean(item));
 }
 
 export async function obtenerCreditoAddiPorCedula(

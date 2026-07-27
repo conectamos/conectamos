@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 import { requireVendorPage } from "@/lib/page-access";
 import { esPerfilRegistroVenta } from "@/lib/access-control";
-import { getTodayBogotaDateKey } from "@/lib/ventas-utils";
+import {
+  getCurrentBogotaMonthInput,
+  getTodayBogotaDateKey,
+} from "@/lib/ventas-utils";
 import { shiftDateKey } from "@/lib/credit-date-utils";
 import InconsistenciasCreditosWorkspace from "./workspace";
 
@@ -18,6 +21,7 @@ export default async function InconsistenciasCreditosPage() {
     <InconsistenciasCreditosWorkspace
       fechaHoy={fechaHoy}
       fechaAyer={shiftDateKey(fechaHoy, -1)}
+      mesActual={getCurrentBogotaMonthInput()}
       session={{
         nombre: session.nombre,
         sedeNombre: session.sedeNombre ?? "Tu sede",

@@ -43,8 +43,12 @@ type ResultadoRevision = {
   razones: string[];
 };
 
+type ModoRevision = "MENSUAL" | "DIARIA";
+
 type ReporteRevision = {
-  fecha: string;
+  modo: ModoRevision;
+  fecha?: string;
+  mes?: string;
   limitado: boolean;
   maxRegistros: number;
   resumen: {
@@ -59,7 +63,22 @@ type ReporteRevision = {
   resultados: ResultadoRevision[];
 };
 
+type RespuestaMensual = Omit<ReporteRevision, "modo"> & {
+  modo: "MENSUAL";
+  proveedor: string;
+  paginacion: {
+    snapshot: string;
+    cursor: number;
+    cursorSiguiente: number | null;
+    completo: boolean;
+    gruposProcesados: number;
+    gruposTotales: number;
+    creditosTotales: number;
+  };
+};
+
 type FiltroEstado = "REVISION" | "TODOS" | EstadoRevision;
+const PROVEEDORES_MENSUALES = ["PAYJOY", "SUMASPAY", "ESMIO", "ADDI"] as const;
 
 function formatMoney(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
@@ -101,18 +120,46 @@ function claseEstado(estado: EstadoRevision) {
   return "border-emerald-200 bg-emerald-50 text-emerald-700";
 }
 
+function resumirResultados(resultados: ResultadoRevision[]) {
+  return {
+    registrosAnalizados: new Set(
+      resultados.map((resultado) => resultado.registroId)
+    ).size,
+    creditosAnalizados: resultados.length,
+    coincidencias: resultados.filter(
+      (resultado) => resultado.estado === "COINCIDE"
+    ).length,
+    inconsistencias: resultados.filter(
+      (resultado) => resultado.estado === "INCONSISTENTE"
+    ).length,
+    revisar: resultados.filter((resultado) => resultado.estado === "REVISAR")
+      .length,
+    sinVerificar: resultados.filter(
+      (resultado) => resultado.estado === "SIN_VERIFICAR"
+    ).length,
+    revisados: resultados.filter(
+      (resultado) => resultado.estado === "REVISADO"
+    ).length,
+  };
+}
+
 export default function InconsistenciasCreditosWorkspace({
   fechaAyer,
   fechaHoy,
+  mesActual,
   session,
 }: {
   fechaAyer: string;
   fechaHoy: string;
+  mesActual: string;
   session: SessionProps;
 }) {
+  const [modo, setModo] = useState<ModoRevision>("MENSUAL");
   const [fecha, setFecha] = useState(fechaHoy);
+  const [mes, setMes] = useState(mesActual);
   const [reporte, setReporte] = useState<ReporteRevision | null>(null);
   const [cargando, setCargando] = useState(false);
+  const [progreso, setProgreso] = useState("");
   const [error, setError] = useState("");
   const [filtro, setFiltro] = useState<FiltroEstado>("REVISION");
   const [marcandoRevision, setMarcandoRevision] = useState("");
@@ -169,25 +216,107 @@ export default function InconsistenciasCreditosWorkspace({
       setCargando(true);
       setError("");
       setReporte(null);
+      setProgreso("");
 
-      const params = new URLSearchParams({ fecha });
-      const response = await fetch(
-        `/api/vendedor/registros/inconsistencias?${params.toString()}`,
-        { cache: "no-store" }
-      );
-      const data = await response.json();
+      if (modo === "MENSUAL") {
+        const resultados = new Map<string, ResultadoRevision>();
+        let snapshotRevision = "";
 
-      if (!response.ok) {
-        setError(data.error || "No se pudo completar la revision.");
-        return;
+        for (const proveedor of PROVEEDORES_MENSUALES) {
+          let cursor: number | null = 0;
+          const cursoresProcesados = new Set<number>();
+
+          while (cursor !== null) {
+            if (cursoresProcesados.has(cursor)) {
+              throw new Error(
+                `La consulta de ${proveedor} no pudo avanzar al siguiente bloque.`
+              );
+            }
+
+            cursoresProcesados.add(cursor);
+            setProgreso(
+              `Consultando ${proveedor} para ${mes}${
+                cursor > 0 ? ` · bloque ${cursoresProcesados.size}` : ""
+              }`
+            );
+
+            const params = new URLSearchParams({
+              mes,
+              proveedor,
+              cursor: String(cursor),
+            });
+
+            if (snapshotRevision) {
+              params.set("snapshot", snapshotRevision);
+            }
+
+            const response = await fetch(
+              `/api/vendedor/registros/inconsistencias?${params.toString()}`,
+              { cache: "no-store" }
+            );
+            const data = await response.json();
+
+            if (!response.ok) {
+              throw new Error(
+                data.error ||
+                  `No se pudo completar la revision mensual de ${proveedor}.`
+              );
+            }
+
+            const pagina = data as RespuestaMensual;
+            snapshotRevision =
+              snapshotRevision || pagina.paginacion.snapshot;
+
+            for (const resultado of pagina.resultados) {
+              resultados.set(
+                `${resultado.registroId}:${resultado.proveedor}`,
+                resultado
+              );
+            }
+
+            cursor = pagina.paginacion.cursorSiguiente;
+          }
+        }
+
+        const resultadosCompletos = Array.from(resultados.values());
+
+        setReporte({
+          modo: "MENSUAL",
+          mes,
+          limitado: false,
+          maxRegistros: 0,
+          resumen: resumirResultados(resultadosCompletos),
+          resultados: resultadosCompletos,
+        });
+      } else {
+        setProgreso("Consultando las financieras del dia seleccionado");
+        const params = new URLSearchParams({ fecha });
+        const response = await fetch(
+          `/api/vendedor/registros/inconsistencias?${params.toString()}`,
+          { cache: "no-store" }
+        );
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "No se pudo completar la revision.");
+        }
+
+        setReporte({
+          ...(data as Omit<ReporteRevision, "modo">),
+          modo: "DIARIA",
+        });
       }
 
-      setReporte(data as ReporteRevision);
       setFiltro("REVISION");
-    } catch {
-      setError("Error consultando las plataformas de credito.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Error consultando las plataformas de credito."
+      );
     } finally {
       setCargando(false);
+      setProgreso("");
     }
   };
 
@@ -289,8 +418,8 @@ export default function InconsistenciasCreditosWorkspace({
                 Inconsistencias de creditos
               </h1>
               <p className="mt-2 max-w-3xl text-[15px] leading-6 text-slate-500">
-                Compara lo registrado en Conectamos contra PAYJOY, FINSER, ALO
-                CREDIT, SUMASPAY, ESMIO y ADDI.
+                Revisa las ventas contra las plataformas de credito, por dia o
+                durante todo el mes.
               </p>
             </div>
 
@@ -320,36 +449,71 @@ export default function InconsistenciasCreditosWorkspace({
           </header>
 
           <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-end">
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_220px_220px_auto] xl:items-end">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-[#e30613]">
                   Revision en linea
                 </p>
                 <h2 className="mt-2 text-xl font-black">
-                  Selecciona el dia que deseas revisar
+                  {modo === "MENSUAL"
+                    ? "Selecciona el mes que deseas revisar"
+                    : "Selecciona el dia que deseas revisar"}
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Solo se habilitan hoy y ayer porque las plataformas entregan
-                  creditos recientes. La revision no modifica ninguna venta.
+                  {modo === "MENSUAL"
+                    ? "Compara PAYJOY, SUMASPAY, ESMIOPCION y ADDI durante todo el mes. Solo se valida el valor del credito; no se comparan cuota, plazo, inicial ni frecuencia."
+                    : "La revision diaria conserva la consulta de hoy y ayer para todas las financieras. No modifica ninguna venta."}
                 </p>
               </div>
 
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Fecha de registros
-                <input
-                  type="date"
-                  value={fecha}
-                  min={fechaAyer}
-                  max={fechaHoy}
-                  onChange={(event) => setFecha(event.target.value)}
+                Tipo de revision
+                <select
+                  value={modo}
+                  disabled={cargando}
+                  onChange={(event) => {
+                    setModo(event.target.value as ModoRevision);
+                    setReporte(null);
+                    setError("");
+                  }}
                   className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                />
+                >
+                  <option value="MENSUAL">Mensual · 4 financieras</option>
+                  <option value="DIARIA">Diaria · todas</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                {modo === "MENSUAL" ? "Mes de registros" : "Fecha de registros"}
+                {modo === "MENSUAL" ? (
+                  <input
+                    type="month"
+                    value={mes}
+                    max={mesActual}
+                    disabled={cargando}
+                    onChange={(event) => setMes(event.target.value)}
+                    className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                  />
+                ) : (
+                  <input
+                    type="date"
+                    value={fecha}
+                    min={fechaAyer}
+                    max={fechaHoy}
+                    disabled={cargando}
+                    onChange={(event) => setFecha(event.target.value)}
+                    className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                  />
+                )}
               </label>
 
               <button
                 type="button"
                 onClick={() => void analizar()}
-                disabled={cargando || !fecha}
+                disabled={
+                  cargando ||
+                  (modo === "MENSUAL" ? !mes : !fecha)
+                }
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-6 text-sm font-black uppercase tracking-[0.06em] text-white shadow-sm transition hover:bg-[#c90511] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <DashboardIcon
@@ -380,10 +544,12 @@ export default function InconsistenciasCreditosWorkspace({
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-[#e30613]" />
                 <div>
                   <p className="text-sm font-bold text-slate-900">
-                    Comparando registros con las plataformas
+                    {progreso || "Comparando registros con las plataformas"}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    El tiempo depende de la respuesta de cada financiera.
+                    {modo === "MENSUAL"
+                      ? "Se recorreran todos los bloques del mes; puedes mantener esta pagina abierta."
+                      : "El tiempo depende de la respuesta de cada financiera."}
                   </p>
                 </div>
               </div>
@@ -439,7 +605,7 @@ export default function InconsistenciasCreditosWorkspace({
                 ))}
               </section>
 
-              {reporte.limitado && (
+              {reporte.modo === "DIARIA" && reporte.limitado && (
                 <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
                   La revision se limito a los {reporte.maxRegistros} registros
                   mas recientes del dia.

@@ -351,12 +351,15 @@ test("el auditor solo compara el credito autorizado como dato financiero", () =>
       : null
   );
 
-  assert.equal(
-    financialComparisons.length,
-    1,
-    "El auditor no debe comparar cuota, plazo ni otros valores financieros"
+  assert.ok(
+    financialComparisons.length >= 1,
+    "El auditor debe comparar el credito autorizado"
   );
-  assert.deepEqual(financialComparisons, ["Credito autorizado"]);
+  assert.deepEqual(
+    [...new Set(financialComparisons)],
+    ["Credito autorizado"],
+    "Ningun modo del auditor debe comparar cuota, plazo ni otros valores financieros"
+  );
   assert.equal(
     parsed.sourceText.includes("Frecuencia: Conectamos"),
     false,

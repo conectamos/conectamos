@@ -10,12 +10,15 @@ import {
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
   getBogotaDayRangeFromInput,
+  getBogotaDateKey,
+  getBogotaMonthRangeFromInput,
   getTodayBogotaDateKey,
 } from "@/lib/ventas-utils";
 import { normalizeDateKey, shiftDateKey } from "@/lib/credit-date-utils";
 import {
   isPayJoyRetailConfigured,
   obtenerCreditoPayJoyPorImei,
+  obtenerCreditosPayJoyEnRango,
 } from "@/lib/payjoy-retail";
 import {
   isFinserpayConsultaConfigured,
@@ -28,14 +31,17 @@ import {
 import {
   isSumasConsultaConfigured,
   obtenerCreditoSumasPayPorCedula,
+  obtenerCreditosSumasPayPorCedulasEnRango,
 } from "@/lib/sumasconsulta";
 import {
   isEsmioOpcionConsultaConfigured,
   obtenerCreditoEsmioOpcionPorCedula,
+  obtenerCreditosEsmioOpcionPorCedulasEnRango,
 } from "@/lib/esmiopcionconsulta";
 import {
   isAddiConsultaConfigured,
   obtenerCreditoAddiPorCedula,
+  obtenerCreditosAddiPorCedulasEnRango,
 } from "@/lib/addiconsulta";
 
 type Proveedor =
@@ -45,6 +51,10 @@ type Proveedor =
   | "SUMASPAY"
   | "ESMIO"
   | "ADDI";
+type ProveedorMensual = Extract<
+  Proveedor,
+  "PAYJOY" | "SUMASPAY" | "ESMIO" | "ADDI"
+>;
 
 type EstadoRevision =
   | "COINCIDE"
@@ -89,12 +99,37 @@ type ResultadoConsulta =
   | { ok: true; credito: CreditoOficial | null }
   | { ok: false; error: string };
 
+type CreditoOficialMensual = {
+  creditoAutorizado: number;
+  fechaCreacionCredito: string;
+  ordenId: string | null;
+};
+
+type ResultadoConsultaMensual =
+  | { ok: true; creditos: CreditoOficialMensual[] }
+  | { ok: false; error: string };
+
 const PROVEEDORES_POR_CEDULA = new Set<Proveedor>([
   "ALO CREDIT",
   "SUMASPAY",
   "ESMIO",
   "ADDI",
 ]);
+const PROVEEDORES_MENSUALES = new Set<Proveedor>([
+  "PAYJOY",
+  "SUMASPAY",
+  "ESMIO",
+  "ADDI",
+]);
+const GRUPOS_POR_PAGINA_MENSUAL: Record<
+  ProveedorMensual,
+  number
+> = {
+  PAYJOY: Number.MAX_SAFE_INTEGER,
+  SUMASPAY: 4,
+  ESMIO: 80,
+  ADDI: 8,
+};
 const MAX_REGISTROS_REVISION = 60;
 const MAX_CONCURRENCIA = 4;
 
@@ -130,6 +165,12 @@ function identificarProveedor(value: unknown): Proveedor | null {
   if (key === "ESMIO" || key === "ESMIOPCION") return "ESMIO";
   if (key === "ADDI") return "ADDI";
   return null;
+}
+
+function esProveedorMensual(
+  proveedor: Proveedor | null
+): proveedor is ProveedorMensual {
+  return Boolean(proveedor && PROVEEDORES_MENSUALES.has(proveedor));
 }
 
 function extraerDetalles(registro: {
@@ -310,6 +351,123 @@ function compararNumero(
   }
 }
 
+function identificadorConsulta(item: ItemRevision) {
+  return PROVEEDORES_POR_CEDULA.has(item.proveedor)
+    ? soloDigitos(item.documentoNumero)
+    : soloDigitos(item.serialImei);
+}
+
+function claveGrupoMensual(item: ItemRevision) {
+  const identificador = identificadorConsulta(item);
+
+  return identificador
+    ? `${item.proveedor}:${identificador}`
+    : `${item.proveedor}:REGISTRO:${item.registroId}`;
+}
+
+function diferenciaDias(fechaA: string | null, fechaB: string | null) {
+  if (!fechaA || !fechaB) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const a = Date.parse(`${fechaA}T00:00:00.000Z`);
+  const b = Date.parse(`${fechaB}T00:00:00.000Z`);
+
+  return Number.isFinite(a) && Number.isFinite(b)
+    ? Math.abs(a - b)
+    : Number.MAX_SAFE_INTEGER;
+}
+
+function asignarCreditosMensuales(
+  items: ItemRevision[],
+  creditos: CreditoOficialMensual[]
+) {
+  const asignaciones = new Map<number, CreditoOficialMensual>();
+  const usados = new Set<number>();
+  const indicesItems = items
+    .map((_, index) => index)
+    .sort(
+      (a, b) => items[a].createdAt.getTime() - items[b].createdAt.getTime()
+    );
+
+  const asignar = (
+    itemIndex: number,
+    candidatos: Array<{ credito: CreditoOficialMensual; index: number }>
+  ) => {
+    if (candidatos.length === 0) {
+      return false;
+    }
+
+    const fechaRegistro = getBogotaDateKey(items[itemIndex].createdAt);
+    const elegido = candidatos.sort(
+      (a, b) =>
+        diferenciaDias(a.credito.fechaCreacionCredito, fechaRegistro) -
+        diferenciaDias(b.credito.fechaCreacionCredito, fechaRegistro)
+    )[0];
+
+    usados.add(elegido.index);
+    asignaciones.set(itemIndex, elegido.credito);
+    return true;
+  };
+
+  // Primero consume coincidencias exactas de valor. La fecha solo desempata
+  // cuál operación corresponde; nunca genera una inconsistencia.
+  for (const itemIndex of indicesItems) {
+    const registrado = items[itemIndex].creditoAutorizado;
+
+    if (registrado === null) {
+      continue;
+    }
+
+    asignar(
+      itemIndex,
+      creditos
+        .map((credito, index) => ({ credito, index }))
+        .filter(
+          ({ credito, index }) =>
+            !usados.has(index) &&
+            Math.round(credito.creditoAutorizado) === Math.round(registrado)
+        )
+    );
+  }
+
+  // Las operaciones restantes se emparejan por cercanía de fecha únicamente
+  // para poder mostrar ambos valores cuando difieren.
+  for (const itemIndex of indicesItems) {
+    if (asignaciones.has(itemIndex)) {
+      continue;
+    }
+
+    asignar(
+      itemIndex,
+      creditos
+        .map((credito, index) => ({ credito, index }))
+        .filter(({ index }) => !usados.has(index))
+    );
+  }
+
+  return asignaciones;
+}
+
+function resumenResultados(
+  resultados: Array<{ registroId: number; estado: EstadoRevision }>
+) {
+  return {
+    registrosAnalizados: new Set(resultados.map((item) => item.registroId)).size,
+    creditosAnalizados: resultados.length,
+    coincidencias: resultados.filter((item) => item.estado === "COINCIDE")
+      .length,
+    inconsistencias: resultados.filter(
+      (item) => item.estado === "INCONSISTENTE"
+    ).length,
+    revisar: resultados.filter((item) => item.estado === "REVISAR").length,
+    sinVerificar: resultados.filter(
+      (item) => item.estado === "SIN_VERIFICAR"
+    ).length,
+    revisados: resultados.filter((item) => item.estado === "REVISADO").length,
+  };
+}
+
 function construirScope(session: {
   perfilId?: number | null;
   perfilTipo?: unknown;
@@ -325,6 +483,431 @@ function construirScope(session: {
   return {
     perfilVendedorId: session.perfilId || -1,
   };
+}
+
+async function consultarCreditosMensuales(
+  proveedor: ProveedorMensual,
+  identificadores: string[],
+  fechaInicio: Date,
+  fechaFin: Date,
+  fechaDesde: string,
+  fechaHasta: string
+) {
+  const consultas = new Map<string, ResultadoConsultaMensual>();
+  const diasFallidos = new Map<string, string>();
+  const errorConfiguracion = `La consulta de ${proveedor} no esta configurada en el servidor.`;
+
+  if (identificadores.length === 0) {
+    return { consultas, diasFallidos };
+  }
+
+  if (!proveedorConfigurado(proveedor)) {
+    for (const identificador of identificadores) {
+      consultas.set(identificador, {
+        ok: false,
+        error: errorConfiguracion,
+      });
+    }
+
+    return { consultas, diasFallidos };
+  }
+
+  try {
+    if (proveedor === "PAYJOY") {
+      const respuesta = await obtenerCreditosPayJoyEnRango(
+        fechaInicio,
+        fechaFin
+      );
+
+      for (const identificador of identificadores) {
+        consultas.set(identificador, {
+          ok: true,
+          creditos: respuesta.creditos
+            .filter((credito) => credito.imei === identificador)
+            .map((credito) => ({
+              creditoAutorizado: credito.creditoAutorizado,
+              fechaCreacionCredito: credito.fechaCreacionCredito,
+              ordenId: credito.ordenId,
+            })),
+        });
+      }
+
+      for (const fallo of respuesta.diasFallidos) {
+        diasFallidos.set(fallo.fecha, fallo.error);
+      }
+    } else if (proveedor === "SUMASPAY") {
+      const respuesta = await obtenerCreditosSumasPayPorCedulasEnRango(
+        identificadores,
+        fechaDesde,
+        fechaHasta
+      );
+
+      for (const item of respuesta) {
+        consultas.set(
+          soloDigitos(item.documento),
+          item.error
+            ? { ok: false, error: item.error }
+            : {
+                ok: true,
+                creditos: item.creditos.map((credito) => ({
+                  creditoAutorizado: credito.creditoAutorizado,
+                  fechaCreacionCredito: credito.fechaCreacionCredito,
+                  ordenId: credito.ordenId,
+                })),
+              }
+        );
+      }
+    } else if (proveedor === "ESMIO") {
+      const respuesta =
+        await obtenerCreditosEsmioOpcionPorCedulasEnRango(
+          identificadores,
+          fechaDesde,
+          fechaHasta
+        );
+
+      for (const item of respuesta) {
+        consultas.set(
+          soloDigitos(item.documento),
+          item.error
+            ? { ok: false, error: item.error }
+            : {
+                ok: true,
+                creditos: item.creditos.map((credito) => ({
+                  creditoAutorizado: credito.creditoAutorizado,
+                  fechaCreacionCredito: credito.fechaCreacionCredito,
+                  ordenId: credito.ordenId,
+                })),
+              }
+        );
+      }
+    } else {
+      const respuesta = await obtenerCreditosAddiPorCedulasEnRango(
+        identificadores,
+        fechaDesde,
+        fechaHasta
+      );
+
+      for (const item of respuesta) {
+        consultas.set(
+          soloDigitos(item.documento),
+          item.error
+            ? { ok: false, error: item.error }
+            : {
+                ok: true,
+                creditos: item.creditos.map((credito) => ({
+                  creditoAutorizado: credito.creditoAutorizado,
+                  fechaCreacionCredito: credito.fechaCreacionCredito,
+                  ordenId: credito.ordenId,
+                })),
+              }
+        );
+      }
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : `No se pudo consultar ${proveedor}.`;
+
+    for (const identificador of identificadores) {
+      consultas.set(identificador, { ok: false, error: message });
+    }
+  }
+
+  for (const identificador of identificadores) {
+    if (!consultas.has(identificador)) {
+      consultas.set(identificador, {
+        ok: false,
+        error: `${proveedor} no devolvio una respuesta para este identificador.`,
+      });
+    }
+  }
+
+  return { consultas, diasFallidos };
+}
+
+async function revisarInconsistenciasMensuales(
+  url: URL,
+  session: {
+    perfilId?: number | null;
+    perfilTipo?: unknown;
+    rolNombre?: string | null;
+  }
+) {
+  const mes = String(url.searchParams.get("mes") || "").trim();
+  const proveedor = identificarProveedor(url.searchParams.get("proveedor"));
+  const rango = getBogotaMonthRangeFromInput(mes);
+  const mesActual = getTodayBogotaDateKey().slice(0, 7);
+  const cursorRaw = String(url.searchParams.get("cursor") || "0");
+  const cursor = Number(cursorRaw);
+  const snapshotRaw = String(url.searchParams.get("snapshot") || "").trim();
+  const ahora = new Date();
+  const snapshotSolicitado = snapshotRaw ? new Date(snapshotRaw) : ahora;
+  const snapshot =
+    snapshotSolicitado.getTime() > ahora.getTime()
+      ? ahora
+      : snapshotSolicitado;
+
+  if (!rango || mes > mesActual) {
+    return NextResponse.json(
+      { error: "Selecciona un mes valido, igual o anterior al mes actual." },
+      { status: 400 }
+    );
+  }
+
+  if (!esProveedorMensual(proveedor)) {
+    return NextResponse.json(
+      {
+        error:
+          "La revision mensual esta disponible para PAYJOY, SUMASPAY, ESMIO y ADDI.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!Number.isInteger(cursor) || cursor < 0) {
+    return NextResponse.json(
+      { error: "El cursor de la revision mensual no es valido." },
+      { status: 400 }
+    );
+  }
+
+  if (Number.isNaN(snapshot.getTime())) {
+    return NextResponse.json(
+      { error: "La referencia temporal de la revision mensual no es valida." },
+      { status: 400 }
+    );
+  }
+
+  const registros = await prisma.registroVendedorVenta.findMany({
+    where: {
+      ...construirScope(session),
+      eliminadoEn: null,
+      createdAt: {
+        gte: rango.start,
+        lt: rango.end,
+        lte: snapshot,
+      },
+    },
+    select: {
+      id: true,
+      createdAt: true,
+      clienteNombre: true,
+      documentoNumero: true,
+      serialImei: true,
+      puntoVenta: true,
+      asesorNombre: true,
+      plataformaCredito: true,
+      creditoAutorizado: true,
+      cuotaInicial: true,
+      valorCuota: true,
+      numeroCuotas: true,
+      frecuenciaCuota: true,
+      financierasDetalle: true,
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  const items: ItemRevision[] = registros.flatMap((registro) =>
+    extraerDetalles(registro).flatMap((detalle) => {
+      const proveedorDetalle = identificarProveedor(
+        detalle.plataformaCredito
+      );
+
+      if (proveedorDetalle !== proveedor) {
+        return [];
+      }
+
+      return [
+        {
+          ...detalle,
+          registroId: registro.id,
+          createdAt: registro.createdAt,
+          clienteNombre: registro.clienteNombre,
+          documentoNumero: registro.documentoNumero,
+          serialImei: registro.serialImei,
+          puntoVenta: registro.puntoVenta,
+          asesorNombre: registro.asesorNombre,
+          proveedor,
+        } satisfies ItemRevision,
+      ];
+    })
+  );
+  const gruposMap = new Map<string, ItemRevision[]>();
+
+  for (const item of items) {
+    const key = claveGrupoMensual(item);
+    const grupo = gruposMap.get(key) || [];
+    grupo.push(item);
+    gruposMap.set(key, grupo);
+  }
+
+  const grupos = Array.from(gruposMap.entries()).sort(
+    (a, b) =>
+      b[1][0].createdAt.getTime() - a[1][0].createdAt.getTime() ||
+      b[1][0].registroId - a[1][0].registroId
+  );
+  const limite = GRUPOS_POR_PAGINA_MENSUAL[proveedor];
+  const gruposPagina = grupos.slice(cursor, cursor + limite);
+  const itemsPagina = gruposPagina.flatMap(([, grupo]) => grupo);
+  const identificadores = Array.from(
+    new Set(
+      itemsPagina.map(identificadorConsulta).filter((item) => Boolean(item))
+    )
+  );
+  const fechaDesde = `${mes}-01`;
+  const finConsulta = new Date(
+    Math.min(rango.end.getTime() - 1, Date.now())
+  );
+  const fechaHasta = getBogotaDateKey(finConsulta);
+  const plataforma = await consultarCreditosMensuales(
+    proveedor,
+    identificadores,
+    rango.start,
+    rango.end,
+    fechaDesde,
+    fechaHasta
+  );
+  const revisiones = await prisma.revisionInconsistenciaCredito.findMany({
+    where: {
+      registroId: {
+        in: itemsPagina.map((item) => item.registroId),
+      },
+    },
+    select: {
+      registroId: true,
+      proveedor: true,
+      revisadoPor: true,
+      updatedAt: true,
+    },
+  });
+  const revisionesPorItem = new Map(
+    revisiones.map((revision) => [
+      `${revision.registroId}:${revision.proveedor}`,
+      revision,
+    ])
+  );
+  const resultados = gruposPagina.flatMap(([, grupo]) => {
+    const identificador = identificadorConsulta(grupo[0]);
+    const consulta = identificador
+      ? plataforma.consultas.get(identificador)
+      : {
+          ok: false as const,
+          error:
+            proveedor === "PAYJOY"
+              ? "El registro no tiene un IMEI valido para consultar."
+              : "El registro no tiene una cedula valida para consultar.",
+        };
+    const asignaciones =
+      consulta?.ok === true
+        ? asignarCreditosMensuales(grupo, consulta.creditos)
+        : new Map<number, CreditoOficialMensual>();
+
+    return grupo.map((item, itemIndex) => {
+      const razones: string[] = [];
+      const creditoPlataforma = asignaciones.get(itemIndex) || null;
+      let estado: EstadoRevision = "COINCIDE";
+
+      if (!consulta || !consulta.ok) {
+        estado = "SIN_VERIFICAR";
+        razones.push(
+          consulta && !consulta.ok
+            ? consulta.error
+            : "No se obtuvo respuesta de la plataforma."
+        );
+      } else if (
+        proveedor === "PAYJOY" &&
+        plataforma.diasFallidos.size > 0 &&
+        (!creditoPlataforma ||
+          item.creditoAutorizado === null ||
+          Math.round(item.creditoAutorizado) !==
+            Math.round(creditoPlataforma.creditoAutorizado))
+      ) {
+        estado = "SIN_VERIFICAR";
+        razones.push(
+          `PAYJOY no pudo completar ${plataforma.diasFallidos.size} dia(s) del mes. No se marca una diferencia hasta consultar el rango completo.`
+        );
+      } else if (!creditoPlataforma) {
+        estado = "INCONSISTENTE";
+        razones.push(
+          `No se encontro en ${proveedor} un credito disponible dentro del mes para este ${
+            proveedor === "PAYJOY" ? "IMEI" : "documento"
+          }.`
+        );
+      } else {
+        compararNumero(
+          razones,
+          "Credito autorizado",
+          item.creditoAutorizado,
+          creditoPlataforma.creditoAutorizado
+        );
+
+        if (razones.length > 0) {
+          estado = "INCONSISTENTE";
+        }
+      }
+
+      const revision = revisionesPorItem.get(
+        `${item.registroId}:${item.proveedor}`
+      );
+
+      if (revision && estado !== "COINCIDE") {
+        estado = "REVISADO";
+        razones.unshift(
+          `Marcado como revisado por ${revision.revisadoPor} el ${revision.updatedAt.toLocaleString(
+            "es-CO",
+            {
+              timeZone: "America/Bogota",
+            }
+          )}.`
+        );
+      }
+
+      return {
+        registroId: item.registroId,
+        createdAt: item.createdAt.toISOString(),
+        clienteNombre: item.clienteNombre,
+        documentoNumero: item.documentoNumero,
+        serialImei: item.serialImei,
+        puntoVenta: item.puntoVenta,
+        asesorNombre: item.asesorNombre,
+        proveedor: item.proveedor,
+        identificadorTipo: proveedor === "PAYJOY" ? "IMEI" : "CEDULA",
+        plataformaCredito: item.plataformaCredito,
+        creditoRegistrado: item.creditoAutorizado,
+        creditoPlataforma: creditoPlataforma?.creditoAutorizado ?? null,
+        fechaCreditoPlataforma:
+          creditoPlataforma?.fechaCreacionCredito ?? null,
+        ordenId: creditoPlataforma?.ordenId ?? null,
+        estado,
+        razones,
+      };
+    });
+  });
+  const cursorSiguiente =
+    cursor + gruposPagina.length < grupos.length
+      ? cursor + gruposPagina.length
+      : null;
+
+  return NextResponse.json({
+    ok: true,
+    modo: "MENSUAL",
+    mes,
+    proveedor,
+    alcance: "CREDITO_AUTORIZADO",
+    limitado: false,
+    maxRegistros: 0,
+    paginacion: {
+      snapshot: snapshot.toISOString(),
+      cursor,
+      cursorSiguiente,
+      completo: cursorSiguiente === null,
+      gruposProcesados: gruposPagina.length,
+      gruposTotales: grupos.length,
+      creditosTotales: items.length,
+    },
+    resumen: resumenResultados(resultados),
+    resultados,
+  });
 }
 
 export async function GET(req: Request) {
@@ -347,6 +930,12 @@ export async function GET(req: Request) {
     }
 
     const url = new URL(req.url);
+
+    if (url.searchParams.has("mes")) {
+      await ensureVendorProfilesSchema();
+      return revisarInconsistenciasMensuales(url, session);
+    }
+
     const hoy = getTodayBogotaDateKey();
     const fecha = String(url.searchParams.get("fecha") || hoy);
     const ayer = shiftDateKey(hoy, -1);

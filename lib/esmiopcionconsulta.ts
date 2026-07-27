@@ -21,6 +21,24 @@ export type EsmioOpcionCreditoCedula = {
   origen: string;
 };
 
+export type EsmioOpcionCreditoAuditoriaMensual = {
+  documento: string;
+  creditoAutorizado: number;
+  fechaCreacionCredito: string;
+  ordenId: string | null;
+};
+
+export type EsmioOpcionAuditoriaMensualBatchItem = {
+  documento: string;
+  creditos: EsmioOpcionCreditoAuditoriaMensual[];
+  error?: string;
+};
+
+type EsmioOpcionCreditoAuditoriaMensualInterno =
+  EsmioOpcionCreditoAuditoriaMensual & {
+    sortTime: number;
+  };
+
 type EsmioConfig = {
   apiBaseUrl: string;
   usuario: string;
@@ -1520,6 +1538,484 @@ async function fetchPaymentPlanTerms(
 
     throw error;
   }
+}
+
+function isValidEsmioAuditDateKey(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
+function validateEsmioAuditRange(fechaDesde: string, fechaHasta: string) {
+  if (
+    !isValidEsmioAuditDateKey(fechaDesde) ||
+    !isValidEsmioAuditDateKey(fechaHasta) ||
+    fechaDesde > fechaHasta
+  ) {
+    throw new EsmioOpcionConsultaLookupError(
+      "El rango de auditoria ESMIOPCION debe usar fechas validas YYYY-MM-DD."
+    );
+  }
+}
+
+function buildEsmioMonthlyAuditCredit(
+  record: Record<string, unknown>,
+  documentosEsperados: Set<string>,
+  fechaDesde: string,
+  fechaHasta: string
+): EsmioOpcionCreditoAuditoriaMensualInterno | null {
+  const documento = normalizeDocumento(
+    deepText(record, [
+      "customer__document_number",
+      "customer_document_number",
+      "customerDocumentNumber",
+      "document_number",
+      "documentNumber",
+      "doc_cliente",
+      "docClient",
+      "client_document",
+      "clientDocument",
+      "clientDocumentNumber",
+      "identification",
+      "identificationNumber",
+      "cedula",
+    ])
+  );
+
+  if (!documento || !documentosEsperados.has(documento)) {
+    return null;
+  }
+
+  const rawFechaCreacionCredito = deepText(record, [
+    "timestamp",
+    "created_at",
+    "createdAt",
+    "created",
+    "date",
+    "start_date",
+    "startDate",
+    "generation_date",
+    "generationDate",
+  ]);
+  const fechaCreacionCredito = normalizeDateInput(rawFechaCreacionCredito);
+
+  if (
+    !fechaCreacionCredito ||
+    fechaCreacionCredito < fechaDesde ||
+    fechaCreacionCredito > fechaHasta
+  ) {
+    return null;
+  }
+
+  const creditoAutorizado = toNumber(
+    deepNumber(record, [
+      "capital",
+      "total_capital",
+      "totalCapital",
+      "loan_amount_initial",
+      "loanAmountInitial",
+      "credit_value",
+      "creditValue",
+      "approvedAmount",
+      "approved_amount",
+      "principal",
+      "value",
+    ])
+  );
+
+  if (creditoAutorizado === null || creditoAutorizado <= 0) {
+    return null;
+  }
+
+  return {
+    documento,
+    creditoAutorizado,
+    fechaCreacionCredito,
+    ordenId: getCreditId(record),
+    sortTime:
+      (rawFechaCreacionCredito &&
+      /T|\d{1,2}:\d{2}/.test(rawFechaCreacionCredito)
+        ? toSortableDate(rawFechaCreacionCredito)
+        : 0) || Date.parse(`${fechaCreacionCredito}T00:00:00.000Z`),
+  };
+}
+
+function dedupeEsmioMonthlyAuditCredits(
+  creditos: EsmioOpcionCreditoAuditoriaMensualInterno[]
+) {
+  const seen = new Set<string>();
+
+  return creditos
+    .filter((credito) => {
+      const key = credito.ordenId
+        ? `id:${credito.ordenId}`
+        : [
+            "fallback",
+            credito.documento,
+            credito.fechaCreacionCredito,
+            credito.creditoAutorizado,
+            credito.sortTime,
+          ].join("|");
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    })
+    .sort(
+      (a, b) =>
+        b.sortTime - a.sortTime ||
+        b.fechaCreacionCredito.localeCompare(a.fechaCreacionCredito)
+    )
+    .map((credito) => ({
+      documento: credito.documento,
+      creditoAutorizado: credito.creditoAutorizado,
+      fechaCreacionCredito: credito.fechaCreacionCredito,
+      ordenId: credito.ordenId,
+    }));
+}
+
+function isEsmioMonthlyAuditReportPayload(value: unknown, depth = 0): boolean {
+  if (Array.isArray(value)) {
+    return true;
+  }
+
+  if (!isRecord(value) || depth > 5) {
+    return false;
+  }
+
+  for (const key of ["results", "data", "items", "records"]) {
+    const nested = value[key];
+
+    if (Array.isArray(nested)) {
+      return true;
+    }
+
+    if (isRecord(nested) && isEsmioMonthlyAuditReportPayload(nested, depth + 1)) {
+      return true;
+    }
+  }
+
+  return Boolean(
+    deepText(value, [
+      "customer__document_number",
+      "customer_document_number",
+      "document_number",
+      "documentNumber",
+      "cedula",
+    ]) &&
+      deepNumber(value, [
+        "capital",
+        "total_capital",
+        "loan_amount_initial",
+        "credit_value",
+        "approvedAmount",
+        "principal",
+      ]) !== null
+  );
+}
+
+async function fetchEsmioMonthlyAuditReport(
+  config: EsmioConfig,
+  session: EsmioSession,
+  fechaDesde: string,
+  fechaHasta: string,
+  documento?: string
+) {
+  const params = new URLSearchParams({
+    // AppMikro expone `all=true`; `page_size` eleva el limite defensivamente.
+    // No se asume un cursor porque este endpoint no entrega aqui un contrato
+    // estable de paginacion que pueda recorrerse sin duplicar resultados.
+    all: "true",
+    start: fechaDesde,
+    end: fechaHasta,
+    page_size: "5000",
+  });
+
+  if (documento) {
+    params.set("search", documento);
+  }
+
+  const source = `commerce_reports/get_credits_table/?${params.toString()}`;
+  const data = await requestJson(
+    buildApiUrl(
+      config.apiBaseUrl,
+      "commerce_reports/get_credits_table/",
+      params
+    ),
+    {
+      method: "GET",
+      headers: {
+        authorization: `Token ${session.storeToken}`,
+      },
+    },
+    "tabla mensual de creditos"
+  );
+
+  if (!isEsmioMonthlyAuditReportPayload(data)) {
+    throw new EsmioOpcionConsultaLookupError(
+      "ESMIOPCION devolvio un formato inesperado en la tabla mensual de creditos."
+    );
+  }
+
+  return collectRecords(data, source).map((item) => item.record);
+}
+
+async function fetchEsmioMonthlyAuditByDocument(
+  config: EsmioConfig,
+  session: EsmioSession,
+  documento: string,
+  fechaDesde: string,
+  fechaHasta: string
+) {
+  const documentosEsperados = new Set([documento]);
+  let reportError: unknown = null;
+  let reportRows: Record<string, unknown>[] = [];
+
+  try {
+    reportRows = await fetchEsmioMonthlyAuditReport(
+      config,
+      session,
+      fechaDesde,
+      fechaHasta,
+      documento
+    );
+  } catch (error) {
+    reportError = error;
+  }
+
+  let creditos = reportRows
+    .map((record) =>
+      buildEsmioMonthlyAuditCredit(
+        record,
+        documentosEsperados,
+        fechaDesde,
+        fechaHasta
+      )
+    )
+    .filter(
+      (
+        credito
+      ): credito is EsmioOpcionCreditoAuditoriaMensualInterno =>
+        Boolean(credito)
+    );
+
+  if (creditos.length === 0) {
+    try {
+      const attempts = await fetchCustomerCreditsFallback(
+        config,
+        session,
+        documento
+      );
+
+      creditos = attempts
+        .flatMap((attempt) =>
+          collectRecords(attempt.data, attempt.source).map((item) => item.record)
+        )
+        .map((record) =>
+          buildEsmioMonthlyAuditCredit(
+            record,
+            documentosEsperados,
+            fechaDesde,
+            fechaHasta
+          )
+        )
+        .filter(
+          (
+            credito
+          ): credito is EsmioOpcionCreditoAuditoriaMensualInterno =>
+            Boolean(credito)
+        );
+    } catch (fallbackError) {
+      if (reportError) {
+        throw reportError;
+      }
+      throw fallbackError;
+    }
+  }
+
+  if (creditos.length === 0 && reportError) {
+    throw reportError;
+  }
+
+  return dedupeEsmioMonthlyAuditCredits(creditos);
+}
+
+async function mapEsmioAuditConcurrency<T, R>(
+  items: T[],
+  worker: (item: T) => Promise<R>,
+  concurrency = 4
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const run = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index]);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, run)
+  );
+
+  return results;
+}
+
+export async function obtenerCreditosEsmioOpcionPorCedulasEnRango(
+  documentosInput: unknown[],
+  fechaDesde: string,
+  fechaHasta: string
+): Promise<EsmioOpcionAuditoriaMensualBatchItem[]> {
+  validateEsmioAuditRange(fechaDesde, fechaHasta);
+
+  const documentos = Array.from(
+    new Set(documentosInput.map((documento) => normalizeDocumento(documento)))
+  );
+  const invalidos = documentos.filter(
+    (documento) => documento.length < 5 || documento.length > 15
+  );
+  const validos = documentos.filter(
+    (documento) => documento.length >= 5 && documento.length <= 15
+  );
+  const resultadosInvalidos: EsmioOpcionAuditoriaMensualBatchItem[] =
+    invalidos.map((documento) => ({
+      documento,
+      creditos: [],
+      error: "La cedula debe tener entre 5 y 15 digitos.",
+    }));
+
+  if (validos.length === 0) {
+    return resultadosInvalidos;
+  }
+
+  let config: EsmioConfig;
+  let session: EsmioSession;
+
+  try {
+    config = getConfig();
+    session = await loginEsmio(config);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "No se pudo iniciar sesion en ESMIOPCION.";
+
+    return [
+      ...resultadosInvalidos,
+      ...validos.map((documento) => ({
+        documento,
+        creditos: [],
+        error: message,
+      })),
+    ];
+  }
+
+  const creditosGlobalesPorDocumento = new Map<
+    string,
+    EsmioOpcionCreditoAuditoriaMensualInterno[]
+  >();
+  let reporteGlobalCompleto = false;
+
+  try {
+    const documentosEsperados = new Set(validos);
+    const rows = await fetchEsmioMonthlyAuditReport(
+      config,
+      session,
+      fechaDesde,
+      fechaHasta
+    );
+
+    for (const record of rows) {
+      const credito = buildEsmioMonthlyAuditCredit(
+        record,
+        documentosEsperados,
+        fechaDesde,
+        fechaHasta
+      );
+
+      if (!credito) {
+        continue;
+      }
+
+      const existentes =
+        creditosGlobalesPorDocumento.get(credito.documento) || [];
+      existentes.push(credito);
+      creditosGlobalesPorDocumento.set(credito.documento, existentes);
+    }
+    reporteGlobalCompleto = true;
+  } catch {
+    // Algunos despliegues de AppMikro requieren `search`; se usa el respaldo
+    // por cedula con la misma sesion.
+  }
+
+  const resultadosValidos = await mapEsmioAuditConcurrency(
+    validos,
+    async (documento): Promise<EsmioOpcionAuditoriaMensualBatchItem> => {
+      const creditosGlobales = dedupeEsmioMonthlyAuditCredits(
+        creditosGlobalesPorDocumento.get(documento) || []
+      );
+
+      if (reporteGlobalCompleto) {
+        return {
+          documento,
+          creditos: creditosGlobales,
+        };
+      }
+
+      try {
+        return {
+          documento,
+          creditos: await fetchEsmioMonthlyAuditByDocument(
+            config,
+            session,
+            documento,
+            fechaDesde,
+            fechaHasta
+          ),
+        };
+      } catch (error) {
+        return {
+          documento,
+          creditos: [],
+          error:
+            error instanceof Error
+              ? error.message
+              : "No se pudo consultar ESMIOPCION para esta cedula.",
+        };
+      }
+    }
+  );
+
+  const resultadosPorDocumento = new Map(
+    [...resultadosInvalidos, ...resultadosValidos].map((item) => [
+      item.documento,
+      item,
+    ])
+  );
+
+  return documentos
+    .map((documento) => resultadosPorDocumento.get(documento))
+    .filter(
+      (item): item is EsmioOpcionAuditoriaMensualBatchItem => Boolean(item)
+    );
 }
 
 export async function obtenerCreditoEsmioOpcionPorCedula(

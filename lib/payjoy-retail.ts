@@ -68,6 +68,21 @@ export type PayJoyCreditoImei = {
   origen: "lookup-customer" | "list-transactions";
 };
 
+export type PayJoyCreditoAuditoriaMensual = {
+  imei: string;
+  creditoAutorizado: number;
+  fechaCreacionCredito: string;
+  ordenId: string | null;
+};
+
+export type PayJoyAuditoriaMensualResultado = {
+  creditos: PayJoyCreditoAuditoriaMensual[];
+  diasFallidos: Array<{
+    fecha: string;
+    error: string;
+  }>;
+};
+
 export class PayJoyRetailConfigError extends Error {
   constructor() {
     super("Falta configurar la clave API de PayJoy en el servidor.");
@@ -411,7 +426,8 @@ function getPayJoyDateFromRecord(record: Record<string, unknown> | null | undefi
 
 async function fetchPayJoy<T>(
   endpoint: string,
-  params: Record<string, string | number>
+  params: Record<string, string | number>,
+  options: { timeoutMs?: number } = {}
 ) {
   const url = new URL(`${PAYJOY_RETAIL_API_BASE_URL}/${endpoint}`);
 
@@ -421,9 +437,33 @@ async function fetchPayJoy<T>(
     url.searchParams.set(key, String(value));
   }
 
-  const response = await fetch(url, {
-    cache: "no-store",
-  });
+  const controller =
+    options.timeoutMs && options.timeoutMs > 0
+      ? new AbortController()
+      : null;
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), options.timeoutMs)
+    : null;
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      cache: "no-store",
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      throw new PayJoyRetailLookupError(
+        "PayJoy supero el tiempo maximo de respuesta."
+      );
+    }
+
+    throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 
   const text = await response.text();
   let data: T & { message?: string; valid?: boolean };
@@ -443,6 +483,191 @@ async function fetchPayJoy<T>(
   }
 
   return data;
+}
+
+export async function obtenerCreditosPayJoyEnRango(
+  fechaInicio: Date,
+  fechaFin: Date
+): Promise<PayJoyAuditoriaMensualResultado> {
+  const inicioMs = fechaInicio.getTime();
+  const finMs = fechaFin.getTime();
+
+  if (
+    !Number.isFinite(inicioMs) ||
+    !Number.isFinite(finMs) ||
+    finMs <= inicioMs
+  ) {
+    throw new PayJoyRetailLookupError(
+      "El rango de fechas para consultar PayJoy no es valido."
+    );
+  }
+
+  getApiKey();
+
+  const ahoraUnix = getUnixNow();
+  const unDiaMs = 24 * 60 * 60 * 1000;
+  const dias: Array<{
+    fecha: string;
+    starttime: number;
+    endtime: number;
+  }> = [];
+
+  for (
+    let inicioDiaMs = inicioMs;
+    inicioDiaMs < finMs;
+    inicioDiaMs += unDiaMs
+  ) {
+    const starttime = Math.floor(inicioDiaMs / 1000);
+
+    if (starttime > ahoraUnix) {
+      break;
+    }
+
+    const finDiaExclusivoMs = Math.min(inicioDiaMs + unDiaMs, finMs);
+    const endtime = Math.min(
+      Math.ceil(finDiaExclusivoMs / 1000) - 1,
+      ahoraUnix
+    );
+    const fecha = dateKeyFromUnixTimestamp(starttime);
+
+    if (!fecha || endtime < starttime) {
+      continue;
+    }
+
+    dias.push({
+      fecha,
+      starttime,
+      endtime,
+    });
+  }
+
+  const resultados = new Array<{
+    fecha: string;
+    creditos: Array<
+      PayJoyCreditoAuditoriaMensual & {
+        claveDedupe: string;
+      }
+    >;
+    error: string | null;
+  }>(dias.length);
+  let siguienteDia = 0;
+
+  const consultarDia = async () => {
+    while (siguienteDia < dias.length) {
+      const index = siguienteDia;
+      siguienteDia += 1;
+      const dia = dias[index];
+
+      try {
+        const data = await fetchPayJoy<PayJoyTransactionResponse>(
+          "list-transactions.php",
+          {
+            starttime: dia.starttime,
+            endtime: dia.endtime,
+          },
+          { timeoutMs: 20_000 }
+        );
+
+        if (!data.valid || !Array.isArray(data.transactions)) {
+          throw new PayJoyRetailLookupError(
+            data.message ||
+              `PayJoy no devolvio las transacciones del ${dia.fecha}.`
+          );
+        }
+
+        const creditos = data.transactions.flatMap((transaction) => {
+          const type = String(transaction.type || "").trim().toLowerCase();
+          const imei = normalizeImei(transaction.device?.imei);
+          const fechaCreacionCredito = dateKeyFromUnixTimestamp(
+            transaction.time
+          );
+          const creditoAutorizado =
+            parseAmount(transaction.financeOrder?.financeAmount) ??
+            parseAmount(transaction.amount);
+
+          if (
+            type !== "finance" ||
+            !/^\d{15}$/.test(imei) ||
+            fechaCreacionCredito !== dia.fecha ||
+            creditoAutorizado === null ||
+            creditoAutorizado <= 0
+          ) {
+            return [];
+          }
+
+          const ordenId =
+            transaction.financeOrder?.id === null ||
+            transaction.financeOrder?.id === undefined
+              ? null
+              : String(transaction.financeOrder.id).trim() || null;
+          const timeKey = String(transaction.time ?? "").trim();
+          const claveDedupe = ordenId
+            ? `orden:${ordenId}`
+            : `transaccion:${imei}:${timeKey}:${creditoAutorizado}`;
+
+          return [
+            {
+              imei,
+              creditoAutorizado,
+              fechaCreacionCredito,
+              ordenId,
+              claveDedupe,
+            },
+          ];
+        });
+
+        resultados[index] = {
+          fecha: dia.fecha,
+          creditos,
+          error: null,
+        };
+      } catch (error) {
+        resultados[index] = {
+          fecha: dia.fecha,
+          creditos: [],
+          error:
+            error instanceof Error
+              ? error.message
+              : `No se pudo consultar PayJoy para el ${dia.fecha}.`,
+        };
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(3, dias.length) },
+      consultarDia
+    )
+  );
+
+  const creditosPorClave = new Map<
+    string,
+    PayJoyCreditoAuditoriaMensual
+  >();
+
+  for (const resultado of resultados) {
+    for (const { claveDedupe, ...credito } of resultado.creditos) {
+      if (!creditosPorClave.has(claveDedupe)) {
+        creditosPorClave.set(claveDedupe, credito);
+      }
+    }
+  }
+
+  return {
+    creditos: Array.from(creditosPorClave.values()).sort(
+      (a, b) =>
+        b.fechaCreacionCredito.localeCompare(a.fechaCreacionCredito) ||
+        a.imei.localeCompare(b.imei) ||
+        b.creditoAutorizado - a.creditoAutorizado
+    ),
+    diasFallidos: resultados
+      .filter((resultado) => Boolean(resultado.error))
+      .map((resultado) => ({
+        fecha: resultado.fecha,
+        error: resultado.error as string,
+      })),
+  };
 }
 
 async function completeWithPaymentSnapshot(
