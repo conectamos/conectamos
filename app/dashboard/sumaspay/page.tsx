@@ -1,7 +1,12 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { esRolAdministrativo } from "@/lib/access-control";
 import { requireSessionPage } from "@/lib/page-access";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
 import SumasPayBatchWorkspace from "./sumaspay-batch-workspace";
 
 export const dynamic = "force-dynamic";
@@ -14,38 +19,84 @@ export default async function SumasPayBatchPage() {
     redirect("/dashboard");
   }
 
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+    { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
+  ];
+  const usuario =
+    session.perfilNombre || session.nombre || session.usuario || "Administrador";
+  const rolUsuario = session.perfilTipoLabel || session.rolNombre || "ADMIN";
+  const inicialesUsuario = usuario
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f5f2ea_0%,#eef3f9_100%)] text-slate-950">
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <section className="relative overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#172033_52%,#0f766e_100%)] px-6 py-6 text-white shadow-[0_26px_85px_rgba(15,23,42,0.2)] sm:px-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_28%)]" />
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref="/caja"
+        coverageLabel="Todas las sedes"
+        items={navigationItems}
+      />
+
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/90">
-                Plataforma externa
-              </div>
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <span>Plataformas financieras</span>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-[#e30613]">SUMASPAY</span>
+              </nav>
+              <h1 className="text-[30px] font-black tracking-tight text-slate-950 sm:text-[34px]">
                 Consulta SUMASPAY
               </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-200 md:text-base">
-                Carga masiva de cedulas para consultar nombre y valor de cuota
-                con vigencia de 2 meses.
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+                Consulta créditos vigentes por cédula y exporta los resultados
+                en un archivo listo para trabajar.
               </p>
             </div>
 
-            <Link
-              href="/dashboard"
-              className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-white/15"
-            >
-              Volver
-            </Link>
-          </div>
-        </section>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex min-h-[52px] min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 shadow-sm sm:min-w-[205px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || (
+                    <DashboardIcon name="user" className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-900">
+                    {usuario}
+                  </p>
+                  <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {rolUsuario}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton
+                variant="light"
+                className="min-h-[52px] rounded-xl uppercase"
+              />
+            </div>
+          </header>
 
-        <div className="mt-6">
-          <SumasPayBatchWorkspace />
-        </div>
-      </main>
+          <div className="mt-6">
+            <SumasPayBatchWorkspace />
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
