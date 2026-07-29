@@ -27,6 +27,7 @@ export type InventoryAdminSummary = {
 };
 
 const MARCAS_RADAR = [
+  "APPLE",
   "HONOR",
   "SAMSUNG",
   "INFINIX",
@@ -36,6 +37,9 @@ const MARCAS_RADAR = [
   "XIAOMI",
   "ZTE",
 ];
+const ALIAS_MARCA_RADAR: Record<string, string> = {
+  IPHONE: "APPLE",
+};
 
 function normalizeReference(value: string | null | undefined) {
   return String(value || "SIN REFERENCIA")
@@ -48,7 +52,15 @@ function resolveBrand(reference: string) {
   const words = reference.split(/[^A-Z0-9]+/).filter(Boolean);
   const brand = MARCAS_RADAR.find((item) => words.includes(item));
 
-  return brand || "OTRAS REFERENCIAS";
+  if (brand) {
+    return brand;
+  }
+
+  const alias = Object.entries(ALIAS_MARCA_RADAR).find(([word]) =>
+    words.includes(word)
+  );
+
+  return alias?.[1] || "OTRAS REFERENCIAS";
 }
 
 function ensureReference(
