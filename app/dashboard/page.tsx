@@ -866,7 +866,7 @@ export default async function DashboardPage({
           {
             href: "/dashboard/analitico",
             icon: "reports",
-            label: "Reportes",
+            label: "Panel analítico",
           },
           ]
         : [
@@ -883,7 +883,7 @@ export default async function DashboardPage({
           {
             href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
             icon: "reports",
-            label: "Reportes",
+            label: esAdmin ? "Reportes" : "Panel analítico",
           },
           ...(esAdmin
             ? ([

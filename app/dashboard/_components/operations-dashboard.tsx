@@ -889,6 +889,21 @@ export default function OperationsDashboard({
           },
         ]
       : []),
+    ...(esAdmin || esSupervisor
+      ? [
+          {
+            title: "Análisis",
+            description: "Indicadores, comparativos y reportes de la operación.",
+            icon: "reports" as const,
+            links: [
+              { href: "/dashboard/analitico", label: "Panel analítico" },
+              ...(esAdmin
+                ? [{ href: "/dashboard/reportes", label: "Reportes" }]
+                : []),
+            ],
+          },
+        ]
+      : []),
     ...(puedeVerFacturacion
       ? [
           {
@@ -933,15 +948,6 @@ export default function OperationsDashboard({
               { href: "/dashboard/nuovopay", label: "NUOVO" },
               { href: "/dashboard/nuovopay/cartera", label: "Cartera NUOVO" },
               ...(puedeVerEquality ? [{ href: "/dashboard/equality", label: "Trustonic" }] : []),
-            ],
-          },
-          {
-            title: "Análisis",
-            description: "Comparativos, consolidados y reportes detallados.",
-            icon: "reports" as const,
-            links: [
-              { href: "/dashboard/analitico", label: "Panel analítico" },
-              { href: "/dashboard/reportes", label: "Reportes" },
             ],
           },
         ]
@@ -1049,7 +1055,11 @@ export default function OperationsDashboard({
         { href: "/ventas/nuevo", icon: "sales", label: "Nueva venta" },
         { href: "/inventario/nuevo", icon: "inventory", label: "Nuevo inventario" },
         { href: "/caja/gestion", icon: "cash", label: "Registrar egreso" },
-        { href: reportHref, icon: "reports", label: "Ver reportes" },
+        {
+          href: reportHref,
+          icon: "reports",
+          label: esAdmin ? "Ver reportes" : "Panel analítico",
+        },
       ];
 
   return (
