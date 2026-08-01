@@ -1258,6 +1258,7 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as Record<string, unknown>;
+    const modoManual = body.modoManual === true;
     const catalogo = await obtenerCatalogoPersonalVenta();
     const payload = validarPayload(
       body,
@@ -1314,16 +1315,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: equipoValidado.error }, { status: 400 });
     }
 
-    const errorPayJoy = await validarCreditoPayJoy(payload.data);
+    if (!modoManual) {
+      const errorPayJoy = await validarCreditoPayJoy(payload.data);
 
-    if (errorPayJoy) {
-      return NextResponse.json({ error: errorPayJoy }, { status: 400 });
-    }
+      if (errorPayJoy) {
+        return NextResponse.json({ error: errorPayJoy }, { status: 400 });
+      }
 
-    const errorFinserpay = await validarCreditoFinserpay(payload.data);
+      const errorFinserpay = await validarCreditoFinserpay(payload.data);
 
-    if (errorFinserpay) {
-      return NextResponse.json({ error: errorFinserpay }, { status: 400 });
+      if (errorFinserpay) {
+        return NextResponse.json({ error: errorFinserpay }, { status: 400 });
+      }
     }
 
     const creado = await prisma.registroVendedorVenta.create({

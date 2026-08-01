@@ -3509,6 +3509,7 @@ export default function VendedorRegistroWorkspace({
 
       const payload = {
         ...form,
+        modoManual,
         confirmacionCliente: true,
         financierasDetalle: esServicioFinanciera(form.servicio)
           ? form.financierasDetalle
