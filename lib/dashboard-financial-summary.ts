@@ -39,6 +39,101 @@ type FinancialSnapshotRow = {
   capturedAt: Date | string;
 };
 
+type HistoricalFinancialSnapshotSeed = {
+  periodKey: string;
+  sedeNombre: string;
+  fechaCorte: string;
+  capturedAt: string;
+  expectedTotals: {
+    activos: number;
+    pasivos: number;
+    resultadoNeto: number;
+  };
+  summary: FinancialDashboardSummary;
+};
+
+// Cierres reconstruidos con los respaldos visuales tomados el 31/07/2026.
+const HISTORICAL_FINANCIAL_SNAPSHOT_SEEDS: HistoricalFinancialSnapshotSeed[] = [
+  {
+    periodKey: "2026-07",
+    sedeNombre: "SEDE 3",
+    fechaCorte: "2026-08-01T05:00:00.000Z",
+    capturedAt: "2026-08-01T04:50:31.000Z",
+    expectedTotals: {
+      activos: 1_146_028_750.4,
+      pasivos: 817_976_552,
+      resultadoNeto: 328_052_198.4,
+    },
+    summary: {
+      cajaGeneralVentas: 100_182_332,
+      saldoCaja: 0,
+      cajaDisponible: 100_182_332,
+      transferenciasVentas: 66_950_941,
+      abonosTransferencia: 0,
+      saldoTransferencias: 66_950_941,
+      deudaEquipos: 538_660_000,
+      financieras: { "TOTAL CIERRE JULIO 2026": 874_310_477.4 },
+      valorPendiente: 4_390_000,
+      valorGarantia: 1_335_000,
+      valorBodega: 71_055_000,
+      totalGastosCartera: 273_591_552,
+      prestamosPorCobrar: 33_530_000,
+    },
+  },
+  {
+    periodKey: "2026-07",
+    sedeNombre: "SEDE 6",
+    fechaCorte: "2026-08-01T05:00:00.000Z",
+    capturedAt: "2026-08-01T04:50:31.000Z",
+    expectedTotals: {
+      activos: 1_498_975_792.82,
+      pasivos: 661_655_383,
+      resultadoNeto: 837_320_409.82,
+    },
+    summary: {
+      cajaGeneralVentas: 88_526_098,
+      saldoCaja: 0,
+      cajaDisponible: 88_526_098,
+      transferenciasVentas: 82_123_300,
+      abonosTransferencia: 0,
+      saldoTransferencias: 82_123_300,
+      deudaEquipos: 713_355_000,
+      financieras: { "TOTAL CIERRE JULIO 2026": 1_234_296_394.82 },
+      valorPendiente: 15_507_000,
+      valorGarantia: 2_840_000,
+      valorBodega: 64_255_000,
+      totalGastosCartera: -70_046_617,
+      prestamosPorCobrar: 29_775_000,
+    },
+  },
+  {
+    periodKey: "2026-07",
+    sedeNombre: "SEDE 7",
+    fechaCorte: "2026-08-01T05:00:00.000Z",
+    capturedAt: "2026-08-01T04:50:31.000Z",
+    expectedTotals: {
+      activos: 835_280_661.06,
+      pasivos: 366_169_970,
+      resultadoNeto: 469_110_691.06,
+    },
+    summary: {
+      cajaGeneralVentas: 73_475_514,
+      saldoCaja: 0,
+      cajaDisponible: 73_475_514,
+      transferenciasVentas: 66_554_500,
+      abonosTransferencia: 0,
+      saldoTransferencias: 66_554_500,
+      deudaEquipos: 358_760_000,
+      financieras: { "TOTAL CIERRE JULIO 2026": 571_350_647.06 },
+      valorPendiente: 900_000,
+      valorGarantia: 330_000,
+      valorBodega: 87_160_000,
+      totalGastosCartera: 6_179_970,
+      prestamosPorCobrar: 36_740_000,
+    },
+  },
+];
+
 let ensureFinancialMonthlySnapshotsPromise: Promise<void> | null = null;
 
 function n(v: unknown) {
@@ -139,6 +234,79 @@ export function calcularTotalesFinancieros(summary: FinancialDashboardSummary) {
   };
 }
 
+function financialAmountsMatch(actual: number, expected: number) {
+  return Math.abs(actual - expected) < 0.005;
+}
+
+async function restoreHistoricalFinancialMonthlySnapshots() {
+  for (const seed of HISTORICAL_FINANCIAL_SNAPSHOT_SEEDS) {
+    const totals = calcularTotalesFinancieros(seed.summary);
+
+    if (
+      !financialAmountsMatch(totals.activos, seed.expectedTotals.activos) ||
+      !financialAmountsMatch(totals.pasivos, seed.expectedTotals.pasivos) ||
+      !financialAmountsMatch(
+        totals.resultadoNeto,
+        seed.expectedTotals.resultadoNeto
+      )
+    ) {
+      throw new Error(
+        `El cierre historico ${seed.periodKey} de ${seed.sedeNombre} no cuadra.`
+      );
+    }
+
+    const affectedRows = await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO dashboard_financial_monthly_snapshots (
+          period_key,
+          sede_scope,
+          sede_id,
+          fecha_corte,
+          summary_json,
+          activos,
+          pasivos,
+          resultado_neto,
+          captured_at
+        )
+        SELECT
+          $1,
+          sede.id,
+          sede.id,
+          $3::timestamptz,
+          $4::jsonb,
+          $5,
+          $6,
+          $7,
+          $8::timestamptz
+        FROM "Sede" AS sede
+        WHERE UPPER(TRIM(sede.nombre)) = UPPER(TRIM($2))
+        ON CONFLICT (period_key, sede_scope) DO UPDATE SET
+          sede_id = EXCLUDED.sede_id,
+          fecha_corte = EXCLUDED.fecha_corte,
+          summary_json = EXCLUDED.summary_json,
+          activos = EXCLUDED.activos,
+          pasivos = EXCLUDED.pasivos,
+          resultado_neto = EXCLUDED.resultado_neto,
+          captured_at = EXCLUDED.captured_at
+      `,
+      seed.periodKey,
+      seed.sedeNombre,
+      seed.fechaCorte,
+      JSON.stringify(seed.summary),
+      totals.activos,
+      totals.pasivos,
+      totals.resultadoNeto,
+      seed.capturedAt
+    );
+
+    if (affectedRows !== 1) {
+      throw new Error(
+        `No se encontro la sede para restaurar el cierre de ${seed.sedeNombre}.`
+      );
+    }
+  }
+}
+
 function getSnapshotScope(sedeId?: number | null) {
   return sedeId && sedeId > 0 ? sedeId : 0;
 }
@@ -191,6 +359,8 @@ async function ensureFinancialMonthlySnapshotsTable() {
         CREATE INDEX IF NOT EXISTS idx_dashboard_financial_monthly_snapshots_captured_at
         ON dashboard_financial_monthly_snapshots (captured_at DESC)
       `);
+
+      await restoreHistoricalFinancialMonthlySnapshots();
     })().catch((error) => {
       ensureFinancialMonthlySnapshotsPromise = null;
       throw error;
