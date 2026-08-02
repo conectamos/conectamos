@@ -7,7 +7,10 @@ import {
   getMonthlyCommercialSummary,
   type CommercialRankingItem,
 } from "@/lib/dashboard-commercial-summary";
-import { getFinancialDashboardSummary } from "@/lib/dashboard-financial-summary";
+import {
+  calcularTotalesFinancieros,
+  getFinancialDashboardSummaryForMonthlyReport,
+} from "@/lib/dashboard-financial-summary";
 import {
   getBogotaMonthRangeFromInput,
   getCurrentBogotaMonthInput,
@@ -29,6 +32,18 @@ function formatoPesos(valor: number) {
 
 function formatoNumero(valor: number) {
   return Number(valor || 0).toLocaleString("es-CO");
+}
+
+function formatoFechaHora(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function MetricCard({
@@ -312,33 +327,22 @@ export default async function ReportesDashboardPage({
       : null;
   const sedeSeleccionadaId = sedeSeleccionada?.id ?? null;
   const coberturaLabel = sedeSeleccionada?.nombre || "Todas las sedes";
-  const [resumen, financiero] = await Promise.all([
+  const [resumen, lecturaFinanciera] = await Promise.all([
     getMonthlyCommercialSummary({
       period: periodoSeleccionado,
       sedeId: sedeSeleccionadaId,
     }),
-    getFinancialDashboardSummary({
+    getFinancialDashboardSummaryForMonthlyReport({
+      periodKey: periodoCorte?.key ?? periodoSeleccionado,
       sedeId: sedeSeleccionadaId,
       fechaCorte: periodoCorte?.end ?? null,
     }),
   ]);
+  const financiero = lecturaFinanciera.summary;
   const financieraLider = resumen.topFinancieras[0] ?? null;
-  const totalFinancieras = Object.values(financiero.financieras || {}).reduce(
-    (acc, valor) => acc + Number(valor || 0),
-    0
-  );
-  const activos =
-    financiero.cajaDisponible +
-    financiero.saldoTransferencias +
-    financiero.prestamosPorCobrar +
-    financiero.valorBodega +
-    totalFinancieras;
-  const pasivos =
-    financiero.deudaEquipos +
-    financiero.valorPendiente +
-    financiero.valorGarantia +
-    financiero.totalGastosCartera;
-  const resultadoNeto = activos - pasivos;
+  const { totalFinancieras, activos, pasivos, resultadoNeto } =
+    calcularTotalesFinancieros(financiero);
+  const fechaSnapshot = formatoFechaHora(lecturaFinanciera.snapshot?.capturedAt);
   const navigationItems: NavigationItem[] = [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
@@ -509,6 +513,12 @@ export default async function ReportesDashboardPage({
                 y riesgos de{" "}
                 <span className="font-bold text-slate-700">{coberturaLabel}</span>.
               </p>
+              {lecturaFinanciera.source === "snapshot" && (
+                <p className="mt-2 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                  Cierre financiero congelado
+                  {fechaSnapshot ? ` desde ${fechaSnapshot}` : ""}.
+                </p>
+              )}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[580px]">

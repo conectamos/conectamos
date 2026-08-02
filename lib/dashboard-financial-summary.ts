@@ -15,6 +15,32 @@ const MOVIMIENTOS_PAGO_FINANCIERO = [
   "PAGO_PRESTAMO_APROBADO_LOTE",
 ];
 
+export type FinancialDashboardSummary = {
+  cajaGeneralVentas: number;
+  saldoCaja: number;
+  cajaDisponible: number;
+  transferenciasVentas: number;
+  abonosTransferencia: number;
+  saldoTransferencias: number;
+  deudaEquipos: number;
+  financieras: Record<string, number>;
+  valorPendiente: number;
+  valorGarantia: number;
+  valorBodega: number;
+  totalGastosCartera: number;
+  prestamosPorCobrar: number;
+};
+
+type FinancialSnapshotRow = {
+  periodKey: string;
+  sedeId: number | null;
+  fechaCorte: Date | string;
+  summary: unknown;
+  capturedAt: Date | string;
+};
+
+let ensureFinancialMonthlySnapshotsPromise: Promise<void> | null = null;
+
 function n(v: unknown) {
   if (!v) return 0;
 
@@ -38,6 +64,209 @@ function agregarFinancieraNeta(
   }
 
   mapa[nombre] += valorNumero;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseJsonColumn<T>(value: unknown, fallback: T): T {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  if (!value) {
+    return fallback;
+  }
+
+  return value as T;
+}
+
+function normalizeFinancialSummary(value: unknown): FinancialDashboardSummary {
+  const record = parseJsonColumn<Record<string, unknown>>(value, {});
+  const financierasRecord = isRecord(record.financieras)
+    ? record.financieras
+    : {};
+  const financieras: Record<string, number> = {};
+
+  for (const [nombre, valor] of Object.entries(financierasRecord)) {
+    financieras[nombre] = n(valor);
+  }
+
+  return {
+    cajaGeneralVentas: n(record.cajaGeneralVentas),
+    saldoCaja: n(record.saldoCaja),
+    cajaDisponible: n(record.cajaDisponible),
+    transferenciasVentas: n(record.transferenciasVentas),
+    abonosTransferencia: n(record.abonosTransferencia),
+    saldoTransferencias: n(record.saldoTransferencias),
+    deudaEquipos: n(record.deudaEquipos),
+    financieras,
+    valorPendiente: n(record.valorPendiente),
+    valorGarantia: n(record.valorGarantia),
+    valorBodega: n(record.valorBodega),
+    totalGastosCartera: n(record.totalGastosCartera),
+    prestamosPorCobrar: n(record.prestamosPorCobrar),
+  };
+}
+
+export function calcularTotalesFinancieros(summary: FinancialDashboardSummary) {
+  const totalFinancieras = Object.values(summary.financieras || {}).reduce(
+    (acc, valor) => acc + n(valor),
+    0
+  );
+  const activos =
+    summary.cajaDisponible +
+    summary.saldoTransferencias +
+    summary.prestamosPorCobrar +
+    summary.valorBodega +
+    totalFinancieras;
+  const pasivos =
+    summary.deudaEquipos +
+    summary.valorPendiente +
+    summary.valorGarantia +
+    summary.totalGastosCartera;
+
+  return {
+    totalFinancieras,
+    activos,
+    pasivos,
+    resultadoNeto: activos - pasivos,
+  };
+}
+
+function getSnapshotScope(sedeId?: number | null) {
+  return sedeId && sedeId > 0 ? sedeId : 0;
+}
+
+function isClosedFinancialPeriod(fechaCorte: Date | null) {
+  return Boolean(fechaCorte && new Date().getTime() >= fechaCorte.getTime());
+}
+
+function mapFinancialSnapshotRow(row: FinancialSnapshotRow) {
+  return {
+    periodKey: row.periodKey,
+    sedeId: row.sedeId,
+    fechaCorte:
+      row.fechaCorte instanceof Date
+        ? row.fechaCorte.toISOString()
+        : new Date(row.fechaCorte).toISOString(),
+    capturedAt:
+      row.capturedAt instanceof Date
+        ? row.capturedAt.toISOString()
+        : new Date(row.capturedAt).toISOString(),
+    summary: normalizeFinancialSummary(row.summary),
+  };
+}
+
+async function ensureFinancialMonthlySnapshotsTable() {
+  if (!ensureFinancialMonthlySnapshotsPromise) {
+    ensureFinancialMonthlySnapshotsPromise = (async () => {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS dashboard_financial_monthly_snapshots (
+          id SERIAL PRIMARY KEY,
+          period_key TEXT NOT NULL,
+          sede_scope INTEGER NOT NULL DEFAULT 0,
+          sede_id INTEGER,
+          fecha_corte TIMESTAMPTZ NOT NULL,
+          summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          activos DOUBLE PRECISION NOT NULL DEFAULT 0,
+          pasivos DOUBLE PRECISION NOT NULL DEFAULT 0,
+          resultado_neto DOUBLE PRECISION NOT NULL DEFAULT 0,
+          captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_dashboard_financial_monthly_snapshots_period_scope
+        ON dashboard_financial_monthly_snapshots (period_key, sede_scope)
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_dashboard_financial_monthly_snapshots_captured_at
+        ON dashboard_financial_monthly_snapshots (captured_at DESC)
+      `);
+    })().catch((error) => {
+      ensureFinancialMonthlySnapshotsPromise = null;
+      throw error;
+    });
+  }
+
+  await ensureFinancialMonthlySnapshotsPromise;
+}
+
+async function getFinancialMonthlySnapshot(periodKey: string, sedeId?: number | null) {
+  await ensureFinancialMonthlySnapshotsTable();
+
+  const rows = await prisma.$queryRawUnsafe<FinancialSnapshotRow[]>(
+    `
+      SELECT
+        period_key AS "periodKey",
+        sede_id AS "sedeId",
+        fecha_corte AS "fechaCorte",
+        summary_json AS "summary",
+        captured_at AS "capturedAt"
+      FROM dashboard_financial_monthly_snapshots
+      WHERE period_key = $1 AND sede_scope = $2
+      LIMIT 1
+    `,
+    periodKey,
+    getSnapshotScope(sedeId)
+  );
+
+  return rows[0] ? mapFinancialSnapshotRow(rows[0]) : null;
+}
+
+async function saveFinancialMonthlySnapshot(input: {
+  periodKey: string;
+  sedeId?: number | null;
+  fechaCorte: Date;
+  summary: FinancialDashboardSummary;
+}) {
+  await ensureFinancialMonthlySnapshotsTable();
+
+  const totals = calcularTotalesFinancieros(input.summary);
+  const rows = await prisma.$queryRawUnsafe<FinancialSnapshotRow[]>(
+    `
+      INSERT INTO dashboard_financial_monthly_snapshots (
+        period_key,
+        sede_scope,
+        sede_id,
+        fecha_corte,
+        summary_json,
+        activos,
+        pasivos,
+        resultado_neto
+      )
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+      ON CONFLICT (period_key, sede_scope) DO NOTHING
+      RETURNING
+        period_key AS "periodKey",
+        sede_id AS "sedeId",
+        fecha_corte AS "fechaCorte",
+        summary_json AS "summary",
+        captured_at AS "capturedAt"
+    `,
+    input.periodKey,
+    getSnapshotScope(input.sedeId),
+    input.sedeId ?? null,
+    input.fechaCorte,
+    JSON.stringify(input.summary),
+    totals.activos,
+    totals.pasivos,
+    totals.resultadoNeto
+  );
+
+  if (rows[0]) {
+    return mapFinancialSnapshotRow(rows[0]);
+  }
+
+  return getFinancialMonthlySnapshot(input.periodKey, input.sedeId);
 }
 
 function estadoInventarioAlCorte(item: {
@@ -87,12 +316,15 @@ export async function getDashboardCashSummary(options?: {
 }) {
   const fechaCorte = options?.fechaCorte ?? null;
   const whereSede = options?.sedeId ? { sedeId: options.sedeId } : {};
+  const whereFechaVenta = fechaCorte
+    ? { fecha: { lt: fechaCorte }, createdAt: { lt: fechaCorte } }
+    : {};
 
   const [ventas, movimientosCaja] = await Promise.all([
     prisma.venta.aggregate({
       where: {
         ...whereSede,
-        ...(fechaCorte ? { fecha: { lt: fechaCorte } } : {}),
+        ...whereFechaVenta,
       },
       _sum: {
         cajaOficina: true,
@@ -135,10 +367,12 @@ export async function getDashboardCashSummary(options?: {
 export async function getFinancialDashboardSummary(options?: {
   sedeId?: number | null;
   fechaCorte?: Date | null;
-}) {
+}): Promise<FinancialDashboardSummary> {
   const fechaCorte = options?.fechaCorte ?? null;
   const whereSede = options?.sedeId ? { sedeId: options.sedeId } : {};
-  const whereFechaVenta = fechaCorte ? { fecha: { lt: fechaCorte } } : {};
+  const whereFechaVenta = fechaCorte
+    ? { fecha: { lt: fechaCorte }, createdAt: { lt: fechaCorte } }
+    : {};
   const whereFechaCreacion = fechaCorte
     ? { createdAt: { lt: fechaCorte } }
     : {};
@@ -480,5 +714,54 @@ export async function getFinancialDashboardSummary(options?: {
     valorBodega,
     totalGastosCartera,
     prestamosPorCobrar,
+  };
+}
+
+export async function getFinancialDashboardSummaryForMonthlyReport(options: {
+  periodKey: string;
+  sedeId?: number | null;
+  fechaCorte?: Date | null;
+}) {
+  const fechaCorte = options.fechaCorte ?? null;
+
+  if (!fechaCorte || !isClosedFinancialPeriod(fechaCorte)) {
+    return {
+      source: "live" as const,
+      snapshot: null,
+      summary: await getFinancialDashboardSummary({
+        sedeId: options.sedeId,
+        fechaCorte,
+      }),
+    };
+  }
+
+  const existingSnapshot = await getFinancialMonthlySnapshot(
+    options.periodKey,
+    options.sedeId
+  );
+
+  if (existingSnapshot) {
+    return {
+      source: "snapshot" as const,
+      snapshot: existingSnapshot,
+      summary: existingSnapshot.summary,
+    };
+  }
+
+  const summary = await getFinancialDashboardSummary({
+    sedeId: options.sedeId,
+    fechaCorte,
+  });
+  const snapshot = await saveFinancialMonthlySnapshot({
+    periodKey: options.periodKey,
+    sedeId: options.sedeId,
+    fechaCorte,
+    summary,
+  });
+
+  return {
+    source: "snapshot" as const,
+    snapshot,
+    summary: snapshot?.summary ?? summary,
   };
 }
