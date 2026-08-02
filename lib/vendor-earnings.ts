@@ -11,8 +11,8 @@ const BOLSA_ESTADO_HABILITADA = "TOP_HABILITADA";
 const BOLSA_ESTADO_FUERA_TOP = "FUERA_TOP";
 const BOLSA_PROFILE_TYPES = new Set(["VENDEDOR", "APOYO_OPERATIVO"]);
 const UPDATE_CHUNK_SIZE = 50;
-const BOLSA_VALOR_POR_VENTA = 1000;
-const BOLSA_VALOR_TOP1 = 2000;
+const BOLSA_VALOR_TOP_2_AL_5 = 2000;
+const BOLSA_VALOR_TOP1 = 3000;
 
 type RewardMonthRecord = {
   id: number;
@@ -114,7 +114,7 @@ function buildRankingEntries(
 }
 
 function getBolsaValorPorVenta(puestoActual: number | null) {
-  return puestoActual === 1 ? BOLSA_VALOR_TOP1 : BOLSA_VALOR_POR_VENTA;
+  return puestoActual === 1 ? BOLSA_VALOR_TOP1 : BOLSA_VALOR_TOP_2_AL_5;
 }
 
 function buildFinalRankingForRecords(records: RewardMonthRecord[]) {
@@ -400,7 +400,7 @@ export async function getVendorEarningsSummary(
       periodoLabel: getCurrentBogotaMonthRange().label,
       totalGanado: 0,
       totalVentasConComision: 0,
-      valorBonoPorVenta: BOLSA_VALOR_POR_VENTA,
+      valorBonoPorVenta: BOLSA_VALOR_TOP_2_AL_5,
       recientes: [],
     };
   }
