@@ -3,6 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon, {
+  type DashboardIconName,
+} from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  esPerfilAdministrativo,
+  esPerfilFacturador,
+  esRolAdministrativo,
+} from "@/lib/access-control";
+import {
   DOMINIOS_CORREO_REGISTRO_TEXTO,
   TIPOS_DOCUMENTO_CLIENTE,
   esCorreoRegistroValido,
@@ -136,6 +149,7 @@ const ESTADO_OPTIONS = [
 ] as const;
 
 const SIIGO_MAX_FACTURA_TOTAL = 2300000;
+const REGISTROS_POR_PAGINA = 25;
 
 type FiltroRegistro =
   | "TODOS"
@@ -408,6 +422,43 @@ function resolveEstadoBadge(estadoFacturacion: string | null, numeroFactura: str
   };
 }
 
+function SummaryCard({
+  detail,
+  icon,
+  iconClassName,
+  label,
+  value,
+  valueClassName = "text-slate-950",
+}: {
+  detail: string;
+  icon: DashboardIconName;
+  iconClassName: string;
+  label: string;
+  value: string | number;
+  valueClassName?: string;
+}) {
+  return (
+    <article className="min-h-[132px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-4">
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
+        >
+          <DashboardIcon name={icon} className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-600">{label}</p>
+          <p
+            className={`mt-1.5 break-words text-[27px] font-black leading-none tracking-tight ${valueClassName}`}
+          >
+            {value}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function createEditDraft(registro: RegistroFacturacion): EditDraft {
   const financieras = resolveFinancieras(registro).map((item) => ({
     plataformaCredito: item.plataformaCredito,
@@ -452,6 +503,12 @@ export default function FacturadorRegistrosWorkspace({
   const esAdmin =
     ["ADMIN", "AUDITOR"].includes(String(session.rolNombre || "").trim().toUpperCase()) ||
     String(session.perfilTipoLabel || "").trim().toUpperCase() === "ADMINISTRADOR";
+  const esAdministrativo =
+    esAdmin ||
+    esRolAdministrativo(session.rolNombre) ||
+    esPerfilAdministrativo(session.perfilTipo);
+  const esFacturador =
+    !esAdministrativo && esPerfilFacturador(session.perfilTipo);
   const puedeVerReporteSiigo =
     esAdmin ||
     String(session.perfilTipo || "").trim().toUpperCase() === "AUDITOR" ||
@@ -470,6 +527,7 @@ export default function FacturadorRegistrosWorkspace({
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
   const [modoSoporteSiigo, setModoSoporteSiigo] = useState(false);
   const [filtroActivo, setFiltroActivo] = useState<FiltroRegistro>("TODOS");
+  const [paginaActual, setPaginaActual] = useState(1);
   const [facturandoPendientes, setFacturandoPendientes] = useState(false);
   const [reporteSiigoMes, setReporteSiigoMes] = useState(defaultMonthInput);
   const [reporteSiigo, setReporteSiigo] = useState<SiigoReporteMensual | null>(
@@ -588,6 +646,45 @@ export default function FacturadorRegistrosWorkspace({
       );
     });
   }, [busqueda, filtroActivo, registros]);
+
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(registrosFiltrados.length / REGISTROS_POR_PAGINA)
+  );
+  const registrosPaginados = useMemo(() => {
+    const inicio = (paginaActual - 1) * REGISTROS_POR_PAGINA;
+
+    return registrosFiltrados.slice(inicio, inicio + REGISTROS_POR_PAGINA);
+  }, [paginaActual, registrosFiltrados]);
+  const paginasVisibles = useMemo(() => {
+    const candidatas = new Set([
+      1,
+      paginaActual - 1,
+      paginaActual,
+      paginaActual + 1,
+      totalPaginas,
+    ]);
+
+    return [...candidatas]
+      .filter((pagina) => pagina >= 1 && pagina <= totalPaginas)
+      .sort((a, b) => a - b);
+  }, [paginaActual, totalPaginas]);
+  const primerRegistroVisible =
+    registrosFiltrados.length === 0
+      ? 0
+      : (paginaActual - 1) * REGISTROS_POR_PAGINA + 1;
+  const ultimoRegistroVisible = Math.min(
+    paginaActual * REGISTROS_POR_PAGINA,
+    registrosFiltrados.length
+  );
+
+  useEffect(() => {
+    setPaginaActual(1);
+  }, [busqueda, filtroActivo]);
+
+  useEffect(() => {
+    setPaginaActual((pagina) => Math.min(pagina, totalPaginas));
+  }, [totalPaginas]);
 
   const guardarFactura = async (registroId: number) => {
     const numeroFactura = String(facturasDraft[registroId] || "").trim();
@@ -1147,38 +1244,112 @@ export default function FacturadorRegistrosWorkspace({
   };
 
   const editandoConvertido = Boolean(editando?.convertidoEnVenta);
+  const coverageLabel = esAdministrativo
+    ? "Todas las sedes"
+    : session.sedeNombre;
+  const navigationItems: NavigationItem[] = esAdministrativo
+    ? [
+        { href: "/dashboard", icon: "home", label: "Inicio" },
+        { href: "/ventas", icon: "sales", label: "Ventas" },
+        { href: "/inventario", icon: "inventory", label: "Inventario" },
+        { href: "/prestamos", icon: "loans", label: "Préstamos" },
+        { href: "/caja", icon: "cash", label: "Caja" },
+        {
+          href: "/dashboard/aprobaciones",
+          icon: "approvals",
+          label: "Aprobaciones",
+        },
+        { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+        {
+          href: "/dashboard/sedes",
+          icon: "settings",
+          label: "Configuración",
+        },
+      ]
+    : [
+        { href: "/dashboard", icon: "home", label: "Inicio" },
+        {
+          href: "/facturador/registros",
+          icon: "document",
+          label: "Facturación",
+        },
+      ];
+  const sidebarActiveHref = esAdministrativo
+    ? "/dashboard/aprobaciones"
+    : "/facturador/registros";
+  const inicialesUsuario = String(session.nombre || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f4f7fb_0%,#e9eef7_100%)] px-4 py-8">
-      <div className="mx-auto w-full max-w-none">
-        <section className="overflow-hidden rounded-[34px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#1f2937_52%,#0f766e_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                {esAdmin ? "Consulta de registros" : "Facturacion"}
-              </div>
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
+      <DashboardSidebar
+        activeHref={sidebarActiveHref}
+        coverageLabel={coverageLabel}
+        items={navigationItems}
+        panelLabel={esFacturador ? "Panel de facturación" : "Panel operativo"}
+      />
 
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                {esAdmin ? "CONSULTAR REGISTROS" : "REGISTROS GUARDADOS"}
-              </h1>
-
-              <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                {esAdmin
-                  ? "Busca por cédula o IMEI, consulta la información del trámite, edita el registro o elimínalo cuando el cliente solicite copia o ajuste."
-                  : "Revisa los registros capturados por los asesores en todas las sedes, agrega el numero de factura y deja marcada la fila como facturada."}
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                Gestión de registros
               </p>
+              <h1 className="mt-2 text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
+                {esAdmin ? "Consultar registros" : "Registros guardados"}
+              </h1>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+                {esAdmin
+                  ? "Consulta, corrige y gestiona la facturación de los registros comerciales."
+                  : "Revisa los registros capturados, completa la factura y gestiona su estado en Siigo."}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  Cobertura: {coverageLabel}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  {cargando
+                    ? "Actualizando registros"
+                    : `${registros.length.toLocaleString("es-CO")} registros disponibles`}
+                </span>
+              </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/dashboard"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                Volver a CONECTAMOS
-              </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              {esAdministrativo && (
+                <Link
+                  href="/ventas/aprobaciones"
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
+                >
+                  Registros por aprobar
+                </Link>
+              )}
+              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[190px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || (
+                    <DashboardIcon name="user" className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-800">
+                    {session.nombre}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {session.rolNombre || session.perfilTipoLabel}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton
+                variant="light"
+                className="min-h-12 shrink-0 rounded-xl"
+              />
             </div>
-          </div>
-        </section>
+          </header>
 
         {mensaje && (
           <div
@@ -1192,83 +1363,64 @@ export default function FacturadorRegistrosWorkspace({
           </div>
         )}
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Perfil
-            </p>
-            <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">
-              {session.perfilNombre}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              {esAdmin ? "Administrador" : session.perfilTipoLabel}
-            </p>
-          </div>
+        <section
+          className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6"
+          aria-label="Resumen de registros"
+        >
+          <SummaryCard
+            label="Total de registros"
+            value={conteosFiltro.TODOS.toLocaleString("es-CO")}
+            detail="Registros comerciales disponibles"
+            icon="document"
+            iconClassName="bg-slate-100 text-slate-700"
+          />
+          <SummaryCard
+            label="Pendientes"
+            value={conteosFiltro.PENDIENTES.toLocaleString("es-CO")}
+            detail="Sin factura y dentro del tope"
+            icon="calendar"
+            iconClassName="bg-amber-50 text-amber-600"
+            valueClassName="text-amber-600"
+          />
+          <SummaryCard
+            label="Facturados"
+            value={conteosFiltro.FACTURADOS.toLocaleString("es-CO")}
+            detail="Con número de factura registrado"
+            icon="approvals"
+            iconClassName="bg-emerald-50 text-emerald-600"
+            valueClassName="text-emerald-600"
+          />
+          <SummaryCard
+            label="Notas crédito"
+            value={conteosFiltro.NC.toLocaleString("es-CO")}
+            detail="Facturas anuladas mediante NC"
+            icon="document"
+            iconClassName="bg-amber-50 text-amber-700"
+            valueClassName="text-amber-700"
+          />
+          <SummaryCard
+            label="Errores Siigo"
+            value={conteosFiltro.ERRORES_SIIGO.toLocaleString("es-CO")}
+            detail="Requieren corrección operativa"
+            icon="warning"
+            iconClassName="bg-red-50 text-[#e30613]"
+            valueClassName="text-[#e30613]"
+          />
+          <SummaryCard
+            label="Superan el tope"
+            value={conteosFiltro.SUPERA_TOPE.toLocaleString("es-CO")}
+            detail="No se pueden emitir por Siigo"
+            icon="warning"
+            iconClassName="bg-orange-50 text-orange-600"
+            valueClassName="text-orange-600"
+          />
 
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Pendientes
-            </p>
-            <p className="mt-2 text-2xl font-black tracking-tight text-amber-600">
-              {conteosFiltro.PENDIENTES}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Sin factura y dentro del tope.
-            </p>
-          </div>
+        </section>
 
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Facturados
-            </p>
-            <p className="mt-2 text-2xl font-black tracking-tight text-emerald-600">
-              {conteosFiltro.FACTURADOS}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Filas globales en verde con numero de factura.
-            </p>
-          </div>
-
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Notas credito
-            </p>
-            <p className="mt-2 text-2xl font-black tracking-tight text-amber-700">
-              {conteosFiltro.NC}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Facturas anuladas por NC.
-            </p>
-          </div>
-
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Errores Siigo
-            </p>
-            <p className="mt-2 text-2xl font-black tracking-tight text-red-600">
-              {conteosFiltro.ERRORES_SIIGO}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Requieren correccion antes de facturar.
-            </p>
-          </div>
-
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Supera tope
-            </p>
-            <p className="mt-2 text-2xl font-black tracking-tight text-rose-600">
-              {conteosFiltro.SUPERA_TOPE}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              No se pueden facturar por Siigo.
-            </p>
-          </div>
-
-          {puedeVerReporteSiigo && (
-            <div
+        {puedeVerReporteSiigo && (
+            <section
               id="reporte-siigo"
-              className="scroll-mt-8 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] xl:col-span-2"
+              className="mt-5 scroll-mt-8 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -1283,18 +1435,19 @@ export default function FacturadorRegistrosWorkspace({
                   </p>
                 </div>
 
-                <div className="flex min-w-[210px] flex-col gap-2">
+                <div className="flex min-w-[230px] flex-col gap-2 sm:flex-row">
                   <input
                     type="month"
                     value={reporteSiigoMes}
                     onChange={(event) => setReporteSiigoMes(event.target.value)}
-                    className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    aria-label="Mes del reporte Siigo"
+                    className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                   />
                   <button
                     type="button"
                     onClick={() => void consultarReporteSiigo()}
                     disabled={consultandoReporteSiigo}
-                    className="rounded-2xl border border-emerald-200 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-300"
+                    className="min-h-11 rounded-xl bg-[#11161d] px-4 py-2 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:bg-slate-300"
                   >
                     {consultandoReporteSiigo ? "Consultando..." : "Reporte Siigo"}
                   </button>
@@ -1378,41 +1531,46 @@ export default function FacturadorRegistrosWorkspace({
                   ) : null}
                 </>
               )}
-            </div>
+            </section>
           )}
-        </section>
 
-        <section className="mt-6 rounded-[32px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+          <div className="flex flex-col gap-5 border-b border-slate-100 px-5 py-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                Tabla horizontal
-              </div>
-              <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
+                Operación comercial
+              </p>
+              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
                 {esAdmin ? "Registros para consultar" : "Registros para facturar"}
               </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
+              <p className="mt-1 text-sm leading-6 text-slate-500">
                 {esAdmin
-                  ? "Puedes buscar por cédula o IMEI, consultar la información completa, editar el registro o eliminarlo cuando corresponda."
-                  : "Puedes revisar los datos, guardar la factura y modificar el registro si necesitas hacer una nota credito."}
+                  ? "Busca, consulta y corrige registros sin perder la trazabilidad del trámite."
+                  : "Completa la facturación y revisa el estado de cada registro comercial."}
               </p>
             </div>
 
-            <div className="flex w-full max-w-md flex-col gap-3">
+            <div className="flex w-full flex-col gap-3 xl:max-w-xl">
               <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Buscar por IMEI o cedula
-                <input
-                  value={busqueda}
-                  onChange={(event) => setBusqueda(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  placeholder="Ej: 3551... o 1110..."
-                />
+                Buscar registro
+                <span className="relative block">
+                  <DashboardIcon
+                    name="search"
+                    className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    value={busqueda}
+                    onChange={(event) => setBusqueda(event.target.value)}
+                    className="min-h-12 w-full rounded-xl border border-slate-300 bg-white py-3 pl-12 pr-4 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                    placeholder="Cédula, IMEI, cliente, sede o factura"
+                  />
+                </span>
               </label>
               {esAdmin && (
                 <button
                   type="button"
                   onClick={() => setModoSoporteSiigo((current) => !current)}
-                  className={`self-start rounded-2xl border px-4 py-2 text-sm font-semibold transition ${
+                  className={`self-start rounded-xl border px-4 py-2 text-xs font-black uppercase tracking-[0.06em] transition ${
                     modoSoporteSiigo
                       ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
                       : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-950"
@@ -1424,13 +1582,8 @@ export default function FacturadorRegistrosWorkspace({
             </div>
           </div>
 
-          <p className="mt-4 text-sm text-slate-500">
-            {busqueda.trim()
-              ? `${registrosFiltrados.length} registro(s) encontrados para la busqueda actual.`
-              : `${registrosFiltrados.length} registro(s) visibles en el filtro actual.`}
-          </p>
-
-          <div className="mt-5 flex flex-wrap gap-2">
+          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap gap-2">
             {FILTROS_REGISTROS.map((filtro) => {
               const activo = filtroActivo === filtro.value;
 
@@ -1439,23 +1592,26 @@ export default function FacturadorRegistrosWorkspace({
                   key={filtro.value}
                   type="button"
                   onClick={() => setFiltroActivo(filtro.value)}
-                  className={`rounded-2xl border px-4 py-2 text-sm font-semibold transition ${
+                  aria-pressed={activo}
+                  className={`rounded-xl border px-3.5 py-2 text-xs font-black uppercase tracking-[0.04em] transition ${
                     activo
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-950"
+                      ? "border-[#e30613] bg-[#e30613] text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:text-[#e30613]"
                   }`}
                 >
-                  {filtro.label} ({conteosFiltro[filtro.value]})
+                  {filtro.label} · {conteosFiltro[filtro.value].toLocaleString("es-CO")}
                 </button>
               );
             })}
+            </div>
             {esAdmin && (
               <button
                 type="button"
                 onClick={() => void facturarPendientesSiigo()}
                 disabled={facturandoPendientes}
-                className="rounded-2xl border border-emerald-200 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-300"
+                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#11161d] px-4 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:bg-slate-300"
               >
+                <DashboardIcon name="send" className="h-4 w-4" />
                 {facturandoPendientes
                   ? "Facturando..."
                   : "Facturar pendientes Siigo"}
@@ -1463,49 +1619,63 @@ export default function FacturadorRegistrosWorkspace({
             )}
           </div>
 
-          <div className="mt-6 overflow-x-auto">
-            <table className="min-w-[2700px] border-separate border-spacing-y-3">
-              <thead>
+          <div className="flex items-center justify-between gap-4 border-b border-slate-100 bg-slate-50/70 px-5 py-3 text-xs text-slate-500">
+            <span>
+              {cargando
+                ? "Preparando registros"
+                : `${registrosFiltrados.length.toLocaleString("es-CO")} resultado(s)`}
+            </span>
+            <span className="hidden sm:inline">
+              Vista compacta de {REGISTROS_POR_PAGINA} por página
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1480px] table-fixed">
+              <thead className="sticky top-0 z-10 bg-slate-50">
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  <th className="px-4 py-2">Fecha</th>
-                  <th className="px-4 py-2">Punto / sede</th>
-                  <th className="px-4 py-2">Tipo de identificacion</th>
-                  <th className="px-4 py-2">Numero de cedula</th>
-                  <th className="px-4 py-2">Nombre completo</th>
-                  <th className="px-4 py-2">Correo electronico</th>
-                  <th className="px-4 py-2">WhatsApp</th>
-                  <th className="px-4 py-2">Direccion</th>
-                  <th className="px-4 py-2">Barrio</th>
-                  <th className="px-4 py-2">Referencia</th>
-                  <th className="px-4 py-2">IMEI</th>
-                  <th className="px-4 py-2">Inicial</th>
-                  <th className="px-4 py-2">
-                    Creditos autorizados / financiera
-                  </th>
-                  <th className="px-4 py-2">Numero de factura</th>
-                  <th className="px-4 py-2">Siigo</th>
-                  <th className="px-4 py-2">Estado</th>
-                  <th className="px-4 py-2">Accion</th>
+                  <th className="w-[155px] px-5 py-3">Registro</th>
+                  <th className="hidden">Punto / sede</th>
+                  <th className="hidden">Tipo de identificación</th>
+                  <th className="w-[270px] px-5 py-3">Cliente y contacto</th>
+                  <th className="hidden">Nombre completo</th>
+                  <th className="hidden">Correo electrónico</th>
+                  <th className="hidden">WhatsApp</th>
+                  <th className="hidden">Dirección</th>
+                  <th className="hidden">Barrio</th>
+                  <th className="w-[230px] px-5 py-3">Equipo</th>
+                  <th className="hidden">IMEI</th>
+                  <th className="w-[245px] px-5 py-3">Pago</th>
+                  <th className="hidden">Créditos autorizados</th>
+                  <th className="w-[220px] px-5 py-3">Facturación</th>
+                  <th className="w-[250px] px-5 py-3">Siigo</th>
+                  <th className="hidden">Estado</th>
+                  <th className="w-[210px] px-5 py-3">Acciones</th>
                 </tr>
               </thead>
 
               <tbody>
                 {cargando ? (
                   <tr>
-                    <td colSpan={17} className="px-4 py-8 text-sm text-slate-500">
+                    <td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-500">
+                      <span className="mx-auto mb-3 block h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-[#e30613]" />
                       Cargando registros...
                     </td>
                   </tr>
                 ) : registrosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={17} className="px-4 py-8 text-sm text-slate-500">
+                    <td colSpan={7} className="px-5 py-14 text-center text-sm text-slate-500">
+                      <DashboardIcon
+                        name="search"
+                        className="mx-auto mb-3 h-8 w-8 text-slate-300"
+                      />
                       {busqueda.trim()
-                        ? "No hay registros que coincidan con la cedula o IMEI consultado."
+                        ? "No hay registros que coincidan con la cédula, IMEI o dato consultado."
                         : "No hay registros guardados para facturar."}
                     </td>
                   </tr>
                 ) : (
-                  registrosFiltrados.map((registro) => {
+                  registrosPaginados.map((registro) => {
                     const estado = resolveEstadoBadge(
                       registro.estadoFacturacion,
                       registro.numeroFactura
@@ -1545,56 +1715,73 @@ export default function FacturadorRegistrosWorkspace({
                       !notaCreditoSiigoEmitida &&
                       !superaTopeSiigo &&
                       !registro.numeroFactura;
-                    const financierasConInicial = financieras.filter(
-                      (item, index) =>
-                        financieraRequiereInicial(index) &&
-                        item.cuotaInicial !== null &&
-                        item.cuotaInicial !== undefined &&
-                        item.cuotaInicial !== ""
-                    );
-
                     return (
                       <tr
                         key={registro.id}
-                        className={`rounded-[24px] ${estado.rowClass}`}
+                        className="align-top transition-colors hover:bg-slate-50/80"
                       >
-                        <td className="rounded-l-[24px] border-y border-l border-slate-200 px-4 py-4 text-sm">
-                          {formatDate(registro.createdAt)}
-                        </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          {registro.puntoVenta || "Sin punto"}
-                        </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm font-semibold uppercase">
-                          {registro.tipoDocumento || "Sin tipo"}
-                        </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          {registro.documentoNumero}
-                        </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm font-semibold">
-                          {registro.clienteNombre}
-                        </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          {registro.correo || "Sin correo"}
-                        </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          {registro.whatsapp || "Sin WhatsApp"}
-                        </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          {registro.direccion || "Sin direccion"}
-                        </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          {registro.barrio || "Sin barrio"}
-                        </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
-                          <div>{registro.referenciaEquipo || "Sin referencia"}</div>
-                          <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-white/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                            {registro.tipoProducto || "TELEFONIA"}
+                        <td className="border-t border-slate-100 px-5 py-5 text-sm">
+                          <p className="font-black text-slate-950">#{registro.id}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            {formatDate(registro.createdAt)}
+                          </p>
+                          <span className="mt-2 inline-flex max-w-full rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-slate-600">
+                            {registro.puntoVenta || "Sin punto"}
                           </span>
                         </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
+                        <td className="hidden">
+                          {registro.puntoVenta || "Sin punto"}
+                        </td>
+                        <td className="hidden">
+                          {registro.tipoDocumento || "Sin tipo"}
+                        </td>
+                        <td className="border-t border-slate-100 px-5 py-5 text-sm">
+                          <p className="font-bold leading-5 text-slate-950">
+                            {registro.clienteNombre}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold uppercase text-slate-600">
+                            {registro.tipoDocumento || "ID"} {registro.documentoNumero}
+                          </p>
+                          <div className="mt-3 space-y-1 text-xs leading-5 text-slate-500">
+                            <p className="break-all">{registro.correo || "Sin correo"}</p>
+                            <p>{registro.whatsapp || "Sin WhatsApp"}</p>
+                            <p>
+                              {[registro.direccion, registro.barrio]
+                                .filter(Boolean)
+                                .join(" · ") || "Sin dirección"}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="hidden">
+                          {registro.clienteNombre}
+                        </td>
+                        <td className="hidden">
+                          {registro.correo || "Sin correo"}
+                        </td>
+                        <td className="hidden">
+                          {registro.whatsapp || "Sin WhatsApp"}
+                        </td>
+                        <td className="hidden">
+                          {registro.direccion || "Sin direccion"}
+                        </td>
+                        <td className="hidden">
+                          {registro.barrio || "Sin barrio"}
+                        </td>
+                        <td className="border-t border-slate-100 px-5 py-5 text-sm">
+                          <p className="font-bold leading-5 text-slate-950">
+                            {registro.referenciaEquipo || "Sin referencia"}
+                          </p>
+                          <span className="mt-2 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                            {registro.tipoProducto || "TELEFONIA"}
+                          </span>
+                          <p className="mt-3 break-all font-mono text-xs text-slate-500">
+                            IMEI {registro.serialImei || "sin registrar"}
+                          </p>
+                        </td>
+                        <td className="hidden">
                           {registro.serialImei || "Sin IMEI"}
                         </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
+                        <td className="border-t border-slate-100 px-5 py-5 text-sm">
                           {esContado ? (
                             pagosContado.length > 0 ? (
                               <div className="space-y-2">
@@ -1620,19 +1807,27 @@ export default function FacturadorRegistrosWorkspace({
                             ) : (
                               <span className="text-sm text-slate-500">Sin valor</span>
                             )
-                          ) : financierasConInicial.length > 0 ? (
-                            <div className="space-y-2">
-                              {financierasConInicial.map((item, index) => (
+                          ) : financieras.length > 0 ? (
+                            <div className="space-y-2.5">
+                              {financieras.map((item, index) => (
                                 <div
-                                  key={`${registro.id}-inicial-${index}`}
-                                  className="min-w-40"
+                                  key={`${registro.id}-pago-${index}`}
+                                  className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
                                 >
-                                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
                                     {item.plataformaCredito || `Financiera ${index + 1}`}
-                                  </div>
-                                  <div className="mt-1 font-semibold text-slate-900">
-                                    {formatMoney(item.cuotaInicial)}
-                                  </div>
+                                  </p>
+                                  <p className="mt-1 font-bold text-slate-950">
+                                    {formatMoney(item.creditoAutorizado)}
+                                  </p>
+                                  {financieraRequiereInicial(index) &&
+                                    item.cuotaInicial !== null &&
+                                    item.cuotaInicial !== undefined &&
+                                    item.cuotaInicial !== "" && (
+                                      <p className="mt-1 text-xs text-slate-500">
+                                        Inicial: {formatMoney(item.cuotaInicial)}
+                                      </p>
+                                    )}
                                 </div>
                               ))}
                             </div>
@@ -1640,7 +1835,7 @@ export default function FacturadorRegistrosWorkspace({
                             <span className="text-sm text-slate-500">No aplica</span>
                           )}
                         </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
+                        <td className="hidden">
                           <div className="space-y-2">
                             {financieras.map((item, index) => (
                               <div key={`${registro.id}-credito-${index}`} className="min-w-48">
@@ -1654,7 +1849,12 @@ export default function FacturadorRegistrosWorkspace({
                             ))}
                           </div>
                         </td>
-                        <td className="border-y border-slate-200 px-4 py-4">
+                        <td className="border-t border-slate-100 px-5 py-5">
+                          <span
+                            className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] ${estado.pillClass}`}
+                          >
+                            {estado.label}
+                          </span>
                           <input
                             value={draft}
                             disabled={
@@ -1668,11 +1868,26 @@ export default function FacturadorRegistrosWorkspace({
                                 [registro.id]: event.target.value,
                               }))
                             }
-                            className={`w-48 rounded-2xl border px-4 py-3 text-sm outline-none transition disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 ${estado.inputClass}`}
-                            placeholder="Factura"
+                            className={`mt-3 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 ${estado.inputClass}`}
+                            placeholder="Número de factura"
                           />
+                          {!registroCerradoConNotaCredito && (
+                            <button
+                              type="button"
+                              onClick={() => void guardarFactura(registro.id)}
+                              disabled={
+                                guardandoId === registro.id ||
+                                facturaSiigoEmitida ||
+                                !convertido ||
+                                !String(draft).trim()
+                              }
+                              className={`mt-2 min-h-10 w-full rounded-xl px-3 text-xs font-black uppercase tracking-[0.04em] transition ${estado.buttonClass} disabled:cursor-not-allowed disabled:bg-slate-300`}
+                            >
+                              {guardandoId === registro.id ? "Guardando..." : "Guardar factura"}
+                            </button>
+                          )}
                         </td>
-                        <td className="border-y border-slate-200 px-4 py-4 text-sm">
+                        <td className="border-t border-slate-100 px-5 py-5 text-sm">
                           {facturaSiigoEmitida ? (
                             <div className="min-w-48 space-y-2">
                               <div className="font-bold text-slate-950">
@@ -1765,38 +1980,24 @@ export default function FacturadorRegistrosWorkspace({
                             <span className="text-sm text-slate-500">Sin emitir</span>
                           )}
                         </td>
-                        <td className="border-y border-slate-200 px-4 py-4">
+                        <td className="hidden">
                           <span
                             className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${estado.pillClass}`}
                           >
                             {estado.label}
                           </span>
                         </td>
-                        <td className="rounded-r-[24px] border-y border-r border-slate-200 px-4 py-4">
-                          <div className="flex min-w-44 flex-col gap-2">
+                        <td className="border-t border-slate-100 px-5 py-5">
+                          <div className="flex flex-col gap-2">
                             {!registroCerradoConNotaCredito && (
                               <>
-                                <button
-                                  type="button"
-                                  onClick={() => void guardarFactura(registro.id)}
-                                  disabled={
-                                    guardandoId === registro.id ||
-                                    facturaSiigoEmitida ||
-                                    !convertido ||
-                                    !String(draft).trim()
-                                  }
-                                  className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${estado.buttonClass} disabled:cursor-not-allowed disabled:bg-slate-300`}
-                                >
-                                  {guardandoId === registro.id ? "Guardando..." : "Guardar"}
-                                </button>
-
                                 <button
                                   type="button"
                                   onClick={() => void emitirFacturaSiigo(registro.id)}
                                   disabled={
                                     emitiendoSiigoId === registro.id || !puedeEmitirSiigo
                                   }
-                                  className="rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                  className="min-h-10 rounded-xl border border-emerald-200 bg-white px-3 text-xs font-black uppercase tracking-[0.04em] text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                                 >
                                   {emitiendoSiigoId === registro.id
                                     ? "Enviando..."
@@ -1816,7 +2017,7 @@ export default function FacturadorRegistrosWorkspace({
                                     type="button"
                                     onClick={() => void reenviarCorreoSiigo(registro.id)}
                                     disabled={reenviandoCorreoId === registro.id}
-                                    className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                    className="min-h-10 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black uppercase tracking-[0.04em] text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                                   >
                                     {reenviandoCorreoId === registro.id
                                       ? "Reenviando..."
@@ -1828,7 +2029,7 @@ export default function FacturadorRegistrosWorkspace({
                                   type="button"
                                   onClick={() => setEditando(createEditDraft(registro))}
                                   disabled={!puedeModificarRegistro}
-                                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                  className="min-h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs font-black uppercase tracking-[0.04em] text-slate-700 transition hover:border-slate-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                                 >
                                   Modificar
                                 </button>
@@ -1840,7 +2041,7 @@ export default function FacturadorRegistrosWorkspace({
                                 type="button"
                                 onClick={() => void emitirNotaCreditoSiigo(registro.id)}
                                 disabled={emitiendoNcId === registro.id}
-                                className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                className="min-h-10 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black uppercase tracking-[0.04em] text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                               >
                                 {emitiendoNcId === registro.id
                                   ? "Emitiendo NC..."
@@ -1853,7 +2054,7 @@ export default function FacturadorRegistrosWorkspace({
                                 type="button"
                                 onClick={() => void quitarFacturaBorradaSiigo(registro.id)}
                                 disabled={limpiandoSiigoId === registro.id}
-                                className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                className="min-h-10 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-black uppercase tracking-[0.04em] text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                               >
                                 {limpiandoSiigoId === registro.id
                                   ? "Quitando..."
@@ -1867,7 +2068,7 @@ export default function FacturadorRegistrosWorkspace({
                                 type="button"
                                 onClick={() => void eliminarRegistro(registro.id)}
                                 disabled={eliminandoId === registro.id}
-                                className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                                className="min-h-10 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-black uppercase tracking-[0.04em] text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                               >
                                 {eliminandoId === registro.id
                                   ? "Eliminando..."
@@ -1885,7 +2086,65 @@ export default function FacturadorRegistrosWorkspace({
               </tbody>
             </table>
           </div>
+          {!cargando && registrosFiltrados.length > 0 && (
+            <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-slate-500">
+                Mostrando {primerRegistroVisible.toLocaleString("es-CO")}–
+                {ultimoRegistroVisible.toLocaleString("es-CO")} de{" "}
+                {registrosFiltrados.length.toLocaleString("es-CO")}
+              </p>
+              <nav
+                className="flex flex-wrap items-center gap-1.5"
+                aria-label="Paginación de registros"
+              >
+                <button
+                  type="button"
+                  onClick={() => setPaginaActual((pagina) => Math.max(1, pagina - 1))}
+                  disabled={paginaActual === 1}
+                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-[0.04em] text-slate-600 transition hover:border-red-200 hover:text-[#e30613] disabled:cursor-not-allowed disabled:text-slate-300"
+                >
+                  Anterior
+                </button>
+                {paginasVisibles.map((pagina, index) => {
+                  const paginaAnterior = paginasVisibles[index - 1];
+
+                  return (
+                    <span key={pagina} className="contents">
+                      {paginaAnterior && pagina - paginaAnterior > 1 ? (
+                        <span className="px-1 text-slate-400" aria-hidden="true">
+                          …
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => setPaginaActual(pagina)}
+                        aria-current={pagina === paginaActual ? "page" : undefined}
+                        className={`h-10 min-w-10 rounded-xl border px-3 text-xs font-black transition ${
+                          pagina === paginaActual
+                            ? "border-[#e30613] bg-[#e30613] text-white"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:text-[#e30613]"
+                        }`}
+                      >
+                        {pagina}
+                      </button>
+                    </span>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPaginaActual((pagina) => Math.min(totalPaginas, pagina + 1))
+                  }
+                  disabled={paginaActual === totalPaginas}
+                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-[0.04em] text-slate-600 transition hover:border-red-200 hover:text-[#e30613] disabled:cursor-not-allowed disabled:text-slate-300"
+                >
+                  Siguiente
+                </button>
+              </nav>
+            </div>
+          )}
         </section>
+        </main>
       </div>
 
       {editando && (
