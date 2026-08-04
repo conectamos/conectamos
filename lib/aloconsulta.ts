@@ -8,6 +8,8 @@ import {
   findRecentAloDate,
   matchesAloReportDocument,
   matchesAloReportImei,
+  parseAloInstallmentTerms,
+  selectAloInstallmentTerms,
   selectCompatibleAloHeader,
 } from "@/lib/alo-report-parser";
 
@@ -64,11 +66,6 @@ type AloSession = {
 type CachedAloSession = {
   session: AloSession;
   expiresAt: number;
-};
-
-type AloCarteraTerms = {
-  valorCuota: number | null;
-  numeroCuotas: number | null;
 };
 
 export type AloCreditoImei = {
@@ -182,29 +179,6 @@ function parseAmount(value: unknown) {
   const parsed = Number(raw);
 
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
-}
-
-function parseTerm(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return Math.round(value * 2);
-  }
-
-  const text = normalizeText(value);
-  const number = Number(text.match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(",", "."));
-
-  if (!Number.isFinite(number) || number <= 0) {
-    return null;
-  }
-
-  if (
-    text.includes("CATORCEN") ||
-    text.includes("QUINCEN") ||
-    text.includes("CUOTA")
-  ) {
-    return Math.round(number);
-  }
-
-  return Math.round(number * 2);
 }
 
 function getCredentials() {
@@ -2453,10 +2427,6 @@ function getByHeader(
   return getCell(row, findHeaderIndex(headerRow, matcher));
 }
 
-function getHeaderKey(headerRow: MatrixCell[] | null, index: number) {
-  return headerRow ? normalizeKey(getCell(headerRow, index)) : "";
-}
-
 function getValuesByHeader(
   row: MatrixCell[],
   headerRow: MatrixCell[] | null,
@@ -2535,50 +2505,6 @@ function isPhoneKey(key: string) {
 
 function isEmailKey(key: string) {
   return key.includes("CORREO") || key.includes("EMAIL") || key.includes("MAIL");
-}
-
-function isTermKey(key: string) {
-  if (
-    key.includes("VALOR") ||
-    key.includes("MONTO") ||
-    key.includes("PAGO") ||
-    key.includes("ATRAS") ||
-    key.includes("MORA") ||
-    key.includes("PENDIENT") ||
-    key.includes("VENCID") ||
-    key.includes("PAGAD")
-  ) {
-    return false;
-  }
-
-  return (
-    key.includes("PLAZO") ||
-    key.includes("MESES") ||
-    key.includes("NUMEROCUOTAS") ||
-    key.includes("CANTIDADCUOTAS") ||
-    key === "CUOTAS"
-  );
-}
-
-function isInstallmentValueKey(key: string) {
-  if (
-    key.includes("INICIAL") ||
-    key.includes("CUOTAINICIAL") ||
-    key.includes("PLAZO") ||
-    key.includes("NUMERO") ||
-    key.includes("CANTIDAD")
-  ) {
-    return false;
-  }
-
-  return (
-    key.includes("VALORCUOTA") ||
-    key.includes("CUOTACATORCENAL") ||
-    key.includes("CUOTAQUINCENAL") ||
-    key.includes("CUOTAMENSUAL") ||
-    (key.includes("VALOR") && key.includes("PAGO")) ||
-    key === "CUOTA"
-  );
 }
 
 function isAccessoryValueKey(key: string) {
@@ -2669,43 +2595,6 @@ function findClientName(row: MatrixCell[], headerRow: MatrixCell[] | null) {
   return Array.from(new Set(values)).join(" ").trim();
 }
 
-function findTermValue(row: MatrixCell[], headerRow: MatrixCell[] | null) {
-  const index = findHeaderIndex(headerRow, isTermKey);
-
-  if (index >= 0) {
-    return {
-      value: getCell(row, index),
-      headerKey: getHeaderKey(headerRow, index),
-    };
-  }
-
-  const value = row
-    .map(visibleText)
-    .find((cell) =>
-      /\b\d{1,2}(?:[.,]\d+)?\s*(?:MESES?|MES|CUOTAS?|CATORCENAS?|QUINCENAS?)\b/i.test(
-        cell
-      )
-    );
-
-  return { value: value || "", headerKey: "" };
-}
-
-function parseTermByHeader(value: unknown, headerKey: string) {
-  if (
-    headerKey.includes("CUOTA") ||
-    headerKey.includes("CATORCEN") ||
-    headerKey.includes("QUINCEN")
-  ) {
-    const number = Number(
-      String(value ?? "").match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(",", ".")
-    );
-
-    return Number.isFinite(number) && number > 0 ? Math.round(number) : null;
-  }
-
-  return parseTerm(value);
-}
-
 function maskNumericValue(value: string) {
   return value ? `${"*".repeat(Math.max(0, value.length - 4))}${value.slice(-4)}` : "";
 }
@@ -2730,71 +2619,33 @@ function readCarteraMatrices(text: string) {
   }
 }
 
-function rowMatchesAnySearch(row: MatrixCell[], searchValues: string[]) {
-  const rowDigits = row.map(visibleText).join(" ").replace(/\D/g, "");
-
-  return searchValues.some(
-    (value) => value.length >= 6 && rowDigits.includes(value)
-  );
-}
-
-function parseCarteraTermsFromRow(
-  row: MatrixCell[],
-  headerRow: MatrixCell[] | null
-): AloCarteraTerms {
-  const plazo = findTermValue(row, headerRow);
-  const numeroCuotas = parseTermByHeader(plazo.value, plazo.headerKey);
-  const valorCuota =
-    parseAmount(getByHeader(row, headerRow, isInstallmentValueKey)) ??
-    parseAmount(
-      getByHeader(
-        row,
-        headerRow,
-        (key) =>
-          key.includes("CUOTAVALOR") ||
-          key.includes("VALORPAGOCUOTA") ||
-          key.includes("VALORCATORCENAL") ||
-          key.includes("PAGOCATORCENAL")
-      )
-    );
-
-  return {
-    valorCuota,
-    numeroCuotas,
-  };
-}
-
 function findCarteraTermsInText(
   text: string,
-  searchValues: string[],
+  credito: AloCreditoImei,
   fallbackHeaders: MatrixCell[][] = []
 ) {
   const matrices = readCarteraMatrices(text);
   const headers = [...extractAloHtmlHeaderCandidates(text), ...fallbackHeaders];
+  const candidates: Array<{
+    row: MatrixCell[];
+    header: MatrixCell[] | null;
+  }> = [];
 
   for (const matrix of matrices) {
     for (let rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
       const row = matrix[rowIndex] || [];
-
-      if (!rowMatchesAnySearch(row, searchValues)) {
-        continue;
-      }
-
-      const terms = parseCarteraTermsFromRow(
-        row,
+      const header =
         findHeaderRow(matrix, rowIndex) ||
-          headers.find((header) => header.length >= row.length) ||
-          headers[0] ||
-          null
-      );
+        findFallbackHeaderRow(headers, row);
 
-      if (terms.valorCuota !== null || terms.numeroCuotas !== null) {
-        return terms;
-      }
+      candidates.push({ row, header });
     }
   }
 
-  return null;
+  return selectAloInstallmentTerms(candidates, {
+    documento: credito.documento,
+    imei: credito.imei,
+  });
 }
 
 function carteraSearchFields(searchValue: string, baseFields = new URLSearchParams()) {
@@ -2964,7 +2815,7 @@ async function consultarCuotaPlazoAloCartera(
   }
 
   const pageHeaders = extractAloHtmlHeaderCandidates(page.text);
-  const pageTerms = findCarteraTermsInText(page.text, searchValues, pageHeaders);
+  const pageTerms = findCarteraTermsInText(page.text, credito, pageHeaders);
 
   if (pageTerms) {
     return pageTerms;
@@ -2994,7 +2845,7 @@ async function consultarCuotaPlazoAloCartera(
         continue;
       }
 
-      const terms = findCarteraTermsInText(result.text, searchValues, pageHeaders);
+      const terms = findCarteraTermsInText(result.text, credito, pageHeaders);
 
       if (terms) {
         console.info("ALO CREDIT cartera encontro cuota/plazo", {
@@ -3078,12 +2929,7 @@ function parseCreditoFromRow(
     (headerRow ? null : parseAmount(getCell(row, 8)));
   const documento =
     findAloReportDocument(row, headerRow, documentoEsperado) || "";
-  const plazo = findTermValue(row, headerRow);
-  const valorCuotaRaw = getByHeader(
-    row,
-    headerRow,
-    isInstallmentValueKey
-  );
+  const terms = parseAloInstallmentTerms(row, headerRow);
   const correo =
     visibleText(
       getByHeader(row, headerRow, isEmailKey)
@@ -3091,12 +2937,8 @@ function parseCreditoFromRow(
     findEmail(row);
   const telefono = findPhone(row, headerRow, documento || null, imei);
   const clienteNombre = findClientName(row, headerRow);
-  const numeroCuotas = parseTermByHeader(plazo.value, plazo.headerKey);
-  const valorCuota =
-    parseAmount(valorCuotaRaw) ??
-    (numeroCuotas && numeroCuotas > 0
-      ? Math.round(creditoAutorizado / numeroCuotas)
-      : null);
+  const numeroCuotas = terms.numeroCuotas;
+  const valorCuota = terms.valorCuota;
   const valorAccesorios =
     accesorios !== null && accesorios > 0 ? accesorios : null;
 

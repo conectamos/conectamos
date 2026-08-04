@@ -7,7 +7,9 @@ import {
   findAloAuthorizedAmount,
   findRecentAloDate,
   matchesAloReportImei,
+  parseAloInstallmentTerms,
   parseAloReportCredits,
+  selectAloInstallmentTerms,
   selectAloCreditByImei,
   selectAloCreditForSale,
   selectCompatibleAloHeader,
@@ -418,4 +420,129 @@ test("el diagnostico seguro solo expone codigo y encabezados normalizados", () =
     headerKeys: ["FECHAVENTA", "CEDULA", "MONTO"],
   });
   assert.deepEqual(Object.keys(diagnostic), ["code", "headerKeys"]);
+});
+
+test("prioriza valor cuota y nunca confunde valor pago con la cuota ALO", () => {
+  const terms = parseAloInstallmentTerms(
+    ["1020304050", "$ 180.000", "$ 74.500", "20"],
+    ["Cedula", "Valor pago", "Valor cuota", "Numero cuotas"]
+  );
+
+  assert.deepEqual(terms, {
+    valorCuota: 74_500,
+    numeroCuotas: 20,
+  });
+});
+
+test("no inventa la cuota dividiendo el credito autorizado por el plazo", () => {
+  const terms = parseAloInstallmentTerms(
+    ["1020304050", "$ 1.490.000", "10 meses"],
+    ["Cedula", "Credito autorizado", "Plazo"]
+  );
+
+  assert.deepEqual(terms, {
+    valorCuota: null,
+    numeroCuotas: 20,
+  });
+});
+
+test("interpreta el plazo expresado en cuotas sin volver a duplicarlo", () => {
+  assert.deepEqual(
+    parseAloInstallmentTerms(
+      ["1020304050", "$ 74.500", "20 cuotas"],
+      ["Cedula", "Valor de la cuota", "Plazo"]
+    ),
+    {
+      valorCuota: 74_500,
+      numeroCuotas: 20,
+    }
+  );
+});
+
+test("no presenta una cuota mensual de ALO como si fuera catorcenal", () => {
+  assert.deepEqual(
+    parseAloInstallmentTerms(
+      ["1020304050", "$ 148.000", "20"],
+      ["Cedula", "Cuota mensual", "Numero cuotas"]
+    ),
+    {
+      valorCuota: null,
+      numeroCuotas: 20,
+    }
+  );
+});
+
+test("selecciona la cuota de cartera por cedula e IMEI exactos", () => {
+  const header = ["Cedula", "IMEI", "Valor cuota", "Numero cuotas"];
+  const terms = selectAloInstallmentTerms(
+    [
+      {
+        header,
+        row: ["1020304050", "359999999999991", "$ 74.500", "20"],
+      },
+      {
+        header,
+        row: ["1020304050", "359999999999992", "$ 91.000", "24"],
+      },
+    ],
+    {
+      documento: "1020304050",
+      imei: "359999999999992",
+    }
+  );
+
+  assert.deepEqual(terms, {
+    valorCuota: 91_000,
+    numeroCuotas: 24,
+  });
+});
+
+test("rechaza cuotas contradictorias cuando la cartera no identifica el IMEI", () => {
+  const header = ["Cedula", "Valor cuota", "Numero cuotas"];
+  const terms = selectAloInstallmentTerms(
+    [
+      { header, row: ["1020304050", "$ 74.500", "20"] },
+      { header, row: ["1020304050", "$ 91.000", "24"] },
+    ],
+    {
+      documento: "1020304050",
+      imei: "359999999999992",
+    }
+  );
+
+  assert.equal(terms, null);
+});
+
+test("no usa la cuota de otro IMEI aunque sea la unica fila de la cedula", () => {
+  const header = ["Cedula", "IMEI", "Valor cuota", "Numero cuotas"];
+  const terms = selectAloInstallmentTerms(
+    [
+      {
+        header,
+        row: ["1020304050", "359999999999991", "$ 74.500", "20"],
+      },
+    ],
+    {
+      documento: "1020304050",
+      imei: "359999999999992",
+    }
+  );
+
+  assert.equal(terms, null);
+});
+
+test("exige la cedula exacta para leer la cuota de cartera", () => {
+  const header = ["Cedula", "Valor cuota", "Numero cuotas"];
+  const terms = selectAloInstallmentTerms(
+    [
+      { header, row: ["10203040501", "$ 74.500", "20"] },
+      { header, row: ["9991020304050", "$ 91.000", "24"] },
+    ],
+    {
+      documento: "1020304050",
+      imei: "359999999999992",
+    }
+  );
+
+  assert.equal(terms, null);
 });

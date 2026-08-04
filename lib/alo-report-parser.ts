@@ -23,6 +23,16 @@ export type AloReportParserOptions = {
   htmlHeaders?: AloReportCell[][];
 };
 
+export type AloInstallmentTerms = {
+  valorCuota: number | null;
+  numeroCuotas: number | null;
+};
+
+export type AloInstallmentCandidate = {
+  row: AloReportCell[];
+  header: AloReportCell[] | null;
+};
+
 export type AloAmountParserOptions = {
   allowLegacyColumn10?: boolean;
 };
@@ -430,6 +440,241 @@ export function parseAloCurrencyAmount(value: unknown) {
   const parsed = Number(raw);
 
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
+}
+
+function installmentValueHeaderScore(value: unknown) {
+  const key = normalizeHeader(value);
+
+  if (
+    !key ||
+    key.includes("INICIAL") ||
+    key.includes("SALDO") ||
+    key.includes("CAPITAL") ||
+    key.includes("MORA") ||
+    key.includes("ATRAS") ||
+    key.includes("PENDIENT") ||
+    key.includes("VENCID") ||
+    key.includes("PAGAD") ||
+    key.includes("MENSUAL") ||
+    key.includes("PLAZO") ||
+    key.includes("NUMERO") ||
+    key.includes("CANTIDAD")
+  ) {
+    return -1;
+  }
+
+  if (
+    key === "VALORCUOTA" ||
+    key === "CUOTAVALOR" ||
+    key === "VALORPAGOCUOTA"
+  ) {
+    return 100;
+  }
+
+  if (
+    key.includes("CUOTACATORCENAL") ||
+    key.includes("CUOTAQUINCENAL") ||
+    key.includes("VALORCATORCENAL") ||
+    key.includes("VALORQUINCENAL") ||
+    key.includes("PAGOCATORCENAL") ||
+    key.includes("PAGOQUINCENAL") ||
+    (key.includes("VALOR") && key.includes("CATORCEN")) ||
+    (key.includes("VALOR") && key.includes("QUINCEN")) ||
+    (key.includes("PAGO") && key.includes("CATORCEN")) ||
+    (key.includes("PAGO") && key.includes("QUINCEN"))
+  ) {
+    return 90;
+  }
+
+  if (
+    key.includes("VALORCUOTA") ||
+    key.includes("CUOTAVALOR") ||
+    (key.includes("VALOR") && key.includes("CUOTA"))
+  ) {
+    return 80;
+  }
+
+  return key === "CUOTA" ? 60 : -1;
+}
+
+function installmentCountHeaderScore(value: unknown) {
+  const key = normalizeHeader(value);
+
+  if (
+    !key ||
+    key.includes("VALOR") ||
+    key.includes("MONTO") ||
+    key.includes("PAGO") ||
+    key.includes("MORA") ||
+    key.includes("ATRAS") ||
+    key.includes("PENDIENT") ||
+    key.includes("VENCID") ||
+    key.includes("PAGAD")
+  ) {
+    return -1;
+  }
+
+  if (
+    key.includes("NUMEROCUOTAS") ||
+    key.includes("CANTIDADCUOTAS") ||
+    ((key.includes("NUMERO") || key.includes("CANTIDAD")) &&
+      key.includes("CUOTA"))
+  ) {
+    return 100;
+  }
+
+  if (key === "CUOTAS" || key.includes("CATORCENAS") || key.includes("QUINCENAS")) {
+    return 90;
+  }
+
+  if (key.includes("PLAZO") || key.includes("MESES")) {
+    return 70;
+  }
+
+  return -1;
+}
+
+function positiveNumber(value: unknown) {
+  const number = Number(
+    visibleText(value).match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(",", ".")
+  );
+
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function parseInstallmentCount(value: unknown, header: unknown) {
+  const number = positiveNumber(value);
+
+  if (number === null) {
+    return null;
+  }
+
+  const key = normalizeHeader(header);
+  const valueKey = normalizeHeader(value);
+
+  if (
+    key.includes("CUOTA") ||
+    key.includes("CATORCEN") ||
+    key.includes("QUINCEN") ||
+    valueKey.includes("CUOTA") ||
+    valueKey.includes("CATORCEN") ||
+    valueKey.includes("QUINCEN")
+  ) {
+    return Math.round(number);
+  }
+
+  return Math.round(number * 2);
+}
+
+/**
+ * Extrae exclusivamente la cuota contractual publicada por ALO. Nunca usa
+ * pagos, abonos, saldos ni calcula una cuota aproximada desde el capital.
+ */
+export function parseAloInstallmentTerms(
+  row: AloReportCell[],
+  header: AloReportCell[] | null
+): AloInstallmentTerms {
+  const valueCandidates = (header ?? [])
+    .map((cell, index) => ({
+      index,
+      score: installmentValueHeaderScore(cell),
+    }))
+    .filter((item) => item.score >= 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+
+  let valorCuota: number | null = null;
+
+  for (const candidate of valueCandidates) {
+    const amount = parseAloCurrencyAmount(row[candidate.index]);
+
+    if (amount !== null && amount > 0) {
+      valorCuota = amount;
+      break;
+    }
+  }
+
+  const countCandidates = (header ?? [])
+    .map((cell, index) => ({
+      header: cell,
+      index,
+      score: installmentCountHeaderScore(cell),
+    }))
+    .filter((item) => item.score >= 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+
+  let numeroCuotas: number | null = null;
+
+  for (const candidate of countCandidates) {
+    const count = parseInstallmentCount(
+      row[candidate.index],
+      candidate.header
+    );
+
+    if (count !== null) {
+      numeroCuotas = count;
+      break;
+    }
+  }
+
+  return { valorCuota, numeroCuotas };
+}
+
+/**
+ * Selecciona términos de cartera solo sobre la cédula exacta. Cuando hay más
+ * de un crédito para la misma persona, prioriza el IMEI exacto y rechaza
+ * resultados contradictorios en vez de tomar la primera fila.
+ */
+export function selectAloInstallmentTerms(
+  candidates: AloInstallmentCandidate[],
+  options: { documento: unknown; imei?: unknown }
+) {
+  const documento = identityDigits(options.documento);
+
+  if (!documento) {
+    return null;
+  }
+
+  const documentMatches = candidates.filter(({ row, header }) =>
+    matchesAloReportDocument(row, documento, header)
+  );
+  const imeiMatches = documentMatches.filter(({ row, header }) =>
+    matchesAloReportImei(row, options.imei, header, {
+      allowLegacyAnyCell: header === null,
+    })
+  );
+  const expectedImei = imeiDigits(options.imei);
+  const documentRowsExposeImei = documentMatches.some(({ row, header }) => {
+    if ((header ?? []).some(isImeiHeader)) {
+      return true;
+    }
+
+    return header === null && row.some((cell) => Boolean(imeiDigits(cell)));
+  });
+
+  if (
+    expectedImei &&
+    documentRowsExposeImei &&
+    imeiMatches.length === 0
+  ) {
+    return null;
+  }
+
+  const selected = imeiMatches.length > 0 ? imeiMatches : documentMatches;
+  const terms = selected
+    .map(({ row, header }) => parseAloInstallmentTerms(row, header))
+    .filter(
+      (item) => item.valorCuota !== null || item.numeroCuotas !== null
+    );
+  const uniqueTerms = new Map(
+    terms.map((item) => [
+      `${item.valorCuota ?? ""}|${item.numeroCuotas ?? ""}`,
+      item,
+    ])
+  );
+
+  return uniqueTerms.size === 1
+    ? Array.from(uniqueTerms.values())[0]
+    : null;
 }
 
 function safeMoneyMarkerScore(value: unknown) {
