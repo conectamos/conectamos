@@ -16,6 +16,12 @@ export default async function PayJoyFortySixtyPage() {
   return (
     <PayJoyFortySixtyWorkspace
       puedeEliminar={String(user.rolNombre || "").toUpperCase() === "ADMIN"}
+      user={{
+        nombre: user.nombre,
+        usuario: user.usuario,
+        rolNombre: user.rolNombre,
+        sedeNombre: user.sedeNombre,
+      }}
     />
   );
 }

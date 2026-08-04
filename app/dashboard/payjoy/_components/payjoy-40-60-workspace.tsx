@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  DashboardSidebar,
+  type NavigationItem,
+} from "@/app/dashboard/_components/operations-dashboard";
 
 type FortySixtyStatus = "40/60 APROBADO" | "40/60 NO APROBADO";
 
@@ -95,8 +101,8 @@ function formatDateTime(value: string) {
 
 function statusRowClass(status: FortySixtyStatus) {
   return status === "40/60 APROBADO"
-    ? "bg-emerald-50/80"
-    : "bg-red-50/80";
+    ? "bg-white hover:bg-emerald-50/40 [&>td:first-child]:shadow-[inset_4px_0_0_#10b981]"
+    : "bg-white hover:bg-red-50/50 [&>td:first-child]:shadow-[inset_4px_0_0_#e30613]";
 }
 
 function summarizeRows(rows: FortySixtyRow[]): FortySixtySummary {
@@ -140,8 +146,15 @@ function buildProcessingSourceKey(selectedFile: File, selectedWeek: string) {
 
 export default function PayJoyFortySixtyWorkspace({
   puedeEliminar,
+  user,
 }: {
   puedeEliminar: boolean;
+  user: {
+    nombre: string;
+    usuario: string;
+    rolNombre: string;
+    sedeNombre: string;
+  };
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -172,16 +185,61 @@ export default function PayJoyFortySixtyWorkspace({
   const [processedSourceKey, setProcessedSourceKey] = useState<string | null>(
     null
   );
+  const [currentPage, setCurrentPage] = useState(1);
 
   const liveSummary = summarizeRows(rows);
-  const visibleRows = rows.filter((row) =>
-    selectedStatus === "TODOS" ? true : row.status === selectedStatus
+  const visibleRows = useMemo(
+    () =>
+      rows.filter((row) =>
+        selectedStatus === "TODOS" ? true : row.status === selectedStatus
+      ),
+    [rows, selectedStatus]
   );
   const totalEvaluated = liveSummary.aprobados + liveSummary.noAprobados;
   const approvalRate =
     totalEvaluated > 0 ? (liveSummary.aprobados / totalEvaluated) * 100 : 0;
   const canSaveRecord = Boolean(data && rows.length);
   const savedRecordsCount = savedRecords.length;
+  const pageSize = 25;
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const paginatedRows = visibleRows.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+  const inicialesUsuario = String(user.nombre || user.usuario || "Usuario")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0]?.toUpperCase())
+    .join("");
+  const navigationItems: NavigationItem[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" },
+    {
+      href: "/dashboard/aprobaciones",
+      icon: "approvals",
+      label: "Aprobaciones",
+    },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+    {
+      href: "/dashboard/sedes",
+      icon: "settings",
+      label: "Configuración",
+    },
+  ];
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStatus, rows.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const updateCedula = (id: string, value: string) => {
     setRows((currentRows) =>
@@ -298,6 +356,7 @@ export default function PayJoyFortySixtyWorkspace({
     setWeek(record.week);
     setWeekOptions(record.week ? [record.week] : []);
     setSelectedStatus("TODOS");
+    setCurrentPage(1);
     setProcessedSourceKey(null);
     setFile(null);
 
@@ -407,6 +466,7 @@ export default function PayJoyFortySixtyWorkspace({
       setRows(payload.rows);
       setProcessedSourceKey(nextSourceKey);
       setSelectedStatus("TODOS");
+      setCurrentPage(1);
 
       if (shouldKeepActiveRecord) {
         setMessage(
@@ -508,6 +568,7 @@ export default function PayJoyFortySixtyWorkspace({
           setData(refreshedPayload);
           setRows(refreshedPayload.rows);
           setSelectedStatus("TODOS");
+          setCurrentPage(1);
           setProcessedSourceKey(nextSourceKey);
         }
       }
@@ -654,225 +715,382 @@ export default function PayJoyFortySixtyWorkspace({
   };
 
   return (
-    <div className="min-h-screen bg-[#f6f4ef] px-4 py-6 md:px-6">
-      <div className="mx-auto max-w-[1680px]">
-        <section className="overflow-hidden rounded-[34px] border border-[#e5dccd] bg-[linear-gradient(135deg,#17191d_0%,#20242c_55%,#2b313b_100%)] p-6 text-white shadow-[0_28px_80px_rgba(15,23,42,0.22)] md:p-8">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-            <div className="max-w-3xl">
-              <div className="flex flex-wrap gap-2">
-                <span className="rounded-full border border-[#b98746]/40 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#f3d7a8]">
-                  PayJoy 40/60
+    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950 [&_button]:uppercase">
+      <DashboardSidebar
+        activeHref="/caja"
+        coverageLabel={user.sedeNombre || "Todas las sedes"}
+        items={navigationItems}
+      />
+
+      <div className="lg:pl-[252px]">
+        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
+          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <nav className="mb-3 flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <Link href="/dashboard" className="transition hover:text-[#e30613]">
+                  Inicio
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <Link href="/dashboard/payjoy" className="transition hover:text-[#e30613]">
+                  Cartera PayJoy
+                </Link>
+                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
+                <span className="text-[#e30613]">40/60</span>
+              </nav>
+              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
+                Validación PayJoy 40/60
+              </h1>
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+                Procesa una WEEK, cruza el DEVICE_TAG con la cartera PayJoy y revisa el resultado antes de guardarlo.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
+                  Acceso: ADMIN / AUDITOR
                 </span>
-                <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-200">
-                  Solo admin
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
+                  Formatos: XLSX, XLS y CSV
                 </span>
               </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                40/60
-              </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-200/85 md:text-base">
-                Carga el Excel, selecciona la WEEK exactamente como viene en el
-                archivo y el modulo cruza el DEVICE_TAG contra Cartera PayJoy
-                para autollenar la cedula cuando exista coincidencia.
-              </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               <Link
                 href="/dashboard/payjoy"
-                className="rounded-2xl border border-white/15 bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-slate-100"
+                className="inline-flex min-h-[52px] items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
               >
                 Cartera PayJoy
               </Link>
-              <Link
-                href="/dashboard/payjoy/40-60"
-                className="rounded-2xl border border-[#b98746]/40 bg-[#b98746] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#a9793c]"
-              >
-                40/60
-              </Link>
-              <Link
-                href="/dashboard"
-                className="rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                Volver
-              </Link>
+              <div className="flex min-h-[52px] min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 shadow-sm sm:min-w-[205px]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
+                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-900">
+                    {user.nombre || user.usuario}
+                  </p>
+                  <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {user.rolNombre}
+                  </p>
+                </div>
+              </div>
+              <LogoutButton variant="light" className="min-h-[52px] rounded-xl uppercase" />
             </div>
-          </div>
-        </section>
+          </header>
 
-        {message && (
-          <div className="mt-5 rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-700 shadow-sm">
-            {message}
-          </div>
-        )}
-
-        <section className="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-[30px] border border-[#eadfce] bg-[linear-gradient(180deg,#fffdf9_0%,#fbf6ee_100%)] p-6 shadow-sm">
-            <div className="inline-flex rounded-full border border-[#eadbc2] bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#b26b19]">
-              Cargue
-            </div>
-            <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-              Consultar semana 40/60
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-              El archivo debe traer como minimo: <span className="font-semibold">WEEK</span>,{" "}
-              <span className="font-semibold">MERCHANTNAME</span>,{" "}
-              <span className="font-semibold">DEVICE_TAG</span>,{" "}
-              <span className="font-semibold">LOAN_AGE_DAYS</span>,{" "}
-              <span className="font-semibold">NUMBER_OF_PAYMENTS</span>,{" "}
-              <span className="font-semibold">LOAN_REPAYMENT_BIWEEK</span> y{" "}
-              <span className="font-semibold">PAY_40_AT_60</span>.
-            </p>
-
-            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_260px_auto] lg:items-end">
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Archivo Excel
-                </label>
-                <div className="mt-2 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="rounded-2xl border border-slate-950 bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-                  >
-                    Seleccionar archivo
-                  </button>
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                    {file
-                      ? loadingWeeks
-                        ? `Leyendo weeks de ${file.name}...`
-                        : file.name
-                      : "Aun no has seleccionado archivo"}
+          <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              {
+                icon: "document" as const,
+                label: "Archivo seleccionado",
+                value: file ? "1" : "0",
+                detail: file ? file.name : "Selecciona el Excel que deseas validar.",
+                tone: "bg-blue-50 text-blue-600",
+              },
+              {
+                icon: "calendar" as const,
+                label: "Weeks detectadas",
+                value: loadingWeeks ? "..." : String(weekOptions.length),
+                detail: week ? `Seleccionada: ${week}` : "Se habilitan al leer el archivo.",
+                tone: "bg-violet-50 text-violet-600",
+              },
+              {
+                icon: "sales" as const,
+                label: "Filas procesadas",
+                value: String(rows.length),
+                detail: data ? `Hoja: ${data.sheetName}` : "Sin una WEEK procesada todavía.",
+                tone: "bg-red-50 text-[#e30613]",
+              },
+              {
+                icon: "catalog" as const,
+                label: "Semanas guardadas",
+                value: savedRecordsLoading ? "..." : String(savedRecordsCount),
+                detail: "Historial disponible para consulta y actualización.",
+                tone: "bg-slate-100 text-slate-700",
+              },
+            ].map((item) => (
+              <article
+                key={item.label}
+                className="min-h-[132px] rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
+              >
+                <div className="flex items-start gap-4">
+                  <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${item.tone}`}>
+                    <DashboardIcon name={item.icon} className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-600">{item.label}</p>
+                    <p className="mt-1 text-[27px] font-black leading-tight">{item.value}</p>
+                    <p className="mt-2 line-clamp-2 break-all text-xs leading-5 text-slate-500">
+                      {item.detail}
+                    </p>
                   </div>
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="hidden"
-                  onChange={(event) =>
-                    void handleFileChange(
-                      event.target.files?.[0] ? event.target.files[0] : null
-                    )
-                  }
-                />
+              </article>
+            ))}
+          </section>
+
+          {message && (
+            <div
+              role="status"
+              className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-sm font-medium text-slate-700 shadow-sm"
+            >
+              <DashboardIcon name="document" className="mt-0.5 h-5 w-5 shrink-0 text-[#e30613]" />
+              <span>{message}</span>
+            </div>
+          )}
+
+          <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+            <div className="grid xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="p-5 sm:p-6">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+                    <DashboardIcon name="document" className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#e30613]">
+                      Proceso de validación
+                    </p>
+                    <h2 className="mt-1 text-2xl font-black tracking-tight">
+                      Consultar semana 40/60
+                    </h2>
+                  </div>
+                </div>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-500">
+                  Selecciona el archivo, elige la WEEK detectada y procesa. El resultado no se guarda hasta que uses la acción de guardado.
+                </p>
+
+                <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_250px_auto] lg:items-end">
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                      1. Archivo Excel
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="mt-2 flex min-h-[48px] w-full items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-left text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                    >
+                      <DashboardIcon name="document" className="h-5 w-5 shrink-0 text-slate-500" />
+                      <span className="min-w-0 flex-1 truncate normal-case">
+                        {file
+                          ? loadingWeeks
+                            ? `Leyendo WEEKs de ${file.name}...`
+                            : file.name
+                          : "Seleccionar archivo"}
+                      </span>
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={(event) =>
+                        void handleFileChange(event.target.files?.[0] || null)
+                      }
+                    />
+                  </div>
+
+                  <label>
+                    <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                      2. WEEK
+                    </span>
+                    <select
+                      value={week}
+                      onChange={(event) => setWeek(event.target.value)}
+                      disabled={!weekOptions.length || loadingWeeks}
+                      className="mt-2 min-h-[48px] w-full rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100 disabled:bg-slate-50 disabled:text-slate-400"
+                    >
+                      <option value="">
+                        {loadingWeeks
+                          ? "Leyendo WEEKs..."
+                          : weekOptions.length
+                            ? "Selecciona una WEEK"
+                            : "Primero carga el archivo"}
+                      </option>
+                      {weekOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => void processFile()}
+                    disabled={loading || loadingWeeks || !file || !week}
+                    className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-[#e30613] px-6 text-xs font-black tracking-[0.06em] text-white transition hover:bg-[#c90511] disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    <DashboardIcon name="search" className="h-4 w-4" />
+                    {loading ? "Procesando..." : loadingWeeks ? "Leyendo..." : "Procesar"}
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Buscar week
-                </label>
-                <select
-                  value={week}
-                  onChange={(event) => setWeek(event.target.value)}
-                  disabled={!weekOptions.length || loadingWeeks}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-950 outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
+              <aside className="border-t border-slate-200 bg-slate-50/70 p-5 sm:p-6 xl:border-l xl:border-t-0">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  Requisitos y reglas
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  El archivo debe incluir WEEK, DEVICE_TAG y los campos de comportamiento del crédito.
+                </p>
+                <details className="group mt-4 rounded-xl border border-slate-200 bg-white">
+                  <summary className="flex min-h-[46px] cursor-pointer list-none items-center justify-between px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 [&::-webkit-details-marker]:hidden">
+                    Ver regla aplicada
+                    <DashboardIcon name="arrow" className="h-4 w-4 rotate-90 transition group-open:-rotate-90" />
+                  </summary>
+                  <div className="space-y-3 border-t border-slate-200 px-4 py-4 text-xs leading-5 text-slate-600">
+                    <p><strong className="text-slate-900">PAY_40_AT_60 = 1:</strong> aprobado.</p>
+                    <p><strong className="text-slate-900">PAY_40_AT_60 = 0:</strong> no aprobado.</p>
+                    <p>Con el indicador vacío y LOAN_AGE_DAYS de 60 o menos, se aprueba con 3 o más pagos.</p>
+                    <p>En ese mismo rango, también se aprueba cuando el equipo ya quedó pagado en PayJoy.</p>
+                  </div>
+                </details>
+              </aside>
+            </div>
+          </section>
+
+          {!data && (
+            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#e30613]">
+                    Historial disponible
+                  </p>
+                  <h2 className="mt-1 text-xl font-black">Semanas guardadas</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Puedes abrir una semana anterior sin cargar un archivo nuevo.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadSavedRecords()}
+                  disabled={savedRecordsLoading}
+                  className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
                 >
-                  <option value="">
-                    {loadingWeeks
-                      ? "Leyendo weeks..."
-                      : weekOptions.length
-                        ? "Selecciona una week del archivo"
-                        : "Primero sube el archivo"}
-                  </option>
-                  {weekOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
+                  {savedRecordsLoading ? "Actualizando..." : "Actualizar historial"}
+                </button>
+              </div>
+
+              {savedRecordsError ? (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {savedRecordsError}
+                </div>
+              ) : savedRecordsLoading ? (
+                <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                  Cargando semanas guardadas...
+                </div>
+              ) : savedRecords.length ? (
+                <div className="mt-5 grid gap-3 lg:grid-cols-2">
+                  {savedRecords.slice(0, 6).map((record) => (
+                    <article key={record.id} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate font-black text-slate-900">{record.recordName}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {record.week} · {record.filteredRows} registros · {formatDateTime(record.updatedAt)}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void loadStoredRecord(record.id)}
+                          disabled={consultingRecordId === record.id}
+                          className="min-h-[40px] rounded-lg bg-slate-950 px-4 text-xs font-black text-white transition hover:bg-slate-800 disabled:opacity-60"
+                        >
+                          {consultingRecordId === record.id ? "Abriendo..." : "Consultar"}
+                        </button>
+                        {puedeEliminar && (
+                          <button
+                            type="button"
+                            onClick={() => void deleteStoredRecord(record.id, record.recordName)}
+                            disabled={deletingRecordId === record.id}
+                            className="min-h-[40px] rounded-lg border border-red-200 bg-white px-3 text-xs font-black text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+                          >
+                            {deletingRecordId === record.id ? "..." : "Borrar"}
+                          </button>
+                        )}
+                      </div>
+                    </article>
                   ))}
-                </select>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void processFile()}
-                disabled={loading || loadingWeeks}
-                className="rounded-2xl border border-[#b98746]/30 bg-[#b98746] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#a9793c] disabled:opacity-70"
-              >
-                {loading ? "Procesando..." : loadingWeeks ? "Leyendo..." : "Procesar"}
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              Regla aplicada
-            </div>
-            <div className="mt-5 space-y-3 text-sm leading-7 text-slate-600">
-              <p>
-                <span className="font-semibold text-slate-950">PAY_40_AT_60 = 1</span>{" "}
-                marca <span className="font-semibold text-emerald-700">40/60 APROBADO</span>.
-              </p>
-              <p>
-                <span className="font-semibold text-slate-950">PAY_40_AT_60 = 0</span>{" "}
-                marca <span className="font-semibold text-red-700">40/60 NO APROBADO</span>.
-              </p>
-              <p>
-                Si viene en blanco y <span className="font-semibold text-slate-950">LOAN_AGE_DAYS</span>{" "}
-                es 60 o menos, se aprueba cuando{" "}
-                <span className="font-semibold text-slate-950">NUMBER_OF_PAYMENTS</span>{" "}
-                es 3 o mas.
-              </p>
-              <p>
-                Si viene en blanco y el equipo ya no debe pagos en PayJoy, tambien
-                queda <span className="font-semibold text-emerald-700">40/60 APROBADO</span>.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {data && (
-          <>
-            <section className="mt-6 grid gap-4 md:grid-cols-5">
-              <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Week consultada
-                </p>
-                <p className="mt-2 text-3xl font-black text-slate-950">{data.week}</p>
-              </div>
-              <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Aprobados
-                </p>
-                <p className="mt-2 text-3xl font-black text-emerald-700">
-                  {liveSummary.aprobados}
-                </p>
-              </div>
-              <div className="rounded-[24px] border border-red-200 bg-red-50 p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
-                  No aprobados
-                </p>
-                <p className="mt-2 text-3xl font-black text-red-700">
-                  {liveSummary.noAprobados}
-                </p>
-              </div>
-              <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Cedulas encontradas
-                </p>
-                <p className="mt-2 text-3xl font-black text-slate-950">
-                  {liveSummary.cedulasEncontradas}
-                </p>
-                <p className="mt-2 text-sm text-slate-500">
-                  Pendientes: {liveSummary.cedulasPendientes}
-                </p>
-              </div>
-              <div className="rounded-[24px] border border-[#d8b476] bg-[linear-gradient(180deg,#fff9ef_0%,#fff4de_100%)] p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8f5b24]">
-                  % 40/60
-                </p>
-                <p className="mt-2 text-3xl font-black text-[#8f5b24]">
-                  {formatPercent(approvalRate)}
-                </p>
-                <p className="mt-2 text-sm text-[#8f5b24]/80">
-                  {liveSummary.aprobados} de {totalEvaluated} aprobados
-                </p>
-              </div>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                  Aún no hay semanas guardadas. Procesa una WEEK para crear el primer registro.
+                </div>
+              )}
             </section>
+          )}
 
-            <section className="mt-6 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+          {data && (
+            <>
+              <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                {[
+                  {
+                    icon: "calendar" as const,
+                    label: "WEEK consultada",
+                    value: data.week,
+                    detail: `${rows.length} filas procesadas`,
+                    card: "border-slate-200 bg-white",
+                    iconTone: "bg-slate-100 text-slate-700",
+                    valueTone: "text-slate-950",
+                  },
+                  {
+                    icon: "approvals" as const,
+                    label: "Aprobados",
+                    value: String(liveSummary.aprobados),
+                    detail: "Cumplen la validación 40/60",
+                    card: "border-emerald-200 bg-emerald-50/60",
+                    iconTone: "bg-emerald-100 text-emerald-700",
+                    valueTone: "text-emerald-700",
+                  },
+                  {
+                    icon: "warning" as const,
+                    label: "No aprobados",
+                    value: String(liveSummary.noAprobados),
+                    detail: "Requieren revisión operativa",
+                    card: "border-red-200 bg-red-50/60",
+                    iconTone: "bg-red-100 text-red-700",
+                    valueTone: "text-red-700",
+                  },
+                  {
+                    icon: "user" as const,
+                    label: "Cédulas encontradas",
+                    value: String(liveSummary.cedulasEncontradas),
+                    detail: `${liveSummary.cedulasPendientes} pendientes`,
+                    card: "border-slate-200 bg-white",
+                    iconTone: "bg-blue-50 text-blue-600",
+                    valueTone: "text-slate-950",
+                  },
+                  {
+                    icon: "trend" as const,
+                    label: "Tasa 40/60",
+                    value: formatPercent(approvalRate),
+                    detail: `${liveSummary.aprobados} de ${totalEvaluated} aprobados`,
+                    card: "border-slate-200 bg-white",
+                    iconTone: "bg-violet-50 text-violet-600",
+                    valueTone: "text-slate-950",
+                  },
+                ].map((item) => (
+                  <article
+                    key={item.label}
+                    className={`min-h-[138px] rounded-2xl border p-4 shadow-[0_8px_24px_rgba(15,23,42,0.045)] ${item.card}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.iconTone}`}>
+                        <DashboardIcon name={item.icon} className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-600">{item.label}</p>
+                        <p className={`mt-1 break-words text-[26px] font-black leading-tight ${item.valueTone}`}>
+                          {item.value}
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">{item.detail}</p>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </section>
+
+              <section className="mt-6 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
                 <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                   Guardar semana
                 </div>
@@ -884,7 +1102,7 @@ export default function PayJoyFortySixtyWorkspace({
                   consultarla despues desde este mismo modulo.
                 </p>
                 {activeSavedRecordId && file && String(week || "").trim() && (
-                  <div className="mt-4 rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-4 py-3 text-sm font-medium text-[#8f5b24]">
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
                     Al usar <span className="font-semibold">Actualizar guardado</span>,
                     primero recargaremos la informacion con el archivo nuevo y
                     luego sobrescribiremos la semana guardada.
@@ -901,11 +1119,11 @@ export default function PayJoyFortySixtyWorkspace({
                         value={saveName}
                         onChange={(event) => setSaveName(event.target.value)}
                         placeholder="Ej: 40/60 - Week 02"
-                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-[#c79a57] focus:ring-2 focus:ring-[#f4dfbc]"
+                        className="min-h-[48px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
                       />
                     </label>
 
-                    <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                    <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                         Semana activa
                       </p>
@@ -923,7 +1141,7 @@ export default function PayJoyFortySixtyWorkspace({
                       <button
                         onClick={() => void saveCurrentRecord()}
                         disabled={savingRecord}
-                        className="rounded-2xl bg-[#111318] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b1f27] disabled:opacity-70"
+                        className="min-h-[46px] rounded-xl bg-[#e30613] px-5 py-3 text-xs font-black text-white shadow-sm transition hover:bg-[#c90511] disabled:opacity-70"
                       >
                         {savingRecord ? "Guardando..." : "Guardar semana"}
                       </button>
@@ -933,7 +1151,7 @@ export default function PayJoyFortySixtyWorkspace({
                             void updateCurrentStoredRecord(activeSavedRecordId)
                           }
                           disabled={updatingRecord}
-                          className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-5 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
+                          className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-5 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
                         >
                           {updatingRecord
                             ? "Actualizando..."
@@ -946,14 +1164,14 @@ export default function PayJoyFortySixtyWorkspace({
                     </div>
                   </>
                 ) : (
-                  <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+                  <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
                     Procesa una semana primero y luego podras guardarla en el
                     historial.
                   </div>
                 )}
               </div>
 
-              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
@@ -1001,17 +1219,17 @@ export default function PayJoyFortySixtyWorkspace({
                 )}
 
                 {savedRecordsLoading && !savedRecords.length ? (
-                  <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+                  <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
                     Cargando historial de semanas guardadas...
                   </div>
                 ) : !savedRecords.length ? (
-                  <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
+                  <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
                     Aun no hay semanas guardadas. Cuando uses{" "}
                     <span className="font-semibold">Guardar semana</span>, te
                     quedaran listadas aqui para futuras consultas.
                   </div>
                 ) : !savedRecordsExpanded ? (
-                  <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                  <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-5">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">
@@ -1047,10 +1265,10 @@ export default function PayJoyFortySixtyWorkspace({
                         <article
                           key={record.id}
                           className={[
-                            "rounded-[24px] border px-4 py-4 transition",
+                            "rounded-xl border px-4 py-4 transition",
                             activeSavedRecordId === record.id
-                              ? "border-[#d8b476] bg-[#fff9ef] shadow-sm"
-                              : "border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]",
+                              ? "border-red-200 bg-red-50/50 shadow-sm"
+                              : "border-slate-200 bg-white",
                           ].join(" ")}
                         >
                           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1060,7 +1278,7 @@ export default function PayJoyFortySixtyWorkspace({
                                   {record.recordName}
                                 </h3>
                                 {activeSavedRecordId === record.id && (
-                                  <span className="rounded-full border border-[#e1c38d] bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8f5b24]">
+                                  <span className="rounded-full border border-red-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#e30613]">
                                     En pantalla
                                   </span>
                                 )}
@@ -1107,7 +1325,7 @@ export default function PayJoyFortySixtyWorkspace({
                                         void updateCurrentStoredRecord(record.id)
                                       }
                                       disabled={updatingRecord}
-                                      className="rounded-2xl border border-[#d8b476] bg-[#fff9ef] px-4 py-3 text-sm font-semibold text-[#8f5b24] transition hover:bg-[#fff2db] disabled:opacity-70"
+                                      className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
                                     >
                                       {updatingRecord
                                         ? "Guardando..."
@@ -1164,7 +1382,7 @@ export default function PayJoyFortySixtyWorkspace({
                               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                                 % 40/60
                               </p>
-                              <p className="mt-1 text-lg font-black text-[#8f5b24]">
+                              <p className="mt-1 text-lg font-black text-slate-950">
                                 {formatPercent(recordRate)}
                               </p>
                             </div>
@@ -1177,7 +1395,7 @@ export default function PayJoyFortySixtyWorkspace({
               </div>
             </section>
 
-            <section className="mt-6 rounded-[30px] border border-slate-200 bg-white shadow-sm">
+            <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
               <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
@@ -1243,17 +1461,17 @@ export default function PayJoyFortySixtyWorkspace({
               </div>
 
               <div className="overflow-x-auto">
-                <table className="min-w-[1380px] w-full border-collapse">
+                <table className="w-full min-w-[1220px] border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      <th className="px-4 py-4">Week</th>
-                      <th className="px-4 py-4">Merchant name</th>
-                      <th className="px-4 py-4">Device tag</th>
-                      <th className="px-4 py-4">Loan age days</th>
-                      <th className="px-4 py-4">Number of payments</th>
-                      <th className="px-4 py-4">LOAN_REPAYMENT_BIWEEK</th>
-                      <th className="px-4 py-4">Cedula</th>
-                      <th className="px-4 py-4">40/60</th>
+                      <th className="px-4 py-4">WEEK</th>
+                      <th className="px-4 py-4">Comercio</th>
+                      <th className="px-4 py-4">DEVICE TAG</th>
+                      <th className="px-4 py-4">Edad del crédito</th>
+                      <th className="px-4 py-4">Pagos</th>
+                      <th className="px-4 py-4">Cuota quincenal</th>
+                      <th className="px-4 py-4">Cédula</th>
+                      <th className="px-4 py-4">Resultado</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1267,7 +1485,7 @@ export default function PayJoyFortySixtyWorkspace({
                         </td>
                       </tr>
                     ) : (
-                      visibleRows.map((row) => (
+                      paginatedRows.map((row) => (
                         <tr
                           key={row.id}
                           className={[
@@ -1299,8 +1517,8 @@ export default function PayJoyFortySixtyWorkspace({
                               onChange={(event) =>
                                 updateCedula(row.id, event.target.value)
                               }
-                              placeholder="Escribe la cedula"
-                              className="w-[180px] rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-950 outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
+                              placeholder="Escribe la cédula"
+                              className="w-[170px] rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-950 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
                             />
                           </td>
                           <td className="px-4 py-4">
@@ -1313,7 +1531,7 @@ export default function PayJoyFortySixtyWorkspace({
                                 )
                               }
                               className={[
-                                "rounded-2xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] outline-none transition focus:ring-2",
+                                "rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] outline-none transition focus:ring-2",
                                 row.status === "40/60 APROBADO"
                                   ? "border-emerald-200 bg-emerald-100 text-emerald-700 focus:ring-emerald-200"
                                   : "border-red-200 bg-red-100 text-red-700 focus:ring-red-200",
@@ -1333,9 +1551,37 @@ export default function PayJoyFortySixtyWorkspace({
                   </tbody>
                 </table>
               </div>
+
+              <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-500">
+                  Mostrando {visibleRows.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, visibleRows.length)} de {visibleRows.length} registros
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                    disabled={currentPage <= 1}
+                    className="min-h-[40px] rounded-lg border border-slate-300 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <span className="min-w-[92px] text-center text-xs font-bold text-slate-600">
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="min-h-[40px] rounded-lg border border-slate-300 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
             </section>
           </>
         )}
+        </main>
       </div>
     </div>
   );
