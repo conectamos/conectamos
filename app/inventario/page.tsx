@@ -58,17 +58,34 @@ type Sede = {
   nombre: string;
 };
 
-type EstadoFiltro =
-  | "TODOS"
+type EstadoOperativoFiltro =
   | "BODEGA"
+  | "VENDIDO"
   | "PENDIENTE"
   | "GARANTIA"
   | "PRESTAMO"
   | "PRESTAMO_PAGO"
   | "TRASLADO"
-  | "PRESTAMO_POR_ACEPTAR"
-  | "PAGO"
-  | "DEUDA";
+  | "PRESTAMO_POR_ACEPTAR";
+
+type EstadoFinancieroFiltro = "PAGO" | "DEUDA";
+type EstadoFiltro = EstadoOperativoFiltro | EstadoFinancieroFiltro;
+
+const ESTADOS_OPERATIVOS_FILTRO: EstadoOperativoFiltro[] = [
+  "BODEGA",
+  "VENDIDO",
+  "PENDIENTE",
+  "GARANTIA",
+  "PRESTAMO",
+  "PRESTAMO_PAGO",
+  "TRASLADO",
+  "PRESTAMO_POR_ACEPTAR",
+];
+
+const ESTADOS_FINANCIEROS_FILTRO: EstadoFinancieroFiltro[] = [
+  "PAGO",
+  "DEUDA",
+];
 
 type EditarInventarioForm = {
   referencia: string;
@@ -102,6 +119,32 @@ function coincideBusquedaInventario(item: InventarioItem, termino: string) {
     (item.prestamoDestino?.nombre || "").toLowerCase().includes(termino) ||
     (item.sede?.nombre || "").toLowerCase().includes(termino)
   );
+}
+
+function esFiltroFinanciero(
+  estado: EstadoFiltro
+): estado is EstadoFinancieroFiltro {
+  return ESTADOS_FINANCIEROS_FILTRO.some((item) => item === estado);
+}
+
+function coincideEstadosOperativos(
+  item: InventarioItem,
+  filtros: EstadoOperativoFiltro[]
+) {
+  if (filtros.length === 0) return true;
+
+  const estado = String(item.estadoActual || "").trim().toUpperCase();
+  return filtros.some((filtro) => filtro === estado);
+}
+
+function coincideEstadosFinancieros(
+  item: InventarioItem,
+  filtros: EstadoFinancieroFiltro[]
+) {
+  if (filtros.length === 0) return true;
+
+  const estado = String(item.estadoFinanciero || "").trim().toUpperCase();
+  return filtros.some((filtro) => filtro === estado);
 }
 
 function badgeClaseEstadoInventario(estado: string | null) {
@@ -242,7 +285,7 @@ export default function InventarioPage() {
   const [cargando, setCargando] = useState(false);
   const [cargandoInventario, setCargandoInventario] = useState(false);
   const [inventarioCargado, setInventarioCargado] = useState(false);
-  const [filtroEstado, setFiltroEstado] = useState<EstadoFiltro>("TODOS");
+  const [filtrosEstado, setFiltrosEstado] = useState<EstadoFiltro[]>([]);
   const [filtroAcreedorDeuda, setFiltroAcreedorDeuda] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
@@ -412,10 +455,10 @@ export default function InventarioPage() {
   }, [items]);
 
   useEffect(() => {
-    if (filtroEstado !== "DEUDA" && filtroAcreedorDeuda !== "TODOS") {
+    if (!filtrosEstado.includes("DEUDA") && filtroAcreedorDeuda !== "TODOS") {
       setFiltroAcreedorDeuda("TODOS");
     }
-  }, [filtroAcreedorDeuda, filtroEstado]);
+  }, [filtroAcreedorDeuda, filtrosEstado]);
 
   useLiveRefresh(
     async () => {
@@ -499,21 +542,40 @@ export default function InventarioPage() {
     [items]
   );
 
+  const filtrosOperativosSeleccionados = useMemo(
+    () =>
+      filtrosEstado.filter(
+        (estado): estado is EstadoOperativoFiltro => !esFiltroFinanciero(estado)
+      ),
+    [filtrosEstado]
+  );
+
+  const filtrosFinancierosSeleccionados = useMemo(
+    () => filtrosEstado.filter(esFiltroFinanciero),
+    [filtrosEstado]
+  );
+
   const itemsDeudaConBusqueda = useMemo(() => {
     const termino = busqueda.trim().toLowerCase();
 
     return items
       .filter((item) => (item.estadoFinanciero || "").toUpperCase() === "DEUDA")
+      .filter((item) =>
+        coincideEstadosOperativos(item, filtrosOperativosSeleccionados)
+      )
       .filter((item) => coincideBusquedaInventario(item, termino));
-  }, [busqueda, items]);
+  }, [busqueda, filtrosOperativosSeleccionados, items]);
 
   const itemsPrestamoConBusqueda = useMemo(() => {
     const termino = busqueda.trim().toLowerCase();
 
     return items
       .filter((item) => (item.estadoActual || "").toUpperCase() === "PRESTAMO")
+      .filter((item) =>
+        coincideEstadosFinancieros(item, filtrosFinancierosSeleccionados)
+      )
       .filter((item) => coincideBusquedaInventario(item, termino));
-  }, [busqueda, items]);
+  }, [busqueda, filtrosFinancierosSeleccionados, items]);
 
   const totalPrestamoVista = useMemo(
     () =>
@@ -579,27 +641,52 @@ export default function InventarioPage() {
   const itemsFiltrados = useMemo(() => {
     return items
       .filter((item) => {
-        const estado = (item.estadoActual || "").toUpperCase();
         const estadoFinanciero = (item.estadoFinanciero || "").toUpperCase();
+        const coincideOperativo = coincideEstadosOperativos(
+          item,
+          filtrosOperativosSeleccionados
+        );
+        const coincideFinanciero = coincideEstadosFinancieros(
+          item,
+          filtrosFinancierosSeleccionados
+        );
 
-        if (filtroEstado === "TODOS") return true;
-        if (filtroEstado === "PAGO") return estadoFinanciero === "PAGO";
-        if (filtroEstado === "DEUDA") {
+        if (!coincideOperativo || !coincideFinanciero) return false;
+
+        if (filtrosEstado.includes("DEUDA")) {
           const coincideAcreedor =
             filtroAcreedorDeuda === "TODOS" ||
             normalizarAcreedorDeuda(item.deboA) === filtroAcreedorDeuda;
 
-          return estadoFinanciero === "DEUDA" && coincideAcreedor;
+          if (filtroAcreedorDeuda !== "TODOS") {
+            return estadoFinanciero === "DEUDA" && coincideAcreedor;
+          }
         }
 
-        return estado === filtroEstado;
+        return true;
       })
       .filter((item) => {
         const termino = busqueda.trim().toLowerCase();
 
         return coincideBusquedaInventario(item, termino);
       });
-  }, [busqueda, filtroAcreedorDeuda, filtroEstado, items]);
+  }, [
+    busqueda,
+    filtroAcreedorDeuda,
+    filtrosEstado,
+    filtrosFinancierosSeleccionados,
+    filtrosOperativosSeleccionados,
+    items,
+  ]);
+
+  const alternarFiltroEstado = (estado: EstadoFiltro) => {
+    setIdsSeleccionados([]);
+    setFiltrosEstado((actuales) =>
+      actuales.includes(estado)
+        ? actuales.filter((item) => item !== estado)
+        : [...actuales, estado]
+    );
+  };
 
   const eliminar = async (ids: number[]) => {
     try {
@@ -1486,55 +1573,105 @@ export default function InventarioPage() {
                 Exploración de inventario
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                Busca por IMEI o referencia y combina estados sin perder el contexto operativo.
+                Busca por IMEI o referencia y selecciona uno o varios estados.
+                Los estados del equipo se cruzan con PAGO o DEUDA.
               </p>
             </div>
 
-            <div className="flex w-full flex-col gap-4 xl:max-w-[680px]">
+            <div className="flex w-full flex-col gap-4 xl:max-w-[860px]">
               <input
                 type="text"
                 value={busqueda}
-                onChange={(event) => setBusqueda(event.target.value)}
+                onChange={(event) => {
+                  setBusqueda(event.target.value);
+                  setIdsSeleccionados([]);
+                }}
                 placeholder="Buscar por IMEI, referencia, color, proveedor o sede..."
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
               />
 
-              <div className="flex flex-wrap gap-2">
-                {(
-                  [
-                    "TODOS",
-                    "BODEGA",
-                    "PENDIENTE",
-                    "GARANTIA",
-                    "PRESTAMO",
-                    "PRESTAMO_PAGO",
-                    "TRASLADO",
-                    "PRESTAMO_POR_ACEPTAR",
-                    "PAGO",
-                    "DEUDA",
-                  ] as EstadoFiltro[]
-                ).map((estado) => (
-                  <button
-                    key={estado}
-                    type="button"
-                    onClick={() => setFiltroEstado(estado)}
-                    className={[
-                      "rounded-xl px-4 py-2.5 text-sm font-bold transition",
-                      filtroEstado === estado
-                        ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
-                        : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
-                    ].join(" ")}
-                  >
-                    {estado === "TODOS"
-                      ? "TODOS"
-                      : etiquetaEstadoInventario(estado)}
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiltrosEstado([]);
+                    setFiltroAcreedorDeuda("TODOS");
+                    setIdsSeleccionados([]);
+                  }}
+                  aria-pressed={filtrosEstado.length === 0}
+                  className={[
+                    "rounded-xl px-4 py-2.5 text-sm font-bold transition",
+                    filtrosEstado.length === 0
+                      ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
+                      : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
+                  ].join(" ")}
+                >
+                  TODOS
+                </button>
+                {filtrosEstado.length > 0 && (
+                  <span className="text-xs font-bold text-slate-500">
+                    {filtrosEstado.length} filtro
+                    {filtrosEstado.length === 1 ? "" : "s"} activo
+                    {filtrosEstado.length === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                <div>
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    Estado del equipo
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {ESTADOS_OPERATIVOS_FILTRO.map((estado) => (
+                      <button
+                        key={estado}
+                        type="button"
+                        onClick={() => alternarFiltroEstado(estado)}
+                        aria-pressed={filtrosEstado.includes(estado)}
+                        className={[
+                          "rounded-xl px-3.5 py-2.5 text-xs font-bold transition",
+                          filtrosEstado.includes(estado)
+                            ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
+                            : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
+                        ].join(" ")}
+                      >
+                        {estado === "VENDIDO"
+                          ? "VENDIDOS"
+                          : etiquetaEstadoInventario(estado)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    Estado financiero
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {ESTADOS_FINANCIEROS_FILTRO.map((estado) => (
+                      <button
+                        key={estado}
+                        type="button"
+                        onClick={() => alternarFiltroEstado(estado)}
+                        aria-pressed={filtrosEstado.includes(estado)}
+                        className={[
+                          "rounded-xl px-4 py-2.5 text-xs font-bold transition",
+                          filtrosEstado.includes(estado)
+                            ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
+                            : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
+                        ].join(" ")}
+                      >
+                        {etiquetaEstadoInventario(estado)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {filtroEstado === "PRESTAMO" && (
+          {filtrosEstado.includes("PRESTAMO") && (
             <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50/60 p-4">
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm">
@@ -1564,7 +1701,7 @@ export default function InventarioPage() {
             </div>
           )}
 
-          {filtroEstado === "DEUDA" && (
+          {filtrosEstado.includes("DEUDA") && (
             <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50/60 p-4">
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px_minmax(0,1fr)]">
                 <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm">
@@ -1586,7 +1723,10 @@ export default function InventarioPage() {
                   </label>
                   <select
                     value={filtroAcreedorDeuda}
-                    onChange={(event) => setFiltroAcreedorDeuda(event.target.value)}
+                    onChange={(event) => {
+                      setFiltroAcreedorDeuda(event.target.value);
+                      setIdsSeleccionados([]);
+                    }}
                     className="h-[54px] w-full rounded-2xl border border-amber-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-amber-100"
                   >
                     <option value="TODOS">Todos los acreedores</option>
@@ -1623,7 +1763,10 @@ export default function InventarioPage() {
                     <button
                       key={item.acreedor}
                       type="button"
-                      onClick={() => setFiltroAcreedorDeuda(item.acreedor)}
+                      onClick={() => {
+                        setFiltroAcreedorDeuda(item.acreedor);
+                        setIdsSeleccionados([]);
+                      }}
                       className={[
                         "rounded-2xl border px-4 py-3 text-left transition",
                         filtroAcreedorDeuda === item.acreedor
