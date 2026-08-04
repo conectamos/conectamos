@@ -1821,38 +1821,44 @@ export default function InventarioPage() {
             </div>
           </div>
 
-          {idsSeleccionados.length > 0 && (
+          {(filtrosEstado.includes("DEUDA") || idsSeleccionados.length > 0) && (
             <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-sm font-bold text-slate-950">
-                    {idsSeleccionados.length} equipo
-                    {idsSeleccionados.length === 1 ? "" : "s"} seleccionado
-                    {idsSeleccionados.length === 1 ? "" : "s"}
+                    {idsSeleccionados.length > 0
+                      ? `${idsSeleccionados.length} equipo${
+                          idsSeleccionados.length === 1 ? "" : "s"
+                        } seleccionado${idsSeleccionados.length === 1 ? "" : "s"}`
+                      : "Selecciona los equipos que deseas pagar"}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {itemsSeleccionadosParaPrestamo.length} disponible
-                    {itemsSeleccionadosParaPrestamo.length === 1 ? "" : "s"} para envio
-                    {" "}a sede · {itemsSeleccionadosParaPago.length} deuda
-                    {itemsSeleccionadosParaPago.length === 1 ? "" : "s"} pagable
-                    {esAdmin
-                      ? ` | ${itemsSeleccionadosParaPendiente.length} para pendiente | ${itemsSeleccionadosParaGarantia.length} para garantia`
-                      : ""}
+                    {idsSeleccionados.length > 0
+                      ? `${itemsSeleccionadosParaPago.length} deuda${
+                          itemsSeleccionadosParaPago.length === 1 ? "" : "s"
+                        } pagable${
+                          itemsSeleccionadosParaPago.length > 0
+                            ? ` por ${formatoPesos(totalPagoMasivo)}`
+                            : ""
+                        }. Solo se procesara lo seleccionado.`
+                      : "Marca las casillas de los IMEI. El pago masivo procesara solamente lo seleccionado."}
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSedeDestinoId("");
-                      setMostrarModalPrestamoMasivo(true);
-                    }}
-                    disabled={cargando || itemsSeleccionadosParaPrestamo.length === 0}
-                    className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Enviar a sede
-                  </button>
+                  {idsSeleccionados.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSedeDestinoId("");
+                        setMostrarModalPrestamoMasivo(true);
+                      }}
+                      disabled={cargando || itemsSeleccionadosParaPrestamo.length === 0}
+                      className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Enviar a sede
+                    </button>
+                  )}
 
                   <button
                     type="button"
@@ -1860,10 +1866,13 @@ export default function InventarioPage() {
                     disabled={cargando || itemsSeleccionadosParaPago.length === 0}
                     className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Pagar deudas
+                    Pagar seleccionados
+                    {itemsSeleccionadosParaPago.length > 0
+                      ? ` (${itemsSeleccionadosParaPago.length})`
+                      : ""}
                   </button>
 
-                  {esAdmin && (
+                  {esAdmin && idsSeleccionados.length > 0 && (
                     <button
                       type="button"
                       onClick={() =>
@@ -1879,7 +1888,7 @@ export default function InventarioPage() {
                     </button>
                   )}
 
-                  {esAdmin && (
+                  {esAdmin && idsSeleccionados.length > 0 && (
                     <button
                       type="button"
                       onClick={() =>
@@ -1895,7 +1904,7 @@ export default function InventarioPage() {
                     </button>
                   )}
 
-                  {esAdmin && (
+                  {esAdmin && idsSeleccionados.length > 0 && (
                     <button
                       type="button"
                       onClick={() => itemSeleccionadoUnico && abrirEdicion(itemSeleccionadoUnico)}
@@ -1906,7 +1915,7 @@ export default function InventarioPage() {
                     </button>
                   )}
 
-                  {puedeEliminar && (
+                  {puedeEliminar && idsSeleccionados.length > 0 && (
                     <button
                       type="button"
                       onClick={() => abrirEliminacion(idsSeleccionados)}
@@ -1917,14 +1926,16 @@ export default function InventarioPage() {
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={limpiarSeleccionMasiva}
-                    disabled={cargando}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    Limpiar seleccion
-                  </button>
+                  {idsSeleccionados.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={limpiarSeleccionMasiva}
+                      disabled={cargando}
+                      className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Limpiar seleccion
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
