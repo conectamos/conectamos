@@ -38,21 +38,21 @@ export default function VendorWelcomeModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 px-4 py-6 backdrop-blur-sm">
-      <section className="relative w-full max-w-3xl overflow-hidden rounded-[34px] border border-white/70 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.28)]">
-        <div className="absolute inset-x-0 top-0 h-2 bg-[linear-gradient(90deg,#0f172a_0%,#0f766e_55%,#f59e0b_100%)]" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
+      <section className="relative max-h-[calc(100vh-3rem)] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.3)]">
+        <div className="absolute inset-x-0 top-0 h-1 bg-[#e30613]" />
 
         <button
           type="button"
           onClick={cerrar}
           aria-label="Cerrar mensaje de bienvenida"
-          className="absolute right-5 top-5 flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-base font-black text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-700 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
         >
           X
         </button>
 
         <div className="p-6 sm:p-8">
-          <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.2em] text-emerald-700">
+          <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.2em] text-[#e30613]">
             {mensaje.eyebrow}
           </div>
 
@@ -70,7 +70,7 @@ export default function VendorWelcomeModal({
             <button
               type="button"
               onClick={cerrar}
-              className="rounded-2xl bg-slate-950 px-6 py-3 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
+              className="min-h-12 rounded-xl bg-slate-950 px-6 text-sm font-black uppercase tracking-[0.1em] text-white transition hover:bg-slate-800"
             >
               {mensaje.buttonLabel}
             </button>
