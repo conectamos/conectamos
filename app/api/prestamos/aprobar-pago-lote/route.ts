@@ -11,6 +11,8 @@ import {
   esEstadoDeuda,
 } from "@/lib/prestamos";
 
+class PagoLoteYaProcesadoError extends Error {}
+
 function parsePrestamoIds(value: unknown) {
   if (!Array.isArray(value)) {
     return [];
@@ -319,6 +321,24 @@ export async function POST(req: Request) {
     const aprobacionEn = new Date();
 
     await prisma.$transaction(async (tx) => {
+      const prestamosActualizados = await tx.prestamoSede.updateMany({
+        where: {
+          id: {
+            in: prestamoIds,
+          },
+          estado: "PAGO_PENDIENTE_APROBACION",
+        },
+        data: {
+          sedeOrigenId: primerContexto.sedeAcreedoraId,
+          estado: "PAGADO",
+          fechaAprobacionPago: aprobacionEn,
+        },
+      });
+
+      if (prestamosActualizados.count !== contextos.length) {
+        throw new PagoLoteYaProcesadoError();
+      }
+
       const movimientosCajaExistentes = await tx.movimientoCajaSede.findMany({
         where: {
           prestamoId: {
@@ -372,15 +392,6 @@ export async function POST(req: Request) {
         const destinoSoloInventario = Boolean(
           sedesSoloInventario.get(prestamo.sedeDestinoId)
         );
-
-        await tx.prestamoSede.update({
-          where: { id: prestamo.id },
-          data: {
-            sedeOrigenId: contexto.sedeAcreedoraId,
-            estado: "PAGADO",
-            fechaAprobacionPago: aprobacionEn,
-          },
-        });
 
         const movimientoPendiente = movimientoCajaPorPrestamo.get(prestamo.id);
 
@@ -508,6 +519,17 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("ERROR APROBAR PAGO LOTE:", error);
+
+    if (error instanceof PagoLoteYaProcesadoError) {
+      return NextResponse.json(
+        {
+          error:
+            "El lote cambio de estado mientras se aprobaba. Actualiza la pagina antes de intentar nuevamente.",
+        },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Error interno al aprobar pago en lote" },
       { status: 500 }
