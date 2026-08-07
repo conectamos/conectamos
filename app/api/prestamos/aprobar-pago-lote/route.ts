@@ -319,6 +319,33 @@ export async function POST(req: Request) {
     const aprobacionEn = new Date();
 
     await prisma.$transaction(async (tx) => {
+      const movimientosCajaExistentes = await tx.movimientoCajaSede.findMany({
+        where: {
+          prestamoId: {
+            in: prestamoIds,
+          },
+        },
+        orderBy: {
+          id: "asc",
+        },
+        select: {
+          id: true,
+          prestamoId: true,
+        },
+      });
+      const movimientoCajaPorPrestamo = new Map<number, { id: number }>();
+
+      for (const movimiento of movimientosCajaExistentes) {
+        if (
+          movimiento.prestamoId &&
+          !movimientoCajaPorPrestamo.has(movimiento.prestamoId)
+        ) {
+          movimientoCajaPorPrestamo.set(movimiento.prestamoId, {
+            id: movimiento.id,
+          });
+        }
+      }
+
       await tx.cajaMovimiento.create({
         data: {
           tipo: "INGRESO",
@@ -355,14 +382,7 @@ export async function POST(req: Request) {
           },
         });
 
-        const movimientoPendiente = await tx.movimientoCajaSede.findFirst({
-          where: {
-            prestamoId: prestamo.id,
-          },
-          select: {
-            id: true,
-          },
-        });
+        const movimientoPendiente = movimientoCajaPorPrestamo.get(prestamo.id);
 
         if (movimientoPendiente) {
           await tx.movimientoCajaSede.update({
@@ -475,6 +495,9 @@ export async function POST(req: Request) {
           },
         });
       }
+    }, {
+      maxWait: 15_000,
+      timeout: 180_000,
     });
 
     return NextResponse.json({
