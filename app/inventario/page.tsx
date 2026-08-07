@@ -1841,11 +1841,22 @@ export default function InventarioPage() {
                             ? ` por ${formatoPesos(totalPagoMasivo)}`
                             : ""
                         }. Solo se procesara lo seleccionado.`
-                      : "Marca las casillas de los IMEI. El pago masivo procesara solamente lo seleccionado."}
+                      : "Marca IMEI individuales o selecciona todos los resultados visibles. El pago masivo procesara solamente lo seleccionado."}
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={alternarSeleccionVisibles}
+                    disabled={cargando || idsVisibles.length === 0}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {todosVisiblesSeleccionados
+                      ? "Quitar seleccion visible"
+                      : `Seleccionar visibles (${idsVisibles.length})`}
+                  </button>
+
                   {idsSeleccionados.length > 0 && (
                     <button
                       type="button"
