@@ -559,19 +559,28 @@ function PayJoyTrophyIcon({ className = "" }: { className?: string }) {
   );
 }
 
-function PayJoyMedal({ puesto }: { puesto: number }) {
-  const tono =
+function PayJoyPodiumMedal({ puesto }: { puesto: number }) {
+  const estilos =
     puesto === 1
-      ? "border-[#d99a09] bg-[#f7c63d] text-[#5d3b00]"
+      ? {
+          aro: "border-[#d69a08] bg-[#f8c93f] text-[#5b3900]",
+          cinta: "bg-[#dca10f]",
+        }
       : puesto === 2
-        ? "border-slate-400 bg-slate-200 text-slate-700"
-        : "border-[#bd6f35] bg-[#e79a62] text-[#633019]";
+        ? {
+            aro: "border-slate-400 bg-slate-200 text-slate-700",
+            cinta: "bg-slate-400",
+          }
+        : {
+            aro: "border-[#bd6f35] bg-[#eba36f] text-[#633019]",
+            cinta: "bg-[#c97b43]",
+          };
 
   return (
-    <span className="relative flex h-12 w-12 items-center justify-center" aria-hidden="true">
-      <span className="absolute bottom-0 left-2 h-5 w-3 -rotate-12 bg-slate-300 [clip-path:polygon(0_0,100%_0,75%_100%,50%_72%,25%_100%)]" />
-      <span className="absolute bottom-0 right-2 h-5 w-3 rotate-12 bg-slate-300 [clip-path:polygon(0_0,100%_0,75%_100%,50%_72%,25%_100%)]" />
-      <span className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-full border-[3px] text-base font-black shadow-sm ${tono}`}>
+    <span className="relative flex h-16 w-16 items-start justify-center" aria-hidden="true">
+      <span className={`absolute bottom-0 left-[17px] h-8 w-3 -rotate-12 ${estilos.cinta}`} />
+      <span className={`absolute bottom-0 right-[17px] h-8 w-3 rotate-12 ${estilos.cinta}`} />
+      <span className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-[3px] text-lg font-black shadow-sm ${estilos.aro}`}>
         {puesto}
       </span>
     </span>
@@ -593,35 +602,16 @@ function PayJoyAdvisorsPanel({
       .slice(0, 2)
       .map((parte) => parte.charAt(0).toUpperCase())
       .join("") || "--";
-  const clasePodio =
-    topTres.length === 1
-      ? "md:mx-auto md:max-w-[290px] md:grid-cols-1"
-      : topTres.length === 2
-        ? "md:mx-auto md:max-w-[560px] md:grid-cols-2 md:items-end"
-        : "md:grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)_minmax(0,1fr)] md:items-end";
-  const posicionPodio = (puesto: number) => {
-    if (topTres.length === 3) {
-      if (puesto === 1) return "md:col-start-2 md:row-start-1";
-      if (puesto === 2) return "md:col-start-1 md:row-start-1";
-      return "md:col-start-3 md:row-start-1";
-    }
-    if (topTres.length === 2) {
-      return puesto === 1
-        ? "md:col-start-2 md:row-start-1"
-        : "md:col-start-1 md:row-start-1";
-    }
-    return "";
-  };
 
   return (
     <section
       aria-labelledby="payjoy-advisors-title"
-      className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
+      className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
     >
-      <header className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-[#e30613] shadow-sm">
-            <DashboardIcon name="sales" className="h-6 w-6" />
+      <header className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-6">
+        <div className="flex min-w-0 items-center gap-4">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-[#e30613] shadow-sm">
+            <DashboardIcon name="sales" className="h-7 w-7" />
           </span>
           <div className="min-w-0">
             <h2 id="payjoy-advisors-title" className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
@@ -641,14 +631,14 @@ function PayJoyAdvisorsPanel({
       </header>
 
       {ranking.length === 0 ? (
-        <div className="m-5 flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500 sm:m-6">
+        <div className="m-5 flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500 sm:m-7">
           No hay ventas PAYJOY con asesor en el periodo.
         </div>
       ) : (
         <div
-          className={`grid items-stretch gap-6 p-5 sm:p-6 ${
+          className={`grid items-stretch gap-7 px-5 pb-7 pt-6 sm:px-7 ${
             clasificacion.length > 0
-              ? "xl:grid-cols-[minmax(0,1.14fr)_minmax(390px,0.86fr)]"
+              ? "xl:grid-cols-[minmax(0,1.45fr)_minmax(390px,0.8fr)]"
               : ""
           }`}
         >
@@ -657,102 +647,136 @@ function PayJoyAdvisorsPanel({
               Podio del periodo
             </p>
 
-            <ol className={`grid list-none gap-3 ${clasePodio}`}>
+            <ol className="grid list-none gap-3 md:hidden">
               {topTres.map((asesor, index) => {
                 const puesto = index + 1;
-                const esLider = puesto === 1;
-                const colorBase =
-                  puesto === 1
-                    ? "border-[#e3b330] bg-[#fffdf7]"
-                    : puesto === 2
-                      ? "border-slate-300 bg-slate-50"
-                      : "border-[#dca67d] bg-[#fffaf6]";
-                const colorSuperior =
-                  puesto === 1
-                    ? "bg-[#e4b22d]"
-                    : puesto === 2
-                      ? "bg-slate-400"
-                      : "bg-[#ce8550]";
-
                 return (
                   <li
-                    key={`${puesto}-${asesor.nombre}`}
+                    key={`movil-${puesto}-${asesor.nombre}`}
                     value={puesto}
-                    className={`relative flex min-w-0 flex-col justify-end ${posicionPodio(puesto)}`}
+                    className="grid min-w-0 grid-cols-[42px_52px_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm"
                     aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
                   >
-                    {esLider ? (
-                      <div className="relative mx-auto mb-1 hidden h-14 w-24 items-center justify-center md:flex">
-                        <span className="absolute left-0 top-6 h-1.5 w-1.5 rounded-full bg-[#e30613]" />
-                        <span className="absolute left-3 top-1 h-1 w-1 rounded-full bg-[#e4b22d]" />
-                        <span className="absolute right-0 top-5 h-1.5 w-1.5 rounded-full bg-[#e30613]" />
-                        <span className="absolute right-4 top-0 h-1 w-1 rounded-full bg-[#e4b22d]" />
-                        <PayJoyTrophyIcon className="h-14 w-14" />
-                      </div>
-                    ) : null}
-
-                    <article
-                      className={`flex min-h-[128px] min-w-0 flex-col items-center justify-center rounded-t-2xl border border-b-0 bg-white px-3 py-4 text-center shadow-[0_7px_20px_rgba(15,23,42,0.05)] ${
-                        esLider
-                          ? "border-red-200 md:min-h-[240px] md:px-4 md:py-7"
-                          : puesto === 2
-                            ? "border-slate-200 md:min-h-[195px]"
-                            : "border-slate-200 md:min-h-[178px]"
-                      }`}
-                    >
-                      <span
-                        className={`flex shrink-0 items-center justify-center rounded-full font-black shadow-sm ${
-                          esLider
-                            ? "h-20 w-20 bg-[#e30613] text-xl text-white"
-                            : "h-16 w-16 bg-slate-200 text-base text-slate-800"
-                        }`}
-                      >
-                        {inicialesAsesor(asesor.nombre)}
-                      </span>
-                      <h3
-                        className={`mt-4 line-clamp-2 min-h-[2.5rem] break-words font-black leading-tight text-slate-950 ${
-                          esLider ? "text-lg" : "text-sm sm:text-base"
-                        }`}
-                        title={asesor.nombre}
-                      >
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-black ${puesto === 1 ? "bg-[#e30613] text-white" : "bg-slate-100 text-slate-700"}`}>
+                      {puesto}
+                    </span>
+                    <span className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-black ${puesto === 1 ? "bg-red-50 text-[#e30613]" : "bg-slate-200 text-slate-800"}`}>
+                      {inicialesAsesor(asesor.nombre)}
+                    </span>
+                    <span className="min-w-0">
+                      <strong className="block truncate text-sm text-slate-950" title={asesor.nombre}>
                         {asesor.nombre}
-                      </h3>
-                      <span
-                        className={`mt-3 rounded-full border px-4 py-2 text-sm font-black ${
-                          esLider
-                            ? "border-red-200 bg-red-50 text-[#e30613]"
-                            : "border-slate-200 bg-slate-50 text-slate-800"
-                        }`}
-                      >
+                      </strong>
+                      <span className="mt-1 block text-xs font-bold text-slate-500">
                         {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
                       </span>
-                    </article>
-
-                    <div className={`relative flex flex-col items-center justify-center rounded-b-2xl border px-3 ${colorBase} ${
-                      esLider
-                        ? "min-h-[68px] md:min-h-[132px]"
-                        : puesto === 2
-                          ? "min-h-[64px] md:min-h-[98px]"
-                          : "min-h-[64px] md:min-h-[86px]"
-                    }`}>
-                      <span className={`absolute inset-x-0 top-0 h-2 ${colorSuperior}`} />
-                      <PayJoyMedal puesto={puesto} />
-                      <span className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                        Puesto {puesto}
-                      </span>
-                    </div>
-
-                    {esLider ? (
-                      <span
-                        aria-hidden="true"
-                        className="mx-auto hidden h-10 w-[84%] bg-[#e30613] md:block"
-                        style={{ clipPath: "polygon(16% 0, 84% 0, 100% 100%, 0 100%)" }}
-                      />
-                    ) : null}
+                    </span>
                   </li>
                 );
               })}
             </ol>
+
+            {topTres.length === 3 ? (
+              <div className="relative hidden min-h-[490px] overflow-hidden rounded-2xl border border-slate-100 bg-[#fbfcfe] px-5 pt-6 md:block">
+                <span className="absolute left-[9%] top-[22%] h-1.5 w-1.5 rounded-full bg-[#e30613]" aria-hidden="true" />
+                <span className="absolute left-[17%] top-[15%] h-1 w-1 rounded-full bg-[#efb31a]" aria-hidden="true" />
+                <span className="absolute right-[13%] top-[20%] h-1.5 w-1.5 rounded-full bg-[#e30613]" aria-hidden="true" />
+                <span className="absolute right-[21%] top-[13%] h-1 w-1 rounded-full bg-[#efb31a]" aria-hidden="true" />
+
+                <ol className="absolute inset-x-5 bottom-8 top-5 grid list-none grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)_minmax(0,1fr)] items-end gap-0">
+                  {topTres.map((asesor, index) => {
+                    const puesto = index + 1;
+                    const esLider = puesto === 1;
+                    const posicion =
+                      puesto === 1
+                        ? "col-start-2 row-start-1"
+                        : puesto === 2
+                          ? "col-start-1 row-start-1"
+                          : "col-start-3 row-start-1";
+                    const alturaTarjeta =
+                      puesto === 1
+                        ? "min-h-[230px] w-[94%] max-w-[230px] border-red-100"
+                        : puesto === 2
+                          ? "min-h-[202px] w-[90%] max-w-[205px] border-slate-200"
+                          : "min-h-[190px] w-[90%] max-w-[205px] border-slate-200";
+                    const alturaBase =
+                      puesto === 1
+                        ? "h-[148px]"
+                        : puesto === 2
+                          ? "h-[112px]"
+                          : "h-[96px]";
+                    const colorBorde =
+                      puesto === 1
+                        ? "bg-[#e2b126]"
+                        : puesto === 2
+                          ? "bg-slate-300"
+                          : "bg-[#d78b55]";
+
+                    return (
+                      <li
+                        key={`podio-${puesto}-${asesor.nombre}`}
+                        value={puesto}
+                        className={`relative flex min-w-0 flex-col items-center justify-end ${posicion}`}
+                        aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
+                      >
+                        {esLider ? (
+                          <div className="relative mb-1 flex h-14 w-24 items-center justify-center" aria-hidden="true">
+                            <span className="absolute left-1 top-7 h-1.5 w-1.5 rounded-full bg-[#e30613]" />
+                            <span className="absolute left-4 top-1 h-1 w-1 rounded-full bg-[#efb31a]" />
+                            <span className="absolute right-1 top-6 h-1.5 w-1.5 rounded-full bg-[#e30613]" />
+                            <span className="absolute right-4 top-0 h-1 w-1 rounded-full bg-[#efb31a]" />
+                            <PayJoyTrophyIcon className="h-14 w-14" />
+                          </div>
+                        ) : null}
+
+                        <article className={`relative z-20 flex flex-col items-center justify-center rounded-2xl border bg-white px-4 py-5 text-center shadow-[0_10px_25px_rgba(15,23,42,0.08)] ${alturaTarjeta}`}>
+                          <span className={`flex shrink-0 items-center justify-center rounded-full font-black shadow-sm ${esLider ? "h-20 w-20 bg-[#e30613] text-xl text-white" : "h-16 w-16 bg-slate-200 text-base text-slate-800"}`}>
+                            {inicialesAsesor(asesor.nombre)}
+                          </span>
+                          <h3 className={`mt-4 line-clamp-2 min-h-[2.5rem] break-words font-black leading-tight text-slate-950 ${esLider ? "text-lg" : "text-base"}`} title={asesor.nombre}>
+                            {asesor.nombre}
+                          </h3>
+                          <span className={`mt-3 rounded-full border px-4 py-2 text-sm font-black ${esLider ? "border-red-200 bg-red-50 text-[#e30613]" : "border-slate-200 bg-slate-50 text-slate-800"}`}>
+                            {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
+                          </span>
+                        </article>
+
+                        <div className={`relative z-10 -mt-1 flex w-full flex-col items-center justify-center rounded-t-[20px] border border-slate-200 bg-white shadow-[0_12px_24px_rgba(15,23,42,0.08)] ${alturaBase}`}>
+                          <span className={`absolute inset-x-0 top-0 h-3 rounded-t-[19px] ${colorBorde}`} />
+                          <PayJoyPodiumMedal puesto={puesto} />
+                          <span className="mt-1 text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                            Puesto {puesto}
+                          </span>
+                        </div>
+
+                        {esLider ? (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -bottom-8 left-1/2 z-30 h-16 w-[72%] -translate-x-1/2 bg-[#e30613]"
+                            style={{ clipPath: "polygon(24% 0, 76% 0, 100% 100%, 0 100%)" }}
+                          />
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            ) : (
+              <ol className="hidden list-none gap-4 md:grid md:grid-cols-2">
+                {topTres.map((asesor, index) => {
+                  const puesto = index + 1;
+                  return (
+                    <li key={`parcial-${puesto}-${asesor.nombre}`} value={puesto} className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm">
+                      <span className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full font-black ${puesto === 1 ? "bg-[#e30613] text-white" : "bg-slate-200 text-slate-800"}`}>
+                        {inicialesAsesor(asesor.nombre)}
+                      </span>
+                      <strong className="mt-3 block text-base text-slate-950" title={asesor.nombre}>{asesor.nombre}</strong>
+                      <span className="mt-2 block text-sm font-bold text-slate-500">{asesor.total} {asesor.total === 1 ? "venta" : "ventas"}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
           </div>
 
           {clasificacion.length > 0 ? (
@@ -770,10 +794,10 @@ function PayJoyAdvisorsPanel({
                     <li
                       key={`${puesto}-${asesor.nombre}`}
                       value={puesto}
-                      className="grid min-h-[62px] min-w-0 grid-cols-[38px_40px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-2.5 sm:px-4"
+                      className="grid min-h-[64px] min-w-0 grid-cols-[36px_40px_minmax(0,1fr)_auto] items-center gap-3 bg-slate-50/40 px-3.5 py-2.5 sm:px-4"
                       aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
                     >
-                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-sm font-black text-slate-800">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-black text-slate-800 shadow-sm">
                         {puesto}
                       </span>
                       <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200 text-xs font-black text-slate-800">
@@ -782,7 +806,7 @@ function PayJoyAdvisorsPanel({
                       <span className="min-w-0 truncate text-sm font-bold text-slate-900" title={asesor.nombre}>
                         {asesor.nombre}
                       </span>
-                      <span className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-950 shadow-sm">
+                      <span className="shrink-0 text-sm font-black text-slate-950">
                         {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
                       </span>
                     </li>
@@ -1650,16 +1674,18 @@ export default function OperationsDashboard({
             <QuickActions actions={quickActions} />
           </section>
 
-          <div className="mt-5">
-            {commercialAvailable ? (
-              <PayJoyAdvisorsPanel asesores={commercial.topAsesoresPayJoy} />
-            ) : (
-              <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-                <h2 className="text-xl font-black tracking-tight text-slate-950">Top asesores PAYJOY</h2>
-                <p className="mt-8 text-sm font-semibold text-slate-500">Datos no disponibles temporalmente.</p>
-              </article>
-            )}
-          </div>
+          {esAdmin ? (
+            <div className="mt-5">
+              {commercialAvailable ? (
+                <PayJoyAdvisorsPanel asesores={commercial.topAsesoresPayJoy} />
+              ) : (
+                <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+                  <h2 className="text-xl font-black tracking-tight text-slate-950">Top asesores PAYJOY</h2>
+                  <p className="mt-8 text-sm font-semibold text-slate-500">Datos no disponibles temporalmente.</p>
+                </article>
+              )}
+            </div>
+          ) : null}
           <div className="mt-5">
             <OperationsToolCenter groups={toolGroups} storageUserKey={usuario} />
           </div>
