@@ -633,11 +633,13 @@ function PayJoyAdvisorsPanel({
   const etiquetaVentas = (total: number) => `${total} ${total === 1 ? "venta" : "ventas"}`;
 
   return (
-    <section
-      aria-labelledby="payjoy-advisors-title"
-      className="overflow-hidden rounded-[18px] border border-slate-200/90 bg-white shadow-[0_12px_36px_rgba(15,23,42,0.055)]"
+    <details
+      className="group overflow-hidden rounded-[18px] border border-slate-200/90 bg-white shadow-[0_12px_36px_rgba(15,23,42,0.055)]"
     >
-      <header className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-6">
+      <summary
+        aria-labelledby="payjoy-advisors-title"
+        className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 transition-colors hover:bg-slate-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#e30613]/30 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-6 [&::-webkit-details-marker]:hidden"
+      >
         <div className="flex min-w-0 items-center gap-4">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-[#e30613] shadow-sm">
             <DashboardIcon name="sales" className="h-5 w-5" />
@@ -653,12 +655,29 @@ function PayJoyAdvisorsPanel({
           <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-800">
             {ranking.length} {ranking.length === 1 ? "clasificado" : "clasificados"}
           </span>
-          <span className="rounded-full border border-red-100 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#e30613]">
+          <span className="hidden rounded-full border border-red-100 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#e30613] sm:inline-flex">
             Top 10
           </span>
+          <span className="inline-flex min-w-[128px] items-center justify-center gap-2 rounded-xl bg-[#111820] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white shadow-sm">
+            <span className="group-open:hidden">Ver ranking</span>
+            <span className="hidden group-open:inline">Ocultar ranking</span>
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4 transition-transform duration-200 group-open:rotate-180"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </span>
         </div>
-      </header>
+      </summary>
 
+      <div className="border-t border-slate-100">
       {ranking.length === 0 ? (
         <div className="m-5 flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500 sm:m-7">
           No hay ventas PAYJOY con asesor en el periodo.
@@ -864,7 +883,8 @@ function PayJoyAdvisorsPanel({
           ) : null}
         </div>
       )}
-    </section>
+      </div>
+    </details>
   );
 }
 function QuickActions({

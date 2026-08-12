@@ -49,3 +49,22 @@ test("el ranking conserva el limite top 10 y no muestra montos", () => {
   assert.doesNotMatch(panel, /asesor\.monto|formatoPesos/);
   assert.match(panel, /Puestos 4-10/);
 });
+test("el ranking PAYJOY inicia cerrado y se abre con un control nativo", () => {
+  const start = operations.indexOf("function PayJoyAdvisorsPanel(");
+  const end = operations.indexOf("function QuickActions(", start);
+  const panel = operations.slice(start, end);
+  const detailsIndex = panel.indexOf("<details");
+  const summaryIndex = panel.indexOf("<summary", detailsIndex);
+  const summaryEnd = panel.indexOf("</summary>", summaryIndex);
+  const podiumIndex = panel.indexOf("Podio del periodo", summaryEnd);
+
+  assert.ok(detailsIndex > 0, "El ranking debe usar un details nativo");
+  assert.ok(summaryIndex > detailsIndex, "El summary debe estar dentro del details");
+  assert.ok(summaryEnd > summaryIndex, "El summary debe cerrarse antes del contenido");
+  assert.ok(podiumIndex > summaryEnd, "El podio debe permanecer dentro del contenido plegable");
+  assert.doesNotMatch(panel.slice(detailsIndex, summaryIndex), /\sopen(?:=|\s|>)/);
+  assert.doesNotMatch(panel, /defaultOpen/);
+  assert.match(panel, /Ver ranking/);
+  assert.match(panel, /Ocultar ranking/);
+  assert.equal((panel.match(/<summary/g) || []).length, 1);
+});
