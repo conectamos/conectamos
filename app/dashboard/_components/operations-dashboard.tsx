@@ -541,14 +541,50 @@ function LeadingFinancialPanel({
   );
 }
 
+function PayJoyTrophyIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+      <path
+        d="M17 12h30v10c0 11.6-6.7 20.2-15 20.2S17 33.6 17 22V12Z"
+        fill="#f5bd25"
+        stroke="#d79a08"
+        strokeWidth="2"
+      />
+      <path d="M19 15H9v6c0 8 4.8 13 12.2 13" fill="none" stroke="#d79a08" strokeWidth="4" strokeLinecap="round" />
+      <path d="M45 15h10v6c0 8-4.8 13-12.2 13" fill="none" stroke="#d79a08" strokeWidth="4" strokeLinecap="round" />
+      <path d="M32 42v9" stroke="#d79a08" strokeWidth="4" strokeLinecap="round" />
+      <path d="M23 52h18l4 6H19l4-6Z" fill="#f5bd25" stroke="#d79a08" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M23 16h18" stroke="#ffe28a" strokeWidth="3" strokeLinecap="round" opacity="0.9" />
+    </svg>
+  );
+}
+
+function PayJoyMedal({ puesto }: { puesto: number }) {
+  const tono =
+    puesto === 1
+      ? "border-[#d99a09] bg-[#f7c63d] text-[#5d3b00]"
+      : puesto === 2
+        ? "border-slate-400 bg-slate-200 text-slate-700"
+        : "border-[#bd6f35] bg-[#e79a62] text-[#633019]";
+
+  return (
+    <span className="relative flex h-12 w-12 items-center justify-center" aria-hidden="true">
+      <span className="absolute bottom-0 left-2 h-5 w-3 -rotate-12 bg-slate-300 [clip-path:polygon(0_0,100%_0,75%_100%,50%_72%,25%_100%)]" />
+      <span className="absolute bottom-0 right-2 h-5 w-3 rotate-12 bg-slate-300 [clip-path:polygon(0_0,100%_0,75%_100%,50%_72%,25%_100%)]" />
+      <span className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-full border-[3px] text-base font-black shadow-sm ${tono}`}>
+        {puesto}
+      </span>
+    </span>
+  );
+}
+
 function PayJoyAdvisorsPanel({
   asesores,
 }: {
   asesores: CommercialSummary["topAsesoresPayJoy"];
 }) {
   const ranking = asesores.slice(0, 10);
-  const lider = ranking[0];
-  const podioSecundario = ranking.slice(1, 3);
+  const topTres = ranking.slice(0, 3);
   const clasificacion = ranking.slice(3);
   const inicialesAsesor = (nombre: string) =>
     nombre
@@ -557,121 +593,175 @@ function PayJoyAdvisorsPanel({
       .slice(0, 2)
       .map((parte) => parte.charAt(0).toUpperCase())
       .join("") || "--";
+  const clasePodio =
+    topTres.length === 1
+      ? "md:mx-auto md:max-w-[290px] md:grid-cols-1"
+      : topTres.length === 2
+        ? "md:mx-auto md:max-w-[560px] md:grid-cols-2 md:items-end"
+        : "md:grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)_minmax(0,1fr)] md:items-end";
+  const posicionPodio = (puesto: number) => {
+    if (topTres.length === 3) {
+      if (puesto === 1) return "md:col-start-2 md:row-start-1";
+      if (puesto === 2) return "md:col-start-1 md:row-start-1";
+      return "md:col-start-3 md:row-start-1";
+    }
+    if (topTres.length === 2) {
+      return puesto === 1
+        ? "md:col-start-2 md:row-start-1"
+        : "md:col-start-1 md:row-start-1";
+    }
+    return "";
+  };
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <header className="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+    <section
+      aria-labelledby="payjoy-advisors-title"
+      className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
+    >
+      <header className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
-            <DashboardIcon name="sales" className="h-5 w-5" />
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-[#e30613] shadow-sm">
+            <DashboardIcon name="sales" className="h-6 w-6" />
           </span>
           <div className="min-w-0">
-            <h2 className="text-xl font-black tracking-tight text-slate-950">Top asesores PAYJOY</h2>
-            <p className="mt-0.5 text-xs text-slate-500">Ventas registradas del periodo seleccionado.</p>
+            <h2 id="payjoy-advisors-title" className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+              Top asesores PAYJOY
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">Ventas registradas del periodo seleccionado.</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-600">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-800">
             {ranking.length} {ranking.length === 1 ? "clasificado" : "clasificados"}
           </span>
-          <span className="rounded-full bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#e30613]">
+          <span className="rounded-full border border-red-100 bg-red-50 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-[#e30613]">
             Top 10
           </span>
         </div>
       </header>
 
       {ranking.length === 0 ? (
-        <div className="m-5 flex min-h-[190px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500 sm:m-6">
+        <div className="m-5 flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500 sm:m-6">
           No hay ventas PAYJOY con asesor en el periodo.
         </div>
       ) : (
         <div
-          className={`grid items-start gap-5 p-5 sm:p-6 ${
+          className={`grid items-stretch gap-6 p-5 sm:p-6 ${
             clasificacion.length > 0
-              ? "xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]"
+              ? "xl:grid-cols-[minmax(0,1.14fr)_minmax(390px,0.86fr)]"
               : ""
           }`}
         >
           <div className="min-w-0">
-            <p className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+            <p className="mb-4 text-xs font-black uppercase tracking-[0.16em] text-slate-500">
               Podio del periodo
             </p>
 
-            {lider ? (
-              <article
-                className="relative overflow-hidden rounded-2xl border border-red-200 bg-red-50/60 p-4 sm:p-5"
-                aria-label={`Puesto 1, ${lider.nombre}, ${lider.total} ${lider.total === 1 ? "venta" : "ventas"}`}
-              >
-                <span className="absolute inset-y-0 left-0 w-1 bg-[#e30613]" />
-                <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
-                  <div className="relative shrink-0 self-start sm:self-auto">
-                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e30613] text-base font-black text-white shadow-sm">
-                      {inicialesAsesor(lider.nombre)}
-                    </span>
-                    <span className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-red-50 bg-[#11161d] text-[10px] font-black text-white">
-                      1
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#e30613]">
-                      {"L\u00edder del per\u00edodo"}
-                    </p>
-                    <h3 className="mt-1 truncate text-lg font-black text-slate-950 sm:text-xl" title={lider.nombre}>
-                      {lider.nombre}
-                    </h3>
-                  </div>
-                  <div className="w-fit shrink-0 rounded-xl border border-red-100 bg-white px-4 py-2.5 sm:text-right">
-                    <strong className="block text-2xl font-black leading-none text-slate-950">{lider.total}</strong>
-                    <span className="mt-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-                      {lider.total === 1 ? "venta" : "ventas"}
-                    </span>
-                  </div>
-                </div>
-              </article>
-            ) : null}
+            <ol className={`grid list-none gap-3 ${clasePodio}`}>
+              {topTres.map((asesor, index) => {
+                const puesto = index + 1;
+                const esLider = puesto === 1;
+                const colorBase =
+                  puesto === 1
+                    ? "border-[#e3b330] bg-[#fffdf7]"
+                    : puesto === 2
+                      ? "border-slate-300 bg-slate-50"
+                      : "border-[#dca67d] bg-[#fffaf6]";
+                const colorSuperior =
+                  puesto === 1
+                    ? "bg-[#e4b22d]"
+                    : puesto === 2
+                      ? "bg-slate-400"
+                      : "bg-[#ce8550]";
 
-            {podioSecundario.length > 0 ? (
-              <div className="mt-3 grid gap-3">
-                {podioSecundario.map((asesor, index) => {
-                  const puesto = index + 2;
-                  return (
-                    <article
-                      key={`${puesto}-${asesor.nombre}`}
-                      className="min-h-[82px] min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_14px_rgba(15,23,42,0.035)]"
-                      aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="relative shrink-0">
-                          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-xs font-black text-slate-700">
-                            {inicialesAsesor(asesor.nombre)}
-                          </span>
-                          <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#11161d] text-[9px] font-black text-white">
-                            {puesto}
-                          </span>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-black text-slate-900" title={asesor.nombre}>
-                            {asesor.nombre}
-                          </p>
-                          <p className="mt-1 text-xs font-semibold text-slate-500">
-                            {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
-                          </p>
-                        </div>
+                return (
+                  <li
+                    key={`${puesto}-${asesor.nombre}`}
+                    value={puesto}
+                    className={`relative flex min-w-0 flex-col justify-end ${posicionPodio(puesto)}`}
+                    aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
+                  >
+                    {esLider ? (
+                      <div className="relative mx-auto mb-1 hidden h-14 w-24 items-center justify-center md:flex">
+                        <span className="absolute left-0 top-6 h-1.5 w-1.5 rounded-full bg-[#e30613]" />
+                        <span className="absolute left-3 top-1 h-1 w-1 rounded-full bg-[#e4b22d]" />
+                        <span className="absolute right-0 top-5 h-1.5 w-1.5 rounded-full bg-[#e30613]" />
+                        <span className="absolute right-4 top-0 h-1 w-1 rounded-full bg-[#e4b22d]" />
+                        <PayJoyTrophyIcon className="h-14 w-14" />
                       </div>
+                    ) : null}
+
+                    <article
+                      className={`flex min-h-[128px] min-w-0 flex-col items-center justify-center rounded-t-2xl border border-b-0 bg-white px-3 py-4 text-center shadow-[0_7px_20px_rgba(15,23,42,0.05)] ${
+                        esLider
+                          ? "border-red-200 md:min-h-[240px] md:px-4 md:py-7"
+                          : puesto === 2
+                            ? "border-slate-200 md:min-h-[195px]"
+                            : "border-slate-200 md:min-h-[178px]"
+                      }`}
+                    >
+                      <span
+                        className={`flex shrink-0 items-center justify-center rounded-full font-black shadow-sm ${
+                          esLider
+                            ? "h-20 w-20 bg-[#e30613] text-xl text-white"
+                            : "h-16 w-16 bg-slate-200 text-base text-slate-800"
+                        }`}
+                      >
+                        {inicialesAsesor(asesor.nombre)}
+                      </span>
+                      <h3
+                        className={`mt-4 line-clamp-2 min-h-[2.5rem] break-words font-black leading-tight text-slate-950 ${
+                          esLider ? "text-lg" : "text-sm sm:text-base"
+                        }`}
+                        title={asesor.nombre}
+                      >
+                        {asesor.nombre}
+                      </h3>
+                      <span
+                        className={`mt-3 rounded-full border px-4 py-2 text-sm font-black ${
+                          esLider
+                            ? "border-red-200 bg-red-50 text-[#e30613]"
+                            : "border-slate-200 bg-slate-50 text-slate-800"
+                        }`}
+                      >
+                        {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
+                      </span>
                     </article>
-                  );
-                })}
-              </div>
-            ) : null}
+
+                    <div className={`relative flex flex-col items-center justify-center rounded-b-2xl border px-3 ${colorBase} ${
+                      esLider
+                        ? "min-h-[68px] md:min-h-[132px]"
+                        : puesto === 2
+                          ? "min-h-[64px] md:min-h-[98px]"
+                          : "min-h-[64px] md:min-h-[86px]"
+                    }`}>
+                      <span className={`absolute inset-x-0 top-0 h-2 ${colorSuperior}`} />
+                      <PayJoyMedal puesto={puesto} />
+                      <span className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                        Puesto {puesto}
+                      </span>
+                    </div>
+
+                    {esLider ? (
+                      <span
+                        aria-hidden="true"
+                        className="mx-auto hidden h-10 w-[84%] bg-[#e30613] md:block"
+                        style={{ clipPath: "polygon(16% 0, 84% 0, 100% 100%, 0 100%)" }}
+                      />
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ol>
           </div>
 
           {clasificacion.length > 0 ? (
             <div className="min-w-0">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
                   {"Clasificaci\u00f3n general"}
                 </p>
-                <span className="text-[10px] font-bold text-slate-400">Puestos 4-10</span>
+                <span className="text-xs font-semibold text-slate-500">Puestos 4-10</span>
               </div>
               <ol start={4} className="overflow-hidden rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
                 {clasificacion.map((asesor, index) => {
@@ -679,16 +769,20 @@ function PayJoyAdvisorsPanel({
                   return (
                     <li
                       key={`${puesto}-${asesor.nombre}`}
-                      className="grid min-w-0 grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-3 sm:px-4"
+                      value={puesto}
+                      className="grid min-h-[62px] min-w-0 grid-cols-[38px_40px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-2.5 sm:px-4"
                       aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
                     >
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-[11px] font-black text-slate-700">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-sm font-black text-slate-800">
                         {puesto}
                       </span>
-                      <span className="min-w-0 truncate text-xs font-bold text-slate-800" title={asesor.nombre}>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200 text-xs font-black text-slate-800">
+                        {inicialesAsesor(asesor.nombre)}
+                      </span>
+                      <span className="min-w-0 truncate text-sm font-bold text-slate-900" title={asesor.nombre}>
                         {asesor.nombre}
                       </span>
-                      <span className="shrink-0 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] font-black text-slate-950">
+                      <span className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-950 shadow-sm">
                         {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
                       </span>
                     </li>
