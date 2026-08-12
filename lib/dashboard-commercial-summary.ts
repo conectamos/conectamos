@@ -294,6 +294,7 @@ export async function getMonthlyCommercialSummary(options?: {
   const ventasSede = new Map<string, CommercialRankingItem>();
   const jaladores = new Map<string, CommercialRankingItem>();
   const cerradores = new Map<string, CommercialRankingItem>();
+  const asesoresPayJoy = new Map<string, CommercialRankingItem>();
   const financieras = new Map<string, CommercialRankingItem>();
   const marcasVendidas = new Map<string, CommercialRankingItem>();
   const referenciasVendidas = new Map<string, CommercialRankingItem>();
@@ -355,6 +356,19 @@ export async function getMonthlyCommercialSummary(options?: {
       venta as Record<string, unknown>
     );
 
+    const financierasPayJoy = financierasVenta.filter(
+      (financiera) =>
+        financiera.nombreNormalizado === "PAYJOY" && n(financiera.valorBruto) > 0
+    );
+
+    if (venta.cerrador && financierasPayJoy.length > 0) {
+      const montoPayJoy = financierasPayJoy.reduce(
+        (total, financiera) => total + n(financiera.valorBruto),
+        0
+      );
+      pushRanking(asesoresPayJoy, venta.cerrador, montoPayJoy);
+    }
+
     for (const financiera of financierasVenta) {
       pushRanking(financieras, financiera.nombre, n(financiera.valorBruto));
     }
@@ -406,6 +420,7 @@ export async function getMonthlyCommercialSummary(options?: {
     topVentasSede: sortedRanking(ventasSede),
     topJaladores: sortedRanking(jaladores),
     topCerradores: sortedRanking(cerradores),
+    topAsesoresPayJoy: sortedRanking(asesoresPayJoy).slice(0, 10),
     topFinancieras: sortedRanking(financieras),
     topMarcasVendidas: sortedBrandRanking(marcasVendidas),
     topReferenciasVendidas: referenciasRanking.slice(0, 10),

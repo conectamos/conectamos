@@ -109,6 +109,7 @@ function createEmptyCommercialSummary(
     topVentasSede: [],
     topJaladores: [],
     topCerradores: [],
+    topAsesoresPayJoy: [],
     topFinancieras: [],
     topMarcasVendidas: [],
     topReferenciasVendidas: [],
