@@ -546,58 +546,158 @@ function PayJoyAdvisorsPanel({
 }: {
   asesores: CommercialSummary["topAsesoresPayJoy"];
 }) {
-  const maximoVentas = Math.max(1, ...asesores.map((asesor) => asesor.total));
+  const ranking = asesores.slice(0, 10);
+  const lider = ranking[0];
+  const podioSecundario = ranking.slice(1, 3);
+  const clasificacion = ranking.slice(3);
+  const inicialesAsesor = (nombre: string) =>
+    nombre
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((parte) => parte.charAt(0).toUpperCase())
+      .join("") || "--";
 
   return (
-    <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-black tracking-tight text-slate-950">Top asesores PAYJOY</h2>
-          <p className="mt-1 text-xs text-slate-500">Ventas PAYJOY del periodo seleccionado.</p>
+    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
+      <header className="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
+            <DashboardIcon name="sales" className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-xl font-black tracking-tight text-slate-950">Top asesores PAYJOY</h2>
+            <p className="mt-0.5 text-xs text-slate-500">Ventas registradas del periodo seleccionado.</p>
+          </div>
         </div>
-        <span className="shrink-0 rounded-full bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#e30613]">
-          Top 10
-        </span>
-      </div>
-      {asesores.length === 0 ? (
-        <div className="mt-5 flex min-h-[190px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-600">
+            {ranking.length} {ranking.length === 1 ? "clasificado" : "clasificados"}
+          </span>
+          <span className="rounded-full bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#e30613]">
+            Top 10
+          </span>
+        </div>
+      </header>
+
+      {ranking.length === 0 ? (
+        <div className="m-5 flex min-h-[190px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500 sm:m-6">
           No hay ventas PAYJOY con asesor en el periodo.
         </div>
       ) : (
-        <ol className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
-          {asesores.slice(0, 10).map((asesor, index) => (
-            <li
-              key={asesor.nombre}
-              className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5"
-            >
-              <div className="flex min-w-0 items-center gap-2.5">
-                <span
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${
-                    index === 0 ? "bg-[#e30613] text-white" : "bg-[#11161d] text-white"
-                  }`}
-                >
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center justify-between gap-2">
-                    <p className="truncate text-xs font-black text-slate-900" title={asesor.nombre}>
-                      {asesor.nombre}
-                    </p>
-                    <span className="shrink-0 text-[11px] font-black text-slate-950">
-                      {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
+        <div
+          className={`grid items-start gap-5 p-5 sm:p-6 ${
+            clasificacion.length > 0
+              ? "xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]"
+              : ""
+          }`}
+        >
+          <div className="min-w-0">
+            <p className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+              Podio del periodo
+            </p>
+
+            {lider ? (
+              <article
+                className="relative overflow-hidden rounded-2xl border border-red-200 bg-red-50/60 p-4 sm:p-5"
+                aria-label={`Puesto 1, ${lider.nombre}, ${lider.total} ${lider.total === 1 ? "venta" : "ventas"}`}
+              >
+                <span className="absolute inset-y-0 left-0 w-1 bg-[#e30613]" />
+                <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
+                  <div className="relative shrink-0 self-start sm:self-auto">
+                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e30613] text-base font-black text-white shadow-sm">
+                      {inicialesAsesor(lider.nombre)}
+                    </span>
+                    <span className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-red-50 bg-[#11161d] text-[10px] font-black text-white">
+                      1
                     </span>
                   </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200">
-                    <div
-                      className="h-full rounded-full bg-[#e30613]"
-                      style={{ width: `${Math.max(4, (asesor.total / maximoVentas) * 100)}%` }}
-                    />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#e30613]">
+                      {"L\u00edder del per\u00edodo"}
+                    </p>
+                    <h3 className="mt-1 truncate text-lg font-black text-slate-950 sm:text-xl" title={lider.nombre}>
+                      {lider.nombre}
+                    </h3>
+                  </div>
+                  <div className="w-fit shrink-0 rounded-xl border border-red-100 bg-white px-4 py-2.5 sm:text-right">
+                    <strong className="block text-2xl font-black leading-none text-slate-950">{lider.total}</strong>
+                    <span className="mt-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                      {lider.total === 1 ? "venta" : "ventas"}
+                    </span>
                   </div>
                 </div>
+              </article>
+            ) : null}
+
+            {podioSecundario.length > 0 ? (
+              <div className="mt-3 grid gap-3">
+                {podioSecundario.map((asesor, index) => {
+                  const puesto = index + 2;
+                  return (
+                    <article
+                      key={`${puesto}-${asesor.nombre}`}
+                      className="min-h-[82px] min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_14px_rgba(15,23,42,0.035)]"
+                      aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="relative shrink-0">
+                          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-xs font-black text-slate-700">
+                            {inicialesAsesor(asesor.nombre)}
+                          </span>
+                          <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#11161d] text-[9px] font-black text-white">
+                            {puesto}
+                          </span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-black text-slate-900" title={asesor.nombre}>
+                            {asesor.nombre}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">
+                            {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-            </li>
-          ))}
-        </ol>
+            ) : null}
+          </div>
+
+          {clasificacion.length > 0 ? (
+            <div className="min-w-0">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                  {"Clasificaci\u00f3n general"}
+                </p>
+                <span className="text-[10px] font-bold text-slate-400">Puestos 4-10</span>
+              </div>
+              <ol start={4} className="overflow-hidden rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
+                {clasificacion.map((asesor, index) => {
+                  const puesto = index + 4;
+                  return (
+                    <li
+                      key={`${puesto}-${asesor.nombre}`}
+                      className="grid min-w-0 grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-3 sm:px-4"
+                      aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
+                    >
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-[11px] font-black text-slate-700">
+                        {puesto}
+                      </span>
+                      <span className="min-w-0 truncate text-xs font-bold text-slate-800" title={asesor.nombre}>
+                        {asesor.nombre}
+                      </span>
+                      <span className="shrink-0 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] font-black text-slate-950">
+                        {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          ) : null}
+        </div>
       )}
     </section>
   );
