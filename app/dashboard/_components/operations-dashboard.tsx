@@ -587,6 +587,34 @@ function PayJoyPodiumMedal({ puesto }: { puesto: number }) {
   );
 }
 
+function PayJoyLaurelTrophy() {
+  return (
+    <div className="relative mx-auto flex h-[76px] w-[164px] items-center justify-center" aria-hidden="true">
+      <svg viewBox="0 0 164 76" className="absolute inset-0 h-full w-full">
+        <path d="M54 65C31 58 20 39 26 15" fill="none" stroke="#d8a21b" strokeWidth="2.4" strokeLinecap="round" />
+        <path d="M110 65c23-7 34-26 28-50" fill="none" stroke="#d8a21b" strokeWidth="2.4" strokeLinecap="round" />
+        <g fill="#e2ae27">
+          <ellipse cx="29" cy="21" rx="3" ry="6" transform="rotate(-33 29 21)" />
+          <ellipse cx="30" cy="33" rx="3" ry="6" transform="rotate(-55 30 33)" />
+          <ellipse cx="35" cy="44" rx="3" ry="6" transform="rotate(-68 35 44)" />
+          <ellipse cx="43" cy="54" rx="3" ry="6" transform="rotate(-78 43 54)" />
+          <ellipse cx="135" cy="21" rx="3" ry="6" transform="rotate(33 135 21)" />
+          <ellipse cx="134" cy="33" rx="3" ry="6" transform="rotate(55 134 33)" />
+          <ellipse cx="129" cy="44" rx="3" ry="6" transform="rotate(68 129 44)" />
+          <ellipse cx="121" cy="54" rx="3" ry="6" transform="rotate(78 121 54)" />
+        </g>
+      </svg>
+      <span className="absolute left-0 top-7 h-1.5 w-1.5 rotate-45 bg-[#e30613]" />
+      <span className="absolute left-5 top-1 h-1.5 w-1.5 rounded-full bg-[#e9b52b]" />
+      <span className="absolute right-1 top-8 h-1.5 w-1.5 rotate-45 bg-[#e30613]" />
+      <span className="absolute right-6 top-1 h-1.5 w-1.5 rounded-full bg-[#e9b52b]" />
+      <span className="absolute left-10 top-2 h-1 w-3 rotate-[24deg] rounded-full bg-[#e30613]" />
+      <span className="absolute right-10 top-3 h-1 w-3 -rotate-[24deg] rounded-full bg-[#e30613]" />
+      <PayJoyTrophyIcon className="relative z-10 h-16 w-16 drop-shadow-[0_6px_7px_rgba(148,96,0,0.18)]" />
+    </div>
+  );
+}
+
 function PayJoyAdvisorsPanel({
   asesores,
 }: {
@@ -602,29 +630,30 @@ function PayJoyAdvisorsPanel({
       .slice(0, 2)
       .map((parte) => parte.charAt(0).toUpperCase())
       .join("") || "--";
+  const etiquetaVentas = (total: number) => `${total} ${total === 1 ? "venta" : "ventas"}`;
 
   return (
     <section
       aria-labelledby="payjoy-advisors-title"
-      className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
+      className="overflow-hidden rounded-[18px] border border-slate-200/90 bg-white shadow-[0_12px_36px_rgba(15,23,42,0.055)]"
     >
       <header className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-6">
         <div className="flex min-w-0 items-center gap-4">
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-[#e30613] shadow-sm">
-            <DashboardIcon name="sales" className="h-7 w-7" />
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-[#e30613] shadow-sm">
+            <DashboardIcon name="sales" className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <h2 id="payjoy-advisors-title" className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+            <h2 id="payjoy-advisors-title" className="text-xl font-black tracking-tight text-slate-950 sm:text-[26px]">
               Top asesores PAYJOY
             </h2>
-            <p className="mt-1 text-sm text-slate-500">Ventas registradas del periodo seleccionado.</p>
+            <p className="mt-1 text-xs text-slate-500 sm:text-sm">Ventas registradas del periodo seleccionado.</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-800">
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-800">
             {ranking.length} {ranking.length === 1 ? "clasificado" : "clasificados"}
           </span>
-          <span className="rounded-full border border-red-100 bg-red-50 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-[#e30613]">
+          <span className="rounded-full border border-red-100 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#e30613]">
             Top 10
           </span>
         </div>
@@ -636,9 +665,9 @@ function PayJoyAdvisorsPanel({
         </div>
       ) : (
         <div
-          className={`grid items-stretch gap-7 px-5 pb-7 pt-6 sm:px-7 ${
+          className={`grid items-stretch gap-7 px-5 pb-8 pt-6 sm:px-7 ${
             clasificacion.length > 0
-              ? "xl:grid-cols-[minmax(0,1.45fr)_minmax(390px,0.8fr)]"
+              ? "xl:grid-cols-[minmax(0,1fr)_minmax(420px,1fr)]"
               : ""
           }`}
         >
@@ -650,26 +679,37 @@ function PayJoyAdvisorsPanel({
             <ol className="grid list-none gap-3 md:hidden">
               {topTres.map((asesor, index) => {
                 const puesto = index + 1;
+                const estiloPuesto =
+                  puesto === 1
+                    ? "border-red-200 bg-red-50/50"
+                    : puesto === 2
+                      ? "border-slate-300 bg-slate-50"
+                      : "border-[#e5c3aa] bg-[#fffaf7]";
+                const estiloNumero =
+                  puesto === 1
+                    ? "bg-[#e30613] text-white"
+                    : puesto === 2
+                      ? "bg-slate-300 text-slate-800"
+                      : "bg-[#d9905c] text-white";
+
                 return (
                   <li
                     key={`movil-${puesto}-${asesor.nombre}`}
                     value={puesto}
-                    className="grid min-w-0 grid-cols-[42px_52px_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm"
-                    aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
+                    className={`grid min-w-0 grid-cols-[40px_48px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border px-3 py-3 shadow-sm max-[430px]:grid-cols-[38px_minmax(0,1fr)_auto] ${estiloPuesto}`}
+                    aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${etiquetaVentas(asesor.total)}`}
                   >
-                    <span className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-black ${puesto === 1 ? "bg-[#e30613] text-white" : "bg-slate-100 text-slate-700"}`}>
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-black ${estiloNumero}`}>
                       {puesto}
                     </span>
-                    <span className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-black ${puesto === 1 ? "bg-red-50 text-[#e30613]" : "bg-slate-200 text-slate-800"}`}>
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-sm font-black text-slate-800 shadow-sm max-[430px]:hidden">
                       {inicialesAsesor(asesor.nombre)}
                     </span>
-                    <span className="min-w-0">
-                      <strong className="block truncate text-sm text-slate-950" title={asesor.nombre}>
-                        {asesor.nombre}
-                      </strong>
-                      <span className="mt-1 block text-xs font-bold text-slate-500">
-                        {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
-                      </span>
+                    <strong className="min-w-0 truncate text-sm text-slate-950" title={asesor.nombre}>
+                      {asesor.nombre}
+                    </strong>
+                    <span className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-900">
+                      {etiquetaVentas(asesor.total)}
                     </span>
                   </li>
                 );
@@ -677,101 +717,108 @@ function PayJoyAdvisorsPanel({
             </ol>
 
             {topTres.length === 3 ? (
-              <div className="relative hidden min-h-[490px] overflow-hidden rounded-2xl border border-slate-100 bg-[#fbfcfe] px-5 pt-6 md:block">
-                <span className="absolute left-[9%] top-[22%] h-1.5 w-1.5 rounded-full bg-[#e30613]" aria-hidden="true" />
-                <span className="absolute left-[17%] top-[15%] h-1 w-1 rounded-full bg-[#efb31a]" aria-hidden="true" />
-                <span className="absolute right-[13%] top-[20%] h-1.5 w-1.5 rounded-full bg-[#e30613]" aria-hidden="true" />
-                <span className="absolute right-[21%] top-[13%] h-1 w-1 rounded-full bg-[#efb31a]" aria-hidden="true" />
+              <div className="relative hidden min-h-[610px] overflow-hidden rounded-2xl border border-slate-100 bg-white md:block">
+                <span className="absolute left-[17%] top-[19%] h-1.5 w-1.5 rotate-45 bg-[#e30613]" aria-hidden="true" />
+                <span className="absolute left-[23%] top-[12%] h-1 w-1 rounded-full bg-[#e8b329]" aria-hidden="true" />
+                <span className="absolute right-[18%] top-[20%] h-1.5 w-1.5 rotate-45 bg-[#e30613]" aria-hidden="true" />
+                <span className="absolute right-[24%] top-[13%] h-1 w-1 rounded-full bg-[#e8b329]" aria-hidden="true" />
 
-                <ol className="absolute inset-x-5 bottom-8 top-5 grid list-none grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)_minmax(0,1fr)] items-end gap-0">
+                <span
+                  className="absolute inset-x-3 bottom-[46px] z-10 h-9 rounded-b-[22px] border border-t-0 border-slate-200 bg-white shadow-[0_14px_24px_rgba(15,23,42,0.08)]"
+                  aria-hidden="true"
+                />
+
+                <ol className="absolute bottom-[78px] left-1/2 top-7 grid w-[calc(100%_-_24px)] max-w-[840px] -translate-x-1/2 list-none grid-cols-[minmax(0,1fr)_minmax(0,1.14fr)_minmax(0,1fr)] items-end gap-0 xl:max-w-none">
                   {topTres.map((asesor, index) => {
                     const puesto = index + 1;
                     const esLider = puesto === 1;
                     const posicion =
                       puesto === 1
-                        ? "col-start-2 row-start-1"
+                        ? "col-start-2 row-start-1 z-30"
                         : puesto === 2
-                          ? "col-start-1 row-start-1"
-                          : "col-start-3 row-start-1";
-                    const alturaTarjeta =
+                          ? "col-start-1 row-start-1 z-20"
+                          : "col-start-3 row-start-1 z-20";
+                    const tarjeta =
                       puesto === 1
-                        ? "min-h-[230px] w-[94%] max-w-[230px] border-red-100"
+                        ? "min-h-[210px] w-[92%] max-w-[226px] border-[#eddcaa]"
                         : puesto === 2
-                          ? "min-h-[202px] w-[90%] max-w-[205px] border-slate-200"
-                          : "min-h-[190px] w-[90%] max-w-[205px] border-slate-200";
-                    const alturaBase =
+                          ? "min-h-[190px] w-[92%] max-w-[198px] border-slate-300"
+                          : "min-h-[185px] w-[92%] max-w-[198px] border-[#e7c9b3]";
+                    const base =
                       puesto === 1
-                        ? "h-[148px]"
+                        ? "h-[174px] w-[calc(100%+8px)] -mx-1 rounded-t-[22px] bg-white"
                         : puesto === 2
-                          ? "h-[112px]"
-                          : "h-[96px]";
-                    const colorBorde =
+                          ? "h-[116px] rounded-tl-[22px] bg-[#f8fafc]"
+                          : "h-[102px] rounded-tr-[22px] bg-[#fffaf7]";
+                    const banda =
                       puesto === 1
-                        ? "bg-[#e2b126]"
+                        ? "h-3.5 rounded-t-[21px] bg-[#e1b43c] shadow-[0_4px_7px_rgba(156,103,0,0.2)]"
                         : puesto === 2
-                          ? "bg-slate-300"
-                          : "bg-[#d78b55]";
+                          ? "h-3 rounded-tl-[21px] bg-slate-300"
+                          : "h-3 rounded-tr-[21px] bg-[#d98d58]";
+                    const avatar =
+                      puesto === 1
+                        ? "h-[72px] w-[72px] bg-[#e30613] text-xl text-white"
+                        : puesto === 2
+                          ? "h-[60px] w-[60px] bg-slate-200 text-lg text-slate-800"
+                          : "h-[60px] w-[60px] bg-[#eee5df] text-lg text-[#68402a]";
 
                     return (
                       <li
                         key={`podio-${puesto}-${asesor.nombre}`}
                         value={puesto}
                         className={`relative flex min-w-0 flex-col items-center justify-end ${posicion}`}
-                        aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
+                        aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${etiquetaVentas(asesor.total)}`}
                       >
-                        {esLider ? (
-                          <div className="relative mb-1 flex h-14 w-24 items-center justify-center" aria-hidden="true">
-                            <span className="absolute left-1 top-7 h-1.5 w-1.5 rounded-full bg-[#e30613]" />
-                            <span className="absolute left-4 top-1 h-1 w-1 rounded-full bg-[#efb31a]" />
-                            <span className="absolute right-1 top-6 h-1.5 w-1.5 rounded-full bg-[#e30613]" />
-                            <span className="absolute right-4 top-0 h-1 w-1 rounded-full bg-[#efb31a]" />
-                            <PayJoyTrophyIcon className="h-14 w-14" />
-                          </div>
-                        ) : null}
+                        {esLider ? <PayJoyLaurelTrophy /> : null}
 
-                        <article className={`relative z-20 flex flex-col items-center justify-center rounded-2xl border bg-white px-4 py-5 text-center shadow-[0_10px_25px_rgba(15,23,42,0.08)] ${alturaTarjeta}`}>
-                          <span className={`flex shrink-0 items-center justify-center rounded-full font-black shadow-sm ${esLider ? "h-20 w-20 bg-[#e30613] text-xl text-white" : "h-16 w-16 bg-slate-200 text-base text-slate-800"}`}>
+                        <article className={`relative z-30 -mb-px flex flex-col items-center justify-center rounded-[18px] border bg-white px-4 py-5 text-center shadow-[0_10px_25px_rgba(15,23,42,0.085)] ${tarjeta}`}>
+                          <span className={`flex shrink-0 items-center justify-center rounded-full font-black shadow-sm ${avatar}`}>
                             {inicialesAsesor(asesor.nombre)}
                           </span>
-                          <h3 className={`mt-4 line-clamp-2 min-h-[2.5rem] break-words font-black leading-tight text-slate-950 ${esLider ? "text-lg" : "text-base"}`} title={asesor.nombre}>
+                          <h3
+                            className={`mt-4 line-clamp-2 min-h-[2.6rem] break-words font-black leading-tight text-slate-950 ${esLider ? "text-lg" : "text-base"}`}
+                            title={asesor.nombre}
+                          >
                             {asesor.nombre}
                           </h3>
-                          <span className={`mt-3 rounded-full border px-4 py-2 text-sm font-black ${esLider ? "border-red-200 bg-red-50 text-[#e30613]" : "border-slate-200 bg-slate-50 text-slate-800"}`}>
-                            {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
+                          <span className={`mt-3 rounded-full border bg-white px-3 py-1.5 text-xs font-black ${esLider ? "border-red-200 text-[#e30613]" : puesto === 2 ? "border-slate-200 text-slate-800" : "border-[#ecd1bd] text-[#8a4c27]"}`}>
+                            {etiquetaVentas(asesor.total)}
                           </span>
                         </article>
 
-                        <div className={`relative z-10 -mt-1 flex w-full flex-col items-center justify-center rounded-t-[20px] border border-slate-200 bg-white shadow-[0_12px_24px_rgba(15,23,42,0.08)] ${alturaBase}`}>
-                          <span className={`absolute inset-x-0 top-0 h-3 rounded-t-[19px] ${colorBorde}`} />
+                        <div className={`relative z-20 flex shrink-0 flex-col items-center justify-center border border-slate-200 shadow-[0_12px_24px_rgba(15,23,42,0.075)] ${base}`}>
+                          <span className={`absolute inset-x-0 top-0 ${banda}`} />
                           <PayJoyPodiumMedal puesto={puesto} />
-                          <span className="mt-1 text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                          <span className="mt-1 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
                             Puesto {puesto}
                           </span>
                         </div>
-
-                        {esLider ? (
-                          <span
-                            aria-hidden="true"
-                            className="absolute -bottom-8 left-1/2 z-30 h-16 w-[72%] -translate-x-1/2 bg-[#e30613]"
-                            style={{ clipPath: "polygon(24% 0, 76% 0, 100% 100%, 0 100%)" }}
-                          />
-                        ) : null}
                       </li>
                     );
                   })}
                 </ol>
+
+                <span className="absolute bottom-[22px] left-1/2 z-40 h-9 w-[27%] -translate-x-1/2 rounded-t-md bg-[#e30613]" aria-hidden="true" />
+                <span
+                  className="absolute bottom-0 left-1/2 z-40 h-12 w-[35%] -translate-x-1/2 bg-[#d80a16]"
+                  style={{ clipPath: "polygon(14% 0, 86% 0, 100% 100%, 0 100%)" }}
+                  aria-hidden="true"
+                />
               </div>
             ) : (
-              <ol className="hidden list-none gap-4 md:grid md:grid-cols-2">
+              <ol className={`mx-auto hidden list-none gap-4 md:grid ${topTres.length === 1 ? "max-w-sm grid-cols-1" : "max-w-2xl grid-cols-2"}`}>
                 {topTres.map((asesor, index) => {
                   const puesto = index + 1;
                   return (
                     <li key={`parcial-${puesto}-${asesor.nombre}`} value={puesto} className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm">
-                      <span className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full font-black ${puesto === 1 ? "bg-[#e30613] text-white" : "bg-slate-200 text-slate-800"}`}>
+                      {puesto === 1 ? <PayJoyLaurelTrophy /> : null}
+                      <span className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full text-xl font-black ${puesto === 1 ? "bg-[#e30613] text-white" : "bg-slate-200 text-slate-800"}`}>
                         {inicialesAsesor(asesor.nombre)}
                       </span>
                       <strong className="mt-3 block text-base text-slate-950" title={asesor.nombre}>{asesor.nombre}</strong>
-                      <span className="mt-2 block text-sm font-bold text-slate-500">{asesor.total} {asesor.total === 1 ? "venta" : "ventas"}</span>
+                      <span className="mt-3 inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-800">{etiquetaVentas(asesor.total)}</span>
+                      <div className="mt-4 flex justify-center"><PayJoyPodiumMedal puesto={puesto} /></div>
                     </li>
                   );
                 })}
@@ -785,29 +832,29 @@ function PayJoyAdvisorsPanel({
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
                   {"Clasificaci\u00f3n general"}
                 </p>
-                <span className="text-xs font-semibold text-slate-500">Puestos 4-10</span>
+                <span className="text-sm font-semibold text-slate-500">Puestos 4-10</span>
               </div>
-              <ol start={4} className="overflow-hidden rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
+              <ol start={4} className="overflow-hidden rounded-[18px] border border-slate-200 bg-white divide-y divide-slate-100">
                 {clasificacion.map((asesor, index) => {
                   const puesto = index + 4;
                   return (
                     <li
                       key={`${puesto}-${asesor.nombre}`}
                       value={puesto}
-                      className="grid min-h-[64px] min-w-0 grid-cols-[36px_40px_minmax(0,1fr)_auto] items-center gap-3 bg-slate-50/40 px-3.5 py-2.5 sm:px-4"
-                      aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${asesor.total} ${asesor.total === 1 ? "venta" : "ventas"}`}
+                      className="grid min-h-[74px] min-w-0 grid-cols-[42px_46px_minmax(0,1fr)_auto] items-center gap-3 bg-white px-4 py-3 max-[430px]:grid-cols-[36px_minmax(0,1fr)_auto] sm:gap-4 sm:px-5 xl:min-h-[86px]"
+                      aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${etiquetaVentas(asesor.total)}`}
                     >
-                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-black text-slate-800 shadow-sm">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-base font-black text-slate-900 shadow-sm max-[430px]:h-9 max-[430px]:w-9">
                         {puesto}
                       </span>
-                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200 text-xs font-black text-slate-800">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-200 text-sm font-black text-slate-800 max-[430px]:hidden">
                         {inicialesAsesor(asesor.nombre)}
                       </span>
-                      <span className="min-w-0 truncate text-sm font-bold text-slate-900" title={asesor.nombre}>
+                      <span className="min-w-0 truncate text-sm font-bold text-slate-950 sm:text-base" title={asesor.nombre}>
                         {asesor.nombre}
                       </span>
-                      <span className="shrink-0 text-sm font-black text-slate-950">
-                        {asesor.total} {asesor.total === 1 ? "venta" : "ventas"}
+                      <span className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-950 shadow-sm sm:px-4 sm:text-sm">
+                        {etiquetaVentas(asesor.total)}
                       </span>
                     </li>
                   );
