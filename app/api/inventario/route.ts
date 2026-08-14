@@ -59,6 +59,20 @@ export async function GET(req: Request) {
           select: {
             id: true,
             nombre: true,
+            soloInventarioPorCobrar: true,
+          },
+        },
+        facturaStandItem: {
+          select: {
+            factura: {
+              select: {
+                id: true,
+                estado: true,
+                siigoInvoiceName: true,
+                siigoInvoiceUrl: true,
+                siigoInvoiceError: true,
+              },
+            },
           },
         },
       },
@@ -135,6 +149,7 @@ export async function GET(req: Request) {
     }
 
     const inventarioConPrestamo = inventario.map((item) => {
+      const { facturaStandItem, ...inventarioItem } = item;
       const estadoInventario = String(item.estadoActual || "")
         .trim()
         .toUpperCase();
@@ -154,7 +169,16 @@ export async function GET(req: Request) {
         prestamo && prestamo.sedeDestinoId === item.sedeId;
 
       return {
-        ...item,
+        ...inventarioItem,
+        facturaStand: facturaStandItem
+          ? {
+              id: facturaStandItem.factura.id,
+              estado: facturaStandItem.factura.estado,
+              nombre: facturaStandItem.factura.siigoInvoiceName,
+              url: facturaStandItem.factura.siigoInvoiceUrl,
+              error: facturaStandItem.factura.siigoInvoiceError,
+            }
+          : null,
         prestamoDestino:
           prestamo && sedeDestino && !destinoEsLaMismaSede
             ? {

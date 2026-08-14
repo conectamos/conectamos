@@ -31,6 +31,12 @@ model Sede {
   codigo                   String?                 @unique
   activa                   Boolean                 @default(true)
   soloInventarioPorCobrar  Boolean                 @default(false)
+  facturacionNombre        String?
+  facturacionTipoDocumento String?
+  facturacionDocumento     String?
+  facturacionCorreo        String?
+  facturacionTelefono      String?
+  facturacionDireccion     String?
   clavePanelFinancieroHash String?
   siigoEnabled             Boolean                 @default(false)
   siigoInvoiceDocumentId   Int?
@@ -58,6 +64,7 @@ model Sede {
   arqueosDiarios           ArqueoDiario[]
   perfilesVendedor         PerfilVendedorSede[]
   registrosVendedorVenta   RegistroVendedorVenta[]
+  facturasInventarioStand  FacturaInventarioStand[]
 }
 
 model Usuario {
@@ -359,8 +366,49 @@ model InventarioSede {
   estadoAnterior        String?
   fechaMovimiento       DateTime?
   observacion           String?
+  facturaStandItem      FacturaInventarioStandItem?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
+}
+
+model FacturaInventarioStand {
+  id                    Int                          @id @default(autoincrement())
+  sedeId                Int
+  sede                  Sede                         @relation(fields: [sedeId], references: [id])
+  estado                String                       @default("PROCESANDO")
+  total                 Decimal                      @db.Decimal(14, 2)
+  cantidad              Int
+  creadoPor             String
+  siigoInvoiceId        String?
+  siigoInvoiceName      String?
+  siigoInvoiceStatus    String?
+  siigoInvoiceUrl       String?
+  siigoInvoiceError     String?
+  siigoInvoiceCreatedAt DateTime?
+  siigoInvoiceAttempt   Int                          @default(0)
+  items                 FacturaInventarioStandItem[]
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+
+  @@index([sedeId, createdAt])
+  @@index([estado])
+  @@index([siigoInvoiceId])
+}
+
+model FacturaInventarioStandItem {
+  id               Int                     @id @default(autoincrement())
+  facturaId        Int
+  factura          FacturaInventarioStand @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+  inventarioSedeId Int?                    @unique
+  inventarioSede   InventarioSede?         @relation(fields: [inventarioSedeId], references: [id], onDelete: SetNull)
+  imei             String                  @unique
+  referencia       String
+  tipoProducto     String                  @default("TELEFONIA")
+  color            String?
+  costo            Decimal                 @db.Decimal(12, 2)
+  createdAt        DateTime                @default(now())
+
+  @@index([facturaId])
 }
 
 model PrestamoSede {

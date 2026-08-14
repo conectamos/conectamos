@@ -34,6 +34,14 @@ type InventarioItem = {
   sede?: {
     id: number;
     nombre: string;
+    soloInventarioPorCobrar: boolean;
+  } | null;
+  facturaStand?: {
+    id: number;
+    estado: string;
+    nombre: string | null;
+    url: string | null;
+    error: string | null;
   } | null;
   prestamoDestino?: {
     id: number;
@@ -95,6 +103,16 @@ type EditarInventarioForm = {
   distribuidor: string;
   estadoFinanciero: string;
   deboA: string;
+};
+
+type FacturaStandResultado = {
+  id: number;
+  estado: string;
+  nombre: string;
+  url: string | null;
+  total: number;
+  cantidad: number;
+  sedeNombre: string;
 };
 
 function formatoPesos(valor: number) {
@@ -300,6 +318,9 @@ export default function InventarioPage() {
   const [mostrarModalPagoMasivo, setMostrarModalPagoMasivo] = useState(false);
   const [itemPago, setItemPago] = useState<InventarioItem | null>(null);
   const [idsSeleccionados, setIdsSeleccionados] = useState<number[]>([]);
+  const [mostrarModalFacturaStand, setMostrarModalFacturaStand] = useState(false);
+  const [facturaStandResultado, setFacturaStandResultado] =
+    useState<FacturaStandResultado | null>(null);
 
   const [modalEliminar, setModalEliminar] = useState(false);
   const [idsEliminar, setIdsEliminar] = useState<number[]>([]);
@@ -1112,6 +1133,59 @@ export default function InventarioPage() {
     [itemsSeleccionados]
   );
 
+  const sedeStandFactura = itemsSeleccionados[0]?.sede || null;
+  const seleccionIncluyeStand = itemsSeleccionados.some(
+    (item) => item.sede?.soloInventarioPorCobrar
+  );
+  const seleccionFacturaStandValida = useMemo(() => {
+    if (!esAdmin || itemsSeleccionados.length === 0) return false;
+
+    const primeraSedeId = itemsSeleccionados[0].sedeId;
+    return itemsSeleccionados.every((item) => {
+      const estadoFactura = String(item.facturaStand?.estado || "").toUpperCase();
+      return (
+        item.sedeId === primeraSedeId &&
+        item.sede?.soloInventarioPorCobrar === true &&
+        Number(item.costo || 0) > 0 &&
+        !["EMITIDA", "PROCESANDO"].includes(estadoFactura)
+      );
+    });
+  }, [esAdmin, itemsSeleccionados]);
+
+  const totalFacturaStand = useMemo(
+    () =>
+      itemsSeleccionados.reduce(
+        (acumulado, item) => acumulado + Number(item.costo || 0),
+        0
+      ),
+    [itemsSeleccionados]
+  );
+
+  const motivoFacturaStandInvalida = useMemo(() => {
+    if (itemsSeleccionados.length === 0) return "Selecciona al menos un equipo.";
+    if (!itemsSeleccionados.every((item) => item.sede?.soloInventarioPorCobrar)) {
+      return "Selecciona unicamente equipos de un stand marcado como solo inventario.";
+    }
+    if (
+      new Set(itemsSeleccionados.map((item) => item.sedeId)).size !== 1
+    ) {
+      return "Todos los equipos de la factura deben pertenecer al mismo stand.";
+    }
+    if (itemsSeleccionados.some((item) => Number(item.costo || 0) <= 0)) {
+      return "Todos los equipos deben tener un costo mayor a cero.";
+    }
+    if (
+      itemsSeleccionados.some((item) =>
+        ["EMITIDA", "PROCESANDO"].includes(
+          String(item.facturaStand?.estado || "").toUpperCase()
+        )
+      )
+    ) {
+      return "La seleccion contiene equipos facturados o en proceso de facturacion.";
+    }
+    return "";
+  }, [itemsSeleccionados]);
+
   const totalPagoMasivo = useMemo(
     () =>
       itemsSeleccionadosParaPago.reduce(
@@ -1152,6 +1226,7 @@ export default function InventarioPage() {
     setSedeDestinoId("");
     setMostrarModalPrestamoMasivo(false);
     setMostrarModalPagoMasivo(false);
+    setMostrarModalFacturaStand(false);
   };
 
   const abrirEliminacion = (ids: number[]) => {
@@ -1280,6 +1355,51 @@ export default function InventarioPage() {
       await cargarInventario();
     } catch {
       setMensaje("Error ejecutando pago masivo");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const emitirFacturaStand = async () => {
+    if (!seleccionFacturaStandValida) {
+      setMensaje(
+        motivoFacturaStandInvalida ||
+          "La seleccion actual no se puede facturar."
+      );
+      return;
+    }
+
+    try {
+      setCargando(true);
+      setMensaje("");
+
+      const res = await fetch("/api/inventario/factura-stand", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          inventarioIds: itemsSeleccionados.map((item) => item.id),
+        }),
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        mensaje?: string;
+        factura?: FacturaStandResultado;
+      };
+
+      if (!res.ok || !data.factura) {
+        setMensaje(data.error || "No fue posible emitir la factura");
+        return;
+      }
+
+      setFacturaStandResultado(data.factura);
+      setMostrarModalFacturaStand(false);
+      setIdsSeleccionados([]);
+      setMensaje(data.mensaje || "Factura emitida correctamente");
+      await cargarInventario();
+    } catch {
+      setMensaje("Error comunicando la factura con Siigo");
     } finally {
       setCargando(false);
     }
@@ -1883,6 +2003,31 @@ export default function InventarioPage() {
                       : ""}
                   </button>
 
+                  {esAdmin &&
+                    idsSeleccionados.length > 0 &&
+                    seleccionIncluyeStand && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!seleccionFacturaStandValida) {
+                            setMensaje(motivoFacturaStandInvalida);
+                            return;
+                          }
+
+                          setFacturaStandResultado(null);
+                          setMostrarModalFacturaStand(true);
+                        }}
+                        disabled={cargando || !seleccionFacturaStandValida}
+                        title={motivoFacturaStandInvalida || "Emitir factura electronica"}
+                        className="rounded-2xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Factura electronica
+                        {seleccionFacturaStandValida
+                          ? " (" + itemsSeleccionados.length + ")"
+                          : ""}
+                      </button>
+                    )}
+
                   {esAdmin && idsSeleccionados.length > 0 && (
                     <button
                       type="button"
@@ -2040,6 +2185,24 @@ export default function InventarioPage() {
                         <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
                           {item.tipoProducto || "TELEFONIA"}
                         </span>
+                        {item.facturaStand &&
+                          (item.facturaStand.url ? (
+                            <a
+                              href={item.facturaStand.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-1 block text-[11px] font-bold text-blue-700 underline decoration-blue-300 underline-offset-2"
+                            >
+                              {item.facturaStand.nombre || "Ver factura"}
+                            </a>
+                          ) : (
+                            <span
+                              className="mt-1 block text-[11px] font-bold uppercase text-blue-700"
+                              title={item.facturaStand.error || undefined}
+                            >
+                              Factura: {item.facturaStand.estado}
+                            </span>
+                          ))}
                       </td>
                       <td className="break-words px-2 py-4">{item.color ?? "-"}</td>
                       <td className="break-words px-2 py-4 font-semibold text-slate-950">
@@ -2280,6 +2443,147 @@ export default function InventarioPage() {
         </section>
         </main>
       </div>
+
+      {mostrarModalFacturaStand && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-blue-200 bg-white shadow-2xl">
+            <div className="bg-slate-950 px-6 py-5 text-white">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-300">
+                Factura electronica
+              </p>
+              <h3 className="mt-2 text-2xl font-black">
+                Confirmar lote del stand
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                Revisa el destinatario, los IMEI y el valor antes de enviar la
+                factura a Siigo.
+              </p>
+            </div>
+
+            <div className="p-6">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                    Stand
+                  </p>
+                  <p className="mt-2 font-black text-slate-950">
+                    {sedeStandFactura?.nombre || "Sin sede"}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                    Equipos
+                  </p>
+                  <p className="mt-2 text-xl font-black text-slate-950">
+                    {itemsSeleccionados.length}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-blue-700">
+                    Total factura
+                  </p>
+                  <p className="mt-2 text-xl font-black text-blue-950">
+                    {formatoPesos(totalFacturaStand)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-black text-slate-950">
+                    IMEI incluidos
+                  </p>
+                  <span className="text-xs font-semibold text-slate-500">
+                    Una linea por equipo
+                  </span>
+                </div>
+                <div className="mt-3 flex max-h-32 flex-wrap gap-2 overflow-y-auto">
+                  {itemsSeleccionados.slice(0, 30).map((item) => (
+                    <span
+                      key={item.id}
+                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700"
+                    >
+                      {item.imei}
+                    </span>
+                  ))}
+                  {itemsSeleccionados.length > 30 && (
+                    <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">
+                      +{itemsSeleccionados.length - 30} mas
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                Esta accion genera una factura electronica real. No marca los
+                equipos como pagados, no los elimina y no modifica caja,
+                prestamos ni ventas.
+              </div>
+
+              <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setMostrarModalFacturaStand(false)}
+                  disabled={cargando}
+                  className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void emitirFacturaStand()}
+                  disabled={cargando || !seleccionFacturaStandValida}
+                  className="rounded-2xl bg-blue-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {cargando ? "Enviando a Siigo..." : "Emitir factura"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {facturaStandResultado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-emerald-200 bg-white p-6 text-center shadow-2xl">
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl font-black text-emerald-700">
+              V
+            </span>
+            <p className="mt-5 text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
+              Factura emitida
+            </p>
+            <h3 className="mt-2 text-2xl font-black text-slate-950">
+              {facturaStandResultado.nombre}
+            </h3>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              {facturaStandResultado.cantidad} equipos de{" "}
+              {facturaStandResultado.sedeNombre} por{" "}
+              <span className="font-black text-slate-950">
+                {formatoPesos(facturaStandResultado.total)}
+              </span>
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              {facturaStandResultado.url && (
+                <a
+                  href={facturaStandResultado.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-2xl bg-blue-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-800"
+                >
+                  Abrir factura
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setFacturaStandResultado(null)}
+                className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {mostrarModalPrestamoMasivo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

@@ -41,6 +41,25 @@ function normalizarEnteroNoNegativo(valor: unknown) {
   return Number.isInteger(numero) && numero >= 0 ? numero : 0;
 }
 
+function normalizarTipoDocumentoFacturacion(valor: unknown) {
+  const tipo = String(valor || "").trim().toUpperCase();
+  return ["NIT", "CC", "CE", "PPT"].includes(tipo) ? tipo : null;
+}
+
+function normalizarDatosFacturacion(body: Record<string, unknown>) {
+  return {
+    facturacionNombre: normalizarTextoNullable(body.facturacionNombre),
+    facturacionTipoDocumento: normalizarTipoDocumentoFacturacion(
+      body.facturacionTipoDocumento
+    ),
+    facturacionDocumento: normalizarTextoNullable(body.facturacionDocumento),
+    facturacionCorreo:
+      normalizarTextoNullable(body.facturacionCorreo)?.toLowerCase() || null,
+    facturacionTelefono: normalizarTextoNullable(body.facturacionTelefono),
+    facturacionDireccion: normalizarTextoNullable(body.facturacionDireccion),
+  };
+}
+
 function normalizarConfiguracionSiigo(body: Record<string, unknown>) {
   return {
     siigoEnabled: Boolean(body.siigoEnabled),
@@ -117,6 +136,12 @@ async function obtenerSedesAdmin() {
       codigo: true,
       activa: true,
       soloInventarioPorCobrar: true,
+      facturacionNombre: true,
+      facturacionTipoDocumento: true,
+      facturacionDocumento: true,
+      facturacionCorreo: true,
+      facturacionTelefono: true,
+      facturacionDireccion: true,
       siigoEnabled: true,
       siigoInvoiceDocumentId: true,
       siigoSellerId: true,
@@ -163,6 +188,12 @@ async function obtenerSedesAdmin() {
       codigo: sede.codigo,
       activa: sede.activa,
       soloInventarioPorCobrar: sede.soloInventarioPorCobrar,
+      facturacionNombre: sede.facturacionNombre,
+      facturacionTipoDocumento: sede.facturacionTipoDocumento,
+      facturacionDocumento: sede.facturacionDocumento,
+      facturacionCorreo: sede.facturacionCorreo,
+      facturacionTelefono: sede.facturacionTelefono,
+      facturacionDireccion: sede.facturacionDireccion,
       siigoEnabled: sede.siigoEnabled,
       siigoInvoiceDocumentId: sede.siigoInvoiceDocumentId,
       siigoSellerId: sede.siigoSellerId,
@@ -224,6 +255,7 @@ export async function POST(req: Request) {
     const usuarioAcceso = normalizarUsuarioAcceso(body.usuario);
     const clave = String(body.clave || "").trim();
     const soloInventarioPorCobrar = Boolean(body.soloInventarioPorCobrar);
+    const datosFacturacion = normalizarDatosFacturacion(body);
     const siigoConfig = normalizarConfiguracionSiigo(body);
 
     if (!nombre) {
@@ -302,6 +334,7 @@ export async function POST(req: Request) {
           codigo,
           activa: true,
           soloInventarioPorCobrar,
+          ...datosFacturacion,
           ...siigoConfig,
         },
         select: {
@@ -354,6 +387,7 @@ export async function PATCH(req: Request) {
     const usuarioAcceso = normalizarUsuarioAcceso(body.usuario);
     const clave = String(body.clave || "").trim();
     const soloInventarioPorCobrar = Boolean(body.soloInventarioPorCobrar);
+    const datosFacturacion = normalizarDatosFacturacion(body);
     const siigoConfig = normalizarConfiguracionSiigo(body);
 
     if (!Number.isInteger(sedeId) || sedeId <= 0) {
@@ -480,6 +514,7 @@ export async function PATCH(req: Request) {
           nombre,
           codigo,
           soloInventarioPorCobrar,
+          ...datosFacturacion,
           ...siigoConfig,
         },
       });

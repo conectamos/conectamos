@@ -25,6 +25,12 @@ type SedeAdminItem = {
   codigo: string | null;
   activa: boolean;
   soloInventarioPorCobrar: boolean;
+  facturacionNombre: string | null;
+  facturacionTipoDocumento: string | null;
+  facturacionDocumento: string | null;
+  facturacionCorreo: string | null;
+  facturacionTelefono: string | null;
+  facturacionDireccion: string | null;
   siigoEnabled: boolean;
   siigoInvoiceDocumentId: number | null;
   siigoSellerId: number | null;
@@ -52,6 +58,12 @@ type SedeEdicion = {
   usuario: string;
   clave: string;
   soloInventarioPorCobrar: boolean;
+  facturacionNombre: string;
+  facturacionTipoDocumento: string;
+  facturacionDocumento: string;
+  facturacionCorreo: string;
+  facturacionTelefono: string;
+  facturacionDireccion: string;
   siigoEnabled: boolean;
   siigoInvoiceDocumentId: string;
   siigoSellerId: string;
@@ -92,6 +104,12 @@ function crearEdicionDesdeSede(sede: SedeAdminItem): SedeEdicion {
     usuario: sede.acceso?.usuario || "",
     clave: "",
     soloInventarioPorCobrar: Boolean(sede.soloInventarioPorCobrar),
+    facturacionNombre: sede.facturacionNombre || "",
+    facturacionTipoDocumento: sede.facturacionTipoDocumento || "NIT",
+    facturacionDocumento: sede.facturacionDocumento || "",
+    facturacionCorreo: sede.facturacionCorreo || "",
+    facturacionTelefono: sede.facturacionTelefono || "",
+    facturacionDireccion: sede.facturacionDireccion || "",
     siigoEnabled: Boolean(sede.siigoEnabled),
     siigoInvoiceDocumentId: sede.siigoInvoiceDocumentId
       ? String(sede.siigoInvoiceDocumentId)
@@ -372,6 +390,12 @@ function payloadSedePatch(sedeId: number, payload?: SedeEdicion) {
     usuario: payload?.usuario,
     clave: payload?.clave,
     soloInventarioPorCobrar: Boolean(payload?.soloInventarioPorCobrar),
+    facturacionNombre: payload?.facturacionNombre,
+    facturacionTipoDocumento: payload?.facturacionTipoDocumento,
+    facturacionDocumento: payload?.facturacionDocumento,
+    facturacionCorreo: payload?.facturacionCorreo,
+    facturacionTelefono: payload?.facturacionTelefono,
+    facturacionDireccion: payload?.facturacionDireccion,
     siigoEnabled: Boolean(payload?.siigoEnabled),
     siigoInvoiceDocumentId: payload?.siigoInvoiceDocumentId,
     siigoSellerId: payload?.siigoSellerId,
@@ -1290,6 +1314,129 @@ export default function GestionSedesPage() {
                         </span>
                       </span>
                     </label>
+
+                    {edicion.soloInventarioPorCobrar && (
+                      <section className="mt-5 border-t border-slate-200 pt-5">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                          <div>
+                            <p className="text-sm font-black uppercase tracking-[0.16em] text-slate-800">
+                              Datos fiscales del stand
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">
+                              Se usan como cliente de la factura electronica de los equipos seleccionados.
+                            </p>
+                          </div>
+                          <span className="text-xs font-semibold text-amber-700">
+                            Obligatorios al momento de facturar
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Nombre o razon social
+                            <input
+                              value={edicion.facturacionNombre}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "facturacionNombre",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Nombre fiscal del stand"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+
+                          <div className="grid gap-4 sm:grid-cols-[150px_1fr]">
+                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                              Documento
+                              <select
+                                value={edicion.facturacionTipoDocumento}
+                                onChange={(event) =>
+                                  actualizarEdicion(
+                                    sede.id,
+                                    "facturacionTipoDocumento",
+                                    event.target.value,
+                                  )
+                                }
+                                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                              >
+                                <option value="NIT">NIT</option>
+                                <option value="CC">CC</option>
+                                <option value="CE">CE</option>
+                                <option value="PPT">PPT</option>
+                              </select>
+                            </label>
+
+                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                              Numero
+                              <input
+                                value={edicion.facturacionDocumento}
+                                onChange={(event) =>
+                                  actualizarEdicion(
+                                    sede.id,
+                                    "facturacionDocumento",
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder="NIT con DV: 900123456-7"
+                                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                              />
+                            </label>
+                          </div>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Correo de facturacion
+                            <input
+                              type="email"
+                              value={edicion.facturacionCorreo}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "facturacionCorreo",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="facturacion@stand.com"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
+                            Telefono
+                            <input
+                              value={edicion.facturacionTelefono}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "facturacionTelefono",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Numero de contacto"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+
+                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700 md:col-span-2">
+                            Direccion fiscal
+                            <input
+                              value={edicion.facturacionDireccion}
+                              onChange={(event) =>
+                                actualizarEdicion(
+                                  sede.id,
+                                  "facturacionDireccion",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="Direccion registrada para facturacion"
+                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                            />
+                          </label>
+                        </div>
+                      </section>
+                    )}
 
                     <details className="group mt-5 border-t border-slate-200 pt-4">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-xl px-1 py-2 text-sm font-bold text-slate-800 marker:content-none">

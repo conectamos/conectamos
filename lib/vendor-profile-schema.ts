@@ -234,6 +234,12 @@ async function runEnsureVendorProfilesSchema() {
 
   await prisma.$executeRawUnsafe(`
     ALTER TABLE "Sede"
+      ADD COLUMN IF NOT EXISTS "facturacionNombre" TEXT,
+      ADD COLUMN IF NOT EXISTS "facturacionTipoDocumento" TEXT,
+      ADD COLUMN IF NOT EXISTS "facturacionDocumento" TEXT,
+      ADD COLUMN IF NOT EXISTS "facturacionCorreo" TEXT,
+      ADD COLUMN IF NOT EXISTS "facturacionTelefono" TEXT,
+      ADD COLUMN IF NOT EXISTS "facturacionDireccion" TEXT,
       ADD COLUMN IF NOT EXISTS "siigoEnabled" BOOLEAN NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS "siigoInvoiceDocumentId" INTEGER,
       ADD COLUMN IF NOT EXISTS "siigoSellerId" INTEGER,
@@ -247,6 +253,72 @@ async function runEnsureVendorProfilesSchema() {
       ADD COLUMN IF NOT EXISTS "siigoStampSend" BOOLEAN NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS "siigoMailSend" BOOLEAN NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS "siigoPaymentDueDays" INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "FacturaInventarioStand" (
+      "id" SERIAL NOT NULL,
+      "sedeId" INTEGER NOT NULL,
+      "estado" TEXT NOT NULL DEFAULT 'PROCESANDO',
+      "total" DECIMAL(14,2) NOT NULL,
+      "cantidad" INTEGER NOT NULL,
+      "creadoPor" TEXT NOT NULL,
+      "siigoInvoiceId" TEXT,
+      "siigoInvoiceName" TEXT,
+      "siigoInvoiceStatus" TEXT,
+      "siigoInvoiceUrl" TEXT,
+      "siigoInvoiceError" TEXT,
+      "siigoInvoiceCreatedAt" TIMESTAMP(3),
+      "siigoInvoiceAttempt" INTEGER NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "FacturaInventarioStand_pkey" PRIMARY KEY ("id")
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "FacturaInventarioStandItem" (
+      "id" SERIAL NOT NULL,
+      "facturaId" INTEGER NOT NULL,
+      "inventarioSedeId" INTEGER,
+      "imei" TEXT NOT NULL,
+      "referencia" TEXT NOT NULL,
+      "tipoProducto" TEXT NOT NULL DEFAULT 'TELEFONIA',
+      "color" TEXT,
+      "costo" DECIMAL(12,2) NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "FacturaInventarioStandItem_pkey" PRIMARY KEY ("id")
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "FacturaInventarioStand_sedeId_createdAt_idx"
+    ON "FacturaInventarioStand"("sedeId", "createdAt");
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "FacturaInventarioStand_estado_idx"
+    ON "FacturaInventarioStand"("estado");
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "FacturaInventarioStand_siigoInvoiceId_idx"
+    ON "FacturaInventarioStand"("siigoInvoiceId");
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "FacturaInventarioStandItem_inventarioSedeId_key"
+    ON "FacturaInventarioStandItem"("inventarioSedeId");
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "FacturaInventarioStandItem_imei_key"
+    ON "FacturaInventarioStandItem"("imei");
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "FacturaInventarioStandItem_facturaId_idx"
+    ON "FacturaInventarioStandItem"("facturaId");
   `);
 
   await prisma.$executeRawUnsafe(`
@@ -449,6 +521,51 @@ async function runEnsureVendorProfilesSchema() {
         FOREIGN KEY ("registroId")
         REFERENCES "RegistroVendedorVenta"("id")
         ON DELETE CASCADE
+        ON UPDATE CASCADE;
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      ALTER TABLE "FacturaInventarioStand"
+        ADD CONSTRAINT "FacturaInventarioStand_sedeId_fkey"
+        FOREIGN KEY ("sedeId")
+        REFERENCES "Sede"("id")
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE;
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      ALTER TABLE "FacturaInventarioStandItem"
+        ADD CONSTRAINT "FacturaInventarioStandItem_facturaId_fkey"
+        FOREIGN KEY ("facturaId")
+        REFERENCES "FacturaInventarioStand"("id")
+        ON DELETE CASCADE
+        ON UPDATE CASCADE;
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      ALTER TABLE "FacturaInventarioStandItem"
+        ADD CONSTRAINT "FacturaInventarioStandItem_inventarioSedeId_fkey"
+        FOREIGN KEY ("inventarioSedeId")
+        REFERENCES "InventarioSede"("id")
+        ON DELETE SET NULL
         ON UPDATE CASCADE;
     EXCEPTION
       WHEN duplicate_object THEN NULL;
