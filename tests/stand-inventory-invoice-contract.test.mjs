@@ -29,7 +29,7 @@ test("cada IMEI queda trazable e idempotente en una sola factura", () => {
   assert.match(schema, /imei\s+String\s+@unique/);
   assert.match(schema, /onDelete: SetNull/);
   assert.match(route, /siigoIdempotencyKey: `CSTAND\$\{lote\.id\}N1`/);
-  assert.match(route, /Este lote ya fue facturado/);
+  assert.match(route, /findSiigoCreditNoteForInvoice/);
 });
 
 test("Siigo recibe una linea identificable por cada equipo seleccionado", () => {
@@ -64,7 +64,57 @@ test("inventario confirma el lote y muestra la factura emitida", () => {
   assert.match(page, /Confirmar lote del stand/);
   assert.match(page, /No marca los\s+equipos como pagados/);
   assert.match(page, /\/api\/inventario\/factura-stand/);
-  assert.match(page, /Factura emitida/);
   assert.match(inventoryRoute, /facturaStandItem/);
   assert.match(inventoryRoute, /facturaStand:/);
+});
+
+test("una nota credito valida libera solo el bloqueo de facturacion anterior", () => {
+  const schema = source("prisma/schema.prisma");
+  const route = source("app/api/inventario/factura-stand/route.ts");
+
+  assert.match(schema, /siigoCreditNoteId\s+String\?/);
+  assert.match(schema, /itemsAnulados\s+Json\?/);
+  assert.match(route, /estado: "ANULADA"/);
+  assert.match(route, /prisma\.facturaInventarioStandItem\.deleteMany/);
+  assert.equal(route.includes("prisma.inventarioSede.update"), false);
+  assert.equal(route.includes("prisma.inventarioSede.delete"), false);
+});
+
+test("la factura toma forma de pago y plazo desde la configuracion del stand", () => {
+  const page = source("app/inventario/page.tsx");
+  const route = source("app/api/inventario/factura-stand/route.ts");
+
+  assert.match(route, /where: \{ id: sede\.id \}/);
+  assert.match(route, /select: SIIGO_SEDE_SELECT/);
+  assert.match(route, /sede: sedeSiigo/);
+  assert.match(route, /siigoPaymentDueDays: lote\.diasVencimiento/);
+  assert.equal(route.includes("sedeOnline"), false);
+  assert.equal(route.includes("body.diasVencimiento"), false);
+  assert.match(page, /Configuracion Siigo del stand/);
+  assert.equal(page.includes("diasVencimientoFacturaStand"), false);
+  assert.match(page, /Factura emitida/);
+});
+
+test("la NC del lote es idempotente y solo libera vinculos de facturacion", () => {
+  const route = source(
+    "app/api/inventario/factura-stand/nota-credito/route.ts"
+  );
+  const siigo = source("lib/siigo.ts");
+
+  assert.match(route, /siigoInvoiceIdEsperado/);
+  assert.match(route, /cantidadEsperada/);
+  assert.match(route, /buscarNotaCreditoVerificada/);
+  assert.match(route, /createSiigoCreditNoteForRegistro/);
+  assert.match(route, /siigoIdempotencyKey: `CSTANDNC\$\{lote\.id\}N1`/);
+  assert.match(route, /where: \{ id: lote\.id, estado: "EMITIDA" \}/);
+  assert.match(route, /prisma\.\$transaction/);
+  assert.match(route, /tx\.facturaInventarioStandItem\.deleteMany/);
+  assert.equal(route.includes("prisma.inventarioSede.update"), false);
+  assert.equal(route.includes("prisma.inventarioSede.delete"), false);
+  assert.equal(route.includes("prisma.venta.update"), false);
+  assert.equal(route.includes("prisma.cajaMovimiento.create"), false);
+  assert.match(
+    siigo,
+    /customIdempotencyKey \|\| `CONECTAMOSNC\$\{registro\.id\}N1`/
+  );
 });

@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
   createSiigoInvoiceForRegistro,
+  findSiigoCreditNoteForInvoice,
   getSiigoErrorMessage,
   getSiigoErrorStatus,
   getSiigoInvoiceLabel,
@@ -65,6 +66,10 @@ function errorDuplicado(error: unknown) {
 
 export async function POST(req: Request) {
   let loteId: number | null = null;
+  let facturaAnteriorAnulada: {
+    factura: string;
+    notaCredito: string | null;
+  } | null = null;
 
   try {
     const user = await getSessionUser();
@@ -85,7 +90,6 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const inventarioIds = idsPositivosUnicos(body.inventarioIds);
-
     if (inventarioIds.length === 0) {
       return NextResponse.json(
         { error: "Selecciona al menos un equipo para facturar" },
@@ -155,6 +159,26 @@ export async function POST(req: Request) {
       );
     }
 
+    const sedeSiigo = await prisma.sede.findUnique({
+      where: { id: sede.id },
+      select: SIIGO_SEDE_SELECT,
+    });
+
+    if (!sedeSiigo) {
+      return NextResponse.json(
+        { error: "No fue posible cargar la configuracion Siigo del stand" },
+        { status: 409 }
+      );
+    }
+
+    const diasVencimiento = Number(sedeSiigo.siigoPaymentDueDays ?? 0);
+    if (!Number.isInteger(diasVencimiento) || diasVencimiento < 0) {
+      return NextResponse.json(
+        { error: `El plazo Siigo configurado para ${sede.nombre} no es valido` },
+        { status: 400 }
+      );
+    }
+
     const fiscal = {
       nombre: texto(sede.facturacionNombre),
       tipoDocumento: texto(sede.facturacionTipoDocumento).toUpperCase(),
@@ -204,10 +228,24 @@ export async function POST(req: Request) {
           select: {
             id: true,
             estado: true,
+            siigoInvoiceId: true,
             siigoInvoiceName: true,
             siigoInvoiceUrl: true,
+            siigoInvoiceCreatedAt: true,
+            diasVencimiento: true,
+            createdAt: true,
             updatedAt: true,
-            items: { select: { imei: true } },
+            items: {
+              select: {
+                inventarioSedeId: true,
+                imei: true,
+                referencia: true,
+                tipoProducto: true,
+                color: true,
+                costo: true,
+                createdAt: true,
+              },
+            },
           },
         },
       },
@@ -238,39 +276,103 @@ export async function POST(req: Request) {
 
       const factura = facturas[0];
       if (factura.estado === "EMITIDA") {
-        return NextResponse.json(
-          {
-            error: `Este lote ya fue facturado como ${factura.siigoInvoiceName || `lote #${factura.id}`}`,
-            facturaUrl: factura.siigoInvoiceUrl,
-          },
-          { status: 409 }
-        );
+        const notaCredito = await findSiigoCreditNoteForInvoice({
+          invoiceId: factura.siigoInvoiceId,
+          invoiceName: factura.siigoInvoiceName,
+          invoiceCreatedAt:
+            factura.siigoInvoiceCreatedAt || factura.createdAt,
+        });
+
+        if (!notaCredito) {
+          return NextResponse.json(
+            {
+              error: `La factura ${factura.siigoInvoiceName || `lote #${factura.id}`} sigue bloqueada porque Siigo no devolvio una nota credito valida que la relacione. Verifica que la NC este emitida y vuelve a intentar.`,
+              facturaUrl: factura.siigoInvoiceUrl,
+            },
+            { status: 409 }
+          );
+        }
+
+        const liberadoPor = `${user.nombre} (${rol})`;
+        const itemsAnulados = factura.items.map((item) => ({
+          inventarioSedeId: item.inventarioSedeId,
+          imei: item.imei,
+          referencia: item.referencia,
+          tipoProducto: item.tipoProducto,
+          color: item.color,
+          costo: Number(item.costo),
+          createdAt: item.createdAt.toISOString(),
+        }));
+
+        await prisma.$transaction([
+          prisma.facturaInventarioStand.update({
+            where: { id: factura.id },
+            data: {
+              estado: "ANULADA",
+              siigoCreditNoteId: notaCredito.id,
+              siigoCreditNoteName: notaCredito.name,
+              siigoCreditNoteStatus: notaCredito.status,
+              siigoCreditNoteUrl: notaCredito.url,
+              siigoCreditNoteCreatedAt:
+                notaCredito.createdAt || new Date(),
+              itemsAnulados,
+              itemsLiberadosAt: new Date(),
+              itemsLiberadosPor: liberadoPor,
+            },
+          }),
+          prisma.facturaInventarioStandItem.deleteMany({
+            where: { facturaId: factura.id },
+          }),
+        ]);
+
+        facturaAnteriorAnulada = {
+          factura:
+            factura.siigoInvoiceName || `lote #${factura.id}`,
+          notaCredito: notaCredito.name,
+        };
       }
 
-      const procesandoReciente =
-        factura.estado === "PROCESANDO" &&
-        Date.now() - factura.updatedAt.getTime() <
-          MINUTOS_PROCESANDO * 60_000;
-      if (procesandoReciente) {
-        return NextResponse.json(
-          {
-            error:
-              "Este lote ya se esta enviando a Siigo. Espera unos minutos.",
-          },
-          { status: 409 }
-        );
-      }
+      if (factura.estado !== "EMITIDA") {
+        if (factura.diasVencimiento !== diasVencimiento) {
+          const condicionOriginal =
+            factura.diasVencimiento === 30
+              ? "credito a 30 dias"
+              : "pago inmediato";
+          return NextResponse.json(
+            {
+              error: `Este lote ya fue creado con ${condicionOriginal}. La configuracion actual del stand es diferente.`,
+            },
+            { status: 409 }
+          );
+        }
 
-      loteId = factura.id;
-      await prisma.facturaInventarioStand.update({
-        where: { id: loteId },
-        data: {
-          estado: "PROCESANDO",
-          siigoInvoiceError: null,
-          siigoInvoiceAttempt: { increment: 1 },
-        },
-      });
-    } else {
+        const procesandoReciente =
+          factura.estado === "PROCESANDO" &&
+          Date.now() - factura.updatedAt.getTime() <
+            MINUTOS_PROCESANDO * 60_000;
+        if (procesandoReciente) {
+          return NextResponse.json(
+            {
+              error:
+                "Este lote ya se esta enviando a Siigo. Espera unos minutos.",
+            },
+            { status: 409 }
+          );
+        }
+
+        loteId = factura.id;
+        await prisma.facturaInventarioStand.update({
+          where: { id: loteId },
+          data: {
+            estado: "PROCESANDO",
+            siigoInvoiceError: null,
+            siigoInvoiceAttempt: { increment: 1 },
+          },
+        });
+      }
+    }
+
+    if (!loteId) {
       const total = equipos.reduce(
         (acumulado, item) => acumulado + Number(item.costo || 0),
         0
@@ -281,6 +383,7 @@ export async function POST(req: Request) {
           estado: "PROCESANDO",
           total,
           cantidad: equipos.length,
+          diasVencimiento,
           creadoPor: `${user.nombre} (${rol})`,
           siigoInvoiceAttempt: 1,
           items: {
@@ -305,22 +408,6 @@ export async function POST(req: Request) {
         items: { orderBy: { id: "asc" } },
       },
     });
-
-    const sedeOnline = await prisma.sede.findFirst({
-      where: {
-        OR: [
-          { nombre: { equals: "ONLINE", mode: "insensitive" } },
-          { codigo: { equals: "ONLINE", mode: "insensitive" } },
-        ],
-      },
-      select: SIIGO_SEDE_SELECT,
-    });
-
-    if (!sedeOnline) {
-      throw new Error(
-        "No existe la sede ONLINE configurada para facturar stands"
-      );
-    }
 
     const invoice = await createSiigoInvoiceForRegistro({
       id: lote.id,
@@ -347,13 +434,17 @@ export async function POST(req: Request) {
         tipoProducto: item.tipoProducto,
       })),
       siigoIdempotencyKey: `CSTAND${lote.id}N1`,
+      siigoPaymentDueDays: lote.diasVencimiento,
       siigoObservaciones: [
         `Factura de inventario para ${sede.nombre}`,
         `Lote CONECTAMOS #${lote.id}`,
         `${lote.cantidad} equipos seleccionados`,
+        lote.diasVencimiento === 30
+          ? "Condicion de pago: credito a 30 dias"
+          : "Condicion de pago: inmediato",
         `IMEI: ${lote.items.map((item) => item.imei).join(", ")}`,
       ].join(" | "),
-      sede: sedeOnline,
+      sede: sedeSiigo,
     });
     const invoiceLabel = getSiigoInvoiceLabel(invoice);
 
@@ -387,7 +478,9 @@ export async function POST(req: Request) {
         total: Number(lote.total),
         cantidad: lote.cantidad,
         sedeNombre: sede.nombre,
+        diasVencimiento: lote.diasVencimiento,
       },
+      facturaAnteriorAnulada,
     });
   } catch (error) {
     console.error("ERROR FACTURA INVENTARIO STAND:", error);

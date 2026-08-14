@@ -262,6 +262,7 @@ async function runEnsureVendorProfilesSchema() {
       "estado" TEXT NOT NULL DEFAULT 'PROCESANDO',
       "total" DECIMAL(14,2) NOT NULL,
       "cantidad" INTEGER NOT NULL,
+      "diasVencimiento" INTEGER NOT NULL DEFAULT 0,
       "creadoPor" TEXT NOT NULL,
       "siigoInvoiceId" TEXT,
       "siigoInvoiceName" TEXT,
@@ -270,10 +271,31 @@ async function runEnsureVendorProfilesSchema() {
       "siigoInvoiceError" TEXT,
       "siigoInvoiceCreatedAt" TIMESTAMP(3),
       "siigoInvoiceAttempt" INTEGER NOT NULL DEFAULT 0,
+      "siigoCreditNoteId" TEXT,
+      "siigoCreditNoteName" TEXT,
+      "siigoCreditNoteStatus" TEXT,
+      "siigoCreditNoteUrl" TEXT,
+      "siigoCreditNoteCreatedAt" TIMESTAMP(3),
+      "itemsAnulados" JSONB,
+      "itemsLiberadosAt" TIMESTAMP(3),
+      "itemsLiberadosPor" TEXT,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "FacturaInventarioStand_pkey" PRIMARY KEY ("id")
     );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "FacturaInventarioStand"
+      ADD COLUMN IF NOT EXISTS "diasVencimiento" INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteId" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteName" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteStatus" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteUrl" TEXT,
+      ADD COLUMN IF NOT EXISTS "siigoCreditNoteCreatedAt" TIMESTAMP(3),
+      ADD COLUMN IF NOT EXISTS "itemsAnulados" JSONB,
+      ADD COLUMN IF NOT EXISTS "itemsLiberadosAt" TIMESTAMP(3),
+      ADD COLUMN IF NOT EXISTS "itemsLiberadosPor" TEXT;
   `);
 
   await prisma.$executeRawUnsafe(`

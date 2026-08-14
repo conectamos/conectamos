@@ -165,6 +165,7 @@ export type RegistroSiigoInput = {
   }>;
   siigoIdempotencyKey?: string;
   siigoObservaciones?: string;
+  siigoPaymentDueDays?: unknown;
   sede?: {
     id: number;
     nombre: string;
@@ -471,7 +472,10 @@ function getSiigoConfig(registro: RegistroSiigoInput): SiigoConfig {
       null,
     stampSend: Boolean(sede?.siigoStampSend),
     mailSend: Boolean(sede?.siigoMailSend),
-    paymentDueDays: toNonNegativeInt(sede?.siigoPaymentDueDays) ?? 0,
+    paymentDueDays:
+      toNonNegativeInt(registro.siigoPaymentDueDays) ??
+      toNonNegativeInt(sede?.siigoPaymentDueDays) ??
+      0,
     exemptItemLimit: readMoney("SIIGO_EXEMPT_ITEM_LIMIT", 1150000),
     maxInvoiceTotal: readMoney("SIIGO_MAX_INVOICE_TOTAL", 2300000),
     applianceItemCode: process.env.SIIGO_APPLIANCE_ITEM_CODE?.trim() || "002",
@@ -1740,6 +1744,139 @@ async function fetchSiigoReportDocuments(
   return documents;
 }
 
+export type SiigoCreditNoteMatch = {
+  id: string;
+  name: string | null;
+  status: string | null;
+  url: string | null;
+  createdAt: Date | null;
+};
+
+function creditNoteCanReleaseInvoice(document: SiigoReportDocument) {
+  const statuses = [document.status, document.stamp?.status]
+    .map((item) => String(item || "").trim().toUpperCase())
+    .filter(Boolean);
+  const rejected = statuses.some((status) =>
+    [
+      "REJECT",
+      "RECHAZ",
+      "ERROR",
+      "VOID",
+      "CANCEL",
+      "ANUL",
+      "DRAFT",
+      "BORRADOR",
+      "PENDING",
+      "PENDIENTE",
+    ].some((marker) => status.includes(marker))
+  );
+
+  if (rejected) {
+    return false;
+  }
+
+  if (document.stamp?.cufe || document.stamp?.cude) {
+    return true;
+  }
+
+  if (statuses.length === 0) {
+    return true;
+  }
+
+  return statuses.some((status) =>
+    [
+      "APPROV",
+      "ACCEPT",
+      "APROB",
+      "ACEPT",
+      "CREATED",
+      "CREADA",
+      "SUCCESS",
+      "STAMP",
+    ].some((marker) => status.includes(marker))
+  );
+}
+
+function siigoCreditNoteLookupDate(value: Date | string | null | undefined) {
+  const parsed =
+    value instanceof Date ? new Date(value) : new Date(String(value || ""));
+
+  if (Number.isNaN(parsed.getTime())) {
+    parsed.setTime(Date.now() - 366 * 24 * 60 * 60 * 1000);
+  }
+
+  return parsed;
+}
+
+function siigoDateOnly(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function getSiigoDocumentCreatedAt(document: SiigoReportDocument) {
+  const metadata =
+    document.metadata && typeof document.metadata === "object"
+      ? document.metadata
+      : {};
+  const raw =
+    metadata.created || document.created_at || document.created || document.date;
+  const parsed = new Date(String(raw || ""));
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export async function findSiigoCreditNoteForInvoice(input: {
+  invoiceId?: string | null;
+  invoiceName?: string | null;
+  invoiceCreatedAt?: Date | string | null;
+}): Promise<SiigoCreditNoteMatch | null> {
+  const expectedId = String(input.invoiceId || "").trim();
+  const expectedName = normalizeDocumentName(input.invoiceName);
+
+  if (!expectedId && !expectedName) {
+    return null;
+  }
+
+  const start = siigoCreditNoteLookupDate(input.invoiceCreatedAt);
+  start.setUTCDate(start.getUTCDate() - 2);
+  const end = new Date();
+  end.setUTCDate(end.getUTCDate() + 2);
+  const creditNotes = await fetchSiigoReportDocuments(
+    getSiigoAuthConfig(),
+    "/credit-notes",
+    siigoDateOnly(start),
+    siigoDateOnly(end)
+  );
+  const matches = creditNotes
+    .filter(creditNoteCanReleaseInvoice)
+    .filter((creditNote) => {
+      const reference = getCreditNoteInvoiceReference(creditNote);
+
+      return (
+        (expectedId && reference.id === expectedId) ||
+        (expectedName && reference.name === expectedName)
+      );
+    })
+    .sort(
+      (a, b) =>
+        (getSiigoDocumentCreatedAt(b)?.getTime() || 0) -
+        (getSiigoDocumentCreatedAt(a)?.getTime() || 0)
+    );
+  const match = matches[0];
+  const id = String(match?.id || "").trim();
+
+  if (!match || !id) {
+    return null;
+  }
+
+  return {
+    id,
+    name: getReportDocumentLabel(match),
+    status: getReportDocumentStatusLabel(match) || null,
+    url: toNullableText(match.public_url),
+    createdAt: getSiigoDocumentCreatedAt(match),
+  };
+}
+
 export async function getSiigoMonthlyReport(
   dateStart: string,
   dateEnd: string
@@ -2689,7 +2826,12 @@ export async function createSiigoCreditNoteForRegistro(
     creditNoteDocumentId,
     config.stampSend || invoiceHasElectronicStamp(invoice)
   );
-  const idempotencyKey = `CONECTAMOSNC${registro.id}N1`.slice(0, 30);
+  const customIdempotencyKey = String(registro.siigoIdempotencyKey || "").trim();
+  const idempotencyKey = (
+    customIdempotencyKey || `CONECTAMOSNC${registro.id}N1`
+  )
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(0, 30);
 
   try {
     return await siigoFetch<SiigoCreditNoteResponse>(

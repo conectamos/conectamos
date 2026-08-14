@@ -113,6 +113,11 @@ type FacturaStandResultado = {
   total: number;
   cantidad: number;
   sedeNombre: string;
+  diasVencimiento: number;
+  facturaAnteriorAnulada?: {
+    factura: string;
+    notaCredito: string | null;
+  } | null;
 };
 
 function formatoPesos(valor: number) {
@@ -1147,7 +1152,7 @@ export default function InventarioPage() {
         item.sedeId === primeraSedeId &&
         item.sede?.soloInventarioPorCobrar === true &&
         Number(item.costo || 0) > 0 &&
-        !["EMITIDA", "PROCESANDO"].includes(estadoFactura)
+        estadoFactura !== "PROCESANDO"
       );
     });
   }, [esAdmin, itemsSeleccionados]);
@@ -1157,6 +1162,15 @@ export default function InventarioPage() {
       itemsSeleccionados.reduce(
         (acumulado, item) => acumulado + Number(item.costo || 0),
         0
+      ),
+    [itemsSeleccionados]
+  );
+
+  const seleccionRequiereConciliarNotaCredito = useMemo(
+    () =>
+      itemsSeleccionados.some(
+        (item) =>
+          String(item.facturaStand?.estado || "").toUpperCase() === "EMITIDA"
       ),
     [itemsSeleccionados]
   );
@@ -1176,12 +1190,10 @@ export default function InventarioPage() {
     }
     if (
       itemsSeleccionados.some((item) =>
-        ["EMITIDA", "PROCESANDO"].includes(
-          String(item.facturaStand?.estado || "").toUpperCase()
-        )
+        String(item.facturaStand?.estado || "").toUpperCase() === "PROCESANDO"
       )
     ) {
-      return "La seleccion contiene equipos facturados o en proceso de facturacion.";
+      return "La seleccion contiene equipos en proceso de facturacion.";
     }
     return "";
   }, [itemsSeleccionados]);
@@ -1386,6 +1398,10 @@ export default function InventarioPage() {
         error?: string;
         mensaje?: string;
         factura?: FacturaStandResultado;
+        facturaAnteriorAnulada?: {
+          factura: string;
+          notaCredito: string | null;
+        } | null;
       };
 
       if (!res.ok || !data.factura) {
@@ -1393,7 +1409,10 @@ export default function InventarioPage() {
         return;
       }
 
-      setFacturaStandResultado(data.factura);
+      setFacturaStandResultado({
+        ...data.factura,
+        facturaAnteriorAnulada: data.facturaAnteriorAnulada,
+      });
       setMostrarModalFacturaStand(false);
       setIdsSeleccionados([]);
       setMensaje(data.mensaje || "Factura emitida correctamente");
@@ -2488,6 +2507,15 @@ export default function InventarioPage() {
                 </div>
               </div>
 
+              <div className="mt-5 border border-blue-200 bg-blue-50 p-4 text-blue-950">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                  Configuracion Siigo del stand
+                </p>
+                <p className="mt-2 text-sm leading-6">
+                  La forma de pago y el plazo se aplicaran automaticamente desde la configuracion de {sedeStandFactura?.nombre || "este stand"}.
+                </p>
+              </div>
+
               <div className="mt-5 rounded-2xl border border-slate-200 p-4">
                 <div className="flex items-center justify-between gap-4">
                   <p className="text-sm font-black text-slate-950">
@@ -2514,6 +2542,13 @@ export default function InventarioPage() {
                 </div>
               </div>
 
+              {seleccionRequiereConciliarNotaCredito && (
+                <div className="mt-5 border border-blue-300 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-950">
+                  Este lote tiene una factura anterior. CONECTAMOS verificara en
+                  Siigo que exista una nota credito valida antes de emitir la nueva.
+                </div>
+              )}
+
               <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
                 Esta accion genera una factura electronica real. No marca los
                 equipos como pagados, no los elimina y no modifica caja,
@@ -2535,7 +2570,11 @@ export default function InventarioPage() {
                   disabled={cargando || !seleccionFacturaStandValida}
                   className="rounded-2xl bg-blue-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {cargando ? "Enviando a Siigo..." : "Emitir factura"}
+                  {cargando
+                    ? "Verificando y enviando..."
+                    : seleccionRequiereConciliarNotaCredito
+                      ? "Verificar NC y emitir"
+                      : "Emitir factura"}
                 </button>
               </div>
             </div>
@@ -2562,6 +2601,25 @@ export default function InventarioPage() {
                 {formatoPesos(facturaStandResultado.total)}
               </span>
             </p>
+            <p className="mt-2 text-sm font-bold text-slate-700">
+              {facturaStandResultado.diasVencimiento > 0
+                ? `Credito a ${facturaStandResultado.diasVencimiento} dias`
+                : "Pago inmediato"}
+            </p>
+            {facturaStandResultado.facturaAnteriorAnulada && (
+              <div className="mt-5 border border-emerald-300 bg-emerald-50 p-4 text-left text-sm text-emerald-950">
+                <p className="font-black">Nota credito verificada</p>
+                <p className="mt-1">
+                  Factura anterior:{" "}
+                  {facturaStandResultado.facturaAnteriorAnulada.factura}
+                </p>
+                <p>
+                  Nota credito:{" "}
+                  {facturaStandResultado.facturaAnteriorAnulada.notaCredito ||
+                    "Confirmada en Siigo"}
+                </p>
+              </div>
+            )}
             <div className="mt-6 flex flex-col gap-3">
               {facturaStandResultado.url && (
                 <a

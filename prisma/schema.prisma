@@ -378,6 +378,7 @@ model FacturaInventarioStand {
   estado                String                       @default("PROCESANDO")
   total                 Decimal                      @db.Decimal(14, 2)
   cantidad              Int
+  diasVencimiento       Int                          @default(0)
   creadoPor             String
   siigoInvoiceId        String?
   siigoInvoiceName      String?
@@ -386,6 +387,14 @@ model FacturaInventarioStand {
   siigoInvoiceError     String?
   siigoInvoiceCreatedAt DateTime?
   siigoInvoiceAttempt   Int                          @default(0)
+  siigoCreditNoteId     String?
+  siigoCreditNoteName   String?
+  siigoCreditNoteStatus String?
+  siigoCreditNoteUrl    String?
+  siigoCreditNoteCreatedAt DateTime?
+  itemsAnulados         Json?
+  itemsLiberadosAt      DateTime?
+  itemsLiberadosPor     String?
   items                 FacturaInventarioStandItem[]
   createdAt             DateTime                     @default(now())
   updatedAt             DateTime                     @updatedAt
