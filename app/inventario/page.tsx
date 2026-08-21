@@ -1138,65 +1138,64 @@ export default function InventarioPage() {
     [itemsSeleccionados]
   );
 
-  const sedeStandFactura = itemsSeleccionados[0]?.sede || null;
+  const itemsSeleccionadosParaFactura = useMemo(
+    () => itemsSeleccionados.filter((item) => !item.facturaStand),
+    [itemsSeleccionados]
+  );
+  const cantidadExcluidaFacturaStand =
+    itemsSeleccionados.length - itemsSeleccionadosParaFactura.length;
+  const sedeStandFactura = itemsSeleccionadosParaFactura[0]?.sede || null;
   const seleccionIncluyeStand = itemsSeleccionados.some(
     (item) => item.sede?.soloInventarioPorCobrar
   );
   const seleccionFacturaStandValida = useMemo(() => {
-    if (!esAdmin || itemsSeleccionados.length === 0) return false;
+    if (!esAdmin || itemsSeleccionadosParaFactura.length === 0) return false;
 
-    const primeraSedeId = itemsSeleccionados[0].sedeId;
-    return itemsSeleccionados.every((item) => {
-      const estadoFactura = String(item.facturaStand?.estado || "").toUpperCase();
+    const primeraSedeId = itemsSeleccionadosParaFactura[0].sedeId;
+    return itemsSeleccionadosParaFactura.every((item) => {
       return (
         item.sedeId === primeraSedeId &&
         item.sede?.soloInventarioPorCobrar === true &&
-        Number(item.costo || 0) > 0 &&
-        estadoFactura !== "PROCESANDO"
+        Number(item.costo || 0) > 0
       );
     });
-  }, [esAdmin, itemsSeleccionados]);
+  }, [esAdmin, itemsSeleccionadosParaFactura]);
 
   const totalFacturaStand = useMemo(
     () =>
-      itemsSeleccionados.reduce(
+      itemsSeleccionadosParaFactura.reduce(
         (acumulado, item) => acumulado + Number(item.costo || 0),
         0
       ),
-    [itemsSeleccionados]
-  );
-
-  const seleccionRequiereConciliarNotaCredito = useMemo(
-    () =>
-      itemsSeleccionados.some(
-        (item) =>
-          String(item.facturaStand?.estado || "").toUpperCase() === "EMITIDA"
-      ),
-    [itemsSeleccionados]
+    [itemsSeleccionadosParaFactura]
   );
 
   const motivoFacturaStandInvalida = useMemo(() => {
     if (itemsSeleccionados.length === 0) return "Selecciona al menos un equipo.";
-    if (!itemsSeleccionados.every((item) => item.sede?.soloInventarioPorCobrar)) {
+    if (itemsSeleccionadosParaFactura.length === 0) {
+      return "Todos los equipos seleccionados ya estan vinculados a una factura.";
+    }
+    if (
+      !itemsSeleccionadosParaFactura.every(
+        (item) => item.sede?.soloInventarioPorCobrar
+      )
+    ) {
       return "Selecciona unicamente equipos de un stand marcado como solo inventario.";
     }
     if (
-      new Set(itemsSeleccionados.map((item) => item.sedeId)).size !== 1
+      new Set(itemsSeleccionadosParaFactura.map((item) => item.sedeId)).size !== 1
     ) {
       return "Todos los equipos de la factura deben pertenecer al mismo stand.";
     }
-    if (itemsSeleccionados.some((item) => Number(item.costo || 0) <= 0)) {
-      return "Todos los equipos deben tener un costo mayor a cero.";
-    }
     if (
-      itemsSeleccionados.some((item) =>
-        String(item.facturaStand?.estado || "").toUpperCase() === "PROCESANDO"
+      itemsSeleccionadosParaFactura.some(
+        (item) => Number(item.costo || 0) <= 0
       )
     ) {
-      return "La seleccion contiene equipos en proceso de facturacion.";
+      return "Todos los equipos deben tener un costo mayor a cero.";
     }
     return "";
-  }, [itemsSeleccionados]);
+  }, [itemsSeleccionados, itemsSeleccionadosParaFactura]);
 
   const totalPagoMasivo = useMemo(
     () =>
@@ -1391,7 +1390,7 @@ export default function InventarioPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          inventarioIds: itemsSeleccionados.map((item) => item.id),
+          inventarioIds: itemsSeleccionadosParaFactura.map((item) => item.id),
         }),
       });
       const data = (await res.json()) as {
@@ -2042,9 +2041,17 @@ export default function InventarioPage() {
                       >
                         Factura electronica
                         {seleccionFacturaStandValida
-                          ? " (" + itemsSeleccionados.length + ")"
+                          ? " (" + itemsSeleccionadosParaFactura.length + ")"
                           : ""}
                       </button>
+                    )}
+
+                  {esAdmin &&
+                    seleccionIncluyeStand &&
+                    cantidadExcluidaFacturaStand > 0 && (
+                      <span className="self-center text-xs font-semibold text-blue-700">
+                        {cantidadExcluidaFacturaStand} con factura se excluyen
+                      </span>
                     )}
 
                   {esAdmin && idsSeleccionados.length > 0 && (
@@ -2494,7 +2501,7 @@ export default function InventarioPage() {
                     Equipos
                   </p>
                   <p className="mt-2 text-xl font-black text-slate-950">
-                    {itemsSeleccionados.length}
+                    {itemsSeleccionadosParaFactura.length}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
@@ -2526,7 +2533,7 @@ export default function InventarioPage() {
                   </span>
                 </div>
                 <div className="mt-3 flex max-h-32 flex-wrap gap-2 overflow-y-auto">
-                  {itemsSeleccionados.slice(0, 30).map((item) => (
+                  {itemsSeleccionadosParaFactura.slice(0, 30).map((item) => (
                     <span
                       key={item.id}
                       className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700"
@@ -2534,18 +2541,21 @@ export default function InventarioPage() {
                       {item.imei}
                     </span>
                   ))}
-                  {itemsSeleccionados.length > 30 && (
+                  {itemsSeleccionadosParaFactura.length > 30 && (
                     <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">
-                      +{itemsSeleccionados.length - 30} mas
+                      +{itemsSeleccionadosParaFactura.length - 30} mas
                     </span>
                   )}
                 </div>
               </div>
 
-              {seleccionRequiereConciliarNotaCredito && (
+              {cantidadExcluidaFacturaStand > 0 && (
                 <div className="mt-5 border border-blue-300 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-950">
-                  Este lote tiene una factura anterior. CONECTAMOS verificara en
-                  Siigo que exista una nota credito valida antes de emitir la nueva.
+                  {cantidadExcluidaFacturaStand} equipo
+                  {cantidadExcluidaFacturaStand === 1 ? "" : "s"} ya tiene
+                  {cantidadExcluidaFacturaStand === 1 ? "" : "n"} factura y no
+                  se incluira{cantidadExcluidaFacturaStand === 1 ? "" : "n"} en
+                  este nuevo lote.
                 </div>
               )}
 
@@ -2572,9 +2582,7 @@ export default function InventarioPage() {
                 >
                   {cargando
                     ? "Verificando y enviando..."
-                    : seleccionRequiereConciliarNotaCredito
-                      ? "Verificar NC y emitir"
-                      : "Emitir factura"}
+                    : "Emitir factura"}
                 </button>
               </div>
             </div>

@@ -68,6 +68,21 @@ test("inventario confirma el lote y muestra la factura emitida", () => {
   assert.match(inventoryRoute, /facturaStand:/);
 });
 
+test("la facturacion masiva excluye equipos que ya pertenecen a una factura", () => {
+  const page = source("app/inventario/page.tsx");
+
+  assert.match(page, /itemsSeleccionadosParaFactura/);
+  assert.match(
+    page,
+    /itemsSeleccionados\.filter\(\(item\) => !item\.facturaStand\)/
+  );
+  assert.match(
+    page,
+    /inventarioIds: itemsSeleccionadosParaFactura\.map/
+  );
+  assert.match(page, /con factura se excluyen/);
+});
+
 test("una nota credito valida libera solo el bloqueo de facturacion anterior", () => {
   const schema = source("prisma/schema.prisma");
   const route = source("app/api/inventario/factura-stand/route.ts");
