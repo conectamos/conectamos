@@ -36,28 +36,22 @@ type ModalModo = "pin" | "cambiar-pin";
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-[1.45rem] border border-white/12 bg-[linear-gradient(145deg,rgba(34,211,238,0.16)_0%,rgba(15,23,42,0.08)_50%,rgba(16,185,129,0.16)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_18px_42px_rgba(15,23,42,0.18)] ${
-        compact ? "h-14 w-14" : "h-16 w-16"
-      }`}
+      className={
+        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/5 " +
+        (compact ? "h-11 w-11" : "h-12 w-12")
+      }
       aria-hidden="true"
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(255,255,255,0.28),transparent_38%),radial-gradient(circle_at_78%_82%,rgba(45,212,191,0.18),transparent_36%)]" />
-      <svg
-        viewBox="0 0 64 64"
-        className="relative h-full w-full p-2.5"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
+      <svg viewBox="0 0 64 64" className="h-8 w-8 text-[#ef1018]" fill="none">
         <path
-          d="M17 19C17 15.6863 19.6863 13 23 13H37.5C42.1944 13 46 16.8056 46 21.5C46 26.1944 42.1944 30 37.5 30H28.5C24.9101 30 22 32.9101 22 36.5C22 40.0899 24.9101 43 28.5 43H48"
-          stroke="rgba(236,254,255,0.94)"
-          strokeWidth="4.2"
+          d="M39 43.5a18 18 0 1 1 0-27"
+          stroke="currentColor"
+          strokeWidth="7"
           strokeLinecap="round"
-          strokeLinejoin="round"
         />
-        <circle cx="18" cy="19" r="5" fill="#67E8F9" />
-        <circle cx="46" cy="21.5" r="5" fill="#A7F3D0" />
-        <circle cx="47" cy="43" r="5" fill="#E2E8F0" />
+        <path d="M39 47h10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        <path d="M45 15a8 8 0 0 1 8 8" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
+        <path d="M45 8a15 15 0 0 1 15 15" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
       </svg>
     </div>
   );
@@ -136,27 +130,58 @@ const AVATAR_PRESENTATIONS: Record<AvatarPerfilKey, AvatarPresentation> = {
   },
 };
 
-function ProfileAvatar({ perfil }: { perfil: PerfilAcceso }) {
+function ProfileAvatar({
+  perfil,
+  compact = false,
+}: {
+  perfil: PerfilAcceso;
+  compact?: boolean;
+}) {
   const avatarKey = normalizarAvatarPerfil(perfil.avatarKey, perfil.tipo);
   const avatar = AVATAR_PRESENTATIONS[avatarKey];
 
   return (
     <div
       className={[
-        "relative flex h-[16.5rem] w-[15.5rem] items-end justify-center overflow-hidden border transition duration-500 group-hover:-translate-y-1 group-hover:scale-[1.03]",
-        avatar.shapeClass,
-        avatar.toneClass,
+        "relative shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-[#f7f8fa] transition duration-300 group-hover:border-red-200 group-hover:bg-red-50/40 sm:self-center",
+        compact
+          ? "h-[4.5rem] w-[4.5rem]"
+          : "h-24 w-24 sm:h-32 sm:w-32",
       ].join(" ")}
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.24),transparent_48%)]" />
       <Image
         src={avatar.src}
         alt={avatar.alt}
         fill
-        sizes="248px"
-        className="object-cover object-center"
+        sizes={compact ? "72px" : "(max-width: 639px) 96px, (max-width: 1279px) 40vw, 360px"}
+        className="object-contain object-bottom transition duration-300 group-hover:scale-[1.025]"
       />
     </div>
+  );
+}
+
+function ProfileSearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProfileArrowIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
+      <path d="M5 12h13M14 7l5 5-5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ProfileCloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+      <path d="m7 7 10 10M17 7 7 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -521,64 +546,105 @@ export default function Home() {
 
   if (pasoPerfil) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f8fbff_0%,#e9eef7_48%,#dde5f0_100%)] text-slate-900">
-        <header className="border-b border-white/10 bg-[linear-gradient(135deg,#1f2027_0%,#30313b_62%,#1f2027_100%)] shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
-          <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-            <div className="flex items-center gap-4">
-              <BrandMark />
-
-              <div>
-                <p className="text-[1.55rem] font-black tracking-[0.02em] text-white">
+      <div className="min-h-screen bg-[#f4f5f7] text-slate-950">
+        <header className="border-b border-white/10 bg-[#11161d] text-white shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
+          <div className="mx-auto flex min-h-[76px] max-w-[1480px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-3">
+              <BrandMark compact />
+              <div className="min-w-0">
+                <p className="truncate text-lg font-black tracking-[0.01em] text-white sm:text-xl">
                   CONECTAMOS
                 </p>
-                <p className="text-sm text-white/78">
-                  Ingreso por sede:{" "}
-                  <span className="font-semibold text-white">
-                    {nombreSedeActual}
-                  </span>
+                <p className="truncate text-xs text-slate-400">
+                  Acceso por perfiles
                 </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => void volverAlInicio()}
-              disabled={cargando}
-              className="rounded-2xl border border-white/12 bg-white/10 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/16 disabled:opacity-60"
-            >
-              Cerrar sesion
-            </button>
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <div className="hidden min-w-0 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 sm:block">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                  Sede activa
+                </p>
+                <p className="max-w-52 truncate text-sm font-semibold text-white">
+                  {nombreSedeActual}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void volverAlInicio()}
+                disabled={cargando}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/15 bg-white/[0.06] px-3 text-xs font-bold uppercase tracking-[0.08em] text-white transition hover:border-white/30 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 disabled:cursor-not-allowed disabled:opacity-60 sm:px-5"
+              >
+                Cerrar sesión
+              </button>
+            </div>
           </div>
         </header>
 
-        <main className="mx-auto flex max-w-7xl flex-col gap-7 px-4 py-8 sm:px-6 lg:px-8">
-          <section className="rounded-[2.2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(244,248,254,0.95)_100%)] p-6 shadow-[0_24px_70px_rgba(71,85,105,0.15)] sm:p-8">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h1 className="text-3xl font-black tracking-[-0.05em] text-slate-950 sm:text-5xl">
-                  SELECCIONA EL PERFIL
+        <main className="mx-auto flex max-w-[1480px] flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+          <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.72fr)] lg:items-end">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-[#e30613]">
+                  Acceso por perfil
+                </p>
+                <h1 className="mt-2 text-3xl font-black tracking-[-0.035em] text-slate-950 sm:text-4xl">
+                  Selecciona tu perfil
                 </h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+                  Elige el perfil con el que vas a operar en {nombreSedeActual}.
+                </p>
               </div>
 
-              <div className="w-full max-w-xl">
-                <input
-                  type="text"
-                  value={busqueda}
-                  onChange={(event) => setBusqueda(event.target.value)}
-                  placeholder="Buscar perfil"
-                  className="w-full rounded-[1.6rem] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-                />
+              <div className="min-w-0">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label htmlFor="buscar-perfil" className="text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
+                    Buscar perfil
+                  </label>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-600">
+                    {perfilesFiltrados.length} {perfilesFiltrados.length === 1 ? "perfil" : "perfiles"}
+                  </span>
+                </div>
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-slate-400">
+                    <ProfileSearchIcon />
+                  </span>
+                  <input
+                    id="buscar-perfil"
+                    type="search"
+                    value={busqueda}
+                    onChange={(event) => setBusqueda(event.target.value)}
+                    placeholder="Nombre o tipo de perfil"
+                    autoComplete="off"
+                    className="min-h-12 w-full rounded-xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-300 focus:ring-4 focus:ring-red-100"
+                  />
+                </div>
               </div>
             </div>
           </section>
 
-          <section>
+          <section aria-labelledby="perfiles-disponibles-title">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 id="perfiles-disponibles-title" className="text-lg font-black text-slate-950">
+                  Perfiles disponibles
+                </h2>
+                <p className="text-xs text-slate-500 sm:hidden">
+                  Sede: {nombreSedeActual}
+                </p>
+              </div>
+              <p className="hidden text-xs text-slate-500 sm:block">
+                Selecciona un perfil para ingresar con su PIN.
+              </p>
+            </div>
+
             <div
               className={[
-                "grid gap-x-8 gap-y-10 justify-items-center",
+                "grid gap-4",
                 perfilesFiltrados.length === 1
-                  ? "mx-auto max-w-[18rem]"
-                  : "sm:grid-cols-2 xl:grid-cols-3",
+                  ? "max-w-md"
+                  : "md:grid-cols-2 xl:grid-cols-3",
               ].join(" ")}
             >
               {perfilesFiltrados.map((perfil) => {
@@ -589,58 +655,61 @@ export default function Home() {
                     key={perfil.id}
                     type="button"
                     onClick={() => abrirModalPin(String(perfil.id))}
-                    className="group flex w-full max-w-[18rem] flex-col items-center bg-transparent text-center transition"
+                    aria-label={
+                      "Ingresar con el perfil " + perfil.nombre + ", " + perfil.tipoLabel
+                    }
+                    className={[
+                      "group relative flex min-w-0 overflow-hidden rounded-2xl border bg-white p-4 text-left shadow-[0_6px_20px_rgba(15,23,42,0.045)] transition duration-200 hover:-translate-y-0.5 hover:border-red-200 hover:shadow-[0_12px_30px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100 sm:min-h-[286px] sm:flex-col sm:p-5",
+                      seleccionado ? "border-red-300 ring-4 ring-red-50" : "border-slate-200/90",
+                    ].join(" ")}
                   >
-                    <div
+                    <span
                       className={[
-                        "rounded-[3rem] p-2 transition duration-300",
-                        seleccionado
-                          ? "bg-[radial-gradient(circle_at_top,rgba(15,23,42,0.1),transparent_70%)] ring-4 ring-slate-200"
-                          : "group-hover:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_70%)]",
+                        "absolute inset-x-0 top-0 h-1 origin-left bg-[#e30613] transition-transform duration-200",
+                        seleccionado ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100",
                       ].join(" ")}
-                    >
-                      <ProfileAvatar perfil={perfil} />
-                    </div>
+                    />
 
-                    <div className="mt-5">
-                      <h2 className="text-[1.85rem] font-black tracking-[-0.04em] text-slate-950">
+                    <ProfileAvatar perfil={perfil} />
+
+                    <span className="flex min-w-0 flex-1 flex-col pl-4 sm:w-full sm:pl-0 sm:pt-4">
+                      <span className="line-clamp-2 text-lg font-black leading-tight tracking-[-0.02em] text-slate-950 sm:text-xl">
                         {perfil.nombre}
-                      </h2>
-                      <p className="mt-2 text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">
+                      </span>
+                      <span className="mt-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
                         {perfil.tipoLabel}
-                      </p>
-                      {perfil.debeCambiarPin ? (
-                        <span className="mt-4 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                          Cambiar PIN
+                      </span>
+
+                      <span className="mt-auto flex items-end justify-between gap-3 pt-4 sm:w-full">
+                        {perfil.debeCambiarPin ? (
+                          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-amber-700">
+                            Cambiar PIN
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold uppercase tracking-[0.1em] text-slate-600">
+                            Ingresar
+                          </span>
+                        )}
+                        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white transition group-hover:bg-[#e30613]">
+                          <ProfileArrowIcon />
                         </span>
-                      ) : (
-                        <span className="mt-4 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition group-hover:border-slate-300 group-hover:text-slate-700">
-                          <svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                            aria-hidden="true"
-                          >
-                            <path
-                              d="M9 6L15 12L9 18"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </span>
-                      )}
-                    </div>
+                      </span>
+                    </span>
                   </button>
                 );
               })}
 
               {perfilesFiltrados.length === 0 && (
-                <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white/70 p-8 text-sm text-slate-600 shadow-[0_20px_55px_rgba(71,85,105,0.08)]">
-                  No encontramos perfiles con ese texto.
+                <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center shadow-[0_6px_20px_rgba(15,23,42,0.035)]">
+                  <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                    <ProfileSearchIcon />
+                  </span>
+                  <p className="mt-4 text-base font-black text-slate-900">
+                    No encontramos perfiles
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Prueba con otro nombre o tipo de perfil.
+                  </p>
                 </div>
               )}
             </div>
@@ -648,142 +717,173 @@ export default function Home() {
         </main>
 
         {hayPerfilSeleccionado && modalModo && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.26)] px-4 backdrop-blur-[3px]">
-            {modalModo === "pin" && (
-              <button
-                type="button"
-                aria-label="Cerrar modal"
-                onClick={cerrarModalPerfil}
-                className="absolute inset-0 cursor-default"
-              />
-            )}
-
-            <div className="relative z-10 w-full max-w-md rounded-[2rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(245,249,255,0.96)_100%)] p-6 shadow-[0_28px_80px_rgba(15,23,42,0.24)] sm:p-7">
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-4 backdrop-blur-[2px]">
+            <div className="flex min-h-full items-center justify-center py-4">
               {modalModo === "pin" && (
                 <button
                   type="button"
+                  aria-label="Cerrar modal"
                   onClick={cerrarModalPerfil}
-                  disabled={cargando}
-                  className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-60"
-                >
-                  <span className="text-xl leading-none">x</span>
-                </button>
+                  className="absolute inset-0 cursor-default"
+                />
               )}
-              {false && modalModo === "pin" && (
-                <button
-                type="button"
-                onClick={cerrarModalPerfil}
-                disabled={cargando}
-                className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 disabled:opacity-60"
+
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="perfil-modal-title"
+                aria-describedby="perfil-modal-description"
+                className="relative z-10 w-full max-w-[440px] rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:p-6"
               >
-                <span className="text-xl leading-none">×</span>
-                </button>
-              )}
+                {modalModo === "pin" && (
+                  <button
+                    type="button"
+                    aria-label="Cerrar"
+                    onClick={cerrarModalPerfil}
+                    disabled={cargando}
+                    className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100 disabled:opacity-60"
+                  >
+                    <ProfileCloseIcon />
+                  </button>
+                )}
 
-              <p className="text-[0.68rem] font-bold uppercase tracking-[0.32em] text-slate-500">
-                {modalModo === "pin" ? "Acceso al perfil" : "Cambio de PIN"}
-              </p>
-              <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] text-slate-950">
-                {modalModo === "pin" ? "Ingresa tu PIN" : "Cambia tu PIN"}
-              </h2>
-              <p className="mt-2 text-sm font-medium text-slate-500">
-                {perfilSeleccionado.nombre} - {perfilSeleccionado.tipoLabel}
-              </p>
-              {perfilSeleccionado && false && (
-                <p className="mt-2 text-sm font-medium text-slate-500">
-                {perfilSeleccionado.nombre} · {perfilSeleccionado.tipoLabel}
-              </p>
-              )}
-              <p className="mt-2 text-sm text-slate-500">
-                {modalModo === "pin"
-                  ? `Sucursal activa: ${nombreSedeActual}`
-                  : "Es tu primer ingreso. Define un PIN personal de 4 a 6 digitos para continuar."}
-              </p>
+                <div className="flex items-center gap-4 pr-12">
+                  <ProfileAvatar perfil={perfilSeleccionado} compact />
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#e30613]">
+                      {modalModo === "pin" ? "Acceso al perfil" : "Primer ingreso"}
+                    </p>
+                    <h2 id="perfil-modal-title" className="mt-1 truncate text-xl font-black tracking-[-0.025em] text-slate-950">
+                      {perfilSeleccionado.nombre}
+                    </h2>
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      {perfilSeleccionado.tipoLabel}
+                    </p>
+                  </div>
+                </div>
 
-              {modalModo === "pin" ? (
-                <>
-                  <label className="mt-7 block">
-                    <span className="sr-only">PIN del perfil</span>
+                <div id="perfil-modal-description" className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-800">
+                    {modalModo === "pin" ? "Ingresa tu PIN para continuar" : "Crea un PIN personal de 4 a 6 dígitos"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {modalModo === "pin" ? "Sede activa: " + nombreSedeActual : "Este cambio es obligatorio antes de ingresar al dashboard."}
+                  </p>
+                </div>
+
+                {modalModo === "pin" ? (
+                  <form
+                    className="mt-5"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void confirmarPerfil();
+                    }}
+                  >
+                    <label htmlFor="pin-perfil" className="block text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                      PIN del perfil
+                    </label>
                     <input
+                      id="pin-perfil"
                       type="password"
                       inputMode="numeric"
+                      autoComplete="current-password"
                       autoFocus
                       value={pin}
                       onChange={(event) =>
                         setPin(event.target.value.replace(/\D/g, "").slice(0, 6))
                       }
-                      placeholder="PIN de 4 a 6 digitos"
-                      className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-5 py-4 text-2xl tracking-[0.22em] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:tracking-[0.16em] placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
+                      placeholder="4 a 6 dígitos"
+                      className="mt-2 min-h-12 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-xl font-bold tracking-[0.28em] text-slate-950 outline-none transition placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400 focus:border-red-300 focus:ring-4 focus:ring-red-100"
                     />
-                  </label>
 
-                  <button
-                    type="button"
-                    onClick={() => void confirmarPerfil()}
-                    disabled={cargando}
-                    className="mt-5 w-full rounded-[1.35rem] bg-[linear-gradient(135deg,#1b1f28_0%,#171c24_46%,#2a2d33_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_20px_40px_rgba(15,23,42,0.22)] transition hover:brightness-110 disabled:opacity-65"
+                    <button
+                      type="submit"
+                      disabled={cargando}
+                      className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[#e30613] px-5 text-sm font-black uppercase tracking-[0.08em] text-white transition hover:bg-[#c9000d] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {cargando ? "Confirmando..." : "Ingresar"}
+                    </button>
+                  </form>
+                ) : (
+                  <form
+                    className="mt-5"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void confirmarCambioPin();
+                    }}
                   >
-                    {cargando ? "Confirmando..." : "Confirmar"}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <label className="mt-7 block">
-                    <span className="sr-only">Nuevo PIN</span>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      autoFocus
-                      value={nuevoPin}
-                      onChange={(event) =>
-                        setNuevoPin(event.target.value.replace(/\D/g, "").slice(0, 6))
-                      }
-                      placeholder="Nuevo PIN"
-                      className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-5 py-4 text-2xl tracking-[0.22em] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:tracking-[0.12em] placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-                    />
-                  </label>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                          Nuevo PIN
+                        </span>
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          autoComplete="new-password"
+                          autoFocus
+                          value={nuevoPin}
+                          onChange={(event) =>
+                            setNuevoPin(event.target.value.replace(/\D/g, "").slice(0, 6))
+                          }
+                          placeholder="4 a 6 dígitos"
+                          className="mt-2 min-h-12 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg font-bold tracking-[0.2em] text-slate-950 outline-none transition placeholder:text-xs placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400 focus:border-red-300 focus:ring-4 focus:ring-red-100"
+                        />
+                      </label>
 
-                  <label className="mt-4 block">
-                    <span className="sr-only">Confirmar PIN</span>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      value={confirmarPin}
-                      onChange={(event) =>
-                        setConfirmarPin(
-                          event.target.value.replace(/\D/g, "").slice(0, 6)
-                        )
-                      }
-                      placeholder="Confirmar PIN"
-                      className="w-full rounded-[1.35rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-5 py-4 text-2xl tracking-[0.22em] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] outline-none transition placeholder:tracking-[0.12em] placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
-                    />
-                  </label>
+                      <label className="block">
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                          Confirmar PIN
+                        </span>
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          autoComplete="new-password"
+                          value={confirmarPin}
+                          onChange={(event) =>
+                            setConfirmarPin(event.target.value.replace(/\D/g, "").slice(0, 6))
+                          }
+                          placeholder="Repite el PIN"
+                          className="mt-2 min-h-12 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-lg font-bold tracking-[0.2em] text-slate-950 outline-none transition placeholder:text-xs placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400 focus:border-red-300 focus:ring-4 focus:ring-red-100"
+                        />
+                      </label>
+                    </div>
 
-                  <button
-                    type="button"
-                    onClick={() => void confirmarCambioPin()}
-                    disabled={cargando}
-                    className="mt-5 w-full rounded-[1.35rem] bg-[linear-gradient(135deg,#1b1f28_0%,#171c24_46%,#2a2d33_100%)] px-6 py-4 text-lg font-bold text-white shadow-[0_20px_40px_rgba(15,23,42,0.22)] transition hover:brightness-110 disabled:opacity-65"
+                    <button
+                      type="submit"
+                      disabled={cargando}
+                      className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[#e30613] px-5 text-sm font-black uppercase tracking-[0.08em] text-white transition hover:bg-[#c9000d] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {cargando ? "Actualizando..." : "Guardar PIN"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void volverAlInicio()}
+                      disabled={cargando}
+                      className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-5 text-xs font-bold uppercase tracking-[0.08em] text-slate-600 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200 disabled:opacity-60"
+                    >
+                      Cerrar sesión
+                    </button>
+                  </form>
+                )}
+
+                {mensaje && (
+                  <p
+                    role={/(correcto|correctamente|bienvenido)/i.test(mensaje) ? "status" : "alert"}
+                    className={[
+                      "mt-4 rounded-xl border px-4 py-3 text-sm font-medium",
+                      /(correcto|correctamente|bienvenido)/i.test(mensaje)
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : /debes cambiar tu pin/i.test(mensaje)
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : "border-red-200 bg-red-50 text-red-800",
+                    ].join(" ")}
                   >
-                    {cargando ? "Actualizando..." : "Guardar PIN"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void volverAlInicio()}
-                    disabled={cargando}
-                    className="mt-3 w-full rounded-[1.2rem] border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    Cerrar sesion
-                  </button>
-                </>
-              )}
-
-              {mensaje && (
-                <p className="mt-4 rounded-[1.2rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  {mensaje}
-                </p>
-              )}
+                    {mensaje}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         )}
