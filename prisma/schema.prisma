@@ -16,6 +16,17 @@ enum TipoPerfilVendedor {
   APOYO_OPERATIVO
 }
 
+enum EstadoFacturaProveedor {
+  PENDIENTE
+  PAGADO
+}
+
+enum EstadoAvisoFacturaProveedor {
+  PENDIENTE
+  ENVIADO
+  FALLIDO
+}
+
 model Rol {
   id          Int       @id @default(autoincrement())
   nombre      String    @unique
@@ -26,11 +37,11 @@ model Rol {
 }
 
 model Sede {
-  id                       Int                     @id @default(autoincrement())
-  nombre                   String                  @unique
-  codigo                   String?                 @unique
-  activa                   Boolean                 @default(true)
-  soloInventarioPorCobrar  Boolean                 @default(false)
+  id                       Int                      @id @default(autoincrement())
+  nombre                   String                   @unique
+  codigo                   String?                  @unique
+  activa                   Boolean                  @default(true)
+  soloInventarioPorCobrar  Boolean                  @default(false)
   facturacionNombre        String?
   facturacionTipoDocumento String?
   facturacionDocumento     String?
@@ -38,7 +49,7 @@ model Sede {
   facturacionTelefono      String?
   facturacionDireccion     String?
   clavePanelFinancieroHash String?
-  siigoEnabled             Boolean                 @default(false)
+  siigoEnabled             Boolean                  @default(false)
   siigoInvoiceDocumentId   Int?
   siigoSellerId            Int?
   siigoPaymentTypeId       Int?
@@ -48,16 +59,16 @@ model Sede {
   siigoDefaultStateCode    String?
   siigoDefaultCityCode     String?
   siigoDefaultPostalCode   String?
-  siigoStampSend           Boolean                 @default(false)
-  siigoMailSend            Boolean                 @default(false)
-  siigoPaymentDueDays      Int                     @default(0)
+  siigoStampSend           Boolean                  @default(false)
+  siigoMailSend            Boolean                  @default(false)
+  siigoPaymentDueDays      Int                      @default(0)
   usuarios                 Usuario[]
   inventario               Inventario[]
   ventas                   Venta[]
   inventariosSede          InventarioSede[]
   cajaMovimientos          CajaMovimiento[]
-  createdAt                DateTime                @default(now())
-  updatedAt                DateTime                @updatedAt
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
   movimientoCajaSedes      MovimientoCajaSede[]
   abonosFinancieros        AbonoFinanciero[]
   gastosCartera            GastoCartera[]
@@ -68,22 +79,92 @@ model Sede {
 }
 
 model Usuario {
-  id                      Int                 @id @default(autoincrement())
-  nombre                  String
-  usuario                 String              @unique
-  claveHash               String
-  activo                  Boolean             @default(true)
-  rolId                   Int
-  sedeId                  Int
-  activeSessionKey        String?
-  activeSessionLastSeenAt DateTime?
-  rol                     Rol                 @relation(fields: [rolId], references: [id])
-  sede                    Sede                @relation(fields: [sedeId], references: [id])
-  ventas                  Venta[]
-  arqueosDiarios          ArqueoDiario[]
-  importacionesCartera    CargaCarteraNuovo[]
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
+  id                       Int                         @id @default(autoincrement())
+  nombre                   String
+  usuario                  String                      @unique
+  claveHash                String
+  activo                   Boolean                     @default(true)
+  rolId                    Int
+  sedeId                   Int
+  activeSessionKey         String?
+  activeSessionLastSeenAt  DateTime?
+  rol                      Rol                         @relation(fields: [rolId], references: [id])
+  sede                     Sede                        @relation(fields: [sedeId], references: [id])
+  ventas                   Venta[]
+  arqueosDiarios           ArqueoDiario[]
+  importacionesCartera     CargaCarteraNuovo[]
+  facturasProveedorCreadas FacturaProveedor[]          @relation("FacturaProveedorCreadaPor")
+  facturasProveedorPagadas FacturaProveedor[]          @relation("FacturaProveedorPagoAprobadoPor")
+  pushProveedores          PushSubscriptionProveedor[]
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
+}
+
+model FacturaProveedor {
+  id                       Int                     @id @default(autoincrement())
+  aliado                   String
+  aliadoNormalizado        String
+  numeroFactura            String
+  numeroFacturaNormalizado String
+  fechaVencimiento         DateTime                @db.Date
+  valorPagar               Decimal                 @db.Decimal(14, 2)
+  estado                   EstadoFacturaProveedor  @default(PENDIENTE)
+  creadoPorId              Int
+  creadoPorNombre          String
+  pagoAprobadoPorId        Int?
+  pagoAprobadoPorNombre    String?
+  pagoAprobadoEn           DateTime?
+  creadoPor                Usuario                 @relation("FacturaProveedorCreadaPor", fields: [creadoPorId], references: [id])
+  pagoAprobadoPor          Usuario?                @relation("FacturaProveedorPagoAprobadoPor", fields: [pagoAprobadoPorId], references: [id], onDelete: SetNull)
+  avisos                   AvisoFacturaProveedor[]
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+
+  @@unique([aliadoNormalizado, numeroFacturaNormalizado])
+  @@index([estado, fechaVencimiento])
+  @@index([createdAt])
+}
+
+model PushSubscriptionProveedor {
+  id                 Int                     @id @default(autoincrement())
+  usuarioId          Int
+  endpoint           String                  @unique
+  p256dh             String
+  auth               String
+  expirationTime     DateTime?
+  userAgent          String?
+  activo             Boolean                 @default(true)
+  fallosConsecutivos Int                     @default(0)
+  ultimoExitoEn      DateTime?
+  ultimoErrorEn      DateTime?
+  usuario            Usuario                 @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  avisos             AvisoFacturaProveedor[]
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@index([usuarioId, activo])
+  @@index([activo])
+}
+
+model AvisoFacturaProveedor {
+  id                 Int                         @id @default(autoincrement())
+  facturaId          Int
+  pushSubscriptionId Int
+  fechaClave         String
+  tipo               String
+  estado             EstadoAvisoFacturaProveedor @default(PENDIENTE)
+  intentos           Int                         @default(0)
+  enviadoEn          DateTime?
+  ultimoIntentoEn    DateTime?
+  error              String?
+  factura            FacturaProveedor            @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+  pushSubscription   PushSubscriptionProveedor   @relation(fields: [pushSubscriptionId], references: [id], onDelete: Cascade)
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  @@unique([facturaId, pushSubscriptionId, fechaClave])
+  @@index([fechaClave, estado])
+  @@index([pushSubscriptionId, createdAt])
 }
 
 model Inventario {
@@ -360,44 +441,44 @@ model InventarioSede {
   origen           String
 
   inventarioPrincipalId Int?
-  inventarioPrincipal   InventarioPrincipal? @relation(fields: [inventarioPrincipalId], references: [id])
+  inventarioPrincipal   InventarioPrincipal?        @relation(fields: [inventarioPrincipalId], references: [id])
   ventas                Venta[]
-  estadoActual          String               @default("BODEGA")
+  estadoActual          String                      @default("BODEGA")
   estadoAnterior        String?
   fechaMovimiento       DateTime?
   observacion           String?
   facturaStandItem      FacturaInventarioStandItem?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
 }
 
 model FacturaInventarioStand {
-  id                    Int                          @id @default(autoincrement())
-  sedeId                Int
-  sede                  Sede                         @relation(fields: [sedeId], references: [id])
-  estado                String                       @default("PROCESANDO")
-  total                 Decimal                      @db.Decimal(14, 2)
-  cantidad              Int
-  diasVencimiento       Int                          @default(0)
-  creadoPor             String
-  siigoInvoiceId        String?
-  siigoInvoiceName      String?
-  siigoInvoiceStatus    String?
-  siigoInvoiceUrl       String?
-  siigoInvoiceError     String?
-  siigoInvoiceCreatedAt DateTime?
-  siigoInvoiceAttempt   Int                          @default(0)
-  siigoCreditNoteId     String?
-  siigoCreditNoteName   String?
-  siigoCreditNoteStatus String?
-  siigoCreditNoteUrl    String?
+  id                       Int                          @id @default(autoincrement())
+  sedeId                   Int
+  sede                     Sede                         @relation(fields: [sedeId], references: [id])
+  estado                   String                       @default("PROCESANDO")
+  total                    Decimal                      @db.Decimal(14, 2)
+  cantidad                 Int
+  diasVencimiento          Int                          @default(0)
+  creadoPor                String
+  siigoInvoiceId           String?
+  siigoInvoiceName         String?
+  siigoInvoiceStatus       String?
+  siigoInvoiceUrl          String?
+  siigoInvoiceError        String?
+  siigoInvoiceCreatedAt    DateTime?
+  siigoInvoiceAttempt      Int                          @default(0)
+  siigoCreditNoteId        String?
+  siigoCreditNoteName      String?
+  siigoCreditNoteStatus    String?
+  siigoCreditNoteUrl       String?
   siigoCreditNoteCreatedAt DateTime?
-  itemsAnulados         Json?
-  itemsLiberadosAt      DateTime?
-  itemsLiberadosPor     String?
-  items                 FacturaInventarioStandItem[]
-  createdAt             DateTime                     @default(now())
-  updatedAt             DateTime                     @updatedAt
+  itemsAnulados            Json?
+  itemsLiberadosAt         DateTime?
+  itemsLiberadosPor        String?
+  items                    FacturaInventarioStandItem[]
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
 
   @@index([sedeId, createdAt])
   @@index([estado])
@@ -405,17 +486,17 @@ model FacturaInventarioStand {
 }
 
 model FacturaInventarioStandItem {
-  id               Int                     @id @default(autoincrement())
+  id               Int                    @id @default(autoincrement())
   facturaId        Int
   factura          FacturaInventarioStand @relation(fields: [facturaId], references: [id], onDelete: Cascade)
-  inventarioSedeId Int?                    @unique
-  inventarioSede   InventarioSede?         @relation(fields: [inventarioSedeId], references: [id], onDelete: SetNull)
-  imei             String                  @unique
+  inventarioSedeId Int?                   @unique
+  inventarioSede   InventarioSede?        @relation(fields: [inventarioSedeId], references: [id], onDelete: SetNull)
+  imei             String                 @unique
   referencia       String
-  tipoProducto     String                  @default("TELEFONIA")
+  tipoProducto     String                 @default("TELEFONIA")
   color            String?
-  costo            Decimal                 @db.Decimal(12, 2)
-  createdAt        DateTime                @default(now())
+  costo            Decimal                @db.Decimal(12, 2)
+  createdAt        DateTime               @default(now())
 
   @@index([facturaId])
 }

@@ -1193,6 +1193,9 @@ export default function OperationsDashboard({
         { href: "/prestamos/nuevo", label: "Nuevo préstamo" },
         { href: "/dashboard/deuda-sedes", label: "Deuda entre sedes" },
         { href: "/alertas/prestamos", label: "Alertas" },
+        ...(esAdmin || esSupervisor
+          ? [{ href: "/dashboard/radar", label: "Abrir radar" }]
+          : []),
       ],
     },
     {
@@ -1217,19 +1220,27 @@ export default function OperationsDashboard({
         { href: "/vendedor/registros/buscar", label: "Buscar registro" },
         { href: "/ventas/aprobaciones", label: "Aprobar ventas" },
         ...(!esAdmin ? [{ href: "/vendedor/lista-precios", label: "Lista de precios" }] : []),
+        ...(esAdmin || esSupervisor
+          ? [
+              {
+                href: "/vendedor/registros/inconsistencias",
+                label: "Inconsistencias de créditos",
+              },
+            ]
+          : []),
       ],
     },
     ...(esAdmin || esSupervisor
       ? [
           {
-            title: "Funciones",
-            description: "Consultas y revisiones operativas.",
-            icon: "reports" as const,
+            title: "Proveedores",
+            description: "Facturas por pagar, vencimientos y pagos aprobados.",
+            icon: "document" as const,
             links: [
-              { href: "/dashboard/radar", label: "Abrir radar" },
               {
-                href: "/vendedor/registros/inconsistencias",
-                label: "Inconsistencias de créditos",
+                href: "/dashboard/proveedores",
+                label: "Gestionar proveedores",
+                keywords: ["aliado", "factura", "vencimiento", "pago"],
               },
             ],
           },

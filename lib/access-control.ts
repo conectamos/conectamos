@@ -96,3 +96,15 @@ export function puedeConsultarReporteSiigo(
     perfilNombreNormalizado.includes("CONTABILIDAD")
   );
 }
+
+export function puedeGestionarProveedores(
+  perfilTipo: unknown,
+  rolNombre: unknown
+) {
+  return (
+    esRolAdministrativo(rolNombre) ||
+    esPerfilAdministrativo(perfilTipo) ||
+    esPerfilSupervisor(perfilTipo) ||
+    normalizarRolNombre(rolNombre) === "SUPERVISOR"
+  );
+}

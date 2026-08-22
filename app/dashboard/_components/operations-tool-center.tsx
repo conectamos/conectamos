@@ -39,6 +39,7 @@ const CATEGORY_ORDER = [
   "Radar de inventario",
   "Administración",
   "Análisis",
+  "Proveedores",
 ];
 
 function normalize(value: string) {
@@ -135,7 +136,23 @@ export default function OperationsToolCenter({
       const parsed = saved ? JSON.parse(saved) : null;
 
       if (Array.isArray(parsed)) {
-        nextFavorites = parsed.filter((id): id is string => typeof id === "string" && validIds.has(id));
+        nextFavorites = Array.from(
+          new Set(
+            parsed.flatMap((id) => {
+              if (typeof id !== "string") return [];
+              if (validIds.has(id)) return [id];
+
+              const [, previousHref, previousLabel] = id.split("::");
+              const movedTool = allTools.find(
+                (tool) =>
+                  tool.link.href === previousHref &&
+                  normalize(tool.link.label) === normalize(previousLabel || ""),
+              );
+
+              return movedTool ? [movedTool.id] : [];
+            }),
+          ),
+        );
       } else {
         nextFavorites = INITIAL_FAVORITES.flatMap((label) => {
           const tool = allTools.find((item) => normalize(item.link.label) === normalize(label));

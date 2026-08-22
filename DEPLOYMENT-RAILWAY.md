@@ -44,6 +44,43 @@ Para consultar creditos ESMIOPCION desde el registro del asesor tambien agrega:
 - `ESMIOPCIONCONSULTA_PERFIL`
 - `ESMIOPCIONCONSULTA_PIN`
 
+Para las notificaciones push de vencimientos de proveedores agrega:
+
+- `WEB_PUSH_PUBLIC_KEY`
+- `WEB_PUSH_PRIVATE_KEY`
+- `WEB_PUSH_SUBJECT`
+- `CRON_SECRET`
+- `APP_URL`
+
+`WEB_PUSH_SUBJECT` debe ser un contacto `mailto:` o una URL `https://`.
+`CRON_SECRET` debe ser una cadena larga y aleatoria. `APP_URL` debe apuntar
+al dominio publico de la aplicacion, por ejemplo
+`https://conectamos.app`. La clave privada y `CRON_SECRET` nunca se exponen
+al navegador; la API de suscripcion solo entrega la clave VAPID publica.
+
+Para generar un par VAPID nuevo sin guardarlo en archivos ejecuta:
+
+```bash
+npm run proveedores:vapid
+```
+
+El comando imprime `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY` y
+`WEB_PUSH_SUBJECT` para que los copies en las variables de Railway.
+
+### Cron diario para proveedores
+
+Crea un servicio Cron de Railway con el mismo repositorio. En este repositorio
+la aplicacion esta en la raiz, por lo que `Root Directory` debe quedar vacio.
+Comparte las variables `APP_URL` y `CRON_SECRET` con ese servicio y configura:
+
+- Schedule: `0 13 * * *`
+- Start Command: `npm run proveedores:notificar`
+
+Railway interpreta el horario en UTC. `0 13 * * *` ejecuta el aviso todos
+los dias a las 8:00 a. m. de Bogota. El endpoint usa `CRON_SECRET` y registra
+una sola entrega por factura, suscripcion y fecha de Bogota, de modo que una
+repeticion del mismo cron no duplica la notificacion.
+
 Opcionales para Siigo:
 
 - `SIIGO_ITEM_CODE`
