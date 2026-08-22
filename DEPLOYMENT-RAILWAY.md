@@ -215,7 +215,18 @@ npm run start:standalone
 
 ## Paso 6. Crear tablas en produccion
 
-Antes de usar la app por primera vez, en Railway abre una terminal del servicio de la app y ejecuta:
+Para agregar el modulo de Proveedores a una base de datos existente, ejecuta
+el script aditivo especifico:
+
+```bash
+npm run db:apply-proveedores
+```
+
+Este comando solo crea los enums, tablas, indices y relaciones de Proveedores.
+No elimina ni modifica las tablas operativas existentes.
+
+En una instalacion completamente nueva y vacia puedes crear el resto del
+esquema con:
 
 ```bash
 npm run db:push
@@ -252,10 +263,11 @@ Cada vez que hagas cambios:
 1. pruebas localmente
 2. subes cambios a GitHub
 3. Railway redeploya solo
-4. si cambias la base, ejecutas:
+4. si cambias la base, aplica una migracion revisada y especifica. Para
+   Proveedores ejecuta:
 
 ```bash
-npm run db:push
+npm run db:apply-proveedores
 ```
 
 ## Recomendacion importante

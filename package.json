@@ -14,6 +14,7 @@
     "test:proveedores": "node --test tests/proveedores-contract.test.mjs tests/proveedores-ui-contract.test.mjs",
     "proveedores:vapid": "node scripts/generar-vapid.mjs",
     "proveedores:notificar": "node scripts/notificar-proveedores.mjs",
+    "db:apply-proveedores": "prisma db execute --file scripts/apply-proveedores-schema.sql",
     "db:push": "npx prisma db push",
     "db:ensure-vendor-profiles": "npx prisma db execute --file scripts/ensure-vendor-profiles.sql",
     "seed:initial": "npx prisma db execute --file scripts/seed-initial-data.sql",

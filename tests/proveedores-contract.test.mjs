@@ -101,3 +101,22 @@ test("service worker y automatización abren el módulo de proveedores", () => {
   assert.match(cron, /Authorization: `Bearer \$\{cronSecret\}`/);
   assert.match(manifest, /display: "standalone"/);
 });
+
+test("el despliegue de tablas de proveedores es aditivo y no borra datos", () => {
+  const sql = read("scripts/apply-proveedores-schema.sql");
+
+  for (const table of [
+    "FacturaProveedor",
+    "PushSubscriptionProveedor",
+    "AvisoFacturaProveedor",
+  ]) {
+    assert.match(sql, new RegExp(`CREATE TABLE IF NOT EXISTS "${table}"`));
+  }
+
+  assert.match(sql, /BEGIN;/);
+  assert.match(sql, /COMMIT;/);
+  assert.doesNotMatch(
+    sql,
+    /\bDROP\s+(?:TABLE|TYPE|SCHEMA)|\bDELETE\s+FROM|\bTRUNCATE\b/i,
+  );
+});
