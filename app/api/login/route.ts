@@ -8,7 +8,7 @@ import {
   PENDING_PROFILE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
 } from "@/lib/session";
-import { createUserSession, ensureSessionStateSchema } from "@/lib/session-state";
+import { createUserSession } from "@/lib/session-state";
 import { esRolAdministrativo } from "@/lib/access-control";
 import { obtenerPerfilesAccesoPorSede } from "@/lib/vendor-profiles";
 
@@ -18,8 +18,6 @@ function esAdmin(rolNombre: string | null | undefined) {
 
 export async function POST(req: Request) {
   try {
-    await ensureSessionStateSchema();
-
     const body = await req.json();
     const usuario = String(body.usuario ?? "").trim();
     const clave = String(body.clave ?? "");

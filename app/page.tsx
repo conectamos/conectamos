@@ -7,6 +7,7 @@ import {
   type AvatarPerfilKey,
   normalizarAvatarPerfil,
 } from "@/lib/profile-avatars";
+import { fetchJsonWithTimeout } from "@/lib/fetch-json-with-timeout";
 
 type PerfilAcceso = {
   id: number;
@@ -32,6 +33,41 @@ type UsuarioPendiente = {
 };
 
 type ModalModo = "pin" | "cambiar-pin";
+
+type LoginApiPayload = {
+  error?: string;
+  mensaje?: string;
+  ok?: boolean;
+  requiresProfile?: boolean;
+  requiresPinChange?: boolean;
+  pendingPinChange?: number | null;
+  usuario?: UsuarioPendiente;
+  perfiles?: PerfilAcceso[];
+  perfil?: PerfilAcceso;
+};
+
+const LOGIN_REQUEST_TIMEOUT_MS = 20_000;
+const LOGIN_TIMEOUT_MESSAGE =
+  "El servidor tardó demasiado en responder. Intenta nuevamente.";
+
+async function fetchLoginApi(url: string, init?: RequestInit) {
+  return fetchJsonWithTimeout<LoginApiPayload>(
+    url,
+    init,
+    LOGIN_REQUEST_TIMEOUT_MS
+  );
+}
+
+function loginRequestErrorMessage(error: unknown, fallback: string) {
+  if (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.message.toLowerCase().includes("abort"))
+  ) {
+    return LOGIN_TIMEOUT_MESSAGE;
+  }
+
+  return fallback;
+}
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
@@ -255,17 +291,20 @@ export default function Home() {
   useEffect(() => {
     void (async () => {
       try {
-        const pendingPinChangeRes = await fetch("/api/login/perfil/cambiar-pin", {
-          cache: "no-store",
-        });
+        const { response: pendingPinChangeRes, data: pendingPinChangeData } =
+          await fetchLoginApi("/api/login/perfil/cambiar-pin", {
+            cache: "no-store",
+          });
 
         if (pendingPinChangeRes.ok) {
-          const data = await pendingPinChangeRes.json();
-
           setPasoPerfil(true);
-          setPerfiles(Array.isArray(data.perfiles) ? data.perfiles : []);
-          setUsuarioPendiente(data.usuario ?? null);
-          setPerfilId(String(data.perfil?.id ?? ""));
+          setPerfiles(
+            Array.isArray(pendingPinChangeData.perfiles)
+              ? pendingPinChangeData.perfiles
+              : []
+          );
+          setUsuarioPendiente(pendingPinChangeData.usuario ?? null);
+          setPerfilId(String(pendingPinChangeData.perfil?.id ?? ""));
           setPin("");
           setNuevoPin("");
           setConfirmarPin("");
@@ -274,15 +313,17 @@ export default function Home() {
           return;
         }
 
-        const res = await fetch("/api/login/perfil", {
-          cache: "no-store",
-        });
+        const { response: res, data } = await fetchLoginApi(
+          "/api/login/perfil",
+          {
+            cache: "no-store",
+          }
+        );
 
         if (!res.ok) {
           return;
         }
 
-        const data = await res.json();
         setPasoPerfil(true);
         setPerfiles(Array.isArray(data.perfiles) ? data.perfiles : []);
         setUsuarioPendiente(data.usuario ?? null);
@@ -362,15 +403,13 @@ export default function Home() {
       setCargando(true);
       setMensaje("");
 
-      const res = await fetch("/api/login", {
+      const { response: res, data } = await fetchLoginApi("/api/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ usuario, clave }),
       });
-
-      const data = await res.json();
 
       if (!res.ok) {
         setMensaje(data.error || "Error al conectar con el servidor");
@@ -390,13 +429,15 @@ export default function Home() {
         return;
       }
 
-      setMensaje(`Bienvenido ${data.usuario.nombre}`);
+      setMensaje(`Bienvenido ${data.usuario?.nombre || usuario}`);
 
       setTimeout(() => {
         router.push("/dashboard");
       }, 700);
-    } catch {
-      setMensaje("Error al conectar con el servidor");
+    } catch (error) {
+      setMensaje(
+        loginRequestErrorMessage(error, "Error al conectar con el servidor")
+      );
     } finally {
       setCargando(false);
     }
@@ -417,18 +458,19 @@ export default function Home() {
         return;
       }
 
-      const res = await fetch("/api/login/perfil", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          perfilId: Number(perfilId),
-          pin,
-        }),
-      });
-
-      const data = await res.json();
+      const { response: res, data } = await fetchLoginApi(
+        "/api/login/perfil",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            perfilId: Number(perfilId),
+            pin,
+          }),
+        }
+      );
 
       if (!res.ok) {
         setMensaje(data.error || "No se pudo validar el perfil");
@@ -455,8 +497,8 @@ export default function Home() {
       setTimeout(() => {
         router.push("/dashboard");
       }, 700);
-    } catch {
-      setMensaje("Error validando el perfil");
+    } catch (error) {
+      setMensaje(loginRequestErrorMessage(error, "Error validando el perfil"));
     } finally {
       setCargando(false);
     }
@@ -477,18 +519,19 @@ export default function Home() {
         return;
       }
 
-      const res = await fetch("/api/login/perfil/cambiar-pin", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          nuevoPin,
-          confirmarPin,
-        }),
-      });
-
-      const data = await res.json();
+      const { response: res, data } = await fetchLoginApi(
+        "/api/login/perfil/cambiar-pin",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            nuevoPin,
+            confirmarPin,
+          }),
+        }
+      );
 
       if (!res.ok) {
         setMensaje(data.error || "No se pudo actualizar el PIN");
@@ -510,8 +553,8 @@ export default function Home() {
       setTimeout(() => {
         router.push("/dashboard");
       }, 700);
-    } catch {
-      setMensaje("Error actualizando el PIN");
+    } catch (error) {
+      setMensaje(loginRequestErrorMessage(error, "Error actualizando el PIN"));
     } finally {
       setCargando(false);
     }
@@ -519,7 +562,7 @@ export default function Home() {
 
   const volverAlInicio = async () => {
     try {
-      await fetch("/api/logout", {
+      await fetchLoginApi("/api/logout", {
         method: "POST",
       });
     } catch {}

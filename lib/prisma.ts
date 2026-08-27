@@ -5,18 +5,18 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-});
-
 const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    adapter,
+    adapter: new PrismaPg({
+      connectionString: process.env.DATABASE_URL,
+      connectionTimeoutMillis: 10_000,
+      lock_timeout: 10_000,
+      query_timeout: 60_000,
+      statement_timeout: 60_000,
+    }),
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+globalForPrisma.prisma = prisma;
 
 export default prisma;

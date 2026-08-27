@@ -1,5 +1,4 @@
 import prisma from "@/lib/prisma";
-import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import {
   getBogotaDateKey,
   getBogotaMonthRangeFromInput,
@@ -280,7 +279,6 @@ async function ensureCurrentMonthRewardSnapshots() {
 }
 
 export async function syncCurrentMonthRewardSnapshots() {
-  await ensureVendorProfilesSchema();
   return ensureCurrentMonthRewardSnapshots();
 }
 
@@ -288,8 +286,6 @@ export async function syncVendorRewardSnapshotForSale(saleId: number) {
   if (!Number.isInteger(saleId) || saleId <= 0) {
     return null;
   }
-
-  await ensureVendorProfilesSchema();
 
   const record = await prisma.registroVendedorVenta.findFirst({
     where: {
@@ -389,8 +385,6 @@ export async function syncVendorRewardSnapshotForSale(saleId: number) {
 export async function getVendorEarningsSummary(
   perfilVendedorId: number
 ): Promise<VendorEarningsSummary> {
-  await ensureVendorProfilesSchema();
-
   if (!Number.isInteger(perfilVendedorId) || perfilVendedorId <= 0) {
     return {
       bolsaHabilitada: false,

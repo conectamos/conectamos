@@ -11,15 +11,13 @@ import {
   verifyPendingPinChangeToken,
   verifyPendingProfileToken,
 } from "@/lib/session";
-import { createProfileSession, ensureSessionStateSchema } from "@/lib/session-state";
+import { createProfileSession } from "@/lib/session-state";
 import {
   obtenerPerfilesAccesoPorSede,
   validarPerfilAccesoPorSede,
 } from "@/lib/vendor-profiles";
 
 async function getPendingUser() {
-  await ensureSessionStateSchema();
-
   const cookieStore = await cookies();
   const pendingToken = cookieStore.get(PENDING_PROFILE_COOKIE_NAME)?.value;
   const pending = verifyPendingProfileToken(pendingToken);
@@ -90,8 +88,6 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    await ensureSessionStateSchema();
-
     const user = await getPendingUser();
 
     if (!user) {

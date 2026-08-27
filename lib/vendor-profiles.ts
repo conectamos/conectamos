@@ -220,8 +220,6 @@ export async function obtenerPerfilesVendedor(options?: {
 }
 
 export async function obtenerPerfilesAccesoPorSede(sedeId: number) {
-  await ensureVendorProfilesSchema();
-
   const perfiles = await prisma.perfilVendedor.findMany({
     where: {
       activo: true,
@@ -264,8 +262,6 @@ export async function validarPerfilAccesoPorSede(params: {
   perfilId: number;
   sedeId: number;
 }) {
-  await ensureVendorProfilesSchema();
-
   const perfil = await prisma.perfilVendedor.findFirst({
     where: {
       id: params.perfilId,

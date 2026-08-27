@@ -3,14 +3,11 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
 import {
-  ensureSessionStateSchema,
   touchProfileSession,
   touchUserSession,
 } from "@/lib/session-state";
 
 export async function POST() {
-  await ensureSessionStateSchema();
-
   const user = await getSessionUser();
 
   if (!user) {

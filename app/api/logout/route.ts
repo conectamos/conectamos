@@ -10,13 +10,10 @@ import {
 import {
   clearProfileSession,
   clearUserSession,
-  ensureSessionStateSchema,
 } from "@/lib/session-state";
 import { cookies } from "next/headers";
 
 export async function POST() {
-  await ensureSessionStateSchema();
-
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   const session = verifySessionToken(sessionToken);

@@ -215,15 +215,18 @@ npm run start:standalone
 
 ## Paso 6. Crear tablas en produccion
 
-Para agregar el modulo de Proveedores a una base de datos existente, ejecuta
-el script aditivo especifico:
+Las migraciones se ejecutan como paso de despliegue, nunca desde una solicitud
+de login. En una base existente, aplica primero los perfiles y el estado de
+sesion; despues aplica Proveedores:
 
 ```bash
+npm run db:ensure-vendor-profiles
+npm run db:apply-session-state
 npm run db:apply-proveedores
 ```
 
-Este comando solo crea los enums, tablas, indices y relaciones de Proveedores.
-No elimina ni modifica las tablas operativas existentes.
+Los scripts usan cambios aditivos (`IF NOT EXISTS`). El script de sesion limita
+el tiempo de espera de locks para no dejar bloqueado el despliegue.
 
 En una instalacion completamente nueva y vacia puedes crear el resto del
 esquema con:
@@ -263,10 +266,12 @@ Cada vez que hagas cambios:
 1. pruebas localmente
 2. subes cambios a GitHub
 3. Railway redeploya solo
-4. si cambias la base, aplica una migracion revisada y especifica. Para
-   Proveedores ejecuta:
+4. si cambias la base, aplica una migracion revisada y especifica. Para el
+   estado de sesion y Proveedores ejecuta, en ese orden:
 
 ```bash
+npm run db:ensure-vendor-profiles
+npm run db:apply-session-state
 npm run db:apply-proveedores
 ```
 

@@ -1,35 +1,5 @@
 import prisma from "@/lib/prisma";
-import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { SESSION_IDLE_TIMEOUT_SECONDS, createOpaqueSessionKey } from "@/lib/session";
-
-let ensureSessionStatePromise: Promise<void> | null = null;
-
-async function runEnsureSessionStateSchema() {
-  await ensureVendorProfilesSchema();
-
-  await prisma.$executeRawUnsafe(`
-    ALTER TABLE "Usuario"
-      ADD COLUMN IF NOT EXISTS "activeSessionKey" TEXT,
-      ADD COLUMN IF NOT EXISTS "activeSessionLastSeenAt" TIMESTAMP(3);
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    ALTER TABLE "PerfilVendedor"
-      ADD COLUMN IF NOT EXISTS "activeSessionKey" TEXT,
-      ADD COLUMN IF NOT EXISTS "activeSessionLastSeenAt" TIMESTAMP(3);
-  `);
-}
-
-export async function ensureSessionStateSchema() {
-  if (!ensureSessionStatePromise) {
-    ensureSessionStatePromise = runEnsureSessionStateSchema().catch((error) => {
-      ensureSessionStatePromise = null;
-      throw error;
-    });
-  }
-
-  await ensureSessionStatePromise;
-}
 
 export function isSessionIdle(lastSeenAt?: Date | string | null) {
   if (!lastSeenAt) {
@@ -47,8 +17,6 @@ export function isSessionIdle(lastSeenAt?: Date | string | null) {
 }
 
 export async function createUserSession(userId: number) {
-  await ensureSessionStateSchema();
-
   const sessionKey = createOpaqueSessionKey();
 
   await prisma.usuario.update({
@@ -63,8 +31,6 @@ export async function createUserSession(userId: number) {
 }
 
 export async function createProfileSession(profileId: number) {
-  await ensureSessionStateSchema();
-
   const sessionKey = createOpaqueSessionKey();
 
   await prisma.perfilVendedor.update({
@@ -79,8 +45,6 @@ export async function createProfileSession(profileId: number) {
 }
 
 export async function touchUserSession(userId: number, sessionKey: string) {
-  await ensureSessionStateSchema();
-
   const result = await prisma.usuario.updateMany({
     where: {
       id: userId,
@@ -95,8 +59,6 @@ export async function touchUserSession(userId: number, sessionKey: string) {
 }
 
 export async function touchProfileSession(profileId: number, sessionKey: string) {
-  await ensureSessionStateSchema();
-
   const result = await prisma.perfilVendedor.updateMany({
     where: {
       id: profileId,
@@ -111,8 +73,6 @@ export async function touchProfileSession(profileId: number, sessionKey: string)
 }
 
 export async function clearUserSession(userId: number, sessionKey?: string | null) {
-  await ensureSessionStateSchema();
-
   await prisma.usuario.updateMany({
     where: {
       id: userId,
@@ -129,8 +89,6 @@ export async function clearProfileSession(
   profileId: number,
   sessionKey?: string | null
 ) {
-  await ensureSessionStateSchema();
-
   await prisma.perfilVendedor.updateMany({
     where: {
       id: profileId,

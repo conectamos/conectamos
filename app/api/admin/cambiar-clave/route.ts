@@ -12,10 +12,7 @@ import {
   SESSION_COOKIE_NAME,
   verifySessionToken,
 } from "@/lib/session";
-import {
-  clearUserSession,
-  ensureSessionStateSchema,
-} from "@/lib/session-state";
+import { clearUserSession } from "@/lib/session-state";
 
 function validarNuevaClave(value: unknown) {
   const clave = String(value || "");
@@ -51,8 +48,6 @@ function limpiarCookiesSesion(response: NextResponse) {
 
 export async function POST(req: Request) {
   try {
-    await ensureSessionStateSchema();
-
     const session = await getSessionUser();
 
     if (!session) {
