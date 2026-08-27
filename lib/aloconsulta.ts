@@ -19,6 +19,13 @@ const ALO_REPORT_PATH = "/admin_reportes";
 const ALO_CARTERA_PATH = "/admin_cartera";
 const ALO_REPORT_CACHE_MS = 60_000;
 const ALO_SESSION_CACHE_MS = 45_000;
+const ALO_REGISTRY_LOOKUP_TIMEOUT_MS = 15_000;
+const ALO_NETWORK_ATTEMPT_TIMEOUT_MS = 8_000;
+const ALO_REPORT_CANDIDATE_LIMIT = 10;
+const ALO_CARTERA_CANDIDATE_LIMIT = 6;
+const ALO_MAX_HTML_BYTES = 5 * 1024 * 1024;
+const ALO_MAX_REPORT_BYTES = 20 * 1024 * 1024;
+const ALO_DEBUG = process.env.ALO_DEBUG === "1";
 const COLOMBIA_CURRENCY = "COP";
 const ALO_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -103,8 +110,19 @@ export class AloConsultaLookupError extends Error {
 let cachedReport: CachedReport | null = null;
 let cachedReportInFlight: Promise<ReportBundle | null> | null = null;
 let aloLoginInFlight: Promise<AloSession> | null = null;
-let aloLookupQueue: Promise<void> = Promise.resolve();
+let aloRegistryLookupInFlight: {
+  documento: string;
+  promise: Promise<AloCreditoImei | null>;
+} | null = null;
 let cachedAloSession: CachedAloSession | null = null;
+
+function assertAloLookupActive(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw new AloConsultaLookupError(
+      "ALO CREDIT excedio el tiempo permitido para responder."
+    );
+  }
+}
 
 function normalizeImei(value: unknown) {
   return String(value || "").replace(/\D/g, "").slice(0, 15);
@@ -261,10 +279,13 @@ async function fetchWithCookies(
   url: string,
   init: RequestInit,
   jar: CookieJar,
-  timeoutMs = 25000
+  timeoutMs = 25000,
+  signal?: AbortSignal
 ) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const requestSignal = signal
+    ? AbortSignal.any([signal, timeoutSignal])
+    : timeoutSignal;
   const headers = new Headers(init.headers);
   const cookieHeader = getCookieHeader(jar);
 
@@ -272,34 +293,81 @@ async function fetchWithCookies(
     headers.set("Cookie", cookieHeader);
   }
 
-  try {
-    const response = await fetch(url, {
-      ...init,
-      headers,
-      cache: "no-store",
-      redirect: "manual",
-      signal: controller.signal,
-    });
+  const response = await fetch(url, {
+    ...init,
+    headers,
+    cache: "no-store",
+    redirect: "manual",
+    signal: requestSignal,
+  });
 
-    storeResponseCookies(response.headers, jar);
+  storeResponseCookies(response.headers, jar);
 
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
+  return response;
+}
+
+async function readResponseBuffer(response: Response, maxBytes: number) {
+  const contentLength = Number(response.headers.get("content-length"));
+
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    await response.body?.cancel();
+    throw new AloConsultaLookupError(
+      "ALO CREDIT devolvio una respuesta demasiado grande."
+    );
   }
+
+  if (!response.body) {
+    return Buffer.alloc(0);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new AloConsultaLookupError(
+          "ALO CREDIT devolvio una respuesta demasiado grande."
+        );
+      }
+
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks, totalBytes);
 }
 
 async function fetchTextFollowingRedirects(
   url: string,
   init: RequestInit,
   jar: CookieJar,
-  maxRedirects = 8
+  maxRedirects = 8,
+  signal?: AbortSignal
 ) {
   let currentUrl = url;
   let requestInit = init;
 
   for (let index = 0; index <= maxRedirects; index++) {
-    const response = await fetchWithCookies(currentUrl, requestInit, jar);
+    assertAloLookupActive(signal);
+    const response = await fetchWithCookies(
+      currentUrl,
+      requestInit,
+      jar,
+      ALO_NETWORK_ATTEMPT_TIMEOUT_MS,
+      signal
+    );
     const location = response.headers.get("location");
 
     if (
@@ -308,6 +376,7 @@ async function fetchTextFollowingRedirects(
       response.status < 400 &&
       index < maxRedirects
     ) {
+      await response.body?.cancel();
       currentUrl = new URL(location, currentUrl).toString();
       requestInit = {
         method: "GET",
@@ -316,9 +385,11 @@ async function fetchTextFollowingRedirects(
       continue;
     }
 
+    assertAloLookupActive(signal);
+    const buffer = await readResponseBuffer(response, ALO_MAX_HTML_BYTES);
     return {
       response,
-      text: await response.text(),
+      text: buffer.toString("utf8"),
       url: currentUrl,
     };
   }
@@ -633,7 +704,7 @@ function looksLikeLoginPage(html: string) {
   return /name=["']_username["']/i.test(html) || /id=["']inputPassword["']/i.test(html);
 }
 
-async function loginAlo(): Promise<AloSession> {
+async function loginAlo(signal?: AbortSignal): Promise<AloSession> {
   if (
     cachedAloSession &&
     cachedAloSession.expiresAt > Date.now()
@@ -645,7 +716,7 @@ async function loginAlo(): Promise<AloSession> {
     return aloLoginInFlight;
   }
 
-  const pending = performLoginAlo().then((session) => {
+  const pending = performLoginAlo(signal).then((session) => {
     cachedAloSession = {
       session,
       expiresAt: Date.now() + ALO_SESSION_CACHE_MS,
@@ -664,7 +735,7 @@ async function loginAlo(): Promise<AloSession> {
   }
 }
 
-async function performLoginAlo(): Promise<AloSession> {
+async function performLoginAlo(signal?: AbortSignal): Promise<AloSession> {
   const config = getCredentials();
   const jar: CookieJar = new Map();
   const loginPage = await fetchTextFollowingRedirects(
@@ -675,7 +746,9 @@ async function performLoginAlo(): Promise<AloSession> {
         "User-Agent": ALO_USER_AGENT,
       },
     },
-    jar
+    jar,
+    8,
+    signal
   );
   const loginForm = parseForms(loginPage.text, loginPage.url)[0];
   const fields = loginForm?.fields ?? new URLSearchParams();
@@ -699,7 +772,9 @@ async function performLoginAlo(): Promise<AloSession> {
         "User-Agent": ALO_USER_AGENT,
       },
     },
-    jar
+    jar,
+    8,
+    signal
   );
 
   if (looksLikeLoginPage(loginResponse.text)) {
@@ -818,13 +893,26 @@ function debugUrl(value: string, baseUrl: string) {
 }
 
 function firstTableRows(html: string, maxRows = 3) {
-  const rows = Array.from(html.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi)).map(
-    (match) => match[0]
-  );
+  const rows: string[] = [];
 
-  return rows
-    .filter((row) => normalizeText(row.replace(/<[^>]*>/g, " ")).length > 0)
-    .slice(0, maxRows);
+  if (maxRows <= 0) {
+    return rows;
+  }
+
+  for (const match of html.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi)) {
+    const row = match[0];
+
+    if (normalizeText(row.replace(/<[^>]*>/g, " ")).length === 0) {
+      continue;
+    }
+
+    rows.push(row);
+    if (rows.length >= maxRows) {
+      break;
+    }
+  }
+
+  return rows;
 }
 
 function debugHtmlRows(html: string, maxRows = 4) {
@@ -840,8 +928,15 @@ function debugHtmlRows(html: string, maxRows = 4) {
   }));
 }
 
-function logAloInfo(message: string, data: Record<string, unknown>) {
-  console.info(`${message} ${JSON.stringify(data)}`);
+function logAloInfo(
+  message: string,
+  createData: () => Record<string, unknown>
+) {
+  if (!ALO_DEBUG) {
+    return;
+  }
+
+  console.info(`${message} ${JSON.stringify(createData())}`);
 }
 
 function extractRouteHints(text: string) {
@@ -947,14 +1042,27 @@ function bufferLooksText(buffer: Buffer) {
 }
 
 function candidateKey(candidate: DownloadCandidate) {
+  const url = new URL(candidate.url);
+  const queryEntries = Array.from(url.searchParams.entries()).sort(
+    ([leftKey, leftValue], [rightKey, rightValue]) =>
+      leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue)
+  );
+  url.search = "";
+  for (const [key, value] of queryEntries) {
+    url.searchParams.append(key, value);
+  }
+
   const body = candidate.body
     ? Array.from(candidate.body.entries())
-        .sort(([left], [right]) => left.localeCompare(right))
+        .sort(
+          ([leftKey, leftValue], [rightKey, rightValue]) =>
+            leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue)
+        )
         .map(([key, value]) => `${key}=${value}`)
         .join("&")
     : "";
 
-  return `${candidate.method || "GET"} ${candidate.url} ${body}`;
+  return `${candidate.method || "GET"} ${url.toString()} ${body}`;
 }
 
 function dedupeDownloadCandidates(candidates: DownloadCandidate[]) {
@@ -1523,7 +1631,7 @@ function exactAloReportCandidates(
 
   ajaxFields.set("draw", ajaxFields.get("draw") || "1");
   ajaxFields.set("start", ajaxFields.get("start") || "0");
-  ajaxFields.set("length", ajaxFields.get("length") || "5000");
+  ajaxFields.set("length", ajaxFields.get("length") || "100");
   ajaxFields.set(
     "search[value]",
     identifier || ajaxFields.get("search[value]") || ""
@@ -1768,7 +1876,11 @@ function chooseConsultForm(forms: HtmlForm[]) {
   );
 }
 
-async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
+async function getConsultedReportsPage(
+  jar: CookieJar,
+  reportUrl: URL,
+  signal?: AbortSignal
+) {
   const page = await fetchTextFollowingRedirects(
     reportUrl.toString(),
     {
@@ -1778,7 +1890,9 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
         "User-Agent": ALO_USER_AGENT,
       },
     },
-    jar
+    jar,
+    8,
+    signal
   );
 
   if (looksLikeLoginPage(page.text)) {
@@ -1826,7 +1940,9 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
         "User-Agent": ALO_USER_AGENT,
       },
     },
-    jar
+    jar,
+    8,
+    signal
   );
 
   console.info("ALO CREDIT consulta reporte semanal", {
@@ -1837,21 +1953,6 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
     rows: firstTableRows(result.text, 10).length,
     muestras: debugHtmlRows(result.text),
   });
-  logAloInfo("ALO CREDIT consulta reporte semanal detalle", {
-    action: debugUrl(action.toString(), page.url),
-    method: consultForm.method === "GET" ? "GET" : "POST",
-    fieldKeys: Array.from(fields.keys()).sort(),
-    fieldShape: Array.from(fields.entries()).map(([key, value]) => ({
-      key: debugKey(key),
-      hasValue: Boolean(value),
-      looksDate: /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value),
-    })),
-    dateFieldPairs: findDateFieldPairs(fields),
-    rows: firstTableRows(result.text, 10).length,
-    muestras: debugHtmlRows(result.text),
-    estructura: debugHtmlStructure(result.text, result.url),
-  });
-
   return {
     ...result,
     submittedFields: fields,
@@ -1861,7 +1962,8 @@ async function getConsultedReportsPage(jar: CookieJar, reportUrl: URL) {
 async function fetchReportBufferFromUrl(
   jar: CookieJar,
   candidate: DownloadCandidate,
-  referer: string
+  referer: string,
+  signal?: AbortSignal
 ) {
   const url = new URL(candidate.url);
 
@@ -1893,13 +1995,23 @@ async function fetchReportBufferFromUrl(
       },
     },
     jar,
-    45000
+    ALO_NETWORK_ATTEMPT_TIMEOUT_MS,
+    signal
   );
 
+  if (!response.ok) {
+    await response.body?.cancel();
+    return {
+      ok: false,
+      status: response.status,
+      buffer: Buffer.alloc(0),
+    };
+  }
+
   return {
-    ok: response.ok,
+    ok: true,
     status: response.status,
-    buffer: Buffer.from(await response.arrayBuffer()),
+    buffer: await readResponseBuffer(response, ALO_MAX_REPORT_BYTES),
   };
 }
 
@@ -1929,8 +2041,10 @@ async function downloadFirstReport(
   identifier?: string,
   sessionArg?: AloSession,
   sourceMatcher: ReportSourceMatcher = sourceContainsImei,
-  identifierLabel = "IMEI"
+  identifierLabel = "IMEI",
+  signal?: AbortSignal
 ): Promise<ReportBundle | null> {
+  assertAloLookupActive(signal);
   const matches = (report: ReportBundle) =>
     !identifier || sourceMatcher(report.source, identifier);
 
@@ -1958,7 +2072,8 @@ async function downloadFirstReport(
       identifier,
       sessionArg,
       sourceMatcher,
-      identifierLabel
+      identifierLabel,
+      signal
     );
   }
 
@@ -1966,7 +2081,8 @@ async function downloadFirstReport(
     identifier,
     sessionArg,
     sourceMatcher,
-    identifierLabel
+    identifierLabel,
+    signal
   );
   cachedReportInFlight = pending;
 
@@ -1983,25 +2099,29 @@ async function downloadAndCacheFirstReport(
   identifier?: string,
   sessionArg?: AloSession,
   sourceMatcher: ReportSourceMatcher = sourceContainsImei,
-  identifierLabel = "IMEI"
+  identifierLabel = "IMEI",
+  signal?: AbortSignal
 ): Promise<ReportBundle | null> {
-  let session = sessionArg ?? (await loginAlo());
+  assertAloLookupActive(signal);
+  let session = sessionArg ?? (await loginAlo(signal));
   let reportsPage: ConsultedReportsPage;
 
   try {
     reportsPage = await getConsultedReportsPage(
       session.jar,
-      session.reportUrl
+      session.reportUrl,
+      signal
     );
   } catch (error) {
     if (!(error instanceof AloConsultaConfigError)) {
       throw error;
     }
 
-    session = await loginAlo();
+    session = await loginAlo(signal);
     reportsPage = await getConsultedReportsPage(
       session.jar,
-      session.reportUrl
+      session.reportUrl,
+      signal
     );
   }
   const weeklyCandidates = findWeeklyReportDownloadCandidates(
@@ -2010,10 +2130,11 @@ async function downloadAndCacheFirstReport(
     reportsPage.submittedFields,
     identifier
   );
-  let candidates =
+  let candidates = (
     weeklyCandidates.length > 0
       ? weeklyCandidates
-      : findDownloadCandidates(reportsPage.text, reportsPage.url);
+      : findDownloadCandidates(reportsPage.text, reportsPage.url)
+  ).slice(0, ALO_REPORT_CANDIDATE_LIMIT);
 
   if (candidates.length === 0) {
     console.info("ALO CREDIT sin candidatos de descarga; se intentara leer HTML", {
@@ -2044,22 +2165,16 @@ async function downloadAndCacheFirstReport(
     },
     candidatos: candidates.slice(0, 5).map(describeDownloadCandidate),
   });
-  logAloInfo("ALO CREDIT candidatos de descarga detalle", {
-    modo: weeklyCandidates.length > 0 ? "primera-fila-reportes-semanales" : "general",
-    rangoSemana: {
-      inicio: dashFromParts(currentWeeklyReportDates().start),
-      fin: dashFromParts(currentWeeklyReportDates().end),
-      hoy: dashFromParts(currentWeeklyReportDates().today),
-    },
-    candidatos: candidates.slice(0, 8).map(describeDownloadCandidate),
-    estructura: debugHtmlStructure(reportsPage.text, reportsPage.url),
-  });
-
   let referer = reportsPage.url;
   let lastHtml = reportsPage.text;
   const triedCandidates = new Set<string>();
 
-  for (let depth = 0; depth < 80 && candidates.length > 0; depth++) {
+  for (
+    let depth = 0;
+    depth < ALO_REPORT_CANDIDATE_LIMIT && candidates.length > 0;
+    depth++
+  ) {
+    assertAloLookupActive(signal);
     const candidate = candidates.find((item) => {
       const key = candidateKey(item);
       return !triedCandidates.has(key) && !isSamePathWithoutQuery(item, referer);
@@ -2073,19 +2188,16 @@ async function downloadAndCacheFirstReport(
     const download = await fetchReportBufferFromUrl(
       session.jar,
       candidate,
-      referer
+      referer,
+      signal
     );
+    assertAloLookupActive(signal);
 
     if (!download.ok) {
       console.info("ALO CREDIT candidato de descarga fallo", {
         origen: describeDownloadCandidate(candidate),
         status: download.status,
       });
-      logAloInfo("ALO CREDIT candidato de descarga fallo detalle", {
-        origen: describeDownloadCandidate(candidate),
-        status: download.status,
-      });
-
       candidates = candidates.filter(
         (item) => !triedCandidates.has(candidateKey(item))
       );
@@ -2117,7 +2229,7 @@ async function downloadAndCacheFirstReport(
           candidates = dedupeDownloadCandidates([
             ...candidates.filter((item) => !triedCandidates.has(candidateKey(item))),
             ...nestedCandidates,
-          ]);
+          ]).slice(0, ALO_REPORT_CANDIDATE_LIMIT);
           console.info("ALO CREDIT respuesta textual sin identificador con rutas candidatas", {
             origen: describeDownloadCandidate(candidate),
             tipoIdentificador: identifierLabel,
@@ -2133,13 +2245,6 @@ async function downloadAndCacheFirstReport(
         identificador: maskNumericIdentifier(identifier),
         fuente: "archivo",
       });
-      logAloInfo("ALO CREDIT descarga descartada detalle", {
-        origen: describeDownloadCandidate(candidate),
-        tipoIdentificador: identifierLabel,
-        identificador: maskNumericIdentifier(identifier),
-        fuente: "archivo",
-      });
-
       candidates = candidates.filter(
         (item) => !triedCandidates.has(candidateKey(item))
       );
@@ -2173,14 +2278,13 @@ async function downloadAndCacheFirstReport(
     candidates = dedupeDownloadCandidates([
       ...candidates.filter((item) => !triedCandidates.has(candidateKey(item))),
       ...nestedCandidates,
-    ]);
+    ]).slice(0, ALO_REPORT_CANDIDATE_LIMIT);
 
     console.info("ALO CREDIT descarga devolvio HTML", {
       intento: depth + 1,
       origen: describeDownloadCandidate(candidate),
-      candidatos: candidates.slice(0, 5).map(describeDownloadCandidate),
+      candidatosPendientes: candidates.length,
       filas: firstTableRows(lastHtml, 10).length,
-      muestras: debugHtmlRows(lastHtml),
       descartadoSinIdentificador: Boolean(identifier),
       tipoIdentificador: identifierLabel,
     });
@@ -2200,20 +2304,7 @@ async function downloadAndCacheFirstReport(
     tipoIdentificador: identifierLabel,
     identificador: identifier ? maskNumericIdentifier(identifier) : null,
     intentos: triedCandidates.size,
-    ultimoHtml: {
-      filas: firstTableRows(lastHtml, 10).length,
-      muestras: debugHtmlRows(lastHtml),
-    },
-  });
-  logAloInfo("ALO CREDIT sin descarga valida detalle", {
-    tipoIdentificador: identifierLabel,
-    identificador: identifier ? maskNumericIdentifier(identifier) : null,
-    intentos: triedCandidates.size,
-    ultimoHtml: {
-      filas: firstTableRows(lastHtml, 10).length,
-      muestras: debugHtmlRows(lastHtml),
-      estructura: debugHtmlStructure(lastHtml, referer),
-    },
+    filasUltimoHtml: firstTableRows(lastHtml, 10).length,
   });
 
   return null;
@@ -2735,13 +2826,17 @@ function aloCarteraSearchCandidates(
     });
   }
 
-  return dedupeDownloadCandidates(candidates).slice(0, 24);
+  return dedupeDownloadCandidates(candidates).slice(
+    0,
+    ALO_CARTERA_CANDIDATE_LIMIT
+  );
 }
 
 async function fetchAloTextCandidate(
   jar: CookieJar,
   candidate: DownloadCandidate,
-  referer: string
+  referer: string,
+  signal?: AbortSignal
 ) {
   const url = new URL(candidate.url);
 
@@ -2770,21 +2865,36 @@ async function fetchAloTextCandidate(
       },
     },
     jar,
-    30000
+    ALO_NETWORK_ATTEMPT_TIMEOUT_MS,
+    signal
   );
 
+  if (!response.ok) {
+    await response.body?.cancel();
+    return {
+      ok: false,
+      status: response.status,
+      text: "",
+      url: url.toString(),
+    };
+  }
+
   return {
-    ok: response.ok,
+    ok: true,
     status: response.status,
-    text: await response.text(),
+    text: (await readResponseBuffer(response, ALO_MAX_HTML_BYTES)).toString(
+      "utf8"
+    ),
     url: url.toString(),
   };
 }
 
 async function consultarCuotaPlazoAloCartera(
   session: AloSession,
-  credito: AloCreditoImei
+  credito: AloCreditoImei,
+  signal?: AbortSignal
 ) {
+  assertAloLookupActive(signal);
   const searchValues = Array.from(
     new Set(
       [credito.documento]
@@ -2807,7 +2917,9 @@ async function consultarCuotaPlazoAloCartera(
         "User-Agent": ALO_USER_AGENT,
       },
     },
-    session.jar
+    session.jar,
+    8,
+    signal
   );
 
   if (looksLikeLoginPage(page.text)) {
@@ -2831,10 +2943,12 @@ async function consultarCuotaPlazoAloCartera(
     );
 
     for (const candidate of candidates) {
+      assertAloLookupActive(signal);
       const result = await fetchAloTextCandidate(
         session.jar,
         candidate,
-        page.url
+        page.url,
+        signal
       );
 
       if (!result.ok) {
@@ -2860,21 +2974,26 @@ async function consultarCuotaPlazoAloCartera(
     }
   }
 
-  logAloInfo("ALO CREDIT cartera sin cuota/plazo detalle", {
+  logAloInfo("ALO CREDIT cartera sin cuota/plazo detalle", () => ({
     busquedas: searchValues.map(maskNumericValue),
     estructura: debugHtmlStructure(page.text, page.url),
     fallos: fallos.slice(0, 8),
-  });
+  }));
 
   return null;
 }
 
 async function completarCuotaPlazoDesdeCartera(
   session: AloSession,
-  credito: AloCreditoImei
+  credito: AloCreditoImei,
+  signal?: AbortSignal
 ) {
   try {
-    const terms = await consultarCuotaPlazoAloCartera(session, credito);
+    const terms = await consultarCuotaPlazoAloCartera(
+      session,
+      credito,
+      signal
+    );
 
     if (!terms) {
       return credito;
@@ -2943,7 +3062,7 @@ function parseCreditoFromRow(
     accesorios !== null && accesorios > 0 ? accesorios : null;
 
   if (!clienteNombre || !documento || !valorCuota || !numeroCuotas) {
-    logAloInfo("ALO CREDIT credito parcial detalle", {
+    logAloInfo("ALO CREDIT credito parcial detalle", () => ({
       faltantes: {
         clienteNombre: !clienteNombre,
         documento: !documento,
@@ -2952,7 +3071,7 @@ function parseCreditoFromRow(
       },
       encabezadosDetectados: headerRow?.length ?? 0,
       columnas: row.length,
-    });
+    }));
   }
 
   return {
@@ -3162,12 +3281,12 @@ function findCreditosInWorkbookByDocumento(
   }
 
   if (filasNoInterpretadas > 0) {
-    logAloInfo("ALO CREDIT filas por cedula no interpretadas", {
+    logAloInfo("ALO CREDIT filas por cedula no interpretadas", () => ({
       documento: maskNumericIdentifier(documento),
       filasConDocumento,
       filasNoInterpretadas,
       diagnosticos,
-    });
+    }));
   }
 
   return Array.from(encontrados.values());
@@ -3183,7 +3302,8 @@ export function isAloConsultaConfigured() {
 export async function obtenerCreditoAloPorImei(
   imeiValue: unknown,
   documentoValue?: unknown,
-  sessionArg?: AloSession
+  sessionArg?: AloSession,
+  signal?: AbortSignal
 ) {
   const imeiDigits = onlyDigits(imeiValue);
   const imei = imeiDigits.length === 15 ? imeiDigits : "";
@@ -3199,12 +3319,13 @@ export async function obtenerCreditoAloPorImei(
     );
   }
 
-  const session = sessionArg ?? (await loginAlo());
+  const session = sessionArg ?? (await loginAlo(signal));
   const report = await downloadFirstReport(
     imei,
     session,
     sourceContainsImei,
-    "IMEI"
+    "IMEI",
+    signal
   );
 
   if (!report) {
@@ -3221,12 +3342,13 @@ export async function obtenerCreditoAloPorImei(
     return null;
   }
 
-  return completarCuotaPlazoDesdeCartera(session, credito);
+  return completarCuotaPlazoDesdeCartera(session, credito, signal);
 }
 
 export async function obtenerCreditoAloPorCedula(
   documentoValue: unknown,
-  sessionArg?: AloSession
+  sessionArg?: AloSession,
+  signal?: AbortSignal
 ) {
   const documento = onlyDigits(documentoValue).slice(0, 15);
 
@@ -3236,12 +3358,13 @@ export async function obtenerCreditoAloPorCedula(
     );
   }
 
-  const session = sessionArg ?? (await loginAlo());
+  const session = sessionArg ?? (await loginAlo(signal));
   const report = await downloadFirstReport(
     documento,
     session,
     sourceContainsDocumento,
-    "cedula"
+    "cedula",
+    signal
   );
 
   if (!report) {
@@ -3261,7 +3384,7 @@ export async function obtenerCreditoAloPorCedula(
     );
   }
 
-  return completarCuotaPlazoDesdeCartera(session, credito);
+  return completarCuotaPlazoDesdeCartera(session, credito, signal);
 }
 
 async function obtenerCreditoAloParaRegistroUnlocked(
@@ -3275,24 +3398,60 @@ async function obtenerCreditoAloParaRegistroUnlocked(
     );
   }
 
-  return obtenerCreditoAloPorCedula(documento);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    ALO_REGISTRY_LOOKUP_TIMEOUT_MS
+  );
+
+  try {
+    return await obtenerCreditoAloPorCedula(
+      documento,
+      undefined,
+      controller.signal
+    );
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new AloConsultaLookupError(
+        "ALO CREDIT tardo mas de 15 segundos; la consulta fue cancelada para proteger la aplicacion."
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function obtenerCreditoAloParaRegistro(
   documentoValue: unknown
 ): Promise<AloCreditoImei | null> {
-  const previous = aloLookupQueue;
-  let releaseQueue!: () => void;
+  const documento = onlyDigits(documentoValue).slice(0, 15);
 
-  aloLookupQueue = new Promise<void>((resolve) => {
-    releaseQueue = resolve;
-  });
+  if (documento.length < 5) {
+    throw new AloConsultaLookupError(
+      "La cedula debe tener entre 5 y 15 digitos."
+    );
+  }
 
-  await previous;
+  if (aloRegistryLookupInFlight) {
+    if (aloRegistryLookupInFlight.documento === documento) {
+      return aloRegistryLookupInFlight.promise;
+    }
+
+    throw new AloConsultaLookupError(
+      "ALO CREDIT esta atendiendo otra consulta; se omitio temporalmente para proteger la aplicacion."
+    );
+  }
+
+  const promise = obtenerCreditoAloParaRegistroUnlocked(documento);
+  aloRegistryLookupInFlight = { documento, promise };
 
   try {
-    return await obtenerCreditoAloParaRegistroUnlocked(documentoValue);
+    return await promise;
   } finally {
-    releaseQueue();
+    if (aloRegistryLookupInFlight?.promise === promise) {
+      aloRegistryLookupInFlight = null;
+    }
   }
 }

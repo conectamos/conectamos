@@ -183,10 +183,11 @@ test("el helper de registro ALO recibe solo cedula y solo consulta PorCedula", (
 
   assert.equal(lookupCalls.length, 1);
   assert.equal(calleeName(lookupCalls[0]), "obtenerCreditoAloPorCedula");
-  assert.equal(lookupCalls[0].arguments.length, 1);
-  assert.equal(
-    lookupCalls[0].arguments[0].getText(parsed.sourceFile),
-    "documento"
+  assert.deepEqual(
+    lookupCalls[0].arguments.map((argument) =>
+      argument.getText(parsed.sourceFile)
+    ),
+    ["documento", "undefined", "controller.signal"]
   );
   assert.equal(callsNamed(unlocked, "obtenerCreditoAloPorImei").length, 0);
 
@@ -198,8 +199,42 @@ test("el helper de registro ALO recibe solo cedula y solo consulta PorCedula", (
   assert.equal(unlockedCalls[0].arguments.length, 1);
   assert.equal(
     unlockedCalls[0].arguments[0].getText(parsed.sourceFile),
-    "documentoValue"
+    "documento"
   );
+});
+
+test("la consulta ALO de registro tiene plazo, pocos intentos y una sola ejecucion", () => {
+  const parsed = parseSource(ALO_SOURCE_PATH);
+
+  assert.match(
+    parsed.sourceText,
+    /ALO_REGISTRY_LOOKUP_TIMEOUT_MS\s*=\s*15_000/
+  );
+  assert.match(
+    parsed.sourceText,
+    /ALO_REPORT_CANDIDATE_LIMIT\s*=\s*10/
+  );
+  assert.match(
+    parsed.sourceText,
+    /depth\s*<\s*ALO_REPORT_CANDIDATE_LIMIT/
+  );
+  assert.doesNotMatch(parsed.sourceText, /depth\s*<\s*80/);
+  assert.match(parsed.sourceText, /AbortSignal\.any\(/);
+  assert.match(
+    parsed.sourceText,
+    /ALO_NETWORK_ATTEMPT_TIMEOUT_MS\s*=\s*8_000/
+  );
+  assert.match(parsed.sourceText, /ALO_MAX_REPORT_BYTES\s*=\s*20\s*\*/);
+  assert.match(parsed.sourceText, /ajaxFields\.get\("length"\)\s*\|\|\s*"100"/);
+  assert.doesNotMatch(parsed.sourceText, /Array\.from\(html\.matchAll/);
+  assert.match(parsed.sourceText, /if\s*\(!ALO_DEBUG\)/);
+  assert.match(parsed.sourceText, /JSON\.stringify\(createData\(\)\)/);
+  assert.match(parsed.sourceText, /aloRegistryLookupInFlight/);
+  assert.match(
+    parsed.sourceText,
+    /aloRegistryLookupInFlight\.documento\s*===\s*documento/
+  );
+  assert.doesNotMatch(parsed.sourceText, /aloLookupQueue/);
 });
 
 test("el registro ALO por cedula conserva el enriquecimiento de cuota y plazo", () => {
@@ -215,7 +250,7 @@ test("el registro ALO por cedula conserva el enriquecimiento de cuota y plazo", 
     carteraCalls[0].arguments.map((argument) =>
       argument.getText(parsed.sourceFile)
     ),
-    ["session", "credito"]
+    ["session", "credito", "signal"]
   );
 });
 
