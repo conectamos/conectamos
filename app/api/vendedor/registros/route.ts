@@ -41,6 +41,9 @@ import {
   validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
 import { syncVendorRewardSnapshotForSale } from "@/lib/vendor-earnings";
+import {
+  esServicioContadoRegistro as esServicioContado,
+} from "@/lib/vendor-sale-service";
 
 const PUNTOS_VENTA_EXCLUIDOS = new Set(["VENTAS", "BODEGA PRINCIPAL"]);
 const LISTA_NEGRA_ERROR = "CEDULA REPORTADA POR FRAUDE";
@@ -205,15 +208,6 @@ function decimalToNumber(value: unknown) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function esServicioContado(value: unknown) {
-  const servicio = String(value || "").trim().toUpperCase();
-  return (
-    servicio === "CONTADO" ||
-    servicio === "CONTADO CLARO" ||
-    servicio === "CONTADO LIBRES"
-  );
 }
 
 function normalizarServicioRegistro(
@@ -903,7 +897,14 @@ async function validarEquipoExistenteParaRegistro(params: {
   return { equipo };
 }
 
-async function validarDocumentoNoReportado(documentoNumero: string) {
+async function validarDocumentoNoReportado(
+  documentoNumero: string,
+  plataformaCredito: string
+) {
+  if (esServicioContado(plataformaCredito)) {
+    return null;
+  }
+
   const registroListaNegra = await buscarDocumentoListaNegra(documentoNumero);
 
   if (!registroListaNegra) {
@@ -1270,7 +1271,8 @@ export async function POST(req: Request) {
     }
 
     const errorListaNegra = await validarDocumentoNoReportado(
-      payload.data.documentoNumero
+      payload.data.documentoNumero,
+      payload.data.plataformaCredito
     );
 
     if (errorListaNegra) {
@@ -1517,7 +1519,8 @@ export async function PATCH(req: Request) {
     }
 
     const errorListaNegra = await validarDocumentoNoReportado(
-      payload.data.documentoNumero
+      payload.data.documentoNumero,
+      payload.data.plataformaCredito
     );
 
     if (errorListaNegra) {

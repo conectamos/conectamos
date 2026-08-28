@@ -24,6 +24,9 @@ import {
   formatearPesoInput,
   validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
+import {
+  esServicioContadoRegistro as esServicioContado,
+} from "@/lib/vendor-sale-service";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import {
   DashboardSidebar,
@@ -657,15 +660,6 @@ function mergeObservacionAccesorios(
   return actual ? `${actual} | ${accesorios}` : accesorios;
 }
 
-function esServicioContado(value: unknown) {
-  const servicio = String(value || "").trim().toUpperCase();
-  return (
-    servicio === "CONTADO" ||
-    servicio === "CONTADO CLARO" ||
-    servicio === "CONTADO LIBRES"
-  );
-}
-
 function esServicioFinanciera(value: unknown) {
   return String(value || "").trim().toUpperCase() === "FINANCIERA";
 }
@@ -1230,6 +1224,9 @@ export default function VendedorRegistroWorkspace({
   const cedulaFrenteInputRef = useRef<HTMLInputElement | null>(null);
   const cedulaReversoInputRef = useRef<HTMLInputElement | null>(null);
   const registroEditandoConvertido = esRegistroConvertido(registroEditando);
+  const listaNegraBloqueante = esServicioFinanciera(form.servicio)
+    ? listaNegraAlerta
+    : null;
   const ingresosResumen = obtenerIngresosResumen(
     form,
     financierasVisibles,
@@ -1387,7 +1384,7 @@ export default function VendedorRegistroWorkspace({
   useEffect(() => {
     const documento = onlyDigits(form.documentoNumero, 15);
 
-    if (documento.length < 5) {
+    if (!esServicioFinanciera(form.servicio) || documento.length < 5) {
       setListaNegraAlerta(null);
       setListaNegraModalCerrado(false);
       setVerificandoListaNegra(false);
@@ -1441,7 +1438,7 @@ export default function VendedorRegistroWorkspace({
       cancelled = true;
       controller.abort();
     };
-  }, [form.documentoNumero]);
+  }, [form.documentoNumero, form.servicio]);
 
   useEffect(() => {
     const documento = onlyDigits(form.documentoNumero, 15);
@@ -3123,7 +3120,9 @@ export default function VendedorRegistroWorkspace({
       requerido("clienteNombre", "El nombre completo es obligatorio");
       requerido("tipoDocumento", "Selecciona el tipo de documento");
       requerido("documentoNumero", "El numero de documento es obligatorio");
-      if (listaNegraAlerta) errores.documentoNumero = "CEDULA REPORTADA POR FRAUDE";
+      if (listaNegraBloqueante) {
+        errores.documentoNumero = "CEDULA REPORTADA POR FRAUDE";
+      }
       if (registroDuplicadoAlerta) {
         errores.documentoNumero =
           "Esta cedula y este IMEI ya aparecen juntos en el sistema";
@@ -3327,7 +3326,7 @@ export default function VendedorRegistroWorkspace({
     if (!isTextFilled(form.clienteNombre)) return "El nombre del cliente es obligatorio";
     if (!isTextFilled(form.tipoDocumento)) return "Debes seleccionar el tipo de documento";
     if (!isTextFilled(form.documentoNumero)) return "El documento del cliente es obligatorio";
-    if (listaNegraAlerta) return "CEDULA REPORTADA POR FRAUDE";
+    if (listaNegraBloqueante) return "CEDULA REPORTADA POR FRAUDE";
     if (registroDuplicadoAlerta) {
       return "REGISTRO DUPLICADO: esta cedula e IMEI ya aparecen en el sistema";
     }
@@ -3566,7 +3565,7 @@ export default function VendedorRegistroWorkspace({
       const data = await res.json();
 
       if (!res.ok) {
-        if (data?.listaNegra) {
+        if (esServicioFinanciera(form.servicio) && data?.listaNegra) {
           setListaNegraAlerta({
             motivo: data.listaNegra.motivo ?? null,
             reportadoPorNombre: data.listaNegra.reportadoPorNombre ?? null,
@@ -3740,7 +3739,7 @@ export default function VendedorRegistroWorkspace({
           </section>
         </div>
       )}
-      {listaNegraAlerta && !listaNegraModalCerrado && (
+      {listaNegraBloqueante && !listaNegraModalCerrado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
           <section
             role="alertdialog"
@@ -3770,30 +3769,30 @@ export default function VendedorRegistroWorkspace({
 
             <div className="space-y-5 px-6 py-6">
               <p className="text-base font-semibold leading-7 text-red-950">
-                No se puede guardar una venta con este documento. Verifica la
-                informacion antes de continuar.
+                No se puede guardar una venta financiada con este documento.
+                Verifica la informacion antes de continuar.
               </p>
 
-              {(listaNegraAlerta.sedeNombre ||
-                listaNegraAlerta.reportadoPorNombre ||
-                listaNegraAlerta.motivo) && (
+              {(listaNegraBloqueante.sedeNombre ||
+                listaNegraBloqueante.reportadoPorNombre ||
+                listaNegraBloqueante.motivo) && (
                 <div className="rounded-[26px] border border-red-100 bg-red-50 p-4 text-sm leading-6 text-red-950">
-                  {listaNegraAlerta.sedeNombre && (
+                  {listaNegraBloqueante.sedeNombre && (
                     <p>
                       <span className="font-black">Reportada por: </span>
-                      {listaNegraAlerta.sedeNombre}
+                      {listaNegraBloqueante.sedeNombre}
                     </p>
                   )}
-                  {listaNegraAlerta.reportadoPorNombre && (
+                  {listaNegraBloqueante.reportadoPorNombre && (
                     <p>
                       <span className="font-black">Asesor: </span>
-                      {listaNegraAlerta.reportadoPorNombre}
+                      {listaNegraBloqueante.reportadoPorNombre}
                     </p>
                   )}
-                  {listaNegraAlerta.motivo && (
+                  {listaNegraBloqueante.motivo && (
                     <p>
                       <span className="font-black">Observacion: </span>
-                      {listaNegraAlerta.motivo}
+                      {listaNegraBloqueante.motivo}
                     </p>
                   )}
                 </div>
