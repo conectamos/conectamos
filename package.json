@@ -12,6 +12,7 @@
     "test:analitico": "node --test tests/panel-analitico-supervisor-contract.test.mjs",
     "test:cierre": "node --test tests/cierre-sale-source-contract.test.mjs",
     "test:proveedores": "node --test tests/proveedores-contract.test.mjs tests/proveedores-ui-contract.test.mjs",
+    "test:inventario-imeis": "node --experimental-strip-types --test tests/inventory-imei-input.test.mjs",
     "test:login": "node --experimental-strip-types --test tests/login-resilience-contract.test.mjs",
     "proveedores:vapid": "node scripts/generar-vapid.mjs",
     "proveedores:notificar": "node scripts/notificar-proveedores.mjs",

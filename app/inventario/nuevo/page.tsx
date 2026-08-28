@@ -9,6 +9,10 @@ import {
 } from "@/app/dashboard/_components/operations-dashboard";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
 import LogoutButton from "@/app/dashboard/_components/logout-button";
+import {
+  extraerImeisMasivos,
+  normalizarSeparadoresImeisMasivos,
+} from "@/lib/inventory-imeis";
 
 const OPCIONES_PROVEEDOR_SEDE = [
   "Proveedor FINSER",
@@ -60,9 +64,18 @@ function formatearPesos(valor: string) {
   return `$ ${Number(limpio).toLocaleString("es-CO")}`;
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
+function FieldLabel({
+  children,
+  htmlFor,
+}: {
+  children: React.ReactNode;
+  htmlFor?: string;
+}) {
   return (
-    <label className="mb-2 block text-sm font-bold text-slate-700">
+    <label
+      htmlFor={htmlFor}
+      className="mb-2 block text-sm font-bold text-slate-700"
+    >
       {children}
     </label>
   );
@@ -110,11 +123,7 @@ export default function NuevoInventarioPage() {
   const [guardando, setGuardando] = useState(false);
 
   const cantidadImeisMasivos = useMemo(
-    () =>
-      imeisMasivos
-        .split("\n")
-        .map((valor) => valor.replace(/\D/g, "").trim())
-        .filter(Boolean).length,
+    () => extraerImeisMasivos(imeisMasivos).length,
     [imeisMasivos]
   );
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
@@ -205,10 +214,7 @@ export default function NuevoInventarioPage() {
   };
 
   const obtenerImeisAdmin = () => {
-    const listaMasiva = imeisMasivos
-      .split("\n")
-      .map((valor) => valor.replace(/\D/g, "").trim())
-      .filter((valor) => valor.length > 0);
+    const listaMasiva = extraerImeisMasivos(imeisMasivos);
 
     const imeiUnico = imei.replace(/\D/g, "").trim();
 
@@ -510,15 +516,36 @@ export default function NuevoInventarioPage() {
                 </div>
 
                 <div>
-                  <FieldLabel>IMEIs masivos (uno por linea)</FieldLabel>
+                  <FieldLabel htmlFor="imeis-masivos">
+                    IMEIs masivos (uno por linea)
+                  </FieldLabel>
                   <textarea
+                    id="imeis-masivos"
                     placeholder={`352041714273552\n352041714273553\n352041714273554`}
                     value={imeisMasivos}
-                    onChange={(event) => setImeisMasivos(event.target.value)}
+                    onChange={(event) =>
+                      setImeisMasivos(
+                        normalizarSeparadoresImeisMasivos(event.target.value)
+                      )
+                    }
+                    aria-describedby="imeis-masivos-ayuda imeis-masivos-condicion"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     rows={7}
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-base leading-8 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 font-mono text-base leading-8 tabular-nums text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
                   />
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p
+                    id="imeis-masivos-ayuda"
+                    className="mt-2 text-xs font-semibold text-slate-600"
+                  >
+                    Pega los IMEIs separados por comas, espacios, punto y coma o
+                    saltos de linea. Se organizaran automaticamente uno por linea.
+                  </p>
+                  <p
+                    id="imeis-masivos-condicion"
+                    className="mt-1 text-xs text-slate-500"
+                  >
                     {esAdmin
                       ? "Usa esta carga solo cuando referencia, costo, factura y distribuidor sean los mismos."
                       : "Usa esta carga solo cuando referencia, costo, distribuidor y estado financiero sean los mismos."}
