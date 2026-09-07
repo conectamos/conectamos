@@ -417,19 +417,13 @@ function PerformancePanel({
   items: CommercialSummary["rendimientoPorSede"];
   mostrarSoloVentas: boolean;
 }) {
-  const visibles = (mostrarSoloVentas
-    ? [...items].sort(
-        (a, b) =>
-          b.ventas - a.ventas || a.nombre.localeCompare(b.nombre, "es")
-      )
-    : items
-  ).slice(0, 5);
-  const max = Math.max(
-    1,
-    ...visibles.map((item) =>
-      mostrarSoloVentas ? item.ventas : item.ingresos
+  const visibles = [...items]
+    .sort(
+      (a, b) =>
+        b.ventas - a.ventas || a.nombre.localeCompare(b.nombre, "es")
     )
-  );
+    .slice(0, 5);
+  const maxVentas = Math.max(1, ...visibles.map((item) => item.ventas));
 
   return (
     <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
@@ -460,9 +454,7 @@ function PerformancePanel({
                     style={{
                       width: `${Math.max(
                         3,
-                        ((mostrarSoloVentas ? item.ventas : item.ingresos) /
-                          max) *
-                          100
+                        (item.ventas / maxVentas) * 100
                       )}%`,
                     }}
                   />

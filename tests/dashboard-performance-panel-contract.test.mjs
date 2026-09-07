@@ -20,6 +20,70 @@ function performancePanelSource() {
   return operations.slice(start, end);
 }
 
+test("ordena todas las sedes por ventas descendentes y desempata por nombre", () => {
+  const panel = performancePanelSource();
+  const rankingStart = panel.indexOf("const visibles =");
+  const maxStart = panel.indexOf("const maxVentas", rankingStart);
+
+  assert.ok(rankingStart >= 0, "Debe existir la preparacion del ranking");
+  assert.ok(maxStart > rankingStart, "Debe existir el maximo de ventas");
+
+  const rankingLogic = panel.slice(rankingStart, maxStart);
+
+  assert.match(rankingLogic, /b\.ventas - a\.ventas/);
+  assert.match(
+    rankingLogic,
+    /a\.nombre\.localeCompare\(b\.nombre,\s*"es"\)/
+  );
+  assert.match(rankingLogic, /\.slice\(0,\s*5\)/);
+  assert.doesNotMatch(
+    rankingLogic,
+    /mostrarSoloVentas/,
+    "El orden no debe cambiar segun el rol"
+  );
+  assert.doesNotMatch(
+    rankingLogic,
+    /\.(?:ingresos|utilidad)\b/,
+    "Ingresos y utilidad no deben intervenir en el orden"
+  );
+});
+
+test("el maximo y el ancho de las barras dependen unicamente de las ventas", () => {
+  const panel = performancePanelSource();
+  const maxStart = panel.indexOf("const maxVentas");
+  const renderStart = panel.indexOf("return (", maxStart);
+
+  assert.ok(maxStart >= 0, "Debe existir maxVentas");
+  assert.ok(renderStart > maxStart, "Debe existir el render del panel");
+
+  const maxLogic = panel.slice(maxStart, renderStart);
+
+  assert.match(
+    maxLogic,
+    /Math\.max\(\s*1,\s*\.\.\.visibles\.map\(\(item\) => item\.ventas\)\s*\)/
+  );
+  assert.doesNotMatch(
+    maxLogic,
+    /mostrarSoloVentas|item\.(?:ingresos|utilidad)/,
+    "La escala debe ser identica para todos los roles"
+  );
+
+  const widthStart = panel.indexOf("width:");
+  const widthEnd = panel.indexOf("/>", widthStart);
+
+  assert.ok(widthStart >= 0, "La barra debe declarar su ancho");
+  assert.ok(widthEnd > widthStart, "El ancho debe conservar un bloque identificable");
+
+  const widthLogic = panel.slice(widthStart, widthEnd);
+
+  assert.match(widthLogic, /item\.ventas\s*\/\s*maxVentas/);
+  assert.doesNotMatch(
+    widthLogic,
+    /mostrarSoloVentas|item\.(?:ingresos|utilidad)/,
+    "La barra debe representar ventas para todos los roles"
+  );
+});
+
 test("el numero de ventas conserva jerarquia explicita y siempre visible", () => {
   const panel = performancePanelSource();
   const marker = panel.indexOf("data-performance-sales-count");
