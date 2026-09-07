@@ -444,14 +444,17 @@ function PerformancePanel({
           Sin rendimiento por sede para mostrar.
         </div>
       ) : (
-        <div className="mt-6 space-y-4">
+        <div className="mt-6 space-y-3.5">
           {visibles.map((item) => (
-            <div key={item.sedeId} className="grid grid-cols-[82px_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[110px_minmax(0,1fr)]">
+            <div
+              key={item.sedeId}
+              className="grid grid-cols-[72px_minmax(0,1fr)_72px] items-center gap-3 sm:grid-cols-[100px_minmax(0,1fr)_82px]"
+            >
               <p className="truncate text-xs font-bold text-slate-600" title={item.nombre}>
                 {item.nombre}
               </p>
               <div className="min-w-0">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center">
                   <div
                     className="h-3 min-w-[5px] rounded-r bg-[#e30613]"
                     style={{
@@ -463,15 +466,23 @@ function PerformancePanel({
                       )}%`,
                     }}
                   />
-                  <span className="shrink-0 text-xs font-bold text-slate-700">
-                    {mostrarSoloVentas
-                      ? `${item.ventas} ${item.ventas === 1 ? "venta" : "ventas"}`
-                      : formatoPesos(item.ingresos)}
-                  </span>
                 </div>
                 {!mostrarSoloVentas && (
-                  <p className="mt-1 text-[11px] text-slate-400">{item.ventas} {item.ventas === 1 ? "venta" : "ventas"}</p>
+                  <p className="mt-1.5 truncate text-[10px] font-semibold text-slate-400">
+                    Ingresos: {formatoPesos(item.ingresos)}
+                  </p>
                 )}
+              </div>
+              <div className="rounded-xl border border-red-100 bg-red-50/80 px-2.5 py-2 text-right">
+                <strong
+                  data-performance-sales-count
+                  className="block text-lg font-black leading-none tabular-nums text-[#e30613]"
+                >
+                  {item.ventas}
+                </strong>
+                <span className="mt-1 block text-[9px] font-extrabold uppercase tracking-[0.14em] text-red-600/75">
+                  {item.ventas === 1 ? "venta" : "ventas"}
+                </span>
               </div>
             </div>
           ))}
