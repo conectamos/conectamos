@@ -41,18 +41,35 @@ test("el numero de ventas conserva jerarquia explicita y siempre visible", () =>
   );
 });
 
-test("el monto permanece oculto cuando mostrarSoloVentas esta activo", () => {
+test("la utilidad permanece oculta cuando mostrarSoloVentas esta activo", () => {
   const panel = performancePanelSource();
-  const amountGuard = panel.indexOf("{!mostrarSoloVentas && (");
-  const amount = panel.indexOf("formatoPesos(item.ingresos)");
+  const utilityGuard = panel.indexOf("{!mostrarSoloVentas && (");
+  const salesMetric = panel.indexOf("data-performance-sales-count", utilityGuard);
+  const utilityMatches = [
+    ...panel.matchAll(/formatoPesos\(item\.utilidad\)/g),
+  ];
 
-  assert.ok(amountGuard > 0, "El monto debe conservar una guarda explicita");
-  assert.ok(amount > amountGuard, "El monto debe renderizarse dentro de !mostrarSoloVentas");
-  assert.equal(
-    panel.match(/formatoPesos\(item\.ingresos\)/g)?.length,
-    1,
-    "No debe existir otro monto de sede fuera de la guarda"
+  assert.ok(utilityGuard > 0, "La utilidad debe conservar una guarda explicita");
+  assert.ok(salesMetric > utilityGuard, "La guarda debe cerrar antes de la metrica de ventas");
+  assert.ok(utilityMatches.length > 0, "Debe mostrarse la utilidad real de la sede");
+  assert.ok(
+    utilityMatches.every(
+      (match) => match.index > utilityGuard && match.index < salesMetric
+    ),
+    "La utilidad solo debe renderizarse dentro de !mostrarSoloVentas"
   );
+  assert.doesNotMatch(panel, /formatoPesos\(item\.ingresos\)/);
+});
+
+test("la utilidad inicia enmascarada y se revela por mouse o teclado", () => {
+  const panel = performancePanelSource();
+
+  assert.match(panel, /Utilidad:/);
+  assert.match(panel, /\*\*\*\*/);
+  assert.match(panel, /group-hover\/utility:hidden/);
+  assert.match(panel, /group-hover\/utility:inline/);
+  assert.match(panel, /group-focus-within\/utility:hidden/);
+  assert.match(panel, /group-focus-within\/utility:inline/);
 });
 
 test("el modo supervisor sigue ocultando montos sin afectar al administrador", () => {

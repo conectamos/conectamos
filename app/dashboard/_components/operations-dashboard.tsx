@@ -468,9 +468,26 @@ function PerformancePanel({
                   />
                 </div>
                 {!mostrarSoloVentas && (
-                  <p className="mt-1.5 truncate text-[10px] font-semibold text-slate-400">
-                    Ingresos: {formatoPesos(item.ingresos)}
-                  </p>
+                  <button
+                    type="button"
+                    className="group/utility mt-1.5 inline-flex max-w-full cursor-help items-center gap-1.5 rounded text-[10px] font-semibold text-slate-400 outline-none transition focus-visible:ring-2 focus-visible:ring-[#e30613]/30"
+                    aria-label={`Utilidad de ${item.nombre}: ${formatoPesos(item.utilidad)}`}
+                    title="Pasa el cursor o enfoca para ver la utilidad"
+                  >
+                    <span className="shrink-0">Utilidad:</span>
+                    <span
+                      aria-hidden="true"
+                      className="font-extrabold tracking-[0.16em] text-slate-500 group-hover/utility:hidden group-focus-within/utility:hidden"
+                    >
+                      ****
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="hidden truncate font-bold tabular-nums text-slate-700 group-hover/utility:inline group-focus-within/utility:inline"
+                    >
+                      {formatoPesos(item.utilidad)}
+                    </span>
+                  </button>
                 )}
               </div>
               <div className="rounded-xl border border-red-100 bg-red-50/80 px-2.5 py-2 text-right">
