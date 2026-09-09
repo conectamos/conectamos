@@ -95,6 +95,7 @@ model Usuario {
   importacionesCartera     CargaCarteraNuovo[]
   facturasProveedorCreadas FacturaProveedor[]          @relation("FacturaProveedorCreadaPor")
   facturasProveedorPagadas FacturaProveedor[]          @relation("FacturaProveedorPagoAprobadoPor")
+  abonosProveedorAprobados AbonoFacturaProveedor[]     @relation("AbonoFacturaProveedorAprobadoPor")
   pushProveedores          PushSubscriptionProveedor[]
   createdAt                DateTime                    @default(now())
   updatedAt                DateTime                    @updatedAt
@@ -116,6 +117,7 @@ model FacturaProveedor {
   pagoAprobadoEn           DateTime?
   creadoPor                Usuario                 @relation("FacturaProveedorCreadaPor", fields: [creadoPorId], references: [id])
   pagoAprobadoPor          Usuario?                @relation("FacturaProveedorPagoAprobadoPor", fields: [pagoAprobadoPorId], references: [id], onDelete: SetNull)
+  abonos                   AbonoFacturaProveedor[]
   avisos                   AvisoFacturaProveedor[]
   createdAt                DateTime                @default(now())
   updatedAt                DateTime                @updatedAt
@@ -123,6 +125,30 @@ model FacturaProveedor {
   @@unique([aliadoNormalizado, numeroFacturaNormalizado])
   @@index([estado, fechaVencimiento])
   @@index([createdAt])
+}
+
+model AbonoFacturaProveedor {
+  id                    Int              @id @default(autoincrement())
+  facturaId             Int
+  valor                 Decimal          @db.Decimal(14, 2)
+  saldoAnterior         Decimal          @db.Decimal(14, 2)
+  saldoPosterior        Decimal          @db.Decimal(14, 2)
+  aliadoSnapshot        String
+  numeroFacturaSnapshot String
+  valorFacturaSnapshot  Decimal          @db.Decimal(14, 2)
+  claveIdempotencia     String           @unique
+  referencia            String?
+  observacion           String?
+  aprobadoPorId         Int?
+  aprobadoPorNombre     String
+  aprobadoEn            DateTime         @default(now())
+  factura               FacturaProveedor @relation(fields: [facturaId], references: [id], onDelete: Restrict)
+  aprobadoPor           Usuario?         @relation("AbonoFacturaProveedorAprobadoPor", fields: [aprobadoPorId], references: [id], onDelete: SetNull)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([facturaId, aprobadoEn])
+  @@index([aprobadoEn])
 }
 
 model PushSubscriptionProveedor {

@@ -2,6 +2,19 @@ import {
   getDateKeyInColombia,
   normalizeDateKey,
 } from "@/lib/credit-date-utils";
+import {
+  calcularSaldoFacturaProveedor,
+  centavosADecimalProveedor,
+  decimalProveedorACentavos,
+} from "./proveedores-pagos";
+
+export {
+  calcularSaldoFacturaProveedor,
+  centavosADecimalProveedor,
+  decimalProveedorACentavos,
+  normalizarClaveIdempotenciaProveedor,
+  validarAbonoFacturaProveedor,
+} from "./proveedores-pagos";
 
 export const ESTADO_FACTURA_PROVEEDOR = {
   PAGADO: "PAGADO",
@@ -27,6 +40,7 @@ export type TipoAvisoFacturaProveedor =
   | "VENCIDA";
 
 type FacturaProveedorSerializable = {
+  abonos?: AbonoFacturaProveedorSerializable[];
   aliado: string;
   creadoPorId: number;
   creadoPorNombre: string;
@@ -42,9 +56,35 @@ type FacturaProveedorSerializable = {
   valorPagar: { toString(): string } | number | string;
 };
 
+export type AbonoFacturaProveedorSerializable = {
+  aliadoSnapshot: string;
+  aprobadoEn: Date | string;
+  aprobadoPorId: number | null;
+  aprobadoPorNombre: string;
+  createdAt: Date | string;
+  facturaId: number;
+  id: number;
+  numeroFacturaSnapshot: string;
+  observacion: string | null;
+  referencia: string | null;
+  saldoAnterior: { toString(): string } | number | string;
+  saldoPosterior: { toString(): string } | number | string;
+  updatedAt: Date | string;
+  valor: { toString(): string } | number | string;
+  valorFacturaSnapshot: { toString(): string } | number | string;
+};
+
 export type FacturaProveedorSerializada = ReturnType<
   typeof serializarFacturaProveedor
 >;
+
+export function numeroReciboAbonoProveedor(id: number) {
+  return `PROV-${String(id).padStart(8, "0")}`;
+}
+
+export function rutaReciboAbonoProveedor(facturaId: number, abonoId: number) {
+  return `/api/proveedores/${facturaId}/abonos/${abonoId}/recibo`;
+}
 
 function fechaIso(value: Date | string | null) {
   if (!value) return null;
@@ -118,7 +158,15 @@ export function parseValorPagarProveedor(value: unknown) {
       return null;
     }
 
-    return value.toFixed(2);
+    const centavos = Math.round(value * 100);
+    if (
+      !Number.isSafeInteger(centavos) ||
+      Math.abs(value * 100 - centavos) > 0.000_001
+    ) {
+      return null;
+    }
+
+    return centavosADecimalProveedor(centavos);
   }
 
   const raw = String(value ?? "").trim();
@@ -194,6 +242,34 @@ export function obtenerTipoAvisoFacturaProveedor(
   return null;
 }
 
+export function serializarAbonoFacturaProveedor(
+  abono: AbonoFacturaProveedorSerializable,
+) {
+  const numeroRecibo = numeroReciboAbonoProveedor(abono.id);
+  const valor = Number(abono.valor.toString());
+
+  return {
+    id: abono.id,
+    facturaId: abono.facturaId,
+    numeroRecibo,
+    aliado: abono.aliadoSnapshot,
+    numeroFactura: abono.numeroFacturaSnapshot,
+    valor,
+    valorAbono: valor,
+    valorFactura: Number(abono.valorFacturaSnapshot.toString()),
+    saldoAnterior: Number(abono.saldoAnterior.toString()),
+    saldoPosterior: Number(abono.saldoPosterior.toString()),
+    referencia: abono.referencia,
+    observacion: abono.observacion,
+    aprobadoPorId: abono.aprobadoPorId,
+    aprobadoPorNombre: abono.aprobadoPorNombre,
+    aprobadoEn: fechaIso(abono.aprobadoEn),
+    reciboUrl: rutaReciboAbonoProveedor(abono.facturaId, abono.id),
+    createdAt: fechaIso(abono.createdAt),
+    updatedAt: fechaIso(abono.updatedAt),
+  };
+}
+
 export function serializarFacturaProveedor(
   factura: FacturaProveedorSerializable,
   hoyKey = getDateKeyInColombia()
@@ -201,6 +277,12 @@ export function serializarFacturaProveedor(
   const fechaVencimiento =
     databaseDateToDateKey(factura.fechaVencimiento) ?? "";
   const valorPagar = Number(factura.valorPagar.toString());
+  const abonos = (factura.abonos || []).map(serializarAbonoFacturaProveedor);
+  const saldo = calcularSaldoFacturaProveedor(
+    factura.valorPagar,
+    factura.abonos || [],
+    factura.estado,
+  );
 
   return {
     id: factura.id,
@@ -210,6 +292,11 @@ export function serializarFacturaProveedor(
     fechaVencimiento,
     valor: valorPagar,
     valorPagar,
+    valorFactura: Number(saldo.valorFactura),
+    valorAbonado: Number(saldo.valorAbonado),
+    saldoPendiente: Number(saldo.saldoPendiente),
+    cantidadAbonos: saldo.cantidadAbonos,
+    abonos,
     estado: factura.estado as EstadoFacturaProveedorValue,
     situacion: obtenerSituacionFacturaProveedor(
       factura.estado,
@@ -233,22 +320,27 @@ export function serializarFacturaProveedor(
 export function resumirFacturasProveedor(
   facturas: FacturaProveedorSerializada[]
 ) {
-  return facturas.reduce(
+  const resumenCentavos = facturas.reduce(
     (resumen, factura) => {
+      const valorAbonadoCentavos =
+        decimalProveedorACentavos(factura.valorAbonado) || 0;
+      const saldoPendienteCentavos =
+        decimalProveedorACentavos(factura.saldoPendiente) || 0;
+
       resumen.total += 1;
+      resumen.valorPagadoCentavos += valorAbonadoCentavos;
 
       if (factura.estado === ESTADO_FACTURA_PROVEEDOR.PAGADO) {
         resumen.pagadas += 1;
-        resumen.valorPagado += factura.valorPagar;
         return resumen;
       }
 
       resumen.pendientes += 1;
-      resumen.valorPendiente += factura.valorPagar;
+      resumen.valorPendienteCentavos += saldoPendienteCentavos;
 
       if (factura.situacion === "VENCIDA") {
         resumen.vencidas += 1;
-        resumen.valorVencido += factura.valorPagar;
+        resumen.valorVencidoCentavos += saldoPendienteCentavos;
       } else if (
         factura.situacion === "VENCE_HOY" ||
         factura.situacion === "PROXIMA"
@@ -264,11 +356,22 @@ export function resumirFacturasProveedor(
       pagadas: 0,
       vencidas: 0,
       proximas: 0,
-      valorPendiente: 0,
-      valorPagado: 0,
-      valorVencido: 0,
+      valorPendienteCentavos: 0,
+      valorPagadoCentavos: 0,
+      valorVencidoCentavos: 0,
     }
   );
+
+  return {
+    total: resumenCentavos.total,
+    pendientes: resumenCentavos.pendientes,
+    pagadas: resumenCentavos.pagadas,
+    vencidas: resumenCentavos.vencidas,
+    proximas: resumenCentavos.proximas,
+    valorPendiente: resumenCentavos.valorPendienteCentavos / 100,
+    valorPagado: resumenCentavos.valorPagadoCentavos / 100,
+    valorVencido: resumenCentavos.valorVencidoCentavos / 100,
+  };
 }
 
 export function validarNuevaFacturaProveedor(

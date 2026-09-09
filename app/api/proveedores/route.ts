@@ -100,6 +100,11 @@ export async function GET(req: Request) {
 
     const facturas = await prisma.facturaProveedor.findMany({
       where,
+      include: {
+        abonos: {
+          orderBy: [{ aprobadoEn: "desc" }, { id: "desc" }],
+        },
+      },
       orderBy: [
         { estado: "asc" },
         { fechaVencimiento: "asc" },

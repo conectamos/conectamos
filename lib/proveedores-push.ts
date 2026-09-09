@@ -2,6 +2,7 @@ import "server-only";
 
 import webpush from "web-push";
 import {
+  calcularSaldoFacturaProveedor,
   databaseDateToDateKey,
   diferenciaDiasFechaProveedor,
   formatoPesosProveedor,
@@ -13,6 +14,7 @@ export type PushPayloadProveedor = {
   body: string;
   data: {
     facturaId: number;
+    saldoPendiente: number;
     url: string;
   };
   icon: string;
@@ -27,10 +29,15 @@ type PushSubscriptionLike = {
 };
 
 type FacturaAvisoLike = {
+  abonos?: Array<{
+    valor: { toString(): string } | number | string;
+  }>;
   aliado: string;
+  estado?: string;
   fechaVencimiento: Date | string;
   id: number;
   numeroFactura: string;
+  saldoPendiente?: { toString(): string } | number | string;
   valorPagar: { toString(): string } | number | string;
 };
 
@@ -114,18 +121,27 @@ export function crearPayloadAvisoFacturaProveedor(
   const fechaVencimiento =
     databaseDateToDateKey(factura.fechaVencimiento) || hoyKey;
   const dias = diferenciaDiasFechaProveedor(fechaVencimiento, hoyKey);
-  const valor = formatoPesosProveedor(factura.valorPagar.toString());
+  const saldoPendiente =
+    factura.saldoPendiente ??
+    calcularSaldoFacturaProveedor(
+      factura.valorPagar,
+      factura.abonos || [],
+      factura.estado,
+    ).saldoPendiente;
+  const saldoPendienteNumero = Number(saldoPendiente.toString());
+  const valor = formatoPesosProveedor(saldoPendiente);
   const detalleFactura = `${factura.aliado} · Factura ${factura.numeroFactura}`;
 
   if (tipo === "VENCIDA") {
     const diasVencida = Math.abs(dias);
     return {
       title: "Factura de proveedor vencida",
-      body: `${detalleFactura} vencio hace ${diasVencida} ${diasVencida === 1 ? "dia" : "dias"}. Valor: ${valor}.`,
+      body: `${detalleFactura} vencio hace ${diasVencida} ${diasVencida === 1 ? "dia" : "dias"}. Saldo pendiente: ${valor}.`,
       icon: "/branding/conectamos-logo.png",
       tag: `factura-proveedor-${factura.id}`,
       data: {
         facturaId: factura.id,
+        saldoPendiente: saldoPendienteNumero,
         url: RUTA_PROVEEDORES,
       },
     };
@@ -134,11 +150,12 @@ export function crearPayloadAvisoFacturaProveedor(
   if (tipo === "VENCE_HOY") {
     return {
       title: "Factura de proveedor vence hoy",
-      body: `${detalleFactura} vence hoy. Valor: ${valor}.`,
+      body: `${detalleFactura} vence hoy. Saldo pendiente: ${valor}.`,
       icon: "/branding/conectamos-logo.png",
       tag: `factura-proveedor-${factura.id}`,
       data: {
         facturaId: factura.id,
+        saldoPendiente: saldoPendienteNumero,
         url: RUTA_PROVEEDORES,
       },
     };
@@ -146,11 +163,12 @@ export function crearPayloadAvisoFacturaProveedor(
 
   return {
     title: "Proximo vencimiento de proveedor",
-    body: `${detalleFactura} vence en ${dias} ${dias === 1 ? "dia" : "dias"} (${fechaVencimiento}). Valor: ${valor}.`,
+    body: `${detalleFactura} vence en ${dias} ${dias === 1 ? "dia" : "dias"} (${fechaVencimiento}). Saldo pendiente: ${valor}.`,
     icon: "/branding/conectamos-logo.png",
     tag: `factura-proveedor-${factura.id}`,
     data: {
       facturaId: factura.id,
+      saldoPendiente: saldoPendienteNumero,
       url: RUTA_PROVEEDORES,
     },
   };

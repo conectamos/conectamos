@@ -9,6 +9,7 @@ import {
   resumirErrorPushProveedor,
 } from "@/lib/proveedores-push";
 import {
+  calcularSaldoFacturaProveedor,
   dateKeyToDatabaseDate,
   DIAS_ANTICIPACION_AVISO_PROVEEDOR,
   ESTADO_FACTURA_PROVEEDOR,
@@ -132,6 +133,11 @@ async function cargarContextoNotificaciones(
         fechaVencimiento: true,
         valorPagar: true,
         estado: true,
+        abonos: {
+          select: {
+            valor: true,
+          },
+        },
       },
       orderBy: [{ fechaVencimiento: "asc" }, { id: "asc" }],
     }),
@@ -153,8 +159,17 @@ async function cargarContextoNotificaciones(
     }),
   ]);
 
+  const facturasConSaldo = facturas.map((factura) => ({
+    ...factura,
+    saldoPendiente: calcularSaldoFacturaProveedor(
+      factura.valorPagar,
+      factura.abonos,
+      factura.estado,
+    ).saldoPendiente,
+  }));
+
   return {
-    facturas,
+    facturas: facturasConSaldo,
     suscripciones,
     fechaLimiteKey,
   };

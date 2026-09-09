@@ -22,6 +22,13 @@ import {
   triggerLiveRefresh,
   useLiveRefresh,
 } from "@/lib/use-live-refresh";
+import {
+  formatPaymentAmountInput,
+  moneyValueToCents,
+  moneyValueToPaymentInput,
+  normalizePaymentAmountInput,
+  paymentAmountToCents,
+} from "@/lib/proveedores-pagos";
 
 type WorkspaceSession = {
   nombre: string;
@@ -31,8 +38,23 @@ type WorkspaceSession = {
   usuario: string;
 };
 
+type AbonoProveedor = {
+  aprobadoEn: string;
+  aprobadoPor: string | null;
+  id: number;
+  numeroRecibo: string;
+  observacion: string | null;
+  reciboUrl: string;
+  referencia: string | null;
+  saldoAnterior: number;
+  saldoPosterior: number;
+  valor: number;
+};
+
 type FacturaProveedor = {
+  abonos: AbonoProveedor[];
   aliado: string;
+  cantidadAbonos: number;
   diasParaVencer: number | null;
   estado: string;
   estadoVencimiento: string | null;
@@ -41,6 +63,9 @@ type FacturaProveedor = {
   numeroFactura: string;
   pagoAprobadoEn: string | null;
   pagoAprobadoPor: string | null;
+  saldoPendiente: number;
+  valorAbonado: number;
+  valorFactura: number;
   valorPagar: number;
 };
 
@@ -58,6 +83,24 @@ type FormularioFactura = {
   fechaVencimiento: string;
   numeroFactura: string;
   valorPagar: string;
+};
+
+type FormularioPago = {
+  observacion: string;
+  referencia: string;
+  valorAbono: string;
+};
+
+type IntentoPago = {
+  idempotencyKey: string;
+  observacion?: string;
+  referencia?: string;
+  valorAbono: string;
+};
+
+type ReciboSeleccionado = {
+  abono: AbonoProveedor;
+  factura: FacturaProveedor;
 };
 
 type FlashMessage = {
@@ -82,9 +125,16 @@ const EMPTY_FORM: FormularioFactura = {
   valorPagar: "",
 };
 
+const EMPTY_PAYMENT_FORM: FormularioPago = {
+  observacion: "",
+  referencia: "",
+  valorAbono: "",
+};
+
 const moneyFormatter = new Intl.NumberFormat("es-CO", {
   currency: "COP",
-  maximumFractionDigits: 0,
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
   style: "currency",
 });
 
@@ -188,6 +238,49 @@ function actorName(value: unknown) {
   return null;
 }
 
+function optionalText(value: unknown) {
+  if (typeof value !== "string") return null;
+  return value.trim() || null;
+}
+
+function numericValue(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizePayment(
+  value: unknown,
+  fallbackInvoiceId?: number,
+): AbonoProveedor | null {
+  if (!isRecord(value)) return null;
+
+  const id = Number(value.id || 0);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const rawInvoiceId = Number(value.facturaId ?? fallbackInvoiceId ?? 0);
+  const invoiceId =
+    Number.isInteger(rawInvoiceId) && rawInvoiceId > 0 ? rawInvoiceId : null;
+
+  return {
+    aprobadoEn: String(value.aprobadoEn ?? value.createdAt ?? ""),
+    aprobadoPor: actorName(
+      value.aprobadoPor ?? value.aprobadoPorNombre ?? value.usuario,
+    ),
+    id,
+    numeroRecibo:
+      optionalText(value.numeroRecibo ?? value.recibo) ?? `REC-${id}`,
+    observacion: optionalText(value.observacion),
+    reciboUrl:
+      optionalText(value.reciboUrl) ??
+      (invoiceId
+        ? `/api/proveedores/${invoiceId}/abonos/${id}/recibo`
+        : ""),
+    referencia: optionalText(value.referencia),
+    saldoAnterior: Math.max(0, numericValue(value.saldoAnterior)),
+    saldoPosterior: Math.max(0, numericValue(value.saldoPosterior)),
+    valor: Math.max(0, numericValue(value.valor ?? value.valorAbono)),
+  };
+}
+
 function normalizeInvoice(value: unknown): FacturaProveedor | null {
   if (!isRecord(value)) return null;
 
@@ -195,33 +288,73 @@ function normalizeInvoice(value: unknown): FacturaProveedor | null {
 
   if (!Number.isInteger(id) || id <= 0) return null;
 
+  const estado = String(value.estado || "PENDIENTE").trim().toUpperCase();
+  const pagoAprobadoEn = value.pagoAprobadoEn
+    ? String(value.pagoAprobadoEn)
+    : null;
+  const abonos = (Array.isArray(value.abonos) ? value.abonos : [])
+    .map((abono) => normalizePayment(abono, id))
+    .filter((abono): abono is AbonoProveedor => Boolean(abono));
+  const valorFactura = Math.max(
+    0,
+    numericValue(value.valorFactura ?? value.valorPagar ?? value.valor),
+  );
+  const valorAbonadoDesdeAbonos = abonos.reduce(
+    (total, abono) => total + abono.valor,
+    0,
+  );
+  const pagoTotalAnterior =
+    Boolean(pagoAprobadoEn) ||
+    ["APROBADO", "PAGADO", "PAGO_APROBADO"].includes(estado);
+  const valorAbonado = Math.max(
+    0,
+    value.valorAbonado === undefined || value.valorAbonado === null
+      ? valorAbonadoDesdeAbonos || (pagoTotalAnterior ? valorFactura : 0)
+      : numericValue(value.valorAbonado),
+  );
+  const saldoPendiente = Math.max(
+    0,
+    value.saldoPendiente === undefined || value.saldoPendiente === null
+      ? valorFactura - valorAbonado
+      : numericValue(value.saldoPendiente),
+  );
+  const rawPaymentCount = Number(value.cantidadAbonos);
   const rawDays = Number(
     value.diasParaVencer ?? value.diasParaVencimiento,
   );
   const rawDueStatus = value.estadoVencimiento ?? value.situacion;
 
   return {
+    abonos,
     aliado: String(value.aliado || "Sin aliado").trim(),
+    cantidadAbonos:
+      Number.isInteger(rawPaymentCount) && rawPaymentCount >= 0
+        ? rawPaymentCount
+        : abonos.length,
     diasParaVencer: Number.isFinite(rawDays) ? rawDays : null,
-    estado: String(value.estado || "PENDIENTE").trim().toUpperCase(),
+    estado,
     estadoVencimiento: rawDueStatus
       ? String(rawDueStatus).trim().toUpperCase()
       : null,
     fechaVencimiento: String(value.fechaVencimiento || "").trim(),
     id,
     numeroFactura: String(value.numeroFactura ?? value.factura ?? "Sin número").trim(),
-    pagoAprobadoEn: value.pagoAprobadoEn
-      ? String(value.pagoAprobadoEn)
-      : null,
+    pagoAprobadoEn,
     pagoAprobadoPor: actorName(
       value.pagoAprobadoPor ?? value.pagoAprobadoPorNombre,
     ),
-    valorPagar: Number(value.valorPagar ?? value.valor ?? 0),
+    saldoPendiente,
+    valorAbonado,
+    valorFactura,
+    valorPagar: numericValue(
+      value.valorPagar ?? value.valorFactura ?? value.valor,
+    ),
   };
 }
 
 function isPaid(invoice: FacturaProveedor) {
   return (
+    (invoice.valorFactura > 0 && invoice.saldoPendiente <= 0) ||
     Boolean(invoice.pagoAprobadoEn) ||
     ["APROBADO", "PAGADO", "PAGO_APROBADO"].includes(invoice.estado)
   );
@@ -270,6 +403,14 @@ function cleanNumericValue(value: string) {
 function formatInputValue(value: string) {
   if (!value) return "";
   return Number(value).toLocaleString("es-CO");
+}
+
+function createPaymentIdempotencyKey() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `proveedores-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 async function readJson(response: Response) {
@@ -570,10 +711,17 @@ function StatusBadge({ invoice }: { invoice: FacturaVista }) {
   }
 
   return (
-    <span
-      className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${styles[invoice.categoria]}`}
-    >
-      {label}
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <span
+        className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${styles[invoice.categoria]}`}
+      >
+        {label}
+      </span>
+      {invoice.categoria !== "PAGADA" && invoice.valorAbonado > 0 && (
+        <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
+          Abono parcial
+        </span>
+      )}
     </span>
   );
 }
@@ -603,13 +751,26 @@ export default function ProveedoresWorkspace({
   const [approvalInvoice, setApprovalInvoice] =
     useState<FacturaVista | null>(null);
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [paymentForm, setPaymentForm] =
+    useState<FormularioPago>(EMPTY_PAYMENT_FORM);
+  const [paymentAmountFocused, setPaymentAmountFocused] = useState(false);
+  const [paymentAmountError, setPaymentAmountError] = useState("");
+  const [paymentError, setPaymentError] = useState("");
+  const [paymentIdempotencyKey, setPaymentIdempotencyKey] = useState("");
+  const [paymentAttempt, setPaymentAttempt] = useState<IntentoPago | null>(
+    null,
+  );
+  const [receiptPayment, setReceiptPayment] =
+    useState<ReciboSeleccionado | null>(null);
+  const [receiptHistoryInvoice, setReceiptHistoryInvoice] =
+    useState<FacturaVista | null>(null);
   const [pushStatus, setPushStatus] = useState<PushStatus>("checking");
   const [pushBusy, setPushBusy] = useState<
     "activate" | "deactivate" | "test" | null
   >(null);
   const [pushError, setPushError] = useState("");
   const allyInputRef = useRef<HTMLInputElement>(null);
-  const approvalButtonRef = useRef<HTMLButtonElement>(null);
+  const paymentAmountInputRef = useRef<HTMLInputElement>(null);
 
   const isAdmin = ["ADMIN", "AUDITOR"].includes(
     session.rolNombre.toUpperCase(),
@@ -775,7 +936,7 @@ export default function ProveedoresWorkspace({
       overdue: visibleInvoices.filter((invoice) => invoice.categoria === "VENCIDA")
         .length,
       pendingTotal: pendingInvoices.reduce(
-        (total, invoice) => total + Number(invoice.valorPagar || 0),
+        (total, invoice) => total + Number(invoice.saldoPendiente || 0),
         0,
       ),
     };
@@ -899,36 +1060,212 @@ export default function ProveedoresWorkspace({
     }
   };
 
-  const approvePayment = async () => {
+  const openPaymentDialog = (invoice: FacturaVista) => {
+    setApprovalInvoice(invoice);
+    setPaymentForm({
+      ...EMPTY_PAYMENT_FORM,
+      valorAbono: moneyValueToPaymentInput(invoice.saldoPendiente),
+    });
+    setPaymentAmountError("");
+    setPaymentAmountFocused(false);
+    setPaymentError("");
+    setPaymentIdempotencyKey(createPaymentIdempotencyKey());
+    setPaymentAttempt(null);
+  };
+
+  const closePaymentDialog = () => {
+    if (approvingId !== null || paymentAttempt) return;
+
+    setApprovalInvoice(null);
+    setPaymentForm(EMPTY_PAYMENT_FORM);
+    setPaymentAmountFocused(false);
+    setPaymentAmountError("");
+    setPaymentError("");
+    setPaymentIdempotencyKey("");
+    setPaymentAttempt(null);
+  };
+
+  const approvePayment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if (!approvalInvoice) return;
+
+    const valorAbono = paymentForm.valorAbono;
+    const valorAbonoCentavos = paymentAmountToCents(
+      paymentForm.valorAbono,
+    );
+    const saldoActualCentavos = moneyValueToCents(
+      approvalInvoice.saldoPendiente,
+    );
+
+    setPaymentAmountError("");
+    setPaymentError("");
+
+    if (
+      !paymentAttempt &&
+      (valorAbonoCentavos === null ||
+        valorAbonoCentavos <= 0)
+    ) {
+      setPaymentAmountError("El valor del abono debe ser mayor a cero.");
+      return;
+    }
+
+    if (
+      !paymentAttempt &&
+      valorAbonoCentavos !== null &&
+      valorAbonoCentavos > saldoActualCentavos
+    ) {
+      setPaymentAmountError(
+        `El abono no puede superar el saldo de ${formatMoney(
+          approvalInvoice.saldoPendiente,
+        )}.`,
+      );
+      return;
+    }
+
+    const idempotencyKey =
+      paymentAttempt?.idempotencyKey ||
+      paymentIdempotencyKey ||
+      createPaymentIdempotencyKey();
+    if (!paymentIdempotencyKey) setPaymentIdempotencyKey(idempotencyKey);
+    const referencia = paymentForm.referencia.trim();
+    const observacion = paymentForm.observacion.trim();
+    const attempt: IntentoPago =
+      paymentAttempt ?? {
+        idempotencyKey,
+        ...(observacion ? { observacion } : {}),
+        ...(referencia ? { referencia } : {}),
+        valorAbono,
+      };
+
+    if (!paymentAttempt) setPaymentAttempt(attempt);
 
     try {
       setApprovingId(approvalInvoice.id);
       const response = await fetch(
         `/api/proveedores/${approvalInvoice.id}/aprobar-pago`,
-        { method: "POST" },
+        {
+          body: JSON.stringify({
+            idempotencyKey,
+            ...(attempt.observacion
+              ? { observacion: attempt.observacion }
+              : {}),
+            ...(attempt.referencia
+              ? { referencia: attempt.referencia }
+              : {}),
+            valorAbono: attempt.valorAbono,
+          }),
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+          },
+          method: "POST",
+        },
       );
       const payload = await readJson(response);
 
       if (!response.ok) {
-        setFlash({
-          text: responseError(payload, "No se pudo aprobar el pago."),
-          tone: "error",
-        });
+        const authoritativeInvoice = normalizeInvoice(payload.item);
+        const respuestaAmbigua =
+          response.status === 408 ||
+          response.status === 425 ||
+          response.status === 429 ||
+          response.status >= 500;
+
+        if (!respuestaAmbigua) {
+          setPaymentAttempt(null);
+          setPaymentIdempotencyKey(createPaymentIdempotencyKey());
+        }
+
+        if (!respuestaAmbigua && authoritativeInvoice) {
+          const authoritativeView = invoiceView(
+            authoritativeInvoice,
+            today,
+            notificationDays,
+          );
+          const authoritativeBalanceCents = moneyValueToCents(
+            authoritativeInvoice.saldoPendiente,
+          );
+
+          setInvoices((current) =>
+            current.map((invoice) =>
+              invoice.id === authoritativeInvoice.id
+                ? authoritativeInvoice
+                : invoice,
+            ),
+          );
+          setApprovalInvoice(authoritativeView);
+          setPaymentForm((current) => ({
+            ...current,
+            valorAbono: moneyValueToPaymentInput(
+              authoritativeInvoice.saldoPendiente,
+            ),
+          }));
+
+          if (authoritativeBalanceCents <= 0) {
+            setPaymentAmountError(
+              "Esta factura ya no tiene saldo pendiente.",
+            );
+          } else if (
+            (paymentAmountToCents(attempt.valorAbono) || 0) >
+            authoritativeBalanceCents
+          ) {
+            setPaymentAmountError(
+              `El saldo cambió. El valor máximo ahora es ${formatMoney(
+                authoritativeInvoice.saldoPendiente,
+              )}.`,
+            );
+          }
+        }
+
+        setPaymentError(
+          respuestaAmbigua
+            ? `${responseError(
+                payload,
+                "No se pudo confirmar la respuesta del servidor.",
+              )} Usa REINTENTAR PAGO para consultar y repetir exactamente el mismo intento, sin riesgo de duplicarlo.`
+            : authoritativeInvoice
+            ? `${responseError(
+                payload,
+                "No se pudo aprobar el pago.",
+              )} Saldo actual: ${formatMoney(
+                authoritativeInvoice.saldoPendiente,
+              )}.`
+            : responseError(payload, "No se pudo aprobar el pago."),
+        );
         return;
       }
 
       const updated = normalizeInvoice(payload.item ?? payload.factura);
-
-      if (updated) {
-        setInvoices((current) =>
-          current.map((invoice) =>
-            invoice.id === updated.id ? updated : invoice,
-          ),
+      const receipt =
+        normalizePayment(
+          payload.recibo ?? payload.abono,
+          approvalInvoice.id,
         );
+
+      if (!updated || !receipt) {
+        setPaymentError(
+          "El servidor respondió, pero no fue posible confirmar todos los datos del pago. Usa REINTENTAR PAGO para verificar el mismo intento sin duplicarlo.",
+        );
+        return;
       }
+      const receiptInvoice = updated;
+
+      setInvoices((current) =>
+        current.map((invoice) =>
+          invoice.id === updated.id ? updated : invoice,
+        ),
+      );
 
       setApprovalInvoice(null);
+      setPaymentForm(EMPTY_PAYMENT_FORM);
+      setPaymentAmountFocused(false);
+      setPaymentAmountError("");
+      setPaymentError("");
+      setPaymentIdempotencyKey("");
+      setPaymentAttempt(null);
+      if (receipt) {
+        setReceiptPayment({ abono: receipt, factura: receiptInvoice });
+      }
       setFlash({
         text:
           typeof payload.mensaje === "string"
@@ -939,13 +1276,16 @@ export default function ProveedoresWorkspace({
       triggerLiveRefresh("pago-proveedor-aprobado");
       await loadInvoices(false, true);
     } catch {
-      setFlash({
-        text: "Error de conexión al aprobar el pago.",
-        tone: "error",
-      });
+      setPaymentError(
+        "No se pudo confirmar la respuesta del servidor. Los datos quedaron bloqueados para reintentar exactamente el mismo pago.",
+      );
     } finally {
       setApprovingId(null);
     }
+  };
+
+  const openReceipt = (url: string) => {
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const activatePush = async () => {
@@ -1132,6 +1472,30 @@ export default function ProveedoresWorkspace({
       text: "Este navegador o la conexión actual no admite notificaciones push seguras.",
     },
   }[pushStatus];
+  const paymentAmountCents = paymentAmountToCents(
+    paymentForm.valorAbono,
+  );
+  const approvalBalanceCents = moneyValueToCents(
+    approvalInvoice?.saldoPendiente ?? 0,
+  );
+  const paymentHasAmount =
+    paymentAmountCents !== null && paymentAmountCents > 0;
+  const paymentExceedsBalance =
+    paymentHasAmount && paymentAmountCents > approvalBalanceCents;
+  const paymentWillSettle =
+    paymentHasAmount &&
+    !paymentExceedsBalance &&
+    paymentAmountCents === approvalBalanceCents;
+  const paymentBalanceAfter = paymentExceedsBalance
+    ? null
+    : paymentHasAmount
+      ? (approvalBalanceCents - paymentAmountCents) / 100
+      : approvalInvoice?.saldoPendiente ?? 0;
+  const activeReceiptHistory = receiptHistoryInvoice
+    ? visibleInvoices.find(
+        (invoice) => invoice.id === receiptHistoryInvoice.id,
+      ) ?? receiptHistoryInvoice
+    : null;
 
   return (
     <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
@@ -1467,12 +1831,14 @@ export default function ProveedoresWorkspace({
               ) : (
                 <>
                   <div className="hidden overflow-x-auto rounded-xl border border-slate-200 lg:block">
-                    <table className="w-full min-w-[930px] text-sm">
+                    <table className="w-full min-w-[1180px] text-sm">
                       <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
                         <tr>
                           <th className="px-4 py-3.5">Aliado / factura</th>
                           <th className="px-4 py-3.5">Vencimiento</th>
-                          <th className="px-4 py-3.5 text-right">Valor a pagar</th>
+                          <th className="px-4 py-3.5 text-right">Total factura</th>
+                          <th className="px-4 py-3.5 text-right">Abonado</th>
+                          <th className="px-4 py-3.5 text-right">Saldo</th>
                           <th className="px-4 py-3.5">Estado</th>
                           <th className="px-4 py-3.5 text-right">Acción</th>
                         </tr>
@@ -1517,8 +1883,20 @@ export default function ProveedoresWorkspace({
                                 </p>
                               )}
                             </td>
-                            <td className="px-4 py-4 text-right text-base font-black text-slate-950">
-                              {formatMoney(invoice.valorPagar)}
+                            <td className="px-4 py-4 text-right font-bold text-slate-700">
+                              {formatMoney(invoice.valorFactura)}
+                            </td>
+                            <td className="px-4 py-4 text-right font-black text-emerald-700">
+                              {formatMoney(invoice.valorAbonado)}
+                            </td>
+                            <td
+                              className={`px-4 py-4 text-right text-base font-black ${
+                                invoice.categoria === "VENCIDA"
+                                  ? "text-red-700"
+                                  : "text-slate-950"
+                              }`}
+                            >
+                              {formatMoney(invoice.saldoPendiente)}
                             </td>
                             <td className="px-4 py-4">
                               <StatusBadge invoice={invoice} />
@@ -1532,21 +1910,35 @@ export default function ProveedoresWorkspace({
                                 </p>
                               )}
                             </td>
-                            <td className="px-4 py-4 text-right">
-                              {invoice.categoria === "PAGADA" ? (
-                                <span className="inline-flex min-h-10 items-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-black uppercase tracking-[0.05em] text-emerald-700">
-                                  Aprobado
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setApprovalInvoice(invoice)}
-                                  disabled={approvingId !== null}
-                                  className="min-h-10 rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase tracking-[0.05em] text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  APROBADO PAGO
-                                </button>
-                              )}
+                            <td className="px-4 py-4">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                {invoice.saldoPendiente > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openPaymentDialog(invoice)}
+                                    disabled={approvingId !== null}
+                                    className="min-h-10 rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase tracking-[0.05em] text-white transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    ABONAR / PAGAR
+                                  </button>
+                                )}
+                                {invoice.cantidadAbonos > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setReceiptHistoryInvoice(invoice)}
+                                    className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.05em] text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+                                  >
+                                    <DashboardIcon name="document" className="h-4 w-4" />
+                                    RECIBOS ({invoice.cantidadAbonos})
+                                  </button>
+                                )}
+                                {invoice.categoria === "PAGADA" &&
+                                  invoice.cantidadAbonos === 0 && (
+                                 <span className="inline-flex min-h-10 items-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-black uppercase tracking-[0.05em] text-emerald-700">
+                                   Aprobado
+                                 </span>
+                                  )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1577,26 +1969,50 @@ export default function ProveedoresWorkspace({
                           <StatusBadge invoice={invoice} />
                         </div>
 
-                        <dl className="mt-4 grid grid-cols-2 gap-3">
-                          <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="mt-4">
+                          <dl className="rounded-xl border border-slate-200 bg-white p-3">
                             <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                               Vencimiento
                             </dt>
                             <dd className="mt-1 text-sm font-black text-slate-900">
                               {formatDate(invoice.fechaVencimiento)}
                             </dd>
-                          </div>
-                          <div className="rounded-xl border border-slate-200 bg-white p-3 text-right">
-                            <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                              Valor
-                            </dt>
-                            <dd className="mt-1 break-words text-sm font-black text-slate-900">
-                              {formatMoney(invoice.valorPagar)}
-                            </dd>
-                          </div>
-                        </dl>
+                          </dl>
+                          <dl className="mt-3 grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                            <div className="min-w-0 border-r border-slate-200 p-3">
+                              <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                                Total
+                              </dt>
+                              <dd className="mt-1 break-words text-xs font-black text-slate-900">
+                                {formatMoney(invoice.valorFactura)}
+                              </dd>
+                            </div>
+                            <div className="min-w-0 border-r border-slate-200 p-3">
+                              <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                                Abonado
+                              </dt>
+                              <dd className="mt-1 break-words text-xs font-black text-emerald-700">
+                                {formatMoney(invoice.valorAbonado)}
+                              </dd>
+                            </div>
+                            <div className="min-w-0 p-3">
+                              <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                                Saldo
+                              </dt>
+                              <dd
+                                className={`mt-1 break-words text-xs font-black ${
+                                  invoice.categoria === "VENCIDA"
+                                    ? "text-red-700"
+                                    : "text-slate-900"
+                                }`}
+                              >
+                                {formatMoney(invoice.saldoPendiente)}
+                              </dd>
+                            </div>
+                          </dl>
+                        </div>
 
-                        {invoice.categoria === "PAGADA" ? (
+                        {invoice.categoria === "PAGADA" && (
                           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold leading-5 text-emerald-700">
                             Pago aprobado
                             {formatDateTime(invoice.pagoAprobadoEn)
@@ -1607,16 +2023,30 @@ export default function ProveedoresWorkspace({
                               : ""}
                             .
                           </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setApprovalInvoice(invoice)}
-                            disabled={approvingId !== null}
-                            className="mt-4 min-h-11 w-full rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            APROBADO PAGO
-                          </button>
                         )}
+
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                          {invoice.saldoPendiente > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => openPaymentDialog(invoice)}
+                              disabled={approvingId !== null}
+                              className="min-h-11 w-full rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              ABONAR / PAGAR
+                            </button>
+                          )}
+                          {invoice.cantidadAbonos > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setReceiptHistoryInvoice(invoice)}
+                              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+                            >
+                              <DashboardIcon name="document" className="h-4 w-4" />
+                              RECIBOS ({invoice.cantidadAbonos})
+                            </button>
+                          )}
+                        </div>
                       </article>
                     ))}
                   </div>
@@ -1814,68 +2244,455 @@ export default function ProveedoresWorkspace({
 
       {approvalInvoice && (
         <AccessibleDialog
-          title="Confirmar pago"
-          description="Esta acción marcará la factura como pagada y la conservará en el historial."
+          title="Registrar abono"
+          description="Aplica el pago a esta factura. Si cubre todo el saldo, quedará marcada como pagada."
           titleId="approve-supplier-payment-title"
-          initialFocusRef={approvalButtonRef}
-          maxWidthClass="max-w-lg"
-          onClose={() => {
-            if (approvingId === null) setApprovalInvoice(null);
-          }}
+          initialFocusRef={paymentAmountInputRef}
+          maxWidthClass="max-w-2xl"
+          onClose={closePaymentDialog}
+        >
+          <form onSubmit={approvePayment} noValidate>
+            <div className="grid gap-5 px-5 py-6 sm:px-6">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.13em] text-slate-500">
+                  Aliado / factura
+                </p>
+                <p className="mt-1 text-base font-black text-slate-950">
+                  {approvalInvoice.aliado} · {approvalInvoice.numeroFactura}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  Vence el {formatDate(approvalInvoice.fechaVencimiento)}
+                </p>
+              </div>
+
+              <dl className="grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="min-w-0 border-r border-slate-200 p-3 sm:p-4">
+                  <dt className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-500 sm:text-[10px]">
+                    Total
+                  </dt>
+                  <dd className="mt-1 break-words text-sm font-black text-slate-950">
+                    {formatMoney(approvalInvoice.valorFactura)}
+                  </dd>
+                </div>
+                <div className="min-w-0 border-r border-slate-200 p-3 sm:p-4">
+                  <dt className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-500 sm:text-[10px]">
+                    Abonado
+                  </dt>
+                  <dd className="mt-1 break-words text-sm font-black text-emerald-700">
+                    {formatMoney(approvalInvoice.valorAbonado)}
+                  </dd>
+                </div>
+                <div className="min-w-0 p-3 sm:p-4">
+                  <dt className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-500 sm:text-[10px]">
+                    Saldo
+                  </dt>
+                  <dd className="mt-1 break-words text-sm font-black text-slate-950">
+                    {formatMoney(approvalInvoice.saldoPendiente)}
+                  </dd>
+                </div>
+              </dl>
+
+              <label className="flex flex-col gap-2 text-sm font-bold text-slate-700">
+                Valor del abono
+                <span className="relative block">
+                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">
+                    $
+                  </span>
+                  <input
+                    ref={paymentAmountInputRef}
+                    value={
+                      paymentAmountFocused
+                        ? paymentForm.valorAbono.replace(".", ",")
+                        : formatPaymentAmountInput(paymentForm.valorAbono)
+                    }
+                    onFocus={() => setPaymentAmountFocused(true)}
+                    onBlur={() => setPaymentAmountFocused(false)}
+                    onChange={(event) => {
+                      const inputType =
+                        "inputType" in event.nativeEvent
+                          ? String(
+                              (
+                                event.nativeEvent as {
+                                  inputType?: unknown;
+                                }
+                              ).inputType ?? "",
+                            )
+                          : "";
+                      setPaymentForm((current) => ({
+                        ...current,
+                        valorAbono: normalizePaymentAmountInput(
+                          event.target.value,
+                          current.valorAbono,
+                          inputType === "insertFromPaste" ||
+                            inputType === "insertFromDrop",
+                        ),
+                      }));
+                      setPaymentIdempotencyKey(
+                        createPaymentIdempotencyKey(),
+                      );
+                      setPaymentAmountError("");
+                      setPaymentError("");
+                    }}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    disabled={approvingId !== null || Boolean(paymentAttempt)}
+                    aria-invalid={Boolean(paymentAmountError)}
+                    aria-describedby={
+                      paymentAmountError
+                        ? "supplier-payment-amount-error"
+                        : "supplier-payment-balance-preview"
+                    }
+                    className="min-h-[52px] w-full rounded-xl border border-slate-300 bg-white pl-9 pr-4 text-base font-black text-slate-900 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  />
+                </span>
+                {paymentAmountError && (
+                  <span
+                    id="supplier-payment-amount-error"
+                    className="text-xs font-semibold text-red-600"
+                  >
+                    {paymentAmountError}
+                  </span>
+                )}
+              </label>
+
+              <div className="grid gap-5 sm:grid-cols-2">
+                <label className="flex flex-col gap-2 text-sm font-bold text-slate-700">
+                  Referencia <span className="font-normal text-slate-400">(opcional)</span>
+                  <input
+                    value={paymentForm.referencia}
+                    onChange={(event) => {
+                      setPaymentForm((current) => ({
+                        ...current,
+                        referencia: event.target.value,
+                      }));
+                      setPaymentIdempotencyKey(
+                        createPaymentIdempotencyKey(),
+                      );
+                      setPaymentError("");
+                    }}
+                    maxLength={120}
+                    autoComplete="off"
+                    disabled={approvingId !== null || Boolean(paymentAttempt)}
+                    placeholder="Ej. transferencia 8452"
+                    className="min-h-[52px] rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm font-bold text-slate-700">
+                  Observación <span className="font-normal text-slate-400">(opcional)</span>
+                  <textarea
+                    value={paymentForm.observacion}
+                    onChange={(event) => {
+                      setPaymentForm((current) => ({
+                        ...current,
+                        observacion: event.target.value,
+                      }));
+                      setPaymentIdempotencyKey(
+                        createPaymentIdempotencyKey(),
+                      );
+                      setPaymentError("");
+                    }}
+                    maxLength={500}
+                    rows={2}
+                    disabled={approvingId !== null || Boolean(paymentAttempt)}
+                    placeholder="Detalle útil para la trazabilidad"
+                    className="min-h-[52px] resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  />
+                </label>
+              </div>
+
+              <div
+                id="supplier-payment-balance-preview"
+                aria-live="polite"
+                className={[
+                  "flex flex-col gap-1 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between",
+                  paymentExceedsBalance
+                    ? "border-red-200 bg-red-50"
+                    : paymentWillSettle
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-slate-200 bg-slate-50",
+                ].join(" ")}
+              >
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.13em] text-slate-500">
+                    Saldo después de este pago
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    {paymentExceedsBalance
+                      ? `El valor supera el saldo actual de ${formatMoney(
+                          approvalInvoice.saldoPendiente,
+                        )}.`
+                      : paymentWillSettle
+                      ? "La factura quedará pagada."
+                      : paymentHasAmount
+                        ? "La factura conservará el saldo pendiente."
+                        : "Ingresa el valor que deseas aplicar."}
+                  </p>
+                </div>
+                <p
+                  className={`break-words text-xl font-black ${
+                    paymentExceedsBalance
+                      ? "text-red-700"
+                      : paymentWillSettle
+                        ? "text-emerald-700"
+                        : "text-slate-950"
+                  }`}
+                >
+                  {paymentBalanceAfter === null
+                    ? "No aplicable"
+                    : formatMoney(paymentBalanceAfter)}
+                </p>
+              </div>
+
+              {paymentError && (
+                <div
+                  role="alert"
+                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+                >
+                  {paymentError}
+                </div>
+              )}
+
+              <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+                <DashboardIcon name="warning" className="mt-0.5 h-5 w-5 shrink-0" />
+                Verifica el valor y la factura antes de aprobar. El sistema
+                generará un recibo para este abono.
+              </div>
+            </div>
+
+            <footer className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50/70 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <button
+                type="button"
+                onClick={closePaymentDialog}
+                disabled={approvingId !== null || Boolean(paymentAttempt)}
+                className="min-h-11 rounded-xl border border-slate-300 bg-white px-5 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={
+                  approvingId !== null ||
+                  (!paymentAttempt && approvalInvoice.saldoPendiente <= 0)
+                }
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <DashboardIcon name="approvals" className="h-4.5 w-4.5" />
+                {approvingId !== null
+                  ? "Aprobando..."
+                  : paymentAttempt
+                    ? "REINTENTAR PAGO"
+                    : "APROBAR PAGO"}
+              </button>
+            </footer>
+          </form>
+        </AccessibleDialog>
+      )}
+
+      {receiptPayment && (
+        <AccessibleDialog
+          title="Recibo de pago"
+          description="El abono fue aprobado y quedó guardado en el historial de la factura."
+          titleId="supplier-payment-receipt-title"
+          maxWidthClass="max-w-xl"
+          onClose={() => setReceiptPayment(null)}
         >
           <div className="px-5 py-6 sm:px-6">
-            <dl className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
-                <dt className="text-[10px] font-black uppercase tracking-[0.13em] text-slate-500">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700">
+                    Recibo
+                  </p>
+                  <p className="mt-1 text-lg font-black text-slate-950">
+                    {receiptPayment.abono.numeroRecibo}
+                  </p>
+                </div>
+                <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-emerald-700">
+                  Pago aprobado
+                </span>
+              </div>
+              <p className="mt-4 text-3xl font-black tracking-tight text-emerald-700">
+                {formatMoney(receiptPayment.abono.valor)}
+              </p>
+            </div>
+
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 sm:col-span-2">
+                <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
                   Aliado / factura
                 </dt>
-                <dd className="mt-1 text-base font-black text-slate-950">
-                  {approvalInvoice.aliado} · {approvalInvoice.numeroFactura}
+                <dd className="mt-1 font-black text-slate-950">
+                  {receiptPayment.factura.aliado} ·{" "}
+                  {receiptPayment.factura.numeroFactura}
                 </dd>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <dt className="text-[10px] font-black uppercase tracking-[0.13em] text-slate-500">
-                  Vencimiento
+                <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  Saldo anterior
                 </dt>
-                <dd className="mt-1 text-sm font-black text-slate-950">
-                  {formatDate(approvalInvoice.fechaVencimiento)}
+                <dd className="mt-1 font-black text-slate-950">
+                  {formatMoney(receiptPayment.abono.saldoAnterior)}
                 </dd>
               </div>
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                <dt className="text-[10px] font-black uppercase tracking-[0.13em] text-emerald-700">
-                  Valor pagado
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  Nuevo saldo
                 </dt>
-                <dd className="mt-1 break-words text-xl font-black text-emerald-700">
-                  {formatMoney(approvalInvoice.valorPagar)}
+                <dd className="mt-1 font-black text-slate-950">
+                  {formatMoney(receiptPayment.abono.saldoPosterior)}
                 </dd>
               </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  Aprobado
+                </dt>
+                <dd className="mt-1 text-sm font-bold text-slate-950">
+                  {formatDateTime(receiptPayment.abono.aprobadoEn) ||
+                    "Fecha no disponible"}
+                </dd>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  Aprobado por
+                </dt>
+                <dd className="mt-1 text-sm font-bold text-slate-950">
+                  {receiptPayment.abono.aprobadoPor || "Usuario autorizado"}
+                </dd>
+              </div>
+              {receiptPayment.abono.referencia && (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 sm:col-span-2">
+                  <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                    Referencia
+                  </dt>
+                  <dd className="mt-1 break-words text-sm font-bold text-slate-950">
+                    {receiptPayment.abono.referencia}
+                  </dd>
+                </div>
+              )}
+              {receiptPayment.abono.observacion && (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 sm:col-span-2">
+                  <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                    Observación
+                  </dt>
+                  <dd className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">
+                    {receiptPayment.abono.observacion}
+                  </dd>
+                </div>
+              )}
             </dl>
-
-            <div className="mt-4 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-              <DashboardIcon name="warning" className="mt-0.5 h-5 w-5 shrink-0" />
-              Verifica que el pago se haya realizado antes de aprobarlo. La factura
-              dejará de generar recordatorios de vencimiento.
-            </div>
           </div>
 
           <footer className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50/70 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
             <button
               type="button"
-              onClick={() => setApprovalInvoice(null)}
-              disabled={approvingId !== null}
-              className="min-h-11 rounded-xl border border-slate-300 bg-white px-5 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              onClick={() => setReceiptPayment(null)}
+              className="min-h-11 rounded-xl border border-slate-300 bg-white px-5 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50"
             >
-              Cancelar
+              Cerrar
             </button>
             <button
-              ref={approvalButtonRef}
               type="button"
-              onClick={() => void approvePayment()}
-              disabled={approvingId !== null}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => openReceipt(receiptPayment.abono.reciboUrl)}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#11161d] px-6 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-700 focus-visible:ring-offset-2"
             >
-              <DashboardIcon name="approvals" className="h-4.5 w-4.5" />
-              {approvingId !== null ? "Aprobando..." : "APROBADO PAGO"}
+              <DashboardIcon name="document" className="h-4.5 w-4.5" />
+              ABRIR / IMPRIMIR RECIBO
+            </button>
+          </footer>
+        </AccessibleDialog>
+      )}
+
+      {activeReceiptHistory && (
+        <AccessibleDialog
+          title="Recibos de la factura"
+          description={`Consulta y vuelve a imprimir los pagos aprobados de la factura ${activeReceiptHistory.numeroFactura}.`}
+          titleId="supplier-receipt-history-title"
+          maxWidthClass="max-w-2xl"
+          onClose={() => setReceiptHistoryInvoice(null)}
+        >
+          <div className="px-5 py-6 sm:px-6">
+            <div className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-black text-slate-950">
+                  {activeReceiptHistory.aliado}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  Factura {activeReceiptHistory.numeroFactura}
+                </p>
+              </div>
+              <div className="mt-2 sm:mt-0 sm:text-right">
+                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  Saldo actual
+                </p>
+                <p className="mt-1 text-lg font-black text-slate-950">
+                  {formatMoney(activeReceiptHistory.saldoPendiente)}
+                </p>
+              </div>
+            </div>
+
+            {activeReceiptHistory.abonos.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-5 py-8 text-center">
+                <DashboardIcon
+                  name="document"
+                  className="mx-auto h-7 w-7 text-slate-400"
+                />
+                <p className="mt-2 text-sm font-bold text-slate-700">
+                  No se pudieron cargar los recibos.
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Actualiza la página e inténtalo nuevamente.
+                </p>
+              </div>
+            ) : (
+              <ol className="mt-4 space-y-3">
+                {activeReceiptHistory.abonos.map((abono) => (
+                  <li
+                    key={abono.id}
+                    className="rounded-xl border border-slate-200 bg-white p-4"
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                          {abono.numeroRecibo}
+                        </p>
+                        <p className="mt-1 text-xl font-black text-emerald-700">
+                          {formatMoney(abono.valor)}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                          {formatDateTime(abono.aprobadoEn) ||
+                            "Fecha no disponible"}
+                          {abono.aprobadoPor ? ` · ${abono.aprobadoPor}` : ""}
+                          {" · "}Saldo: {formatMoney(abono.saldoPosterior)}
+                        </p>
+                        {abono.referencia && (
+                          <p className="mt-1 break-words text-xs text-slate-500">
+                            Referencia: {abono.referencia}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openReceipt(abono.reciboUrl)}
+                        className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.05em] text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+                      >
+                        <DashboardIcon name="document" className="h-4 w-4" />
+                        ABRIR / IMPRIMIR RECIBO
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+
+          <footer className="flex justify-end border-t border-slate-200 bg-slate-50/70 px-5 py-4 sm:px-6">
+            <button
+              type="button"
+              onClick={() => setReceiptHistoryInvoice(null)}
+              className="min-h-11 rounded-xl border border-slate-300 bg-white px-5 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50"
+            >
+              Cerrar
             </button>
           </footer>
         </AccessibleDialog>
