@@ -4,11 +4,91 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { createElement } from "react";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 function read(relativePath) {
   return readFileSync(join(ROOT, relativePath), "utf8");
+}
+
+function workspaceNodes(predicate) {
+  const sourceFile = ts.createSourceFile(
+    "workspace.tsx",
+    read("app/dashboard/proveedores/workspace.tsx"),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const matches = [];
+  function visit(node) {
+    if (predicate(node, sourceFile)) matches.push(node);
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return matches;
+}
+
+function evaluateWorkspaceExpression(expression, bindings = {}) {
+  const { outputText } = ts.transpileModule(
+    "const result = (" + expression + ");",
+    {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.None,
+        jsx: ts.JsxEmit.React,
+      },
+    },
+  );
+  return new Function(...Object.keys(bindings), outputText + "\nreturn result;")(
+    ...Object.values(bindings),
+  );
+}
+
+function workspaceVariable(name, bindings) {
+  const [declaration] = workspaceNodes(
+    (node) => ts.isVariableDeclaration(node) && node.name.getText() === name,
+  );
+  assert.ok(declaration?.initializer, "Missing workspace variable: " + name);
+  return evaluateWorkspaceExpression(declaration.initializer.getText(), bindings);
+}
+
+function jsxAttribute(node, name) {
+  return node.attributes.properties.find(
+    (attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText() === name,
+  );
+}
+
+function jsxValue(node, name, bindings = {}) {
+  const attribute = jsxAttribute(node, name);
+  if (!attribute) return undefined;
+  if (!attribute.initializer) return true;
+  if (ts.isStringLiteral(attribute.initializer)) return attribute.initializer.text;
+  assert.ok(ts.isJsxExpression(attribute.initializer));
+  return evaluateWorkspaceExpression(
+    attribute.initializer.expression.getText(),
+    bindings,
+  );
+}
+
+function workspaceControl(valueName) {
+  const [control] = workspaceNodes((node) => {
+    if (!ts.isJsxOpeningElement(node) && !ts.isJsxSelfClosingElement(node)) return false;
+    return jsxAttribute(node, "value")?.initializer?.getText() === "{" + valueName + "}";
+  });
+  assert.ok(control, "Missing control: " + valueName);
+  return control;
+}
+
+function workspaceButton(text) {
+  const [button] = workspaceNodes(
+    (node) =>
+      ts.isJsxElement(node) &&
+      node.openingElement.tagName.getText() === "button" &&
+      node.children.some((child) => ts.isJsxText(child) && child.text.trim() === text),
+  );
+  assert.ok(button, "Missing button: " + text);
+  return button.openingElement;
 }
 
 // Run the actual memo callback without mounting the surrounding dashboard.
@@ -107,7 +187,12 @@ test("las opciones de aliados son únicas, ordenadas y parten de todas las factu
 test("el selector accesible comparte catálogo y limpiar filtros también restablece el aliado", () => {
   const source = read("app/dashboard/proveedores/workspace.tsx");
   assert.match(source, /Aliado\s*<select\s*value=\{allyFilter\}/);
-  assert.match(source, /onChange=\{\(event\) => setAllyFilter\(event\.target\.value\)\}/);
+  const changes = [];
+  jsxValue(workspaceControl("allyFilter"), "onChange", {
+    setAllyFilter: (value) => changes.push(value),
+    setSelectedInvoiceIds: () => {},
+  })({ target: { value: "JG COMPANY" } });
+  assert.deepEqual(changes, ["JG COMPANY"]);
   assert.match(source, /<option value="">Todos los aliados<\/option>/);
   assert.match(source, /knownAllies\.map\(\(ally\) => \(\s*<option key=\{ally\} value=\{ally\}>/);
   assert.match(source, /\[allyFilter, query, statusFilter, visibleInvoices\]/);
@@ -115,6 +200,180 @@ test("el selector accesible comparte catálogo y limpiar filtros también restab
   assert.match(source, /\{filteredInvoices\.length\} de \{visibleInvoices\.length\}/);
   assert.match(source, /selecciona todos los aliados y estados/);
   assert.match(source, /sm:grid-cols-2 xl:grid-cols-/);
+});
+
+test("la selección inicia vacía y el resumen usa las facturas filtradas vigentes", () => {
+  const [state] = workspaceNodes(
+    (node) => ts.isVariableDeclaration(node) &&
+      ts.isArrayBindingPattern(node.name) &&
+      node.name.elements[0]?.getText() === "selectedInvoiceIds",
+  );
+  const initial = evaluateWorkspaceExpression(state.initializer.getText(), {
+    useState: (value) => typeof value === "function" ? value() : value,
+  });
+  assert.deepEqual([...initial], []);
+
+  const selectedInvoiceIds = new Set([1, 2, 999]);
+  const oldInvoices = [{ id: 1, valorAbonado: 30, saldoPendiente: 70 }];
+  const refreshedInvoices = [{ id: 1, valorAbonado: 80, saldoPendiente: 20 }];
+  for (const filteredInvoices of [oldInvoices, refreshedInvoices, []]) {
+    const result = evaluateWorkspaceMemo("selectionSummary", {
+      filteredInvoices,
+      selectedInvoiceIds,
+      resumirFacturasSeleccionadas: (actualInvoices, actualIds) => {
+        assert.equal(actualInvoices, filteredInvoices);
+        assert.equal(actualIds, selectedInvoiceIds);
+        return { source: actualInvoices };
+      },
+    });
+    assert.equal(result.source, filteredInvoices);
+  }
+  assert.match(
+    read("app/dashboard/proveedores/workspace.tsx"),
+    /\[filteredInvoices, selectedInvoiceIds\]/,
+  );
+});
+
+test("marcar facturas permite pagadas, alterna la selección y descarta IDs ocultos", () => {
+  const filteredInvoices = [filterInvoices[0], filterInvoices[1]];
+  const originalSelection = new Set([2, 999]);
+  let selectedInvoiceIds = originalSelection;
+  const toggle = workspaceVariable("toggleInvoiceSelection", {
+    filteredInvoices,
+    setSelectedInvoiceIds: (update) => {
+      selectedInvoiceIds = typeof update === "function" ? update(selectedInvoiceIds) : update;
+    },
+    fetch: () => assert.fail("Selecting invoices must not write to the API"),
+    approvePayment: () => assert.fail("Selecting invoices must not approve payments"),
+  });
+  toggle(1);
+  assert.deepEqual([...selectedInvoiceIds], [2, 1]);
+  assert.deepEqual([...originalSelection], [2, 999]);
+  toggle(1);
+  assert.deepEqual([...selectedInvoiceIds], [2]);
+});
+
+test("seleccionar todas toma solo las visibles y admite estados vacío, parcial y completo", () => {
+  for (const [count, length, expectedAll, expectedMixed] of [
+    [0, 0, false, false],
+    [0, 2, false, false],
+    [1, 2, false, true],
+    [2, 2, true, false],
+  ]) {
+    const filteredInvoices = filterInvoices.slice(0, length);
+    const selectionSummary = { cantidad: count };
+    const allVisibleSelected = workspaceVariable("allVisibleSelected", { filteredInvoices, selectionSummary });
+    const mixed = workspaceVariable("someVisibleSelected", { selectionSummary, allVisibleSelected });
+    assert.equal(allVisibleSelected, expectedAll);
+    assert.equal(mixed, expectedMixed);
+    let selection;
+    workspaceVariable("toggleVisibleSelection", {
+      allVisibleSelected,
+      filteredInvoices,
+      setSelectedInvoiceIds: (value) => { selection = value; },
+    })();
+    assert.deepEqual(
+      [...selection],
+      allVisibleSelected ? [] : filteredInvoices.map((invoice) => invoice.id),
+    );
+  }
+});
+
+test("búsqueda, aliado, estado y limpiar filtros descartan toda selección anterior", () => {
+  for (const [valueName, setterName, value] of [
+    ["query", "setQuery", "ONL236"],
+    ["allyFilter", "setAllyFilter", "JG COMPANY"],
+    ["statusFilter", "setStatusFilter", "PAGADA"],
+  ]) {
+    let selection = new Set([1, 2]);
+    let actualValue;
+    jsxValue(workspaceControl(valueName), "onChange", {
+      [setterName]: (next) => { actualValue = next; },
+      setSelectedInvoiceIds: (next) => { selection = next; },
+    })({ target: { value } });
+    assert.equal(actualValue, value);
+    assert.deepEqual([...selection], []);
+  }
+
+  const values = {};
+  let selection = new Set([1, 2]);
+  jsxValue(workspaceButton("Limpiar filtros"), "onClick", {
+    setQuery: (value) => { values.query = value; },
+    setAllyFilter: (value) => { values.allyFilter = value; },
+    setStatusFilter: (value) => { values.statusFilter = value; },
+    setSelectedInvoiceIds: (value) => { selection = value; },
+  })();
+  assert.deepEqual(values, { query: "", allyFilter: "", statusFilter: "TODAS" });
+  assert.deepEqual([...selection], []);
+  selection = new Set([1, 2]);
+  jsxValue(workspaceButton("Limpiar selección"), "onClick", {
+    setSelectedInvoiceIds: (value) => { selection = value; },
+  })();
+  assert.deepEqual([...selection], []);
+});
+
+test("los checkboxes de escritorio y móvil identifican factura y aliado sin bloquear pagadas", () => {
+  const checkboxes = workspaceNodes(
+    (node) => ts.isJsxSelfClosingElement(node) &&
+      node.tagName.getText() === "InvoiceSelectionCheckbox" &&
+      jsxAttribute(node, "label")?.initializer?.getText().includes("invoice.numeroFactura"),
+  );
+  assert.equal(checkboxes.length, 2);
+  const invoice = filterInvoices[0];
+  for (const checkbox of checkboxes) {
+    const selected = [];
+    const bindings = {
+      invoice,
+      selectedInvoiceIds: new Set([invoice.id]),
+      toggleInvoiceSelection: (id) => selected.push(id),
+    };
+    assert.equal(jsxValue(checkbox, "checked", bindings), true);
+    assert.equal(jsxValue(checkbox, "label", bindings), "Seleccionar factura ONL238 de JG COMPANY");
+    assert.notEqual(jsxValue(checkbox, "disabled", bindings), true);
+    jsxValue(checkbox, "onChange", bindings)();
+    assert.deepEqual(selected, [invoice.id]);
+  }
+
+  const [toolbar] = workspaceNodes(
+    (node) => ts.isJsxSelfClosingElement(node) &&
+      node.tagName.getText() === "InvoiceSelectionCheckbox" &&
+      jsxAttribute(node, "label")?.initializer?.getText() === '"Seleccionar todas las visibles"',
+  );
+  assert.ok(toolbar);
+  assert.equal(jsxValue(toolbar, "disabled", { loading: true, filteredInvoices: filterInvoices }), true);
+  assert.equal(jsxValue(toolbar, "disabled", { loading: false, filteredInvoices: [] }), true);
+  assert.equal(jsxValue(toolbar, "disabled", { loading: false, filteredInvoices: filterInvoices }), false);
+});
+
+test("el checkbox parcial expone estado mixto accesible y los tres totales se anuncian juntos", () => {
+  const [component] = workspaceNodes(
+    (node) => ts.isFunctionDeclaration(node) && node.name?.text === "InvoiceSelectionCheckbox",
+  );
+  const renderCheckbox = evaluateWorkspaceExpression(component.getText(), { React: { createElement } });
+  const checkbox = renderCheckbox({ checked: false, mixed: true, label: "Facturas visibles", onChange: () => {} });
+  assert.equal(checkbox.type, "label");
+  const [input, label] = checkbox.props.children;
+  assert.equal(input.type, "input");
+  assert.equal(input.props.type, "checkbox");
+  assert.equal(input.props["aria-checked"], "mixed");
+  assert.equal(label.props.children, "Facturas visibles");
+  const element = { indeterminate: false };
+  input.props.ref(element);
+  assert.equal(element.indeterminate, true);
+  input.props.ref(null);
+
+  const source = read("app/dashboard/proveedores/workspace.tsx");
+  const start = source.indexOf('aria-labelledby="supplier-selection-title"');
+  const end = source.indexOf("</section>", start);
+  const summary = source.slice(start, end);
+  assert.match(summary, /aria-live="polite" aria-atomic="true"/);
+  assert.match(summary, /selectionSummary\.cantidad/);
+  for (const property of ["totalFacturas", "totalAbonado", "totalPendiente"]) {
+    assert.ok(summary.includes("formatMoney(selectionSummary." + property + ")"));
+  }
+  assert.match(summary, />Total facturas</);
+  assert.match(summary, />Total abonado</);
+  assert.match(summary, />Total pendiente por pagar</);
 });
 
 test("Proveedores reemplaza Funciones sin perder Radar ni Inconsistencias", () => {

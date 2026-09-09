@@ -29,6 +29,7 @@ import {
   normalizePaymentAmountInput,
   paymentAmountToCents,
 } from "@/lib/proveedores-pagos";
+import { resumirFacturasSeleccionadas } from "@/lib/proveedores-seleccion";
 
 type WorkspaceSession = {
   nombre: string;
@@ -690,6 +691,39 @@ function MetricCard({
   );
 }
 
+function InvoiceSelectionCheckbox({
+  checked,
+  disabled = false,
+  label,
+  mixed = false,
+  onChange,
+  showLabel = false,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  mixed?: boolean;
+  onChange: () => void;
+  showLabel?: boolean;
+}) {
+  return (
+    <label className={`inline-flex min-h-11 min-w-11 items-center gap-3 rounded-lg px-2 text-sm font-semibold normal-case tracking-normal ${disabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer text-slate-700 hover:bg-slate-100"}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        aria-checked={mixed ? "mixed" : checked}
+        ref={(input) => {
+          if (input) input.indeterminate = mixed;
+        }}
+        onChange={onChange}
+        className="h-5 w-5 shrink-0 cursor-inherit rounded border-slate-300 accent-[#e30613] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e30613] focus-visible:ring-offset-2 disabled:opacity-50"
+      />
+      <span className={showLabel ? "min-w-0 break-words" : "sr-only"}>{label}</span>
+    </label>
+  );
+}
+
 function StatusBadge({ invoice }: { invoice: FacturaVista }) {
   const styles: Record<CategoriaFactura, string> = {
     PAGADA: "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -742,6 +776,9 @@ export default function ProveedoresWorkspace({
   const [query, setQuery] = useState("");
   const [allyFilter, setAllyFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<FiltroEstado>("TODAS");
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<number>>(
+    () => new Set(),
+  );
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false);
   const [form, setForm] = useState<FormularioFactura>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<
@@ -974,6 +1011,34 @@ export default function ProveedoresWorkspace({
           left.aliado.localeCompare(right.aliado, "es-CO"),
       );
   }, [allyFilter, query, statusFilter, visibleInvoices]);
+
+  const selectionSummary = useMemo(
+    () => resumirFacturasSeleccionadas(filteredInvoices, selectedInvoiceIds),
+    [filteredInvoices, selectedInvoiceIds],
+  );
+  const allVisibleSelected =
+    filteredInvoices.length > 0 &&
+    selectionSummary.cantidad === filteredInvoices.length;
+  const someVisibleSelected = selectionSummary.cantidad > 0 && !allVisibleSelected;
+
+  const toggleInvoiceSelection = (invoiceId: number) => {
+    setSelectedInvoiceIds((current) => {
+      const next = new Set(
+        filteredInvoices.filter((invoice) => current.has(invoice.id)).map((invoice) => invoice.id),
+      );
+      if (next.has(invoiceId)) next.delete(invoiceId);
+      else next.add(invoiceId);
+      return next;
+    });
+  };
+
+  const toggleVisibleSelection = () => {
+    setSelectedInvoiceIds(
+      allVisibleSelected
+        ? new Set()
+        : new Set(filteredInvoices.map((invoice) => invoice.id)),
+    );
+  };
 
   const knownAllies = useMemo(
     () =>
@@ -1748,7 +1813,10 @@ export default function ProveedoresWorkspace({
                     <input
                       type="search"
                       value={query}
-                      onChange={(event) => setQuery(event.target.value)}
+                      onChange={(event) => {
+                        setQuery(event.target.value);
+                        setSelectedInvoiceIds(new Set());
+                      }}
                       placeholder="Aliado o número de factura"
                       className="min-h-[48px] w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
                     />
@@ -1759,7 +1827,10 @@ export default function ProveedoresWorkspace({
                   Aliado
                   <select
                     value={allyFilter}
-                    onChange={(event) => setAllyFilter(event.target.value)}
+                    onChange={(event) => {
+                      setAllyFilter(event.target.value);
+                      setSelectedInvoiceIds(new Set());
+                    }}
                     className="min-h-[48px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
                   >
                     <option value="">Todos los aliados</option>
@@ -1775,9 +1846,10 @@ export default function ProveedoresWorkspace({
                   Estado
                   <select
                     value={statusFilter}
-                    onChange={(event) =>
-                      setStatusFilter(event.target.value as FiltroEstado)
-                    }
+                    onChange={(event) => {
+                      setStatusFilter(event.target.value as FiltroEstado);
+                      setSelectedInvoiceIds(new Set());
+                    }}
                     className="min-h-[48px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
                   >
                     <option value="TODAS">Todas</option>
@@ -1798,6 +1870,65 @@ export default function ProveedoresWorkspace({
                 </button>
               </div>
             </div>
+
+            <section
+              aria-labelledby="supplier-selection-title"
+              className="mt-5 border-y border-slate-200 py-4"
+            >
+              <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <h3 id="supplier-selection-title" className="text-sm font-black text-slate-900">
+                    Resumen de facturas seleccionadas
+                  </h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Marca las facturas que quieres sumar. Al cambiar los filtros se limpia la selección.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <InvoiceSelectionCheckbox
+                    checked={allVisibleSelected}
+                    mixed={someVisibleSelected}
+                    disabled={loading || filteredInvoices.length === 0}
+                    label="Seleccionar todas las visibles"
+                    onChange={toggleVisibleSelection}
+                    showLabel
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInvoiceIds(new Set())}
+                    disabled={selectionSummary.cantidad === 0}
+                    className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e30613] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Limpiar selección
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3" aria-live="polite" aria-atomic="true">
+                <p className="text-sm font-semibold text-slate-600">
+                  {selectionSummary.cantidad} factura{selectionSummary.cantidad === 1 ? "" : "s"} seleccionada{selectionSummary.cantidad === 1 ? "" : "s"}
+                </p>
+                <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <div className="min-w-0 rounded-xl bg-slate-50 p-4">
+                    <dt className="text-sm font-semibold text-slate-600">Total facturas</dt>
+                    <dd className="mt-1 break-words text-2xl font-black tabular-nums tracking-tight text-slate-950">
+                      {formatMoney(selectionSummary.totalFacturas)}
+                    </dd>
+                  </div>
+                  <div className="min-w-0 rounded-xl bg-emerald-50 p-4">
+                    <dt className="text-sm font-semibold text-emerald-800">Total abonado</dt>
+                    <dd className="mt-1 break-words text-2xl font-black tabular-nums tracking-tight text-emerald-700">
+                      {formatMoney(selectionSummary.totalAbonado)}
+                    </dd>
+                  </div>
+                  <div className="min-w-0 rounded-xl bg-red-50 p-4">
+                    <dt className="text-sm font-semibold text-red-800">Total pendiente por pagar</dt>
+                    <dd className="mt-1 break-words text-2xl font-black tabular-nums tracking-tight text-red-700">
+                      {formatMoney(selectionSummary.totalPendiente)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
 
             <div className="mt-5" aria-busy={loading}>
               {loading ? (
@@ -1840,6 +1971,7 @@ export default function ProveedoresWorkspace({
                         setQuery("");
                         setAllyFilter("");
                         setStatusFilter("TODAS");
+                        setSelectedInvoiceIds(new Set());
                       }}
                       className="mt-4 min-h-11 rounded-xl bg-[#11161d] px-5 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#242c35]"
                     >
@@ -1853,6 +1985,14 @@ export default function ProveedoresWorkspace({
                     <table className="w-full min-w-[1180px] text-sm">
                       <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
                         <tr>
+                          <th scope="col" className="w-14 px-2 py-1">
+                            <InvoiceSelectionCheckbox
+                              checked={allVisibleSelected}
+                              mixed={someVisibleSelected}
+                              label="Seleccionar todas las facturas visibles"
+                              onChange={toggleVisibleSelection}
+                            />
+                          </th>
                           <th className="px-4 py-3.5">Aliado / factura</th>
                           <th className="px-4 py-3.5">Vencimiento</th>
                           <th className="px-4 py-3.5 text-right">Total factura</th>
@@ -1867,11 +2007,20 @@ export default function ProveedoresWorkspace({
                           <tr
                             key={invoice.id}
                             className={
-                              invoice.categoria === "VENCIDA"
-                                ? "bg-red-50/35"
-                                : "hover:bg-slate-50/70"
+                              selectedInvoiceIds.has(invoice.id)
+                                ? "bg-slate-100/80"
+                                : invoice.categoria === "VENCIDA"
+                                  ? "bg-red-50/35"
+                                  : "hover:bg-slate-50/70"
                             }
                           >
+                            <td className="px-2 py-3">
+                              <InvoiceSelectionCheckbox
+                                checked={selectedInvoiceIds.has(invoice.id)}
+                                label={`Seleccionar factura ${invoice.numeroFactura} de ${invoice.aliado}`}
+                                onChange={() => toggleInvoiceSelection(invoice.id)}
+                              />
+                            </td>
                             <td className="px-4 py-4">
                               <p className="font-black text-slate-950">
                                 {invoice.aliado}
@@ -1971,11 +2120,20 @@ export default function ProveedoresWorkspace({
                         key={invoice.id}
                         className={[
                           "rounded-2xl border p-4",
+                          selectedInvoiceIds.has(invoice.id) ? "ring-2 ring-slate-500 ring-offset-1" : "",
                           invoice.categoria === "VENCIDA"
                             ? "border-red-200 bg-red-50/45"
                             : "border-slate-200 bg-white",
                         ].join(" ")}
                       >
+                        <div className="mb-2">
+                          <InvoiceSelectionCheckbox
+                            checked={selectedInvoiceIds.has(invoice.id)}
+                            label={`Seleccionar factura ${invoice.numeroFactura} de ${invoice.aliado}`}
+                            onChange={() => toggleInvoiceSelection(invoice.id)}
+                            showLabel
+                          />
+                        </div>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="truncate text-base font-black text-slate-950">
