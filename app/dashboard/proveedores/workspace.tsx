@@ -740,6 +740,7 @@ export default function ProveedoresWorkspace({
   const [refreshing, setRefreshing] = useState(false);
   const [flash, setFlash] = useState<FlashMessage | null>(null);
   const [query, setQuery] = useState("");
+  const [allyFilter, setAllyFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<FiltroEstado>("TODAS");
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false);
   const [form, setForm] = useState<FormularioFactura>(EMPTY_FORM);
@@ -952,6 +953,7 @@ export default function ProveedoresWorkspace({
     };
 
     return visibleInvoices
+      .filter((invoice) => !allyFilter || invoice.aliado === allyFilter)
       .filter(
         (invoice) =>
           statusFilter === "TODAS" || invoice.categoria === statusFilter,
@@ -971,7 +973,7 @@ export default function ProveedoresWorkspace({
           ) ||
           left.aliado.localeCompare(right.aliado, "es-CO"),
       );
-  }, [query, statusFilter, visibleInvoices]);
+  }, [allyFilter, query, statusFilter, visibleInvoices]);
 
   const knownAllies = useMemo(
     () =>
@@ -1720,23 +1722,23 @@ export default function ProveedoresWorkspace({
           </section>
 
           <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div>
+            <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
+              <div className="min-w-0 2xl:shrink-0">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
                   Cuentas por pagar
                 </p>
                 <h2 className="mt-1 text-2xl font-black tracking-tight">
                   Facturas de proveedores
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-slate-500" aria-live="polite" aria-atomic="true">
                   {filteredInvoices.length} de {visibleInvoices.length} factura
                   {visibleInvoices.length === 1 ? "" : "s"} visible
                   {visibleInvoices.length === 1 ? "" : "s"}.
                 </p>
               </div>
 
-              <div className="grid w-full gap-3 sm:grid-cols-[minmax(0,1fr)_210px_auto] xl:max-w-3xl">
-                <label className="flex flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+              <div className="grid w-full min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_auto] 2xl:max-w-5xl">
+                <label className="flex min-w-0 flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                   Buscar
                   <span className="relative block">
                     <DashboardIcon
@@ -1753,14 +1755,30 @@ export default function ProveedoresWorkspace({
                   </span>
                 </label>
 
-                <label className="flex flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                <label className="flex min-w-0 flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                  Aliado
+                  <select
+                    value={allyFilter}
+                    onChange={(event) => setAllyFilter(event.target.value)}
+                    className="min-h-[48px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
+                  >
+                    <option value="">Todos los aliados</option>
+                    {knownAllies.map((ally) => (
+                      <option key={ally} value={ally}>
+                        {ally}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="flex min-w-0 flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                   Estado
                   <select
                     value={statusFilter}
                     onChange={(event) =>
                       setStatusFilter(event.target.value as FiltroEstado)
                     }
-                    className="min-h-[48px] rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
+                    className="min-h-[48px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
                   >
                     <option value="TODAS">Todas</option>
                     <option value="PENDIENTE">Pendientes</option>
@@ -1805,7 +1823,7 @@ export default function ProveedoresWorkspace({
                   <p className="mt-1 text-sm text-slate-500">
                     {visibleInvoices.length === 0
                       ? "Registra la primera factura para comenzar el seguimiento."
-                      : "Prueba otra búsqueda o selecciona todos los estados."}
+                      : "Prueba otra búsqueda o selecciona todos los aliados y estados."}
                   </p>
                   {visibleInvoices.length === 0 ? (
                     <button
@@ -1820,6 +1838,7 @@ export default function ProveedoresWorkspace({
                       type="button"
                       onClick={() => {
                         setQuery("");
+                        setAllyFilter("");
                         setStatusFilter("TODAS");
                       }}
                       className="mt-4 min-h-11 rounded-xl bg-[#11161d] px-5 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#242c35]"

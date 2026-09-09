@@ -3,12 +3,119 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 function read(relativePath) {
   return readFileSync(join(ROOT, relativePath), "utf8");
 }
+
+// Run the actual memo callback without mounting the surrounding dashboard.
+function evaluateWorkspaceMemo(name, bindings) {
+  const source = read("app/dashboard/proveedores/workspace.tsx");
+  const sourceFile = ts.createSourceFile(
+    "workspace.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  let declaration;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === name) {
+      declaration = node;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  assert.ok(declaration && ts.isCallExpression(declaration.initializer));
+  const helpers = sourceFile.statements
+    .filter(
+      (node) =>
+        ts.isFunctionDeclaration(node) &&
+        ["normalizeText", "dateKey"].includes(node.name?.text),
+    )
+    .map((node) => node.getText(sourceFile))
+    .join("\n");
+  const callback = declaration.initializer.arguments[0].getText(sourceFile);
+  const { outputText } = ts.transpileModule(
+    helpers + "\nfunction run() { return (" + callback + ")(); }",
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
+  );
+  return new Function(...Object.keys(bindings), outputText + "\nreturn run();")(
+    ...Object.values(bindings),
+  );
+}
+
+const filterInvoices = [
+  { id: 1, aliado: "JG COMPANY", numeroFactura: "ONL238", estado: "PAGADO", categoria: "PAGADA", fechaVencimiento: "2026-09-05" },
+  { id: 2, aliado: "JG COMPANY", numeroFactura: "ONL236", estado: "PENDIENTE", categoria: "VENCIDA", fechaVencimiento: "2026-09-05" },
+  { id: 3, aliado: "JAVIER TROPAS", numeroFactura: "ONL228", estado: "PENDIENTE", categoria: "PENDIENTE", fechaVencimiento: "2026-09-13" },
+  { id: 4, aliado: "JG COMPANY SUR", numeroFactura: "ONL236", estado: "PENDIENTE", categoria: "VENCIDA", fechaVencimiento: "2026-09-05" },
+  { id: 5, aliado: "JG COMPANY", numeroFactura: "ONL262", estado: "PENDIENTE", categoria: "PENDIENTE", fechaVencimiento: "2026-09-18" },
+];
+
+function filteredInvoiceIds(overrides = {}) {
+  return evaluateWorkspaceMemo("filteredInvoices", {
+    visibleInvoices: filterInvoices,
+    allyFilter: "",
+    query: "",
+    statusFilter: "TODAS",
+    ...overrides,
+  }).map((invoice) => invoice.id);
+}
+
+test("el selector de aliado es exacto y Todos los aliados conserva todas las facturas", () => {
+  assert.deepEqual(filteredInvoiceIds({ allyFilter: "JG COMPANY" }), [2, 5, 1]);
+  assert.deepEqual(filteredInvoiceIds(), [2, 4, 3, 5, 1]);
+  assert.deepEqual(filterInvoices.map((invoice) => invoice.id), [1, 2, 3, 4, 5]);
+});
+
+test("aliado, búsqueda y estado se combinan sin perder pagos aprobados ni estados vacíos", () => {
+  assert.deepEqual(
+    filteredInvoiceIds({ allyFilter: "JG COMPANY", query: "onl236", statusFilter: "VENCIDA" }),
+    [2],
+  );
+  assert.deepEqual(
+    filteredInvoiceIds({ allyFilter: "JG COMPANY", query: "onl", statusFilter: "PAGADA" }),
+    [1],
+  );
+  assert.deepEqual(
+    filteredInvoiceIds({ allyFilter: "JAVIER TROPAS", statusFilter: "VENCIDA" }),
+    [],
+  );
+  assert.deepEqual(
+    filteredInvoiceIds({ allyFilter: "JG COMPANY", query: "inexistente" }),
+    [],
+  );
+});
+
+test("las opciones de aliados son únicas, ordenadas y parten de todas las facturas", () => {
+  assert.deepEqual(
+    evaluateWorkspaceMemo("knownAllies", {
+      invoices: filterInvoices,
+      filteredInvoices: [],
+      allyFilter: "JG COMPANY",
+      query: "inexistente",
+      statusFilter: "VENCIDA",
+    }),
+    ["JAVIER TROPAS", "JG COMPANY", "JG COMPANY SUR"],
+  );
+});
+
+test("el selector accesible comparte catálogo y limpiar filtros también restablece el aliado", () => {
+  const source = read("app/dashboard/proveedores/workspace.tsx");
+  assert.match(source, /Aliado\s*<select\s*value=\{allyFilter\}/);
+  assert.match(source, /onChange=\{\(event\) => setAllyFilter\(event\.target\.value\)\}/);
+  assert.match(source, /<option value="">Todos los aliados<\/option>/);
+  assert.match(source, /knownAllies\.map\(\(ally\) => \(\s*<option key=\{ally\} value=\{ally\}>/);
+  assert.match(source, /\[allyFilter, query, statusFilter, visibleInvoices\]/);
+  assert.match(source, /setQuery\(""\);\s*setAllyFilter\(""\);\s*setStatusFilter\("TODAS"\);/);
+  assert.match(source, /\{filteredInvoices\.length\} de \{visibleInvoices\.length\}/);
+  assert.match(source, /selecciona todos los aliados y estados/);
+  assert.match(source, /sm:grid-cols-2 xl:grid-cols-/);
+});
 
 test("Proveedores reemplaza Funciones sin perder Radar ni Inconsistencias", () => {
   const source = read("app/dashboard/_components/operations-dashboard.tsx");

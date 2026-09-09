@@ -101,6 +101,8 @@ export async function generarReciboAbonoProveedorPdf(
   const fonts = getPdfFonts();
   const doc = new PDFDocument({
     bufferPages: true,
+    // Initialize with the bundled TTF: PDFKit otherwise loads Helvetica.afm first.
+    font: fonts.regular,
     margin: 44,
     info: {
       Author: "CONECTAMOS",
