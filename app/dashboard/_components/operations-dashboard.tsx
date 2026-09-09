@@ -417,19 +417,13 @@ function PerformancePanel({
   items: CommercialSummary["rendimientoPorSede"];
   mostrarSoloVentas: boolean;
 }) {
-  const visibles = (mostrarSoloVentas
-    ? [...items].sort(
-        (a, b) =>
-          b.ventas - a.ventas || a.nombre.localeCompare(b.nombre, "es")
-      )
-    : items
-  ).slice(0, 5);
-  const max = Math.max(
-    1,
-    ...visibles.map((item) =>
-      mostrarSoloVentas ? item.ventas : item.ingresos
+  const visibles = [...items]
+    .sort(
+      (a, b) =>
+        b.ventas - a.ventas || a.nombre.localeCompare(b.nombre, "es")
     )
-  );
+    .slice(0, 5);
+  const maxVentas = Math.max(1, ...visibles.map((item) => item.ventas));
 
   return (
     <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
@@ -444,34 +438,60 @@ function PerformancePanel({
           Sin rendimiento por sede para mostrar.
         </div>
       ) : (
-        <div className="mt-6 space-y-4">
+        <div className="mt-6 space-y-3.5">
           {visibles.map((item) => (
-            <div key={item.sedeId} className="grid grid-cols-[82px_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[110px_minmax(0,1fr)]">
+            <div
+              key={item.sedeId}
+              className="grid grid-cols-[72px_minmax(0,1fr)_72px] items-center gap-3 sm:grid-cols-[100px_minmax(0,1fr)_82px]"
+            >
               <p className="truncate text-xs font-bold text-slate-600" title={item.nombre}>
                 {item.nombre}
               </p>
               <div className="min-w-0">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center">
                   <div
                     className="h-3 min-w-[5px] rounded-r bg-[#e30613]"
                     style={{
                       width: `${Math.max(
                         3,
-                        ((mostrarSoloVentas ? item.ventas : item.ingresos) /
-                          max) *
-                          100
+                        (item.ventas / maxVentas) * 100
                       )}%`,
                     }}
                   />
-                  <span className="shrink-0 text-xs font-bold text-slate-700">
-                    {mostrarSoloVentas
-                      ? `${item.ventas} ${item.ventas === 1 ? "venta" : "ventas"}`
-                      : formatoPesos(item.ingresos)}
-                  </span>
                 </div>
                 {!mostrarSoloVentas && (
-                  <p className="mt-1 text-[11px] text-slate-400">{item.ventas} {item.ventas === 1 ? "venta" : "ventas"}</p>
+                  <button
+                    type="button"
+                    className="group/utility mt-1.5 inline-flex max-w-full cursor-help items-center gap-1.5 rounded text-[10px] font-semibold text-slate-400 outline-none transition focus-visible:ring-2 focus-visible:ring-[#e30613]/30"
+                    aria-label={`Utilidad de ${item.nombre}: ${formatoPesos(item.utilidad)}`}
+                    title="Pasa el cursor o enfoca para ver la utilidad"
+                  >
+                    <span className="shrink-0">Utilidad:</span>
+                    <span
+                      aria-hidden="true"
+                      className="font-extrabold tracking-[0.16em] text-slate-500 group-hover/utility:hidden group-focus-within/utility:hidden"
+                    >
+                      ****
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="hidden truncate font-bold tabular-nums text-slate-700 group-hover/utility:inline group-focus-within/utility:inline"
+                    >
+                      {formatoPesos(item.utilidad)}
+                    </span>
+                  </button>
                 )}
+              </div>
+              <div className="rounded-xl border border-red-100 bg-red-50/80 px-2.5 py-2 text-right">
+                <strong
+                  data-performance-sales-count
+                  className="block text-lg font-black leading-none tabular-nums text-[#e30613]"
+                >
+                  {item.ventas}
+                </strong>
+                <span className="mt-1 block text-[9px] font-extrabold uppercase tracking-[0.14em] text-red-600/75">
+                  {item.ventas === 1 ? "venta" : "ventas"}
+                </span>
               </div>
             </div>
           ))}
