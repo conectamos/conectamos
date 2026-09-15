@@ -478,7 +478,7 @@ function getSiigoConfig(registro: RegistroSiigoInput): SiigoConfig {
       0,
     exemptItemLimit: readMoney("SIIGO_EXEMPT_ITEM_LIMIT", 1150000),
     maxInvoiceTotal: readMoney("SIIGO_MAX_INVOICE_TOTAL", 2300000),
-    applianceItemCode: process.env.SIIGO_APPLIANCE_ITEM_CODE?.trim() || "002",
+    applianceItemCode: "001",
     applianceTaxId: toPositiveInt(process.env.SIIGO_VAT_19_TAX_ID),
   };
 }
