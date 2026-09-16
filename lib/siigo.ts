@@ -601,7 +601,11 @@ async function siigoFetch<T>(
   config: SiigoAuthConfig,
   path: string,
   init: RequestInit,
-  options?: { idempotencyKey?: string; retryAuth?: boolean }
+  options?: {
+    idempotencyKey?: string;
+    retryAuth?: boolean;
+    rateLimitAttempt?: number;
+  }
 ): Promise<T> {
   const token = await authenticate(config);
   const headers = new Headers(init.headers);
@@ -628,6 +632,35 @@ async function siigoFetch<T>(
     return siigoFetch<T>(config, path, init, {
       ...options,
       retryAuth: false,
+    });
+  }
+
+  const method = String(init.method || "GET").trim().toUpperCase();
+  const rateLimitAttempt = options?.rateLimitAttempt ?? 0;
+
+  if (
+    response.status === 429 &&
+    method === "GET" &&
+    rateLimitAttempt < 5
+  ) {
+    const retryAfterHeader = Number(response.headers.get("Retry-After"));
+    const detailMessage = stringifySiigoDetails(data);
+    const detailSeconds = Number(
+      detailMessage.match(/(\d+)\s*segundos?/i)?.[1] || 0
+    );
+    const retryAfterMs = Math.min(
+      15_000,
+      Math.max(
+        Number.isFinite(retryAfterHeader) ? retryAfterHeader * 1000 : 0,
+        detailSeconds * 1000,
+        3_000 * (rateLimitAttempt + 1)
+      )
+    );
+
+    await wait(retryAfterMs);
+    return siigoFetch<T>(config, path, init, {
+      ...options,
+      rateLimitAttempt: rateLimitAttempt + 1,
     });
   }
 
@@ -1810,11 +1843,21 @@ export async function getSiigoApplianceCorrectionReport(
   dateEnd: string
 ): Promise<SiigoApplianceCorrectionReport> {
   const config = getSiigoAuthConfig();
-  const [invoices, creditNotes, taxes] = await Promise.all([
-    fetchSiigoReportDocuments(config, "/invoices", dateStart, dateEnd),
-    fetchSiigoReportDocuments(config, "/credit-notes", dateStart, dateEnd),
-    getSiigoTaxes(config),
-  ]);
+  const invoices = await fetchSiigoReportDocuments(
+    config,
+    "/invoices",
+    dateStart,
+    dateEnd
+  );
+  await wait(500);
+  const creditNotes = await fetchSiigoReportDocuments(
+    config,
+    "/credit-notes",
+    dateStart,
+    dateEnd
+  );
+  await wait(500);
+  const taxes = await getSiigoTaxes(config);
   const vat19TaxIds = new Set(
     taxes
       .filter(
@@ -1998,6 +2041,8 @@ async function fetchSiigoReportDocuments(
     ) {
       break;
     }
+
+    await wait(500);
   }
 
   return documents;

@@ -42,6 +42,13 @@ test("reporte identifica producto 002 con IVA 19 sin modificar Siigo", async () 
 
   assert.match(siigoSource, /code === "002"/);
   assert.match(siigoSource, /isVat19Tax\(tax, vat19TaxIds\)/);
+  assert.match(siigoSource, /response\.status === 429/);
+  assert.match(siigoSource, /await wait\(retryAfterMs\)/);
+  assert.match(siigoSource, /await wait\(500\)/);
+  assert.doesNotMatch(
+    siigoSource,
+    /const \[invoices, creditNotes, taxes\] = await Promise\.all/,
+  );
   assert.match(routeSource, /export async function GET/);
   assert.doesNotMatch(routeSource, /export async function (POST|PUT|PATCH|DELETE)/);
   assert.match(routeSource, /puedeConsultarReporteSiigo/);
