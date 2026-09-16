@@ -1246,6 +1246,40 @@ export type SiigoMonthlyReport = {
   netoAprobado: number;
 };
 
+export type SiigoApplianceCorrectionReportRow = {
+  estadoCorreccion: string;
+  fechaFactura: string | null;
+  factura: string;
+  estadoFactura: string;
+  cliente: string;
+  identificacion: string;
+  descripcion: string;
+  cantidad: number;
+  subtotal: number;
+  iva19: number;
+  totalAfectado: number;
+  totalFactura: number;
+  documentoSiigo: string;
+  centroCosto: string;
+  notaCredito: string;
+  estadoNotaCredito: string;
+  fechaNotaCredito: string | null;
+  facturaUrl: string;
+  notaCreditoUrl: string;
+};
+
+export type SiigoApplianceCorrectionReport = {
+  desde: string;
+  hasta: string;
+  facturasRevisadas: number;
+  facturasAfectadas: number;
+  pendientesCorreccion: number;
+  corregidasConNotaCredito: number;
+  valorAfectado: number;
+  valorPendiente: number;
+  registros: SiigoApplianceCorrectionReportRow[];
+};
+
 function sumDocumentItems(value: unknown) {
   if (!Array.isArray(value)) {
     return 0;
@@ -1696,6 +1730,231 @@ function buildCreditNoteReportDetails(
       };
     })
     .sort((a, b) => b.valor - a.valor);
+}
+
+function getReportCustomer(document: SiigoReportDocument) {
+  const customer =
+    document.customer && typeof document.customer === "object"
+      ? (document.customer as Record<string, unknown>)
+      : {};
+  const rawName = customer.name;
+  const name = Array.isArray(rawName)
+    ? rawName.map((value) => String(value || "").trim()).filter(Boolean).join(" ")
+    : String(
+        rawName ||
+          customer.commercial_name ||
+          customer.identification ||
+          ""
+      ).trim();
+
+  return {
+    name,
+    identification: String(customer.identification || "").trim(),
+  };
+}
+
+function isVat19Tax(
+  tax: Record<string, unknown>,
+  vat19TaxIds: Set<string>
+) {
+  const percentage =
+    toNumber(tax.percentage) ||
+    toNumber(tax.rate) ||
+    toNumber(tax.percent);
+  const taxId = String(tax.id || "").trim();
+  const label = normalizeCatalogText(
+    [tax.type, tax.name, tax.description].filter(Boolean).join(" ")
+  );
+
+  return (
+    Math.abs(percentage - 19) < 0.0001 ||
+    (taxId && vat19TaxIds.has(taxId)) ||
+    (label.includes("IVA") && percentage === 19)
+  );
+}
+
+function findInvoiceCreditNote(
+  invoice: SiigoReportDocument,
+  creditNotes: SiigoReportDocument[]
+) {
+  const invoiceId = String(invoice.id || "").trim();
+  const invoiceName = normalizeDocumentName(getReportDocumentLabel(invoice));
+  const matches = creditNotes
+    .filter((creditNote) => {
+      const reference = getCreditNoteInvoiceReference(creditNote);
+      return (
+        (invoiceId && reference.id === invoiceId) ||
+        (invoiceName && reference.name === invoiceName)
+      );
+    })
+    .sort((left, right) => {
+      const approvalDifference =
+        Number(isReportDocumentApproved(right)) -
+        Number(isReportDocumentApproved(left));
+
+      if (approvalDifference !== 0) {
+        return approvalDifference;
+      }
+
+      return (
+        (getSiigoDocumentCreatedAt(right)?.getTime() || 0) -
+        (getSiigoDocumentCreatedAt(left)?.getTime() || 0)
+      );
+    });
+
+  return matches[0] || null;
+}
+
+export async function getSiigoApplianceCorrectionReport(
+  dateStart: string,
+  dateEnd: string
+): Promise<SiigoApplianceCorrectionReport> {
+  const config = getSiigoAuthConfig();
+  const [invoices, creditNotes, taxes] = await Promise.all([
+    fetchSiigoReportDocuments(config, "/invoices", dateStart, dateEnd),
+    fetchSiigoReportDocuments(config, "/credit-notes", dateStart, dateEnd),
+    getSiigoTaxes(config),
+  ]);
+  const vat19TaxIds = new Set(
+    taxes
+      .filter(
+        (tax) =>
+          tax.active !== false &&
+          Math.abs(Number(tax.percentage) - 19) < 0.0001 &&
+          normalizeCatalogText(`${tax.type || ""} ${tax.name || ""}`).includes(
+            "IVA"
+          )
+      )
+      .map((tax) => String(tax.id || "").trim())
+      .filter(Boolean)
+  );
+  const registros: SiigoApplianceCorrectionReportRow[] = [];
+
+  for (const invoice of invoices) {
+    const affectedItems = toObjectArray(invoice.items).filter((item) => {
+      const code = readNestedText(item, [
+        "code",
+        "item.code",
+        "product.code",
+      ]);
+
+      return (
+        code === "002" &&
+        toObjectArray(item.taxes).some((tax) => isVat19Tax(tax, vat19TaxIds))
+      );
+    });
+
+    if (affectedItems.length === 0) {
+      continue;
+    }
+
+    const values = affectedItems.reduce<{
+      cantidad: number;
+      subtotal: number;
+      iva19: number;
+      totalAfectado: number;
+    }>(
+      (summary, item) => {
+        const itemValues = getProductLineValues(item, 1);
+        summary.cantidad += itemValues.cantidad;
+        summary.subtotal += itemValues.subtotal;
+        summary.iva19 += itemValues.impuestoCargo;
+        summary.totalAfectado +=
+          itemValues.subtotal + itemValues.impuestoCargo;
+        return summary;
+      },
+      {
+        cantidad: 0,
+        subtotal: 0,
+        iva19: 0,
+        totalAfectado: 0,
+      }
+    );
+    const creditNote = findInvoiceCreditNote(invoice, creditNotes);
+    const invoiceApproved = isReportDocumentApproved(invoice);
+    const creditNoteApproved =
+      Boolean(creditNote) && isReportDocumentApproved(creditNote!);
+    const customer = getReportCustomer(invoice);
+
+    registros.push({
+      estadoCorreccion: creditNoteApproved
+        ? "CORREGIDA CON NC"
+        : creditNote
+          ? "REVISAR ESTADO NC"
+          : invoiceApproved
+            ? "PENDIENTE NC"
+            : "REVISAR FACTURA NO APROBADA",
+      fechaFactura: getReportDocumentDate(invoice),
+      factura: getReportDocumentLabel(invoice),
+      estadoFactura: getReportDocumentStatusLabel(invoice) || "Sin estado",
+      cliente: customer.name,
+      identificacion: customer.identification,
+      descripcion: affectedItems
+        .map((item) =>
+          readNestedText(item, [
+            "description",
+            "name",
+            "item.name",
+            "product.name",
+          ])
+        )
+        .filter(Boolean)
+        .join(" | "),
+      cantidad: values.cantidad,
+      subtotal: roundMoney(values.subtotal),
+      iva19: roundMoney(values.iva19),
+      totalAfectado: roundMoney(values.totalAfectado),
+      totalFactura: roundMoney(getReportDocumentTotal(invoice)),
+      documentoSiigo: readNestedText(invoice, [
+        "document.name",
+        "document.id",
+      ]),
+      centroCosto: readNestedText(invoice, [
+        "cost_center.name",
+        "cost_center.id",
+        "cost_center",
+      ]),
+      notaCredito: creditNote ? getReportDocumentLabel(creditNote) : "",
+      estadoNotaCredito: creditNote
+        ? getReportDocumentStatusLabel(creditNote)
+        : "",
+      fechaNotaCredito: creditNote
+        ? getReportDocumentDate(creditNote)
+        : null,
+      facturaUrl: String(invoice.public_url || "").trim(),
+      notaCreditoUrl: String(creditNote?.public_url || "").trim(),
+    });
+  }
+
+  registros.sort((left, right) =>
+    `${left.fechaFactura || ""} ${left.factura}`.localeCompare(
+      `${right.fechaFactura || ""} ${right.factura}`,
+      "es"
+    )
+  );
+
+  const corregidas = registros.filter(
+    (registro) => registro.estadoCorreccion === "CORREGIDA CON NC"
+  );
+  const pendientes = registros.filter(
+    (registro) => registro.estadoCorreccion !== "CORREGIDA CON NC"
+  );
+
+  return {
+    desde: dateStart,
+    hasta: dateEnd,
+    facturasRevisadas: invoices.length,
+    facturasAfectadas: registros.length,
+    pendientesCorreccion: pendientes.length,
+    corregidasConNotaCredito: corregidas.length,
+    valorAfectado: roundMoney(
+      registros.reduce((total, registro) => total + registro.totalAfectado, 0)
+    ),
+    valorPendiente: roundMoney(
+      pendientes.reduce((total, registro) => total + registro.totalAfectado, 0)
+    ),
+    registros,
+  };
 }
 
 async function fetchSiigoReportDocuments(

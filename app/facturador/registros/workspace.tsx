@@ -1435,7 +1435,7 @@ export default function FacturadorRegistrosWorkspace({
                   </p>
                 </div>
 
-                <div className="flex min-w-[230px] flex-col gap-2 sm:flex-row">
+                <div className="flex min-w-[230px] flex-col gap-2 sm:flex-row sm:flex-wrap">
                   <input
                     type="month"
                     value={reporteSiigoMes}
@@ -1451,6 +1451,13 @@ export default function FacturadorRegistrosWorkspace({
                   >
                     {consultandoReporteSiigo ? "Consultando..." : "Reporte Siigo"}
                   </button>
+                  <a
+                    href="/api/facturador/siigo/reporte/electrodomesticos"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.06em] text-slate-900 transition hover:border-[#e30613] hover:text-[#e30613]"
+                  >
+                    <DashboardIcon name="download" className="h-4 w-4" />
+                    Electrodomesticos 002
+                  </a>
                 </div>
               </div>
 
