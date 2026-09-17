@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import styles from "./login.module.css";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -935,133 +936,110 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#fafafa] text-[#111827]">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-        <section className="relative hidden min-h-screen overflow-hidden bg-[#05070c] lg:block">
+    <main className={styles.login}>
+      <section className={styles.visual} aria-label="CONECTAMOS">
+        <svg className={styles.curves} viewBox="0 0 800 1000" fill="none" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <path d="M-240 780C120 800 785 535 750 190C730-20 440-140 180-160" />
+          <path d="M-170 935C185 960 825 620 685 305C615 145 450 105 330 90" />
+        </svg>
+        <div className={styles.wordmark} role="img" aria-label="CONECTAMOS">
+          <span className={styles.initial}>
+            C<span className={styles.underline} />
+          </span>
+          <span className={styles.wordmarkText}>ONECTAMOS</span>
+          <svg viewBox="0 0 36 36" className={styles.signal} fill="none" aria-hidden="true">
+            <path d="M5 14a12 12 0 0 1 12 12" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+            <path d="M5 6a20 20 0 0 1 20 20" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+          </svg>
+        </div>
+        <div className={styles.mascot}>
           <Image
-            src="/branding/conectamos-login-robot-2026.png"
-            alt="Mascota de CONECTAMOS en el centro de operaciones"
+            src="/branding/conectamos-login-phone-2026.png"
+            alt="Celular mascota de CONECTAMOS, negro con detalles rojos, sonriendo y saludando"
             fill
-            priority
-            sizes="100vw"
-            quality={100}
-            className="object-cover object-center"
+            preload
+            sizes="(max-width: 767px) 220px, 45vw"
+            className={styles.mascotImage}
           />
-          <div className="absolute inset-x-0 bottom-0 h-[45%] bg-[linear-gradient(180deg,rgba(5,7,12,0)_0%,rgba(5,7,12,0.96)_32%,#05070c_48%)]" />
-          <div className="absolute left-8 top-8 flex items-center sm:left-10 sm:top-10 xl:left-12 xl:top-12">
-            <span className="relative text-6xl font-black leading-none text-[#ef1018]">
-              C
-              <span className="absolute bottom-0 left-[70%] h-0.5 w-7 bg-[#ef1018]" />
-            </span>
-            <span className="ml-1 text-3xl font-black text-white xl:text-4xl">
-              ONECTAMOS
-            </span>
-            <svg
-              viewBox="0 0 36 36"
-              className="ml-1 h-9 w-9 self-start text-[#ef1018] xl:h-10 xl:w-10"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path d="M5 14a12 12 0 0 1 12 12" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-              <path d="M5 6a20 20 0 0 1 20 20" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-            </svg>
-          </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="relative flex min-h-screen min-w-0 items-center justify-center bg-[#fbfbfc] px-5 py-24 sm:px-8 lg:px-12">
-          <div className="w-full max-w-[530px] rounded-lg border border-[#d9dadd] bg-white px-6 py-9 shadow-[0_18px_50px_rgba(17,24,39,0.08)] sm:px-12 sm:py-10">
-            <div className="flex justify-center">
-              <LoginBrandIcon />
+      <section className={styles.access} aria-labelledby="login-title">
+        <div className={styles.card}>
+          <div className={styles.brandIcon}><LoginBrandIcon /></div>
+          <p className={styles.eyebrow}>ACCESO</p>
+          <h1 id="login-title" className={styles.title}>Bienvenido</h1>
+          <p className={styles.subtitle}>Ingresa para continuar.</p>
+
+          <form
+            className={styles.form}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void login();
+            }}
+          >
+            <div className={styles.fields}>
+              <label className={styles.label}>
+                Usuario
+                <span className={styles.inputWrap}>
+                  <span className={styles.inputIcon}><LoginUserIcon /></span>
+                  <input
+                    type="text"
+                    autoComplete="username"
+                    placeholder="Usuario"
+                    value={usuario}
+                    onChange={(event) => setUsuario(event.target.value)}
+                    className={styles.input}
+                  />
+                </span>
+              </label>
+
+              <label className={styles.label}>
+                Contraseña
+                <span className={styles.inputWrap}>
+                  <span className={styles.inputIcon}><LoginLockIcon /></span>
+                  <input
+                    type={mostrarClave ? "text" : "password"}
+                    autoComplete="current-password"
+                    placeholder="Contraseña"
+                    value={clave}
+                    onChange={(event) => setClave(event.target.value)}
+                    className={styles.passwordInput}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setMostrarClave((visible) => !visible)}
+                    className={styles.reveal}
+                    aria-label={mostrarClave ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    title={mostrarClave ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    aria-pressed={mostrarClave}
+                  >
+                    <LoginEyeIcon crossed={mostrarClave} />
+                  </button>
+                </span>
+              </label>
             </div>
 
-            <p className="mt-3 text-center text-sm font-extrabold uppercase text-[#ed111b]">
-              Acceso al sistema
-            </p>
-            <h1 className="mt-3 text-center text-4xl font-black text-[#10141d]">
-              Bienvenido
-            </h1>
-            <p className="mt-3 text-center text-base text-[#707783]">
-              Ingresa tus credenciales para continuar.
-            </p>
+            {mensaje && (
+              <p className={styles.message} role="alert">{mensaje}</p>
+            )}
 
-            <form
-              className="mt-9"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void login();
-              }}
+            <button
+              type="submit"
+              disabled={cargando}
+              className={styles.submit}
             >
-              <div className="space-y-6">
-                <label className="block text-sm font-bold text-[#303746]">
-                  Usuario
-                  <span className="relative mt-2 block">
-                    <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-[#7c8490]">
-                      <LoginUserIcon />
-                    </span>
-                    <input
-                      type="text"
-                      autoComplete="username"
-                      placeholder="Usuario de la sede"
-                      value={usuario}
-                      onChange={(event) => setUsuario(event.target.value)}
-                      className="box-border h-14 w-full min-w-0 rounded-lg border border-[#d5d8dd] bg-white pl-14 pr-4 text-base font-medium text-[#111827] outline-none transition placeholder:text-[#9298a2] focus:border-[#ed111b] focus:ring-4 focus:ring-red-100"
-                    />
-                  </span>
-                </label>
+              {cargando ? "Ingresando..." : "INGRESAR"}
+              {!cargando && <ProfileArrowIcon />}
+            </button>
+          </form>
 
-                <label className="block text-sm font-bold text-[#303746]">
-                  Contraseña
-                  <span className="relative mt-2 block">
-                    <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-[#7c8490]">
-                      <LoginLockIcon />
-                    </span>
-                    <input
-                      type={mostrarClave ? "text" : "password"}
-                      autoComplete="current-password"
-                      placeholder="Clave de acceso"
-                      value={clave}
-                      onChange={(event) => setClave(event.target.value)}
-                      className="box-border h-14 w-full min-w-0 rounded-lg border border-[#d5d8dd] bg-white pl-14 pr-14 text-base font-medium text-[#111827] outline-none transition placeholder:text-[#9298a2] focus:border-[#ed111b] focus:ring-4 focus:ring-red-100"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setMostrarClave((visible) => !visible)}
-                      className="absolute inset-y-0 right-0 flex w-14 items-center justify-center text-[#737b88] transition hover:text-[#ed111b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#ed111b]"
-                      aria-label={mostrarClave ? "Ocultar contraseña" : "Mostrar contraseña"}
-                      title={mostrarClave ? "Ocultar contraseña" : "Mostrar contraseña"}
-                    >
-                      <LoginEyeIcon crossed={mostrarClave} />
-                    </button>
-                  </span>
-                </label>
-              </div>
-
-              {mensaje && (
-                <p className="mt-5 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800" role="alert">
-                  {mensaje}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={cargando}
-                className="mt-8 h-[60px] w-full rounded-lg border-b-[3px] border-[#ed111b] bg-[#090e18] px-6 text-lg font-extrabold text-white shadow-[0_12px_24px_rgba(9,14,24,0.18)] transition hover:bg-[#151b27] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-65"
-              >
-                {cargando ? "Ingresando..." : "Ingresar"}
-              </button>
-            </form>
-
-            <div className="mt-6 flex items-center justify-center gap-2 text-sm text-[#7b828e]">
-              <LoginLockIcon />
-              <span>Acceso seguro para personal autorizado</span>
-            </div>
+          <div className={styles.footer}>
+            <LoginLockIcon />
+            <span>Acceso exclusivo para personal autorizado</span>
           </div>
-
-          <p className="absolute inset-x-0 bottom-8 text-center text-sm text-[#737b88]">
-            © 2026 CONECTAMOS
-          </p>
-        </section>
-      </div>
+        </div>
+      </section>
     </main>
   );
 }
