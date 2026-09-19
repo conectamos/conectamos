@@ -954,7 +954,7 @@ export default function Home() {
         </div>
         <div className={styles.mascot}>
           <Image
-            src="/branding/conectamos-login-phone-2026.png"
+            src="/branding/conectamos-login-phone-transparent-2026.png"
             alt="Celular mascota de CONECTAMOS, negro con detalles rojos, sonriendo y saludando"
             fill
             preload
