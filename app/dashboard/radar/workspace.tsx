@@ -11,6 +11,8 @@ import type {
   InventoryBrandSummary,
 } from "@/lib/dashboard-inventory-summary";
 
+type RadarLocationFilter = "TODAS" | "PRINCIPAL" | "SEDES";
+
 function formatoNumero(valor: number) {
   return Number(valor || 0).toLocaleString("es-CO");
 }
@@ -239,19 +241,42 @@ export default function DashboardRadarWorkspace({
   puedeVerInventario: boolean;
 }) {
   const [busqueda, setBusqueda] = useState("");
+  const [ubicacion, setUbicacion] = useState<RadarLocationFilter>("TODAS");
 
   const marcasFiltradas = useMemo(() => {
     const filtro = normalizarBusqueda(busqueda.trim());
 
-    if (!filtro) {
-      return summary.marcas;
-    }
-
     return summary.marcas
       .map((brand) => {
-        const referencias = brand.referencias.filter((item) =>
-          normalizarBusqueda(`${brand.marca} ${item.referencia}`).includes(filtro)
-        );
+        const referencias = brand.referencias
+          .map((item) => {
+            if (ubicacion === "PRINCIPAL") {
+              return {
+                ...item,
+                total: item.bodegaPrincipal,
+                sedes: 0,
+                sedesDetalle: [],
+              };
+            }
+
+            if (ubicacion === "SEDES") {
+              return {
+                ...item,
+                total: item.sedes,
+                bodegaPrincipal: 0,
+              };
+            }
+
+            return item;
+          })
+          .filter(
+            (item) =>
+              item.total > 0 &&
+              (!filtro ||
+                normalizarBusqueda(`${brand.marca} ${item.referencia}`).includes(
+                  filtro
+                ))
+          );
 
         return {
           ...brand,
@@ -260,7 +285,7 @@ export default function DashboardRadarWorkspace({
         };
       })
       .filter((brand) => brand.referencias.length > 0);
-  }, [busqueda, summary.marcas]);
+  }, [busqueda, summary.marcas, ubicacion]);
 
   const totalReferenciasFiltradas = useMemo(
     () =>
@@ -270,6 +295,9 @@ export default function DashboardRadarWorkspace({
       ),
     [marcasFiltradas]
   );
+  const exportUrl = busqueda.trim()
+    ? `/api/dashboard/radar/export?q=${encodeURIComponent(busqueda.trim())}`
+    : "/api/dashboard/radar/export";
 
   return (
     <>
@@ -346,29 +374,63 @@ export default function DashboardRadarWorkspace({
           <label htmlFor="radar-search" className="sr-only">
             Buscar marca o referencia
           </label>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative w-full lg:max-w-xl">
-              <DashboardIcon
-                name="search"
-                className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                id="radar-search"
-                value={busqueda}
-                onChange={(event) => setBusqueda(event.target.value)}
-                placeholder="Buscar por marca o referencia..."
-                className="min-h-12 w-full rounded-xl border border-slate-300 bg-white py-3 pl-12 pr-12 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-              />
-              {busqueda && (
-                <button
-                  type="button"
-                  onClick={() => setBusqueda("")}
-                  aria-label="Limpiar búsqueda"
-                  className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex w-full flex-col gap-3 sm:flex-row xl:max-w-4xl">
+              <div className="relative min-w-0 flex-1">
+                <DashboardIcon
+                  name="search"
+                  className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  id="radar-search"
+                  value={busqueda}
+                  onChange={(event) => setBusqueda(event.target.value)}
+                  placeholder="Buscar por marca o referencia..."
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white py-3 pl-12 pr-12 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                />
+                {busqueda && (
+                  <button
+                    type="button"
+                    onClick={() => setBusqueda("")}
+                    aria-label="Limpiar búsqueda"
+                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    <DashboardIcon name="close" className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              <label className="relative block sm:w-[210px]">
+                <span className="sr-only">Filtrar por ubicación</span>
+                <DashboardIcon
+                  name="store"
+                  className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+                />
+                <select
+                  value={ubicacion}
+                  onChange={(event) =>
+                    setUbicacion(event.target.value as RadarLocationFilter)
+                  }
+                  className="min-h-12 w-full appearance-none rounded-xl border border-slate-300 bg-white py-3 pl-12 pr-9 text-sm font-bold text-slate-700 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
                 >
-                  <DashboardIcon name="close" className="h-4 w-4" />
-                </button>
-              )}
+                  <option value="TODAS">Todas las ubicaciones</option>
+                  <option value="PRINCIPAL">Bodega principal</option>
+                  <option value="SEDES">Sedes</option>
+                </select>
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+                  ▼
+                </span>
+              </label>
+
+              <a
+                href={exportUrl}
+                download
+                className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border-b-2 border-[#e30613] bg-[#11161d] px-4 text-sm font-bold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100"
+                title="Descargar referencias disponibles en estado BODEGA de la bodega principal"
+              >
+                <DashboardIcon name="download" className="h-4 w-4" />
+                Excel bodega
+              </a>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500" aria-live="polite">

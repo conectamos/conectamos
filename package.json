@@ -15,6 +15,7 @@
     "test:proveedores:build": "node tests/proveedores-recibo-build.cjs",
     "test:inventario-imeis": "node --experimental-strip-types --test tests/inventory-imei-input.test.mjs",
     "test:login": "node --experimental-strip-types --test tests/login-resilience-contract.test.mjs",
+    "test:radar": "node --experimental-strip-types --test tests/radar-inventory-export.test.mjs",
     "proveedores:vapid": "node scripts/generar-vapid.mjs",
     "proveedores:notificar": "node scripts/notificar-proveedores.mjs",
     "db:apply-proveedores": "prisma db execute --file scripts/apply-proveedores-schema.sql",
