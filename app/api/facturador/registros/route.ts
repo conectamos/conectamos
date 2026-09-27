@@ -11,7 +11,6 @@ import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
-  DOMINIOS_CORREO_REGISTRO_TEXTO,
   financieraRequiereInicial,
   normalizarCorreoRegistro,
   normalizarImei,
@@ -21,6 +20,7 @@ import {
   normalizarTextoLargo,
   normalizarTipoDocumentoCliente,
   normalizarWhatsappRegistro,
+  obtenerErrorCorreoRegistro,
 } from "@/lib/vendor-sale-records";
 
 const ESTADOS_FACTURACION = [
@@ -514,7 +514,9 @@ export async function PATCH(req: Request) {
       if (!correo) {
         return NextResponse.json(
           {
-            error: `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`,
+            error:
+              obtenerErrorCorreoRegistro(body.correo) ||
+              "El correo no es valido",
           },
           { status: 400 }
         );

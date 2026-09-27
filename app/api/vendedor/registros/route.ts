@@ -26,7 +26,6 @@ import {
 } from "@/lib/finserpayconsulta";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
-  DOMINIOS_CORREO_REGISTRO_TEXTO,
   normalizarCorreoRegistro,
   normalizarFechaIso,
   normalizarFinancierasDetalle,
@@ -38,6 +37,7 @@ import {
   normalizarTipoDocumentoCliente,
   normalizarTipoPagoRegistroVenta,
   normalizarWhatsappRegistro,
+  obtenerErrorCorreoRegistro,
   validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
 import { syncVendorRewardSnapshotForSale } from "@/lib/vendor-earnings";
@@ -519,7 +519,7 @@ function validarPayload(
   if (!correoTexto) return { error: "El correo es obligatorio" };
   if (!correo) {
     return {
-      error: `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`,
+      error: obtenerErrorCorreoRegistro(body.correo) || "El correo no es valido",
     };
   }
   if (!whatsappTexto) return { error: "El WhatsApp es obligatorio" };
@@ -830,7 +830,7 @@ function validarPayloadBasicoConvertido(body: Record<string, unknown>) {
   if (!correoTexto) return { error: "El correo es obligatorio" };
   if (!correo) {
     return {
-      error: `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`,
+      error: obtenerErrorCorreoRegistro(body.correo) || "El correo no es valido",
     };
   }
   if (!whatsappTexto) return { error: "El WhatsApp es obligatorio" };

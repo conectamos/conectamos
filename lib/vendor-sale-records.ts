@@ -3,6 +3,14 @@ import {
   normalizarNombreFinanciera,
 } from "@/lib/ventas-financieras";
 
+export {
+  DOMINIOS_CORREO_REGISTRO,
+  DOMINIOS_CORREO_REGISTRO_TEXTO,
+  esCorreoRegistroValido,
+  normalizarCorreoRegistro,
+  obtenerErrorCorreoRegistro,
+} from "@/lib/vendor-sale-email";
+
 export const PLATAFORMAS_CREDITO = [
   "ADDI",
   "CELYA",
@@ -24,17 +32,6 @@ export const PLATAFORMAS_CREDITO = [
 
 export const TIPOS_DOCUMENTO_CLIENTE = ["CC", "CE", "PPT", "NIT"] as const;
 export const FRECUENCIAS_CUOTA = ["SEMANAL", "CATORCENAL", "MENSUAL"] as const;
-export const DOMINIOS_CORREO_REGISTRO = [
-  "outlook.com",
-  "outlook.es",
-  "gmail.com",
-  "icloud.com",
-  "hotmail.com",
-  "hotmail.es",
-  "mercacambios.com",
-] as const;
-export const DOMINIOS_CORREO_REGISTRO_TEXTO =
-  "@outlook.com, @outlook.es, @gmail.com, @icloud.com, @hotmail.com, @hotmail.es o @mercacambios.com";
 export const MEDIOS_PAGO = [
   "EFECTIVO",
   "TRANSFERENCIA",
@@ -80,8 +77,6 @@ export type DetalleFinancieraRegistro = {
 export type TipoEquipoRegistro =
   (typeof TIPOS_EQUIPO_REGISTRO)[number];
 
-const CORREO_REGISTRO_REGEX = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/i;
-
 function textoLimpio(valor: unknown) {
   return String(valor || "").replace(/\s+/g, " ").trim();
 }
@@ -92,32 +87,6 @@ export function normalizarTextoCorto(valor: unknown) {
 
 export function normalizarTextoLargo(valor: unknown) {
   return textoLimpio(valor) || null;
-}
-
-export function normalizarCorreoRegistro(valor: unknown) {
-  const correo = textoLimpio(valor).toLowerCase();
-
-  if (!correo) {
-    return null;
-  }
-
-  const match = correo.match(CORREO_REGISTRO_REGEX);
-
-  if (!match) {
-    return null;
-  }
-
-  const dominio = match[1].toLowerCase();
-
-  return DOMINIOS_CORREO_REGISTRO.includes(
-    dominio as (typeof DOMINIOS_CORREO_REGISTRO)[number]
-  )
-    ? correo
-    : null;
-}
-
-export function esCorreoRegistroValido(valor: unknown) {
-  return normalizarCorreoRegistro(valor) !== null;
 }
 
 export function normalizarWhatsappRegistro(valor: unknown) {

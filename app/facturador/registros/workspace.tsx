@@ -16,12 +16,12 @@ import {
   esRolAdministrativo,
 } from "@/lib/access-control";
 import {
-  DOMINIOS_CORREO_REGISTRO_TEXTO,
   TIPOS_DOCUMENTO_CLIENTE,
   esCorreoRegistroValido,
   esWhatsappRegistroValido,
   financieraRequiereInicial,
   formatearPesoInput,
+  obtenerErrorCorreoRegistro,
 } from "@/lib/vendor-sale-records";
 import { esElectrodomestico } from "@/lib/product-types";
 
@@ -1092,7 +1092,7 @@ export default function FacturadorRegistrosWorkspace({
     if (!esCorreoRegistroValido(editando.correo)) {
       setMensajeTipo("error");
       setMensaje(
-        `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`
+        obtenerErrorCorreoRegistro(editando.correo) || "El correo no es valido"
       );
       return;
     }

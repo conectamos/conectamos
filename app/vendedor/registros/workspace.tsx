@@ -11,7 +11,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   detalleFinancieraTieneDatos,
-  DOMINIOS_CORREO_REGISTRO_TEXTO,
   esCorreoRegistroValido,
   esWhatsappRegistroValido,
   financieraRequiereInicial,
@@ -22,6 +21,7 @@ import {
   TEXTOS_VISIBLES_CLIENTE,
   TIPOS_DOCUMENTO_CLIENTE,
   formatearPesoInput,
+  obtenerErrorCorreoRegistro,
   validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
 import {
@@ -3103,7 +3103,7 @@ export default function VendedorRegistroWorkspace({
         requerido("correo", "El correo es obligatorio");
         if (form.correo && !esCorreoRegistroValido(form.correo)) {
           errores.correo =
-            `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`;
+            obtenerErrorCorreoRegistro(form.correo) || "El correo no es valido";
         }
         requerido("whatsapp", "El WhatsApp es obligatorio");
         if (form.whatsapp && !esWhatsappRegistroValido(form.whatsapp)) {
@@ -3129,7 +3129,8 @@ export default function VendedorRegistroWorkspace({
       }
       requerido("correo", "El correo es obligatorio");
       if (form.correo && !esCorreoRegistroValido(form.correo)) {
-        errores.correo = `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`;
+        errores.correo =
+          obtenerErrorCorreoRegistro(form.correo) || "El correo no es valido";
       }
       requerido("whatsapp", "El WhatsApp es obligatorio");
       if (form.whatsapp && !esWhatsappRegistroValido(form.whatsapp)) {
@@ -3305,7 +3306,7 @@ export default function VendedorRegistroWorkspace({
       }
       if (!isTextFilled(form.correo)) return "El correo es obligatorio";
       if (!esCorreoRegistroValido(form.correo)) {
-        return `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`;
+        return obtenerErrorCorreoRegistro(form.correo);
       }
       if (!isTextFilled(form.whatsapp)) return "El WhatsApp es obligatorio";
       if (!esWhatsappRegistroValido(form.whatsapp)) {
@@ -3406,7 +3407,7 @@ export default function VendedorRegistroWorkspace({
 
     if (!isTextFilled(form.correo)) return "El correo es obligatorio";
     if (!esCorreoRegistroValido(form.correo)) {
-      return `El correo debe terminar en ${DOMINIOS_CORREO_REGISTRO_TEXTO}`;
+      return obtenerErrorCorreoRegistro(form.correo);
     }
     if (!isTextFilled(form.whatsapp)) return "El WhatsApp es obligatorio";
     if (!esWhatsappRegistroValido(form.whatsapp)) {
@@ -5426,6 +5427,16 @@ export default function VendedorRegistroWorkspace({
                       autoCapitalize="none"
                       value={form.correo}
                       onChange={(event) => setField("correo", event.target.value)}
+                      onBlur={() => {
+                        const errorCorreo = obtenerErrorCorreoRegistro(form.correo);
+
+                        if (errorCorreo) {
+                          setErroresCampos((current) => ({
+                            ...current,
+                            correo: errorCorreo,
+                          }));
+                        }
+                      }}
                       className={inputClass()}
                       placeholder="cliente@gmail.com"
                     />
