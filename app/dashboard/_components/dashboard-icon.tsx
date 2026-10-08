@@ -31,7 +31,11 @@ export type DashboardIconName =
   | "database"
   | "receivable"
   | "trophy"
-  | "tag";
+  | "tag"
+  | "pin"
+  | "users"
+  | "pie"
+  | "coins";
 
 export default function DashboardIcon({
   name,
@@ -52,6 +56,14 @@ export default function DashboardIcon({
   };
 
   switch (name) {
+    case "pin":
+      return <svg {...common}><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>;
+    case "users":
+      return <svg {...common}><circle cx="9" cy="7" r="4" /><path d="M2 21v-2a7 7 0 0 1 14 0v2H2ZM17 4a4 4 0 0 1 0 8m2 3a6 6 0 0 1 3 6h-3" /></svg>;
+    case "pie":
+      return <svg {...common}><path d="M11 3v10h10a9 9 0 1 1-10-10Z" /><path d="M15 2v7h7a8 8 0 0 0-7-7Z" /></svg>;
+    case "coins":
+      return <svg {...common}><ellipse cx="9" cy="10" rx="6" ry="2.5" /><path d="M3 10v9c0 3.5 12 3.5 12 0v-9M3 14.5c0 3.5 12 3.5 12 0" /><ellipse cx="17" cy="5" rx="4" ry="2" /><path d="M13 5v2m8-2v9c0 2-4 2-4 2m4-7c0 2-4 2-4 2" /></svg>;
     case "trophy":
       return <svg {...common}><path d="M7 3h10v7a5 5 0 0 1-10 0V3ZM7 5H3v3a4 4 0 0 0 4 4m10-7h4v3a4 4 0 0 1-4 4M12 15v5m-4 1h8" /></svg>;
     case "tag":
