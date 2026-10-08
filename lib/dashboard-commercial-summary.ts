@@ -48,6 +48,18 @@ export type SedePerformanceItem = {
   utilidad: number;
 };
 
+export type BrandSalesSede = {
+  id: number;
+  nombre: string;
+};
+
+export type BrandSalesSedeDetail = {
+  sedeId: number;
+  nombre: string;
+  total: number;
+  porcentaje: number;
+};
+
 function n(value: unknown) {
   if (!value) return 0;
 
@@ -194,6 +206,7 @@ function sortedReferenceRanking(
 export async function getMonthlyCommercialSummary(options?: {
   period?: string | null;
   sedeId?: number | null;
+  sedesDetalleMarcas?: BrandSalesSede[];
 }) {
   const periodo =
     (options?.period
@@ -297,6 +310,7 @@ export async function getMonthlyCommercialSummary(options?: {
   const asesoresPayJoy = new Map<string, CommercialRankingItem>();
   const financieras = new Map<string, CommercialRankingItem>();
   const marcasVendidas = new Map<string, CommercialRankingItem>();
+  const ventasMarcaPorSede = new Map<string, Map<number, number>>();
   const referenciasVendidas = new Map<string, CommercialRankingItem>();
   const rendimientoDiario = new Map<string, DailyCommercialPoint>();
   const rendimientoSedes = new Map<number, SedePerformanceItem>();
@@ -322,6 +336,10 @@ export async function getMonthlyCommercialSummary(options?: {
     const marca = resolveBrand(referencia);
     pushRanking(marcasVendidas, marca);
     pushRanking(referenciasVendidas, referencia);
+
+    const detalleMarca = ventasMarcaPorSede.get(marca) ?? new Map<number, number>();
+    detalleMarca.set(venta.sede.id, (detalleMarca.get(venta.sede.id) ?? 0) + 1);
+    ventasMarcaPorSede.set(marca, detalleMarca);
 
     if (venta.sede?.nombre) {
       pushRanking(ventasSede, venta.sede.nombre);
@@ -408,6 +426,27 @@ export async function getMonthlyCommercialSummary(options?: {
     }
   );
 
+  const sedesDetalleMarcas = options?.sedesDetalleMarcas ?? Array.from(
+    rendimientoSedes.values(),
+    (sede) => ({ id: sede.sedeId, nombre: sede.nombre })
+  );
+  const detalleMarcasPorSede: Record<string, BrandSalesSedeDetail[]> = {};
+  for (const marca of [...MARCAS_VENDIDAS, OTRAS_MARCAS]) {
+    const totalMarca = marcasVendidas.get(normalizeKey(marca))?.total ?? 0;
+    const ventasPorSede = ventasMarcaPorSede.get(marca);
+    detalleMarcasPorSede[marca] = sedesDetalleMarcas
+      .map((sede) => {
+        const total = ventasPorSede?.get(sede.id) ?? 0;
+        return {
+          sedeId: sede.id,
+          nombre: sede.nombre,
+          total,
+          porcentaje: totalMarca > 0 ? (total / totalMarca) * 100 : 0,
+        };
+      })
+      .sort((a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre, "es") || a.sedeId - b.sedeId);
+  }
+
   return {
     periodo,
     utilidad: n(ventas._sum.utilidad),
@@ -427,5 +466,6 @@ export async function getMonthlyCommercialSummary(options?: {
     referenciasVendidas: referenciasRanking,
     tendenciaDiaria,
     rendimientoPorSede,
+    detalleMarcasPorSede,
   };
 }

@@ -116,6 +116,7 @@ function createEmptyCommercialSummary(
     referenciasVendidas: [],
     tendenciaDiaria: [],
     rendimientoPorSede: [],
+    detalleMarcasPorSede: {},
   };
 }
 

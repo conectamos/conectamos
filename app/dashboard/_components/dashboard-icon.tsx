@@ -29,7 +29,9 @@ export type DashboardIconName =
   | "chevron"
   | "refresh"
   | "database"
-  | "receivable";
+  | "receivable"
+  | "trophy"
+  | "tag";
 
 export default function DashboardIcon({
   name,
@@ -50,6 +52,10 @@ export default function DashboardIcon({
   };
 
   switch (name) {
+    case "trophy":
+      return <svg {...common}><path d="M7 3h10v7a5 5 0 0 1-10 0V3ZM7 5H3v3a4 4 0 0 0 4 4m10-7h4v3a4 4 0 0 1-4 4M12 15v5m-4 1h8" /></svg>;
+    case "tag":
+      return <svg {...common}><path d="M13 3h6a2 2 0 0 1 2 2v6L11 21 3 13 13 3Z" /><circle cx="17" cy="7" r="1" /></svg>;
     case "database":
       return <svg {...common}><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0" /></svg>;
     case "receivable":
