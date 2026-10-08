@@ -35,7 +35,12 @@ export type DashboardIconName =
   | "pin"
   | "users"
   | "pie"
-  | "coins";
+  | "coins"
+  | "star"
+  | "barcode"
+  | "radar"
+  | "document-add"
+  | "document-search";
 
 export default function DashboardIcon({
   name,
@@ -56,6 +61,16 @@ export default function DashboardIcon({
   };
 
   switch (name) {
+    case "star":
+      return <svg {...common}><path d="m12 3 2.78 5.63 6.22.9-4.5 4.38 1.06 6.2L12 17.18l-5.56 2.93 1.06-6.2L3 9.53l6.22-.9L12 3Z" /></svg>;
+    case "barcode":
+      return <svg {...common}><path d="M3 4v16M6 4v16M10 4v16M13 4v16M17 4v16M21 4v16" /></svg>;
+    case "radar":
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /><path d="m12 12 7-7" /></svg>;
+    case "document-add":
+      return <svg {...common}><path d="M6 3h8l4 4v6M6 3v18h7M14 3v5h5M19 16v6m-3-3h6" /></svg>;
+    case "document-search":
+      return <svg {...common}><path d="M6 3h8l4 4v3M6 3v18h5M14 3v5h5M9 11h3" /><circle cx="16" cy="16" r="4" /><path d="m19 19 3 3" /></svg>;
     case "pin":
       return <svg {...common}><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>;
     case "users":

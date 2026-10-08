@@ -942,6 +942,7 @@ export default async function DashboardPage({
           sedeId={sedeSeleccionada?.id ?? null}
           sedes={sedes}
           usuario={nombreUsuario}
+          storageUserKey={`${session.id}:${session.perfilId ?? "usuario"}`}
         />
       </>
     );

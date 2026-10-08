@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { getMonthlyCommercialSummary } from "@/lib/dashboard-commercial-summary";
 import type { getDashboardCashSummary } from "@/lib/dashboard-financial-summary";
 import type { DashboardOperationalSummary } from "@/lib/dashboard-overview";
@@ -8,6 +8,9 @@ import DashboardFilters from "./dashboard-filters";
 import DashboardIcon, { type DashboardIconName } from "./dashboard-icon";
 import DashboardUtilityGate from "./dashboard-utility-gate";
 import LogoutButton from "./logout-button";
+import { formatoPesos, formatoNumero } from "@/lib/monthly-reports-view";
+import { HomeDetailDialog, HomeProfile, OperationsTabs } from "./home-interactions";
+import styles from "./home.module.css";
 import OperationsToolCenter, { type OperationsToolGroup } from "./operations-tool-center";
 
 type CommercialSummary = Awaited<ReturnType<typeof getMonthlyCommercialSummary>>;
@@ -19,44 +22,12 @@ type NavigationItem = {
   label: string;
 };
 
+export type { NavigationItem };
+
 type SedeOption = {
   id: number;
   nombre: string;
 };
-
-function formatoPesos(valor: number) {
-  return `$ ${Number(valor || 0).toLocaleString("es-CO", {
-    maximumFractionDigits: 0,
-  })}`;
-}
-
-function formatoCompacto(valor: number) {
-  const absoluto = Math.abs(valor);
-  const signo = valor < 0 ? "-" : "";
-
-  if (absoluto >= 1_000_000_000) {
-    return `${signo}$${(absoluto / 1_000_000_000).toFixed(1)} mil M`;
-  }
-
-  if (absoluto >= 1_000_000) {
-    return `${signo}$${(absoluto / 1_000_000).toFixed(1)} M`;
-  }
-
-  if (absoluto >= 1_000) {
-    return `${signo}$${(absoluto / 1_000).toFixed(0)} mil`;
-  }
-
-  return `${signo}$${absoluto.toFixed(0)}`;
-}
-
-function initials(nombre: string) {
-  return nombre
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
-}
 
 function SidebarContent({
   activeHref,
@@ -275,7 +246,7 @@ function SalesUtilityChart({
 }) {
   const width = 860;
   const height = 285;
-  const padding = { top: 28, right: 84, bottom: 42, left: 58 };
+  const padding = { top: 28, right: 170, bottom: 42, left: 58 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
   const rawSalesMax = Math.max(0, ...data.map((item) => item.ventas));
@@ -346,7 +317,7 @@ function SalesUtilityChart({
               </text>
               {mostrarUtilidad && (
                 <text x={width - padding.right + 10} y={y + 4} textAnchor="start" fill="#64748b" fontSize="10">
-                  {formatoCompacto(utilityValue)}
+                  {formatoPesos(utilityValue)}
                 </text>
               )}
             </g>
@@ -442,502 +413,46 @@ function AlertRow({
   );
 }
 
-function PerformancePanel({
-  items,
-  mostrarSoloVentas,
-}: {
-  items: CommercialSummary["rendimientoPorSede"];
-  mostrarSoloVentas: boolean;
-}) {
-  const visibles = [...items]
-    .sort(
-      (a, b) =>
-        b.ventas - a.ventas || a.nombre.localeCompare(b.nombre, "es")
-    )
-    .slice(0, 5);
-  const maxVentas = Math.max(1, ...visibles.map((item) => item.ventas));
-
-  return (
-    <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-black tracking-tight text-slate-950">Rendimiento por sede</h2>
-        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-600">
-          Ventas del periodo
-        </span>
-      </div>
-      {visibles.length === 0 ? (
-        <div className="mt-5 flex min-h-[190px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500">
-          Sin rendimiento por sede para mostrar.
-        </div>
-      ) : (
-        <div className="mt-6 space-y-3.5">
-          {visibles.map((item) => (
-            <div
-              key={item.sedeId}
-              className="grid grid-cols-[72px_minmax(0,1fr)_72px] items-center gap-3 sm:grid-cols-[100px_minmax(0,1fr)_82px]"
-            >
-              <p className="truncate text-xs font-bold text-slate-600" title={item.nombre}>
-                {item.nombre}
-              </p>
-              <div className="min-w-0">
-                <div className="flex items-center">
-                  <div
-                    className="h-3 min-w-[5px] rounded-r bg-[#e30613]"
-                    style={{
-                      width: `${Math.max(
-                        3,
-                        (item.ventas / maxVentas) * 100
-                      )}%`,
-                    }}
-                  />
-                </div>
-                {!mostrarSoloVentas && (
-                  <button
-                    type="button"
-                    className="group/utility mt-1.5 inline-flex max-w-full cursor-help items-center gap-1.5 rounded text-[10px] font-semibold text-slate-400 outline-none transition focus-visible:ring-2 focus-visible:ring-[#e30613]/30"
-                    aria-label={`Utilidad de ${item.nombre}: ${formatoPesos(item.utilidad)}`}
-                    title="Pasa el cursor o enfoca para ver la utilidad"
-                  >
-                    <span className="shrink-0">Utilidad:</span>
-                    <span
-                      aria-hidden="true"
-                      className="font-extrabold tracking-[0.16em] text-slate-500 group-hover/utility:hidden group-focus-within/utility:hidden"
-                    >
-                      ****
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className="hidden truncate font-bold tabular-nums text-slate-700 group-hover/utility:inline group-focus-within/utility:inline"
-                    >
-                      {formatoPesos(item.utilidad)}
-                    </span>
-                  </button>
-                )}
-              </div>
-              <div className="rounded-xl border border-red-100 bg-red-50/80 px-2.5 py-2 text-right">
-                <strong
-                  data-performance-sales-count
-                  className="block text-lg font-black leading-none tabular-nums text-[#e30613]"
-                >
-                  {item.ventas}
-                </strong>
-                <span className="mt-1 block text-[9px] font-extrabold uppercase tracking-[0.14em] text-red-600/75">
-                  {item.ventas === 1 ? "venta" : "ventas"}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
+function HomeMetric({ label, value, icon, negative = false }: { label: string; value: string; icon: DashboardIconName; negative?: boolean }) {
+  return <article className={styles.metric} style={{ "--value-length": value.length } as CSSProperties}><p className={styles.metricLabel}><DashboardIcon name={icon} /><span>{label}</span></p><strong className={`${styles.metricValue} ${negative ? styles.negative : ""}`} title={value}>{value}</strong></article>;
 }
 
-function LeadingFinancialPanel({
-  financieras,
-  ocultarMonto,
-}: {
-  financieras: CommercialSummary["topFinancieras"];
-  ocultarMonto: boolean;
-}) {
+function PerformancePanel({ items, mostrarSoloVentas, context, ingresos, detailedRankings }: { items: CommercialSummary["rendimientoPorSede"]; mostrarSoloVentas: boolean; context: string; ingresos: number; detailedRankings?: ReactNode }) {
+  const ordenados = [...items].sort((a, b) => b.ventas - a.ventas || a.nombre.localeCompare(b.nombre, "es"));
+  const visibles = ordenados.slice(0, 5);
+  const maxVentas = Math.max(1, ...visibles.map((item) => item.ventas));
+  return <>
+    {visibles.length === 0 ? <p className={styles.empty}>Sin ventas por sede en este periodo.</p> : <div className={styles.salesRows}>{visibles.map((item) => {
+      const share = Math.max(3, (item.ventas / maxVentas) * 88);
+      return <div className={styles.salesRow} key={item.sedeId}><span title={item.nombre}>{item.nombre}</span><div className={styles.barTrack} style={{ "--share": `${share}%` } as CSSProperties}><div className={styles.bar} style={{ width: `${share}%` }} /><span className={styles.barCount} data-performance-sales-count>{formatoNumero(item.ventas)}</span></div></div>;
+    })}</div>}
+    <div className={styles.salesDetail}><HomeDetailDialog title="Detalle de ventas y rankings" context={context} buttonLabel="Ver detalle y rankings">
+      {!mostrarSoloVentas && <p className="mb-4 text-sm">Ingresos comerciales <strong>{formatoPesos(ingresos)}</strong></p>}
+      <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Sede</th><th>Ventas</th>{!mostrarSoloVentas && <><th>Ingresos</th><th>Utilidad</th></>}</tr></thead><tbody>{ordenados.map((item) => <tr key={item.sedeId}><td>{item.nombre}</td><td>{formatoNumero(item.ventas)}</td>{!mostrarSoloVentas && <><td className={item.ingresos < 0 ? styles.negative : undefined}>{formatoPesos(item.ingresos)}</td><td className={item.utilidad < 0 ? styles.negative : undefined}>{formatoPesos(item.utilidad)}</td></>}</tr>)}</tbody></table></div>
+      {detailedRankings}
+    </HomeDetailDialog></div>
+  </>;
+}
+
+function LeadingFinancialPanel({ financieras, ocultarMonto }: { financieras: CommercialSummary["topFinancieras"]; ocultarMonto: boolean }) {
   const lider = financieras[0] ?? null;
   const montoTotal = financieras.reduce((total, item) => total + item.monto, 0);
   const usosTotales = financieras.reduce((total, item) => total + item.total, 0);
-  const participacion = lider
-    ? !ocultarMonto && montoTotal > 0
-      ? (lider.monto / montoTotal) * 100
-      : usosTotales > 0
-        ? (lider.total / usosTotales) * 100
-        : 0
-    : 0;
-
-  return (
-    <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <h2 className="text-xl font-black tracking-tight text-slate-950">Financiera líder</h2>
-      {!lider ? (
-        <div className="mt-5 flex min-h-[190px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500">
-          Sin usos de financieras en el periodo.
-        </div>
-      ) : (
-        <div className="mt-5 grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4">
-          <div className="min-w-0">
-            <p className="truncate text-[25px] font-black tracking-tight text-slate-950" title={lider.nombre}>
-              {lider.nombre}
-            </p>
-            <div className={ocultarMonto ? "mt-5" : "mt-5 grid grid-cols-2 gap-4"}>
-              <div>
-                <p className="text-xl font-black text-slate-950">{lider.total}</p>
-                <p className="mt-1 text-xs text-slate-500">Usos totales</p>
-              </div>
-              {!ocultarMonto && (
-                <div>
-                  <p className="text-base font-black text-slate-950">{formatoPesos(lider.monto)}</p>
-                  <p className="mt-1 text-xs text-slate-500">Monto financiado</p>
-                </div>
-              )}
-            </div>
-          </div>
-          <div
-            className="relative flex h-[112px] w-[112px] items-center justify-center rounded-full"
-            style={{ background: `conic-gradient(#e30613 ${Math.min(100, Math.max(0, participacion))}%, #e8eaee 0)` }}
-            aria-label={`${participacion.toFixed(1)}% de participación`}
-          >
-            <div className="flex h-[76px] w-[76px] flex-col items-center justify-center rounded-full bg-white">
-              <span className="text-lg font-black text-slate-950">{participacion.toFixed(0)}%</span>
-              <span className="text-[10px] text-slate-500">Participación</span>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
-  );
+  const participacion = lider ? !ocultarMonto && montoTotal > 0 ? (lider.monto / montoTotal) * 100 : usosTotales > 0 ? (lider.total / usosTotales) * 100 : 0 : 0;
+  return <><p className={styles.leaderLabel}>Financiera líder</p>{!lider ? <p className={styles.empty}>Sin usos de financieras en el periodo.</p> : <>
+    <h2>{lider.nombre}</h2><div className={styles.leaderStats} style={ocultarMonto ? { gridTemplateColumns: "1fr 1fr" } : undefined}><div><strong>{formatoNumero(lider.total)}</strong><span>usos</span></div>{!ocultarMonto && <div><strong className={`${styles.leaderMoney} ${lider.monto < 0 ? styles.negative : ""}`} style={{ "--value-length": formatoPesos(lider.monto).length } as CSSProperties} title={formatoPesos(lider.monto)}>{formatoPesos(lider.monto)}</strong><span>financiados</span></div>}<div><strong aria-label={`${participacion.toFixed(1)}% de participación`}>{participacion.toFixed(0)}%</strong><span>participación</span></div></div>
+  </>}</>;
 }
 
-function PayJoyTrophyIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
-      <path
-        d="M17 12h30v10c0 11.6-6.7 20.2-15 20.2S17 33.6 17 22V12Z"
-        fill="#f5bd25"
-        stroke="#d79a08"
-        strokeWidth="2"
-      />
-      <path d="M19 15H9v6c0 8 4.8 13 12.2 13" fill="none" stroke="#d79a08" strokeWidth="4" strokeLinecap="round" />
-      <path d="M45 15h10v6c0 8-4.8 13-12.2 13" fill="none" stroke="#d79a08" strokeWidth="4" strokeLinecap="round" />
-      <path d="M32 42v9" stroke="#d79a08" strokeWidth="4" strokeLinecap="round" />
-      <path d="M23 52h18l4 6H19l4-6Z" fill="#f5bd25" stroke="#d79a08" strokeWidth="2" strokeLinejoin="round" />
-      <path d="M23 16h18" stroke="#ffe28a" strokeWidth="3" strokeLinecap="round" opacity="0.9" />
-    </svg>
-  );
+function PayJoyAdvisorsPanel({ asesores, context }: { asesores: CommercialSummary["topAsesoresPayJoy"]; context: string }) {
+  const topDiez = asesores.slice(0, 10);
+  return <div className={styles.payjoy}><DashboardIcon name="users" /><strong>Top asesores PAYJOY</strong><span>{formatoNumero(topDiez.length)} clasificados</span><HomeDetailDialog title="Top asesores PAYJOY" context={context} buttonLabel="Ver ranking">
+    {topDiez.length === 0 ? <p className={styles.empty}>Sin asesores con ventas PAYJOY en este periodo.</p> : <table className={styles.table}><thead><tr><th>Posición</th><th>Asesor</th><th>Ventas</th></tr></thead><tbody>{topDiez.map((asesor, index) => <tr key={`${index}-${asesor.nombre}`}><td>{index + 1}</td><td style={{ textAlign: "left", whiteSpace: "normal" }}>{asesor.nombre}</td><td>{formatoNumero(asesor.total)}</td></tr>)}</tbody></table>}
+  </HomeDetailDialog></div>;
 }
 
-function PayJoyPodiumMedal({ puesto }: { puesto: number }) {
-  const estilos =
-    puesto === 1
-      ? {
-          aro: "border-[#d69a08] bg-[#f8c93f] text-[#5b3900]",
-          cinta: "bg-[#dca10f]",
-        }
-      : puesto === 2
-        ? {
-            aro: "border-slate-400 bg-slate-200 text-slate-700",
-            cinta: "bg-slate-400",
-          }
-        : {
-            aro: "border-[#bd6f35] bg-[#eba36f] text-[#633019]",
-            cinta: "bg-[#c97b43]",
-          };
-
-  return (
-    <span className="relative flex h-16 w-16 items-start justify-center" aria-hidden="true">
-      <span className={`absolute bottom-0 left-[17px] h-8 w-3 -rotate-12 ${estilos.cinta}`} />
-      <span className={`absolute bottom-0 right-[17px] h-8 w-3 rotate-12 ${estilos.cinta}`} />
-      <span className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-[3px] text-lg font-black shadow-sm ${estilos.aro}`}>
-        {puesto}
-      </span>
-    </span>
-  );
-}
-
-function PayJoyLaurelTrophy() {
-  return (
-    <div className="relative mx-auto flex h-[76px] w-[164px] items-center justify-center" aria-hidden="true">
-      <svg viewBox="0 0 164 76" className="absolute inset-0 h-full w-full">
-        <path d="M54 65C31 58 20 39 26 15" fill="none" stroke="#d8a21b" strokeWidth="2.4" strokeLinecap="round" />
-        <path d="M110 65c23-7 34-26 28-50" fill="none" stroke="#d8a21b" strokeWidth="2.4" strokeLinecap="round" />
-        <g fill="#e2ae27">
-          <ellipse cx="29" cy="21" rx="3" ry="6" transform="rotate(-33 29 21)" />
-          <ellipse cx="30" cy="33" rx="3" ry="6" transform="rotate(-55 30 33)" />
-          <ellipse cx="35" cy="44" rx="3" ry="6" transform="rotate(-68 35 44)" />
-          <ellipse cx="43" cy="54" rx="3" ry="6" transform="rotate(-78 43 54)" />
-          <ellipse cx="135" cy="21" rx="3" ry="6" transform="rotate(33 135 21)" />
-          <ellipse cx="134" cy="33" rx="3" ry="6" transform="rotate(55 134 33)" />
-          <ellipse cx="129" cy="44" rx="3" ry="6" transform="rotate(68 129 44)" />
-          <ellipse cx="121" cy="54" rx="3" ry="6" transform="rotate(78 121 54)" />
-        </g>
-      </svg>
-      <span className="absolute left-0 top-7 h-1.5 w-1.5 rotate-45 bg-[#e30613]" />
-      <span className="absolute left-5 top-1 h-1.5 w-1.5 rounded-full bg-[#e9b52b]" />
-      <span className="absolute right-1 top-8 h-1.5 w-1.5 rotate-45 bg-[#e30613]" />
-      <span className="absolute right-6 top-1 h-1.5 w-1.5 rounded-full bg-[#e9b52b]" />
-      <span className="absolute left-10 top-2 h-1 w-3 rotate-[24deg] rounded-full bg-[#e30613]" />
-      <span className="absolute right-10 top-3 h-1 w-3 -rotate-[24deg] rounded-full bg-[#e30613]" />
-      <PayJoyTrophyIcon className="relative z-10 h-16 w-16 drop-shadow-[0_6px_7px_rgba(148,96,0,0.18)]" />
-    </div>
-  );
-}
-
-function PayJoyAdvisorsPanel({
-  asesores,
-}: {
-  asesores: CommercialSummary["topAsesoresPayJoy"];
-}) {
-  const ranking = asesores.slice(0, 10);
-  const topTres = ranking.slice(0, 3);
-  const clasificacion = ranking.slice(3);
-  const inicialesAsesor = (nombre: string) =>
-    nombre
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((parte) => parte.charAt(0).toUpperCase())
-      .join("") || "--";
-  const etiquetaVentas = (total: number) => `${total} ${total === 1 ? "venta" : "ventas"}`;
-
-  return (
-    <details
-      className="group overflow-hidden rounded-[18px] border border-slate-200/90 bg-white shadow-[0_12px_36px_rgba(15,23,42,0.055)]"
-    >
-      <summary
-        aria-labelledby="payjoy-advisors-title"
-        className="flex cursor-pointer list-none flex-col gap-4 px-5 py-5 transition-colors hover:bg-slate-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#e30613]/30 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-6 [&::-webkit-details-marker]:hidden"
-      >
-        <div className="flex min-w-0 items-center gap-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-[#e30613] shadow-sm">
-            <DashboardIcon name="sales" className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <h2 id="payjoy-advisors-title" className="text-xl font-black tracking-tight text-slate-950 sm:text-[26px]">
-              Top asesores PAYJOY
-            </h2>
-            <p className="mt-1 text-xs text-slate-500 sm:text-sm">Ventas registradas del periodo seleccionado.</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-800">
-            {ranking.length} {ranking.length === 1 ? "clasificado" : "clasificados"}
-          </span>
-          <span className="hidden rounded-full border border-red-100 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#e30613] sm:inline-flex">
-            Top 10
-          </span>
-          <span className="inline-flex min-w-[128px] items-center justify-center gap-2 rounded-xl bg-[#111820] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white shadow-sm">
-            <span className="group-open:hidden">Ver ranking</span>
-            <span className="hidden group-open:inline">Ocultar ranking</span>
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4 transition-transform duration-200 group-open:rotate-180"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </span>
-        </div>
-      </summary>
-
-      <div className="border-t border-slate-100">
-      {ranking.length === 0 ? (
-        <div className="m-5 flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-sm text-slate-500 sm:m-7">
-          No hay ventas PAYJOY con asesor en el periodo.
-        </div>
-      ) : (
-        <div
-          className={`grid items-stretch gap-7 px-5 pb-8 pt-6 sm:px-7 ${
-            clasificacion.length > 0
-              ? "xl:grid-cols-[minmax(0,1fr)_minmax(420px,1fr)]"
-              : ""
-          }`}
-        >
-          <div className="min-w-0">
-            <p className="mb-4 text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-              Podio del periodo
-            </p>
-
-            <ol className="grid list-none gap-3 md:hidden">
-              {topTres.map((asesor, index) => {
-                const puesto = index + 1;
-                const estiloPuesto =
-                  puesto === 1
-                    ? "border-red-200 bg-red-50/50"
-                    : puesto === 2
-                      ? "border-slate-300 bg-slate-50"
-                      : "border-[#e5c3aa] bg-[#fffaf7]";
-                const estiloNumero =
-                  puesto === 1
-                    ? "bg-[#e30613] text-white"
-                    : puesto === 2
-                      ? "bg-slate-300 text-slate-800"
-                      : "bg-[#d9905c] text-white";
-
-                return (
-                  <li
-                    key={`movil-${puesto}-${asesor.nombre}`}
-                    value={puesto}
-                    className={`grid min-w-0 grid-cols-[40px_48px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border px-3 py-3 shadow-sm max-[430px]:grid-cols-[38px_minmax(0,1fr)_auto] ${estiloPuesto}`}
-                    aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${etiquetaVentas(asesor.total)}`}
-                  >
-                    <span className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-black ${estiloNumero}`}>
-                      {puesto}
-                    </span>
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-sm font-black text-slate-800 shadow-sm max-[430px]:hidden">
-                      {inicialesAsesor(asesor.nombre)}
-                    </span>
-                    <strong className="min-w-0 truncate text-sm text-slate-950" title={asesor.nombre}>
-                      {asesor.nombre}
-                    </strong>
-                    <span className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-900">
-                      {etiquetaVentas(asesor.total)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-
-            {topTres.length === 3 ? (
-              <div className="relative hidden min-h-[610px] overflow-hidden rounded-2xl border border-slate-100 bg-white md:block">
-                <span className="absolute left-[17%] top-[19%] h-1.5 w-1.5 rotate-45 bg-[#e30613]" aria-hidden="true" />
-                <span className="absolute left-[23%] top-[12%] h-1 w-1 rounded-full bg-[#e8b329]" aria-hidden="true" />
-                <span className="absolute right-[18%] top-[20%] h-1.5 w-1.5 rotate-45 bg-[#e30613]" aria-hidden="true" />
-                <span className="absolute right-[24%] top-[13%] h-1 w-1 rounded-full bg-[#e8b329]" aria-hidden="true" />
-
-                <span
-                  className="absolute inset-x-3 bottom-[46px] z-10 h-9 rounded-b-[22px] border border-t-0 border-slate-200 bg-white shadow-[0_14px_24px_rgba(15,23,42,0.08)]"
-                  aria-hidden="true"
-                />
-
-                <ol className="absolute bottom-[78px] left-1/2 top-7 grid w-[calc(100%_-_24px)] max-w-[840px] -translate-x-1/2 list-none grid-cols-[minmax(0,1fr)_minmax(0,1.14fr)_minmax(0,1fr)] items-end gap-0 xl:max-w-none">
-                  {topTres.map((asesor, index) => {
-                    const puesto = index + 1;
-                    const esLider = puesto === 1;
-                    const posicion =
-                      puesto === 1
-                        ? "col-start-2 row-start-1 z-30"
-                        : puesto === 2
-                          ? "col-start-1 row-start-1 z-20"
-                          : "col-start-3 row-start-1 z-20";
-                    const tarjeta =
-                      puesto === 1
-                        ? "min-h-[210px] w-[92%] max-w-[226px] border-[#eddcaa]"
-                        : puesto === 2
-                          ? "min-h-[190px] w-[92%] max-w-[198px] border-slate-300"
-                          : "min-h-[185px] w-[92%] max-w-[198px] border-[#e7c9b3]";
-                    const base =
-                      puesto === 1
-                        ? "h-[174px] w-[calc(100%+8px)] -mx-1 rounded-t-[22px] bg-white"
-                        : puesto === 2
-                          ? "h-[116px] rounded-tl-[22px] bg-[#f8fafc]"
-                          : "h-[102px] rounded-tr-[22px] bg-[#fffaf7]";
-                    const banda =
-                      puesto === 1
-                        ? "h-3.5 rounded-t-[21px] bg-[#e1b43c] shadow-[0_4px_7px_rgba(156,103,0,0.2)]"
-                        : puesto === 2
-                          ? "h-3 rounded-tl-[21px] bg-slate-300"
-                          : "h-3 rounded-tr-[21px] bg-[#d98d58]";
-                    const avatar =
-                      puesto === 1
-                        ? "h-[72px] w-[72px] bg-[#e30613] text-xl text-white"
-                        : puesto === 2
-                          ? "h-[60px] w-[60px] bg-slate-200 text-lg text-slate-800"
-                          : "h-[60px] w-[60px] bg-[#eee5df] text-lg text-[#68402a]";
-
-                    return (
-                      <li
-                        key={`podio-${puesto}-${asesor.nombre}`}
-                        value={puesto}
-                        className={`relative flex min-w-0 flex-col items-center justify-end ${posicion}`}
-                        aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${etiquetaVentas(asesor.total)}`}
-                      >
-                        {esLider ? <PayJoyLaurelTrophy /> : null}
-
-                        <article className={`relative z-30 -mb-px flex flex-col items-center justify-center rounded-[18px] border bg-white px-4 py-5 text-center shadow-[0_10px_25px_rgba(15,23,42,0.085)] ${tarjeta}`}>
-                          <span className={`flex shrink-0 items-center justify-center rounded-full font-black shadow-sm ${avatar}`}>
-                            {inicialesAsesor(asesor.nombre)}
-                          </span>
-                          <h3
-                            className={`mt-4 line-clamp-2 min-h-[2.6rem] break-words font-black leading-tight text-slate-950 ${esLider ? "text-lg" : "text-base"}`}
-                            title={asesor.nombre}
-                          >
-                            {asesor.nombre}
-                          </h3>
-                          <span className={`mt-3 rounded-full border bg-white px-3 py-1.5 text-xs font-black ${esLider ? "border-red-200 text-[#e30613]" : puesto === 2 ? "border-slate-200 text-slate-800" : "border-[#ecd1bd] text-[#8a4c27]"}`}>
-                            {etiquetaVentas(asesor.total)}
-                          </span>
-                        </article>
-
-                        <div className={`relative z-20 flex shrink-0 flex-col items-center justify-center border border-slate-200 shadow-[0_12px_24px_rgba(15,23,42,0.075)] ${base}`}>
-                          <span className={`absolute inset-x-0 top-0 ${banda}`} />
-                          <PayJoyPodiumMedal puesto={puesto} />
-                          <span className="mt-1 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                            Puesto {puesto}
-                          </span>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-
-                <span className="absolute bottom-[22px] left-1/2 z-40 h-9 w-[27%] -translate-x-1/2 rounded-t-md bg-[#e30613]" aria-hidden="true" />
-                <span
-                  className="absolute bottom-0 left-1/2 z-40 h-12 w-[35%] -translate-x-1/2 bg-[#d80a16]"
-                  style={{ clipPath: "polygon(14% 0, 86% 0, 100% 100%, 0 100%)" }}
-                  aria-hidden="true"
-                />
-              </div>
-            ) : (
-              <ol className={`mx-auto hidden list-none gap-4 md:grid ${topTres.length === 1 ? "max-w-sm grid-cols-1" : "max-w-2xl grid-cols-2"}`}>
-                {topTres.map((asesor, index) => {
-                  const puesto = index + 1;
-                  return (
-                    <li key={`parcial-${puesto}-${asesor.nombre}`} value={puesto} className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm">
-                      {puesto === 1 ? <PayJoyLaurelTrophy /> : null}
-                      <span className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full text-xl font-black ${puesto === 1 ? "bg-[#e30613] text-white" : "bg-slate-200 text-slate-800"}`}>
-                        {inicialesAsesor(asesor.nombre)}
-                      </span>
-                      <strong className="mt-3 block text-base text-slate-950" title={asesor.nombre}>{asesor.nombre}</strong>
-                      <span className="mt-3 inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-800">{etiquetaVentas(asesor.total)}</span>
-                      <div className="mt-4 flex justify-center"><PayJoyPodiumMedal puesto={puesto} /></div>
-                    </li>
-                  );
-                })}
-              </ol>
-            )}
-          </div>
-
-          {clasificacion.length > 0 ? (
-            <div className="min-w-0">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                  {"Clasificaci\u00f3n general"}
-                </p>
-                <span className="text-sm font-semibold text-slate-500">Puestos 4-10</span>
-              </div>
-              <ol start={4} className="overflow-hidden rounded-[18px] border border-slate-200 bg-white divide-y divide-slate-100">
-                {clasificacion.map((asesor, index) => {
-                  const puesto = index + 4;
-                  return (
-                    <li
-                      key={`${puesto}-${asesor.nombre}`}
-                      value={puesto}
-                      className="grid min-h-[74px] min-w-0 grid-cols-[42px_46px_minmax(0,1fr)_auto] items-center gap-3 bg-white px-4 py-3 max-[430px]:grid-cols-[36px_minmax(0,1fr)_auto] sm:gap-4 sm:px-5 xl:min-h-[86px]"
-                      aria-label={`Puesto ${puesto}, ${asesor.nombre}, ${etiquetaVentas(asesor.total)}`}
-                    >
-                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-base font-black text-slate-900 shadow-sm max-[430px]:h-9 max-[430px]:w-9">
-                        {puesto}
-                      </span>
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-200 text-sm font-black text-slate-800 max-[430px]:hidden">
-                        {inicialesAsesor(asesor.nombre)}
-                      </span>
-                      <span className="min-w-0 truncate text-sm font-bold text-slate-950 sm:text-base" title={asesor.nombre}>
-                        {asesor.nombre}
-                      </span>
-                      <span className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-950 shadow-sm sm:px-4 sm:text-sm">
-                        {etiquetaVentas(asesor.total)}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ol>
-            </div>
-          ) : null}
-        </div>
-      )}
-      </div>
-    </details>
-  );
+function FinancialTab({ financieras, ocultarMonto }: { financieras: CommercialSummary["topFinancieras"]; ocultarMonto: boolean }) {
+  return financieras.length === 0 ? <p className={styles.empty}>Sin usos de financieras en el periodo.</p> : <div className={styles.tableWrap}><table className={`${styles.table} ${styles.financialTable}`}><thead><tr><th>Financiera</th><th>Usos</th>{!ocultarMonto && <th>Monto financiado</th>}</tr></thead><tbody>{financieras.map((item, index) => <tr key={`${index}-${item.nombre}`}><td>{item.nombre}</td><td data-label="Usos">{formatoNumero(item.total)}</td>{!ocultarMonto && <td data-label="Monto financiado" className={item.monto < 0 ? styles.negative : undefined}>{formatoPesos(item.monto)}</td>}</tr>)}</tbody></table></div>;
 }
 function QuickActions({
   actions = [
@@ -981,6 +496,7 @@ function StandInventoryContent({
   quickActions,
   toolGroups,
   usuario,
+  storageUserKey,
 }: {
   coverageLabel: string;
   operational: DashboardOperationalSummary;
@@ -988,6 +504,7 @@ function StandInventoryContent({
   quickActions: NavigationItem[];
   toolGroups: OperationsToolGroup[];
   usuario: string;
+  storageUserKey?: string;
 }) {
   return (
     <>
@@ -1175,7 +692,7 @@ function StandInventoryContent({
 
       <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(300px,0.75fr)_minmax(0,1.25fr)]">
         <QuickActions actions={quickActions} />
-        <OperationsToolCenter groups={toolGroups} storageUserKey={usuario} />
+        <OperationsToolCenter groups={toolGroups} storageUserKey={storageUserKey ?? usuario} legacyStorageUserKey={usuario} />
       </section>
     </>
   );
@@ -1204,6 +721,7 @@ export default function OperationsDashboard({
   sedeId,
   sedes,
   usuario,
+  storageUserKey,
 }: {
   commercial: CommercialSummary;
   commercialAvailable?: boolean;
@@ -1227,6 +745,7 @@ export default function OperationsDashboard({
   sedeId: number | null;
   sedes: SedeOption[];
   usuario: string;
+  storageUserKey?: string;
 }) {
   const modoSupervisorSinMontos = esSupervisor && !esAdmin;
   const datosParciales =
@@ -1471,370 +990,42 @@ export default function OperationsDashboard({
         },
       ];
 
-  return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        coverageLabel={coverageLabel}
-        items={navigationItems}
-        panelLabel={esStand ? "Panel del stand" : "Panel operativo"}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-[27px] font-black tracking-tight text-slate-950 sm:text-[31px]">
-                {esStand ? "Panel del stand" : "Panel administrativo"}
-              </h1>
-              <p className="mt-1 text-sm text-slate-500 sm:text-base">
-                {esStand
-                  ? `Resumen operativo de ${coverageLabel}`
-                  : "Resumen general de la operación"}
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3 xl:items-end">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                {esStandSoloInventario ? (
-                  <div className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 shadow-sm">
-                    <DashboardIcon
-                      name="store"
-                      className="h-5 w-5 text-slate-500"
-                    />
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
-                        Cobertura
-                      </p>
-                      <p className="text-sm font-bold text-slate-800">
-                        {coverageLabel}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <DashboardFilters
-                    esAdmin={esAdmin}
-                    period={period}
-                    sedeId={sedeId}
-                    sedeLabel={coverageLabel}
-                    sedes={sedes}
-                  />
-                )}
-                <div className="flex items-center gap-2">
-                  {!esStand && (
-                    <Link
-                      href="/dashboard/aprobaciones"
-                      aria-label={
-                        operationalAvailable
-                          ? `${operational.pendientesTotal} alertas operativas`
-                          : "Alertas operativas no disponibles"
-                      }
-                      className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:text-[#e30613]"
-                    >
-                      <DashboardIcon name="bell" className="h-6 w-6" />
-                      {operationalAvailable && operational.pendientesTotal > 0 && (
-                        <span className="absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#e30613] px-1 text-[10px] font-black text-white">
-                          {operational.pendientesTotal > 99 ? "99+" : operational.pendientesTotal}
-                        </span>
-                      )}
-                    </Link>
-                  )}
-                  <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[190px]">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                      {initials(usuario) || <DashboardIcon name="user" className="h-5 w-5" />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-slate-800">{usuario}</p>
-                      <p className="truncate text-xs text-slate-500">{rolUsuario}</p>
-                    </div>
-                  </div>
-                  <LogoutButton variant="light" className="min-h-12 shrink-0 px-4" />
-                </div>
-              </div>
-            </div>
-          </header>
-
-          {datosParciales && (
-            <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-black">Actualización parcial del dashboard</p>
-                <p className="mt-0.5 text-xs leading-5 text-amber-800">
-                  Algunos indicadores no se pudieron actualizar. El resto del panel sigue disponible y ningún dato fue modificado.
-                </p>
-              </div>
-              <Link
-                href={`/dashboard?period=${encodeURIComponent(period)}${
-                  sedeId ? `&sedeId=${sedeId}` : ""
-                }`}
-                className="w-fit shrink-0 rounded-xl border border-amber-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.08em] text-amber-900 transition hover:bg-amber-100"
-              >
-                Reintentar datos
-              </Link>
-            </div>
-          )}
-
-          {esStandSoloInventario ? (
-            <StandInventoryContent
-              coverageLabel={coverageLabel}
-              operational={operational}
-              operationalAvailable={operationalAvailable}
-              quickActions={quickActions}
-              toolGroups={toolGroups}
-              usuario={usuario}
-            />
-          ) : (
-            <>
-          <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5" aria-label="Indicadores principales">
-            <KpiCard
-              label="Ventas del periodo"
-              value={commercialAvailable ? String(commercial.ventas) : "No disponible"}
-              detail={
-                !commercialAvailable
-                  ? "No se pudo actualizar este indicador"
-                  : modoSupervisorSinMontos
-                  ? "Registros comerciales del periodo"
-                  : `${formatoPesos(commercial.ingresos)} en ingresos comerciales`
-              }
-              icon="sales"
-              iconClassName="bg-red-50 text-[#e30613]"
-            />
-            {esAdmin ? (
-              <>
-                <KpiCard
-                  label="Utilidad del periodo"
-                  value={commercialAvailable ? formatoPesos(commercial.utilidad) : "No disponible"}
-                  detail={commercialAvailable ? `Acumulado de ${periodLabel}` : "No se pudo actualizar este indicador"}
-                  icon="trend"
-                  iconClassName="bg-emerald-50 text-emerald-600"
-                  valueClassName="text-emerald-600"
-                />
-                <KpiCard
-                  label="Caja acumulada"
-                  value={
-                    financialAvailable && financial
-                      ? formatoPesos(financial.cajaDisponible)
-                      : "No disponible"
-                  }
-                  detail={
-                    financialAvailable && financial
-                      ? `Disponible al cierre de ${periodLabel}`
-                      : "No se pudo actualizar este indicador"
-                  }
-                  icon="cash"
-                  iconClassName="bg-blue-50 text-blue-600"
-                />
-              </>
-            ) : modoSupervisorSinMontos ? (
-              <>
-                <DashboardUtilityGate
-                  coverageLabel={coverageLabel}
-                  requiereClave
-                  period={period}
-                  periodLabel={periodLabel}
-                  variant="cards"
-                  showCashCard={false}
-                />
-                <KpiCard
-                  label="Caja acumulada"
-                  value={
-                    financialAvailable && financial
-                      ? formatoPesos(financial.cajaDisponible)
-                      : "No disponible"
-                  }
-                  detail={
-                    financialAvailable && financial
-                      ? `Disponible al cierre de ${periodLabel}`
-                      : "No se pudo actualizar este indicador"
-                  }
-                  icon="cash"
-                  iconClassName="bg-blue-50 text-blue-600"
-                />
-              </>
-            ) : (
-              <DashboardUtilityGate
-                coverageLabel={coverageLabel}
-                requiereClave
-                period={period}
-                periodLabel={periodLabel}
-                variant="cards"
-              />
-            )}
-            <KpiCard
-              label="Equipos en bodega"
-              value={operationalAvailable ? String(operational.equiposEnBodega) : "No disponible"}
-              detail={operationalAvailable ? "Unidades disponibles actualmente" : "No se pudo actualizar este indicador"}
-              icon="inventory"
-              iconClassName="bg-violet-50 text-violet-600"
-            />
-            <KpiCard
-              label="Pendientes o alertas"
-              value={operationalAvailable ? String(operational.pendientesTotal) : "No disponible"}
-              detail={
-                !operationalAvailable
-                  ? "No se pudo actualizar este indicador"
-                  : operational.pendientesTotal > 0
-                    ? "Requieren atención operativa"
-                    : "Operación sin alertas activas"
-              }
-              icon="warning"
-              iconClassName="bg-orange-50 text-orange-600"
-              valueClassName={operationalAvailable && operational.pendientesTotal > 0 ? "text-orange-600" : "text-slate-950"}
-            />
-          </section>
-
-          <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.75fr)_minmax(340px,0.9fr)]">
-            <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-black tracking-tight text-slate-950">
-                    {esAdmin ? "Ventas y utilidad" : "Ventas por día"}
-                  </h2>
-                  <div className="mt-3 flex flex-wrap gap-4 text-xs font-semibold text-slate-600">
-                    <span className="flex items-center gap-2">
-                      <span className="h-0.5 w-6 bg-[#e30613]" />
-                      Número de ventas
-                    </span>
-                    {esAdmin ? (
-                      <span className="flex items-center gap-2"><span className="h-0.5 w-6 bg-emerald-600" />Utilidad ($)</span>
-                    ) : (
-                      <span className="flex items-center gap-2 text-slate-400"><DashboardIcon name="lock" className="h-3.5 w-3.5" />Utilidad protegida</span>
-                    )}
-                  </div>
-                </div>
-                <span className="w-fit rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold capitalize text-slate-600">{periodLabel}</span>
-              </div>
-              <div className="mt-4">
-                {commercialAvailable ? (
-                  <SalesUtilityChart
-                    data={commercial.tendenciaDiaria}
-                    mostrarUtilidad={esAdmin}
-                  />
-                ) : (
-                  <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 text-center text-sm font-semibold text-slate-500">
-                    La tendencia comercial no está disponible en este momento.
-                  </div>
-                )}
-              </div>
-            </article>
-
-            <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-              <div className="flex items-center justify-between gap-3 px-5 py-5">
-                <div>
-                  <h2 className="text-xl font-black tracking-tight text-slate-950">Alertas operativas</h2>
-                  <p className="mt-1 text-xs text-slate-500">Estado actual de {coverageLabel.toLowerCase()}</p>
-                </div>
-                <Link
-                  href={esStand ? "/alertas/prestamos" : "/dashboard/aprobaciones"}
-                  className="text-xs font-black text-[#e30613] hover:underline"
-                >
-                  Ver todas
-                </Link>
-              </div>
-              {!operationalAvailable ? (
-                <div className="border-t border-slate-100 px-5 py-14 text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600">
-                    <DashboardIcon name="warning" className="h-6 w-6" />
-                  </div>
-                  <p className="mt-3 text-sm font-bold text-slate-700">Alertas no disponibles</p>
-                  <p className="mt-1 text-xs text-slate-500">Reintenta la actualización para consultar el estado operativo.</p>
-                </div>
-              ) : operational.pendientesTotal === 0 ? (
-                <div className="border-t border-slate-100 px-5 py-14 text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                    <DashboardIcon name="approvals" className="h-6 w-6" />
-                  </div>
-                  <p className="mt-3 text-sm font-bold text-slate-700">Sin alertas activas</p>
-                  <p className="mt-1 text-xs text-slate-500">No hay pendientes calculables con los estados actuales.</p>
-                </div>
-              ) : (
-                <div className="border-t border-slate-100">
-                  {!esStand && (
-                    <AlertRow
-                      count={operational.aprobacionesPendientes}
-                      title="aprobaciones pendientes"
-                      detail={`${operational.detalleAprobaciones.prestamos} de préstamos y ${operational.detalleAprobaciones.ventas} de ventas`}
-                      href="/dashboard/aprobaciones"
-                      icon="approvals"
-                      tone="red"
-                    />
-                  )}
-                  <AlertRow
-                    count={operational.prestamosActivos}
-                    title="préstamos sin cierre"
-                    detail="Préstamos aprobados que continúan activos"
-                    href="/prestamos"
-                    icon="loans"
-                    tone="orange"
-                  />
-                  <AlertRow
-                    count={operational.inventarioAtencion}
-                    title="equipos requieren revisión"
-                    detail="Inventario en estado PENDIENTE o GARANTIA"
-                    href="/inventario"
-                    icon="warning"
-                    tone="amber"
-                  />
-                </div>
-              )}
-            </article>
-          </section>
-
-          <section className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_1fr_0.95fr]">
-            {commercialAvailable ? (
-              <PerformancePanel
-                items={commercial.rendimientoPorSede}
-                mostrarSoloVentas={modoSupervisorSinMontos}
-              />
-            ) : (
-              <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-                <h2 className="text-xl font-black tracking-tight text-slate-950">Rendimiento por sede</h2>
-                <p className="mt-8 text-sm font-semibold text-slate-500">Datos no disponibles temporalmente.</p>
-              </article>
-            )}
-            {commercialAvailable ? (
-              <LeadingFinancialPanel
-                financieras={commercial.topFinancieras}
-                ocultarMonto={modoSupervisorSinMontos}
-              />
-            ) : (
-              <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-                <h2 className="text-xl font-black tracking-tight text-slate-950">Financiera líder</h2>
-                <p className="mt-8 text-sm font-semibold text-slate-500">Datos no disponibles temporalmente.</p>
-              </article>
-            )}
-            <QuickActions actions={quickActions} />
-          </section>
-
-          {esAdmin ? (
-            <div className="mt-5">
-              {commercialAvailable ? (
-                <PayJoyAdvisorsPanel asesores={commercial.topAsesoresPayJoy} />
-              ) : (
-                <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-                  <h2 className="text-xl font-black tracking-tight text-slate-950">Top asesores PAYJOY</h2>
-                  <p className="mt-8 text-sm font-semibold text-slate-500">Datos no disponibles temporalmente.</p>
-                </article>
-              )}
-            </div>
-          ) : null}
-          <div className="mt-5">
-            <OperationsToolCenter groups={toolGroups} storageUserKey={usuario} />
-          </div>
-
-          {detailedRankings && (
-            <details className="group mt-5 rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-black text-slate-800 [&::-webkit-details-marker]:hidden">
-                Ver rankings comerciales detallados
-                <span className="text-xl text-[#e30613] transition group-open:rotate-45">+</span>
-              </summary>
-              <div className="border-t border-slate-100 p-4 sm:p-5">{detailedRankings}</div>
-            </details>
-          )}
-            </>
-          )}
-        </main>
-      </div>
-    </div>
-  );
+  const context = `${periodLabel} · ${coverageLabel}`;
+  const unavailable = <p className={styles.empty}>Datos comerciales no disponibles. Reintenta la actualización.</p>;
+  return <div className={styles.shell}>
+    <DashboardSidebar coverageLabel={coverageLabel} items={navigationItems} panelLabel={esStand ? "Panel del stand" : "Panel operativo"} />
+    <div className={styles.workspace}><main className={styles.main}>
+      <header className={styles.header}><h1>Inicio</h1><div className={styles.headerControls}>
+        {esStandSoloInventario ? <span>{coverageLabel}</span> : <div className={styles.filters}><DashboardFilters key={`${period}:${sedeId ?? "TODAS"}`} esAdmin={esAdmin} period={period} sedeId={sedeId} sedeLabel={coverageLabel} sedes={sedes} /></div>}
+        <HomeProfile usuario={usuario} rolUsuario={rolUsuario} />
+      </div></header>
+      {datosParciales && <div className={styles.notice} role="status"><div><strong>Actualización parcial del dashboard</strong><p>Algunos indicadores no se pudieron actualizar. Los demás datos siguen disponibles.</p></div><Link className={styles.detailLink} href={`/dashboard?period=${encodeURIComponent(period)}${sedeId ? `&sedeId=${sedeId}` : ""}`}>Reintentar datos</Link></div>}
+      {esStandSoloInventario ? <StandInventoryContent coverageLabel={coverageLabel} operational={operational} operationalAvailable={operationalAvailable} quickActions={quickActions} toolGroups={toolGroups} usuario={usuario} storageUserKey={storageUserKey} /> : <>
+        <section className={styles.metrics} aria-label="Indicadores principales">
+          <HomeMetric label="Ventas" value={commercialAvailable ? formatoNumero(commercial.ventas) : "No disponible"} icon="sales" />
+          {esAdmin ? <><HomeMetric label="Utilidad" value={commercialAvailable ? formatoPesos(commercial.utilidad) : "No disponible"} icon="loans" negative={commercialAvailable && commercial.utilidad < 0} /><HomeMetric label="Caja" value={financialAvailable && financial ? formatoPesos(financial.cajaDisponible) : "No disponible"} icon="cash" negative={!!financial && financial.cajaDisponible < 0} /></> : <>
+            <DashboardUtilityGate key={context} coverageLabel={coverageLabel} requiereClave period={period} periodLabel={periodLabel} showCashCard={!modoSupervisorSinMontos} variant="home" />
+            {modoSupervisorSinMontos && <HomeMetric label="Caja" value={financialAvailable && financial ? formatoPesos(financial.cajaDisponible) : "No disponible"} icon="cash" negative={!!financial && financial.cajaDisponible < 0} />}
+          </>}
+          <HomeMetric label="En bodega" value={operationalAvailable ? formatoNumero(operational.equiposEnBodega) : "No disponible"} icon="inventory" />
+        </section>
+        <section className={styles.pending} aria-label="Pendientes operativos">
+          <div className={styles.pendingTitle}><span><DashboardIcon name="warning" /></span>Pendientes <strong>{operationalAvailable ? formatoNumero(operational.pendientesTotal) : "No disponibles"}</strong></div>
+          {operationalAvailable && <>
+            {!esStand && <Link href="/dashboard/aprobaciones" aria-label={`${operational.aprobacionesPendientes} aprobaciones: ${operational.detalleAprobaciones.prestamos} de préstamos y ${operational.detalleAprobaciones.ventas} de ventas`}><strong>{formatoNumero(operational.aprobacionesPendientes)}</strong> aprobaciones</Link>}
+            <Link href="/prestamos"><strong>{formatoNumero(operational.prestamosActivos)}</strong> préstamos sin cierre</Link>
+            <Link href="/inventario"><strong>{formatoNumero(operational.inventarioAtencion)}</strong> equipos por revisar</Link>
+          </>}
+          <Link href={esStand ? "/alertas/prestamos" : "/dashboard/aprobaciones"} aria-label="Ver todos los pendientes"><DashboardIcon name="arrow" /></Link>
+        </section>
+        <section className={styles.analytics} aria-label="Actividad comercial">
+          <OperationsTabs sales={commercialAvailable ? <PerformancePanel items={commercial.rendimientoPorSede} mostrarSoloVentas={modoSupervisorSinMontos} context={context} ingresos={commercial.ingresos} detailedRankings={detailedRankings} /> : unavailable}
+            evolution={commercialAvailable ? <><p className="mb-3 text-xs text-slate-500">{context} · Ventas{esAdmin ? " y utilidad" : ""} por día</p><SalesUtilityChart data={commercial.tendenciaDiaria} mostrarUtilidad={esAdmin} /></> : unavailable}
+            financial={commercialAvailable ? <FinancialTab financieras={commercial.topFinancieras} ocultarMonto={modoSupervisorSinMontos} /> : unavailable} />
+          <div className={styles.leader}>{commercialAvailable ? <><LeadingFinancialPanel financieras={commercial.topFinancieras} ocultarMonto={modoSupervisorSinMontos} />{esAdmin && <PayJoyAdvisorsPanel asesores={commercial.topAsesoresPayJoy} context={context} />}</> : <><p className={styles.leaderLabel}>Financiera líder</p>{unavailable}</>}</div>
+        </section>
+        <OperationsToolCenter groups={toolGroups} storageUserKey={storageUserKey ?? usuario} legacyStorageUserKey={usuario} quickActions={quickActions} />
+      </>}
+    </main></div>
+  </div>;
 }
-
-export type { NavigationItem };

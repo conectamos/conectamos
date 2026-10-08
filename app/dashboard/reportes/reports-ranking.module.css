@@ -338,8 +338,31 @@
   display: flex;
   flex-shrink: 0;
   justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
   border-top: 1px solid #e2e8f0;
   padding: 16px 24px;
+}
+
+.commissionTotal {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+}
+
+.commissionTotal dt {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.commissionTotal dd {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .dialogFooter button {

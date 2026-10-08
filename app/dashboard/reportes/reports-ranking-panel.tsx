@@ -46,6 +46,10 @@ export default function ReportsRankingPanel({
   const selectedItems = activeRanking ? rankings[activeRanking] : [];
   const visibleItems = showAll ? selectedItems : selectedItems.slice(0, 5);
   const isFinancial = activeRanking === "financiera";
+  const isJalador = activeRanking === "jalador";
+  const hasAmountColumn = showAmounts && (isFinancial || isJalador);
+  const amountLabel = isJalador ? "Comisiones" : "Monto";
+  const totalCommissions = rankings.jalador.reduce((total, item) => total + item.monto, 0);
   const countLabel = isFinancial ? "Usos" : "Ventas";
 
   useEffect(() => {
@@ -97,7 +101,7 @@ export default function ReportsRankingPanel({
             onClick={(event) => {
               triggerRef.current = event.currentTarget;
               setShowAll(false);
-              setShowAmounts(false);
+              setShowAmounts(option.key === "jalador");
               setActiveRanking(option.key);
             }}
           >
@@ -138,16 +142,16 @@ export default function ReportsRankingPanel({
               <button type="button" aria-pressed={!showAll} aria-controls={tableId} onClick={() => setShowAll(false)}>Top 5</button>
               <button type="button" aria-pressed={showAll} aria-controls={tableId} onClick={() => setShowAll(true)}>Todos</button>
             </div>
-            {isFinancial && (
+            {(isFinancial || isJalador) && (
               <button type="button" className={styles.amountsButton} aria-pressed={showAmounts} aria-controls={tableId} onClick={() => setShowAmounts((value) => !value)}>
                 <DashboardIcon name="wallet" className={styles.controlIcon} />
-                Montos
+                {isJalador ? "Comisiones" : "Montos"}
               </button>
             )}
           </div>
 
           <div className={styles.dialogBody}>
-            <table id={tableId} className={`${styles.table} ${isFinancial && showAmounts ? styles.hasAmounts : ""}`}>
+            <table id={tableId} className={`${styles.table} ${hasAmountColumn ? styles.hasAmounts : ""}`}>
               <caption className={styles.visuallyHidden}>
                 {selectedOption.title} · {periodLabel} · {cobertura} · {showAll ? "Todos" : "Top 5"}
               </caption>
@@ -155,20 +159,20 @@ export default function ReportsRankingPanel({
                 <col className={styles.positionColumn} />
                 <col />
                 <col className={styles.countColumn} />
-                {isFinancial && showAmounts && <col className={styles.amountColumn} />}
+                {hasAmountColumn && <col className={styles.amountColumn} />}
               </colgroup>
               <thead>
                 <tr>
                   <th scope="col">#</th>
                   <th scope="col">{selectedOption.nameColumn}</th>
                   <th scope="col" className={styles.numberHeading}>{countLabel}</th>
-                  {isFinancial && showAmounts && <th scope="col" className={styles.numberHeading}>Monto</th>}
+                  {hasAmountColumn && <th scope="col" className={styles.numberHeading}>{amountLabel}</th>}
                 </tr>
               </thead>
               <tbody>
                 {visibleItems.length === 0 ? (
                   <tr>
-                    <td colSpan={isFinancial && showAmounts ? 4 : 3} className={styles.empty}>
+                    <td colSpan={hasAmountColumn ? 4 : 3} className={styles.empty}>
                       Sin movimientos registrados en este periodo.
                     </td>
                   </tr>
@@ -177,8 +181,8 @@ export default function ReportsRankingPanel({
                     <td className={styles.positionCell}><span>{formatoNumero(index + 1)}</span></td>
                     <th scope="row" className={styles.name}>{item.nombre}</th>
                     <td className={styles.count} data-label={countLabel}>{formatoNumero(item.total)}</td>
-                    {isFinancial && showAmounts && (
-                      <td className={`${styles.amount} ${item.monto < 0 ? styles.negative : ""}`} data-label="Monto">
+                    {hasAmountColumn && (
+                      <td className={`${styles.amount} ${item.monto < 0 ? styles.negative : ""}`} data-label={amountLabel}>
                         {formatoPesos(item.monto)}
                       </td>
                     )}
@@ -189,6 +193,12 @@ export default function ReportsRankingPanel({
           </div>
 
           <footer className={styles.dialogFooter}>
+            {isJalador && showAmounts && (
+              <dl className={styles.commissionTotal}>
+                <dt>Total comisiones registradas</dt>
+                <dd className={totalCommissions < 0 ? styles.negative : ""}>{formatoPesos(totalCommissions)}</dd>
+              </dl>
+            )}
             <button type="button" onClick={closeRanking}>Cerrar</button>
           </footer>
         </dialog>

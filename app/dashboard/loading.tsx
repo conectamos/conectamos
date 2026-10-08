@@ -10,9 +10,9 @@ function SkeletonCard({ className = "" }: { className?: string }) {
 
 export default function DashboardLoading() {
   return (
-    <div className="min-h-screen bg-[#f5f6f8] lg:pl-[252px]">
-      <aside className="fixed inset-y-0 left-0 hidden w-[252px] animate-pulse bg-[#11161d] lg:block" />
-      <main className="px-4 py-6 sm:px-6 lg:px-7 2xl:px-9">
+    <div className="min-h-screen bg-[#f6f7f9] lg:pl-[210px]" aria-busy="true" aria-label="Cargando dashboard">
+      <aside className="fixed inset-y-0 left-0 hidden w-[210px] animate-pulse border-r border-slate-200 bg-white lg:block" />
+      <main className="px-4 py-5 lg:px-5">
         <div className="flex animate-pulse flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="h-8 w-64 rounded bg-slate-200" />
@@ -20,9 +20,9 @@ export default function DashboardLoading() {
           </div>
           <div className="h-12 w-full rounded-xl bg-slate-200 xl:w-[620px]" />
         </div>
-        <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-          {Array.from({ length: 5 }, (_, index) => (
-            <SkeletonCard key={index} className="min-h-[144px]" />
+        <div className="mt-5 grid gap-4 rounded-lg border border-slate-200 bg-white sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <SkeletonCard key={index} className="min-h-[100px] !border-0 !shadow-none" />
           ))}
         </div>
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.75fr_0.9fr]">

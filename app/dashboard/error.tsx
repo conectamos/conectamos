@@ -1,10 +1,10 @@
 "use client";
 
 export default function DashboardError({
-  reset,
+  unstable_retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  unstable_retry: () => void;
 }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f5f6f8] p-5">
@@ -14,7 +14,7 @@ export default function DashboardError({
         <p className="mt-2 text-sm leading-6 text-slate-500">Los datos no fueron modificados. Reintenta la consulta o vuelve a ingresar más tarde.</p>
         <button
           type="button"
-          onClick={reset}
+          onClick={unstable_retry}
           className="mt-6 rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#c9000c]"
         >
           Reintentar

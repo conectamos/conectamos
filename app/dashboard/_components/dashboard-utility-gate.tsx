@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import { formatoPesos as formatoPesosHome } from "@/lib/monthly-reports-view";
+import DashboardIcon from "./dashboard-icon";
+import homeStyles from "./home.module.css";
 
 type RankingItem = {
   nombre: string;
@@ -47,7 +50,7 @@ export default function DashboardUtilityGate({
   period?: string;
   periodLabel?: string;
   showCashCard?: boolean;
-  variant?: "panel" | "cards";
+  variant?: "panel" | "cards" | "home";
 }) {
   const [abierto, setAbierto] = useState(false);
   const [clave, setClave] = useState("");
@@ -98,7 +101,38 @@ export default function DashboardUtilityGate({
 
   return (
     <>
-      {variant === "cards" ? (
+      {variant === "home" ? (
+        <div className="contents">
+          <article className={homeStyles.metric} style={{ "--value-length": (resumen ? formatoPesosHome(resumen.utilidad) : "Protegida").length } as CSSProperties}>
+            <div className={homeStyles.metricLabel}>
+              <DashboardIcon name="loans" className="h-6 w-6 shrink-0 text-[#11161d]" />
+              <span>Utilidad</span>
+            </div>
+            <p className={`${homeStyles.metricValue} ${resumen && resumen.utilidad < 0 ? homeStyles.negative : ""}`}>
+              {resumen ? formatoPesosHome(resumen.utilidad) : "Protegida"}
+            </p>
+            {resumen ? (
+              <button type="button" onClick={() => setResumen(null)} className={homeStyles.metricAction}>Ocultar valores</button>
+            ) : (
+              <button type="button" onClick={solicitarAcceso} disabled={cargando} className={homeStyles.metricAction}>
+                {cargando ? "Consultando…" : requiereClave ? "Desbloquear con clave" : "Ver utilidad"}
+              </button>
+            )}
+            {error && !abierto && <p className={`${homeStyles.metricAction} ${homeStyles.negative}`} role="alert">{error}</p>}
+          </article>
+          {showCashCard && (
+            <article className={homeStyles.metric} style={{ "--value-length": (resumen ? formatoPesosHome(resumen.caja) : "Protegida").length } as CSSProperties}>
+              <div className={homeStyles.metricLabel}>
+                <DashboardIcon name="wallet" className="h-6 w-6 shrink-0 text-[#11161d]" />
+                <span>Caja</span>
+              </div>
+              <p className={`${homeStyles.metricValue} ${resumen && resumen.caja < 0 ? homeStyles.negative : ""}`}>
+                {resumen ? formatoPesosHome(resumen.caja) : "Protegida"}
+              </p>
+            </article>
+          )}
+        </div>
+      ) : variant === "cards" ? (
         <div className="contents">
           <article className="min-h-[144px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
             <div className="flex items-start gap-4">
