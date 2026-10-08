@@ -5,6 +5,11 @@ import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { esSedeVentas } from "@/lib/sedes";
 import { normalizarTipoProducto } from "@/lib/product-types";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import {
+  nombreHistoricoAcreedor,
+  obtenerSaldoPendienteInventario,
+  resolverIdentidadesAcreedores,
+} from "@/lib/inventory-creditors";
 
 function parseSedeId(value: string | null) {
   const sedeId = Number(value);
@@ -78,6 +83,7 @@ export async function GET(req: Request) {
       },
     });
 
+    const identidadesAcreedores = await resolverIdentidadesAcreedores(inventario);
     const imeis = [...new Set(inventario.map((item) => item.imei))];
     const sedesOrigenIds = [...new Set(inventario.map((item) => item.sedeId))];
 
@@ -150,6 +156,10 @@ export async function GET(req: Request) {
 
     const inventarioConPrestamo = inventario.map((item) => {
       const { facturaStandItem, ...inventarioItem } = item;
+      const nombreAcreedor = nombreHistoricoAcreedor(item.deboA);
+      const acreedor = nombreAcreedor === null
+        ? null
+        : identidadesAcreedores.get(nombreAcreedor);
       const estadoInventario = String(item.estadoActual || "")
         .trim()
         .toUpperCase();
@@ -170,6 +180,9 @@ export async function GET(req: Request) {
 
       return {
         ...inventarioItem,
+        acreedorId: acreedor?.id ?? null,
+        acreedorNombre: acreedor?.nombre ?? null,
+        deudaPendiente: obtenerSaldoPendienteInventario(item),
         facturaStand: facturaStandItem
           ? {
               id: facturaStandItem.factura.id,

@@ -16,6 +16,8 @@ export type InventoryItem = {
   costo: number;
   distribuidor: string | null;
   deboA: string | null;
+  acreedorId?: number | null;
+  acreedorNombre?: string | null;
   estadoActual: string | null;
   estadoFinanciero: string | null;
   origen: string | null;
@@ -66,6 +68,7 @@ export type InventoryRowProps = {
   onToggle: () => void;
   destino: string;
   actions: InventoryAction[];
+  variant?: "default" | "debt";
 };
 
 function InventoryActionControl({ action, onAction, menu = false }: { action: InventoryAction; onAction?: () => void; menu?: boolean }) {
@@ -80,7 +83,7 @@ function InventoryActionControl({ action, onAction, menu = false }: { action: In
   return <button type="button" className={className} disabled={action.disabled} onClick={run}>{content}</button>;
 }
 
-export function InventoryRow({ item, selected, onSelect, expanded, onToggle, destino, actions }: InventoryRowProps) {
+export function InventoryRow({ item, selected, onSelect, expanded, onToggle, destino, actions, variant = "default" }: InventoryRowProps) {
   const detailId = useId();
   const toggleRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDetailsElement>(null);
@@ -93,6 +96,9 @@ export function InventoryRow({ item, selected, onSelect, expanded, onToggle, des
   const stateAlert = ["PENDIENTE", "GARANTIA", "PRESTAMO_POR_ACEPTAR"].includes(normalizedState);
   const operationalAction = ["prestamo", "pago", "bodega", "cambio"].map(key => actions.find(action => action.key === key)).find(Boolean);
   const primaryActions = [actions.find(action => action.key === "historial"), operationalAction, actions.find(action => action.key === "editar")].filter((action): action is InventoryAction => Boolean(action));
+  const debt = variant === "debt";
+  const creditorName = item.acreedorNombre ?? item.deboA;
+  const creditorLabel = creditorName?.trim() ? creditorName : "Sin acreedor";
 
   function closeMenu() {
     if (menuRef.current) menuRef.current.open = false;
@@ -158,7 +164,7 @@ export function InventoryRow({ item, selected, onSelect, expanded, onToggle, des
   }, [menuOpen]);
 
   return <Fragment>
-    <tr className={`${styles.row} ${selected ? styles.selectedRow : ""} ${expanded ? styles.expandedRow : ""}`}>
+    <tr className={`${styles.row}${debt ? ` ${styles.debtRow}` : ""} ${selected ? styles.selectedRow : ""} ${expanded ? styles.expandedRow : ""}`}>
       <td className={styles.controlsCell}>
         <div className={styles.controls}>
           <input type="checkbox" checked={selected} onChange={onSelect} aria-label={`Seleccionar equipo ${item.imei}`} className={styles.checkbox} />
@@ -171,12 +177,13 @@ export function InventoryRow({ item, selected, onSelect, expanded, onToggle, des
         <strong className={styles.reference}>{item.referencia}</strong>
         <span className={styles.equipmentMeta}>{item.color ?? "-"} · ID {item.id}</span>
         <span className={styles.imei}>IMEI: {item.imei}</span>
+        {debt && <span className={styles.equipmentCreditor}>Acreedor: {creditorLabel}</span>}
       </td>
       <td className={`${styles.costCell} ${item.costo < 0 ? styles.negative : ""}`} data-label="Costo">{formatoPesos(item.costo)}</td>
       <td className={styles.sedeCell} data-label="Sede">{item.sede?.nombre ?? "Sede sin configurar"}</td>
-      <td className={styles.creditorCell} data-label="Acreedor">{item.deboA ?? "-"}</td>
-      <td className={styles.stateCell} data-label="Estado"><span className={`${styles.badge} ${stateAlert ? styles.alertBadge : ""}`}>{etiquetaEstadoInventario(item.estadoActual)}</span></td>
-      <td className={styles.financialCell} data-label="Financiero"><span className={`${styles.badge} ${normalizedFinancialState === "DEUDA" ? styles.alertBadge : ""}`}>{item.estadoFinanciero ?? "-"}</span></td>
+      {!debt && <td className={styles.creditorCell} data-label="Acreedor">{item.deboA ?? "-"}</td>}
+      <td className={styles.stateCell} data-label={debt ? "Estado / Financiero" : "Estado"}><span className={`${styles.badge} ${stateAlert ? styles.alertBadge : ""}`}>{etiquetaEstadoInventario(item.estadoActual)}</span>{debt && <span className={`${styles.badge} ${normalizedFinancialState === "DEUDA" ? styles.alertBadge : ""}`}>{item.estadoFinanciero ?? "-"}</span>}</td>
+      {!debt && <td className={styles.financialCell} data-label="Financiero"><span className={`${styles.badge} ${normalizedFinancialState === "DEUDA" ? styles.alertBadge : ""}`}>{item.estadoFinanciero ?? "-"}</span></td>}
       <td className={styles.actionsCell} data-label="Acciones">
         {actions.length > 0 ? <details ref={menuRef} className={styles.menu} onToggle={event => handleMenuToggle(event.currentTarget.open)}>
           <summary ref={menuToggleRef} className={styles.menuToggle} aria-label={`Acciones del equipo ${item.imei}`}>
@@ -189,7 +196,7 @@ export function InventoryRow({ item, selected, onSelect, expanded, onToggle, des
       </td>
     </tr>
     {expanded && <tr className={styles.detailRow}>
-      <td colSpan={8} className={styles.detailCell}>
+      <td colSpan={debt ? 6 : 8} className={styles.detailCell}>
         <section id={detailId} className={styles.detail} aria-label={`Detalle del equipo ${item.referencia}`} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); closeDetail(); } }}>
           <div className={styles.detailHeading}><h3>Detalle del equipo</h3><button type="button" className={styles.closeDetail} aria-label={`Cerrar detalle del equipo ${item.imei}`} onClick={closeDetail}><DashboardIcon name="close" className={styles.closeIcon} /></button></div>
           <div className={styles.detailLayout}>

@@ -27,6 +27,17 @@ enum EstadoAvisoFacturaProveedor {
   FALLIDO
 }
 
+// Persistent IDs for exact historical InventarioSede.deboA labels.
+// This metadata catalog does not change the existing inventory debt model.
+model InventarioAcreedorIdentidad {
+  id        Int      @id @default(autoincrement())
+  origen    String
+  nombre    String
+  createdAt DateTime @default(now())
+
+  @@unique([origen, nombre])
+}
+
 model Rol {
   id          Int       @id @default(autoincrement())
   nombre      String    @unique

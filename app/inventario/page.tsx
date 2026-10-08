@@ -14,6 +14,8 @@ import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
 import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import { formatoPesos as formatoMoneda } from "@/lib/monthly-reports-view";
 import { InventoryMetric, InventoryRow, type InventoryAction } from "./_components/inventory-dashboard-parts";
+import { CreditorsPanel, DebtSummary, DebtSelectionBar, DebtEquipmentFilters } from "./_components/inventory-debt-parts";
+import { agruparDeudasPorAcreedor, deudaPendienteInventario, identidadAcreedor } from "@/lib/inventory-debt-view";
 import styles from "./inventory.module.css";
 
 type InventarioItem = {
@@ -25,6 +27,9 @@ type InventarioItem = {
   costo: number;
   distribuidor: string | null;
   deboA: string | null;
+  acreedorId?: number | null;
+  acreedorNombre?: string | null;
+  deudaPendiente?: number;
   estadoActual: string | null;
   estadoFinanciero: string | null;
   origen: string | null;
@@ -122,11 +127,6 @@ function formatoPesos(valor: number) {
   return formatoMoneda(valor);
 }
 
-function normalizarAcreedorDeuda(valor: string | null | undefined) {
-  const acreedor = String(valor || "").trim();
-  return acreedor || "SIN ACREEDOR";
-}
-
 function coincideBusquedaInventario(item: InventarioItem, termino: string) {
   if (!termino) return true;
 
@@ -214,7 +214,13 @@ export default function InventarioPage() {
   const [filasPorPagina, setFilasPorPagina] = useState(10);
   const [idsExpandidos, setIdsExpandidos] = useState<number[]>([]);
   const [filtrosEstado, setFiltrosEstado] = useState<EstadoFiltro[]>([]);
-  const [filtroAcreedorDeuda, setFiltroAcreedorDeuda] = useState("TODOS");
+  const [pestana, setPestana] = useState<"equipos" | "deudas">("equipos");
+  const [acreedorDeudaClave, setAcreedorDeudaClave] = useState("TODOS");
+  const [busquedaDeudas, setBusquedaDeudas] = useState("");
+  const [busquedaAcreedores, setBusquedaAcreedores] = useState("");
+  const [filtrosEstadoDeudas, setFiltrosEstadoDeudas] = useState<string[]>([]);
+  const [paginaDeudas, setPaginaDeudas] = useState(1);
+  const [filasPorPaginaDeudas, setFilasPorPaginaDeudas] = useState(10);
   const [busqueda, setBusqueda] = useState("");
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
   const inventarioRequestId = useRef(0);
@@ -226,8 +232,15 @@ export default function InventarioPage() {
 
   const [mostrarModalPago, setMostrarModalPago] = useState(false);
   const [mostrarModalPagoMasivo, setMostrarModalPagoMasivo] = useState(false);
+  const pagoMasivoDialog = useRef<HTMLDivElement>(null);
   const [itemPago, setItemPago] = useState<InventarioItem | null>(null);
   const [idsSeleccionados, setIdsSeleccionados] = useState<number[]>([]);
+  useEffect(() => {
+    if (!mostrarModalPagoMasivo || !pagoMasivoDialog.current) return;
+    const previousFocus = document.activeElement;
+    pagoMasivoDialog.current.querySelector<HTMLButtonElement>("button[data-cancel-payment]")?.focus();
+    return () => { if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus(); };
+  }, [mostrarModalPagoMasivo]);
   const [mostrarModalFacturaStand, setMostrarModalFacturaStand] = useState(false);
   const [facturaStandResultado, setFacturaStandResultado] =
     useState<FacturaStandResultado | null>(null);
@@ -392,12 +405,6 @@ export default function InventarioPage() {
     );
   }, [items]);
 
-  useEffect(() => {
-    if (!filtrosEstado.includes("DEUDA") && filtroAcreedorDeuda !== "TODOS") {
-      setFiltroAcreedorDeuda("TODOS");
-    }
-  }, [filtroAcreedorDeuda, filtrosEstado]);
-
   useLiveRefresh(
     async () => {
       await cargarInventario(true);
@@ -493,16 +500,25 @@ export default function InventarioPage() {
     [filtrosEstado]
   );
 
-  const itemsDeudaConBusqueda = useMemo(() => {
-    const termino = busqueda.trim().toLowerCase();
-
-    return items
-      .filter((item) => (item.estadoFinanciero || "").toUpperCase() === "DEUDA")
-      .filter((item) =>
-        coincideEstadosOperativos(item, filtrosOperativosSeleccionados)
-      )
-      .filter((item) => coincideBusquedaInventario(item, termino));
-  }, [busqueda, filtrosOperativosSeleccionados, items]);
+  const itemsDeudaBase = useMemo(
+    () => items.filter((item) => String(item.estadoFinanciero || "").trim().toUpperCase() === "DEUDA"),
+    [items]
+  );
+  const resumenDeudaPorAcreedor = useMemo(() => agruparDeudasPorAcreedor(itemsDeudaBase), [itemsDeudaBase]);
+  const totalDeudaVista = useMemo(() => itemsDeudaBase.reduce((total, item) => total + deudaPendienteInventario(item), 0), [itemsDeudaBase]);
+  const itemsDeudaFiltrados = useMemo(() => {
+    const termino = busquedaDeudas.trim().toLocaleLowerCase("es-CO");
+    return itemsDeudaBase.filter((item) =>
+      (acreedorDeudaClave === "TODOS" || identidadAcreedor(item).key === acreedorDeudaClave) &&
+      (!filtrosEstadoDeudas.length || filtrosEstadoDeudas.includes(String(item.estadoActual || "").trim().toUpperCase())) &&
+      (!termino || item.imei.toLocaleLowerCase("es-CO").includes(termino) || item.referencia.toLocaleLowerCase("es-CO").includes(termino))
+    );
+  }, [acreedorDeudaClave, busquedaDeudas, filtrosEstadoDeudas, itemsDeudaBase]);
+  useEffect(() => {
+    if (inventarioCargado && consultaCargada === consultaScope && acreedorDeudaClave !== "TODOS" && !resumenDeudaPorAcreedor.some((creditor) => creditor.key === acreedorDeudaClave)) {
+      setAcreedorDeudaClave("TODOS"); setIdsSeleccionados([]); setPaginaDeudas(1);
+    }
+  }, [acreedorDeudaClave, consultaCargada, consultaScope, inventarioCargado, resumenDeudaPorAcreedor]);
 
   const itemsPrestamoConBusqueda = useMemo(() => {
     const termino = busqueda.trim().toLowerCase();
@@ -524,98 +540,18 @@ export default function InventarioPage() {
     [itemsPrestamoConBusqueda]
   );
 
-  const resumenDeudaPorAcreedor = useMemo(() => {
-    const resumen = new Map<string, { acreedor: string; cantidad: number; valor: number }>();
-
-    for (const item of itemsDeudaConBusqueda) {
-      const acreedor = normalizarAcreedorDeuda(item.deboA);
-      const actual =
-        resumen.get(acreedor) || {
-          acreedor,
-          cantidad: 0,
-          valor: 0,
-        };
-
-      actual.cantidad += 1;
-      actual.valor += Number(item.costo || 0);
-      resumen.set(acreedor, actual);
-    }
-
-    return Array.from(resumen.values()).sort((a, b) => b.valor - a.valor);
-  }, [itemsDeudaConBusqueda]);
-
+  const itemsFiltrados = useMemo(() => items.filter((item) =>
+    coincideEstadosOperativos(item, filtrosOperativosSeleccionados) &&
+    coincideEstadosFinancieros(item, filtrosFinancierosSeleccionados) &&
+    coincideBusquedaInventario(item, busqueda.trim().toLowerCase())
+  ), [busqueda, filtrosFinancierosSeleccionados, filtrosOperativosSeleccionados, items]);
+  const itemsVista = pestana === "deudas" ? itemsDeudaFiltrados : itemsFiltrados;
   useEffect(() => {
-    if (
-      filtroAcreedorDeuda !== "TODOS" &&
-      !resumenDeudaPorAcreedor.some(
-        (item) => item.acreedor === filtroAcreedorDeuda
-      )
-    ) {
-      setFiltroAcreedorDeuda("TODOS");
-    }
-  }, [filtroAcreedorDeuda, resumenDeudaPorAcreedor]);
-
-  const totalDeudaVista = useMemo(
-    () =>
-      itemsDeudaConBusqueda.reduce(
-        (acc, item) => acc + Number(item.costo || 0),
-        0
-      ),
-    [itemsDeudaConBusqueda]
-  );
-
-  const totalDeudaAcreedorSeleccionado = useMemo(() => {
-    if (filtroAcreedorDeuda === "TODOS") {
-      return totalDeudaVista;
-    }
-
-    return (
-      resumenDeudaPorAcreedor.find(
-        (item) => item.acreedor === filtroAcreedorDeuda
-      )?.valor || 0
-    );
-  }, [filtroAcreedorDeuda, resumenDeudaPorAcreedor, totalDeudaVista]);
-
-  const itemsFiltrados = useMemo(() => {
-    return items
-      .filter((item) => {
-        const estadoFinanciero = (item.estadoFinanciero || "").toUpperCase();
-        const coincideOperativo = coincideEstadosOperativos(
-          item,
-          filtrosOperativosSeleccionados
-        );
-        const coincideFinanciero = coincideEstadosFinancieros(
-          item,
-          filtrosFinancierosSeleccionados
-        );
-
-        if (!coincideOperativo || !coincideFinanciero) return false;
-
-        if (filtrosEstado.includes("DEUDA")) {
-          const coincideAcreedor =
-            filtroAcreedorDeuda === "TODOS" ||
-            normalizarAcreedorDeuda(item.deboA) === filtroAcreedorDeuda;
-
-          if (filtroAcreedorDeuda !== "TODOS") {
-            return estadoFinanciero === "DEUDA" && coincideAcreedor;
-          }
-        }
-
-        return true;
-      })
-      .filter((item) => {
-        const termino = busqueda.trim().toLowerCase();
-
-        return coincideBusquedaInventario(item, termino);
-      });
-  }, [
-    busqueda,
-    filtroAcreedorDeuda,
-    filtrosEstado,
-    filtrosFinancierosSeleccionados,
-    filtrosOperativosSeleccionados,
-    items,
-  ]);
+    setIdsSeleccionados((actuales) => {
+      const restantes = actuales.filter((id) => itemsVista.some((item) => item.id === id));
+      return restantes.length === actuales.length ? actuales : restantes;
+    });
+  }, [itemsVista]);
 
   const alternarFiltroEstado = (estado: EstadoFiltro) => {
     setPagina(1);
@@ -1020,8 +956,8 @@ export default function InventarioPage() {
   const itemSeleccionadoUnico = itemsSeleccionados.length === 1 ? itemsSeleccionados[0] : null;
 
   const idsVisibles = useMemo(
-    () => itemsFiltrados.map((item) => item.id),
-    [itemsFiltrados]
+    () => itemsVista.map((item) => item.id),
+    [itemsVista]
   );
 
   const todosVisiblesSeleccionados = useMemo(
@@ -1113,11 +1049,14 @@ export default function InventarioPage() {
   const totalPagoMasivo = useMemo(
     () =>
       itemsSeleccionadosParaPago.reduce(
-        (acc, item) => acc + Number(item.costo || 0),
+        (acc, item) => acc + deudaPendienteInventario(item),
         0
       ),
     [itemsSeleccionadosParaPago]
   );
+
+  const totalSeleccionDeuda = itemsSeleccionados.reduce((total, item) => total + deudaPendienteInventario(item), 0);
+  const acreedoresPago = agruparDeudasPorAcreedor(itemsSeleccionadosParaPago);
 
   const sedesDestinoMasivo = useMemo(() => {
     return sedes.filter(
@@ -1439,21 +1378,35 @@ export default function InventarioPage() {
     : user?.sedeNombre || "Tu sede";
   const vistaDisponible = inventarioCargado && consultaCargada === consultaScope;
   const valorMetrica = (valor: string | number) => vistaDisponible ? valor : "—";
-  const resultados = vistaDisponible ? itemsFiltrados.length : 0;
-  const paginas = Math.max(1, Math.ceil(resultados / filasPorPagina));
-  const paginaActual = Math.min(pagina, paginas);
-  const inicioPagina = (paginaActual - 1) * filasPorPagina;
-  const itemsPagina = vistaDisponible ? itemsFiltrados.slice(inicioPagina, inicioPagina + filasPorPagina) : [];
+  const resultados = vistaDisponible ? itemsVista.length : 0;
+  const filasPorPaginaVista = pestana === "deudas" ? filasPorPaginaDeudas : filasPorPagina;
+  const paginaVista = pestana === "deudas" ? paginaDeudas : pagina;
+  const cambiarPagina = pestana === "deudas" ? setPaginaDeudas : setPagina;
+  const paginas = Math.max(1, Math.ceil(resultados / filasPorPaginaVista));
+  const paginaActual = Math.min(paginaVista, paginas);
+  const inicioPagina = (paginaActual - 1) * filasPorPaginaVista;
+  const itemsPagina = vistaDisponible ? itemsVista.slice(inicioPagina, inicioPagina + filasPorPaginaVista) : [];
+  const paginaSeleccionada = itemsPagina.length > 0 && itemsPagina.every((item) => idsSeleccionados.includes(item.id));
+  const alternarSeleccionPagina = () => setIdsSeleccionados((actuales) => paginaSeleccionada
+    ? actuales.filter((id) => !itemsPagina.some((item) => item.id === id))
+    : Array.from(new Set([...actuales, ...itemsPagina.map((item) => item.id)])));
+  const cambiarFilasPorPagina = (cantidad: number) => {
+    if (pestana === "deudas") { setFilasPorPaginaDeudas(cantidad); setPaginaDeudas(1); }
+    else { setFilasPorPagina(cantidad); setPagina(1); }
+  };
   const primeraPagina = Math.max(1, Math.min(paginaActual - 2, paginas - 4));
   const botonesPagina = Array.from({ length: Math.min(5, paginas) }, (_, index) => primeraPagina + index);
-  const filtrosActivos = Boolean(busqueda.trim() || filtrosEstado.length || filtroAcreedorDeuda !== "TODOS");
+  const filtrosActivos = pestana === "deudas" ? Boolean(busquedaDeudas.trim() || filtrosEstadoDeudas.length || acreedorDeudaClave !== "TODOS") : Boolean(busqueda.trim() || filtrosEstado.length);
   const etiquetasFiltro: Record<EstadoOperativoFiltro, string> = {
     BODEGA: "Bodega", VENDIDO: "Vendidos", PENDIENTE: "Pendiente", GARANTIA: "Garantía",
     PRESTAMO: "Préstamo", PRESTAMO_PAGO: "Préstamo pago", TRASLADO: "Traslado", PRESTAMO_POR_ACEPTAR: "Por aceptar",
   };
 
   const limpiarFiltros = () => {
-    setBusqueda(""); setFiltrosEstado([]); setFiltroAcreedorDeuda("TODOS"); setIdsSeleccionados([]); setPagina(1);
+    if (pestana === "deudas") {
+      setBusquedaDeudas(""); setBusquedaAcreedores(""); setFiltrosEstadoDeudas([]); setAcreedorDeudaClave("TODOS"); setPaginaDeudas(1);
+    } else { setBusqueda(""); setFiltrosEstado([]); setPagina(1); }
+    setIdsSeleccionados([]);
   };
   const limpiarGrupo = (financiero: boolean) => {
     setFiltrosEstado((actuales) => actuales.filter((estado) => esFiltroFinanciero(estado) !== financiero));
@@ -1472,66 +1425,8 @@ export default function InventarioPage() {
     return acciones;
   };
 
-  return (
-    <div className={styles.shell}>
-      <DashboardSidebar appearance="white" activeHref="/inventario" coverageLabel={coberturaActual} items={navigationItems} />
-      <div className={styles.workspace}>
-        <main className={styles.main}>
-          <header className={styles.header}>
-            <h1>Inventario</h1>
-            <div className={styles.headerControls}>
-              <label className={styles.sedeField}>
-                <DashboardIcon name="pin" />
-                <select aria-label="Sede del inventario" value={esAdmin ? sedeFiltroId : String(user?.sedeId ?? "")} disabled={!esAdmin || cargando} onChange={(event) => {
-                  setSedeFiltroId(event.target.value); setIdsSeleccionados([]); setPagina(1);
-                }}>
-                  {esAdmin ? <><option value="TODAS">Todas las sedes</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</> : <option value={String(user?.sedeId ?? "")}>{user?.sedeNombre || "Tu sede"}</option>}
-                </select>
-                <DashboardIcon name="chevron" />
-              </label>
-              <Link href="/inventario/historial">Centro IMEI</Link>
-              <Link href="/prestamos">Préstamos</Link>
-              <Link className={styles.newInventory} href="/inventario/nuevo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>Nuevo inventario</Link>
-              <SalesProfile name={user?.nombre || user?.usuario || "Usuario"} role={user?.rolNombre || ""} />
-            </div>
-          </header>
-          {mensaje && <div className={styles.notice} role="alert"><DashboardIcon name="bell" /><span>{mensaje}</span><button type="button" disabled={cargandoInventario || cargando} onClick={() => void (user ? cargarInventario() : cargarUsuario())}>Actualizar</button></div>}
-          <section className={`${styles.summary} ${styles.counts}`} aria-label={`Estados del inventario · ${coberturaActual}`} aria-busy={cargandoInventario}>
-            <InventoryMetric icon="inventory" label="En bodega" value={valorMetrica(totalBodega)} />
-            <InventoryMetric icon="warning" label="Pendientes" value={valorMetrica(totalPendiente)} alert />
-            <InventoryMetric icon="shield" label="Garantía" value={valorMetrica(totalGarantia)} alert />
-            <InventoryMetric icon="approvals" label="Pagados" value={valorMetrica(totalPagados)} />
-            <InventoryMetric icon="close" label="Cancelados" value={valorMetrica(totalCancelados)} />
-          </section>
-          <section className={`${styles.summary} ${styles.financial}`} aria-label={`Saldos del inventario · ${coberturaActual}`} aria-busy={cargandoInventario}>
-            <InventoryMetric financial icon="document" label="Total que debo" value={valorMetrica(totalDeuda)} alert />
-            <InventoryMetric financial icon="clock" label="Préstamos por cobrar" value={valorMetrica(valorPrestamosPorCobrar)} detail={vistaDisponible ? `${totalPrestamo.toLocaleString("es-CO")} préstamo${totalPrestamo === 1 ? "" : "s"}` : undefined} alert />
-            <InventoryMetric financial icon="wallet" label="Total pagado" value={valorMetrica(totalPagado)} />
-          </section>
-          <section className={styles.list} aria-labelledby="inventory-list-title">
-            <div className={styles.listTop}>
-              <div className={styles.listHeading}><h2 id="inventory-list-title">Equipos registrados</h2><span aria-live="polite">{vistaDisponible ? `${resultados.toLocaleString("es-CO")} resultado${resultados === 1 ? "" : "s"}` : cargandoInventario || !user && !mensaje ? "Cargando inventario…" : "Sin datos cargados"}</span></div>
-              <label className={styles.search}><DashboardIcon name="search" /><input aria-label="Buscar equipos" type="search" value={busqueda} placeholder="Buscar IMEI, referencia, color, proveedor o sede…" onChange={(event) => { setBusqueda(event.target.value); setPagina(1); }} /></label>
-            </div>
-            <div className={styles.filterRows}>
-              <div className={styles.filterGroup}><p>Estado del equipo</p><div className={styles.filterButtons} role="group" aria-label="Estado del equipo">
-                <button type="button" aria-pressed={!filtrosOperativosSeleccionados.length} onClick={() => limpiarGrupo(false)}>Todos</button>
-                {ESTADOS_OPERATIVOS_FILTRO.map((estado) => <button key={estado} type="button" aria-pressed={filtrosEstado.includes(estado)} onClick={() => alternarFiltroEstado(estado)}>{etiquetasFiltro[estado]}</button>)}
-              </div></div>
-              <div className={`${styles.filterGroup} ${styles.financeGroup}`}><p>Estado financiero</p><div className={styles.filterButtons} role="group" aria-label="Estado financiero">
-                <button type="button" aria-pressed={!filtrosFinancierosSeleccionados.length} onClick={() => limpiarGrupo(true)}>Todos</button>
-                {ESTADOS_FINANCIEROS_FILTRO.map((estado) => <button key={estado} type="button" aria-pressed={filtrosEstado.includes(estado)} onClick={() => alternarFiltroEstado(estado)}>{estado === "PAGO" ? "Pago" : "Deuda"}</button>)}
-              </div></div>
-            </div>
-            {filtrosActivos && <div className={styles.filterMeta}><span>{coberturaActual} · Selección múltiple de estados</span><button type="button" onClick={limpiarFiltros}><DashboardIcon name="close" />Limpiar filtros</button></div>}
-            {vistaDisponible && filtrosEstado.includes("PRESTAMO") && <div className={styles.extraPanel}><div className={styles.loanSummary}><span>Préstamos en esta consulta · {itemsPrestamoConBusqueda.length.toLocaleString("es-CO")} equipos</span><strong>{formatoPesos(totalPrestamoVista)}</strong></div></div>}
-            {vistaDisponible && filtrosEstado.includes("DEUDA") && <details className={styles.extraPanel} open>
-              <summary>Deuda por acreedor</summary>
-              <div className={styles.debtSummary}><span>{itemsDeudaConBusqueda.length.toLocaleString("es-CO")} equipos con deuda en esta consulta <strong>{formatoPesos(totalDeudaVista)}</strong></span><label className={styles.creditorSelect}>Acreedor<select aria-label="Filtrar deuda por acreedor" value={filtroAcreedorDeuda} onChange={(event) => { setFiltroAcreedorDeuda(event.target.value); setIdsSeleccionados([]); setPagina(1); }}><option value="TODOS">Todos los acreedores</option>{resumenDeudaPorAcreedor.map((item) => <option key={item.acreedor} value={item.acreedor}>{item.acreedor}</option>)}</select></label></div>
-              <div className={styles.creditors}>{resumenDeudaPorAcreedor.map((item) => <button className={styles.creditorRow} key={item.acreedor} type="button" aria-pressed={filtroAcreedorDeuda === item.acreedor} onClick={() => { setFiltroAcreedorDeuda(item.acreedor); setIdsSeleccionados([]); setPagina(1); }}><span>{item.acreedor}<small>{item.cantidad} equipo{item.cantidad === 1 ? "" : "s"}</small></span><strong>{formatoPesos(item.valor)}</strong></button>)}</div>
-              {filtroAcreedorDeuda !== "TODOS" && <p className={styles.creditorTotal}>Deuda del acreedor seleccionado: <strong>{formatoPesos(totalDeudaAcreedorSeleccionado)}</strong></p>}
-            </details>}
-          {vistaDisponible && (filtrosEstado.includes("DEUDA") || idsSeleccionados.length > 0) && (
+  const operacionesMasivas = (
+vistaDisponible && (pestana === "deudas" || filtrosEstado.includes("DEUDA") || idsSeleccionados.length > 0) && (
             <div className={styles.bulkSection}>
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -1693,29 +1588,107 @@ export default function InventarioPage() {
                 </div>
               </div>
             </div>
-          )}
-
-            <div className={styles.tableScroller} aria-busy={cargandoInventario}>
-              <table className={styles.table}>
-                <colgroup><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
-                <thead><tr><th><input type="checkbox" aria-label={`Seleccionar todos los resultados filtrados (${resultados})`} checked={vistaDisponible && todosVisiblesSeleccionados} disabled={!vistaDisponible || cargando || !resultados} onChange={alternarSeleccionVisibles} /></th><th>Equipo / IMEI</th><th>Costo</th><th>Sede</th><th>Acreedor</th><th>Estado</th><th>Financiero</th><th>Acciones</th></tr></thead>
-                <tbody>{!itemsPagina.length ? <tr><td colSpan={8} className={styles.empty}><DashboardIcon name="inventory" /><strong>{!vistaDisponible ? cargandoInventario || !user && !mensaje ? "Cargando inventario…" : "No se pudo cargar el inventario" : "No hay equipos para estos filtros"}</strong>{vistaDisponible && filtrosActivos && <button type="button" onClick={limpiarFiltros}>Limpiar filtros</button>}</td></tr> : itemsPagina.map((item) => <InventoryRow key={item.id} item={item} selected={idsSeleccionados.includes(item.id)} onSelect={() => alternarSeleccion(item.id)} expanded={idsExpandidos.includes(item.id)} onToggle={() => setIdsExpandidos((actuales) => actuales.includes(item.id) ? actuales.filter((id) => id !== item.id) : [...actuales, item.id])} destino={etiquetaDestinoPrestamo(item)} actions={accionesEquipo(item)} />)}</tbody>
+          )
+  );
+  const tablaEquipos = (<>
+<div className={`${styles.tableScroller} ${pestana === "deudas" ? styles.debtTableScroller : ""}`} aria-busy={cargandoInventario}>
+              <table className={`${styles.table} ${pestana === "deudas" ? styles.debtTable : ""}`}>
+                <colgroup>{Array.from({ length: pestana === "deudas" ? 6 : 8 }, (_, index) => <col key={index} />)}</colgroup>
+                <thead><tr><th><input type="checkbox" aria-label={pestana === "deudas" ? `Seleccionar página actual (${itemsPagina.length})` : `Seleccionar todos los resultados filtrados (${resultados})`} checked={vistaDisponible && (pestana === "deudas" ? paginaSeleccionada : todosVisiblesSeleccionados)} disabled={!vistaDisponible || cargando || !resultados} onChange={pestana === "deudas" ? alternarSeleccionPagina : alternarSeleccionVisibles} /></th><th>Equipo / IMEI</th><th>Costo</th><th>Sede</th>{pestana === "equipos" && <th>Acreedor</th>}<th>Estado</th>{pestana === "equipos" && <th>Financiero</th>}<th>Acciones</th></tr></thead>
+                <tbody>{!itemsPagina.length ? <tr><td colSpan={pestana === "deudas" ? 6 : 8} className={styles.empty}><DashboardIcon name="inventory" /><strong>{!vistaDisponible ? cargandoInventario || !user && !mensaje ? "Cargando inventario…" : "No se pudo cargar el inventario" : "No hay equipos para estos filtros"}</strong>{vistaDisponible && filtrosActivos && <button type="button" onClick={limpiarFiltros}>Limpiar filtros</button>}</td></tr> : itemsPagina.map((item) => <InventoryRow key={item.id} variant={pestana === "deudas" ? "debt" : "default"} item={item} selected={idsSeleccionados.includes(item.id)} onSelect={() => alternarSeleccion(item.id)} expanded={idsExpandidos.includes(item.id)} onToggle={() => setIdsExpandidos((actuales) => actuales.includes(item.id) ? actuales.filter((id) => id !== item.id) : [...actuales, item.id])} destino={etiquetaDestinoPrestamo(item)} actions={accionesEquipo(item)} />)}</tbody>
               </table>
             </div>
             <footer className={styles.pagination}>
-              <p>{vistaDisponible ? `Mostrando ${resultados ? inicioPagina + 1 : 0} – ${Math.min(inicioPagina + filasPorPagina, resultados)} de ${resultados.toLocaleString("es-CO")}` : "Esperando la consulta"}</p>
+              <p>{vistaDisponible ? `Mostrando ${resultados ? inicioPagina + 1 : 0} – ${Math.min(inicioPagina + filasPorPaginaVista, resultados)} de ${resultados.toLocaleString("es-CO")}` : "Esperando la consulta"}</p>
               <div className={styles.paginationControls}>
-                <label className={styles.pageSize}>Filas por página<select aria-label="Filas por página" value={filasPorPagina} onChange={(event) => { setFilasPorPagina(Number(event.target.value)); setPagina(1); }}>{[10, 25, 50, 100].map((cantidad) => <option key={cantidad} value={cantidad}>{cantidad}</option>)}</select></label>
+                <label className={styles.pageSize}>Filas por página<select aria-label="Filas por página" value={filasPorPaginaVista} onChange={(event) => cambiarFilasPorPagina(Number(event.target.value))}>{[10, 25, 50, 100].map((cantidad) => <option key={cantidad} value={cantidad}>{cantidad}</option>)}</select></label>
                 <nav className={styles.pageButtons} aria-label="Páginas de inventario">
-                  <button type="button" aria-label="Página anterior" disabled={!vistaDisponible || paginaActual <= 1} onClick={() => setPagina(paginaActual - 1)}><DashboardIcon name="chevron" className={styles.previousIcon} /></button>
-                  {primeraPagina > 1 && <><button type="button" aria-label="Página 1" onClick={() => setPagina(1)}>1</button>{primeraPagina > 2 && <span>…</span>}</>}
-                  {botonesPagina.map((numero) => <button key={numero} type="button" aria-label={`Página ${numero}`} aria-current={paginaActual === numero ? "page" : undefined} disabled={!vistaDisponible} onClick={() => setPagina(numero)}>{numero}</button>)}
-                  {botonesPagina.at(-1)! < paginas && <>{botonesPagina.at(-1)! < paginas - 1 && <span>…</span>}<button type="button" aria-label={`Página ${paginas}`} onClick={() => setPagina(paginas)}>{paginas}</button></>}
-                  <button type="button" aria-label="Página siguiente" disabled={!vistaDisponible || paginaActual >= paginas} onClick={() => setPagina(paginaActual + 1)}><DashboardIcon name="chevron" /></button>
+                  <button type="button" aria-label="Página anterior" disabled={!vistaDisponible || paginaActual <= 1} onClick={() => cambiarPagina(paginaActual - 1)}><DashboardIcon name="chevron" className={styles.previousIcon} /></button>
+                  {primeraPagina > 1 && <><button type="button" aria-label="Página 1" onClick={() => cambiarPagina(1)}>1</button>{primeraPagina > 2 && <span>…</span>}</>}
+                  {botonesPagina.map((numero) => <button key={numero} type="button" aria-label={`Página ${numero}`} aria-current={paginaActual === numero ? "page" : undefined} disabled={!vistaDisponible} onClick={() => cambiarPagina(numero)}>{numero}</button>)}
+                  {botonesPagina.at(-1)! < paginas && <>{botonesPagina.at(-1)! < paginas - 1 && <span>…</span>}<button type="button" aria-label={`Página ${paginas}`} onClick={() => cambiarPagina(paginas)}>{paginas}</button></>}
+                  <button type="button" aria-label="Página siguiente" disabled={!vistaDisponible || paginaActual >= paginas} onClick={() => cambiarPagina(paginaActual + 1)}><DashboardIcon name="chevron" /></button>
                 </nav>
               </div>
             </footer>
+  </>);
+
+  return (
+    <div className={styles.shell}>
+      <DashboardSidebar appearance="white" activeHref="/inventario" coverageLabel={coberturaActual} items={navigationItems} />
+      <div className={styles.workspace}>
+        <main className={styles.main}>
+          <header className={styles.header}>
+            <div className={styles.headerTitle}><h1>Inventario</h1>
+              <label className={styles.sedeField}>
+                <DashboardIcon name="pin" />
+                <select aria-label="Sede del inventario" value={esAdmin ? sedeFiltroId : String(user?.sedeId ?? "")} disabled={!esAdmin || cargando} onChange={(event) => {
+                  setSedeFiltroId(event.target.value); setAcreedorDeudaClave("TODOS"); setIdsSeleccionados([]); setPagina(1); setPaginaDeudas(1);
+                }}>
+                  {esAdmin ? <><option value="TODAS">Todas las sedes</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</> : <option value={String(user?.sedeId ?? "")}>{user?.sedeNombre || "Tu sede"}</option>}
+                </select>
+                <DashboardIcon name="chevron" />
+              </label>
+            </div>
+            <div className={styles.headerControls}>
+              <Link href="/inventario/historial">Centro IMEI</Link>
+              <Link href="/prestamos">Préstamos</Link>
+              <Link className={styles.newInventory} href="/inventario/nuevo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>Nuevo inventario</Link>
+              <SalesProfile name={user?.nombre || user?.usuario || "Usuario"} role={user?.rolNombre || ""} />
+            </div>
+          </header>
+          {mensaje && <div className={styles.notice} role="alert"><DashboardIcon name="bell" /><span>{mensaje}</span><button type="button" disabled={cargandoInventario || cargando} onClick={() => void (user ? cargarInventario() : cargarUsuario())}>Actualizar</button></div>}
+          <div className={styles.tabs} role="tablist" aria-label="Secciones de inventario">
+            <button type="button" role="tab" id="inventory-equipment-tab" aria-selected={pestana === "equipos"} aria-controls="inventory-equipment-panel" onClick={() => { setPestana("equipos"); setIdsSeleccionados([]); }}>Equipos</button>
+            <button type="button" role="tab" id="inventory-debts-tab" aria-selected={pestana === "deudas"} aria-controls="inventory-debts-panel" onClick={() => { setPestana("deudas"); setIdsSeleccionados([]); }}>Deudas por acreedor</button>
+          </div>
+          {pestana === "equipos" ? <div role="tabpanel" id="inventory-equipment-panel" aria-labelledby="inventory-equipment-tab">
+          <section className={`${styles.summary} ${styles.counts}`} aria-label={`Estados del inventario · ${coberturaActual}`} aria-busy={cargandoInventario}>
+            <InventoryMetric icon="inventory" label="En bodega" value={valorMetrica(totalBodega)} />
+            <InventoryMetric icon="warning" label="Pendientes" value={valorMetrica(totalPendiente)} alert />
+            <InventoryMetric icon="shield" label="Garantía" value={valorMetrica(totalGarantia)} alert />
+            <InventoryMetric icon="approvals" label="Pagados" value={valorMetrica(totalPagados)} />
+            <InventoryMetric icon="close" label="Cancelados" value={valorMetrica(totalCancelados)} />
           </section>
+          <section className={`${styles.summary} ${styles.financial}`} aria-label={`Saldos del inventario · ${coberturaActual}`} aria-busy={cargandoInventario}>
+            <InventoryMetric financial icon="document" label="Total que debo" value={valorMetrica(totalDeuda)} alert />
+            <InventoryMetric financial icon="clock" label="Préstamos por cobrar" value={valorMetrica(valorPrestamosPorCobrar)} detail={vistaDisponible ? `${totalPrestamo.toLocaleString("es-CO")} préstamo${totalPrestamo === 1 ? "" : "s"}` : undefined} alert />
+            <InventoryMetric financial icon="wallet" label="Total pagado" value={valorMetrica(totalPagado)} />
+          </section>
+          <section className={styles.list} aria-labelledby="inventory-list-title">
+            <div className={styles.listTop}>
+              <div className={styles.listHeading}><h2 id="inventory-list-title">Equipos registrados</h2><span aria-live="polite">{vistaDisponible ? `${resultados.toLocaleString("es-CO")} resultado${resultados === 1 ? "" : "s"}` : cargandoInventario || !user && !mensaje ? "Cargando inventario…" : "Sin datos cargados"}</span></div>
+              <label className={styles.search}><DashboardIcon name="search" /><input aria-label="Buscar equipos" type="search" value={busqueda} placeholder="Buscar IMEI, referencia, color, proveedor o sede…" onChange={(event) => { setBusqueda(event.target.value); setIdsSeleccionados([]); setPagina(1); }} /></label>
+            </div>
+            <div className={styles.filterRows}>
+              <div className={styles.filterGroup}><p>Estado del equipo</p><div className={styles.filterButtons} role="group" aria-label="Estado del equipo">
+                <button type="button" aria-pressed={!filtrosOperativosSeleccionados.length} onClick={() => limpiarGrupo(false)}>Todos</button>
+                {ESTADOS_OPERATIVOS_FILTRO.map((estado) => <button key={estado} type="button" aria-pressed={filtrosEstado.includes(estado)} onClick={() => alternarFiltroEstado(estado)}>{etiquetasFiltro[estado]}</button>)}
+              </div></div>
+              <div className={`${styles.filterGroup} ${styles.financeGroup}`}><p>Estado financiero</p><div className={styles.filterButtons} role="group" aria-label="Estado financiero">
+                <button type="button" aria-pressed={!filtrosFinancierosSeleccionados.length} onClick={() => limpiarGrupo(true)}>Todos</button>
+                {ESTADOS_FINANCIEROS_FILTRO.map((estado) => <button key={estado} type="button" aria-pressed={filtrosEstado.includes(estado)} onClick={() => alternarFiltroEstado(estado)}>{estado === "PAGO" ? "Pago" : "Deuda"}</button>)}
+              </div></div>
+            </div>
+            {filtrosActivos && <div className={styles.filterMeta}><span>{coberturaActual} · Selección múltiple de estados</span><button type="button" onClick={limpiarFiltros}><DashboardIcon name="close" />Limpiar filtros</button></div>}
+            {vistaDisponible && filtrosEstado.includes("PRESTAMO") && <div className={styles.extraPanel}><div className={styles.loanSummary}><span>Préstamos en esta consulta · {itemsPrestamoConBusqueda.length.toLocaleString("es-CO")} equipos</span><strong>{formatoPesos(totalPrestamoVista)}</strong></div></div>}
+            {operacionesMasivas}
+
+            {tablaEquipos}
+          </section>
+          </div> : <div role="tabpanel" id="inventory-debts-panel" aria-labelledby="inventory-debts-tab">
+            <DebtSummary total={totalDeudaVista} count={itemsDeudaBase.length} loading={!vistaDisponible} />
+            <div className={styles.debtGrid}>
+              <CreditorsPanel creditors={vistaDisponible ? resumenDeudaPorAcreedor : []} selectedKey={acreedorDeudaClave} onSelect={(key) => { setAcreedorDeudaClave(key); setIdsSeleccionados([]); setPaginaDeudas(1); }} search={busquedaAcreedores} onSearch={(value) => { setBusquedaAcreedores(value); setIdsSeleccionados([]); }} loading={!vistaDisponible} error={!vistaDisponible && !cargandoInventario && Boolean(mensaje)} />
+              <section className={`${styles.list} ${styles.debtEquipment}`} aria-label="Equipos con deuda">
+                <DebtEquipmentFilters search={busquedaDeudas} onSearch={(value) => { setBusquedaDeudas(value); setIdsSeleccionados([]); setPaginaDeudas(1); }} states={filtrosEstadoDeudas} onToggleState={(estado) => { setFiltrosEstadoDeudas((actuales) => actuales.includes(estado) ? actuales.filter((item) => item !== estado) : [...actuales, estado]); setIdsSeleccionados([]); setPaginaDeudas(1); }} onClear={limpiarFiltros} resultsCount={resultados} creditorLabel={acreedorDeudaClave === "TODOS" ? "Todos los acreedores" : resumenDeudaPorAcreedor.find((creditor) => creditor.key === acreedorDeudaClave)?.name || "Sin acreedor"} />
+                <DebtSelectionBar selectedCount={idsSeleccionados.length} total={totalSeleccionDeuda} resultsCount={resultados} pageCount={itemsPagina.length} allSelected={todosVisiblesSeleccionados} pageSelected={paginaSeleccionada} onSelectAll={alternarSeleccionVisibles} onSelectPage={alternarSeleccionPagina} onClear={limpiarSeleccionMasiva} onPay={() => setMostrarModalPagoMasivo(true)} payDisabled={!vistaDisponible || !itemsSeleccionadosParaPago.length} busy={cargando || !vistaDisponible} />
+                {idsSeleccionados.length > itemsSeleccionadosParaPago.length && <p className={styles.paymentEligibility}>{itemsSeleccionadosParaPago.length} equipos aptos para pago · {formatoPesos(totalPagoMasivo)}. Los demás no aplican por estado, tipo de deuda o reglas actuales.</p>}
+                {idsSeleccionados.length > 0 && <details className={styles.moreBulkOperations}><summary>Más operaciones para la selección</summary>{operacionesMasivas}</details>}
+                {tablaEquipos}
+              </section>
+            </div>
+          </div>}
         </main>
       </div>
       {mostrarModalFacturaStand && (
@@ -1962,13 +1935,21 @@ export default function InventarioPage() {
 
       {mostrarModalPagoMasivo && (
         <div className={styles.modal}>
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
-            <h3 className="text-xl font-bold text-slate-900">
+          <div ref={pagoMasivoDialog} className={styles.paymentReview} role="dialog" aria-modal="true" aria-labelledby="bulk-payment-title" onKeyDown={(event) => {
+            if (event.key === "Escape" && !cargando) { event.preventDefault(); setMostrarModalPagoMasivo(false); }
+            if (event.key === "Tab") {
+              const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+              const first = buttons[0]; const last = buttons.at(-1);
+              if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+              else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+            }
+          }}>
+            <h3 id="bulk-payment-title" className="text-xl font-bold text-slate-900">
               Pagar deudas seleccionadas
             </h3>
 
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Se pagaran {itemsSeleccionadosParaPago.length} deuda
+              Se procesarán {itemsSeleccionadosParaPago.length} deuda
               {itemsSeleccionadosParaPago.length === 1 ? "" : "s"} por un total de{" "}
               <span className="font-semibold text-slate-950">
                 {formatoPesos(totalPagoMasivo)}
@@ -1983,6 +1964,13 @@ export default function InventarioPage() {
                 : ""}
             </p>
 
+            <div className={styles.paymentCreditors}>
+              {acreedoresPago.map((creditor) => <section key={creditor.key}>
+                <header><strong>{creditor.name}{creditor.id != null && <small> ID {creditor.id}</small>}</strong><b>{formatoPesos(creditor.total)}</b></header>
+                <ul>{itemsSeleccionadosParaPago.filter((item) => identidadAcreedor(item).key === creditor.key).map((item) => <li key={item.id}><span><strong>{item.referencia}</strong><small>ID {item.id} · IMEI: {item.imei} · {item.sede?.nombre || "—"}</small></span><b>{formatoPesos(deudaPendienteInventario(item))}</b></li>)}</ul>
+              </section>)}
+            </div>
+            {itemsSeleccionadosParaPago.some((item) => String(item.origen || "").toUpperCase() === "PRINCIPAL") && <p className={styles.paymentEligibility}>Las deudas con origen Principal siguen el flujo actual de aprobación antes de registrarse como pagadas.</p>}
             <div className="mt-6 flex gap-3">
               <button
                 onClick={ejecutarPagoMasivo}
@@ -1994,6 +1982,8 @@ export default function InventarioPage() {
 
               <button
                 onClick={() => setMostrarModalPagoMasivo(false)}
+                data-cancel-payment
+                disabled={cargando}
                 className="flex-1 rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 Cancelar
@@ -2080,11 +2070,11 @@ export default function InventarioPage() {
             </p>
             <p className="mt-3 text-sm text-slate-700">
               Proveedor / acreedor:{" "}
-              <span className="font-semibold">{itemPago.deboA || "-"}</span>
+              <span className="font-semibold">{identidadAcreedor(itemPago).name}</span>
             </p>
             <p className="mt-1 text-sm text-slate-700">
               Valor a pagar:{" "}
-              <span className="font-semibold">{formatoPesos(itemPago.costo)}</span>
+              <span className="font-semibold">{formatoPesos(deudaPendienteInventario(itemPago))}</span>
             </p>
 
             <div className="mt-6 flex gap-3">

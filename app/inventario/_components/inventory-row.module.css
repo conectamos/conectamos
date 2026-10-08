@@ -155,7 +155,8 @@
 
 .reference,
 .equipmentMeta,
-.imei {
+.imei,
+.equipmentCreditor {
   display: block;
   overflow-wrap: anywhere;
 }
@@ -166,9 +167,37 @@
 }
 
 .equipmentMeta,
-.imei {
+.imei,
+.equipmentCreditor {
   margin-top: 2px;
   color: #475569;
+}
+
+.equipmentCreditor {
+  color: #64748b;
+}
+
+.debtRow > td {
+  padding: 12px 8px;
+}
+
+@media (min-width: 761px) { .debtRow > td { border-bottom: 1px solid #edf1f5; } }
+
+.debtRow .controls {
+  gap: 4px;
+}
+
+.debtRow .toggle {
+  width: 22px;
+}
+
+.debtRow .stateCell > .badge {
+  display: flex;
+  width: fit-content;
+}
+
+.debtRow .stateCell > .badge + .badge {
+  margin-top: 6px;
 }
 
 .costCell {
@@ -513,6 +542,10 @@
     padding-inline: 10px;
   }
 
+  .debtRow > td {
+    padding-inline: 8px;
+  }
+
   .controls {
     gap: 8px;
   }
@@ -541,6 +574,18 @@
     display: block;
     min-width: 0;
     padding: 0;
+  }
+
+  .debtRow {
+    grid-template-areas: "controls actions" "equipment equipment" "cost sede" "state state";
+  }
+
+  .debtRow > td {
+    padding: 0;
+  }
+
+  .debtRow .toggle {
+    width: 44px;
   }
 
   .row > td[data-label]::before {

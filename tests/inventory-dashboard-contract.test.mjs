@@ -31,18 +31,26 @@ const prestamos = loadTypeScript("lib/prestamos.ts");
 const sedes = loadTypeScript("lib/sedes.ts");
 const productTypes = loadTypeScript("lib/product-types.ts");
 const access = loadTypeScript("lib/access-control.ts");
+const creditorHelpers = loadTypeScript("lib/inventory-creditors.ts", {
+  "@/lib/prisma": { __esModule: true, default: {} }, "@/lib/prestamos": prestamos,
+});
 const baselineMode = Boolean(process.env.INVENTORY_DASHBOARD_TEST_SOURCE);
 const nullComponent = { __esModule: true, default: () => null };
 const childHooks = {
   Fragment: Symbol.for("react.fragment"), useEffect() {}, useRef: (initial) => ({ current: initial }),
-  useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}], useId: () => "inventory-test-row",
+  useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}], useMemo: (fn) => fn(), useId: () => "inventory-test-row",
 };
 const linkComponent = { __esModule: true, default: ({ children, ...props }) => jsxRuntime.jsx("a", { ...props, children }) };
 const monthlyView = loadTypeScript("lib/monthly-reports-view.ts");
+const inventoryDebtView = loadTypeScript("lib/inventory-debt-view.ts");
+const inventoryDebtParts = loadTypeScript("app/inventario/_components/inventory-debt-parts.tsx", {
+  react: childHooks, "@/app/dashboard/_components/dashboard-icon": nullComponent,
+  "@/lib/monthly-reports-view": monthlyView,
+});
 const inventoryParts = loadTypeScript("app/inventario/_components/inventory-dashboard-parts.tsx", {
   react: childHooks, "next/link": linkComponent,
   "@/app/dashboard/_components/dashboard-icon": nullComponent,
-  "@/lib/monthly-reports-view": monthlyView, "@/lib/prestamos": prestamos,
+  "@/lib/monthly-reports-view": monthlyView, "@/lib/prestamos": prestamos, "@/lib/inventory-debt-view": inventoryDebtView,
 });
 const financieras = loadTypeScript("lib/ventas-financieras.ts");
 const salesParts = loadTypeScript("app/ventas/_components/sales-dashboard-parts.tsx", {
@@ -90,6 +98,8 @@ function pageProbe(initialState = {}, responses = {}) {
     "consultaScope", "inventarioDisponible", "itemsPaginados", "paginaActual", "totalPaginas", "totalResultados", "valorMetrica",
     "vistaDisponible", "itemsPagina", "resultados", "filasPorPagina",
     "paginas", "accionesEquipo",
+    "itemsDeudaBase", "itemsDeudaFiltrados", "itemsVista", "totalSeleccionDeuda", "acreedoresPago", "paginaSeleccionada",
+    "alternarSeleccionPagina", "cambiarPagina", "cambiarFilasPorPagina", "limpiarFiltros", "limpiarGrupo",
   ].filter((name) => declaredNames.includes(name));
   const returnStatement = page.body.statements.find((node) => ts.isReturnStatement(node));
   assert.ok(returnStatement);
@@ -120,6 +130,8 @@ function pageProbe(initialState = {}, responses = {}) {
     "@/app/dashboard/_components/dashboard-icon": nullComponent, "@/app/dashboard/_components/logout-button": nullComponent,
     "@/app/inventario/_components/inventory-dashboard-parts": inventoryParts,
     "./_components/inventory-dashboard-parts": inventoryParts,
+    "./_components/inventory-debt-parts": inventoryDebtParts,
+    "@/lib/inventory-debt-view": inventoryDebtView,
     "@/app/ventas/_components/sales-dashboard-parts": salesParts,
     "@/lib/monthly-reports-view": monthlyView,
   }, {
@@ -157,6 +169,194 @@ function elements(node) {
 function textOf(node) {
   return elements(node).filter((value) => typeof value === "string" || typeof value === "number").join("");
 }
+
+function componentProps(node, component) {
+  if (!node || typeof node !== "object") return undefined;
+  if (Array.isArray(node)) {
+    for (const child of node) { const props = componentProps(child, component); if (props) return props; }
+    return undefined;
+  }
+  if (node.type === component) return node.props;
+  return componentProps(node.props?.children, component);
+}
+
+test("identidad de deuda usa ID persistente y conserva etiquetas legacy exactas sin unir homónimos", { skip: baselineMode }, () => {
+  const identity = (data) => inventoryDebtView.identidadAcreedor({ ...items[0], ...data });
+  assert.deepEqual(identity({ acreedorId: 101, acreedorNombre: "Proveedor Finser" }), { key: "id:101", id: 101, name: "Proveedor Finser" });
+  assert.deepEqual(identity({ acreedorId: 102, acreedorNombre: "Proveedor Finser" }), { key: "id:102", id: 102, name: "Proveedor Finser" });
+  const names = ["Proveedor Finser", "PROVEEDOR FINSER", "Proveedor Finser ", "Proveedor Fínser"];
+  const legacy = names.map((deboA) => identity({ acreedorId: null, acreedorNombre: null, deboA }));
+  assert.equal(new Set(legacy.map((creditor) => creditor.key)).size, 4);
+  assert.deepEqual(legacy.map((creditor) => creditor.name), names);
+  for (const deboA of [null, "", "   "]) assert.deepEqual(identity({ acreedorId: null, acreedorNombre: null, deboA }), { key: "sin-acreedor", id: null, name: "Sin acreedor" });
+});
+
+test("resumen y selección de deuda usan saldo pendiente real, centavos y sólo registros en DEUDA", { skip: baselineMode }, () => {
+  const row = (id, data) => ({ ...items[0], id, acreedorId: null, acreedorNombre: null, ...data });
+  const debt = [
+    row(1, { acreedorId: 101, acreedorNombre: "Proveedor Finser", costo: 999, deudaPendiente: 100.25 }),
+    row(2, { acreedorId: 102, acreedorNombre: "Proveedor Finser", deudaPendiente: 200.5 }),
+    row(3, { acreedorId: 101, acreedorNombre: "Proveedor Finser", deudaPendiente: 0 }),
+    row(4, { deboA: "Proveedor Finser", deudaPendiente: 300.75 }),
+    row(5, { deboA: "PROVEEDOR FINSER", costo: 400 }),
+    row(6, { deboA: "Proveedor Finser ", costo: 500 }),
+    row(7, { deboA: "Proveedor Fínser", costo: 600 }),
+    row(8, { deboA: "   ", costo: 50 }),
+    row(9, { deboA: null, costo: 75 }),
+    row(10, { estadoFinanciero: "PAGO", deudaPendiente: 10099 }),
+    row(11, { estadoFinanciero: " deuda ", deboA: "Proveedor Finser", costo: 25, deudaPendiente: NaN }),
+  ];
+  const groups = inventoryDebtView.agruparDeudasPorAcreedor(debt);
+  assert.equal(groups.length, 7);
+  assert.equal(groups.reduce((sum, creditor) => sum + creditor.count, 0), 10);
+  assert.equal(groups.reduce((sum, creditor) => sum + creditor.total, 0), 2251.5);
+  assert.deepEqual(groups.filter((creditor) => creditor.id !== null).map((creditor) => [creditor.key, creditor.count, creditor.total]), [["id:102", 1, 200.5], ["id:101", 2, 100.25]]);
+  assert.equal(groups.find((creditor) => creditor.key === "sin-acreedor").total, 125);
+  assert.ok(groups.every((creditor, index) => index === 0 || groups[index - 1].total >= creditor.total));
+  assert.equal(inventoryDebtView.deudaPendienteInventario(debt[2]), 0);
+  assert.equal(inventoryDebtView.deudaPendienteInventario(debt[9]), 0);
+  assert.equal(inventoryDebtView.deudaPendienteInventario(debt[10]), 25);
+  assert.deepEqual(inventoryDebtView.agruparDeudasPorAcreedor([]), []);
+});
+
+test("panel de acreedores distingue IDs homónimos y busca fuera de los cinco principales", { skip: baselineMode }, () => {
+  const creditors = Array.from({ length: 9 }, (_, index) => ({ key: `id:${101 + index}`, id: 101 + index,
+    name: index < 2 ? "Proveedor Finser" : `Proveedor ${index === 8 ? "Tecnologías lejanas" : index}`,
+    count: index + 1, total: 100.25 + index * 30.5 }));
+  const invoked = [];
+  const props = { creditors, selectedKey: "id:101", onSelect: (key) => invoked.push(key), search: "", onSearch() {} };
+  const initial = inventoryDebtParts.CreditorsPanel(props);
+  const buttons = elements(initial).filter((node) => node?.type === "button" && node.props["aria-pressed"] !== undefined);
+  assert.equal(buttons.length, 6);
+  const homonyms = buttons.filter((node) => textOf(node).includes("Proveedor Finser"));
+  assert.equal(homonyms.length, 2);
+  assert.match(textOf(homonyms[0]), /ID 101/);
+  assert.match(textOf(homonyms[1]), /ID 102/);
+  assert.equal(homonyms[0].props["aria-pressed"], true);
+  assert.equal(homonyms[1].props["aria-pressed"], false);
+  homonyms[1].props.onClick();
+  assert.deepEqual(invoked, ["id:102"]);
+  const searched = inventoryDebtParts.CreditorsPanel({ ...props, search: "tecnologias" });
+  const matches = elements(searched).filter((node) => node?.type === "button" && node.props["aria-pressed"] !== undefined);
+  assert.equal(matches.length, 2);
+  const outsideTopFive = matches.find((node) => textOf(node).includes("Tecnologías lejanas"));
+  assert.ok(outsideTopFive);
+  assert.ok(!textOf(searched).includes("No hay acreedores"));
+  outsideTopFive.props.onClick();
+  assert.deepEqual(invoked, ["id:102", "id:109"]);
+  const failed = inventoryDebtParts.CreditorsPanel({ ...props, creditors: [], loading: true, error: true });
+  assert.ok(textOf(failed).includes("No se pudieron cargar los acreedores."));
+  assert.ok(textOf(failed).includes("Sin datos cargados"));
+  assert.ok(!textOf(failed).includes("Cargando acreedores") && !textOf(failed).includes("No hay acreedores con deuda"));
+  assert.equal(failed.props["aria-busy"], false);
+  assert.ok(elements(failed).filter((node) => node?.type === "input" || node?.type === "button").every((node) => node.props.disabled));
+  const empty = inventoryDebtParts.CreditorsPanel({ ...props, creditors: [], loading: false, error: false });
+  assert.ok(textOf(empty).includes("No hay acreedores con deuda."));
+  assert.ok(!textOf(empty).includes("No se pudieron cargar"));
+});
+
+test("barra de deuda separa selección de página y resultados completos con importes sin abreviar", { skip: baselineMode }, () => {
+  const invoked = [];
+  const bar = inventoryDebtParts.DebtSelectionBar({ selectedCount: 23, total: 87007927.5, resultsCount: 50,
+    pageCount: 3, allSelected: false, pageSelected: true, onSelectAll: () => invoked.push("all"),
+    onSelectPage: () => invoked.push("page"), onClear: () => invoked.push("clear"), onPay: () => invoked.push("pay"),
+    payDisabled: false, busy: false });
+  assert.ok(textOf(bar).includes("$ 87.007.927,50"));
+  const buttons = elements(bar).filter((node) => node?.type === "button");
+  for (const label of ["Seleccionar resultados (50)", "Quitar selección de página actual (3)", "Limpiar selección", "Pagar seleccionados"]) {
+    const button = buttons.find((node) => textOf(node) === label);
+    assert.ok(button, label);
+    button.props.onClick();
+  }
+  assert.deepEqual(invoked, ["all", "page", "clear", "pay"]);
+  const empty = inventoryDebtParts.DebtSelectionBar({ selectedCount: 0, total: 0, resultsCount: 0, pageCount: 0,
+    allSelected: false, pageSelected: false, onSelectAll() {}, onSelectPage() {}, onClear() {}, onPay() {}, payDisabled: true });
+  assert.ok(elements(empty).filter((node) => node?.type === "button").every((node) => node.props.disabled));
+});
+
+test("cambiar acreedor, búsquedas, estados, sede o pestaña limpia selección antes de usar otro corte", { skip: baselineMode }, () => {
+  const initial = { pestana: "deudas", idsSeleccionados: [10, 4], paginaDeudas: 3, acreedorDeudaClave: 'legacy:"Proveedor Finser"', busquedaDeudas: "Equipo", filtrosEstadoDeudas: ["BODEGA"] };
+  const cases = [
+    ["acreedor", (tree) => componentProps(tree, inventoryDebtParts.CreditorsPanel).onSelect('legacy:"SEDE 1"'), (state) => assert.equal(state.acreedorDeudaClave, 'legacy:"SEDE 1"')],
+    ["búsqueda acreedor", (tree) => componentProps(tree, inventoryDebtParts.CreditorsPanel).onSearch("Tecnologías"), (state) => assert.equal(state.busquedaAcreedores, "Tecnologías")],
+    ["búsqueda equipo", (tree) => componentProps(tree, inventoryDebtParts.DebtEquipmentFilters).onSearch(items[0].imei), (state) => assert.equal(state.busquedaDeudas, "000000000001000")],
+    ["estado", (tree) => componentProps(tree, inventoryDebtParts.DebtEquipmentFilters).onToggleState("PRESTAMO"), (state) => assert.deepEqual(state.filtrosEstadoDeudas, ["BODEGA", "PRESTAMO"])],
+    ["limpiar", (tree) => componentProps(tree, inventoryDebtParts.DebtEquipmentFilters).onClear(), (state) => { assert.equal(state.acreedorDeudaClave, "TODOS"); assert.equal(state.busquedaDeudas, ""); assert.deepEqual(state.filtrosEstadoDeudas, []); }],
+    ["sede", (tree) => elements(tree).find((node) => node?.type === "select" && node.props["aria-label"] === "Sede del inventario").props.onChange({ target: { value: "3" } }), (state) => assert.equal(state.sedeFiltroId, "3")],
+    ["pestaña", (tree) => elements(tree).find((node) => node?.type === "button" && node.props.id === "inventory-equipment-tab").props.onClick(), (state) => assert.equal(state.pestana, "equipos")],
+  ];
+  for (const [name, change, check] of cases) {
+    const probe = pageProbe(initial);
+    change(probe.render().tree);
+    assert.deepEqual(probe.state.idsSeleccionados, [], name);
+    check(probe.state);
+    if (!["búsqueda acreedor", "pestaña"].includes(name)) assert.equal(probe.state.paginaDeudas, 1, name);
+  }
+  const general = pageProbe({ idsSeleccionados: [10], pagina: 3 });
+  elements(general.render().tree).find((node) => node?.type === "input" && node.props["aria-label"] === "Buscar equipos").props.onChange({ target: { value: "no existe" } });
+  assert.deepEqual(general.state.idsSeleccionados, []);
+  assert.equal(general.state.pagina, 1);
+});
+
+test("selección de página sólo afecta sus IDs y la selección completa abarca todas las páginas del acreedor filtrado", { skip: baselineMode }, () => {
+  const stock = Array.from({ length: 23 }, (_, index) => ({ ...items[0], id: 23 - index,
+    imei: String(8000 + index).padStart(15, "0"), acreedorId: index < 14 ? 101 : 102,
+    acreedorNombre: "Proveedor Finser", deudaPendiente: 100.25 + index * 10.5 }));
+  const probe = pageProbe({ pestana: "deudas", items: stock, filasPorPaginaDeudas: 10, paginaDeudas: 3, idsSeleccionados: [23] });
+  assert.deepEqual(probe.view.itemsPagina.map((item) => item.id), [3, 2, 1]);
+  probe.view.alternarSeleccionPagina();
+  assert.deepEqual(probe.state.idsSeleccionados, [23, 3, 2, 1]);
+  probe.render();
+  assert.equal(probe.view.paginaSeleccionada, true);
+  probe.view.cambiarPagina(2);
+  probe.render();
+  assert.deepEqual(probe.state.idsSeleccionados, [23, 3, 2, 1]);
+  probe.view.alternarSeleccionVisibles();
+  probe.render();
+  assert.equal(probe.state.idsSeleccionados.length, 23);
+  assert.equal(probe.view.todosVisiblesSeleccionados, true);
+  assert.equal(probe.view.totalSeleccionDeuda, 4962.25);
+  probe.view.alternarSeleccionPagina();
+  assert.equal(probe.state.idsSeleccionados.length, 13);
+  assert.deepEqual(probe.state.idsSeleccionados.slice(0, 4), [23, 3, 2, 1]);
+  probe.view.cambiarFilasPorPagina(25);
+  assert.equal(probe.state.paginaDeudas, 1);
+  assert.equal(probe.state.idsSeleccionados.length, 13);
+  const filtered = pageProbe({ pestana: "deudas", items: stock, filasPorPaginaDeudas: 10, paginaDeudas: 2, acreedorDeudaClave: "id:101" });
+  assert.equal(filtered.view.idsVisibles.length, 14);
+  assert.deepEqual(filtered.view.itemsPagina.map((item) => item.id), [13, 12, 11, 10]);
+  filtered.view.alternarSeleccionVisibles();
+  assert.deepEqual(new Set(filtered.state.idsSeleccionados), new Set(stock.filter((item) => item.acreedorId === 101).map((item) => item.id)));
+});
+
+test("confirmación lista todos los equipos elegibles y acreedores separados, y no paga antes de confirmar", { skip: baselineMode }, async () => {
+  const stock = Array.from({ length: 23 }, (_, index) => ({ ...items[0], id: 230 - index,
+    imei: String(9000 + index).padStart(15, "0"), referencia: `Referencia de confirmación ${index}`,
+    acreedorId: index < 12 ? 101 : 102, acreedorNombre: "Proveedor Finser", deudaPendiente: 100.25 + index * 10.5 }));
+  const ineligible = [{ ...items[2], id: 300, referencia: "No pagable por estado" }, { ...items[0], id: 301, deboA: "SEDE 2", acreedorId: 103, acreedorNombre: "SEDE 2" }];
+  const paid = [];
+  const probe = pageProbe({ pestana: "deudas", items: [...stock, ...ineligible], idsSeleccionados: [...stock, ...ineligible].map((item) => item.id) }, {
+    "/api/inventario/pagar-deuda": (_url, options) => { paid.push(JSON.parse(options.body).id); return { ok: true, data: { ok: true } }; },
+  });
+  componentProps(probe.render().tree, inventoryDebtParts.DebtSelectionBar).onPay();
+  assert.equal(probe.state.mostrarModalPagoMasivo, true);
+  assert.deepEqual(paid, []);
+  const dialog = elements(probe.render().tree).find((node) => node?.props?.role === "dialog");
+  assert.ok(dialog);
+  assert.equal(dialog.props["aria-modal"], "true");
+  const text = textOf(dialog);
+  assert.match(text, /Se procesarán 23 deudas/);
+  assert.match(text, /2 seleccionados no aplica/);
+  assert.ok(text.includes("$ 4.962,25"));
+  assert.ok(text.includes("ID 101") && text.includes("ID 102"));
+  for (const item of stock) { assert.ok(text.includes(item.referencia), item.referencia); assert.ok(text.includes(item.imei), item.imei); }
+  assert.ok(!text.includes("No pagable por estado"));
+  const confirm = elements(dialog).find((node) => node?.type === "button" && textOf(node) === "Confirmar pago");
+  await confirm.props.onClick();
+  assert.deepEqual(paid, stock.map((item) => item.id));
+  assert.deepEqual(probe.state.idsSeleccionados, []);
+  assert.equal(probe.state.mostrarModalPagoMasivo, false);
+});
 
 test("operaciones conservan resultado y bloqueos parciales tras recargar inventario", { skip: baselineMode }, async () => {
   const probe = pageProbe({ idsSeleccionados: items.map((item) => item.id) }, {
@@ -196,6 +396,10 @@ test("fila real conserva IMEI textual, datos adicionales, factura, destino y cal
   action.props.onClick();
   assert.deepEqual(invoked, ["select", "toggle", "pay"]);
   assert.ok(nodes.some((node) => node?.type === "a" && node.props.href === "https://qa.test/fv20"));
+  const missingCreditor = inventoryParts.InventoryRow({ item: { ...fixture, deboA: "   ", acreedorNombre: null, acreedorId: null },
+    selected: false, expanded: true, destino: "—", actions: [], variant: "debt", onSelect() {}, onToggle() {} });
+  assert.ok(textOf(missingCreditor).includes("Acreedor: Sin acreedor"));
+  assert.ok(elements(missingCreditor).some((node) => node?.type === "td" && node.props.colSpan === 6));
 });
 
 test("cambiar cobertura oculta cifras y acciones anteriores; respuestas o errores tardíos no reemplazan el corte vigente", { skip: baselineMode }, async () => {
@@ -298,7 +502,8 @@ test("filtros son OR dentro de cada grupo y AND entre operativo, financiero, acr
   assert.deepEqual(ids({ filtrosEstado: ["BODEGA", "PENDIENTE"] }), [10, 9, 8]);
   assert.deepEqual(ids({ filtrosEstado: ["BODEGA", "PENDIENTE", "DEUDA"] }), [10, 8]);
   assert.deepEqual(ids({ filtrosEstado: ["BODEGA", "PENDIENTE", "DEUDA", "PAGO"] }), [10, 9, 8]);
-  assert.deepEqual(ids({ filtrosEstado: ["DEUDA", "PAGO"], filtroAcreedorDeuda: "SEDE 1" }), [6]);
+  if (baselineMode) assert.deepEqual(ids({ filtrosEstado: ["DEUDA", "PAGO"], filtroAcreedorDeuda: "SEDE 1" }), [6]);
+  else assert.deepEqual(pageProbe({ pestana: "deudas", acreedorDeudaClave: 'legacy:"SEDE 1"', filtrosEstadoDeudas: ["BODEGA", "PRESTAMO"] }).view.itemsVista.map((item) => item.id), [6]);
   assert.deepEqual(ids({ busqueda: "000000000001000" }), [10]);
   for (const busqueda of ["equipo 10", "ROJO", "distribuidor qa", "PRINCIPAL", "sede 3"]) assert.ok(ids({ busqueda }).length > 0);
   const trimmed = pageProbe({ items: [{ ...items[0], estadoActual: " bodega ", estadoFinanciero: " deuda " }], filtrosEstado: ["BODEGA", "DEUDA"] });
@@ -307,6 +512,20 @@ test("filtros son OR dentro de cada grupo y AND entre operativo, financiero, acr
 });
 
 test("deuda por acreedor y préstamo filtrado usan sus cortes existentes sin alterar el total global", () => {
+  if (!baselineMode) {
+    const view = pageProbe({ pestana: "deudas", filtrosEstadoDeudas: ["BODEGA"], acreedorDeudaClave: 'legacy:"Proveedor Finser"' }).view;
+    assert.deepEqual(view.itemsVista.map((item) => item.id), [10]);
+    assert.equal(view.totalDeudaVista, 3300.25);
+    assert.equal(view.totalPrestamoVista, 1100.5);
+    assert.deepEqual(view.resumenDeudaPorAcreedor, [
+      { key: 'legacy:"Proveedor Finser"', id: null, name: "Proveedor Finser", count: 4, total: 1900.25 },
+      { key: 'legacy:"SEDE 3"', id: null, name: "SEDE 3", count: 1, total: 900 },
+      { key: 'legacy:"SEDE 1"', id: null, name: "SEDE 1", count: 1, total: 500 },
+    ]);
+    const noCreditor = pageProbe({ items: [{ ...items[0], deboA: "  " }], pestana: "deudas" }).view;
+    assert.deepEqual(noCreditor.resumenDeudaPorAcreedor, [{ key: "sin-acreedor", id: null, name: "Sin acreedor", count: 1, total: 100.25 }]);
+    return;
+  }
   const view = pageProbe({ filtrosEstado: ["BODEGA", "DEUDA", "PAGO"], filtroAcreedorDeuda: "Proveedor Finser" }).view;
   assert.equal(view.totalDeudaVista, 100.25);
   assert.equal(view.totalDeudaAcreedorSeleccionado, 100.25);
@@ -319,10 +538,10 @@ test("deuda por acreedor y préstamo filtrado usan sus cortes existentes sin alt
   assert.deepEqual(noCreditor.resumenDeudaPorAcreedor, [{ acreedor: "SIN ACREEDOR", cantidad: 1, valor: 100.25 }]);
 });
 
-test("selección visible conserva ids ocultos, grupos masivos elegibles y excluye VENTAS y sedes origen como destino", () => {
-  const probe = pageProbe({ filtrosEstado: ["BODEGA"], idsSeleccionados: [8] });
+test("selección de resultados conserva otras páginas, grupos elegibles y excluye VENTAS y sedes origen como destino", () => {
+  const probe = pageProbe({ filtrosEstado: ["BODEGA"], filasPorPagina: 1, idsSeleccionados: [9] });
   probe.view.alternarSeleccionVisibles();
-  assert.deepEqual(probe.state.idsSeleccionados, [8, 10, 9]);
+  assert.deepEqual(probe.state.idsSeleccionados, [9, 10]);
   probe.render();
   assert.equal(probe.view.todosVisiblesSeleccionados, true);
   assert.deepEqual(probe.view.itemsSeleccionadosParaPrestamo.map((item) => item.id), [10, 9]);
@@ -331,7 +550,7 @@ test("selección visible conserva ids ocultos, grupos masivos elegibles y excluy
   assert.deepEqual(probe.view.itemsSeleccionadosParaPago.map((item) => item.id), [10]);
   assert.deepEqual(probe.view.sedesDestinoMasivo.map((sede) => sede.id), [2, 3]);
   probe.view.alternarSeleccionVisibles();
-  assert.deepEqual(probe.state.idsSeleccionados, [8]);
+  assert.deepEqual(probe.state.idsSeleccionados, []);
   probe.view.alternarFiltroEstado("DEUDA");
   assert.deepEqual(probe.state.idsSeleccionados, []);
 });
@@ -406,7 +625,8 @@ function apiProbe(user, options = {}) {
   const record = (name, result) => async (args) => { calls.push({ name, args }); return typeof result === "function" ? result(args) : result; };
   const row = options.row ?? items[0];
   const transaction = {
-    inventarioSede: { update: record("tx-update", row), deleteMany: record("tx-delete", { count: 1 }) },
+    $queryRaw: record("tx-lock", row ? [{ id: row.id }] : []),
+    inventarioSede: { findUnique: record("tx-inventory-detail", row), update: record("tx-update", row), deleteMany: record("tx-delete", { count: 1 }) },
     movimientoInventario: { create: record("tx-movement", {}), createMany: record("tx-movements", { count: 1 }) },
   };
   const prisma = {
@@ -422,6 +642,11 @@ function apiProbe(user, options = {}) {
     "@/lib/prisma": { __esModule: true, default: prisma }, "@/lib/auth": { getSessionUser: async () => user },
     "@/lib/access-control": access, "@/lib/prestamos": prestamos, "@/lib/sedes": sedes, "@/lib/product-types": productTypes,
     "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: record("ensure-schema", undefined) }, "@/lib/siigo": {},
+    "@/lib/inventory-creditors": {
+      ...creditorHelpers,
+      resolverIdentidadesAcreedores: async (rows) => new Map([...new Set(rows.map((item) => creditorHelpers.nombreHistoricoAcreedor(item.deboA)).filter((name) => name !== null))]
+        .map((nombre, index) => [nombre, { id: 101 + index, nombre }])),
+    },
   };
   const endpoints = {};
   for (const path of ["app/api/inventario/route.ts", "app/api/inventario/actualizar/route.ts", "app/api/inventario/eliminar/route.ts", "app/api/inventario/cambiar-estado/route.ts", "app/api/inventario/pagar-deuda/route.ts", "app/api/inventario/cambio-equipo/route.ts", "app/api/inventario/factura-stand/route.ts", "app/api/prestamos/crear-desde-inventario/route.ts"]) endpoints[path] = loadTypeScript(path, imports);
@@ -459,6 +684,10 @@ test("GET real preserva cobertura, campos completos, último destino por IMEI+se
     for (const field of ["imei", "referencia", "tipoProducto", "color", "costo", "distribuidor", "deboA", "origen", "estadoActual", "estadoFinanciero", "sedeId"]) assert.equal(query.select[field], true);
     const data = await response.json();
     assert.equal(data[0].imei, "000000000001000");
+    assert.equal(data[0].acreedorId, 101);
+    assert.equal(data[0].acreedorNombre, "Proveedor Finser");
+    assert.equal(data[0].deudaPendiente, 100.25);
+    assert.equal(data[1].deudaPendiente, 0);
     assert.deepEqual(data[4].prestamoDestino, { id: 3, nombre: "SEDE 3", prestamoId: 20, estado: "APROBADO" });
     assert.equal(data[0].prestamoDestino, null);
     assert.equal(data[4].facturaStand.nombre, "FV7");
@@ -514,7 +743,8 @@ test("préstamo y pago servidor impiden alcance ajeno y estados o deuda entre se
     const probe = apiProbe({ ...session, rolNombre: "SUPERVISOR", perfilTipo: "OPERATIVO" }, { row: { ...items[0], sedeId: 3 } });
     const response = await probe.endpoints[path].POST(request(path, { id: 10, inventarioId: 10, sedeDestinoId: 2 }));
     assert.equal(response.status, 403);
-    assert.ok(!probe.calls.some((call) => call.name === "transaction"));
+    assert.ok(!probe.calls.some((call) => ["tx-update", "tx-delete", "tx-movement", "tx-movements"].includes(call.name)));
+    if (path === "app/api/inventario/pagar-deuda/route.ts") assert.ok(probe.calls.some((call) => call.name === "tx-lock"));
   }
   const nonStock = apiProbe(session, { row: items[2] });
   assert.equal((await nonStock.endpoints["app/api/prestamos/crear-desde-inventario/route.ts"].POST(request("api/prestamos/crear-desde-inventario", { inventarioId: 8, sedeDestinoId: 2 }))).status, 400);

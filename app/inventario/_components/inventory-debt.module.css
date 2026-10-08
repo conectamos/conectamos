@@ -1,0 +1,655 @@
+.creditorsPanel,
+.summary,
+.selectionBar,
+.equipmentHeader {
+  min-width: 0;
+  color: #11161d;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.creditorsPanel {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.creditorsHeader {
+  padding: 20px 16px 16px;
+}
+
+.creditorsHeader h2,
+.equipmentHeading h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.creditorSearch,
+.equipmentSearch {
+  display: flex;
+  min-width: 0;
+  height: 44px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 14px;
+}
+
+.creditorSearch {
+  margin-top: 16px;
+}
+
+.searchIcon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: #475569;
+}
+
+.creditorSearch input,
+.equipmentSearch input {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+  color: #11161d;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.creditorSearch input::placeholder,
+.equipmentSearch input::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+.creditorSearch:focus-within,
+.equipmentSearch:focus-within {
+  outline: 2px solid #e30613;
+  outline-offset: 2px;
+}
+
+.creditorsList {
+  min-width: 0;
+  flex: 1;
+}
+
+.creditorButton {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 70px;
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: #fff;
+  padding: 12px 16px 12px 12px;
+  color: #11161d;
+  text-align: left;
+  cursor: pointer;
+}
+
+.creditorButton::after {
+  position: absolute;
+  inset: auto 16px 0;
+  border-bottom: 1px solid #e2e8f0;
+  content: "";
+}
+
+.creditorButton:hover {
+  background: #f8fafc;
+}
+
+.creditorButton:disabled {
+  cursor: default;
+}
+
+.creditorName {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.creditorName small {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.creditorName small.creditorId {
+  margin-top: 1px;
+}
+
+.creditorAmount {
+  max-width: 145px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.selectionMark {
+  display: flex;
+  width: 16px;
+  align-items: center;
+  justify-content: center;
+  color: #e30613;
+}
+
+.selectionIcon {
+  width: 18px;
+  height: 18px;
+}
+
+.selectedCreditor,
+.selectedCreditor:hover {
+  background: #fff1f2;
+}
+
+.selectedCreditor::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: #e30613;
+  content: "";
+}
+
+.allCreditors {
+  min-height: 62px;
+}
+
+.allCreditors::after {
+  display: none;
+}
+
+.creditorsFooter {
+  padding: 22px 20px 24px;
+}
+
+.viewAll {
+  display: flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #b9c6d6;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 14px;
+  color: #11161d;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.viewAll:hover,
+.secondaryButton:hover {
+  border-color: #e30613;
+  background: #fff8f8;
+}
+
+.viewAllIcon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.upIcon {
+  transform: rotate(180deg);
+}
+
+.empty {
+  margin: 0;
+  padding: 24px 20px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 18px 32px;
+  margin-bottom: 18px;
+}
+
+.summaryMetric {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 28px;
+}
+
+.summaryMetric + .summaryMetric {
+  border-left: 1px solid #d9e0e9;
+  padding-left: 36px;
+}
+
+.summarySymbol {
+  display: flex;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f1f4f7;
+  color: #475569;
+}
+
+.summaryIcon {
+  width: 30px;
+  height: 30px;
+}
+
+.summaryContent {
+  min-width: 0;
+}
+
+.summaryLabel {
+  margin: 0;
+  color: #475569;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.summaryValue {
+  display: block;
+  margin: 1px 0;
+  color: #0f172a;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.selectionBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f7f8fa;
+  padding: 10px 14px;
+  margin: 0 14px 12px;
+}
+
+.selectionSummary {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.selectionSummary strong {
+  color: #11161d;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.selectionActions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.secondaryButton,
+.payButton,
+.clearSelection,
+.clearFilters {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 14px;
+  color: #11161d;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.payButton {
+  border-color: #11161d;
+  background: #11161d;
+  color: #fff;
+}
+
+.payButton:hover:not(:disabled) {
+  border-color: #e30613;
+  background: #e30613;
+}
+
+.payButton:disabled {
+  border-color: #edf1f5;
+  background: #edf1f5;
+  color: #94a3b8;
+  cursor: default;
+}
+
+.secondaryButton:disabled,
+.clearSelection:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.clearSelection {
+  border-color: transparent;
+  background: transparent;
+  color: #e30613;
+  padding-inline: 8px;
+}
+
+.equipmentHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding: 16px 14px;
+}
+
+.equipmentHeading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.equipmentHeading > span {
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.equipmentControls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.equipmentSearch {
+  width: 215px;
+}
+
+.stateDropdown {
+  position: relative;
+  min-width: 170px;
+}
+
+.stateSummary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 14px;
+  color: #11161d;
+  font-size: 14px;
+  line-height: 1.4;
+  list-style: none;
+  cursor: pointer;
+}
+
+.stateSummary::-webkit-details-marker {
+  display: none;
+}
+
+.stateChevron {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.stateDropdown[open] .stateChevron {
+  transform: rotate(180deg);
+}
+
+.stateCount {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #fff1f2;
+  padding: 0 4px;
+  color: #e30613;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stateOptions {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 235px;
+  max-width: calc(100vw - 32px);
+  max-height: min(390px, 55dvh);
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  margin: 0;
+  padding: 8px;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 10%);
+}
+
+.stateOption {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 12px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.stateOption:hover {
+  background: #f8fafc;
+}
+
+.stateOption input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin: 0;
+  accent-color: #e30613;
+}
+
+.clearFilters {
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 8px;
+  color: #e30613;
+  font-weight: 500;
+}
+
+.clearFilters:hover,
+.clearSelection:hover {
+  background: #fff1f2;
+}
+
+.clearIcon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.currentCreditor {
+  min-width: 0;
+  flex-basis: 100%;
+  margin: 0;
+  color: #475569;
+  font-size: 16px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.negative,
+.selectionSummary strong.negative {
+  color: #e30613;
+}
+
+.creditorButton:focus-visible,
+.viewAll:focus-visible,
+.secondaryButton:focus-visible,
+.payButton:focus-visible,
+.clearSelection:focus-visible,
+.clearFilters:focus-visible,
+.stateSummary:focus-visible,
+.stateOption input:focus-visible {
+  outline: 2px solid #e30613;
+  outline-offset: 2px;
+}
+
+.creditorButton:focus-visible {
+  outline-offset: -3px;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 1300px) {
+  .equipmentHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .equipmentControls {
+    width: 100%;
+  }
+
+  .equipmentSearch {
+    min-width: 180px;
+    flex: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    padding: 18px;
+  }
+
+  .summaryMetric {
+    gap: 18px;
+  }
+
+  .summaryMetric + .summaryMetric {
+    border-top: 1px solid #d9e0e9;
+    border-left: 0;
+    padding-top: 16px;
+    padding-left: 0;
+  }
+
+  .summaryValue {
+    font-size: 27px;
+  }
+
+  .creditorAmount {
+    max-width: 130px;
+  }
+
+  .selectionBar {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .selectionActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .selectionActions > button {
+    flex: 1 1 180px;
+  }
+
+  .equipmentControls {
+    gap: 10px;
+  }
+
+  .equipmentSearch {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .stateDropdown {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .clearFilters {
+    padding-inline: 6px;
+    font-size: 13px;
+  }
+
+  .stateSummary {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .stateOptions {
+    right: auto;
+    left: 0;
+  }
+}

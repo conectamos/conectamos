@@ -34,167 +34,178 @@ export async function POST(req: Request) {
 
     const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
-    const item = await prisma.inventarioSede.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        imei: true,
-        referencia: true,
-        color: true,
-        costo: true,
-        sedeId: true,
-        estadoActual: true,
-        estadoAnterior: true,
-        estadoFinanciero: true,
-        deboA: true,
-        origen: true,
-        inventarioPrincipalId: true,
-        sede: {
-          select: {
-            nombre: true,
+    return await prisma.$transaction(async (tx) => {
+      // Lock the debt before reading its current status, scope and cost. A
+      // competing payment waits and then observes the committed settlement or
+      // pending approval instead of creating a second expense/request.
+      const bloqueo = await tx.$queryRaw<Array<{ id: number }>>`
+        SELECT "id" FROM "InventarioSede" WHERE "id" = ${id} FOR UPDATE
+      `;
+
+      if (bloqueo.length === 0) {
+        return NextResponse.json({ error: "Equipo no encontrado" }, { status: 404 });
+      }
+
+      const item = await tx.inventarioSede.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          imei: true,
+          referencia: true,
+          color: true,
+          costo: true,
+          sedeId: true,
+          estadoActual: true,
+          estadoAnterior: true,
+          estadoFinanciero: true,
+          deboA: true,
+          origen: true,
+          inventarioPrincipalId: true,
+          sede: {
+            select: {
+              nombre: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!item) {
-      return NextResponse.json(
-        { error: "Equipo no encontrado" },
-        { status: 404 }
-      );
-    }
+      if (!item) {
+        return NextResponse.json(
+          { error: "Equipo no encontrado" },
+          { status: 404 }
+        );
+      }
 
-    if (!esAdmin && item.sedeId !== user.sedeId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
+      if (!esAdmin && item.sedeId !== user.sedeId) {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+      }
 
-    if (!esEstadoDeuda(item.estadoFinanciero)) {
-      return NextResponse.json(
-        { error: "Este equipo no tiene deuda activa" },
-        { status: 400 }
-      );
-    }
+      if (!esEstadoDeuda(item.estadoFinanciero)) {
+        return NextResponse.json(
+          { error: "Este equipo no tiene deuda activa" },
+          { status: 400 }
+        );
+      }
 
-    const estadoActual = String(item.estadoActual || "").toUpperCase();
-    const deudaProveedor = esDeudaProveedor(item.deboA);
-    const equipoPrestadoConDeudaProveedor =
-      estadoActual === "PRESTAMO" && deudaProveedor;
-    const equipoTrasladadoConDeudaProveedor =
-      estadoActual === "TRASLADO" && deudaProveedor;
-    const equipoPrestamoPagoConDeudaProveedor =
-      estadoActual === "PRESTAMO_PAGO" && deudaProveedor;
-    const equipoYaVendido = estadoActual === "VENDIDO";
-    const sedeItemNombre = etiquetaSedeAcreedora(item.sedeId, item.sede?.nombre);
+      const estadoActual = String(item.estadoActual || "").toUpperCase();
+      const deudaProveedor = esDeudaProveedor(item.deboA);
+      const equipoPrestadoConDeudaProveedor =
+        estadoActual === "PRESTAMO" && deudaProveedor;
+      const equipoTrasladadoConDeudaProveedor =
+        estadoActual === "TRASLADO" && deudaProveedor;
+      const equipoPrestamoPagoConDeudaProveedor =
+        estadoActual === "PRESTAMO_PAGO" && deudaProveedor;
+      const equipoYaVendido = estadoActual === "VENDIDO";
+      const sedeItemNombre = etiquetaSedeAcreedora(item.sedeId, item.sede?.nombre);
 
-    if (
-      estadoActual !== "BODEGA" &&
-      estadoActual !== "VENDIDO" &&
-      !equipoPrestadoConDeudaProveedor &&
-      !equipoTrasladadoConDeudaProveedor &&
-      !equipoPrestamoPagoConDeudaProveedor
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Solo se puede pagar deuda del equipo que esta en BODEGA, VENDIDO, PRESTAMO, PRESTAMO PAGO o TRASLADO con deuda a proveedor.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (esDeudaEntreSedes(item.deboA)) {
-      return NextResponse.json(
-        {
-          error:
-            "La deuda entre sedes debe solicitarse y aprobarse desde el modulo de prestamos.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const sedeBodegaPrincipal = await prisma.sede.findFirst({
-      where: {
-        nombre: {
-          equals: NOMBRE_SEDE_BODEGA,
-          mode: "insensitive",
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-    const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
-    const inventarioPrincipalRelacionado = item.inventarioPrincipalId
-      ? await prisma.inventarioPrincipal.findUnique({
-          where: { id: item.inventarioPrincipalId },
-          select: { id: true },
-        })
-      : await prisma.inventarioPrincipal.findUnique({
-          where: { imei: item.imei },
-          select: { id: true },
-        });
-    const inventarioPrincipalRelacionadoId =
-      item.inventarioPrincipalId || inventarioPrincipalRelacionado?.id || null;
-
-    const prestamosActivos = await prisma.prestamoSede.findMany({
-      where: {
-        imei: item.imei,
-        estado: {
-          in: ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
-        },
-      },
-      select: {
-        id: true,
-        sedeOrigenId: true,
-        sedeDestinoId: true,
-        estado: true,
-      },
-    });
-
-    const deudaProveedorDebeAprobarBodegaPrincipal =
-      esDeudaProveedor(item.deboA) &&
-      item.sedeId !== sedeBodegaId &&
-      (String(item.origen || "").trim().toUpperCase() === "PRINCIPAL" ||
-        !!inventarioPrincipalRelacionadoId);
-    const prestamosDestinoActual = prestamosActivos.filter(
-      (prestamo) => prestamo.sedeDestinoId === item.sedeId
-    );
-    const prestamoBodegaPrincipal = deudaProveedorDebeAprobarBodegaPrincipal
-      ? prestamosDestinoActual.find(
-          (prestamo) => prestamo.sedeOrigenId === sedeBodegaId
-        ) ||
-        prestamosDestinoActual[0] ||
-        null
-      : null;
-
-    if (deudaProveedorDebeAprobarBodegaPrincipal) {
-      if (sedeBodegaId <= 0) {
+      if (
+        estadoActual !== "BODEGA" &&
+        estadoActual !== "VENDIDO" &&
+        !equipoPrestadoConDeudaProveedor &&
+        !equipoTrasladadoConDeudaProveedor &&
+        !equipoPrestamoPagoConDeudaProveedor
+      ) {
         return NextResponse.json(
           {
             error:
-              "No se encontro Bodega Principal para solicitar aprobacion del pago.",
+              "Solo se puede pagar deuda del equipo que esta en BODEGA, VENDIDO, PRESTAMO, PRESTAMO PAGO o TRASLADO con deuda a proveedor.",
           },
           { status: 400 }
         );
       }
 
-      const sedeAcreedoraId = sedeBodegaId;
-
-      if (sedeAcreedoraId === item.sedeId) {
+      if (esDeudaEntreSedes(item.deboA)) {
         return NextResponse.json(
-          { error: "No se puede solicitar pago hacia la misma sede" },
+          {
+            error:
+              "La deuda entre sedes debe solicitarse y aprobarse desde el modulo de prestamos.",
+          },
           { status: 400 }
         );
       }
 
-      if (prestamoBodegaPrincipal?.estado === "PAGO_PENDIENTE_APROBACION") {
-        return NextResponse.json(
-          { error: "Este pago ya esta pendiente de aprobacion" },
-          { status: 400 }
-        );
-      }
+      const sedeBodegaPrincipal = await tx.sede.findFirst({
+        where: {
+          nombre: {
+            equals: NOMBRE_SEDE_BODEGA,
+            mode: "insensitive",
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+      const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
+      const inventarioPrincipalRelacionado = item.inventarioPrincipalId
+        ? await tx.inventarioPrincipal.findUnique({
+            where: { id: item.inventarioPrincipalId },
+            select: { id: true },
+          })
+        : await tx.inventarioPrincipal.findUnique({
+            where: { imei: item.imei },
+            select: { id: true },
+          });
+      const inventarioPrincipalRelacionadoId =
+        item.inventarioPrincipalId || inventarioPrincipalRelacionado?.id || null;
 
-      await prisma.$transaction(async (tx) => {
+      const prestamosActivos = await tx.prestamoSede.findMany({
+        where: {
+          imei: item.imei,
+          estado: {
+            in: ["APROBADO", "PAGO_PENDIENTE_APROBACION"],
+          },
+        },
+        select: {
+          id: true,
+          sedeOrigenId: true,
+          sedeDestinoId: true,
+          estado: true,
+        },
+      });
+
+      const deudaProveedorDebeAprobarBodegaPrincipal =
+        esDeudaProveedor(item.deboA) &&
+        item.sedeId !== sedeBodegaId &&
+        (String(item.origen || "").trim().toUpperCase() === "PRINCIPAL" ||
+          !!inventarioPrincipalRelacionadoId);
+      const prestamosDestinoActual = prestamosActivos.filter(
+        (prestamo) => prestamo.sedeDestinoId === item.sedeId
+      );
+      const prestamoBodegaPrincipal = deudaProveedorDebeAprobarBodegaPrincipal
+        ? prestamosDestinoActual.find(
+            (prestamo) => prestamo.sedeOrigenId === sedeBodegaId
+          ) ||
+          prestamosDestinoActual[0] ||
+          null
+        : null;
+
+      if (deudaProveedorDebeAprobarBodegaPrincipal) {
+        if (sedeBodegaId <= 0) {
+          return NextResponse.json(
+            {
+              error:
+                "No se encontro Bodega Principal para solicitar aprobacion del pago.",
+            },
+            { status: 400 }
+          );
+        }
+
+        const sedeAcreedoraId = sedeBodegaId;
+
+        if (sedeAcreedoraId === item.sedeId) {
+          return NextResponse.json(
+            { error: "No se puede solicitar pago hacia la misma sede" },
+            { status: 400 }
+          );
+        }
+
+        if (prestamoBodegaPrincipal?.estado === "PAGO_PENDIENTE_APROBACION") {
+          return NextResponse.json(
+            { error: "Este pago ya esta pendiente de aprobacion" },
+            { status: 400 }
+          );
+        }
+
         let prestamoPagoId = prestamoBodegaPrincipal?.id ?? null;
 
         if (prestamoPagoId) {
@@ -285,24 +296,22 @@ export async function POST(req: Request) {
             observacion: `${sedeItemNombre} solicita pagar deuda a bodega principal. Prestamo #${prestamoPagoId}.`,
           },
         });
-      });
 
-      return NextResponse.json({
-        ok: true,
-        mensaje:
-          "Solicitud de pago enviada. Bodega principal debe aprobarla desde Prestamos.",
-      });
-    }
+        return NextResponse.json({
+          ok: true,
+          mensaje:
+            "Solicitud de pago enviada. Bodega principal debe aprobarla desde Prestamos.",
+        });
+      }
 
-    const prestamosConPlaceholder = prestamosActivos.filter(
-      (prestamo) => prestamo.sedeOrigenId !== item.sedeId
-    );
-    const prestamosPorCobrarDesdeEstaSede = prestamosActivos.filter(
-      (prestamo) => prestamo.sedeOrigenId === item.sedeId
-    );
+      const prestamosConPlaceholder = prestamosActivos.filter(
+        (prestamo) => prestamo.sedeOrigenId !== item.sedeId
+      );
+      const prestamosPorCobrarDesdeEstaSede = prestamosActivos.filter(
+        (prestamo) => prestamo.sedeOrigenId === item.sedeId
+      );
 
-    if (equipoPrestadoConDeudaProveedor) {
-      await prisma.$transaction(async (tx) => {
+      if (equipoPrestadoConDeudaProveedor) {
         await tx.cajaMovimiento.create({
           data: {
             tipo: "EGRESO",
@@ -349,16 +358,14 @@ export async function POST(req: Request) {
                 : "Se pago la deuda al proveedor y se retiro el registro informativo del prestamo.",
           },
         });
-      });
 
-      return NextResponse.json({
-        ok: true,
-        mensaje: "Deuda pagada correctamente",
-      });
-    }
+        return NextResponse.json({
+          ok: true,
+          mensaje: "Deuda pagada correctamente",
+        });
+      }
 
-    if (equipoTrasladadoConDeudaProveedor || equipoPrestamoPagoConDeudaProveedor) {
-      await prisma.$transaction(async (tx) => {
+      if (equipoTrasladadoConDeudaProveedor || equipoPrestamoPagoConDeudaProveedor) {
         await tx.cajaMovimiento.create({
           data: {
             tipo: "EGRESO",
@@ -401,15 +408,13 @@ export async function POST(req: Request) {
                 : "Se pago la deuda al proveedor de un equipo ya trasladado.",
           },
         });
-      });
 
-      return NextResponse.json({
-        ok: true,
-        mensaje: "Deuda pagada correctamente",
-      });
-    }
+        return NextResponse.json({
+          ok: true,
+          mensaje: "Deuda pagada correctamente",
+        });
+      }
 
-    await prisma.$transaction(async (tx) => {
       await tx.cajaMovimiento.create({
         data: {
           tipo: "EGRESO",
@@ -498,12 +503,12 @@ export async function POST(req: Request) {
               : "Se pago la deuda del equipo.",
         },
       });
-    });
 
-    return NextResponse.json({
-      ok: true,
-      mensaje: "Deuda pagada correctamente",
-    });
+      return NextResponse.json({
+        ok: true,
+        mensaje: "Deuda pagada correctamente",
+      });
+    }, { isolationLevel: "ReadCommitted", timeout: 15_000 });
   } catch (error) {
     console.error("ERROR PAGAR DEUDA INVENTARIO:", error);
     return NextResponse.json(
