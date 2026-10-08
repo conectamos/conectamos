@@ -1,31 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FinancialPasswordSettings from "./_components/financial-password-settings";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
-import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import { DashboardSidebar, type NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
 import LogoutButton from "@/app/dashboard/_components/logout-button";
-
-type Resumen = {
-  cajaGeneralVentas: number;
-  saldoCaja: number;
-  cajaDisponible: number;
-  transferenciasVentas: number;
-  abonosTransferencia: number;
-  saldoTransferencias: number;
-  prestamosPorCobrar: number;
-  deudaEquipos: number;
-  financieras: Record<string, number>;
-  valorPendiente: number;
-  valorGarantia: number;
-  valorBodega: number;
-  totalGastosCartera: number;
-};
+import {
+  calcularBalanceFinanciero,
+  formatoPesos,
+  obtenerAlertasFinancieras,
+  obtenerSaldosFinancieras,
+  type FinancialSummary,
+} from "@/lib/financial-dashboard-view";
+import styles from "./financial.module.css";
 
 type SessionUser = {
   id: number;
@@ -36,756 +25,274 @@ type SessionUser = {
   rolId: number;
   rolNombre: string;
 };
-
-type Sede = {
-  id: number;
-  nombre: string;
+type Sede = { id: number; nombre: string };
+type CorteFinanciero = {
+  resumen: FinancialSummary;
+  cobertura: string;
+  actualizado: Date;
 };
-
-type Tone = "neutral" | "positive" | "negative" | "accent";
-
-function formatoPesos(valor: number) {
-  return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
-}
 
 function formatTimeLabel(date: Date) {
   return new Intl.DateTimeFormat("es-CO", {
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
+    timeZone: "America/Bogota",
   }).format(date);
 }
 
-function toneClasses(tone: Tone) {
-  switch (tone) {
-    case "positive":
-      return {
-        card: "border-slate-200 bg-white",
-        value: "text-emerald-700",
-        detail: "text-slate-500",
-      };
-    case "negative":
-      return {
-        card: "border-red-200 bg-red-50/80",
-        value: "text-red-700",
-        detail: "text-red-600",
-      };
-    case "accent":
-      return {
-        card: "border-[#d7c3a0] bg-[#fff9ef]",
-        value: "text-[#8f5b24]",
-        detail: "text-[#8f5b24]",
-      };
-    default:
-      return {
-        card: "border-slate-200 bg-white",
-        value: "text-slate-950",
-        detail: "text-slate-500",
-      };
-  }
-}
-
-function MetricCard({
-  label,
-  value,
-  detail,
-  tone = "neutral",
-  compactValue = false,
-}: {
+function FinancialRow({ icon, label, value, commitment = false, cash = false }: {
+  icon: DashboardIconName;
   label: string;
-  value: number | null;
-  detail: string;
-  tone?: Tone;
-  compactValue?: boolean;
+  value: number;
+  commitment?: boolean;
+  cash?: boolean;
 }) {
-  const styles = toneClasses(tone);
-  const formattedValue = value === null ? "—" : formatoPesos(value);
-  const hasLongValue = compactValue && formattedValue.length >= 15;
-
+  const formatted = formatoPesos(value);
   return (
-    <div
-      className={[
-        "min-w-0 rounded-2xl border py-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] transition",
-        compactValue ? "px-4" : "px-5",
-        styles.card,
-      ].join(" ")}
-    >
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-      <p
-        className={[
-          "mt-4 max-w-full font-black leading-[1.04] tabular-nums",
-          hasLongValue
-            ? "whitespace-nowrap text-[clamp(0.95rem,0.9vw,1.08rem)] tracking-[-0.04em]"
-            : compactValue
-              ? "text-[clamp(1.15rem,1.15vw,1.6rem)] tracking-tight [overflow-wrap:anywhere]"
-              : "text-[clamp(1.2rem,1.25vw,2.1rem)] tracking-tight [overflow-wrap:anywhere]",
-          styles.value,
-        ].join(" ")}
-      >
-        {formattedValue}
-      </p>
-      <p className={["mt-3 text-sm leading-6", styles.detail].join(" ")}>
-        {detail}
-      </p>
+    <div className={styles.financialRow}>
+      <dt className={styles.rowLabel}>
+        <span className={`${styles.rowIcon} ${commitment ? styles.commitmentIcon : ""}`}><DashboardIcon name={icon} className="h-6 w-6" /></span>
+        <span>{label}</span>
+      </dt>
+      <dd className={`${styles.rowValue} ${cash ? (value < 0 ? styles.negative : styles.positive) : ""} ${formatted.length > 18 ? styles.longRowValue : ""}`}>{formatted}</dd>
     </div>
-  );
-}
-
-function SectionHeader({
-  badge,
-  title,
-  description,
-}: {
-  badge: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div>
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-        {badge}
-      </p>
-      <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-        {title}
-      </h2>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
-    </div>
-  );
-}
-
-function ActionLink({
-  href,
-  label,
-  primary = false,
-}: {
-  href: string;
-  label: string;
-  primary?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold transition",
-        primary
-          ? "bg-[#e30613] text-white hover:bg-[#bd0711]"
-          : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
-      ].join(" ")}
-    >
-      {label}
-    </Link>
   );
 }
 
 export default function PanelFinancieroPage() {
-  const [resumen, setResumen] = useState<Resumen | null>(null);
+  const [corte, setCorte] = useState<CorteFinanciero | null>(null);
+  const corteRef = useRef<CorteFinanciero | null>(null);
+  const solicitudRef = useRef<AbortController | null>(null);
   const [error, setError] = useState("");
   const [actualizacionAdvertencia, setActualizacionAdvertencia] = useState("");
+  const [contextoAdvertencia, setContextoAdvertencia] = useState("");
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [contextoVersion, setContextoVersion] = useState(0);
   const [sedes, setSedes] = useState<Sede[]>([]);
+  const [catalogoFinancieras, setCatalogoFinancieras] = useState<string[]>([]);
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
-  const [ultimaActualizacion, setUltimaActualizacion] = useState<Date | null>(
-    null
-  );
+  const accionesRef = useRef<HTMLDetailsElement | null>(null);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
-
-  const cargarContexto = async () => {
-    try {
-      const sessionRes = await fetch("/api/session", { cache: "no-store" });
-      const sessionData = await sessionRes.json();
-
-      if (!sessionRes.ok) {
-        return;
-      }
-
-      setUser(sessionData);
-
-      if (["ADMIN", "AUDITOR"].includes(String(sessionData?.rolNombre || "").toUpperCase())) {
-        const sedesRes = await fetch("/api/sedes", { cache: "no-store" });
-        const sedesData = await sedesRes.json();
-
-        if (sedesRes.ok) {
-          setSedes(Array.isArray(sedesData) ? sedesData : []);
-        }
-      } else {
-        setSedes([]);
-        setSedeFiltroId("TODAS");
-      }
-    } catch {}
-  };
-
-  const cargarResumen = async () => {
-    try {
-      const params = new URLSearchParams();
-
-      if (esAdmin && sedeFiltroId !== "TODAS") {
-        params.set("sedeId", sedeFiltroId);
-      }
-
-      const endpoint = params.size
-        ? `/api/financiero?${params.toString()}`
-        : "/api/financiero";
-
-      const res = await fetch(endpoint, {
-        cache: "no-store",
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        const mensaje = data.error || "Error cargando panel financiero";
-
-        if (resumen) {
-          setActualizacionAdvertencia(
-            "No se pudo actualizar el panel en este momento. Se conservan los ultimos datos validos."
-          );
-        } else {
-          setError(mensaje);
-        }
-        return;
-      }
-
-      setResumen(data.resumen);
-      setError("");
-      setActualizacionAdvertencia("");
-      setUltimaActualizacion(new Date());
-    } catch {
-      if (resumen) {
-        setActualizacionAdvertencia(
-          "No se pudo actualizar el panel en este momento. Se conservan los ultimos datos validos."
-        );
-      } else {
-        setError("Error interno cargando panel financiero");
-      }
-    }
-  };
+  const coberturaKey = esAdmin ? sedeFiltroId : String(user?.sedeId || "TODAS");
+  // Nunca presentar el corte anterior con el nombre de una cobertura nueva.
+  const resumen = corte?.cobertura === coberturaKey ? corte.resumen : null;
+  const ultimaActualizacion = resumen ? corte?.actualizado : null;
 
   useEffect(() => {
-    const init = async () => {
-      await cargarContexto();
+    const controller = new AbortController();
+    const cargarContexto = async () => {
+      setError("");
+      try {
+        const sessionRes = await fetch("/api/session", { cache: "no-store", signal: controller.signal });
+        const sessionData = await sessionRes.json();
+        if (!sessionRes.ok) {
+          setError(sessionData.error || "No se pudo cargar la sesión");
+          return;
+        }
+        setUser(sessionData);
+        const peticiones = [fetch("/api/ventas/catalogo-personal", { cache: "no-store", signal: controller.signal })
+          .then(async (res) => {
+            const data = await res.json();
+            if (!res.ok || !Array.isArray(data.financieras)) throw new Error("No se pudo cargar el catálogo de financieras");
+            setCatalogoFinancieras(data.financieras.map((item: { nombre: string }) => item.nombre));
+          })];
+        if (["ADMIN", "AUDITOR"].includes(String(sessionData.rolNombre || "").toUpperCase())) {
+          peticiones.push(fetch("/api/sedes", { cache: "no-store", signal: controller.signal })
+            .then(async (res) => {
+              const data = await res.json();
+              if (!res.ok || !Array.isArray(data)) throw new Error("No se pudieron cargar las sedes");
+              setSedes(data);
+            }));
+        }
+        const resultados = await Promise.allSettled(peticiones);
+        if (!controller.signal.aborted) {
+          setContextoAdvertencia(resultados.some((resultado) => resultado.status === "rejected")
+            ? "No se pudo completar el catálogo de financieras o coberturas. Reintenta para mostrar todas las opciones."
+            : "");
+        }
+      } catch {
+        if (!controller.signal.aborted) setError("No se pudo cargar la sesión");
+      }
     };
+    void cargarContexto();
+    return () => controller.abort();
+  }, [contextoVersion]);
 
-    void init();
+  const cargarResumen = useCallback(async () => {
+    if (!user) return;
+    solicitudRef.current?.abort();
+    const controller = new AbortController();
+    solicitudRef.current = controller;
+    try {
+      const params = new URLSearchParams();
+      if (esAdmin && sedeFiltroId !== "TODAS") params.set("sedeId", sedeFiltroId);
+      const endpoint = params.size ? `/api/financiero?${params.toString()}` : "/api/financiero";
+      const res = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
+      const data = await res.json().catch(() => ({}));
+      if (controller.signal.aborted || solicitudRef.current !== controller) return;
+      if (!res.ok || !data.resumen) throw new Error(data.error || "Error cargando panel financiero");
+      const nuevoCorte = { resumen: data.resumen, cobertura: coberturaKey, actualizado: new Date() };
+      corteRef.current = nuevoCorte;
+      setCorte(nuevoCorte);
+      setError("");
+      setActualizacionAdvertencia("");
+    } catch (cause) {
+      if (controller.signal.aborted || solicitudRef.current !== controller) return;
+      if (corteRef.current?.cobertura === coberturaKey) {
+        setActualizacionAdvertencia("No se pudo actualizar el panel en este momento. Se conservan los últimos datos válidos.");
+      } else {
+        setError(cause instanceof Error ? cause.message : "Error interno cargando panel financiero");
+      }
+    }
+  }, [coberturaKey, esAdmin, sedeFiltroId, user]);
+
+  useEffect(() => {
+    setError("");
+    setActualizacionAdvertencia("");
+    void cargarResumen();
+    return () => solicitudRef.current?.abort();
+  }, [cargarResumen]);
+  useLiveRefresh(cargarResumen, { enabled: Boolean(user), intervalMs: 30000 });
+
+  useEffect(() => {
+    const cerrarAcciones = (event: PointerEvent) => {
+      if (accionesRef.current && !accionesRef.current.contains(event.target as Node)) accionesRef.current.open = false;
+    };
+    const cerrarConEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && accionesRef.current?.open) {
+        accionesRef.current.open = false;
+        accionesRef.current.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", cerrarAcciones);
+    document.addEventListener("keydown", cerrarConEscape);
+    return () => {
+      document.removeEventListener("pointerdown", cerrarAcciones);
+      document.removeEventListener("keydown", cerrarConEscape);
+    };
   }, []);
 
-  useLiveRefresh(
-    async () => {
-      if (!user) {
-        return;
-      }
-
-      await cargarResumen();
-    },
-    {
-      enabled: Boolean(user),
-      intervalMs: 30000,
-      runOnMount: true,
-    }
-  );
-
-  const totalFinancieras = Object.values(resumen?.financieras || {}).reduce(
-    (acc, value) => acc + Number(value || 0),
-    0
-  );
-
-  const activos =
-    Number(resumen?.cajaDisponible || 0) +
-    Number(resumen?.saldoTransferencias || 0) +
-    Number(resumen?.prestamosPorCobrar || 0) +
-    Number(resumen?.valorBodega || 0) +
-    Number(totalFinancieras || 0);
-
-  const pasivos =
-    Number(resumen?.deudaEquipos || 0) +
-    Number(resumen?.valorPendiente || 0) +
-    Number(resumen?.valorGarantia || 0) +
-    Number(resumen?.totalGastosCartera || 0);
-
-  const resumenGeneral = activos - pasivos;
-
-  const coberturaActual =
-    !esAdmin || sedeFiltroId === "TODAS"
-      ? esAdmin
-        ? "Todas las sedes"
-        : user?.sedeNombre || "Tu sede"
-      : sedes.find((sede) => String(sede.id) === sedeFiltroId)?.nombre ||
-        "Sede filtrada";
-
-  const financierasOrdenadas = useMemo(() => {
-    return Object.entries(resumen?.financieras || {})
-      .map(([nombre, valor]) => ({
-        nombre,
-        valor: Number(valor || 0),
-      }))
-      .sort((a, b) => b.valor - a.valor);
-  }, [resumen?.financieras]);
-
-  const valorMaximoFinanciera =
-    financierasOrdenadas.length > 0 ? financierasOrdenadas[0].valor : 0;
-
-  const alertas = useMemo(() => {
-    const items: Array<{
-      title: string;
-      detail: string;
-      tone: Tone;
-    }> = [];
-
-    if (resumenGeneral < 0) {
-      items.push({
-        title: "Resultado neto en rojo",
-        detail: `Los pasivos superan a los activos por ${formatoPesos(
-          Math.abs(resumenGeneral)
-        )}.`,
-        tone: "negative",
-      });
-    }
-
-    if (Number(resumen?.cajaDisponible || 0) < 0) {
-      items.push({
-        title: "Caja disponible negativa",
-        detail: `La caja disponible esta en ${formatoPesos(
-          Number(resumen?.cajaDisponible || 0)
-        )}.`,
-        tone: "negative",
-      });
-    }
-
-    if (Number(resumen?.valorPendiente || 0) > 0) {
-      items.push({
-        title: "Equipos pendientes",
-        detail: `Tienes ${formatoPesos(
-          Number(resumen?.valorPendiente || 0)
-        )} comprometidos en estado pendiente.`,
-        tone: "negative",
-      });
-    }
-
-    if (Number(resumen?.valorGarantia || 0) > 0) {
-      items.push({
-        title: "Garantias abiertas",
-        detail: `Hay ${formatoPesos(
-          Number(resumen?.valorGarantia || 0)
-        )} inmovilizados por garantia.`,
-        tone: "negative",
-      });
-    }
-
-    if (
-      Number(resumen?.totalGastosCartera || 0) > 0 &&
-      Number(resumen?.totalGastosCartera || 0) >=
-        Number(resumen?.deudaEquipos || 0)
-    ) {
-      items.push({
-        title: "Cartera con peso alto",
-        detail: `El gasto de cartera alcanza ${formatoPesos(
-          Number(resumen?.totalGastosCartera || 0)
-        )}.`,
-        tone: "negative",
-      });
-    }
-
-    if (items.length === 0) {
-      items.push({
-        title: "Operacion estable",
-        detail:
-          "No hay alertas financieras criticas con los datos visibles en este corte.",
-        tone: "positive",
-      });
-    }
-
-    return items.slice(0, 4);
-  }, [resumen, resumenGeneral]);
-
-  const estadoResumen =
-    resumenGeneral >= 0 ? "Balance saludable" : "Balance bajo presion";
-
+  const { totalFinancieras, activos, pasivos, resultadoNeto } = calcularBalanceFinanciero(resumen);
+  const alertas = useMemo(() => resumen ? obtenerAlertasFinancieras(resumen, resultadoNeto) : [], [resumen, resultadoNeto]);
+  const financierasOrdenadas = useMemo(() => obtenerSaldosFinancieras(resumen, catalogoFinancieras), [resumen, catalogoFinancieras]);
+  const coberturaActual = !esAdmin || sedeFiltroId === "TODAS"
+    ? esAdmin ? "Todas las sedes" : user?.sedeNombre || "Tu sede"
+    : sedes.find((sede) => String(sede.id) === sedeFiltroId)?.nombre || "Sede filtrada";
   const navigationItems: NavigationItem[] = [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" },
     { href: "/prestamos", icon: "loans", label: "Préstamos" },
-    { href: "/caja", icon: "cash", label: "Caja" },
-    {
-      href: "/dashboard/aprobaciones",
-      icon: "approvals",
-      label: "Aprobaciones",
-    },
-    {
-      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
-      icon: "reports",
-      label: "Reportes",
-    },
-    ...(esAdmin
-      ? ([
-          {
-            href: "/dashboard/sedes",
-            icon: "settings",
-            label: "Configuración",
-          },
-        ] satisfies NavigationItem[])
-      : []),
+    { href: "/caja", icon: "wallet", label: "Caja" },
+    { href: "/dashboard/aprobaciones", icon: "approvals", label: "Aprobaciones" },
+    { href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico", icon: "reports", label: "Reportes" },
+    ...(esAdmin ? [{ href: "/dashboard/sedes", icon: "settings", label: "Configuración" } satisfies NavigationItem] : []),
   ];
-  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
+  const inicialesUsuario = String(user?.nombre || user?.usuario || "").split(/\s+/).filter(Boolean).slice(0, 2).map((parte) => parte[0]?.toUpperCase()).join("");
+  const summaryValue = (valor: number) => {
+    const length = formatoPesos(valor).length;
+    return `${styles.summaryValue} ${length > 17 ? styles.extraLongSummaryValue : length > 13 ? styles.mediumSummaryValue : length > 12 ? styles.longSummaryValue : ""}`;
+  };
 
   return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/caja"
-        coverageLabel={coberturaActual}
-        items={navigationItems}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
-                Centro financiero
-              </h1>
-              <p className="mt-1 text-sm text-slate-500 sm:text-base">
-                Liquidez, riesgo operativo, cartera y financieras
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  Cobertura: {coberturaActual}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  Estado: {resumen ? estadoResumen : "Calculando balance"}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  Actualizado:{" "}
-                  {ultimaActualizacion
-                    ? formatTimeLabel(ultimaActualizacion)
-                    : "Cargando..."}
-                </span>
-              </div>
+    <div className={styles.page}>
+      <DashboardSidebar activeHref="/caja" coverageLabel={coberturaActual} items={navigationItems} appearance="financial" />
+      <div className={styles.content}>
+        <main className={styles.main}>
+          <header className={styles.header}>
+            <div className={styles.heading}><h1>Centro financiero</h1><p>Resumen de tu operación</p></div>
+            <div className={styles.user}>
+              <span className={styles.avatar}>{inicialesUsuario || <DashboardIcon name="user" />}</span>
+              <div><p>{user?.nombre || user?.usuario || "Cargando usuario"}</p><span>{user?.rolNombre || "Sesión activa"}</span></div>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">
-                    {user?.nombre || user?.usuario || "Cargando usuario"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {user?.rolNombre || "Sesión activa"}
-                  </p>
+            <div className={styles.toolbar}>
+              <label className={styles.coverage}><span>Cobertura</span>
+                <select aria-label="Cobertura" value={esAdmin ? sedeFiltroId : coberturaKey} onChange={(event) => setSedeFiltroId(event.target.value)} disabled={!esAdmin}>
+                  {esAdmin ? <><option value="TODAS">Todas las sedes</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</> : <option value={coberturaKey}>{coberturaActual}</option>}
+                </select>
+              </label>
+              <FinancialPasswordSettings />
+              <Link href="/dashboard/financiero/abonos" className={`${styles.action} ${styles.redAction}`}>Registrar abono</Link>
+              <Link href="/dashboard/financiero/cartera" className={`${styles.action} ${styles.darkAction}`}>Registrar cartera</Link>
+              <details className={styles.moreActions} ref={accionesRef}>
+                <summary className={styles.action}>Más acciones<DashboardIcon name="chevron" className="h-4 w-4" /></summary>
+                <div className={styles.actionsMenu}>
+                  <Link href="/dashboard" className={styles.menuAction}>Volver<DashboardIcon name="arrow" className="h-4 w-4 rotate-180" /></Link>
+                  <Link href="/dashboard/financiero/abonos/detalle" className={styles.menuAction}>Detalle de abonos<DashboardIcon name="arrow" className="h-4 w-4" /></Link>
+                  <Link href="/dashboard/financiero/cartera/detalle" className={styles.menuAction}>Detalle de cartera<DashboardIcon name="arrow" className="h-4 w-4" /></Link>
+                  <button type="button" className={styles.menuAction} disabled={!user} onClick={() => { if (accionesRef.current) accionesRef.current.open = false; setContextoVersion((version) => version + 1); }}>Actualizar<DashboardIcon name="refresh" className="h-4 w-4" /></button>
+                  <LogoutButton variant="light" className={styles.logout} />
+                  {resumen && <p className={styles.menuStatus}>{resultadoNeto >= 0 ? "Balance saludable" : "Balance bajo presión"}</p>}
                 </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
+              </details>
             </div>
+            <p className={styles.updated} role="status">{ultimaActualizacion ? <>Actualizado <time dateTime={ultimaActualizacion.toISOString()}>{formatTimeLabel(ultimaActualizacion)}</time></> : "Actualizando corte…"}</p>
           </header>
 
-          <section className="mt-6 grid gap-4 md:grid-cols-3" aria-label="Balance financiero">
-            <MetricCard
-              label="Resultado neto"
-              value={resumen ? resumenGeneral : null}
-              detail="Activos disponibles menos compromisos operativos."
-              tone={resumenGeneral >= 0 ? "positive" : "negative"}
-            />
-            <MetricCard
-              label="Activos"
-              value={resumen ? activos : null}
-              detail="Liquidez, cartera por cobrar, bodega y financieras."
-              tone="positive"
-            />
-            <MetricCard
-              label="Pasivos"
-              value={resumen ? pasivos : null}
-              detail="Deudas, pendientes, garantías y gastos de cartera."
-              tone="negative"
-            />
+          {error && <div className={styles.error} role="alert">{error}<button type="button" onClick={() => { if (user) void cargarResumen(); else setContextoVersion((version) => version + 1); }}>Reintentar</button></div>}
+          {actualizacionAdvertencia && <div className={styles.warning} role="status">{actualizacionAdvertencia}</div>}
+          {contextoAdvertencia && <div className={`${styles.warning} ${styles.error}`} role="status">{contextoAdvertencia}<button type="button" onClick={() => setContextoVersion((version) => version + 1)}>Reintentar</button></div>}
+
+          <section className={styles.balance} aria-label="Balance financiero" aria-busy={!resumen}>
+            <div className={styles.netResult}>
+              <h2>Resultado neto</h2><p className={summaryValue(resultadoNeto)}>{resumen ? formatoPesos(resultadoNeto) : "—"}</p>
+              <p className={styles.resultDescription}>Activos menos pasivos</p>
+              {resumen && <span className="sr-only">{resultadoNeto >= 0 ? "Balance saludable" : "Balance bajo presión"}</span>}
+            </div>
+            <div className={styles.balanceItem}><h2>Activos</h2><p className={summaryValue(activos)}>{resumen ? formatoPesos(activos) : "—"}</p></div>
+            <div className={styles.balanceItem}><h2>Pasivos</h2><p className={summaryValue(pasivos)}>{resumen ? formatoPesos(pasivos) : "—"}</p></div>
           </section>
 
-        <div className="mt-6 space-y-6">
-        <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <SectionHeader
-              badge="Acciones y control"
-              title="Operacion financiera"
-              description="Accede rapido a los movimientos financieros clave y controla la cobertura del panel."
-            />
-
-            <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
-              {esAdmin && (
-                <label className="flex min-w-[240px] flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Cobertura financiera
-                  <select
-                    value={sedeFiltroId}
-                    onChange={(event) => setSedeFiltroId(event.target.value)}
-                    className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                  >
-                    <option value="TODAS">Todas las sedes</option>
-                    {sedes.map((sede) => (
-                      <option key={sede.id} value={String(sede.id)}>
-                        {sede.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+          {!resumen ? <div className={styles.loading} role="status">{error ? "No hay datos disponibles para esta cobertura." : "Cargando panel financiero…"}</div> : <>
+            <div className={styles.alerts}>
+              {alertas.length === 0 ? <p className={styles.noAlerts}><span aria-hidden="true" />Sin alertas críticas en este corte.</p> : (
+                <details className={styles.alertDetails}>
+                  <summary><DashboardIcon name="warning" className="h-5 w-5" /><span>{alertas.length} {alertas.length === 1 ? "alerta financiera" : "alertas financieras"} en este corte</span><span className={styles.alertPreview}>{alertas.map((alerta) => alerta.title).join(" · ")}</span><span className={styles.alertDetailLabel}>Ver detalle</span><DashboardIcon name="chevron" className="h-4 w-4" /></summary>
+                  <ul>{alertas.map((alerta) => <li key={alerta.title}><div><strong>{alerta.title}</strong><p>{alerta.detail}</p></div>{alerta.href && <Link href={alerta.href} aria-label={`Ver detalle: ${alerta.title}`}>Ver detalle<DashboardIcon name="arrow" className="h-4 w-4" /></Link>}</li>)}</ul>
+                </details>
               )}
-
-              <div className="flex flex-wrap gap-3">
-                <FinancialPasswordSettings />
-                <ActionLink
-                  href="/dashboard/financiero/abonos"
-                  label="Registrar abono"
-                  primary
-                />
-                <ActionLink
-                  href="/dashboard/financiero/cartera"
-                  label="Registrar cartera"
-                  primary
-                />
-                <ActionLink
-                  href="/dashboard/financiero/abonos/detalle"
-                  label="Detalle abonos"
-                />
-                <ActionLink
-                  href="/dashboard/financiero/cartera/detalle"
-                  label="Detalle cartera"
-                />
-                <ActionLink href="/dashboard" label="Volver" />
-              </div>
             </div>
-          </div>
-        </section>
 
-        {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-            {error}
-          </div>
-        )}
-
-        {actualizacionAdvertencia && (
-          <div
-            className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800"
-            role="status"
-          >
-            {actualizacionAdvertencia}
-          </div>
-        )}
-
-        {!resumen ? (
-          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center text-slate-500 shadow-sm">
-            Cargando panel financiero...
-          </div>
-        ) : (
-          <>
-            <div className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-                <SectionHeader
-                  badge="Liquidez"
-                  title="Lectura operativa"
-                  description="Dinero disponible, flujos de transferencia y respaldo financiero inmediato."
-                />
-
-                <div className="mt-6 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
-                  <MetricCard
-                    label="Caja disponible"
-                    value={resumen.cajaDisponible}
-                    detail="Ventas mas movimientos de caja."
-                    tone={resumen.cajaDisponible >= 0 ? "positive" : "negative"}
-                    compactValue
-                  />
-                  <MetricCard
-                    label="Transferencias saldo"
-                    value={resumen.saldoTransferencias}
-                    detail="Transferencias menos abonos registrados."
-                    tone={resumen.saldoTransferencias >= 0 ? "positive" : "negative"}
-                    compactValue
-                  />
-                  <MetricCard
-                    label="Financieras saldo"
-                    value={totalFinancieras}
-                    detail="Pendiente por recaudar en financieras."
-                    tone={totalFinancieras >= 0 ? "positive" : "negative"}
-                    compactValue
-                  />
-                  <MetricCard
-                    label="Prestamos por cobrar"
-                    value={resumen.prestamosPorCobrar}
-                    detail="Prestamos activos salientes pendientes por cierre o pago."
-                    tone={resumen.prestamosPorCobrar >= 0 ? "positive" : "negative"}
-                    compactValue
-                  />
-                </div>
+            <div className={styles.centralGrid}>
+              <section className={styles.panel} aria-labelledby="availability-title">
+                <h2 id="availability-title">Disponibilidad y cobros</h2>
+                <dl>
+                  <FinancialRow icon="wallet" label="Caja disponible" value={resumen.cajaDisponible} cash />
+                  <FinancialRow icon="transfer" label="Transferencias" value={resumen.saldoTransferencias} />
+                  <FinancialRow icon="document" label="Financieras por cobrar" value={totalFinancieras} />
+                  <FinancialRow icon="receivable" label="Préstamos por cobrar" value={resumen.prestamosPorCobrar} />
+                  <FinancialRow icon="inventory" label="Equipos en bodega" value={resumen.valorBodega} />
+                </dl>
               </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-                <SectionHeader
-                  badge="Alertas"
-                  title="Lectura ejecutiva"
-                  description="Señales rapidas para priorizar decisiones sin revisar todo el detalle."
-                />
-
-                <div className="mt-6 space-y-3">
-                  {alertas.map((alerta, index) => {
-                    const styles = toneClasses(alerta.tone);
-
-                    return (
-                      <div
-                        key={`${alerta.title}-${index}`}
-                        className={[
-                          "rounded-2xl border px-4 py-4",
-                          styles.card,
-                        ].join(" ")}
-                      >
-                        <p className={["text-sm font-bold", styles.value].join(" ")}>
-                          {alerta.title}
-                        </p>
-                        <p className={["mt-1 text-sm", styles.detail].join(" ")}>
-                          {alerta.detail}
-                        </p>
-                      </div>
-                    );
-                  })}
+              <section className={`${styles.panel} ${styles.commitments}`} aria-labelledby="commitments-title">
+                <h2 id="commitments-title">Compromisos</h2>
+                <dl>
+                  <FinancialRow icon="document" label="Gasto de cartera" value={resumen.totalGastosCartera} commitment />
+                  <FinancialRow icon="inventory" label="Deuda de equipos" value={resumen.deudaEquipos} commitment />
+                  <FinancialRow icon="clock" label="Equipos pendientes" value={resumen.valorPendiente} commitment />
+                  <FinancialRow icon="shield" label="Garantías" value={resumen.valorGarantia} commitment />
+                </dl>
+                <div className={styles.detailLinks}>
+                  <Link href="/dashboard/financiero/abonos/detalle">Detalle de abonos<DashboardIcon name="arrow" className="h-4 w-4" /></Link>
+                  <Link href="/dashboard/financiero/cartera/detalle">Detalle de cartera<DashboardIcon name="arrow" className="h-4 w-4" /></Link>
                 </div>
               </section>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-                <SectionHeader
-                  badge="Riesgo y cartera"
-                  title="Compromisos abiertos"
-                  description="Pasivos operativos que presionan caja o amarran inventario."
-                />
-
-                <div className="mt-6 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
-                  <MetricCard
-                    label="Gasto cartera"
-                    value={resumen.totalGastosCartera}
-                    detail="Salidas registradas en cartera."
-                    tone={
-                      resumen.totalGastosCartera <= 0 ? "positive" : "negative"
-                    }
-                    compactValue
-                  />
-                  <MetricCard
-                    label="Deuda equipos"
-                    value={resumen.deudaEquipos}
-                    detail="Equipos con deuda financiera activa."
-                    tone="negative"
-                    compactValue
-                  />
-                  <MetricCard
-                    label="Pendiente"
-                    value={resumen.valorPendiente}
-                    detail="Inventario inmovilizado por pendiente."
-                    tone="negative"
-                    compactValue
-                  />
-                  <MetricCard
-                    label="Garantia"
-                    value={resumen.valorGarantia}
-                    detail="Valor comprometido en garantias."
-                    tone="negative"
-                    compactValue
-                  />
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-                <SectionHeader
-                  badge="Inventario"
-                  title="Respaldo operativo"
-                  description="Valor del inventario disponible para soportar la operacion."
-                />
-
-                <div className="mt-6">
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 shadow-sm">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-500">
-                      Equipos en bodega
-                    </p>
-                    <p className="mt-3 text-4xl font-black text-emerald-700">
-                      {formatoPesos(resumen.valorBodega)}
-                    </p>
-                    <p className="mt-3 max-w-md text-sm leading-6 text-emerald-600">
-                      Este valor funciona como respaldo inmediato del panel, al
-                      concentrar el inventario disponible para venta o rotacion.
-                    </p>
-                  </div>
-                </div>
-              </section>
-            </div>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <SectionHeader
-                  badge="Financieras"
-                  title="Ranking de saldos"
-                  description="Comparativo visual de las financieras con mayor peso en el corte actual."
-                />
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Total saldo financieras:{" "}
-                  <span className="font-bold text-slate-950">
-                    {formatoPesos(totalFinancieras)}
-                  </span>
-                </div>
-              </div>
-
-              {financierasOrdenadas.length === 0 ? (
-                <p className="mt-6 text-sm text-slate-500">
-                  No hay financieras registradas para esta vista.
-                </p>
-              ) : (
-                <div className="mt-6 grid gap-4 xl:grid-cols-2">
-                  {financierasOrdenadas.map((item) => {
-                    const width =
-                      valorMaximoFinanciera > 0
-                        ? Math.max(8, (item.valor / valorMaximoFinanciera) * 100)
-                        : 0;
-
-                    return (
-                      <div
-                        key={item.nombre}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
-                      >
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                              {item.nombre}
-                            </p>
-                            <p className="mt-2 text-xl font-black text-slate-950">
-                              {formatoPesos(item.valor)}
-                            </p>
-                          </div>
-
-                          <div className="text-right text-sm text-slate-500">
-                            {totalFinancieras > 0
-                              ? `${((item.valor / totalFinancieras) * 100).toFixed(1)}%`
-                              : "0.0%"}
-                          </div>
-                        </div>
-
-                        <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-slate-200">
-                          <div
-                            className="h-full rounded-full bg-[#e30613]"
-                            style={{ width: `${width}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+            <section className={`${styles.panel} ${styles.balancesPanel}`} aria-labelledby="finance-balances-title">
+              <div className={styles.balancesHeading}><h2 id="finance-balances-title">Saldos por financiera</h2><p>Total <strong>{formatoPesos(totalFinancieras)}</strong></p></div>
+              {financierasOrdenadas.length === 0 ? <p className={styles.empty}>No hay financieras registradas para esta vista.</p> : (
+                <table className={styles.financeTable}>
+                  <thead><tr><th scope="col">Financiera</th><th scope="col">Saldo pendiente</th><th scope="col">Participación</th></tr></thead>
+                  <tbody>{financierasOrdenadas.map((item) => <tr key={item.nombre}>
+                    <th scope="row">{item.nombre}</th><td data-label="Saldo pendiente">{formatoPesos(item.valor)}</td>
+                    <td data-label="Participación"><div className={styles.participation}><div className={styles.barTrack} aria-hidden="true"><div className={styles.barFill} style={{ width: `${item.anchoBarra}%` }} /></div><span>{new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 }).format(item.participacion)}%</span></div></td>
+                  </tr>)}</tbody>
+                </table>
               )}
             </section>
-          </>
-        )}
-        </div>
+          </>}
         </main>
       </div>
     </div>

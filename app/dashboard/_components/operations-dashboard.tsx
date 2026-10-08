@@ -60,39 +60,53 @@ function initials(nombre: string) {
 
 function SidebarContent({
   activeHref,
+  appearance,
   coverageLabel,
   footerMode,
   items,
   panelLabel,
 }: {
   activeHref?: string;
+  appearance: "default" | "financial";
   coverageLabel: string;
   footerMode: "coverage" | "logout";
   items: NavigationItem[];
   panelLabel: string;
 }) {
+  const financial = appearance === "financial";
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#11161d] text-white">
-      <div className="flex h-[104px] shrink-0 items-center gap-3 border-b border-white/5 px-5">
-        <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full border border-white/15 bg-[#e30613]">
+      <div className={financial
+        ? "flex h-[104px] shrink-0 items-center gap-[11px] px-[26px]"
+        : "flex h-[104px] shrink-0 items-center gap-3 border-b border-white/5 px-5"}>
+        <div className={financial
+          ? "relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-[#e30613]"
+          : "relative h-11 w-11 shrink-0 overflow-hidden rounded-full border border-white/15 bg-[#e30613]"}>
           <Image
             src="/branding/conectamos-logo.png"
             alt="Logo CONECTAMOS"
             fill
-            sizes="44px"
+            sizes={financial ? "40px" : "44px"}
             className="object-cover"
             priority
           />
         </div>
         <div>
-          <p className="text-[17px] font-black tracking-[0.035em]">CONECTAMOS</p>
-          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.19em] text-white/45">
-            {panelLabel}
-          </p>
+          <p className={financial
+            ? "text-[16px] font-extrabold tracking-[0.065em]"
+            : "text-[17px] font-black tracking-[0.035em]"}>CONECTAMOS</p>
+          {!financial && (
+            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.19em] text-white/45">
+              {panelLabel}
+            </p>
+          )}
         </div>
       </div>
 
-      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto py-5" aria-label="Navegación principal">
+      <nav className={financial
+        ? "min-h-0 flex-1 overflow-y-auto py-[6px]"
+        : "min-h-0 flex-1 space-y-1 overflow-y-auto py-5"} aria-label="Navegación principal">
         {items.map((item, index) => {
           const activo = activeHref ? item.href === activeHref : index === 0;
 
@@ -102,13 +116,17 @@ function SidebarContent({
               href={item.href}
               aria-current={activo ? "page" : undefined}
               className={[
-                "relative flex min-h-12 items-center gap-4 px-6 text-[15px] font-semibold transition",
+                financial
+                  ? "relative flex min-h-14 items-center gap-[22px] px-[30px] text-[15px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
+                  : "relative flex min-h-12 items-center gap-4 px-6 text-[15px] font-semibold transition",
                 activo
                   ? "bg-white/[0.075] text-white"
                   : "text-slate-300 hover:bg-white/[0.045] hover:text-white",
               ].join(" ")}
             >
-              {activo && <span className="absolute inset-y-0 left-0 w-1 rounded-r bg-[#e30613]" />}
+              {activo && <span className={financial
+                ? "absolute inset-y-0 left-0 w-[6px] rounded-r bg-[#e30613]"
+                : "absolute inset-y-0 left-0 w-1 rounded-r bg-[#e30613]"} />}
               <DashboardIcon
                 name={item.icon}
                 className={[
@@ -116,20 +134,28 @@ function SidebarContent({
                   activo ? "text-[#ff1f2d]" : "text-slate-400",
                 ].join(" ")}
               />
-              <span>{item.label}</span>
+              <span className={financial && activo ? "font-bold" : undefined}>{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="shrink-0 border-t border-white/10 p-5">
+      <div className={financial
+        ? "flex min-h-[106px] shrink-0 items-center border-t border-white/10 px-[30px] py-6"
+        : "shrink-0 border-t border-white/10 p-5"}>
         {footerMode === "logout" ? (
           <LogoutButton className="w-full justify-start rounded-xl border-0 bg-transparent px-2 text-slate-200 shadow-none hover:bg-white/[0.06]" />
         ) : (
-          <div className="flex items-center gap-3 rounded-xl bg-white/[0.045] px-3 py-3">
-            <DashboardIcon name="store" className="h-6 w-6 shrink-0 text-slate-300" />
+          <div className={financial
+            ? "flex min-w-0 w-full items-center gap-4"
+            : "flex items-center gap-3 rounded-xl bg-white/[0.045] px-3 py-3"}>
+            <DashboardIcon name={financial ? "database" : "store"} className={financial
+              ? "h-7 w-7 shrink-0 text-slate-400"
+              : "h-6 w-6 shrink-0 text-slate-300"} />
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-white">{coverageLabel}</p>
+              <p className={financial
+                ? "break-words text-sm font-medium leading-5 text-white"
+                : "truncate text-sm font-bold text-white"}>{coverageLabel}</p>
               <p className="mt-0.5 text-xs text-slate-400">Cobertura activa</p>
             </div>
           </div>
@@ -141,12 +167,14 @@ function SidebarContent({
 
 export function DashboardSidebar({
   activeHref,
+  appearance = "default",
   coverageLabel,
   footerMode = "coverage",
   items,
   panelLabel = "Panel operativo",
 }: {
   activeHref?: string;
+  appearance?: "default" | "financial";
   coverageLabel: string;
   footerMode?: "coverage" | "logout";
   items: NavigationItem[];
@@ -154,9 +182,12 @@ export function DashboardSidebar({
 }) {
   return (
     <>
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[252px] lg:block">
+      <aside className={appearance === "financial"
+        ? "fixed inset-y-0 left-0 z-40 hidden w-[230px] lg:block"
+        : "fixed inset-y-0 left-0 z-40 hidden w-[252px] lg:block"}>
         <SidebarContent
           activeHref={activeHref}
+          appearance={appearance}
           coverageLabel={coverageLabel}
           footerMode={footerMode}
           items={items}
@@ -189,6 +220,7 @@ export function DashboardSidebar({
           <div className="absolute inset-x-0 top-full max-h-[calc(100vh-70px)] overflow-y-auto shadow-2xl">
             <SidebarContent
               activeHref={activeHref}
+              appearance={appearance}
               coverageLabel={coverageLabel}
               footerMode={footerMode}
               items={items}

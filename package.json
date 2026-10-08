@@ -17,6 +17,7 @@
     "test:login": "node --experimental-strip-types --test tests/login-resilience-contract.test.mjs",
     "test:radar": "node --experimental-strip-types --test tests/radar-inventory-export.test.mjs",
     "test:vendor-email": "node --experimental-strip-types --test tests/vendor-sale-email.test.mjs",
+    "test:financiero": "node --experimental-strip-types --test tests/financial-dashboard-view.test.mjs",
     "proveedores:vapid": "node scripts/generar-vapid.mjs",
     "proveedores:notificar": "node scripts/notificar-proveedores.mjs",
     "db:apply-proveedores": "prisma db execute --file scripts/apply-proveedores-schema.sql",

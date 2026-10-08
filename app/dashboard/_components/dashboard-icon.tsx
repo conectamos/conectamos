@@ -21,7 +21,15 @@ export type DashboardIconName =
   | "send"
   | "document"
   | "download"
-  | "catalog";
+  | "catalog"
+  | "wallet"
+  | "transfer"
+  | "clock"
+  | "shield"
+  | "chevron"
+  | "refresh"
+  | "database"
+  | "receivable";
 
 export default function DashboardIcon({
   name,
@@ -42,6 +50,22 @@ export default function DashboardIcon({
   };
 
   switch (name) {
+    case "database":
+      return <svg {...common}><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0" /></svg>;
+    case "receivable":
+      return <svg {...common}><circle cx="14" cy="6" r="4" /><path d="M14 4v4m1.5-3.2c-.8-1-3-.7-3 .3 0 1.2 3 .1 3 1.3 0 1-2.2 1.3-3 .3M3 21v-6h3l3-2h4a2 2 0 0 1 0 4h-3m-4 4h7l8-6a2 2 0 0 0-3-2l-3 2M6 15v6" /></svg>;
+    case "wallet":
+      return <svg {...common}><path d="M19 7V4L5 6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H5" /><path d="M21 12h-5v5h5m-3-2.5h.01" /></svg>;
+    case "transfer":
+      return <svg {...common}><path d="M3 7h17m-4-4 4 4-4 4M21 17H4m4-4-4 4 4 4" /></svg>;
+    case "clock":
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l4 2" /></svg>;
+    case "shield":
+      return <svg {...common}><path d="m12 3 8 3v6c0 5-8 9-8 9S4 17 4 12V6l8-3Z" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>;
+    case "chevron":
+      return <svg {...common}><path d="m6 9 6 6 6-6" /></svg>;
+    case "refresh":
+      return <svg {...common}><path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5" /></svg>;
     case "home":
       return (
         <svg {...common}>
