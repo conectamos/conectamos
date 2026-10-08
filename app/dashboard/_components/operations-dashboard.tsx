@@ -11,6 +11,7 @@ import LogoutButton from "./logout-button";
 import { formatoPesos, formatoNumero } from "@/lib/monthly-reports-view";
 import { HomeDetailDialog, HomeProfile, OperationsTabs } from "./home-interactions";
 import styles from "./home.module.css";
+import whiteSidebarStyles from "./sidebar-white.module.css";
 import OperationsToolCenter, { type OperationsToolGroup } from "./operations-tool-center";
 
 type CommercialSummary = Awaited<ReturnType<typeof getMonthlyCommercialSummary>>;
@@ -38,13 +39,66 @@ function SidebarContent({
   panelLabel,
 }: {
   activeHref?: string;
-  appearance: "default" | "financial";
+  appearance: "default" | "financial" | "white";
   coverageLabel: string;
   footerMode: "coverage" | "logout";
   items: NavigationItem[];
   panelLabel: string;
 }) {
   const financial = appearance === "financial";
+
+  if (appearance === "white") {
+    return (
+      <div className={whiteSidebarStyles.root}>
+        <div className={whiteSidebarStyles.brand}>
+          <div className={whiteSidebarStyles.logo}>
+            <Image
+              src="/branding/conectamos-logo.png"
+              alt="Logo CONECTAMOS"
+              fill
+              sizes="40px"
+              className="object-cover"
+              priority
+            />
+          </div>
+          <p className={whiteSidebarStyles.wordmark}>CONECTAMOS</p>
+        </div>
+
+        <nav className={whiteSidebarStyles.navigation} aria-label="Navegación principal">
+          {items.map((item, index) => {
+            const activo = activeHref ? item.href === activeHref : index === 0;
+
+            return (
+              <Link
+                key={`${item.label}-${item.href}`}
+                href={item.href}
+                aria-current={activo ? "page" : undefined}
+                className={`${whiteSidebarStyles.navigationLink} ${activo ? whiteSidebarStyles.activeLink : ""}`}
+              >
+                <DashboardIcon name={item.icon} className={whiteSidebarStyles.navigationIcon} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className={whiteSidebarStyles.footer}>
+          {footerMode === "logout" ? (
+            <LogoutButton variant="light" className={whiteSidebarStyles.logout} />
+          ) : (
+            <div className={whiteSidebarStyles.coverage}>
+              <DashboardIcon name="store" className={whiteSidebarStyles.coverageIcon} />
+              <div className={whiteSidebarStyles.coverageText}>
+                <p className={whiteSidebarStyles.coverageName}>{coverageLabel}</p>
+                <p className={whiteSidebarStyles.coverageLabel}>Cobertura activa</p>
+              </div>
+              <DashboardIcon name="chevron" className={whiteSidebarStyles.coverageChevron} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#11161d] text-white">
@@ -145,12 +199,64 @@ export function DashboardSidebar({
   panelLabel = "Panel operativo",
 }: {
   activeHref?: string;
-  appearance?: "default" | "financial";
+  appearance?: "default" | "financial" | "white";
   coverageLabel: string;
   footerMode?: "coverage" | "logout";
   items: NavigationItem[];
   panelLabel?: string;
 }) {
+  if (appearance === "white") {
+    return (
+      <>
+        <aside className={whiteSidebarStyles.desktop}>
+          <SidebarContent
+            activeHref={activeHref}
+            appearance={appearance}
+            coverageLabel={coverageLabel}
+            footerMode={footerMode}
+            items={items}
+            panelLabel={panelLabel}
+          />
+        </aside>
+
+        <div className={whiteSidebarStyles.mobile}>
+          <details className={whiteSidebarStyles.mobileDetails}>
+            <summary className={whiteSidebarStyles.summary} aria-label="Menú de navegación de CONECTAMOS">
+              <div className={whiteSidebarStyles.mobileBrand}>
+                <div className={whiteSidebarStyles.logo}>
+                  <Image
+                    src="/branding/conectamos-logo.png"
+                    alt="Logo CONECTAMOS"
+                    fill
+                    sizes="40px"
+                    className="object-cover"
+                  />
+                </div>
+                <span className={whiteSidebarStyles.wordmark}>CONECTAMOS</span>
+              </div>
+              <span className={`${whiteSidebarStyles.menuControl} ${whiteSidebarStyles.openControl}`}>
+                <DashboardIcon name="menu" className={whiteSidebarStyles.mobileIcon} />
+              </span>
+              <span className={`${whiteSidebarStyles.menuControl} ${whiteSidebarStyles.closeControl}`}>
+                <DashboardIcon name="close" className={whiteSidebarStyles.mobileIcon} />
+              </span>
+            </summary>
+            <div className={whiteSidebarStyles.dropdown}>
+              <SidebarContent
+                activeHref={activeHref}
+                appearance={appearance}
+                coverageLabel={coverageLabel}
+                footerMode={footerMode}
+                items={items}
+                panelLabel={panelLabel}
+              />
+            </div>
+          </details>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <aside className={appearance === "financial"
