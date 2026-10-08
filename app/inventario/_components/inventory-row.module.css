@@ -1,0 +1,640 @@
+.metric {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 24px;
+  color: #11161d;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.metricSymbol {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  color: #475569;
+}
+
+.metricIcon {
+  width: 28px;
+  height: 28px;
+}
+
+.metricContent {
+  min-width: 0;
+  flex: 1;
+}
+
+.metricLabel {
+  margin: 0;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.metricValue {
+  margin: 5px 0 0;
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+
+.metricDetail {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.alertMetric .metricSymbol,
+.alertMetric .metricValue,
+.negative {
+  color: #e30613;
+}
+
+.financialMetric {
+  gap: 22px;
+}
+
+.financialMetric .metricSymbol {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: #f1f5f9;
+}
+
+.financialMetric.alertMetric .metricSymbol {
+  background: #fff1f2;
+}
+
+.financialMetric .metricIcon {
+  width: 25px;
+  height: 25px;
+}
+
+.financialMetric .metricValue {
+  font-size: clamp(20px, calc(480px / max(17, var(--value-length, 17))), 28px);
+}
+
+.row {
+  border-top: 1px solid #e2e8f0;
+  color: #11161d;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  transition: background-color 150ms ease;
+}
+
+.row > td {
+  min-width: 0;
+  padding: 14px 12px;
+  vertical-align: middle;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.row:hover {
+  background: #fafbfc;
+}
+
+.selectedRow {
+  background: #fff8f8;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.checkbox {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin: 0;
+  accent-color: #e30613;
+  cursor: pointer;
+}
+
+.toggle {
+  display: flex;
+  width: 28px;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0;
+  color: #11161d;
+  cursor: pointer;
+}
+
+.toggle:hover,
+.menuToggle:hover,
+.closeDetail:hover {
+  background: #f1f5f9;
+}
+
+.toggleIcon {
+  width: 18px;
+  height: 18px;
+  transform: rotate(-90deg);
+}
+
+.toggleIconExpanded {
+  transform: none;
+}
+
+.reference,
+.equipmentMeta,
+.imei {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.reference {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.equipmentMeta,
+.imei {
+  margin-top: 2px;
+  color: #475569;
+}
+
+.costCell {
+  font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  display: inline-flex;
+  min-width: 86px;
+  max-width: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #edf1f5;
+  padding: 5px 14px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.alertBadge {
+  background: #ffe4e6;
+  color: #e30613;
+}
+
+.row > .actionsCell {
+  text-align: center;
+  overflow: visible;
+}
+
+.menu {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  text-align: left;
+}
+
+.menuToggle {
+  display: flex;
+  width: 40px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.menuToggle::-webkit-details-marker {
+  display: none;
+}
+
+.ellipsis {
+  width: 22px;
+  height: 22px;
+}
+
+.menuList {
+  position: fixed;
+  z-index: 60;
+  width: 240px;
+  max-width: calc(100vw - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+}
+
+.action {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 8px 10px;
+  color: #e30613;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.action span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.actionIcon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.action:hover {
+  background: #fff1f2;
+}
+
+.action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.menuAction {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  color: #334155;
+  font-size: 14px;
+}
+
+.dangerAction {
+  color: #e30613;
+}
+
+.noActions {
+  color: #94a3b8;
+}
+
+.detailRow {
+  color: #11161d;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.detailCell {
+  padding: 0 16px 16px;
+}
+
+.detail {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f7f8fa;
+  padding: 8px 20px 10px;
+}
+
+.detailHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detailHeading h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.closeDetail {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0;
+  color: #475569;
+  cursor: pointer;
+}
+
+.closeIcon {
+  width: 18px;
+  height: 18px;
+}
+
+.detailLayout {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 0;
+}
+
+.primaryDetails {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(80px, 1fr) minmax(120px, 1.4fr) minmax(60px, 1fr);
+  flex: 1;
+  margin: 0;
+}
+
+.primaryDetails > div {
+  min-width: 0;
+  padding-right: 20px;
+}
+
+.primaryDetails > div + div {
+  border-left: 1px solid #cbd5e1;
+  padding-left: 22px;
+}
+
+.detail dt {
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.detail dd {
+  margin: 3px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.detailActions {
+  display: flex;
+  min-width: 0;
+  max-width: 58%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.detailActions .action + .action {
+  border-left: 1px solid #cbd5e1;
+  border-radius: 0;
+}
+
+.detailActions .action {
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
+.detailActions .actionIcon {
+  display: none;
+}
+
+.detailActions .moreActions {
+  color: #334155;
+}
+
+.moreIcon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.additionalInfo {
+  margin-top: 4px;
+}
+
+.additionalInfo > summary {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  list-style: none;
+  cursor: pointer;
+}
+
+.additionalInfo > summary::-webkit-details-marker {
+  display: none;
+}
+
+.additionalInfo > summary:hover {
+  color: #11161d;
+}
+
+.additionalIcon {
+  width: 14px;
+  height: 14px;
+}
+
+.additionalInfo[open] .additionalIcon {
+  transform: rotate(180deg);
+}
+
+.extraDetails {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin: 4px 0 0;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 10px;
+}
+
+.extraDetails > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.invoiceLink {
+  color: #e30613;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.detail dd.invoiceState {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.detail dd.invoiceError {
+  color: #e30613;
+  font-size: 12px;
+}
+
+.toggle:focus-visible,
+.checkbox:focus-visible,
+.menuToggle:focus-visible,
+.action:focus-visible,
+.closeDetail:focus-visible,
+.invoiceLink:focus-visible {
+  outline: 2px solid #e30613;
+  outline-offset: 2px;
+}
+
+.additionalInfo > summary:focus-visible {
+  outline: 2px solid #e30613;
+  outline-offset: 2px;
+}
+
+@media (max-width: 1300px) {
+  .row > td {
+    padding-inline: 10px;
+  }
+
+  .controls {
+    gap: 8px;
+  }
+
+}
+
+@media (max-width: 760px) {
+  .metric {
+    gap: 14px;
+  }
+
+  .financialMetric .metricValue {
+    font-size: clamp(20px, calc(430px / max(17, var(--value-length, 17))), 28px);
+  }
+
+  .row {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "controls actions" "equipment equipment" "cost sede" "creditor creditor" "state financial";
+    gap: 12px 16px;
+    padding: 16px;
+  }
+
+  .row > td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .row > td[data-label]::before {
+    display: block;
+    margin-bottom: 4px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.4;
+    content: attr(data-label);
+  }
+
+  .row > .equipmentCell::before,
+  .row > .actionsCell::before {
+    display: none;
+  }
+
+  .controlsCell { grid-area: controls; }
+  .equipmentCell { grid-area: equipment; }
+  .costCell { grid-area: cost; }
+  .sedeCell { grid-area: sede; }
+  .creditorCell { grid-area: creditor; }
+  .stateCell { grid-area: state; }
+  .financialCell { grid-area: financial; }
+  .actionsCell { grid-area: actions; }
+
+  .row > .actionsCell {
+    text-align: right;
+  }
+
+  .badge {
+    min-width: 0;
+  }
+
+  .detailRow,
+  .detailCell {
+    display: block;
+    width: 100%;
+  }
+
+  .detailCell {
+    padding: 0 12px 16px;
+  }
+
+  .detail {
+    padding: 12px 14px;
+  }
+
+  .closeDetail {
+    width: 44px;
+    height: 44px;
+  }
+
+  .detailLayout {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .primaryDetails {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .primaryDetails > div,
+  .primaryDetails > div + div {
+    border: 0;
+    padding: 0;
+  }
+
+  .detailActions {
+    max-width: 100%;
+    align-items: center;
+    justify-content: flex-start;
+    flex-direction: row;
+    width: 100%;
+  }
+
+  .detailActions .action,
+  .detailActions .action + .action {
+    min-height: 44px;
+    justify-content: flex-start;
+    border: 0;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+
+  .extraDetails {
+    flex-direction: column;
+  }
+
+  .additionalInfo > summary {
+    min-height: 44px;
+    font-size: 14px;
+  }
+}

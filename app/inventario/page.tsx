@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  esDeudaEntreSedes,
-  etiquetaEstadoInventario,
-} from "@/lib/prestamos";
+import { esDeudaEntreSedes } from "@/lib/prestamos";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 import { esSedeOperativaInventario } from "@/lib/sedes";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
@@ -13,10 +10,11 @@ import {
   DashboardSidebar,
   type NavigationItem,
 } from "@/app/dashboard/_components/operations-dashboard";
-import DashboardIcon, {
-  type DashboardIconName,
-} from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import { formatoPesos as formatoMoneda } from "@/lib/monthly-reports-view";
+import { InventoryMetric, InventoryRow, type InventoryAction } from "./_components/inventory-dashboard-parts";
+import styles from "./inventory.module.css";
 
 type InventarioItem = {
   id: number;
@@ -121,7 +119,7 @@ type FacturaStandResultado = {
 };
 
 function formatoPesos(valor: number) {
-  return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
+  return formatoMoneda(valor);
 }
 
 function normalizarAcreedorDeuda(valor: string | null | undefined) {
@@ -170,42 +168,6 @@ function coincideEstadosFinancieros(
   return filtros.some((filtro) => filtro === estado);
 }
 
-function badgeClaseEstadoInventario(estado: string | null) {
-  switch ((estado || "").toUpperCase()) {
-    case "BODEGA":
-      return "bg-slate-100 text-slate-800";
-    case "PENDIENTE":
-      return "bg-amber-100 text-amber-700";
-    case "GARANTIA":
-      return "bg-fuchsia-100 text-fuchsia-700";
-    case "VENDIDO":
-      return "bg-emerald-100 text-emerald-700";
-    case "PRESTAMO":
-      return "bg-sky-100 text-sky-700";
-    case "PRESTAMO_PAGO":
-      return "bg-emerald-100 text-emerald-700";
-    case "TRASLADO":
-      return "bg-violet-100 text-violet-700";
-    case "PRESTAMO_POR_ACEPTAR":
-      return "bg-amber-100 text-amber-700";
-    default:
-      return "bg-slate-100 text-slate-700";
-  }
-}
-
-function badgeClaseEstadoFinanciero(estado: string | null) {
-  switch ((estado || "").toUpperCase()) {
-    case "PAGO":
-      return "bg-emerald-100 text-emerald-700";
-    case "DEUDA":
-      return "bg-red-100 text-red-700";
-    case "CANCELADO":
-      return "bg-slate-200 text-slate-700";
-    default:
-      return "bg-slate-100 text-slate-700";
-  }
-}
-
 function etiquetaDestinoPrestamo(item: InventarioItem) {
   const destino = item.prestamoDestino?.nombre?.trim();
   const estadoActual = String(item.estadoActual || "").trim().toUpperCase();
@@ -239,67 +201,6 @@ function etiquetaDestinoPrestamo(item: InventarioItem) {
   return destino;
 }
 
-function TopMetricCard({
-  icon,
-  iconClass,
-  label,
-  value,
-  detail,
-  valueClass = "text-slate-950",
-}: {
-  icon: DashboardIconName;
-  iconClass: string;
-  label: string;
-  value: string | number;
-  detail: string;
-  valueClass?: string;
-}) {
-  return (
-    <article className="min-h-[138px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start gap-4">
-        <span className={["flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", iconClass].join(" ")}>
-          <DashboardIcon name={icon} className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-slate-700">{label}</p>
-          <p className={["mt-1 text-[27px] font-black leading-tight", valueClass].join(" ")}>
-            {value}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function SummaryMetricCard({
-  label,
-  value,
-  valueClass = "text-slate-950",
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-  tone?: "neutral" | "warm" | "success";
-}) {
-  const toneClass =
-    tone === "warm"
-      ? "border-orange-200 bg-orange-50/70"
-      : tone === "success"
-        ? "border-emerald-200 bg-emerald-50/70"
-        : "border-slate-200 bg-white";
-
-  return (
-    <article className={["rounded-2xl border p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]", toneClass].join(" ")}>
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-        {label}
-      </p>
-      <p className={["mt-3 text-[27px] font-black leading-tight", valueClass].join(" ")}>{value}</p>
-    </article>
-  );
-}
-
 export default function InventarioPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [items, setItems] = useState<InventarioItem[]>([]);
@@ -308,6 +209,10 @@ export default function InventarioPage() {
   const [cargando, setCargando] = useState(false);
   const [cargandoInventario, setCargandoInventario] = useState(false);
   const [inventarioCargado, setInventarioCargado] = useState(false);
+  const [consultaCargada, setConsultaCargada] = useState("");
+  const [pagina, setPagina] = useState(1);
+  const [filasPorPagina, setFilasPorPagina] = useState(10);
+  const [idsExpandidos, setIdsExpandidos] = useState<number[]>([]);
   const [filtrosEstado, setFiltrosEstado] = useState<EstadoFiltro[]>([]);
   const [filtroAcreedorDeuda, setFiltroAcreedorDeuda] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
@@ -349,6 +254,7 @@ export default function InventarioPage() {
   const rolActual = String(user?.rolNombre || "").toUpperCase();
   const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
   const puedeEliminar = rolActual === "ADMIN";
+  const consultaScope = esAdmin ? `admin:${sedeFiltroId}` : `sede:${user?.sedeId ?? ""}`;
 
   const cargarUsuario = useCallback(async () => {
     try {
@@ -366,12 +272,12 @@ export default function InventarioPage() {
     }
   }, []);
 
-  const cargarInventario = useCallback(async () => {
+  const cargarInventario = useCallback(async (preservarMensaje = false) => {
     const requestId = inventarioRequestId.current + 1;
     inventarioRequestId.current = requestId;
 
     try {
-      setMensaje("");
+      if (!preservarMensaje) setMensaje("");
       setCargandoInventario(true);
       const params = new URLSearchParams();
 
@@ -398,8 +304,14 @@ export default function InventarioPage() {
         return;
       }
 
-      setItems(Array.isArray(data) ? data : []);
+      if (!Array.isArray(data)) {
+        setMensaje("No se pudo leer el inventario. Actualiza para reintentar.");
+        return;
+      }
+
+      setItems(data);
       setInventarioCargado(true);
+      setConsultaCargada(consultaScope);
     } catch {
       if (requestId === inventarioRequestId.current) {
         setMensaje("Error cargando inventario");
@@ -409,7 +321,7 @@ export default function InventarioPage() {
         setCargandoInventario(false);
       }
     }
-  }, [esAdmin, sedeFiltroId]);
+  }, [consultaScope, esAdmin, sedeFiltroId]);
 
   const cargarSedes = useCallback(async () => {
     try {
@@ -449,7 +361,7 @@ export default function InventarioPage() {
       }
 
       setMensaje(`Estado actualizado a ${estadoActual}`);
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error actualizando estado");
     } finally {
@@ -488,7 +400,7 @@ export default function InventarioPage() {
 
   useLiveRefresh(
     async () => {
-      await cargarInventario();
+      await cargarInventario(true);
     },
     { enabled: Boolean(user), intervalMs: 60000 }
   );
@@ -706,6 +618,7 @@ export default function InventarioPage() {
   ]);
 
   const alternarFiltroEstado = (estado: EstadoFiltro) => {
+    setPagina(1);
     setIdsSeleccionados([]);
     setFiltrosEstado((actuales) =>
       actuales.includes(estado)
@@ -754,7 +667,7 @@ export default function InventarioPage() {
       );
 
       setIdsSeleccionados((actuales) => actuales.filter((id) => !ids.includes(id)));
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error eliminando equipo");
     } finally {
@@ -849,7 +762,7 @@ export default function InventarioPage() {
 
       setMensaje("Equipo actualizado correctamente");
       cerrarEdicion();
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error actualizando equipo");
     } finally {
@@ -916,7 +829,7 @@ export default function InventarioPage() {
 
       setMensaje(data.mensaje || "Cambio de equipo registrado correctamente");
       cerrarCambioEquipo();
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error registrando cambio de equipo");
     } finally {
@@ -948,7 +861,7 @@ export default function InventarioPage() {
       }
 
       setMensaje("Equipo devuelto a BODEGA");
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error actualizando estado");
     } finally {
@@ -996,7 +909,7 @@ export default function InventarioPage() {
       setMostrarModalPrestamo(false);
       setItemPrestamo(null);
       setSedeDestinoId("");
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error creando prestamo");
     } finally {
@@ -1036,7 +949,7 @@ export default function InventarioPage() {
       setMensaje(data.mensaje || "Deuda pagada correctamente");
       setMostrarModalPago(false);
       setItemPago(null);
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error pagando deuda");
     } finally {
@@ -1308,7 +1221,7 @@ export default function InventarioPage() {
       );
 
       limpiarSeleccionMasiva();
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error ejecutando envio masivo");
     } finally {
@@ -1363,7 +1276,7 @@ export default function InventarioPage() {
       );
 
       limpiarSeleccionMasiva();
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error ejecutando pago masivo");
     } finally {
@@ -1415,7 +1328,7 @@ export default function InventarioPage() {
       setMostrarModalFacturaStand(false);
       setIdsSeleccionados([]);
       setMensaje(data.mensaje || "Factura emitida correctamente");
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error comunicando la factura con Siigo");
     } finally {
@@ -1480,7 +1393,7 @@ export default function InventarioPage() {
       );
 
       limpiarSeleccionMasiva();
-      await cargarInventario();
+      await cargarInventario(true);
     } catch {
       setMensaje("Error ejecutando cambio masivo de estado");
     } finally {
@@ -1521,446 +1434,105 @@ export default function InventarioPage() {
         ] satisfies NavigationItem[])
       : []),
   ];
-  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
   const coberturaActual = esAdmin
-    ? sedeFiltroId === "TODAS"
-      ? "Todas las sedes"
-      : sedeFiltroNombre
+    ? sedeFiltroId === "TODAS" ? "Todas las sedes" : sedeFiltroNombre
     : user?.sedeNombre || "Tu sede";
-  const valorMetrica = (valor: string | number) =>
-    !inventarioCargado ? "—" : valor;
+  const vistaDisponible = inventarioCargado && consultaCargada === consultaScope;
+  const valorMetrica = (valor: string | number) => vistaDisponible ? valor : "—";
+  const resultados = vistaDisponible ? itemsFiltrados.length : 0;
+  const paginas = Math.max(1, Math.ceil(resultados / filasPorPagina));
+  const paginaActual = Math.min(pagina, paginas);
+  const inicioPagina = (paginaActual - 1) * filasPorPagina;
+  const itemsPagina = vistaDisponible ? itemsFiltrados.slice(inicioPagina, inicioPagina + filasPorPagina) : [];
+  const primeraPagina = Math.max(1, Math.min(paginaActual - 2, paginas - 4));
+  const botonesPagina = Array.from({ length: Math.min(5, paginas) }, (_, index) => primeraPagina + index);
+  const filtrosActivos = Boolean(busqueda.trim() || filtrosEstado.length || filtroAcreedorDeuda !== "TODOS");
+  const etiquetasFiltro: Record<EstadoOperativoFiltro, string> = {
+    BODEGA: "Bodega", VENDIDO: "Vendidos", PENDIENTE: "Pendiente", GARANTIA: "Garantía",
+    PRESTAMO: "Préstamo", PRESTAMO_PAGO: "Préstamo pago", TRASLADO: "Traslado", PRESTAMO_POR_ACEPTAR: "Por aceptar",
+  };
+
+  const limpiarFiltros = () => {
+    setBusqueda(""); setFiltrosEstado([]); setFiltroAcreedorDeuda("TODOS"); setIdsSeleccionados([]); setPagina(1);
+  };
+  const limpiarGrupo = (financiero: boolean) => {
+    setFiltrosEstado((actuales) => actuales.filter((estado) => esFiltroFinanciero(estado) !== financiero));
+    setIdsSeleccionados([]); setPagina(1);
+  };
+  const accionesEquipo = (item: InventarioItem): InventoryAction[] => {
+    const acciones: InventoryAction[] = [{ key: "historial", label: "Ver historial", icon: "document-search", href: `/inventario/historial?imei=${encodeURIComponent(item.imei)}` }];
+    if (puedeDevolverABodega(item)) acciones.push({ key: "bodega", label: "Devolver a bodega", icon: "inventory", onClick: () => void devolverABodega(item), disabled: cargando });
+    if (puedeEnviarPrestamo(item)) acciones.push({ key: "prestamo", label: "Enviar a sede", icon: "send", onClick: () => abrirPrestamo(item), disabled: cargando });
+    if (puedePasarAPendiente(item)) acciones.push({ key: "pendiente", label: "Marcar pendiente", icon: "clock", onClick: () => void cambiarEstado(item, "PENDIENTE"), disabled: cargando });
+    if (puedePasarAGarantia(item)) acciones.push({ key: "garantia", label: "Marcar garantía", icon: "shield", onClick: () => void cambiarEstado(item, "GARANTIA"), disabled: cargando });
+    if (puedePagarDeuda(item)) acciones.push({ key: "pago", label: "Pagar deuda", icon: "coins", onClick: () => abrirPagoDeuda(item), disabled: cargando });
+    if (puedeRegistrarCambioEquipo(item)) acciones.push({ key: "cambio", label: String(item.estadoActual || "").toUpperCase() === "VENDIDO" ? "Reemplazar equipo vendido" : "Registrar cambio de equipo", icon: "transfer", onClick: () => abrirCambioEquipo(item), disabled: cargando });
+    if (esAdmin) acciones.push({ key: "editar", label: "Editar", icon: "settings", onClick: () => abrirEdicion(item), disabled: cargando });
+    if (puedeEliminar) acciones.push({ key: "eliminar", label: "Eliminar", icon: "close", onClick: () => abrirEliminacion([item.id]), disabled: cargando, danger: true });
+    return acciones;
+  };
 
   return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/inventario"
-        coverageLabel={coberturaActual}
-        items={navigationItems}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
-                Centro de inventario
-              </h1>
-              <p className="mt-1 text-sm text-slate-500 sm:text-base">
-                Control de equipos, estados, deudas y trazabilidad operativa
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  Cobertura: {coberturaActual}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  {cargandoInventario
-                    ? "Actualizando inventario"
-                    : inventarioCargado
-                      ? `${itemsFiltrados.length} equipos visibles`
-                      : "Inventario sin cargar"}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href="/inventario/nuevo"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#bd0711]"
-              >
-                <span className="text-lg leading-none">+</span>
-                Nuevo inventario
-              </Link>
-              <Link
-                href="/inventario/historial"
-                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
-              >
-                Centro IMEI
-              </Link>
-              <Link
-                href="/prestamos"
-                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
-              >
-                Préstamos
-              </Link>
-              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">
-                    {user?.nombre || user?.usuario || "Cargando usuario"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {user?.rolNombre || "Sesión activa"}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
+    <div className={styles.shell}>
+      <DashboardSidebar appearance="white" activeHref="/inventario" coverageLabel={coberturaActual} items={navigationItems} />
+      <div className={styles.workspace}>
+        <main className={styles.main}>
+          <header className={styles.header}>
+            <h1>Inventario</h1>
+            <div className={styles.headerControls}>
+              <label className={styles.sedeField}>
+                <DashboardIcon name="pin" />
+                <select aria-label="Sede del inventario" value={esAdmin ? sedeFiltroId : String(user?.sedeId ?? "")} disabled={!esAdmin || cargando} onChange={(event) => {
+                  setSedeFiltroId(event.target.value); setIdsSeleccionados([]); setPagina(1);
+                }}>
+                  {esAdmin ? <><option value="TODAS">Todas las sedes</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</> : <option value={String(user?.sedeId ?? "")}>{user?.sedeNombre || "Tu sede"}</option>}
+                </select>
+                <DashboardIcon name="chevron" />
+              </label>
+              <Link href="/inventario/historial">Centro IMEI</Link>
+              <Link href="/prestamos">Préstamos</Link>
+              <Link className={styles.newInventory} href="/inventario/nuevo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>Nuevo inventario</Link>
+              <SalesProfile name={user?.nombre || user?.usuario || "Usuario"} role={user?.rolNombre || ""} />
             </div>
           </header>
-
-          {esAdmin && (
-            <section className="mt-6 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-              <label className="flex max-w-sm flex-col gap-2 text-sm font-semibold text-slate-700">
-                Cobertura
-                <select
-                  value={sedeFiltroId}
-                  onChange={(event) => setSedeFiltroId(event.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                >
-                  <option value="TODAS">Todas las sedes</option>
-                  {sedes.map((sede) => (
-                    <option key={sede.id} value={String(sede.id)}>
-                      {sede.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </section>
-          )}
-
-        {mensaje && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm" role="status">
-            {mensaje}
-          </div>
-        )}
-
-        <section className="mt-6 grid gap-4 2xl:grid-cols-[minmax(0,3fr)_minmax(300px,1fr)]">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <TopMetricCard
-              icon="inventory"
-              iconClass="bg-violet-50 text-violet-600"
-              label="En bodega"
-              value={valorMetrica(totalBodega)}
-              detail="Stock listo para operar."
-            />
-            <TopMetricCard
-              icon="warning"
-              iconClass="bg-orange-50 text-orange-600"
-              label="Pendiente"
-              value={valorMetrica(totalPendiente)}
-              detail="Equipos con gestion pendiente."
-              valueClass="text-orange-600"
-            />
-            <TopMetricCard
-              icon="approvals"
-              iconClass="bg-red-50 text-[#e30613]"
-              label="Garantia"
-              value={valorMetrica(totalGarantia)}
-              detail="Seguimiento por postventa."
-              valueClass="text-[#e30613]"
-            />
-            <TopMetricCard
-              icon="loans"
-              iconClass="bg-orange-50 text-orange-600"
-              label="Prestamos por cobrar"
-              value={valorMetrica(formatoPesos(valorPrestamosPorCobrar))}
-              detail={`${totalPrestamo} prestamo${
-                totalPrestamo === 1 ? "" : "s"
-              } activo${totalPrestamo === 1 ? "" : "s"} saliente${
-                totalPrestamo === 1 ? "" : "s"
-              } pendiente${totalPrestamo === 1 ? "" : "s"} por cierre o pago.`}
-              valueClass="text-orange-700"
-            />
-            <TopMetricCard
-              icon="approvals"
-              iconClass="bg-emerald-50 text-emerald-600"
-              label="Pagados"
-              value={valorMetrica(totalPagados)}
-              detail="Inventario con pago confirmado."
-              valueClass="text-emerald-600"
-            />
-            <TopMetricCard
-              icon="close"
-              iconClass="bg-slate-100 text-slate-600"
-              label="Cancelados"
-              value={valorMetrica(totalCancelados)}
-              detail="Registros financieros cerrados."
-              valueClass="text-slate-700"
-            />
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-            <SummaryMetricCard
-              label="Total que debo"
-              value={String(valorMetrica(formatoPesos(totalDeuda)))}
-              valueClass="text-orange-600"
-              tone="warm"
-            />
-            <SummaryMetricCard
-              label="Total pagado"
-              value={String(valorMetrica(formatoPesos(totalPagado)))}
-              valueClass="text-emerald-600"
-              tone="success"
-            />
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Filtros de inventario
-              </p>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-                Exploración de inventario
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                Busca por IMEI o referencia y selecciona uno o varios estados.
-                Los estados del equipo se cruzan con PAGO o DEUDA.
-              </p>
+          {mensaje && <div className={styles.notice} role="alert"><DashboardIcon name="bell" /><span>{mensaje}</span><button type="button" disabled={cargandoInventario || cargando} onClick={() => void (user ? cargarInventario() : cargarUsuario())}>Actualizar</button></div>}
+          <section className={`${styles.summary} ${styles.counts}`} aria-label={`Estados del inventario · ${coberturaActual}`} aria-busy={cargandoInventario}>
+            <InventoryMetric icon="inventory" label="En bodega" value={valorMetrica(totalBodega)} />
+            <InventoryMetric icon="warning" label="Pendientes" value={valorMetrica(totalPendiente)} alert />
+            <InventoryMetric icon="shield" label="Garantía" value={valorMetrica(totalGarantia)} alert />
+            <InventoryMetric icon="approvals" label="Pagados" value={valorMetrica(totalPagados)} />
+            <InventoryMetric icon="close" label="Cancelados" value={valorMetrica(totalCancelados)} />
+          </section>
+          <section className={`${styles.summary} ${styles.financial}`} aria-label={`Saldos del inventario · ${coberturaActual}`} aria-busy={cargandoInventario}>
+            <InventoryMetric financial icon="document" label="Total que debo" value={valorMetrica(totalDeuda)} alert />
+            <InventoryMetric financial icon="clock" label="Préstamos por cobrar" value={valorMetrica(valorPrestamosPorCobrar)} detail={vistaDisponible ? `${totalPrestamo.toLocaleString("es-CO")} préstamo${totalPrestamo === 1 ? "" : "s"}` : undefined} alert />
+            <InventoryMetric financial icon="wallet" label="Total pagado" value={valorMetrica(totalPagado)} />
+          </section>
+          <section className={styles.list} aria-labelledby="inventory-list-title">
+            <div className={styles.listTop}>
+              <div className={styles.listHeading}><h2 id="inventory-list-title">Equipos registrados</h2><span aria-live="polite">{vistaDisponible ? `${resultados.toLocaleString("es-CO")} resultado${resultados === 1 ? "" : "s"}` : cargandoInventario || !user && !mensaje ? "Cargando inventario…" : "Sin datos cargados"}</span></div>
+              <label className={styles.search}><DashboardIcon name="search" /><input aria-label="Buscar equipos" type="search" value={busqueda} placeholder="Buscar IMEI, referencia, color, proveedor o sede…" onChange={(event) => { setBusqueda(event.target.value); setPagina(1); }} /></label>
             </div>
-
-            <div className="flex w-full flex-col gap-4 xl:max-w-[860px]">
-              <input
-                type="text"
-                value={busqueda}
-                onChange={(event) => {
-                  setBusqueda(event.target.value);
-                  setIdsSeleccionados([]);
-                }}
-                placeholder="Buscar por IMEI, referencia, color, proveedor o sede..."
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-              />
-
-              <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFiltrosEstado([]);
-                    setFiltroAcreedorDeuda("TODOS");
-                    setIdsSeleccionados([]);
-                  }}
-                  aria-pressed={filtrosEstado.length === 0}
-                  className={[
-                    "rounded-xl px-4 py-2.5 text-sm font-bold transition",
-                    filtrosEstado.length === 0
-                      ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
-                      : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
-                  ].join(" ")}
-                >
-                  TODOS
-                </button>
-                {filtrosEstado.length > 0 && (
-                  <span className="text-xs font-bold text-slate-500">
-                    {filtrosEstado.length} filtro
-                    {filtrosEstado.length === 1 ? "" : "s"} activo
-                    {filtrosEstado.length === 1 ? "" : "s"}
-                  </span>
-                )}
-              </div>
-
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-                <div>
-                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-                    Estado del equipo
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {ESTADOS_OPERATIVOS_FILTRO.map((estado) => (
-                      <button
-                        key={estado}
-                        type="button"
-                        onClick={() => alternarFiltroEstado(estado)}
-                        aria-pressed={filtrosEstado.includes(estado)}
-                        className={[
-                          "rounded-xl px-3.5 py-2.5 text-xs font-bold transition",
-                          filtrosEstado.includes(estado)
-                            ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
-                            : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
-                        ].join(" ")}
-                      >
-                        {estado === "VENDIDO"
-                          ? "VENDIDOS"
-                          : etiquetaEstadoInventario(estado)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-                    Estado financiero
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {ESTADOS_FINANCIEROS_FILTRO.map((estado) => (
-                      <button
-                        key={estado}
-                        type="button"
-                        onClick={() => alternarFiltroEstado(estado)}
-                        aria-pressed={filtrosEstado.includes(estado)}
-                        className={[
-                          "rounded-xl px-4 py-2.5 text-xs font-bold transition",
-                          filtrosEstado.includes(estado)
-                            ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
-                            : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
-                        ].join(" ")}
-                      >
-                        {etiquetaEstadoInventario(estado)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            <div className={styles.filterRows}>
+              <div className={styles.filterGroup}><p>Estado del equipo</p><div className={styles.filterButtons} role="group" aria-label="Estado del equipo">
+                <button type="button" aria-pressed={!filtrosOperativosSeleccionados.length} onClick={() => limpiarGrupo(false)}>Todos</button>
+                {ESTADOS_OPERATIVOS_FILTRO.map((estado) => <button key={estado} type="button" aria-pressed={filtrosEstado.includes(estado)} onClick={() => alternarFiltroEstado(estado)}>{etiquetasFiltro[estado]}</button>)}
+              </div></div>
+              <div className={`${styles.filterGroup} ${styles.financeGroup}`}><p>Estado financiero</p><div className={styles.filterButtons} role="group" aria-label="Estado financiero">
+                <button type="button" aria-pressed={!filtrosFinancierosSeleccionados.length} onClick={() => limpiarGrupo(true)}>Todos</button>
+                {ESTADOS_FINANCIEROS_FILTRO.map((estado) => <button key={estado} type="button" aria-pressed={filtrosEstado.includes(estado)} onClick={() => alternarFiltroEstado(estado)}>{estado === "PAGO" ? "Pago" : "Deuda"}</button>)}
+              </div></div>
             </div>
-          </div>
-
-          {filtrosEstado.includes("PRESTAMO") && (
-            <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50/60 p-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">
-                    Prestamos visibles
-                  </p>
-                  <p className="mt-2 text-2xl font-black text-amber-700">
-                    {itemsPrestamoConBusqueda.length}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Equipos salientes en estado PRESTAMO dentro de esta vista.
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm md:col-span-2">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                    Valor por cobrar
-                  </p>
-                  <p className="mt-2 text-3xl font-black text-amber-700">
-                    {formatoPesos(totalPrestamoVista)}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Suma de los costos de los prestamos visibles con los filtros actuales.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {filtrosEstado.includes("DEUDA") && (
-            <div className="mt-5 rounded-2xl border border-orange-200 bg-orange-50/60 p-4">
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px_minmax(0,1fr)]">
-                <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">
-                    Total deuda
-                  </p>
-                  <p className="mt-2 text-2xl font-black text-amber-700">
-                    {formatoPesos(totalDeudaVista)}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {itemsDeudaConBusqueda.length} equipo
-                    {itemsDeudaConBusqueda.length === 1 ? "" : "s"} con deuda en esta vista.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                    Debe a
-                  </label>
-                  <select
-                    value={filtroAcreedorDeuda}
-                    onChange={(event) => {
-                      setFiltroAcreedorDeuda(event.target.value);
-                      setIdsSeleccionados([]);
-                    }}
-                    className="h-[54px] w-full rounded-2xl border border-amber-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-amber-100"
-                  >
-                    <option value="TODOS">Todos los acreedores</option>
-                    {resumenDeudaPorAcreedor.map((item) => (
-                      <option key={item.acreedor} value={item.acreedor}>
-                        {item.acreedor}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                    Valor filtrado
-                  </p>
-                  <p className="mt-2 text-2xl font-black text-slate-950">
-                    {formatoPesos(totalDeudaAcreedorSeleccionado)}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {filtroAcreedorDeuda === "TODOS"
-                      ? "Incluye todos los acreedores visibles."
-                      : filtroAcreedorDeuda}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid max-h-72 gap-3 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
-                {resumenDeudaPorAcreedor.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-amber-200 bg-white px-4 py-4 text-sm font-semibold text-slate-500">
-                    No hay deuda visible con los filtros actuales.
-                  </div>
-                ) : (
-                  resumenDeudaPorAcreedor.map((item) => (
-                    <button
-                      key={item.acreedor}
-                      type="button"
-                      onClick={() => {
-                        setFiltroAcreedorDeuda(item.acreedor);
-                        setIdsSeleccionados([]);
-                      }}
-                      className={[
-                        "rounded-2xl border px-4 py-3 text-left transition",
-                        filtroAcreedorDeuda === item.acreedor
-                          ? "border-slate-900 bg-slate-950 text-white shadow-sm"
-                          : "border-amber-100 bg-white text-slate-900 hover:border-amber-300",
-                      ].join(" ")}
-                    >
-                      <span className="block text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">
-                        {item.cantidad} equipo{item.cantidad === 1 ? "" : "s"}
-                      </span>
-                      <span className="mt-1 block text-sm font-black">
-                        {item.acreedor}
-                      </span>
-                      <span className="mt-2 block text-lg font-black">
-                        {formatoPesos(item.valor)}
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-
-        <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Listado operativo
-              </p>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-                Equipos registrados
-              </h2>
-              <p className="mt-2 text-sm text-slate-500">
-                {cargandoInventario
-                  ? "Actualizando inventario..."
-                  : `${itemsFiltrados.length} resultado${
-                      itemsFiltrados.length === 1 ? "" : "s"
-                    } visibles en esta vista.`}
-              </p>
-            </div>
-
-            <div className="text-sm text-slate-500">
-              Cobertura actual:{" "}
-              <span className="font-semibold text-slate-950">
-                {esAdmin
-                  ? sedeFiltroId === "TODAS"
-                    ? "Todas las sedes"
-                    : sedeFiltroNombre
-                  : user?.sedeNombre || "Tu sede"}
-              </span>
-            </div>
-          </div>
-
-          {(filtrosEstado.includes("DEUDA") || idsSeleccionados.length > 0) && (
-            <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
+            {filtrosActivos && <div className={styles.filterMeta}><span>{coberturaActual} · Selección múltiple de estados</span><button type="button" onClick={limpiarFiltros}><DashboardIcon name="close" />Limpiar filtros</button></div>}
+            {vistaDisponible && filtrosEstado.includes("PRESTAMO") && <div className={styles.extraPanel}><div className={styles.loanSummary}><span>Préstamos en esta consulta · {itemsPrestamoConBusqueda.length.toLocaleString("es-CO")} equipos</span><strong>{formatoPesos(totalPrestamoVista)}</strong></div></div>}
+            {vistaDisponible && filtrosEstado.includes("DEUDA") && <details className={styles.extraPanel} open>
+              <summary>Deuda por acreedor</summary>
+              <div className={styles.debtSummary}><span>{itemsDeudaConBusqueda.length.toLocaleString("es-CO")} equipos con deuda en esta consulta <strong>{formatoPesos(totalDeudaVista)}</strong></span><label className={styles.creditorSelect}>Acreedor<select aria-label="Filtrar deuda por acreedor" value={filtroAcreedorDeuda} onChange={(event) => { setFiltroAcreedorDeuda(event.target.value); setIdsSeleccionados([]); setPagina(1); }}><option value="TODOS">Todos los acreedores</option>{resumenDeudaPorAcreedor.map((item) => <option key={item.acreedor} value={item.acreedor}>{item.acreedor}</option>)}</select></label></div>
+              <div className={styles.creditors}>{resumenDeudaPorAcreedor.map((item) => <button className={styles.creditorRow} key={item.acreedor} type="button" aria-pressed={filtroAcreedorDeuda === item.acreedor} onClick={() => { setFiltroAcreedorDeuda(item.acreedor); setIdsSeleccionados([]); setPagina(1); }}><span>{item.acreedor}<small>{item.cantidad} equipo{item.cantidad === 1 ? "" : "s"}</small></span><strong>{formatoPesos(item.valor)}</strong></button>)}</div>
+              {filtroAcreedorDeuda !== "TODOS" && <p className={styles.creditorTotal}>Deuda del acreedor seleccionado: <strong>{formatoPesos(totalDeudaAcreedorSeleccionado)}</strong></p>}
+            </details>}
+          {vistaDisponible && (filtrosEstado.includes("DEUDA") || idsSeleccionados.length > 0) && (
+            <div className={styles.bulkSection}>
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-sm font-bold text-slate-950">
@@ -1978,8 +1550,8 @@ export default function InventarioPage() {
                           itemsSeleccionadosParaPago.length > 0
                             ? ` por ${formatoPesos(totalPagoMasivo)}`
                             : ""
-                        }. Solo se procesara lo seleccionado.`
-                      : "Marca IMEI individuales o selecciona todos los resultados visibles. El pago masivo procesara solamente lo seleccionado."}
+                        }. Solo se procesará lo seleccionado.`
+                      : "Marca IMEI individuales o selecciona todos los resultados filtrados de todas las páginas. El pago masivo procesará solamente lo seleccionado."}
                   </p>
                 </div>
 
@@ -1991,8 +1563,8 @@ export default function InventarioPage() {
                     className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {todosVisiblesSeleccionados
-                      ? "Quitar seleccion visible"
-                      : `Seleccionar visibles (${idsVisibles.length})`}
+                      ? "Quitar selección de resultados"
+                      : `Seleccionar resultados (${idsVisibles.length})`}
                   </button>
 
                   {idsSeleccionados.length > 0 && (
@@ -2123,355 +1695,31 @@ export default function InventarioPage() {
             </div>
           )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1540px] table-fixed text-[12px] 2xl:text-[13px]">
-              <colgroup>
-                <col className="w-[3%]" />
-                <col className="w-[4%]" />
-                <col className="w-[9%]" />
-                <col className="w-[11%]" />
-                <col className="w-[5%]" />
-                <col className="w-[7%]" />
-                {esAdmin && <col className="w-[6%]" />}
-                <col className="w-[7%]" />
-                <col className="w-[9%]" />
-                <col className="w-[7%]" />
-                <col className="w-[8%]" />
-                <col className="w-[11%]" />
-                <col className="w-[13%]" />
-              </colgroup>
-              <thead className="sticky top-0 z-10 bg-slate-50">
-                <tr className="text-left text-slate-600">
-                  <th className="px-2 py-4">
-                    <input
-                      type="checkbox"
-                      checked={todosVisiblesSeleccionados}
-                      onChange={alternarSeleccionVisibles}
-                      aria-label="Seleccionar equipos visibles"
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                    />
-                  </th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">ID</th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">IMEI</th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Referencia</th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Color</th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Costo</th>
-                  {esAdmin && (
-                    <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Sede</th>
-                  )}
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Deuda</th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Destino prestamo</th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Estado</th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Estado financiero</th>
-                  <th className="break-words px-2 py-4 font-semibold uppercase leading-4 tracking-[0.08em]">Origen</th>
-                  <th className="break-words px-2 py-4 text-center font-semibold uppercase leading-4 tracking-[0.08em]">Acciones</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {itemsFiltrados.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={esAdmin ? 13 : 12}
-                      className="px-6 py-16 text-center"
-                    >
-                      <div className="mx-auto max-w-md">
-                        <p className="text-base font-semibold text-slate-950">
-                          {cargandoInventario && !inventarioCargado
-                            ? "Cargando inventario"
-                            : "No hay equipos registrados"}
-                        </p>
-                        <p className="mt-2 text-sm text-slate-500">
-                          {cargandoInventario && !inventarioCargado
-                            ? "Estamos consultando la cobertura seleccionada."
-                            : "Ajusta la cobertura, el filtro o la busqueda para explorar otros resultados."}
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  itemsFiltrados.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="border-t border-slate-200 text-slate-700 transition hover:bg-slate-50"
-                    >
-                      <td className="px-2 py-4">
-                        <input
-                          type="checkbox"
-                          checked={idsSeleccionados.includes(item.id)}
-                          onChange={() => alternarSeleccion(item.id)}
-                          aria-label={`Seleccionar equipo ${item.imei}`}
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                        />
-                      </td>
-                      <td className="px-2 py-4 font-semibold text-slate-950">{item.id}</td>
-                      <td className="break-all px-2 py-4 font-semibold text-slate-950">{item.imei}</td>
-                      <td className="break-words px-2 py-4 font-semibold text-slate-950">
-                        <div>{item.referencia}</div>
-                        <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                          {item.tipoProducto || "TELEFONIA"}
-                        </span>
-                        {item.facturaStand &&
-                          (item.facturaStand.url ? (
-                            <a
-                              href={item.facturaStand.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-1 block text-[11px] font-bold text-blue-700 underline decoration-blue-300 underline-offset-2"
-                            >
-                              {item.facturaStand.nombre || "Ver factura"}
-                            </a>
-                          ) : (
-                            <span
-                              className="mt-1 block text-[11px] font-bold uppercase text-blue-700"
-                              title={item.facturaStand.error || undefined}
-                            >
-                              Factura: {item.facturaStand.estado}
-                            </span>
-                          ))}
-                      </td>
-                      <td className="break-words px-2 py-4">{item.color ?? "-"}</td>
-                      <td className="break-words px-2 py-4 font-semibold text-slate-950">
-                        {formatoPesos(item.costo)}
-                      </td>
-                      {esAdmin && (
-                        <td className="break-words px-2 py-4 font-semibold text-slate-900">
-                        {item.sede?.nombre ?? "Sede sin configurar"}
-                        </td>
-                      )}
-                      <td className="break-words px-2 py-4">{item.deboA ?? "-"}</td>
-                      <td className="break-words px-2 py-4">
-                        <span className="font-semibold text-slate-900">
-                          {etiquetaDestinoPrestamo(item)}
-                        </span>
-                      </td>
-                      <td className="px-2 py-4">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClaseEstadoInventario(
-                            item.estadoActual
-                          )}`}
-                        >
-                          {etiquetaEstadoInventario(item.estadoActual)}
-                        </span>
-                      </td>
-                      <td className="px-2 py-4">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClaseEstadoFinanciero(
-                            item.estadoFinanciero
-                          )}`}
-                        >
-                          {item.estadoFinanciero ?? "-"}
-                        </span>
-                      </td>
-                      <td className="break-words px-2 py-4">{item.origen ?? "-"}</td>
-
-                      <td className="px-2 py-4">
-                        <div className="flex min-w-[196px] flex-nowrap items-center justify-center gap-1">
-                          {puedeDevolverABodega(item) && (
-                            <button
-                              onClick={() => devolverABodega(item)}
-                              disabled={cargando}
-                              title="Devolver a bodega"
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 transition hover:bg-amber-200 disabled:opacity-70"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4 text-amber-700"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M15 19l-7-7 7-7"
-                                />
-                              </svg>
-                            </button>
-                          )}
-
-                          {puedeEnviarPrestamo(item) && (
-                            <button
-                              onClick={() => abrirPrestamo(item)}
-                              disabled={cargando}
-                              title="Enviar a sede"
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 transition hover:bg-slate-200 disabled:opacity-70"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4 text-slate-700"
-                                fill="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path d="M2.01 21l20.99-9L2.01 3v7l15 2-15 2z" />
-                              </svg>
-                            </button>
-                          )}
-
-                          {puedePasarAPendiente(item) && (
-                            <button
-                              onClick={() => cambiarEstado(item, "PENDIENTE")}
-                              disabled={cargando}
-                              title="Marcar pendiente"
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 transition hover:bg-amber-200 disabled:opacity-70"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4 text-amber-600"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                              </svg>
-                            </button>
-                          )}
-
-                          {puedePasarAGarantia(item) && (
-                            <button
-                              onClick={() => cambiarEstado(item, "GARANTIA")}
-                              disabled={cargando}
-                              title="Marcar garantia"
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-fuchsia-100 transition hover:bg-fuchsia-200 disabled:opacity-70"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4 text-fuchsia-600"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 18h.01M8 2h8a2 2 0 012 2v16a2 2 0 01-2 2H8a2 2 0 01-2-2V4a2 2 0 012-2zm3 5l-2 3h3l-2 3"
-                                />
-                              </svg>
-                            </button>
-                          )}
-
-                          {puedePagarDeuda(item) && (
-                            <button
-                              onClick={() => abrirPagoDeuda(item)}
-                              disabled={cargando}
-                              title="Pagar deuda"
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 transition hover:bg-emerald-200 disabled:opacity-70"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4 text-emerald-700"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 8c-2.21 0-4 .895-4 2s1.79 2 4 2 4 .895 4 2-1.79 2-4 2m0-10V6m0 12v-2"
-                                />
-                              </svg>
-                            </button>
-                          )}
-
-                          {puedeRegistrarCambioEquipo(item) && (
-                            <button
-                              onClick={() => abrirCambioEquipo(item)}
-                              disabled={cargando}
-                              title={
-                                String(item.estadoActual || "").toUpperCase() === "VENDIDO"
-                                  ? "Reemplazar equipo vendido"
-                                  : "Registrar cambio"
-                              }
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-100 transition hover:bg-indigo-200 disabled:opacity-70"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4 text-indigo-700"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M8 7h8m0 0-3-3m3 3-3 3M16 17H8m0 0 3 3m-3-3 3-3"
-                                />
-                              </svg>
-                            </button>
-                          )}
-
-                          {esAdmin && (
-                            <button
-                              onClick={() => abrirEdicion(item)}
-                              disabled={cargando}
-                              title="Editar"
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 transition hover:bg-amber-200 disabled:opacity-70"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4 text-amber-700"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L12 15l-4 1 1-4 9.586-9.586z"
-                                />
-                              </svg>
-                            </button>
-                          )}
-
-                          {puedeEliminar && (
-                            <button
-                              onClick={() => {
-                                abrirEliminacion([item.id]);
-                              }}
-                              disabled={cargando}
-                              title="Eliminar"
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-100 transition hover:bg-red-200 disabled:opacity-70"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4 text-red-600"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M6 18L18 6M6 6l12 12"
-                                />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+            <div className={styles.tableScroller} aria-busy={cargandoInventario}>
+              <table className={styles.table}>
+                <colgroup><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
+                <thead><tr><th><input type="checkbox" aria-label={`Seleccionar todos los resultados filtrados (${resultados})`} checked={vistaDisponible && todosVisiblesSeleccionados} disabled={!vistaDisponible || cargando || !resultados} onChange={alternarSeleccionVisibles} /></th><th>Equipo / IMEI</th><th>Costo</th><th>Sede</th><th>Acreedor</th><th>Estado</th><th>Financiero</th><th>Acciones</th></tr></thead>
+                <tbody>{!itemsPagina.length ? <tr><td colSpan={8} className={styles.empty}><DashboardIcon name="inventory" /><strong>{!vistaDisponible ? cargandoInventario || !user && !mensaje ? "Cargando inventario…" : "No se pudo cargar el inventario" : "No hay equipos para estos filtros"}</strong>{vistaDisponible && filtrosActivos && <button type="button" onClick={limpiarFiltros}>Limpiar filtros</button>}</td></tr> : itemsPagina.map((item) => <InventoryRow key={item.id} item={item} selected={idsSeleccionados.includes(item.id)} onSelect={() => alternarSeleccion(item.id)} expanded={idsExpandidos.includes(item.id)} onToggle={() => setIdsExpandidos((actuales) => actuales.includes(item.id) ? actuales.filter((id) => id !== item.id) : [...actuales, item.id])} destino={etiquetaDestinoPrestamo(item)} actions={accionesEquipo(item)} />)}</tbody>
+              </table>
+            </div>
+            <footer className={styles.pagination}>
+              <p>{vistaDisponible ? `Mostrando ${resultados ? inicioPagina + 1 : 0} – ${Math.min(inicioPagina + filasPorPagina, resultados)} de ${resultados.toLocaleString("es-CO")}` : "Esperando la consulta"}</p>
+              <div className={styles.paginationControls}>
+                <label className={styles.pageSize}>Filas por página<select aria-label="Filas por página" value={filasPorPagina} onChange={(event) => { setFilasPorPagina(Number(event.target.value)); setPagina(1); }}>{[10, 25, 50, 100].map((cantidad) => <option key={cantidad} value={cantidad}>{cantidad}</option>)}</select></label>
+                <nav className={styles.pageButtons} aria-label="Páginas de inventario">
+                  <button type="button" aria-label="Página anterior" disabled={!vistaDisponible || paginaActual <= 1} onClick={() => setPagina(paginaActual - 1)}><DashboardIcon name="chevron" className={styles.previousIcon} /></button>
+                  {primeraPagina > 1 && <><button type="button" aria-label="Página 1" onClick={() => setPagina(1)}>1</button>{primeraPagina > 2 && <span>…</span>}</>}
+                  {botonesPagina.map((numero) => <button key={numero} type="button" aria-label={`Página ${numero}`} aria-current={paginaActual === numero ? "page" : undefined} disabled={!vistaDisponible} onClick={() => setPagina(numero)}>{numero}</button>)}
+                  {botonesPagina.at(-1)! < paginas && <>{botonesPagina.at(-1)! < paginas - 1 && <span>…</span>}<button type="button" aria-label={`Página ${paginas}`} onClick={() => setPagina(paginas)}>{paginas}</button></>}
+                  <button type="button" aria-label="Página siguiente" disabled={!vistaDisponible || paginaActual >= paginas} onClick={() => setPagina(paginaActual + 1)}><DashboardIcon name="chevron" /></button>
+                </nav>
+              </div>
+            </footer>
+          </section>
         </main>
       </div>
-
       {mostrarModalFacturaStand && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+        <div className={styles.modal}>
           <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-blue-200 bg-white shadow-2xl">
             <div className="bg-slate-950 px-6 py-5 text-white">
               <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-300">
@@ -2591,7 +1839,7 @@ export default function InventarioPage() {
       )}
 
       {facturaStandResultado && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+        <div className={styles.modal}>
           <div className="w-full max-w-md rounded-3xl border border-emerald-200 bg-white p-6 text-center shadow-2xl">
             <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl font-black text-emerald-700">
               V
@@ -2652,7 +1900,7 @@ export default function InventarioPage() {
       )}
 
       {mostrarModalPrestamoMasivo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className={styles.modal}>
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-900">
               Envio masivo a sede
@@ -2713,7 +1961,7 @@ export default function InventarioPage() {
       )}
 
       {mostrarModalPagoMasivo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className={styles.modal}>
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-900">
               Pagar deudas seleccionadas
@@ -2756,7 +2004,7 @@ export default function InventarioPage() {
       )}
 
       {mostrarModalPrestamo && itemPrestamo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className={styles.modal}>
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-900">
               Enviar a sede
@@ -2818,7 +2066,7 @@ export default function InventarioPage() {
       )}
 
       {mostrarModalPago && itemPago && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className={styles.modal}>
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-900">
               Pagar deuda del equipo
@@ -2863,7 +2111,7 @@ export default function InventarioPage() {
       )}
 
       {mostrarModalCambio && itemCambio && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className={styles.modal}>
           <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-900">
               {String(itemCambio.estadoActual || "").toUpperCase() === "VENDIDO"
@@ -2949,7 +2197,7 @@ export default function InventarioPage() {
       )}
 
       {mostrarModalEditar && itemEditar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className={styles.modal}>
           <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-900">
               Editar inventario
@@ -3107,7 +2355,7 @@ export default function InventarioPage() {
       )}
 
       {modalEliminar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className={styles.modal}>
           <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-900">
               Confirmar eliminacion
