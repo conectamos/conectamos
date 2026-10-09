@@ -273,7 +273,7 @@ function formatDate(value: string | null) {
 }
 
 function formatPercent(value: number) {
-  return `${value.toFixed(1)}%`;
+  return `${value.toLocaleString("es-CO", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
 }
 
 function buildDefaultSaveName(sourceNames: string[]) {
@@ -370,21 +370,20 @@ function statusFilterClass(
   const isActive = selectedStatus === statusOption;
 
   if (!isActive) {
-    return "border-slate-300 bg-white text-slate-700 hover:bg-slate-50";
+    return "";
   }
 
   switch (statusOption) {
     case "MORA":
-      return "border-red-600 bg-red-600 text-white";
+      return styles.statusMoraActive;
     case "GESTIONAR":
-      return "border-rose-200 bg-rose-100 text-rose-700";
+      return styles.statusGestionarActive;
     case "PAGO":
-      return "border-emerald-200 bg-emerald-100 text-emerald-800";
     case "PAGO X":
-      return "border-emerald-200 bg-emerald-100 text-emerald-800";
+      return styles.statusPaidActive;
     case "TODOS":
     default:
-      return "border-slate-950 bg-slate-950 text-white";
+      return styles.statusAllActive;
   }
 }
 
@@ -659,6 +658,9 @@ export default function PayJoyCarteraWorkspace({
   const savedCutsCount = savedCuts.length;
   const operationBusy = loading || savingCut || updatingCut || consultingCutId !== null || reloadingCutId !== null || deletingCutId !== null;
   const latestSavedCut = [...savedCuts].sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())[0];
+  const analysisCutName = activeSavedCutId !== null
+    ? savedCuts.find((cut) => cut.id === activeSavedCutId)?.recordName || saveName
+    : data?.sourceNames.length === 1 ? data.sourceNames[0] : "";
   const activeStep = loading ? 2 : data ? 3 : files.length ? 2 : 1;
   const navigationItems: NavigationItem[] = [
     { href: "/dashboard", icon: "home", label: "Inicio" },
@@ -1267,212 +1269,56 @@ export default function PayJoyCarteraWorkspace({
           </section>
           <p className={styles.access}><DashboardIcon name="lock" />Acceso: ADMIN / AUDITOR</p>
 
-          {reloadSummary && <section ref={reloadSummaryRef} className={`${styles.panel} ${styles.reloadSummary}`} aria-label="Resumen de recarga"><h2>Resumen de recarga</h2><p>{describeReloadSummary(reloadSummary)}</p><strong>Total revisado: {reloadSummary.total.toLocaleString("es-CO")}</strong></section>}
 
 
         {data && (
-          <div className={styles.results}>
-            <section className="mt-4 grid gap-3 md:grid-cols-4">
-              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Unicas
-                </p>
-                <p className="mt-2 text-2xl font-black text-slate-950">
-                  {hasActiveFilter ? filteredRows.length : rows.length}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {hasActiveFilter ? "Filtradas" : "Sin duplicados"} | Brutas: {data.rawRows}
-                </p>
+          <div className={styles.results} id="payjoy-cartera-analysis">
+            <header className={styles.analysisHeading}>
+              <div><h2>Análisis de cartera</h2>{analysisCutName && <span className={styles.cutBadge}>{analysisCutName}</span>}</div>
+              <div className={styles.analysisActions}>
+                <button type="button" onClick={() => setMerchantSummaryExpanded((current) => !current)} className={styles.button} aria-expanded={merchantSummaryExpanded} aria-controls="payjoy-merchant-summary">{merchantSummaryExpanded ? "Ocultar tiendas" : "Ver tiendas"}</button>
+                <button type="button" onClick={() => void exportVisibleRowsToExcel()} disabled={exportingExcel || operationBusy || !filteredRows.length} className={`${styles.button} ${styles.graphite}`}><DashboardIcon name="download" />{exportingExcel ? "Exportando..." : "Exportar Excel"}</button>
               </div>
+            </header>
 
-              <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Pago
-                </p>
-                <p className="mt-2 text-2xl font-black text-emerald-700">
-                  {summaryCards.pago}
-                </p>
-                <p className="mt-1 text-sm text-emerald-700/80">
-                  Pago X: {summaryCards.pagoX}
-                </p>
-              </div>
-
-              <div className="rounded-[18px] border border-red-200 bg-red-50 p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
-                  Mora / gestionar
-                </p>
-                <p className="mt-2 text-2xl font-black text-red-700">
-                  {summaryCards.mora}
-                </p>
-              </div>
-
-              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  % mora visible
-                </p>
-                <p className="mt-2 text-2xl font-black text-slate-950">
-                  {formatPercent(
-                    visibleSummary.mora + visibleSummary.pago
-                      ? (visibleSummary.mora /
-                          (visibleSummary.mora + visibleSummary.pago)) *
-                          100
-                      : 0
-                  )}
-                </p>
+            <section className={styles.analysisSummary} aria-label="Resultados de cartera">
+              <p className={styles.analysisSummaryLabel}>{hasActiveFilter ? "Resultados filtrados" : "Resultados de cartera"}</p>
+              <div className={styles.analysisMetrics}>
+                <div><strong>{(hasActiveFilter ? filteredRows.length : rows.length).toLocaleString("es-CO")}</strong><span>Registros únicos</span><small>{data.rawRows.toLocaleString("es-CO")} filas originales</small></div>
+                <div><strong className={styles.analysisPaid}>{summaryCards.pago.toLocaleString("es-CO")}</strong><span>Pago</span><small>Pago X: {summaryCards.pagoX.toLocaleString("es-CO")}</small></div>
+                <div><strong className={styles.analysisOverdue}>{summaryCards.mora.toLocaleString("es-CO")}</strong><span>Mora / Gestionar</span></div>
+                <div><strong className={styles.analysisPercent}>{formatPercent(visibleSummary.mora + visibleSummary.pago ? (visibleSummary.mora / (visibleSummary.mora + visibleSummary.pago)) * 100 : 0)}</strong><span>Mora visible</span></div>
               </div>
             </section>
 
-            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
-                    <DashboardIcon name="search" className="h-5 w-5" />
-                  </span>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
-                      Analitica
-                    </p>
-                    <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
-                      Filtros de cartera
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Encuentra comercios y prioriza la gestion por estado.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
-                    Comercios:{" "}
-                    <span className="font-semibold text-slate-950">
-                      {merchantSummaries.length}
-                    </span>
-                  </div>
-                  <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
-                    Filas visibles:{" "}
-                    <span className="font-semibold text-slate-950">
-                      {filteredRows.length}
-                    </span>
-                  </div>
-                </div>
+            <section className={styles.analysisFilters} aria-labelledby="payjoy-analysis-filters-title">
+              <div className={styles.analysisFilterHeading}><h3 id="payjoy-analysis-filters-title">Filtros de cartera</h3><p>{merchantSummaries.length.toLocaleString("es-CO")} comercios · {filteredRows.length.toLocaleString("es-CO")} resultados</p></div>
+              <div className={styles.analysisFields}>
+                <label><span>Buscar comercio</span><span className={styles.analysisSearch}><DashboardIcon name="search" /><input value={merchantQuery} onChange={(event) => setMerchantQuery(event.target.value)} placeholder="Nombre del comercio..." /></span></label>
+                <label><span>Comercio</span><span className={styles.analysisSelect}><select aria-label="Filtrar por tienda" value={selectedMerchant} onChange={(event) => handleMerchantSelection(event.target.value)}><option value="TODOS">Todos los comercios</option>{hasSelectedMerchant && !merchantSummaries.some((summary) => summary.merchantName === selectedMerchant) && <option value={selectedMerchant}>{selectedMerchant}</option>}{merchantSummaries.map((summary) => <option key={summary.merchantName} value={summary.merchantName}>{summary.merchantName}</option>)}</select><DashboardIcon name="chevron" /></span></label>
+                <button type="button" onClick={clearFilters} className={styles.button}>Limpiar filtros</button>
               </div>
-
-              <div className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px_auto]">
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Buscar Merchant name
-                  </span>
-                  <span className="relative block">
-                    <DashboardIcon
-                      name="search"
-                      className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                    />
-                    <input
-                      value={merchantQuery}
-                      onChange={(event) => setMerchantQuery(event.target.value)}
-                      placeholder="Ej: CONECTAMOS CLARO 6"
-                      className="min-h-[50px] w-full rounded-xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
-                    />
-                  </span>
-                </label>
-
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Merchant filtrado
-                  </span>
-                  <select
-                    aria-label="Filtrar por tienda"
-                    value={selectedMerchant}
-                    onChange={(event) =>
-                      handleMerchantSelection(event.target.value)
-                    }
-                    className="min-h-[50px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
-                  >
-                    <option value="TODOS">Todos los merchant</option>
-                    {merchantSummaries.map((summary) => (
-                      <option
-                        key={summary.merchantName}
-                        value={summary.merchantName}
-                      >
-                        {summary.merchantName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="flex items-end">
-                  <button
-                    onClick={clearFilters}
-                    className="min-h-[50px] w-full rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-                  >
-                    Limpiar filtros
-                  </button>
-                </div>
+              <div className={styles.analysisStatusTabs} role="group" aria-label="Filtrar por estado">
+                {(["TODOS", "PAGO", "MORA", "GESTIONAR", "PAGO X"] as const).map((statusOption) => <button type="button" key={statusOption} onClick={() => setSelectedStatus(statusOption)} aria-pressed={selectedStatus === statusOption} className={`${styles.analysisStatusTab} ${statusFilterClass(statusOption, selectedStatus)}`}>{({ TODOS: "Todos", PAGO: "Pago", MORA: "Mora", GESTIONAR: "Gestionar", "PAGO X": "Pago X" })[statusOption]}</button>)}
               </div>
-
-              <div className="mt-5 flex flex-col gap-4 border-t border-slate-100 pt-5 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex w-fit max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
-                  {(
-                    ["TODOS", "PAGO", "MORA", "GESTIONAR", "PAGO X"] as const
-                  ).map(
-                    (statusOption) => (
-                      <button
-                        key={statusOption}
-                        onClick={() => setSelectedStatus(statusOption)}
-                        className={[
-                          "rounded-lg border px-4 py-2 text-xs font-bold transition",
-                          statusFilterClass(statusOption, selectedStatus),
-                        ].join(" ")}
-                      >
-                        {statusOption}
-                      </button>
-                    )
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setMerchantSummaryExpanded((current) => !current)}
-                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    {merchantSummaryExpanded ? "Ocultar tiendas" : "Ver tiendas"}
-                  </button>
-                  <button
-                    onClick={() => void exportVisibleRowsToExcel()}
-                    disabled={exportingExcel || operationBusy || !filteredRows.length}
-                    className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {exportingExcel ? "Exportando..." : "Exportar a Excel"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-5 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Cortes detectados
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(hasActiveFilter ? visibleSourceNames : data.sourceNames).map(
-                    (name) => (
-                      <span
-                        key={name}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
-                      >
-                        {name}
-                      </span>
-                    )
-                  )}
-                </div>
-                </div>
-                <p className="shrink-0 text-xs font-semibold text-slate-500">
-                  Duplicados removidos: {data.duplicatesRemoved}
-                </p>
-              </div>
+              <div className={styles.analysisFilterFooter}><div className={styles.analysisSources} aria-label="Cortes de los resultados">{(hasActiveFilter ? visibleSourceNames : data.sourceNames).map((name) => <span key={name} className={styles.cutBadge}>{name}</span>)}</div><p>{data.duplicatesRemoved.toLocaleString("es-CO")} duplicados removidos</p></div>
             </section>
+
+            {reloadSummary && <section ref={reloadSummaryRef} className={styles.reloadSummary} aria-label="Resumen de recarga">
+              <div className={styles.reloadHeading}><div><h3>Resumen de recarga</h3><span className={styles.cutBadge}>Recarga completa</span></div><p>{reloadSummary.total.toLocaleString("es-CO")} revisados</p></div>
+              <div className={styles.reloadMetrics}>
+                <div><strong>{reloadSummary.movedToPago.toLocaleString("es-CO")}</strong><span>Pasaron a Pago</span></div>
+                <div><strong>{reloadSummary.stayedGestionar.toLocaleString("es-CO")}</strong><span>Siguen en Gestionar</span></div>
+                <div><strong className={styles.reloadOverdue}>{reloadSummary.stayedMora.toLocaleString("es-CO")}</strong><span>Siguen en Mora</span></div>
+                <div><strong className={styles.reloadPaid}>{reloadSummary.keptPago.toLocaleString("es-CO")}</strong><span>Se conservaron en Pago</span></div>
+                <div><strong>{reloadSummary.keptPagoX.toLocaleString("es-CO")}</strong><span>Se conservaron en Pago X</span></div>
+              </div>
+              {reloadSummary.otherChanges > 0 && <p className={styles.reloadOtherChanges}>{reloadSummary.otherChanges.toLocaleString("es-CO")} registros tuvieron otros cambios.</p>}
+            </section>}
+
 
             {merchantSummaryExpanded && (
-            <section className="mt-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+            <section id="payjoy-merchant-summary" className="mt-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                 Resumen por tienda
               </div>

@@ -28,7 +28,7 @@
     "test:sales-approvals": "node --test tests/sales-approvals-workspace.test.mjs",
     "test:cash": "node --test tests/cash-workspace.test.mjs",
     "test:cash-management": "node --test tests/cash-management-workspace.test.mjs",
-    "test:payjoy-cartera": "node --test tests/payjoy-cartera-workspace.test.mjs",
+    "test:payjoy-cartera": "node --test tests/payjoy-cartera-workspace.test.mjs tests/payjoy-cartera-analysis.test.mjs",
     "test:sedes": "node --test tests/sedes-admin-workspace.test.mjs",
     "test:record-search": "node --test tests/record-search-contract.test.mjs tests/record-device-media.test.mjs tests/record-catalog-media.test.mjs",
     "proveedores:vapid": "node scripts/generar-vapid.mjs",
