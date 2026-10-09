@@ -5,6 +5,10 @@ import {
   puedeAccederModulosOperativos,
 } from "@/lib/access-control";
 import { requireFinancialAccess } from "@/lib/financial-access";
+import {
+  CarteraRequestConflictError,
+  registrarGastoCarteraUnaVez,
+} from "@/lib/cartera-expense-registration";
 import prisma from "@/lib/prisma";
 
 const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
@@ -202,12 +206,30 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
-    const body = (await req.json()) as Record<string, unknown>;
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").trim().toUpperCase());
+    let body: Record<string, unknown>;
+    try {
+      const parsed: unknown = await req.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("JSON invalido");
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return NextResponse.json({ error: "Los datos del gasto no son validos" }, { status: 400 });
+    }
 
-    const valor = normalizarNumero(body.valor);
+    const valor = (typeof body.valor === "number" || typeof body.valor === "string")
+      ? normalizarNumero(body.valor)
+      : NaN;
     const observacion = String(body.observacion || "").trim();
     const sedeIdBody = normalizarNumero(body.sedeId);
+
+    if (body.sedeId != null && body.sedeId !== "" && (
+      !["string", "number"].includes(typeof body.sedeId) || !Number.isSafeInteger(sedeIdBody) || sedeIdBody <= 0
+    )) {
+      return NextResponse.json({ error: "Sede invalida" }, { status: 400 });
+    }
+    if (!esAdmin && sedeIdBody > 0 && sedeIdBody !== user.sedeId) {
+      return NextResponse.json({ error: "No tienes permiso para registrar gastos en esa sede" }, { status: 403 });
+    }
 
     let sedeId = user.sedeId;
 
@@ -215,18 +237,28 @@ export async function POST(req: Request) {
       sedeId = sedeIdBody;
     }
 
-    if (!sedeId || sedeId <= 0) {
+    if (!Number.isSafeInteger(sedeId) || sedeId <= 0) {
       return NextResponse.json(
         { error: "Sede invalida" },
         { status: 400 }
       );
     }
 
-    if (!valor) {
+    if (!Number.isFinite(valor) || valor <= 0) {
       return NextResponse.json(
-        { error: "El valor debe ser diferente de 0" },
+        { error: "El valor debe ser mayor que 0" },
         { status: 400 }
       );
+    }
+
+    const headerKey = String(req.headers.get("idempotency-key") || "").trim();
+    const bodyKey = String(body.idempotencyKey || "").trim();
+    if (headerKey && bodyKey && headerKey !== bodyKey) {
+      return NextResponse.json({ error: "La clave del intento no coincide", codigo: "IDEMPOTENCIA_CONFLICTO" }, { status: 409 });
+    }
+    const clave = headerKey || bodyKey;
+    if (!/^[A-Za-z0-9._:-]{8,160}$/.test(clave)) {
+      return NextResponse.json({ error: "El intento de registro no es valido. Actualiza la pagina e intenta de nuevo." }, { status: 400 });
     }
 
     const sedeExiste = await prisma.sede.findUnique({
@@ -241,31 +273,24 @@ export async function POST(req: Request) {
       );
     }
 
-    const resultado = await prisma.$transaction(async (tx) => {
-      const gasto = await tx.gastoCartera.create({
-        data: {
-          valor,
-          observacion: observacion || null,
-          sedeId,
-        },
-        select: {
-          id: true,
-          valor: true,
-          observacion: true,
-          sedeId: true,
-          createdAt: true,
-        },
-      });
-
-      return gasto;
+    const resultado = await registrarGastoCarteraUnaVez({
+      usuarioId: user.id,
+      clave,
+      valor,
+      observacion: observacion || null,
+      sedeId,
     });
 
     return NextResponse.json({
       ok: true,
       mensaje: "Gasto de cartera registrado correctamente",
-      item: resultado,
-    });
+      item: resultado.item,
+      replayed: resultado.replayed,
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof CarteraRequestConflictError) {
+      return NextResponse.json({ error: error.message, codigo: "IDEMPOTENCIA_CONFLICTO" }, { status: 409 });
+    }
     console.error("ERROR REGISTRANDO GASTO DE CARTERA:", error);
     return NextResponse.json(
       { error: "Error registrando gasto de cartera" },
