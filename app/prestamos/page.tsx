@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
-import DashboardIcon, {
-  type DashboardIconName,
-} from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
+import Image from "next/image";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import LoanDialog from "./_components/loan-dialog";
+import { LOAN_TABS, prestamoEnPestana, textoEstadoPrestamo, paginasPrestamos, numerosPaginaPrestamos, type LoanTab } from "@/lib/loans-dashboard-view";
+import styles from "./loans.module.css";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 
 type Prestamo = {
@@ -95,39 +94,6 @@ function imeisResumenLote(items: Prestamo[], expandido = false) {
   return { visibles, restantes };
 }
 
-function MetricCard({
-  label,
-  value,
-  detail,
-  icon,
-  iconClass,
-  valueClass = "text-slate-950",
-}: {
-  label: string;
-  value: string | number;
-  detail: string;
-  icon: DashboardIconName;
-  iconClass: string;
-  valueClass?: string;
-}) {
-  return (
-    <article className="min-h-[138px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start gap-4">
-        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
-          <DashboardIcon name={icon} className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-600">{label}</p>
-          <p className={["mt-1.5 text-[28px] font-black leading-tight tracking-tight", valueClass].join(" ")}>
-            {value}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 export default function PrestamosPage() {
   const [prestamos, setPrestamos] = useState<Prestamo[]>([]);
   const [mensaje, setMensaje] = useState("");
@@ -141,6 +107,12 @@ export default function PrestamosPage() {
   const [lotesDetalleAbiertos, setLotesDetalleAbiertos] = useState<string[]>([]);
   const [lotesImeisExpandidos, setLotesImeisExpandidos] = useState<string[]>([]);
   const [idsSolicitudPago, setIdsSolicitudPago] = useState<number[]>([]);
+  const [pestana, setPestana] = useState<LoanTab>("Todos");
+  const [pagina, setPagina] = useState(1);
+  const [filasPorPagina, setFilasPorPagina] = useState(5);
+  const [detalleId, setDetalleId] = useState<number | null>(null);
+  const [confirmacionPago, setConfirmacionPago] = useState<{ tipo: "solicitar" | "aprobar"; ids: number[] } | null>(null);
+  const solicitudListado = useRef(0);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
@@ -170,6 +142,7 @@ export default function PrestamosPage() {
   }, []);
 
   const cargarPrestamos = useCallback(async () => {
+    const solicitud = ++solicitudListado.current;
     try {
       const params = new URLSearchParams();
 
@@ -188,18 +161,21 @@ export default function PrestamosPage() {
         throw new Error(data?.error || "Error cargando prestamos");
       }
 
+      if (solicitud !== solicitudListado.current) return;
       setPrestamos(data);
+      setIdsSolicitudPago((actuales) => actuales.filter((id) => data.some((item: Prestamo) =>
+        item.id === id && item.estado === "APROBADO" && Boolean(item.requiereAprobacionEntreSedes) && (esAdmin || user?.sedeId === item.sedeDestinoId))));
       setMensaje((actual) =>
         actual === "Error cargando prestamos" || actual === "Error cargando sesion"
           ? ""
           : actual
       );
     } catch {
-      setMensaje("Error cargando prestamos");
+      if (solicitud === solicitudListado.current) setMensaje("Error cargando prestamos");
     } finally {
-      setCargandoListado(false);
+      if (solicitud === solicitudListado.current) setCargandoListado(false);
     }
-  }, [esAdmin, sedeFiltroId]);
+  }, [esAdmin, sedeFiltroId, user?.sedeId]);
 
   useEffect(() => {
     const init = async () => {
@@ -364,15 +340,8 @@ export default function PrestamosPage() {
     }
 
     const seleccionados = prestamos.filter((prestamo) => ids.includes(prestamo.id));
-    const total = seleccionados.reduce(
-      (acumulado, prestamo) => acumulado + Number(prestamo.costo || 0),
-      0
-    );
-    const confirmado = window.confirm(
-      `Confirmas enviar ${ids.length} equipo(s) a pagar por ${formatoPesos(total)}?`
-    );
-
-    if (!confirmado) {
+    if (seleccionados.length !== ids.length || !seleccionados.every(puedeSolicitarPago)) {
+      setMensaje("Error: la selección contiene préstamos que ya no son elegibles para pago");
       return;
     }
 
@@ -620,6 +589,7 @@ export default function PrestamosPage() {
 
   const prestamosFiltrados = useMemo(() => {
     return prestamos
+      .filter((prestamo) => prestamoEnPestana(prestamo.estado, pestana))
       .filter((prestamo) => {
         if (filtroEstado === "TODOS") return true;
         return prestamo.estado === filtroEstado;
@@ -641,7 +611,9 @@ export default function PrestamosPage() {
           prestamo.estado.toLowerCase().includes(termino)
         );
       });
-  }, [prestamos, filtroEstado, busqueda]);
+  }, [prestamos, filtroEstado, busqueda, pestana]);
+  const totalPaginas = paginasPrestamos(prestamosFiltrados.length, filasPorPagina);
+  const paginaActual = Math.min(pagina, totalPaginas);
 
   const prestamosSeleccionablesPago = prestamosFiltrados.filter((prestamo) =>
     puedeSolicitarPago(prestamo)
@@ -654,11 +626,6 @@ export default function PrestamosPage() {
       idsSolicitudPago.includes(prestamo.id) &&
       idsSolicitudPagoValidos.has(prestamo.id)
   );
-  const todosPagablesVisiblesSeleccionados =
-    prestamosSeleccionablesPago.length > 0 &&
-    prestamosSeleccionablesPago.every((prestamo) =>
-      idsSolicitudPago.includes(prestamo.id)
-    );
   const totalSolicitudPagoSeleccionada =
     prestamosSolicitudPagoSeleccionados.reduce(
       (acumulado, prestamo) => acumulado + Number(prestamo.costo || 0),
@@ -707,23 +674,12 @@ export default function PrestamosPage() {
   );
 
   const alternarSeleccionSolicitudPago = (id: number) => {
+    if (cargando || !idsSolicitudPagoValidos.has(id)) return;
     setIdsSolicitudPago((actuales) =>
       actuales.includes(id)
         ? actuales.filter((itemId) => itemId !== id)
         : [...actuales, id]
     );
-  };
-
-  const alternarSeleccionPagablesVisibles = () => {
-    const idsVisibles = prestamosSeleccionablesPago.map((prestamo) => prestamo.id);
-
-    setIdsSolicitudPago((actuales) => {
-      if (todosPagablesVisiblesSeleccionados) {
-        return actuales.filter((id) => !idsVisibles.includes(id));
-      }
-
-      return Array.from(new Set([...actuales, ...idsVisibles]));
-    });
   };
 
   const alternarSeleccionGrupoPago = (items: Prestamo[]) => {
@@ -850,40 +806,6 @@ export default function PrestamosPage() {
     "FINALIZADO",
   ];
 
-  const claseEstado = (estado: string) => {
-    const normalizado = String(estado || "").toUpperCase();
-
-    if (normalizado === "PENDIENTE") return "bg-amber-100 text-amber-700";
-    if (normalizado === "APROBADO") return "bg-sky-100 text-sky-700";
-    if (normalizado === "DEVOLUCION_PENDIENTE") {
-      return "bg-violet-100 text-violet-700";
-    }
-    if (normalizado === "PAGO_PENDIENTE_APROBACION") {
-      return "bg-yellow-100 text-yellow-700";
-    }
-    if (normalizado === "PAGADO" || normalizado === "FINALIZADO") {
-      return "bg-emerald-100 text-emerald-700";
-    }
-    if (normalizado === "RECHAZADO") return "bg-rose-100 text-rose-700";
-    if (normalizado === "CANCELADO") return "bg-slate-200 text-slate-700";
-    if (normalizado === "DEVUELTO") return "bg-slate-200 text-slate-700";
-    return "bg-slate-200 text-slate-700";
-  };
-
-  const claseTipoPrestamo = (prestamo: Prestamo) =>
-    prestamo.prestamoDesdePrincipal
-      ? "border-amber-200 bg-amber-50 text-amber-800"
-      : "border-sky-200 bg-sky-50 text-sky-800";
-
-  const claseFinanciera = (estado: string | null | undefined) => {
-    const normalizado = String(estado || "").toUpperCase();
-
-    if (normalizado === "PAGO") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    if (normalizado === "DEUDA") return "border-amber-200 bg-amber-50 text-amber-700";
-    if (normalizado === "CANCELADO") return "border-slate-200 bg-slate-100 text-slate-700";
-    return "border-slate-200 bg-slate-50 text-slate-500";
-  };
-
   const resolverSiguientePaso = (prestamo: Prestamo) => {
                     const origen = prestamo.sedeOrigenNombre ?? "Sede sin configurar";
                     const destino = prestamo.sedeDestinoNombre ?? "Sede sin configurar";
@@ -990,864 +912,168 @@ export default function PrestamosPage() {
         ] satisfies NavigationItem[])
       : []),
   ];
-  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
+  const prestamosPagina = prestamosFiltrados.slice((paginaActual - 1) * filasPorPagina, paginaActual * filasPorPagina);
+  const pagablesPagina = prestamosPagina.filter(puedeSolicitarPago);
+  const todosPagablesPaginaSeleccionados = pagablesPagina.length > 0 && pagablesPagina.every((item) => idsSolicitudPago.includes(item.id));
+  const seleccionarPagina = () => {
+    const ids = pagablesPagina.map((item) => item.id);
+    setIdsSolicitudPago((actuales) => todosPagablesPaginaSeleccionados
+      ? actuales.filter((id) => !ids.includes(id)) : Array.from(new Set([...actuales, ...ids])));
+  };
+  const cambiarConsulta = () => { setPagina(1); setIdsSolicitudPago([]); setDetalleId(null); };
+  const accionesPrestamo = (item: Prestamo) => [
+    { label: "Solicitar devolución", allowed: puedeSolicitarDevolucion(item), run: () => solicitarDevolucionPrestamo(item.id) },
+    { label: "Aprobar devolución", allowed: puedeAprobarDevolucion(item), run: () => aprobarDevolucionPrestamo(item.id) },
+    { label: "Rechazar devolución", allowed: puedeRechazarDevolucion(item), run: () => rechazarDevolucionPrestamo(item.id) },
+    { label: "Aprobar préstamo", allowed: puedeAprobarPrestamo(item), run: () => aprobarPrestamo(item.id) },
+    { label: "Rechazar préstamo", allowed: puedeRechazarPrestamo(item), run: () => cerrarPrestamoPendiente(item.id, "RECHAZADO") },
+    { label: "Cancelar préstamo", allowed: puedeCancelarPrestamo(item), run: () => cerrarPrestamoPendiente(item.id, "CANCELADO") },
+    { label: "Solicitar pago", allowed: puedeSolicitarPago(item), run: () => solicitarPagoPrestamo(item.id) },
+    { label: "Aprobar pago", allowed: puedeAprobarPago(item) && !idsEnLotesMultiples.has(item.id), run: () => aprobarPagoPrestamo(item.id) },
+  ].filter((action) => action.allowed);
+  const tonoEstado = (estado: string) => {
+    if (["APROBADO", "PAGADO", "FINALIZADO", "DEVUELTO", "PAGO"].includes(estado)) return styles.dotGreen;
+    if (["PENDIENTE", "PAGO_PENDIENTE_APROBACION", "DEVOLUCION_PENDIENTE", "DEUDA"].includes(estado)) return styles.dotAmber;
+    if (estado === "RECHAZADO") return styles.dotRed;
+    return styles.dotGray;
+  };
+  const itemsConfirmacion = confirmacionPago ? prestamos.filter((item) => confirmacionPago.ids.includes(item.id)) : [];
+  const confirmacionValida = Boolean(confirmacionPago && itemsConfirmacion.length > 0 && itemsConfirmacion.length === confirmacionPago.ids.length &&
+    itemsConfirmacion.every(confirmacionPago.tipo === "solicitar" ? puedeSolicitarPago : puedeAprobarPago));
+  const gruposConfirmacion = Array.from(itemsConfirmacion.reduce((mapa, item) => {
+    const key = `${item.sedeOrigenId}:${item.sedeDestinoId}`;
+    mapa.set(key, [...(mapa.get(key) || []), item]); return mapa;
+  }, new Map<string, Prestamo[]>()).values());
+  const valorConfirmacion = (item: Prestamo) => Number(confirmacionPago?.tipo === "aprobar" ? item.montoPago || item.costo || 0 : item.costo || 0);
+  const totalConfirmacion = itemsConfirmacion.reduce((total, item) => total + valorConfirmacion(item), 0);
+  const confirmarPago = async () => {
+    if (!confirmacionPago || !confirmacionValida || cargando || cargandoListado) return;
+    if (confirmacionPago.tipo === "solicitar") await solicitarPagoPrestamoLote(confirmacionPago.ids);
+    else await aprobarPagoPrestamoLote(confirmacionPago.ids);
+    setConfirmacionPago(null);
+  };
 
-  return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/prestamos"
-        coverageLabel={user?.sedeNombre || "Cargando cobertura"}
-        items={navigationItems}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
-                Gestión de préstamos
-              </h1>
-              <p className="mt-1 text-sm text-slate-500 sm:text-base">
-                Control de préstamos entre sedes, devoluciones y pagos
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  Cobertura: {sedeFiltroNombre}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  {prestamosFiltrados.length} registros visibles
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href="/prestamos/nuevo"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#bd0711]"
-              >
-                <span className="text-lg leading-none">+</span>
-                Nuevo préstamo
-              </Link>
-              <Link
-                href="/inventario"
-                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
-              >
-                Ver inventario
-              </Link>
-              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">
-                    {user?.nombre || user?.usuario || "Cargando usuario"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {user?.rolNombre || "Sesión activa"}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
-            </div>
-          </header>
-
-        {mensaje && (
-          <div
-            className={[
-              "mt-5 rounded-xl border px-5 py-4 text-sm font-medium shadow-sm",
-              mensajeEsError
-                ? "border-rose-200 bg-rose-50 text-rose-800"
-                : "border-emerald-200 bg-emerald-50 text-emerald-800",
-            ].join(" ")}
-          >
-            {mensaje}
+  return <div className={styles.page}>
+    <header className={styles.topbar}>
+      <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS · Inicio"><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link>
+      <nav className={styles.navigation} aria-label="Navegación principal">
+        {navigationItems.map((item) => <Link key={item.href} href={item.href} aria-current={item.href === "/prestamos" ? "page" : undefined}
+          aria-label={item.label} title={item.label} className={`${styles.navItem} ${item.href === "/prestamos" ? styles.navActive : ""} ${item.icon === "settings" ? styles.settingsLink : ""}`}>
+          {item.icon === "settings" ? <DashboardIcon name="settings" /> : item.label}
+        </Link>)}
+      </nav>
+      <SalesProfile name={user?.nombre || user?.usuario || "Cargando usuario"} role={user?.rolNombre || "Sesión activa"} />
+    </header>
+    <main className={styles.main}>
+      <header className={styles.heading}>
+        <div className={styles.headingCopy}><h1>Préstamos</h1><p>Control entre sedes y bodega principal</p></div>
+        <div className={styles.headingActions}><Link href="/prestamos/nuevo" className={`${styles.button} ${styles.primary}`}><span aria-hidden="true">＋</span>Nuevo préstamo</Link><Link href="/inventario" className={`${styles.button} ${styles.outline}`}>Ver inventario</Link></div>
+      </header>
+      {mensaje && <div role={mensajeEsError ? "alert" : "status"} className={`${styles.message} ${mensajeEsError ? styles.error : ""}`}>{mensaje}</div>}
+      <section className={styles.summary} aria-label={`Resumen de préstamos · ${sedeFiltroNombre}`} aria-busy={cargandoListado}>
+        <div className={styles.summaryValue}><strong>{cargandoListado ? "—" : formatoPesos(valorTotalPrestamos)}</strong><span>Valor total en préstamos</span></div>
+        {[
+          ["Total", totalPrestamos], ["Bodega principal", totalDesdePrincipal], ["Entre sedes", totalEntreSedes],
+          ["Pendientes", totalPendientes], ["Pago pendiente", totalPagoPendiente], ["Finalizados", totalFinalizados],
+        ].map(([label, value]) => <div className={styles.summaryMetric} key={label}><strong>{cargandoListado ? "—" : Number(value).toLocaleString("es-CO")}</strong><span>{label}</span></div>)}
+      </section>
+      <section className={styles.panel} aria-label="Préstamos registrados">
+        <div className={styles.filterBar}>
+          <div className={styles.tabs} role="tablist" aria-label="Estado de los préstamos">{LOAN_TABS.map((tab) => <button key={tab} type="button" role="tab" aria-selected={pestana === tab} aria-controls="prestamos-listado"
+            className={`${styles.tab} ${pestana === tab ? styles.tabActive : ""}`} onClick={() => { cambiarConsulta(); setPestana(tab); setFiltroEstado("TODOS"); }}>{tab}</button>)}</div>
+          <div className={styles.filters}>
+            {esAdmin ? <select aria-label="Filtrar por sede" value={sedeFiltroId} disabled={cargando} onChange={(event) => { cambiarConsulta(); setPrestamos([]); setMensaje(""); setCargandoListado(true); setSedeFiltroId(event.target.value); }}><option value="TODAS">Todas las sedes</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</select>
+              : <span aria-label="Cobertura">{user?.sedeNombre || "Tu sede"}</span>}
+            <select aria-label="Filtrar por estado" value={filtroEstado} onChange={(event) => { cambiarConsulta(); setPestana("Todos"); setFiltroEstado(event.target.value); }}>
+              {estadosFiltro.map((estado) => <option key={estado} value={estado}>{estado === "TODOS" ? "Todos los estados" : textoEstadoPrestamo(estado)}</option>)}
+            </select>
           </div>
-        )}
-
-        <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-          <MetricCard
-            label="Total prestamos"
-            value={cargandoListado ? "—" : totalPrestamos}
-            detail="Solicitudes visibles en esta cobertura."
-            icon="loans"
-            iconClass="bg-red-50 text-[#e30613]"
-          />
-          <MetricCard
-            label="Bodega principal"
-            value={cargandoListado ? "—" : totalDesdePrincipal}
-            detail="Equipos enviados desde principal."
-            icon="inventory"
-            iconClass="bg-orange-50 text-orange-600"
-            valueClass="text-amber-600"
-          />
-          <MetricCard
-            label="Entre sedes"
-            value={cargandoListado ? "—" : totalEntreSedes}
-            detail="Prestamos operativos sede a sede."
-            icon="store"
-            iconClass="bg-blue-50 text-blue-600"
-            valueClass="text-sky-600"
-          />
-          <MetricCard
-            label="Pendientes"
-            value={cargandoListado ? "—" : totalPendientes}
-            detail="Solicitudes a la espera de aprobacion."
-            icon="approvals"
-            iconClass="bg-orange-50 text-orange-600"
-            valueClass="text-amber-600"
-          />
-          <MetricCard
-            label="Pago pendiente"
-            value={cargandoListado ? "—" : totalPagoPendiente}
-            detail="Casos a la espera de aprobacion."
-            icon="cash"
-            iconClass="bg-violet-50 text-violet-600"
-            valueClass="text-amber-600"
-          />
-          <MetricCard
-            label="Finalizados"
-            value={cargandoListado ? "—" : totalFinalizados}
-            detail="Ciclos ya cerrados por pago o devolucion."
-            icon="approvals"
-            iconClass="bg-emerald-50 text-emerald-600"
-            valueClass="text-emerald-600"
-          />
-        </section>
-
-        <section className="mt-5 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Control operativo
-              </div>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                Seguimiento de préstamos
-              </h2>
-              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">
-                Filtra por estado, IMEI, referencia o sede sin perder trazabilidad.
-              </p>
-            </div>
-
-            <div className="grid w-full gap-4 xl:max-w-[760px] xl:grid-cols-[minmax(0,1fr)_260px]">
-              <input
-                placeholder="Buscar IMEI, referencia, color, sede o estado..."
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                value={busqueda}
-                onChange={(event) => setBusqueda(event.target.value)}
-              />
-
-              {esAdmin ? (
-                <select
-                  value={sedeFiltroId}
-                  onChange={(event) => {
-                    setCargandoListado(true);
-                    setSedeFiltroId(event.target.value);
-                  }}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                >
-                  <option value="TODAS">Todas las sedes</option>
-                  {sedes.map((sede) => (
-                    <option key={sede.id} value={String(sede.id)}>
-                      {sede.nombre}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm font-semibold text-slate-700">
-                  Cobertura: {user?.sedeNombre || "Tu sede"}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-2">
-            {estadosFiltro.map((estado) => (
-              <button
-                key={estado}
-                type="button"
-                onClick={() => setFiltroEstado(estado)}
-                className={[
-                  "rounded-lg px-3.5 py-2 text-xs font-bold transition",
-                  filtroEstado === estado
-                    ? "border border-[#e30613] bg-[#e30613] text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50",
-                ].join(" ")}
-              >
-                {estado}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-5 flex flex-col gap-3 rounded-xl border border-red-100 bg-red-50/45 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                Valor total en préstamos
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Exposición económica acumulada de la cartera visible.
-              </p>
-            </div>
-            <p className="text-[28px] font-black tracking-tight text-[#e30613]">
-              $ {valorTotalPrestamos.toLocaleString("es-CO")}
-            </p>
-          </div>
-        </section>
-
-        {prestamosSeleccionablesPago.length > 0 && (
-          <section className="mt-5 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div>
-                <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                  Enviar a pagar
-                </div>
-                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                  Lote de pagos seleccionado
-                </h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                  Pagos de prestamos entre sedes filtrados en esta vista, agrupados por quien recibe el dinero.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={alternarSeleccionPagablesVisibles}
-                  disabled={cargando || prestamosSeleccionablesPago.length === 0}
-                  className="min-h-[42px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {todosPagablesVisiblesSeleccionados
-                    ? "QUITAR VISIBLES"
-                    : "SELECCIONAR VISIBLES"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={limpiarSeleccionSolicitudPago}
-                  disabled={cargando || idsSolicitudPago.length === 0}
-                  className="min-h-[42px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black tracking-[0.06em] text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  LIMPIAR
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    void solicitarPagoPrestamoLote(
-                      prestamosSolicitudPagoSeleccionados.map((prestamo) => prestamo.id)
-                    )
-                  }
-                  disabled={cargando || prestamosSolicitudPagoSeleccionados.length === 0}
-                  className="min-h-[42px] rounded-xl bg-[#e30613] px-5 text-xs font-black tracking-[0.06em] text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  ENVIAR LOTE A PAGAR
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Pagables visibles
-                </p>
-                <p className="mt-2 text-3xl font-black text-slate-950">
-                  {prestamosSeleccionablesPago.length}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
-                  Seleccionados
-                </p>
-                <p className="mt-2 text-3xl font-black text-amber-700">
-                  {prestamosSolicitudPagoSeleccionados.length}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Total a enviar
-                </p>
-                <p className="mt-2 text-3xl font-black text-emerald-700">
-                  {formatoPesos(totalSolicitudPagoSeleccionada)}
-                </p>
-              </div>
-            </div>
-
-            {lotesConSeleccionPago.length > 0 && (
-              <div className="mt-5 grid gap-4 xl:grid-cols-2">
-                {lotesConSeleccionPago.map((lote) => {
-                  const expansionKey = `solicitud:${lote.key}`;
-                  const imeisExpandidos = lotesImeisExpandidos.includes(expansionKey);
-                  const resumenImeis = imeisResumenLote(lote.items, imeisExpandidos);
-                  const grupoCompleto = lote.seleccionados.length === lote.items.length;
-
-                  return (
-                    <article
-                      key={lote.key}
-                      className={`rounded-2xl border p-5 transition ${
-                        lote.seleccionados.length > 0
-                          ? "border-red-200 bg-red-50/25 shadow-sm"
-                          : "border-slate-200 bg-slate-50/35"
-                      }`}
-                    >
-                      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            {lote.destino} envia pago a
-                          </p>
-                          <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                            {lote.origen}
-                          </h3>
-                          <p className="mt-2 text-sm text-slate-500">
-                            {lote.seleccionados.length} de {lote.items.length} equipos seleccionados
-                          </p>
-                        </div>
-
-                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                            Valor seleccionado
-                          </p>
-                          <p className="mt-1 text-2xl font-black text-emerald-700">
-                            {formatoPesos(lote.totalSeleccionado)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 pt-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-                          Selecciona los IMEI del lote
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => alternarSeleccionGrupoPago(lote.items)}
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-[10px] font-black tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
-                        >
-                          {grupoCompleto ? "QUITAR GRUPO" : "SELECCIONAR GRUPO"}
-                        </button>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {resumenImeis.visibles.map((item) => {
-                          const seleccionado = idsSolicitudPago.includes(item.id);
-
-                          return (
-                            <button
-                              type="button"
-                              key={item.id}
-                              onClick={() => alternarSeleccionSolicitudPago(item.id)}
-                              aria-pressed={seleccionado}
-                              title={`${item.referencia} · ${formatoPesos(item.costo)}`}
-                              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${
-                                seleccionado
-                                  ? "border-[#e30613] bg-[#e30613] text-white shadow-sm"
-                                  : "border-slate-300 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50"
-                              }`}
-                            >
-                              <span
-                                className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
-                                  seleccionado
-                                    ? "border-white/70 bg-white text-[#e30613]"
-                                    : "border-slate-300 bg-white text-transparent"
-                                }`}
-                              >
-                                ✓
-                              </span>
-                              {item.imei}
-                            </button>
-                          );
-                        })}
-                        {(resumenImeis.restantes > 0 || imeisExpandidos) && (
-                          <button
-                            type="button"
-                            onClick={() => alternarImeisLote(expansionKey)}
-                            className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-700"
-                          >
-                            {imeisExpandidos
-                              ? "VER MENOS"
-                              : `VER +${resumenImeis.restantes} MÁS`}
-                          </button>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        )}
-
-        {lotesPagoPendiente.length > 0 && (
-          <section className="mt-5 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                  Lotes por recibir
-                </div>
-                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                  Pagos agrupados para aprobar
-                </h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                  Cada lote resume la sede que paga, la sede que recibe, los IMEIs incluidos y el valor total antes de confirmar.
-                </p>
-              </div>
-
-              <div className="rounded-3xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-right">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Total visible
-                </p>
-                <p className="mt-1 text-2xl font-black text-emerald-700">
-                  {formatoPesos(
-                    lotesPagoPendiente.reduce(
-                      (acumulado, lote) => acumulado + lote.total,
-                      0
-                    )
-                  )}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 xl:grid-cols-2">
-              {lotesPagoPendiente.map((lote) => {
-                const detalleAbierto = lotesDetalleAbiertos.includes(lote.key);
-                const ids = lote.items.map((item) => item.id);
-                const expansionKey = `pendiente:${lote.key}`;
-                const imeisExpandidos = lotesImeisExpandidos.includes(expansionKey);
-                const resumenImeis = imeisResumenLote(lote.items, imeisExpandidos);
-
-                return (
-                  <article
-                    key={lote.key}
-                    className="rounded-xl border border-slate-200 bg-slate-50/35 p-5 shadow-sm"
-                  >
-                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Lote de pago
-                        </p>
-                        <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                          {lote.destino} paga a {lote.origen}
-                        </h3>
-                        <p className="mt-2 text-sm text-slate-500">
-                          {lote.items.length} equipo
-                          {lote.items.length === 1 ? "" : "s"} pendiente
-                          {lote.items.length === 1 ? "" : "s"} de aprobacion
-                          {" "}- Solicitado: {lote.fecha ? new Date(lote.fecha).toLocaleString("es-CO") : "-"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Valor a recibir
-                        </p>
-                        <p className="mt-1 text-2xl font-black text-emerald-700">
-                          {formatoPesos(lote.total)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-3 md:grid-cols-2">
-                      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                          Recibe
-                        </p>
-                        <p className="mt-1 text-base font-black text-slate-950">
-                          {lote.origen}
-                        </p>
-                      </div>
-
-                      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                          Paga
-                        </p>
-                        <p className="mt-1 text-base font-black text-slate-950">
-                          {lote.destino}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 rounded-3xl border border-slate-200 bg-white px-4 py-4">
-                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                          Resumen de IMEIs
-                        </p>
-                        <p className="text-xs font-semibold text-slate-500">
-                          {lote.items.length} serial
-                          {lote.items.length === 1 ? "" : "es"} en el lote
-                        </p>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {resumenImeis.visibles.map((item) => (
-                          <span
-                            key={item.id}
-                            title={`${item.referencia} · ${formatoPesos(item.costo)}`}
-                            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800"
-                          >
-                            {item.imei}
-                          </span>
-                        ))}
-                        {(resumenImeis.restantes > 0 || imeisExpandidos) && (
-                          <button
-                            type="button"
-                            onClick={() => alternarImeisLote(expansionKey)}
-                            className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-700"
-                          >
-                            {imeisExpandidos
-                              ? "VER MENOS"
-                              : `VER +${resumenImeis.restantes} MÁS`}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-5 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => alternarDetalleLote(lote.key)}
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
-                      >
-                        {detalleAbierto ? "Ocultar detalle" : "Ver detalle"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => void aprobarPagoPrestamoLote(ids)}
-                        disabled={cargando}
-                        className="rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-70"
-                      >
-                        Aprobar lote
-                      </button>
-                    </div>
-
-                    {detalleAbierto && (
-                      <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200">
-                        <table className="w-full text-sm">
-                          <thead className="bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
-                            <tr>
-                              <th className="px-4 py-3">IMEI</th>
-                              <th className="px-4 py-3">Referencia</th>
-                              <th className="px-4 py-3 text-right">Valor</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {lote.items.map((item) => (
-                              <tr key={item.id} className="border-t border-slate-100">
-                                <td className="px-4 py-3 font-semibold text-slate-950">
-                                  {item.imei}
-                                </td>
-                                <td className="px-4 py-3 text-slate-600">
-                                  {item.referencia}
-                                </td>
-                                <td className="px-4 py-3 text-right font-bold text-slate-950">
-                                  {formatoPesos(Number(item.montoPago || item.costo || 0))}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Solicitudes
-              </div>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                Préstamos registrados
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Consulta cada solicitud, revisa su estado y ejecuta acciones segun tu alcance.
-              </p>
-            </div>
-
-            <span className="text-sm font-medium text-slate-500">
-              {prestamosFiltrados.length} resultado(s)
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-[1620px] text-sm">
-              <thead className="sticky top-0 bg-[#f8fafc]">
-                <tr className="border-b border-slate-200 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                  <th className="px-4 py-4">
-                    <input
-                      type="checkbox"
-                      checked={todosPagablesVisiblesSeleccionados}
-                      onChange={alternarSeleccionPagablesVisibles}
-                      disabled={prestamosSeleccionablesPago.length === 0}
-                      aria-label="Seleccionar prestamos pagables visibles"
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900 disabled:opacity-40"
-                    />
-                  </th>
-                  <th className="px-4 py-4">ID</th>
-                  <th className="px-4 py-4">Equipo</th>
-                  <th className="px-4 py-4">Tipo</th>
-                  <th className="px-4 py-4">Flujo</th>
-                  <th className="px-4 py-4">Estado</th>
-                  <th className="px-4 py-4">Financiero</th>
-                  <th className="px-4 py-4">Siguiente paso</th>
-                  <th className="px-4 py-4">Accion</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {cargandoListado ? (
-                  <tr>
-                    <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
-                      <span className="inline-flex items-center gap-3 font-semibold">
-                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-[#e30613]" />
-                        Cargando préstamos...
-                      </span>
-                    </td>
+        </div>
+        <div className={styles.searchLine}><label className={styles.search}><DashboardIcon name="search" /><input aria-label="Buscar préstamos" placeholder="Buscar por IMEI, referencia o sede" value={busqueda} onChange={(event) => { cambiarConsulta(); setBusqueda(event.target.value); }} /></label><span className={styles.resultCount} aria-live="polite">{cargandoListado ? "Cargando…" : `${prestamosFiltrados.length.toLocaleString("es-CO")} registros`}</span></div>
+        <div id="prestamos-listado" role="tabpanel" aria-label={pestana} className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead><tr><th className={styles.selectionCell}><input type="checkbox" aria-label="Seleccionar préstamos pagables visibles" checked={todosPagablesPaginaSeleccionados} disabled={cargando || cargandoListado || pagablesPagina.length === 0} onChange={seleccionarPagina} /></th><th>Equipo e IMEI</th><th>Origen</th><th>Destino</th><th>Estado</th><th>Financiero</th><th>Acciones</th></tr></thead>
+            <tbody>{cargandoListado ? <tr><td colSpan={7} className={styles.empty} role="status">Cargando préstamos…</td></tr>
+              : prestamosPagina.length === 0 ? <tr><td colSpan={7} className={styles.empty}>No hay préstamos registrados en esta vista.</td></tr>
+              : prestamosPagina.map((item) => {
+                const abierto = detalleId === item.id;
+                const actions = accionesPrestamo(item);
+                const paso = resolverSiguientePaso(item);
+                return <Fragment key={item.id}>
+                  <tr className={styles.loanRow}>
+                    <td data-label="Seleccionar" className={styles.selectionCell}><input type="checkbox" aria-label={`Seleccionar préstamo ${item.id}`} checked={idsSolicitudPago.includes(item.id) && idsSolicitudPagoValidos.has(item.id)} disabled={cargando || !puedeSolicitarPago(item)} onChange={() => alternarSeleccionSolicitudPago(item.id)} /></td>
+                    <td data-label="Equipo e IMEI"><div className={styles.equipment}><span className={styles.phoneIcon} aria-hidden="true"><svg viewBox="0 0 28 42" fill="none"><rect x="4" y="2" width="20" height="38" rx="4" stroke="currentColor" strokeWidth="1.7" /><path d="M10 2v3h8V2" stroke="currentColor" strokeWidth="1.7" /></svg></span><div className={styles.equipmentCopy}><strong>{item.referencia}</strong><p>IMEI <span>{item.imei}</span></p><p>{item.color || "Sin color"} · ID {item.id}</p></div></div></td>
+                    <td data-label="Origen">{item.sedeOrigenNombre ?? "Sede sin configurar"}</td><td data-label="Destino">{item.sedeDestinoNombre ?? "Sede sin configurar"}</td>
+                    <td data-label="Estado"><span className={styles.status}><i className={`${styles.dot} ${tonoEstado(item.estado)}`} />{textoEstadoPrestamo(item.estado)}</span></td>
+                    <td data-label="Financiero"><div><span className={styles.status}><i className={`${styles.dot} ${tonoEstado(item.estadoFinancieroActual || "")}`} />{textoEstadoPrestamo(item.estadoFinancieroActual || "")}</span>{item.estadoActualActual && <p className={styles.muted}>Equipo {textoEstadoPrestamo(item.estadoActualActual).toLowerCase()}</p>}</div></td>
+                    <td data-label="Acciones"><div className={styles.rowActions}><button id={`abrir-prestamo-${item.id}`} type="button" className={styles.detailButton} aria-label={`${abierto ? "Cerrar" : "Ver"} detalle del préstamo ${item.id}`} aria-expanded={abierto} aria-controls={`detalle-prestamo-${item.id}`} onClick={() => setDetalleId(abierto ? null : item.id)}>{abierto ? "Cerrar detalle" : "Ver detalle"}</button></div></td>
                   </tr>
-                ) : prestamosFiltrados.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
-                      No hay prestamos registrados en esta vista.
-                    </td>
-                  </tr>
-                ) : (
-                  prestamosFiltrados.map((item) => {
-                    const paso = resolverSiguientePaso(item);
-                    const origen = item.sedeOrigenNombre ?? "Sede sin configurar";
-                    const destino = item.sedeDestinoNombre ?? "Sede sin configurar";
-
-                    return (
-                      <tr
-                        key={item.id}
-                        className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-slate-50/80"
-                      >
-                        <td className="px-4 py-4">
-                          <input
-                            type="checkbox"
-                            checked={idsSolicitudPago.includes(item.id)}
-                            onChange={() => alternarSeleccionSolicitudPago(item.id)}
-                            disabled={!puedeSolicitarPago(item)}
-                            aria-label={`Seleccionar prestamo ${item.id}`}
-                            className="h-4 w-4 rounded border-slate-300 text-slate-900 disabled:opacity-30"
-                          />
-                        </td>
-                        <td className="px-4 py-4 font-bold text-slate-950">{item.id}</td>
-                        <td className="px-4 py-4">
-                          <div className="font-semibold text-slate-950">{item.imei}</div>
-                          <div className="mt-1 text-xs font-medium text-slate-500">
-                            {item.referencia}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-400">
-                            {item.color ?? "-"} | {formatoPesos(item.costo)}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span
-                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${claseTipoPrestamo(
-                              item
-                            )}`}
-                          >
-                            {item.prestamoDesdePrincipal ? "Bodega Principal" : "Entre sedes"}
-                          </span>
-                          <div className="mt-2 text-xs font-medium text-slate-500">
-                            {item.prestamoDesdePrincipal
-                              ? "Sin devolucion"
-                              : "Permite devolucion segun estado"}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                              Origen
-                            </p>
-                            <p className="mt-1 font-semibold text-slate-900">{origen}</p>
-                          </div>
-                          <div className="mt-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                              Destino
-                            </p>
-                            <p className="mt-1 font-semibold text-slate-900">{destino}</p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${claseEstado(
-                              item.estado
-                            )}`}
-                          >
-                            {item.estado}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span
-                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${claseFinanciera(
-                              item.estadoFinancieroActual
-                            )}`}
-                          >
-                            {item.estadoFinancieroActual ?? "-"}
-                          </span>
-                          <div className="mt-2 space-y-1 text-xs text-slate-500">
-                            <p>
-                              Debe a:{" "}
-                              <span className="font-semibold text-slate-700">
-                                {item.deboAActual ?? "-"}
-                              </span>
-                            </p>
-                            <p>
-                              Equipo:{" "}
-                              <span className="font-semibold text-slate-700">
-                                {item.estadoActualActual ?? "-"}
-                              </span>
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className={`rounded-2xl border px-4 py-3 ${paso.tono}`}>
-                            <p className="text-xs font-black uppercase tracking-[0.12em]">
-                              {paso.titulo}
-                            </p>
-                            <p className="mt-2 text-xs leading-5">{paso.detalle}</p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          {puedeSolicitarDevolucion(item) && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void solicitarDevolucionPrestamo(item.id)
-                              }
-                              disabled={cargando}
-                              className="rounded-xl bg-[#111318] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d2330] disabled:opacity-70"
-                            >
-                              Solicitar devolucion
-                            </button>
-                          )}
-
-                          {puedeAprobarDevolucion(item) && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void aprobarDevolucionPrestamo(item.id)
-                              }
-                              disabled={cargando}
-                              className="rounded-xl bg-[#111318] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d2330] disabled:opacity-70"
-                            >
-                              Aprobar devolucion
-                            </button>
-                          )}
-
-                          {puedeRechazarDevolucion(item) && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void rechazarDevolucionPrestamo(item.id)
-                              }
-                              disabled={cargando}
-                              className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-70"
-                            >
-                              Rechazar devolucion
-                            </button>
-                          )}
-
-                          {puedeAprobarPrestamo(item) && (
-                            <button
-                              type="button"
-                              onClick={() => void aprobarPrestamo(item.id)}
-                              disabled={cargando}
-                              className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:opacity-70"
-                            >
-                              Aprobar
-                            </button>
-                          )}
-
-                          {puedeRechazarPrestamo(item) && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void cerrarPrestamoPendiente(item.id, "RECHAZADO")
-                              }
-                              disabled={cargando}
-                              className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-70"
-                            >
-                              Rechazar
-                            </button>
-                          )}
-
-                          {puedeCancelarPrestamo(item) && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void cerrarPrestamoPendiente(item.id, "CANCELADO")
-                              }
-                              disabled={cargando}
-                              className="rounded-xl bg-slate-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-70"
-                            >
-                              Cancelar
-                            </button>
-                          )}
-
-                          {puedeSolicitarPago(item) && (
-                            <button
-                              type="button"
-                              onClick={() => void solicitarPagoPrestamo(item.id)}
-                              disabled={cargando}
-                              className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-70"
-                            >
-                              Solicitar pago
-                            </button>
-                          )}
-
-                          {puedeAprobarPago(item) && idsEnLotesMultiples.has(item.id) && (
-                            <span className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700">
-                              Aprobar desde lote
-                            </span>
-                          )}
-
-                          {puedeAprobarPago(item) && !idsEnLotesMultiples.has(item.id) && (
-                            <button
-                              type="button"
-                              onClick={() => void aprobarPagoPrestamo(item.id)}
-                              disabled={cargando}
-                              className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-70"
-                            >
-                              Aprobar pago
-                            </button>
-                          )}
-
-                          {!puedeSolicitarDevolucion(item) &&
-                            !puedeAprobarDevolucion(item) &&
-                            !puedeRechazarDevolucion(item) &&
-                            !puedeAprobarPrestamo(item) &&
-                            !puedeRechazarPrestamo(item) &&
-                            !puedeCancelarPrestamo(item) &&
-                            !puedeSolicitarPago(item) &&
-                            !puedeAprobarPago(item) && (
-                              <span className="text-xs font-medium text-slate-400">
-                                Sin acciones
-                              </span>
-                            )}
-                        </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-        </main>
-      </div>
-    </div>
-  );
+                  {abierto && <tr className={styles.detailRow} id={`detalle-prestamo-${item.id}`}><td colSpan={7}>
+                    <section className={styles.detail} aria-label={`Detalle del préstamo ${item.id}`}>
+                      <div className={styles.detailHeading}><h3>Detalle del préstamo #{item.id}</h3><button type="button" aria-label={`Cerrar detalle del préstamo ${item.id}`} onClick={() => { setDetalleId(null); document.getElementById(`abrir-prestamo-${item.id}`)?.focus(); }}><DashboardIcon name="close" /></button></div>
+                      <dl className={styles.detailGrid}>
+                        <div><dt>Equipo / IMEI</dt><dd>{item.referencia}<br />{item.imei}</dd></div><div><dt>Color</dt><dd>{item.color || "Sin color"}</dd></div>
+                        <div><dt>Costo</dt><dd>{formatoPesos(item.costo)}</dd></div><div><dt>Tipo</dt><dd>{item.prestamoDesdePrincipal ? "Bodega principal · Sin devolución" : "Entre sedes"}</dd></div>
+                        <div><dt>Origen</dt><dd>{item.sedeOrigenNombre ?? "Sede sin configurar"}</dd></div><div><dt>Destino</dt><dd>{item.sedeDestinoNombre ?? "Sede sin configurar"}</dd></div>
+                        <div><dt>Estado del préstamo</dt><dd>{textoEstadoPrestamo(item.estado)}</dd></div><div><dt>Estado del equipo</dt><dd>{item.estadoActualActual || "Sin información"}</dd></div>
+                        <div><dt>Debe a</dt><dd>{item.deboAActual || "Sin información"}</dd></div><div><dt>Estado financiero</dt><dd>{item.estadoFinancieroActual || "Sin información"}</dd></div>
+                        <div><dt>Monto de pago</dt><dd>{item.montoPago == null ? "Sin solicitud" : formatoPesos(Number(item.montoPago))}</dd></div><div><dt>Solicitud de pago</dt><dd>{item.fechaSolicitudPago ? new Date(item.fechaSolicitudPago).toLocaleString("es-CO") : "Sin solicitud"}</dd></div>
+                      </dl>
+                      <p><strong>{paso.titulo}.</strong> {paso.detalle}</p>
+                      <div className={styles.detailActions}>{actions.map((action) => <button key={action.label} type="button" className={styles.button} disabled={cargando || cargandoListado} onClick={() => void action.run()}>{action.label}</button>)}
+                        {puedeAprobarPago(item) && idsEnLotesMultiples.has(item.id) && <button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado} onClick={() => {
+                          const lote = lotesPagoPendiente.find((group) => group.items.some((loan) => loan.id === item.id));
+                          if (lote) setConfirmacionPago({ tipo: "aprobar", ids: lote.items.map((loan) => loan.id) });
+                        }}>Revisar y aprobar lote</button>}
+                        {actions.length === 0 && !puedeAprobarPago(item) && <span className={styles.muted}>Sin acciones disponibles para tu rol en este estado.</span>}
+                      </div>
+                    </section>
+                  </td></tr>}
+                </Fragment>;
+              })}</tbody>
+          </table>
+        </div>
+      </section>
+      <section className={styles.batchBar} aria-label="Pago por lote">
+        <div className={styles.batchAvailable}><input type="checkbox" aria-label="Seleccionar préstamos pagables de esta página" checked={todosPagablesPaginaSeleccionados} disabled={cargando || cargandoListado || pagablesPagina.length === 0} onChange={seleccionarPagina} /><span><strong>{prestamosSeleccionablesPago.length.toLocaleString("es-CO")}</strong> disponibles para pago</span></div>
+        <div className={styles.batchSelected}><strong>{prestamosSolicitudPagoSeleccionados.length}</strong> seleccionados</div>
+        <div className={styles.batchTotal}><span>Total</span><strong>{formatoPesos(totalSolicitudPagoSeleccionada)}</strong></div>
+        <div className={styles.batchActions}><button type="button" className={styles.textButton} onClick={seleccionarPagina} disabled={cargando || cargandoListado || pagablesPagina.length === 0}>{todosPagablesPaginaSeleccionados ? "Quitar visibles" : "Seleccionar visibles"}</button><button type="button" className={styles.button} onClick={limpiarSeleccionSolicitudPago} disabled={cargando || prestamosSolicitudPagoSeleccionados.length === 0}>Limpiar</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado || prestamosSolicitudPagoSeleccionados.length === 0} onClick={() => setConfirmacionPago({ tipo: "solicitar", ids: prestamosSolicitudPagoSeleccionados.map((item) => item.id) })}>{cargando ? "Procesando…" : "Enviar a pagar"}</button></div>
+      </section>
+      <footer className={styles.pagination}>
+        <span>{cargandoListado ? "Cargando registros…" : `Mostrando ${prestamosFiltrados.length ? (paginaActual - 1) * filasPorPagina + 1 : 0}–${Math.min(paginaActual * filasPorPagina, prestamosFiltrados.length)} de ${prestamosFiltrados.length.toLocaleString("es-CO")}`}</span>
+        <label>Filas por página <select aria-label="Filas por página" value={filasPorPagina} onChange={(event) => { setFilasPorPagina(Number(event.target.value)); setPagina(1); }}>{[5, 10, 25, 50].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <nav aria-label="Páginas de préstamos"><button type="button" className={styles.pageButton} aria-label="Página anterior" disabled={paginaActual <= 1} onClick={() => setPagina(paginaActual - 1)}><DashboardIcon name="chevron" /></button>
+          {numerosPaginaPrestamos(paginaActual, totalPaginas).map((value, index, numbers) => <Fragment key={value}>{index > 0 && value - numbers[index - 1] > 1 && <span aria-hidden="true">…</span>}<button type="button" className={`${styles.pageButton} ${value === paginaActual ? styles.pageActive : ""}`} aria-current={value === paginaActual ? "page" : undefined} aria-label={`Página ${value}`} onClick={() => setPagina(value)}>{value}</button></Fragment>)}
+          <button type="button" className={styles.pageButton} aria-label="Página siguiente" disabled={paginaActual >= totalPaginas} onClick={() => setPagina(paginaActual + 1)}><DashboardIcon name="chevron" /></button></nav>
+      </footer>
+        {lotesPagoPendiente.length > 0 && <details className={styles.pendingGroups}>
+          <summary className={styles.pendingSummary}>Pagos agrupados para aprobar · {lotesPagoPendiente.length} {lotesPagoPendiente.length === 1 ? "lote" : "lotes"} · {formatoPesos(lotesPagoPendiente.reduce((total, lote) => total + lote.total, 0))}</summary>
+          {lotesPagoPendiente.map((lote) => {
+            const expansionKey = `pendiente:${lote.key}`;
+            const expandido = lotesImeisExpandidos.includes(expansionKey);
+            const resumen = imeisResumenLote(lote.items, expandido);
+            return <article key={lote.key} className={styles.pendingGroup}>
+              <div className={styles.groupHeading}><div><h3>{lote.destino} paga a {lote.origen}</h3><p>{lote.items.length} equipos · Solicitado: {lote.fecha ? new Date(lote.fecha).toLocaleString("es-CO") : "Sin fecha"}</p></div><strong>{formatoPesos(lote.total)}</strong></div>
+              <div className={styles.groupEquipment}>{resumen.visibles.map((item) => <span key={item.id}>{item.imei}</span>)}{(resumen.restantes > 0 || expandido) && <button type="button" className={styles.textButton} onClick={() => alternarImeisLote(expansionKey)}>{expandido ? "Ver menos" : `Ver ${resumen.restantes} más`}</button>}</div>
+              <div className={styles.detailActions}><button type="button" className={styles.button} onClick={() => alternarDetalleLote(lote.key)}>{lotesDetalleAbiertos.includes(lote.key) ? "Ocultar detalle del lote" : "Ver detalle del lote"}</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado} onClick={() => setConfirmacionPago({ tipo: "aprobar", ids: lote.items.map((item) => item.id) })}>Aprobar lote</button></div>
+              {lotesDetalleAbiertos.includes(lote.key) && <div className={styles.groupEquipment}>{lote.items.map((item) => <p key={item.id}><strong>{item.referencia}</strong> · IMEI {item.imei} · {formatoPesos(Number(item.montoPago || item.costo || 0))}</p>)}</div>}
+            </article>;
+          })}
+        </details>}
+      {lotesSolicitudPago.length > 0 && <details className={styles.pendingGroups}>
+        <summary className={styles.pendingSummary}>Selección por destinatario · {lotesConSeleccionPago.length} grupos seleccionados</summary>
+        {lotesSolicitudPago.map((lote) => <section key={lote.key} className={styles.pendingGroup}>
+          <div className={styles.groupHeading}><div><h3>{lote.destino} paga a {lote.origen}</h3><p>{lote.items.length} disponibles · {lote.seleccionados.length} seleccionados</p></div><strong>{formatoPesos(lote.totalSeleccionado)}</strong></div>
+          <div className={styles.detailActions}><button type="button" className={styles.button} disabled={cargando || cargandoListado} onClick={() => alternarSeleccionGrupoPago(lote.items)}>{lote.seleccionados.length === lote.items.length ? "Quitar grupo" : "Seleccionar grupo"}</button></div>
+          <div className={styles.groupEquipment}>{lote.items.map((item) => <label key={item.id}><input type="checkbox" checked={idsSolicitudPago.includes(item.id)} disabled={cargando || cargandoListado} onChange={() => alternarSeleccionSolicitudPago(item.id)} />{item.referencia} · IMEI {item.imei} · {formatoPesos(item.costo)}</label>)}</div>
+        </section>)}
+      </details>}
+    </main>
+    {confirmacionPago && <LoanDialog title={confirmacionPago.tipo === "solicitar" ? "Confirmar envío a pagar" : "Confirmar aprobación de pago"} open busy={cargando} onClose={() => setConfirmacionPago(null)} footer={<><button type="button" className={styles.button} disabled={cargando} onClick={() => setConfirmacionPago(null)}>Cancelar</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado || !confirmacionValida} onClick={() => void confirmarPago()}>{cargando ? "Procesando…" : confirmacionPago.tipo === "solicitar" ? "Confirmar envío" : "Confirmar aprobación"}</button></>}>
+      <p>{itemsConfirmacion.length} equipos · Total <strong>{formatoPesos(totalConfirmacion)}</strong></p>
+      {!confirmacionValida && <p role="alert" className={styles.error}>La elegibilidad de la selección cambió. Cierra esta ventana y revisa los préstamos.</p>}
+      {gruposConfirmacion.map((items) => <section className={styles.confirmationGroup} key={`${items[0].sedeOrigenId}:${items[0].sedeDestinoId}`}><h3>{items[0].sedeDestinoNombre} paga a {items[0].sedeOrigenNombre}</h3><p>{items.length} equipos · {formatoPesos(items.reduce((total, item) => total + valorConfirmacion(item), 0))}</p><ul>{items.map((item) => <li key={item.id}><div><strong>{item.referencia}</strong><span>IMEI {item.imei}</span></div><strong>{formatoPesos(valorConfirmacion(item))}</strong></li>)}</ul></section>)}
+    </LoanDialog>}
+  </div>;
 }
