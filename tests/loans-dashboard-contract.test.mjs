@@ -465,6 +465,89 @@ test("confirmación agrupa destinatarios por ID y revalida toda la selección an
   assert.match(direct.state.mensaje, /no son elegibles/);
 });
 
+const paymentConfirmationLoans = [
+  { id: 51, sedeOrigenId: 7, sedeOrigenNombre: "SEDE NORTE", sedeDestinoId: 2, sedeDestinoNombre: "SEDE CENTRO", costo: 1_000.25, montoPago: 101.25 },
+  { id: 52, sedeOrigenId: 7, sedeOrigenNombre: "SEDE NORTE", sedeDestinoId: 2, sedeDestinoNombre: "SEDE CENTRO", costo: 250.5, montoPago: 0 },
+  { id: 53, sedeOrigenId: 8, sedeOrigenNombre: "SEDE SUR", sedeDestinoId: 2, sedeDestinoNombre: "SEDE CENTRO", costo: 900.75, montoPago: null },
+  { id: 54, sedeOrigenId: 7, sedeOrigenNombre: "SEDE NORTE", sedeDestinoId: 3, sedeDestinoNombre: "SEDE OCCIDENTE", costo: 825.25, montoPago: 800.5 },
+].map((item) => ({ ...loans[0], ...item, referencia: `Referencia completa del equipo ${item.id}`, imei: `0000000000000${item.id}` }));
+
+function confirmationLabelValue(tree, label) {
+  const field = control(tree, (node) => elements(node.props?.children).some((child) => child?.type === "span" && textOf(child) === label) &&
+    (Array.isArray(node.props?.children) ? node.props.children : [node.props?.children]).some((child) => child?.type === "strong"));
+  return textOf(control(field, (node) => node.type === "strong"));
+}
+
+function assertPaymentConfirmation(probe, expected) {
+  const dialog = control(probe.render().tree, (node) => node.props?.title === expected.title);
+  assert.equal(probe.view.confirmacionValida, true);
+  assert.equal(probe.view.totalConfirmacion, expected.total);
+  assert.equal(confirmationLabelValue(dialog, expected.totalLabel), expected.formattedTotal);
+  assert.ok(textOf(dialog).includes("4 equipos · 3 grupos de pago"));
+  const groups = elements(dialog).filter((node) => node?.type === "details");
+  assert.equal(groups.length, 3);
+  for (const [index, route] of [
+    { paga: "SEDE CENTRO", recibe: "SEDE NORTE", ids: [51, 52] },
+    { paga: "SEDE CENTRO", recibe: "SEDE SUR", ids: [53] },
+    { paga: "SEDE OCCIDENTE", recibe: "SEDE NORTE", ids: [54] },
+  ].entries()) {
+    const group = groups[index];
+    assert.ok(!group.props.open, "El resumen de cada destinatario debe comenzar cerrado");
+    const summary = control(group, (node) => node.type === "summary" && node.props?.["aria-label"] === `Ver equipos: ${route.paga} paga a ${route.recibe}`);
+    assert.equal(confirmationLabelValue(summary, "Paga"), route.paga);
+    assert.equal(confirmationLabelValue(summary, "Recibe"), route.recibe);
+    assert.equal(confirmationLabelValue(summary, "Importe"), expected.formattedSubtotals[index]);
+    assert.ok(textOf(summary).includes(`${route.ids.length} ${route.ids.length === 1 ? "equipo" : "equipos"}`));
+    assert.ok(textOf(summary).includes("Ver equipos"));
+    const equipment = control(group, (node) => node.type === "ul" && node.props?.["aria-label"] === `Equipos: ${route.paga} paga a ${route.recibe}`);
+    const rows = elements(equipment).filter((node) => node?.type === "li");
+    assert.equal(rows.length, route.ids.length);
+    for (const [rowIndex, id] of route.ids.entries()) {
+      const item = paymentConfirmationLoans.find((loan) => loan.id === id);
+      assert.ok(textOf(rows[rowIndex]).includes(item.referencia));
+      assert.ok(textOf(rows[rowIndex]).includes(`IMEI ${item.imei}`), "El detalle conserva el IMEI textual completo, incluidos ceros iniciales");
+      assert.ok(textOf(rows[rowIndex]).endsWith(expected.formattedAmounts[id]));
+    }
+  }
+  assert.equal(probe.calls.length, 0, "Revisar destinatarios y equipos no debe enviar el pago");
+  return dialog;
+}
+
+test("confirmar envío distingue quién paga y quién recibe, con subtotales por par de sedes y equipos desplegables", { skip: baseline }, () => {
+  const ids = paymentConfirmationLoans.map((loan) => loan.id);
+  const probe = pageProbe({ prestamos: paymentConfirmationLoans, idsSolicitudPago: ids, confirmacionPago: { tipo: "solicitar", ids } });
+  const dialog = assertPaymentConfirmation(probe, {
+    title: "Confirmar envío a pagar", totalLabel: "Total a enviar", total: 2_976.75, formattedTotal: "$ 2.976,75",
+    formattedSubtotals: ["$ 1.250,75", "$ 900,75", "$ 825,25"],
+    formattedAmounts: { 51: "$ 1.000,25", 52: "$ 250,5", 53: "$ 900,75", 54: "$ 825,25" },
+  });
+  const cancel = control(dialog.props.footer, (node) => node.type === "button" && textOf(node) === "Cancelar");
+  cancel.props.onClick();
+  assert.equal(probe.state.confirmacionPago, null);
+  assert.deepEqual(probe.state.idsSolicitudPago, ids);
+  assert.equal(probe.calls.length, 0);
+});
+
+test("confirmar aprobación mantiene la dirección del pago y los montos solicitados sin sustituirlos por el costo", { skip: baseline }, () => {
+  const ids = paymentConfirmationLoans.map((loan) => loan.id);
+  const probe = pageProbe({ prestamos: paymentConfirmationLoans.map((loan) => ({ ...loan, estado: "PAGO_PENDIENTE_APROBACION" })), confirmacionPago: { tipo: "aprobar", ids } });
+  const dialog = assertPaymentConfirmation(probe, {
+    title: "Confirmar aprobación de pago", totalLabel: "Total a aprobar", total: 2_053, formattedTotal: "$ 2.053",
+    formattedSubtotals: ["$ 351,75", "$ 900,75", "$ 800,5"],
+    formattedAmounts: { 51: "$ 101,25", 52: "$ 250,5", 53: "$ 900,75", 54: "$ 800,5" },
+  });
+  const confirm = control(dialog.props.footer, (node) => node.type === "button" && textOf(node) === "Confirmar aprobación");
+  assert.equal(confirm.props.disabled, false);
+  // Approval actions normally open one origin/destination batch at a time.
+  probe.state.confirmacionPago = { tipo: "aprobar", ids: [51, 52] };
+  const batch = control(probe.render().tree, (node) => node.props?.title === "Confirmar aprobación de pago");
+  assert.equal(probe.view.gruposConfirmacion.length, 1);
+  assert.equal(probe.view.totalConfirmacion, 351.75);
+  assert.equal(confirmationLabelValue(batch, "Total a aprobar"), "$ 351,75");
+  assert.ok(textOf(batch).includes("2 equipos · 1 grupo de pago"));
+  assert.equal(probe.calls.length, 0);
+});
+
 test("la barra de pagos está disponible, deshabilita el envío vacío y permite cancelar confirmación sin perder selección", { skip: baseline }, () => {
   const empty = pageProbe();
   const send = control(empty.render().tree, (node) => node.type === "button" && textOf(node) === "Enviar a pagar");

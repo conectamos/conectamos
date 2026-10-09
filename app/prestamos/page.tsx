@@ -1094,9 +1094,29 @@ export default function PrestamosPage() {
       </details>}
     </main>
     {confirmacionPago && <LoanDialog title={confirmacionPago.tipo === "solicitar" ? "Confirmar envío a pagar" : "Confirmar aprobación de pago"} open busy={cargando} onClose={() => setConfirmacionPago(null)} footer={<><button type="button" className={styles.button} disabled={cargando} onClick={() => setConfirmacionPago(null)}>Cancelar</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado || !confirmacionValida} onClick={() => void confirmarPago()}>{cargando ? "Procesando…" : confirmacionPago.tipo === "solicitar" ? "Confirmar envío" : "Confirmar aprobación"}</button></>}>
-      <p>{itemsConfirmacion.length} equipos · Total <strong>{formatoPesos(totalConfirmacion)}</strong></p>
+      <div className={styles.confirmationOverview}>
+        <div><span>{confirmacionPago.tipo === "solicitar" ? "Total a enviar" : "Total a aprobar"}</span><strong>{formatoPesos(totalConfirmacion)}</strong></div>
+        <p>{itemsConfirmacion.length} {itemsConfirmacion.length === 1 ? "equipo" : "equipos"}<span aria-hidden="true"> · </span>{gruposConfirmacion.length} {gruposConfirmacion.length === 1 ? "grupo de pago" : "grupos de pago"}</p>
+      </div>
       {!confirmacionValida && <p role="alert" className={styles.error}>La elegibilidad de la selección cambió. Cierra esta ventana y revisa los préstamos.</p>}
-      {gruposConfirmacion.map((items) => <section className={styles.confirmationGroup} key={`${items[0].sedeOrigenId}:${items[0].sedeDestinoId}`}><h3>{items[0].sedeDestinoNombre} paga a {items[0].sedeOrigenNombre}</h3><p>{items.length} equipos · {formatoPesos(items.reduce((total, item) => total + valorConfirmacion(item), 0))}</p><ul>{items.map((item) => <li key={item.id}><div><strong>{item.referencia}</strong><span>IMEI {item.imei}</span></div><strong>{formatoPesos(valorConfirmacion(item))}</strong></li>)}</ul></section>)}
+      <div className={styles.confirmationGroups}>
+        {gruposConfirmacion.map((items) => {
+          const paga = items[0].sedeDestinoNombre || "Sede sin configurar";
+          const recibe = items[0].sedeOrigenNombre || "Sede sin configurar";
+          return <details className={styles.confirmationGroup} key={`${items[0].sedeOrigenId}:${items[0].sedeDestinoId}`}>
+            <summary className={styles.confirmationGroupSummary} aria-label={`Ver equipos: ${paga} paga a ${recibe}`}>
+              <div className={styles.confirmationRoute}>
+                <div className={styles.confirmationParty}><span>Paga</span><strong>{paga}</strong></div>
+                <span className={styles.confirmationDirection} aria-hidden="true"><DashboardIcon name="arrow" /></span>
+                <div className={`${styles.confirmationParty} ${styles.confirmationRecipient}`}><span>Recibe</span><strong>{recibe}</strong></div>
+              </div>
+              <div className={styles.confirmationAmount}><span>Importe</span><strong>{formatoPesos(items.reduce((total, item) => total + valorConfirmacion(item), 0))}</strong></div>
+              <span className={styles.confirmationToggle}><span>{items.length} {items.length === 1 ? "equipo" : "equipos"}</span><span><span className={styles.confirmationShow}>Ver equipos</span><span className={styles.confirmationHide}>Ocultar equipos</span><DashboardIcon name="chevron" /></span></span>
+            </summary>
+            <ul className={styles.confirmationEquipment} aria-label={`Equipos: ${paga} paga a ${recibe}`}>{items.map((item) => <li key={item.id}><div><strong>{item.referencia}</strong><span>IMEI {item.imei}</span></div><strong>{formatoPesos(valorConfirmacion(item))}</strong></li>)}</ul>
+          </details>;
+        })}
+      </div>
     </LoanDialog>}
   </div>;
 }

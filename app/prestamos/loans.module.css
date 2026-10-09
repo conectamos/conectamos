@@ -174,7 +174,7 @@
 .groupEquipment li { padding: 10px 0; border-top: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 13px; line-height: 1.5; }
 .groupEquipment strong { font-size: 14px; }
 .modalBackdrop { position: fixed; inset: 0; z-index: 100; background: rgba(17, 22, 29, .48); display: flex; align-items: center; justify-content: center; padding: 20px; }
-.modal { display: none; flex-direction: column; margin: auto; padding: 0; border: 0; width: min(680px, calc(100% - 32px)); max-height: calc(100dvh - 32px); border-radius: 15px; background: #fff; box-shadow: 0 22px 80px rgba(15, 23, 42, .2); overflow: hidden; color: #0f172a; }
+.modal { display: none; flex-direction: column; margin: auto; padding: 0; border: 0; width: min(800px, calc(100% - 32px)); max-height: calc(100dvh - 32px); border-radius: 15px; background: #fff; box-shadow: 0 22px 80px rgba(15, 23, 42, .2); overflow: hidden; color: #0f172a; }
 .modal[open] { display: flex; }
 .modal::backdrop { background: rgba(17, 22, 29, .5); }
 .modalHeader { padding: 22px 24px 18px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 1px solid #e2e8f0; }
@@ -184,15 +184,39 @@
 .modalHeader button svg { width: 21px; height: 21px; }
 .modalBody { padding: 0 24px 20px; overflow-y: auto; min-height: 0; max-height: 70dvh; }
 .modalBody > p { color: #475569; font-size: 14px; line-height: 1.5; }
-.confirmationGroup { border-bottom: 1px solid #e2e8f0; padding: 16px 0; }
-.confirmationGroup h3 { margin: 0; font-size: 15px; line-height: 1.45; }
-.confirmationGroup p { margin: 6px 0 0; font-size: 14px; color: #475569; line-height: 1.5; }
-.confirmationGroup ul { margin: 12px 0 0; padding: 0; list-style: none; }
-.confirmationGroup li { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid #e2e8f0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
-.confirmationGroup li strong { color: #0f172a; font-size: 14px; }
-.confirmationGroup li > div { min-width: 0; }
-.confirmationGroup li > div > strong, .confirmationGroup li > div > span { display: block; }
-.confirmationGroup li > div > span { color: #64748b; margin-top: 4px; }
+.confirmationOverview { margin: 20px 0 8px; padding: 18px 20px; border-radius: 10px; background: #11161d; color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.confirmationOverview > div { min-width: 0; }
+.confirmationOverview > div > span { display: block; margin-bottom: 4px; font-size: 12px; color: #d4dbe4; }
+.confirmationOverview strong { display: block; font-size: 29px; font-weight: 800; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.confirmationOverview p { margin: 0; font-size: 13px; color: #d4dbe4; line-height: 1.5; text-align: right; }
+.confirmationGroups { margin-top: 6px; }
+.confirmationGroup { border-bottom: 1px solid #e2e8f0; }
+.confirmationGroup:last-child { border-bottom: 0; }
+.confirmationGroupSummary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, auto); gap: 10px 24px; padding: 18px 4px; list-style: none; cursor: pointer; border-radius: 6px; }
+.confirmationGroupSummary::-webkit-details-marker { display: none; }
+.confirmationGroupSummary:hover { background: #f8fafc; }
+.confirmationRoute { display: grid; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr); gap: 12px; align-items: center; min-width: 0; }
+.confirmationParty { min-width: 0; }
+.confirmationParty > span, .confirmationAmount > span { display: block; margin-bottom: 4px; font-size: 12px; line-height: 1.4; color: #64748b; }
+.confirmationParty strong { display: block; font-size: 16px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.confirmationRecipient strong { color: #b91c1c; }
+.confirmationDirection { display: flex; align-items: center; justify-content: center; color: #94a3b8; }
+.confirmationDirection svg { width: 22px; height: 22px; }
+.confirmationAmount { min-width: 0; text-align: right; }
+.confirmationAmount strong { font-size: 17px; font-weight: 800; line-height: 1.4; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.confirmationToggle { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; line-height: 1.4; color: #64748b; }
+.confirmationToggle > span:last-child { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: #475569; }
+.confirmationToggle svg { width: 16px; height: 16px; transition: transform .15s; }
+.confirmationHide { display: none; }
+.confirmationGroup[open] .confirmationHide { display: inline; }
+.confirmationGroup[open] .confirmationShow { display: none; }
+.confirmationGroup[open] .confirmationToggle svg { transform: rotate(180deg); }
+.confirmationEquipment { margin: 0; padding: 0 4px 14px; list-style: none; }
+.confirmationEquipment li { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid #e2e8f0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.confirmationEquipment li > strong { flex-shrink: 0; text-align: right; font-size: 14px; font-variant-numeric: tabular-nums; }
+.confirmationEquipment li > div { min-width: 0; }
+.confirmationEquipment li > div > strong, .confirmationEquipment li > div > span { display: block; }
+.confirmationEquipment li > div > span { color: #64748b; margin-top: 3px; font-size: 12px; }
 .modalFooter { padding: 18px 24px; border-top: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .modalFooter > div { display: flex; gap: 10px; }
 .modalFooter strong { font-size: 18px; overflow-wrap: anywhere; }
@@ -309,6 +333,10 @@
   .modalFooter { padding: 16px; align-items: stretch; flex-direction: column; gap: 12px; }
   .modalFooter > div { width: 100%; }
   .modalFooter .button { flex: 1; padding: 8px 12px; }
+  .confirmationGroupSummary { gap: 12px 16px; }
+  .confirmationRoute { gap: 8px; }
+  .confirmationParty strong { font-size: 14px; }
+  .confirmationAmount strong { font-size: 15px; }
 }
 @media (max-width: 420px) {
   .topbar { padding: 10px 12px 0; gap: 0 10px; }
@@ -334,7 +362,14 @@
   .batchSelected { font-size: 13px; }
   .batchTotal { flex-basis: 100%; justify-content: flex-start; }
   .batchActions .button { font-size: 12px; padding: 0 10px; }
-  .confirmationGroup li { flex-wrap: wrap; gap: 6px; }
+  .confirmationOverview { align-items: flex-start; flex-direction: column; gap: 8px; padding: 16px; }
+  .confirmationOverview strong { font-size: 25px; }
+  .confirmationOverview p { text-align: left; }
+  .confirmationGroupSummary { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px 0; }
+  .confirmationRoute { grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr); }
+  .confirmationAmount { text-align: left; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .confirmationAmount > span { margin: 0; }
+  .confirmationEquipment li { flex-wrap: wrap; gap: 6px; }
   .pagination { font-size: 12px; }
   .pageButton { min-width: 34px; min-height: 36px; padding: 6px 8px; }
 }
