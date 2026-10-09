@@ -93,10 +93,15 @@
 
 .row > td {
   min-width: 0;
+  border-top: 1px solid #dce3ed;
   padding: 14px 12px;
   vertical-align: middle;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.row:first-child > td {
+  border-top: 0;
 }
 
 .row:hover {
@@ -180,8 +185,6 @@
 .debtRow > td {
   padding: 12px 8px;
 }
-
-@media (min-width: 761px) { .debtRow > td { border-bottom: 1px solid #edf1f5; } }
 
 .debtRow .controls {
   gap: 4px;
@@ -573,6 +576,7 @@
   .row > td {
     display: block;
     min-width: 0;
+    border-top: 0;
     padding: 0;
   }
 
