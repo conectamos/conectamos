@@ -1,476 +1,129 @@
 "use client";
 
-import Link from "next/link";
-import { useMemo, useState } from "react";
-import DashboardIcon, {
-  type DashboardIconName,
-} from "@/app/dashboard/_components/dashboard-icon";
-import type {
-  InventoryAdminSummary,
-  InventoryBrandReferenceSummary,
-  InventoryBrandSummary,
-} from "@/lib/dashboard-inventory-summary";
+import { useEffect, useMemo, useRef, useState } from "react";
+import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
+import type { InventoryAdminSummary } from "@/lib/dashboard-inventory-summary";
+import { buildRadarView, type RadarLocationFilter, type RadarReference } from "@/lib/radar-inventory-view";
+import styles from "./radar.module.css";
 
-type RadarLocationFilter = "TODAS" | "PRINCIPAL" | "SEDES";
+const numero = (value: number) => Number(value || 0).toLocaleString("es-CO");
+const marcaLabel = (marca: string) => ({ APPLE: "Apple", HONOR: "Honor", SAMSUNG: "Samsung", MOTOROLA: "Motorola", XIAOMI: "Xiaomi", INFINIX: "Infinix", "OTRAS REFERENCIAS": "Otras referencias" }[marca] || marca);
+const ubicacionLabel = { TODAS: "Todas las ubicaciones", PRINCIPAL: "Bodega principal", SEDES: "Sedes" };
 
-function formatoNumero(valor: number) {
-  return Number(valor || 0).toLocaleString("es-CO");
+function BrandIcon({ marca }: { marca: string }) {
+  return marca === "APPLE" ? <svg viewBox="0 0 24 24" className={styles.appleIcon} fill="currentColor" aria-hidden="true"><path d="M17.05 12.54c.03 3.25 2.85 4.33 2.88 4.35-.02.08-.45 1.54-1.48 3.05-.89 1.3-1.81 2.6-3.27 2.63-1.43.03-1.89-.85-3.52-.85-1.62 0-2.13.82-3.47.88-1.41.05-2.48-1.41-3.38-2.7-1.84-2.65-3.25-7.49-1.36-10.77a5.25 5.25 0 0 1 4.45-2.7c1.39-.03 2.7.94 3.54.94.83 0 2.4-1.16 4.05-.99.69.03 2.65.28 3.91 2.12-.1.06-2.34 1.36-2.35 4.04ZM14.38 4.62c.75-.91 1.26-2.17 1.12-3.43-1.08.04-2.4.72-3.17 1.62-.7.8-1.31 2.1-1.15 3.33 1.2.09 2.43-.61 3.2-1.52Z" /></svg> : <DashboardIcon name="inventory" className={styles.brandIcon} />;
 }
 
-function normalizarBusqueda(valor: string) {
-  return String(valor || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase();
-}
-
-function MetricCard({
-  detail,
-  icon,
-  iconClassName,
-  label,
-  value,
-  valueClassName = "text-slate-950",
-}: {
-  detail: string;
-  icon: DashboardIconName;
-  iconClassName: string;
-  label: string;
-  value: string;
-  valueClassName?: string;
-}) {
-  return (
-    <article className="min-h-[142px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start gap-4">
-        <span
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
-        >
-          <DashboardIcon name={icon} className="h-6 w-6" />
-        </span>
-        <div className="min-w-0 pt-0.5">
-          <p className="text-sm font-semibold text-slate-600">{label}</p>
-          <p
-            className={`mt-1.5 break-words text-[27px] font-black leading-tight tracking-tight ${valueClassName}`}
-          >
-            {value}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function AvailabilityValue({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "neutral" | "positive" | "primary";
-}) {
-  const toneClasses = {
-    neutral: "border-slate-200 bg-slate-50 text-slate-700",
-    positive: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    primary: "border-red-100 bg-red-50 text-[#e30613]",
-  }[tone];
-
-  return (
-    <div className={`min-w-[105px] rounded-xl border px-3 py-2.5 ${toneClasses}`}>
-      <p className="text-[10px] font-black uppercase tracking-[0.13em] opacity-70">
-        {label}
-      </p>
-      <p className="mt-1 text-xl font-black leading-none">{formatoNumero(value)}</p>
-    </div>
-  );
-}
-
-function ReferenceRow({ item }: { item: InventoryBrandReferenceSummary }) {
-  const [mostrarSedes, setMostrarSedes] = useState(false);
-  const tieneSedes = item.sedesDetalle.length > 0;
-
-  return (
-    <article className="border-t border-slate-100 px-4 py-4 first:border-t-0 sm:px-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-              <DashboardIcon name="inventory" className="h-5 w-5" />
-            </span>
-            <div className="min-w-0">
-              <h4 className="break-words text-sm font-black uppercase leading-5 tracking-tight text-slate-950">
-                {item.referencia}
-              </h4>
-              <p className="mt-1 text-xs text-slate-500">
-                Disponibilidad actual en el sistema
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-          <AvailabilityValue
-            label="Principal"
-            value={item.bodegaPrincipal}
-            tone={item.bodegaPrincipal > 0 ? "positive" : "neutral"}
-          />
-
-          {tieneSedes ? (
-            <button
-              type="button"
-              onClick={() => setMostrarSedes((actual) => !actual)}
-              aria-expanded={mostrarSedes}
-              className="group min-w-[105px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
-            >
-              <span className="flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-[0.13em] opacity-70">
-                Sedes
-                <DashboardIcon
-                  name="arrow"
-                  className={`h-3.5 w-3.5 transition-transform ${
-                    mostrarSedes ? "rotate-90" : ""
-                  }`}
-                />
-              </span>
-              <span className="mt-1 block text-xl font-black leading-none">
-                {formatoNumero(item.sedes)}
-              </span>
-            </button>
-          ) : (
-            <AvailabilityValue label="Sedes" value={0} tone="neutral" />
-          )}
-
-          <div className="col-span-2 sm:col-span-1">
-            <AvailabilityValue label="Total" value={item.total} tone="primary" />
-          </div>
-        </div>
-      </div>
-
-      {mostrarSedes && tieneSedes && (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-center gap-2">
-            <DashboardIcon name="store" className="h-4 w-4 text-[#e30613]" />
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-700">
-              Disponibilidad por sede
-            </p>
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {item.sedesDetalle.map((detalle) => (
-              <div
-                key={`${item.referencia}-${detalle.sede}`}
-                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5"
-              >
-                <span className="min-w-0 truncate text-xs font-semibold text-slate-700">
-                  {detalle.sede}
-                </span>
-                <strong className="shrink-0 text-sm font-black text-slate-950">
-                  {formatoNumero(detalle.total)}
-                </strong>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </article>
-  );
-}
-
-function BrandCard({ brand }: { brand: InventoryBrandSummary }) {
-  return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-50/70 px-5 py-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm ring-1 ring-slate-200">
-            <DashboardIcon name="catalog" className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#e30613]">
-              Marca
-            </p>
-            <h3 className="mt-0.5 truncate text-xl font-black tracking-tight text-slate-950">
-              {brand.marca}
-            </h3>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-4 text-right">
-          <div className="hidden sm:block">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-              Referencias
-            </p>
-            <p className="mt-0.5 text-sm font-black text-slate-700">
-              {formatoNumero(brand.referencias.length)}
-            </p>
-          </div>
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700">
-            <p className="text-[10px] font-black uppercase tracking-[0.12em]">
-              Disponibles
-            </p>
-            <p className="mt-0.5 text-xl font-black leading-none">
-              {formatoNumero(brand.total)}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {brand.referencias.length === 0 ? (
-        <div className="flex min-h-[116px] flex-col items-center justify-center px-5 py-6 text-center">
-          <DashboardIcon name="inventory" className="h-7 w-7 text-slate-300" />
-          <p className="mt-2 text-sm font-semibold text-slate-500">
-            Sin referencias disponibles
-          </p>
-        </div>
-      ) : (
-        <div>
-          {brand.referencias.map((item) => (
-            <ReferenceRow key={`${brand.marca}-${item.referencia}`} item={item} />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-export default function DashboardRadarWorkspace({
-  summary,
-  puedeVerBodegaPrincipal,
-  puedeVerInventario,
-}: {
+export default function DashboardRadarWorkspace({ summary }: {
   summary: InventoryAdminSummary;
   puedeVerBodegaPrincipal: boolean;
   puedeVerInventario: boolean;
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [ubicacion, setUbicacion] = useState<RadarLocationFilter>("TODAS");
+  const [marcaActiva, setMarcaActiva] = useState("TODAS");
+  const [pagina, setPagina] = useState(1);
+  const [referenciaActiva, setReferenciaActiva] = useState<RadarReference | null>(null);
+  const [exportando, setExportando] = useState(false);
+  const [errorExportacion, setErrorExportacion] = useState("");
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const moreBrandsRef = useRef<HTMLDetailsElement>(null);
+  const exportRef = useRef(false);
+  const view = useMemo(() => buildRadarView(summary, { search: busqueda, location: ubicacion, brand: marcaActiva }, pagina), [summary, busqueda, ubicacion, marcaActiva, pagina]);
+  const marcasVisibles = view.brands.slice(0, 6);
+  const paginas = [...new Set([1, view.page - 1, view.page, view.page + 1, view.pageCount])].filter((value) => value >= 1 && value <= view.pageCount).sort((a, b) => a - b);
+  const exportUrl = `/api/dashboard/radar/export?${new URLSearchParams({ alcance: "consulta", q: busqueda.trim(), ubicacion, marca: marcaActiva }).toString()}`;
 
-  const marcasFiltradas = useMemo(() => {
-    const filtro = normalizarBusqueda(busqueda.trim());
+  useEffect(() => {
+    if (!referenciaActiva || !dialogRef.current) return;
+    const dialog = dialogRef.current;
+    dialog.showModal();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { dialog.close(); document.body.style.overflow = overflow; };
+  }, [referenciaActiva]);
 
-    return summary.marcas
-      .map((brand) => {
-        const referencias = brand.referencias
-          .map((item) => {
-            if (ubicacion === "PRINCIPAL") {
-              return {
-                ...item,
-                total: item.bodegaPrincipal,
-                sedes: 0,
-                sedesDetalle: [],
-              };
-            }
+  useEffect(() => {
+    const outside = (event: PointerEvent) => { if (!moreBrandsRef.current?.contains(event.target as Node)) moreBrandsRef.current?.removeAttribute("open"); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape" && moreBrandsRef.current?.open) { moreBrandsRef.current.removeAttribute("open"); moreBrandsRef.current.querySelector("summary")?.focus(); } };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
+  }, []);
 
-            if (ubicacion === "SEDES") {
-              return {
-                ...item,
-                total: item.sedes,
-                bodegaPrincipal: 0,
-              };
-            }
+  const cambiarMarca = (marca: string) => { setMarcaActiva(marca); setPagina(1); setErrorExportacion(""); moreBrandsRef.current?.removeAttribute("open"); };
+  const cerrarDetalle = () => { dialogRef.current?.close(); setReferenciaActiva(null); triggerRef.current?.focus({ preventScroll: true }); };
+  const abrirDetalle = (item: RadarReference, trigger: HTMLButtonElement) => { triggerRef.current = trigger; setReferenciaActiva(item); };
+  const limpiarFiltros = () => { setBusqueda(""); setUbicacion("TODAS"); setMarcaActiva("TODAS"); setPagina(1); setErrorExportacion(""); };
 
-            return item;
-          })
-          .filter(
-            (item) =>
-              item.total > 0 &&
-              (!filtro ||
-                normalizarBusqueda(`${brand.marca} ${item.referencia}`).includes(
-                  filtro
-                ))
-          );
+  const exportar = async () => {
+    if (exportRef.current || !view.references.length) return;
+    exportRef.current = true;
+    setExportando(true);
+    setErrorExportacion("");
+    try {
+      const response = await fetch(exportUrl, { cache: "no-store" });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(error.error || "No se pudo exportar el radar.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || "radar-inventario.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setErrorExportacion(error instanceof Error ? error.message : "No se pudo exportar el radar.");
+    } finally { exportRef.current = false; setExportando(false); }
+  };
 
-        return {
-          ...brand,
-          total: referencias.reduce((acumulado, item) => acumulado + item.total, 0),
-          referencias,
-        };
-      })
-      .filter((brand) => brand.referencias.length > 0);
-  }, [busqueda, summary.marcas, ubicacion]);
+  return <>
+    <section className={styles.summary} aria-label="Resumen de disponibilidad">
+      {[
+        { icon: "inventory" as const, value: view.metrics.totalBodega, label: "Equipos disponibles" },
+        { icon: "store" as const, value: view.metrics.totalBodegaPrincipal, label: "Bodega principal" },
+        { icon: "pin" as const, value: view.metrics.totalSedes, label: "Disponibles en sedes" },
+        { icon: "catalog" as const, value: view.metrics.referenciasEnBodega, label: "Referencias activas" },
+      ].map((item) => <div className={styles.metric} key={item.label}><span className={styles.metricIcon}><DashboardIcon name={item.icon} /></span><div><strong>{numero(item.value)}</strong><span>{item.label}</span></div></div>)}
+    </section>
 
-  const totalReferenciasFiltradas = useMemo(
-    () =>
-      marcasFiltradas.reduce(
-        (acumulado, brand) => acumulado + brand.referencias.length,
-        0
-      ),
-    [marcasFiltradas]
-  );
-  const exportUrl = busqueda.trim()
-    ? `/api/dashboard/radar/export?q=${encodeURIComponent(busqueda.trim())}`
-    : "/api/dashboard/radar/export";
+    <section className={styles.panel} aria-labelledby="radar-title">
+      <div className={styles.panelTitle}><h2 id="radar-title">Disponibilidad de equipos</h2><span className={styles.badge}>Solo disponibles</span></div>
+      <div className={styles.filters}>
+        <label className={styles.search}><span className={styles.srOnly}>Buscar marca o referencia</span><DashboardIcon name="search" /><input id="radar-search" value={busqueda} maxLength={100} onChange={(event) => { setBusqueda(event.target.value); setPagina(1); setErrorExportacion(""); }} placeholder="Buscar marca o referencia..." />{busqueda && <button type="button" onClick={() => { setBusqueda(""); setPagina(1); }} aria-label="Limpiar búsqueda"><DashboardIcon name="close" /></button>}</label>
+        <label className={styles.location}><span className={styles.srOnly}>Filtrar por ubicación</span><DashboardIcon name="pin" /><select aria-label="Filtrar por ubicación" value={ubicacion} onChange={(event) => { setUbicacion(event.target.value as RadarLocationFilter); setPagina(1); setErrorExportacion(""); }}><option value="TODAS">Todas las ubicaciones</option><option value="PRINCIPAL">Bodega principal</option><option value="SEDES">Sedes</option></select><DashboardIcon name="chevron" /></label>
+        <button type="button" className={`${styles.button} ${styles.exportButton}`} disabled={exportando || !view.references.length} onClick={() => void exportar()}><DashboardIcon name="download" />{exportando ? "Exportando..." : "Exportar Excel"}</button>
+      </div>
+      {errorExportacion && <p className={styles.error} role="alert">{errorExportacion}</p>}
 
-  return (
-    <>
-      <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-        <MetricCard
-          icon="inventory"
-          iconClassName="bg-red-50 text-[#e30613]"
-          label="Equipos disponibles"
-          value={formatoNumero(summary.totalBodega)}
-          detail="Total actual en estado BODEGA."
-        />
-        <MetricCard
-          icon="store"
-          iconClassName="bg-emerald-50 text-emerald-600"
-          label="Bodega principal"
-          value={formatoNumero(summary.totalBodegaPrincipal)}
-          detail="Unidades listas en inventario principal."
-          valueClassName="text-emerald-600"
-        />
-        <MetricCard
-          icon="send"
-          iconClassName="bg-blue-50 text-blue-600"
-          label="Disponibles en sedes"
-          value={formatoNumero(summary.totalSedes)}
-          detail="Unidades disponibles dentro de las sedes."
-        />
-        <MetricCard
-          icon="catalog"
-          iconClassName="bg-violet-50 text-violet-600"
-          label="Referencias activas"
-          value={formatoNumero(summary.referenciasEnBodega)}
-          detail="Modelos con al menos una unidad disponible."
-        />
-      </section>
+      <nav className={styles.brands} aria-label="Filtrar por marca">
+        <button type="button" className={`${styles.brandTab} ${marcaActiva === "TODAS" ? styles.selectedBrand : ""}`} aria-pressed={marcaActiva === "TODAS"} onClick={() => cambiarMarca("TODAS")}><DashboardIcon name="catalog" /><span>Todas</span><span className={styles.brandCount}>{numero(view.totalUnits)}<span className={styles.srOnly}> unidades disponibles</span></span></button>
+        {marcasVisibles.map((brand) => <button type="button" key={brand.marca} className={`${styles.brandTab} ${marcaActiva === brand.marca ? styles.selectedBrand : ""}`} aria-pressed={marcaActiva === brand.marca} onClick={() => cambiarMarca(brand.marca)}><BrandIcon marca={brand.marca} /><span>{marcaLabel(brand.marca)}</span><span className={styles.brandCount}>{numero(brand.total)}<span className={styles.srOnly}> unidades disponibles</span></span></button>)}
+        {view.brands.length > 0 && <details ref={moreBrandsRef} className={styles.moreBrands}><summary className={`${styles.button} ${!marcasVisibles.some((brand) => brand.marca === marcaActiva) && marcaActiva !== "TODAS" ? styles.moreSelected : ""}`}>{!marcasVisibles.some((brand) => brand.marca === marcaActiva) && marcaActiva !== "TODAS" ? marcaLabel(marcaActiva) : "Más marcas"}<DashboardIcon name="chevron" /></summary><div className={styles.brandMenu} aria-label="Todas las marcas">{view.brands.map((brand) => <button type="button" key={brand.marca} aria-pressed={marcaActiva === brand.marca} className={marcaActiva === brand.marca ? styles.activeBrandOption : undefined} onClick={() => cambiarMarca(brand.marca)}><BrandIcon marca={brand.marca} /><span>{marcaLabel(brand.marca)}</span><strong>{numero(brand.total)}<span className={styles.srOnly}> unidades disponibles</span></strong></button>)}</div></details>}
+        <span className={styles.brandTotal}>{numero(view.brands.length)} marcas</span>
+      </nav>
 
-      <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-        <div className="flex flex-col gap-5 border-b border-slate-200 p-5 lg:flex-row lg:items-end lg:justify-between lg:p-6">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-              Consulta de disponibilidad
-            </p>
-            <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
-              Referencias disponibles por marca
-            </h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-              Busca por marca o referencia y abre el detalle para conocer la cantidad
-              exacta en cada sede.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {puedeVerBodegaPrincipal && (
-              <Link
-                href="/inventario-principal"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-              >
-                <DashboardIcon name="store" className="h-4 w-4" />
-                Bodega principal
-              </Link>
-            )}
-            {puedeVerInventario && (
-              <Link
-                href="/inventario"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-4 text-sm font-bold text-white transition hover:bg-[#c9000b]"
-              >
-                <DashboardIcon name="inventory" className="h-4 w-4" />
-                Ver inventario
-              </Link>
-            )}
-          </div>
+      <div className={styles.tableFrame}>
+        <div className={styles.tableScroller} tabIndex={0} role="region" aria-label="Referencias disponibles. Desplaza horizontalmente para ver todas las columnas.">
+          <table className={styles.table} id="radar-reference-table"><thead><tr><th scope="col">Referencia</th><th scope="col">Bodega principal</th><th scope="col">Unidades en sedes</th><th scope="col">Total disponible</th><th scope="col">Detalle</th></tr></thead><tbody>
+            {view.pageRows.map((item) => <tr key={`${item.marca}-${item.referencia}`}><td><div className={styles.reference}><BrandIcon marca={item.marca} /><strong>{item.referencia}</strong></div></td><td>{numero(item.bodegaPrincipal)}</td><td><button type="button" className={styles.sedeCount} onClick={(event) => abrirDetalle(item, event.currentTarget)} aria-label={`Ver ${numero(item.sedes)} unidades en sedes de ${item.referencia}`}><DashboardIcon name="pin" />{numero(item.sedes)}</button></td><td><span className={styles.availableCount}>{numero(item.total)}</span></td><td><button type="button" className={`${styles.button} ${styles.detailButton}`} onClick={(event) => abrirDetalle(item, event.currentTarget)} aria-label={`Ver sedes de ${item.referencia}`}>Ver sedes<DashboardIcon name="chevron" /></button></td></tr>)}
+            {!view.pageRows.length && <tr><td colSpan={5}><div className={styles.empty}><DashboardIcon name="search" /><h3>No hay referencias disponibles</h3><p>Prueba otra marca, referencia o ubicación.</p><button type="button" className={styles.button} onClick={limpiarFiltros}>Limpiar filtros</button></div></td></tr>}
+          </tbody></table>
         </div>
+        <div className={styles.pagination}><p aria-live="polite">{view.totalReferences ? `Mostrando ${(view.page - 1) * 10 + 1}–${Math.min(view.page * 10, view.totalReferences)} de ${numero(view.totalReferences)} referencias` : "0 referencias"}{marcaActiva !== "TODAS" && <> de {marcaLabel(marcaActiva)}</>}</p><span className={styles.pageSize}>10 por página</span><nav className={styles.pageButtons} aria-label="Páginas de referencias"><button type="button" disabled={view.page === 1} onClick={() => setPagina(view.page - 1)} aria-label="Anterior"><DashboardIcon name="chevron" className={styles.chevronLeft} /><span className={styles.srOnly}>Anterior</span></button>{paginas.map((page, index) => <span key={page}>{index > 0 && page > paginas[index - 1] + 1 && <span className={styles.ellipsis}>…</span>}<button type="button" className={page === view.page ? styles.currentPage : undefined} aria-current={page === view.page ? "page" : undefined} onClick={() => setPagina(page)} aria-label={`Página ${page}`}>{page}</button></span>)}<button type="button" disabled={view.page === view.pageCount} onClick={() => setPagina(view.page + 1)} aria-label="Siguiente"><span className={styles.srOnly}>Siguiente</span><DashboardIcon name="chevron" className={styles.chevronRight} /></button></nav></div>
+      </div>
+      <p className={styles.hint}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10v2" /></svg><span>Selecciona <strong>Ver sedes</strong> para consultar la distribución.</span></p>
+    </section>
 
-        <div className="p-5 lg:p-6">
-          <label htmlFor="radar-search" className="sr-only">
-            Buscar marca o referencia
-          </label>
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex w-full flex-col gap-3 sm:flex-row xl:max-w-4xl">
-              <div className="relative min-w-0 flex-1">
-                <DashboardIcon
-                  name="search"
-                  className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  id="radar-search"
-                  value={busqueda}
-                  onChange={(event) => setBusqueda(event.target.value)}
-                  placeholder="Buscar por marca o referencia..."
-                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white py-3 pl-12 pr-12 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                />
-                {busqueda && (
-                  <button
-                    type="button"
-                    onClick={() => setBusqueda("")}
-                    aria-label="Limpiar búsqueda"
-                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                  >
-                    <DashboardIcon name="close" className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-
-              <label className="relative block sm:w-[210px]">
-                <span className="sr-only">Filtrar por ubicación</span>
-                <DashboardIcon
-                  name="store"
-                  className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
-                />
-                <select
-                  value={ubicacion}
-                  onChange={(event) =>
-                    setUbicacion(event.target.value as RadarLocationFilter)
-                  }
-                  className="min-h-12 w-full appearance-none rounded-xl border border-slate-300 bg-white py-3 pl-12 pr-9 text-sm font-bold text-slate-700 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                >
-                  <option value="TODAS">Todas las ubicaciones</option>
-                  <option value="PRINCIPAL">Bodega principal</option>
-                  <option value="SEDES">Sedes</option>
-                </select>
-                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-400">
-                  ▼
-                </span>
-              </label>
-
-              <a
-                href={exportUrl}
-                download
-                className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border-b-2 border-[#e30613] bg-[#11161d] px-4 text-sm font-bold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100"
-                title="Descargar referencias disponibles en estado BODEGA de la bodega principal"
-              >
-                <DashboardIcon name="download" className="h-4 w-4" />
-                Excel bodega
-              </a>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500" aria-live="polite">
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700">
-                {formatoNumero(marcasFiltradas.length)} marcas
-              </span>
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700">
-                {formatoNumero(totalReferenciasFiltradas)} referencias
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4 xl:grid-cols-2">
-            {marcasFiltradas.length === 0 ? (
-              <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center xl:col-span-2">
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-slate-300 shadow-sm ring-1 ring-slate-200">
-                  <DashboardIcon name="search" className="h-7 w-7" />
-                </span>
-                <p className="mt-4 text-base font-black text-slate-800">
-                  No encontramos esa referencia
-                </p>
-                <p className="mt-1 max-w-md text-sm leading-6 text-slate-500">
-                  Revisa el nombre de la marca o modelo e intenta nuevamente.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setBusqueda("")}
-                  className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-100"
-                >
-                  Limpiar búsqueda
-                </button>
-              </div>
-            ) : (
-              marcasFiltradas.map((brand) => (
-                <BrandCard key={brand.marca} brand={brand} />
-              ))
-            )}
-          </div>
-        </div>
-      </section>
-    </>
-  );
+    {referenciaActiva && <dialog ref={dialogRef} className={styles.detailPanel} aria-labelledby="radar-detail-title" aria-describedby="radar-detail-scope" onCancel={(event) => { event.preventDefault(); cerrarDetalle(); }} onClose={() => { setReferenciaActiva(null); triggerRef.current?.focus({ preventScroll: true }); }}>
+      <div className={styles.detailHeader}><div><span className={styles.detailBrand}><BrandIcon marca={referenciaActiva.marca} />{marcaLabel(referenciaActiva.marca)}</span><h2 id="radar-detail-title">{referenciaActiva.referencia}</h2><p id="radar-detail-scope">Disponibilidad por sede · {ubicacionLabel[ubicacion]}</p></div><button type="button" className={styles.closeDetail} onClick={cerrarDetalle} aria-label="Cerrar detalle"><DashboardIcon name="close" /></button></div>
+      <div className={styles.detailBody}><div className={styles.principalAvailability}><DashboardIcon name="store" /><span>Bodega principal</span><strong>{numero(referenciaActiva.bodegaPrincipal)}</strong></div><h3>Unidades disponibles en sedes</h3><table className={styles.sedesTable}><thead><tr><th scope="col">Sede</th><th scope="col">Unidades</th></tr></thead><tbody>{referenciaActiva.sedesDetalle.map((sede) => <tr key={sede.sede}><td>{sede.sede}</td><td>{numero(sede.total)}</td></tr>)}{!referenciaActiva.sedesDetalle.length && <tr><td colSpan={2}>Sin unidades en sedes para esta consulta.</td></tr>}</tbody><tfoot><tr><th scope="row">Total en sedes</th><td>{numero(referenciaActiva.sedes)}</td></tr></tfoot></table><div className={styles.referenceTotal}><span>Total disponible de la referencia</span><strong>{numero(referenciaActiva.total)}</strong></div></div>
+      <div className={styles.detailFooter}><button type="button" className={`${styles.button} ${styles.graphite}`} onClick={cerrarDetalle}>Cerrar</button></div>
+    </dialog>}
+  </>;
 }

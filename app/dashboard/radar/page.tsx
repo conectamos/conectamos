@@ -1,3 +1,5 @@
+import Image from "next/image";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   esPerfilApoyoOperativo,
@@ -6,12 +8,10 @@ import {
 } from "@/lib/access-control";
 import { requireSessionPage } from "@/lib/page-access";
 import { getAdminInventorySummary } from "@/lib/dashboard-inventory-summary";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
+import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import styles from "./radar.module.css";
 import DashboardRadarWorkspace from "./workspace";
 
 export default async function DashboardRadarPage() {
@@ -79,72 +79,30 @@ export default async function DashboardRadarPage() {
   const rolUsuario =
     session.perfilTipoLabel ||
     (esAdmin ? "Administrador" : esSupervisor ? "Supervisor de tienda" : "Apoyo operativo");
-  const inicialesUsuario = usuario
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
+  const activeHref = esApoyoOperativo ? "/dashboard/radar" : "/inventario";
 
   return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref={esApoyoOperativo ? "/dashboard/radar" : "/inventario"}
-        coverageLabel="Todas las sedes"
-        items={navigationItems}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
-                <span>Inventario</span>
-                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
-                <span className="text-[#e30613]">Radar</span>
-              </div>
-              <h1 className="mt-2 text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
-                Radar de inventario
-              </h1>
-              <p className="mt-1 max-w-3xl text-sm text-slate-500 sm:text-base">
-                Consulta la disponibilidad real por referencia, bodega principal y sede
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  <DashboardIcon name="store" className="h-4 w-4 text-slate-500" />
-                  Cobertura: Todas las sedes
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  Solo equipos disponibles
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[205px]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || (
-                    <DashboardIcon name="user" className="h-5 w-5" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">{usuario}</p>
-                  <p className="truncate text-xs text-slate-500">{rolUsuario}</p>
-                </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
-            </div>
-          </header>
-
-          <div className="mt-6">
-            <DashboardRadarWorkspace
-              summary={summary}
-              puedeVerBodegaPrincipal={esAdmin}
-              puedeVerInventario={esAdmin || esSupervisor}
-            />
+    <div className={styles.page}>
+      <header className={styles.topbar}>
+        <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS, ir al inicio">
+          <Image src="/branding/conectamos-logo.png" alt="" width={42} height={42} priority />
+          <strong>CONECTAMOS</strong>
+        </Link>
+        <nav className={styles.navigation} aria-label="Navegación principal">
+          {navigationItems.map((item) => <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === activeHref ? styles.navActive : ""}`} aria-current={item.href === activeHref ? "page" : undefined}><DashboardIcon name={item.icon} /><span>{item.label}</span></Link>)}
+        </nav>
+        <SalesProfile name={usuario} role={rolUsuario} />
+      </header>
+      <main className={styles.main}>
+        <div className={styles.heading}>
+          <div><h1>Radar de inventario</h1><p>Disponibilidad por referencia y sede.</p></div>
+          <div className={styles.headingActions}>
+            {esAdmin && <Link href="/inventario-principal" className={styles.button}><DashboardIcon name="store" />Bodega principal</Link>}
+            {(esAdmin || esSupervisor) && <Link href="/inventario" className={`${styles.button} ${styles.primary}`}><DashboardIcon name="inventory" />Ver inventario</Link>}
           </div>
-        </main>
-      </div>
+        </div>
+        <DashboardRadarWorkspace summary={summary} puedeVerBodegaPrincipal={esAdmin} puedeVerInventario={esAdmin || esSupervisor} />
+      </main>
     </div>
   );
 }
