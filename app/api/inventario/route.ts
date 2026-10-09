@@ -5,6 +5,7 @@ import { puedeAccederModulosOperativos } from "@/lib/access-control";
 import { esSedeVentas } from "@/lib/sedes";
 import { normalizarTipoProducto } from "@/lib/product-types";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { InventoryIntakeError, leerClaveCarga, leerImeisCarga, registrarCargaInventarioUnaVez } from "@/lib/inventory-intake-registration";
 import {
   nombreHistoricoAcreedor,
   obtenerSaldoPendienteInventario,
@@ -218,266 +219,73 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "No autenticado" },
-        { status: 401 }
-      );
-    }
-
+    if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     if (!puedeAccederModulosOperativos(user.perfilTipo)) {
-      return NextResponse.json(
-        { error: "Este perfil no puede ingresar inventario" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Este perfil no puede ingresar inventario" }, { status: 403 });
     }
-
-    await ensureVendorProfilesSchema();
-
-    const data = await req.json();
-
-    const imeisRaw = Array.isArray(data.imeis)
-      ? data.imeis
-      : data.imei
-      ? [data.imei]
-      : [];
-
-    const imeis = (imeisRaw as unknown[])
-      .map((item) => String(item ?? "").replace(/\D/g, "").trim())
-      .filter((item) => item.length > 0);
-
+    let data: Record<string, unknown>;
+    try {
+      const parsed: unknown = await req.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      data = parsed as Record<string, unknown>;
+    } catch { return NextResponse.json({ error: "La solicitud de carga no es válida." }, { status: 400 }); }
+    const clave = leerClaveCarga(req, data);
+    const imeis = leerImeisCarga(data);
     const referencia = String(data.referencia ?? "").trim();
     const tipoProducto = normalizarTipoProducto(data.tipoProducto);
     const color = String(data.color ?? "").trim();
-    const costo = Number(data.costo ?? 0);
+    const costo = typeof data.costo === "number" || typeof data.costo === "string" ? Number(data.costo) : NaN;
     const distribuidor = String(data.distribuidor ?? "").trim();
     const estadoFinanciero = String(data.estadoFinanciero ?? "").trim().toUpperCase();
     const deboA = data.deboA ? String(data.deboA).trim() : null;
-
     const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
-    const sedeId = esAdmin ? Number(data.sedeId ?? user.sedeId) : user.sedeId;
-
-    if (imeis.length === 0) {
-      return NextResponse.json(
-        { error: "Debes ingresar al menos un IMEI" },
-        { status: 400 }
-      );
+    const sedeSolicitada = data.sedeId === undefined ? user.sedeId :
+      typeof data.sedeId === "number" || typeof data.sedeId === "string" ? Number(data.sedeId) : NaN;
+    if (!Number.isInteger(sedeSolicitada) || sedeSolicitada <= 0) throw new InventoryIntakeError("Sede inválida.");
+    if (!esAdmin && sedeSolicitada !== user.sedeId) {
+      return NextResponse.json({ error: "No tienes permiso para ingresar inventario en esa sede." }, { status: 403 });
     }
-
-    const imeiInvalido = imeis.find((item) => !/^\d{15}$/.test(item));
-    if (imeiInvalido) {
-      return NextResponse.json(
-        { error: "Todos los IMEIs deben tener exactamente 15 digitos" },
-        { status: 400 }
-      );
-    }
-
-    if (!referencia) {
-      return NextResponse.json(
-        { error: "La referencia es obligatoria" },
-        { status: 400 }
-      );
-    }
-
-    if (!costo || costo <= 0) {
-      return NextResponse.json(
-        { error: "El costo debe ser mayor a 0" },
-        { status: 400 }
-      );
-    }
-
-    if (!distribuidor) {
-      return NextResponse.json(
-        { error: "Debes seleccionar un distribuidor" },
-        { status: 400 }
-      );
-    }
-
-    if (!estadoFinanciero) {
-      return NextResponse.json(
-        { error: "Debes seleccionar el estado financiero" },
-        { status: 400 }
-      );
-    }
-
-    if (estadoFinanciero === "DEUDA" && !deboA) {
-      return NextResponse.json(
-        { error: "Debes seleccionar 'Debe a'" },
-        { status: 400 }
-      );
-    }
-
-    if (!sedeId || sedeId <= 0) {
-      return NextResponse.json(
-        { error: "Sede invalida" },
-        { status: 400 }
-      );
-    }
-
-    const sede = await prisma.sede.findUnique({
-      where: { id: sedeId },
-      select: { nombre: true },
-    });
-
-    if (!sede) {
-      return NextResponse.json(
-        { error: "Sede invalida" },
-        { status: 400 }
-      );
-    }
-
-    if (esSedeVentas(sede.nombre)) {
-      return NextResponse.json(
-        {
-          error:
-            "La sede VENTAS es informativa y no puede recibir equipos de inventario",
-        },
-        { status: 400 }
-      );
-    }
-
-    const imeisUnicos = [...new Set(imeis)];
-
-    const existentesEnSedes = await prisma.inventarioSede.findMany({
-      where: {
-        imei: { in: imeisUnicos },
-      },
-      select: {
-        imei: true,
-        sedeId: true,
-        sede: {
-          select: {
-            nombre: true,
-          },
-        },
+    const sedeId = esAdmin ? sedeSolicitada : user.sedeId;
+    if (!referencia) throw new InventoryIntakeError("La referencia es obligatoria.");
+    if (!Number.isFinite(costo) || costo <= 0) throw new InventoryIntakeError("El costo debe ser mayor a 0.");
+    if (!distribuidor) throw new InventoryIntakeError("Debes seleccionar un distribuidor.");
+    if (!estadoFinanciero) throw new InventoryIntakeError("Debes seleccionar el estado financiero.");
+    if (estadoFinanciero === "DEUDA" && !deboA) throw new InventoryIntakeError("Debes seleccionar 'Debe a'.");
+    await ensureVendorProfilesSchema();
+    const resultado = await registrarCargaInventarioUnaVez({
+      usuarioId: user.id, destino: "SEDE", clave, imeis,
+      solicitud: { imeis, referencia, tipoProducto, color, costo, distribuidor, sedeId, estadoFinanciero, deboA },
+      registrar: async (tx) => {
+        const sede = await tx.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } });
+        if (!sede) throw new InventoryIntakeError("Sede inválida.");
+        if (esSedeVentas(sede.nombre)) throw new InventoryIntakeError("La sede VENTAS es informativa y no puede recibir equipos de inventario.");
+        const created = await tx.inventarioSede.createMany({
+          data: imeis.map((imei) => ({
+            imei, referencia, tipoProducto, color: color || null, costo, distribuidor, sedeId,
+            estadoFinanciero, deboA, estadoActual: "BODEGA", origen: "MANUAL", inventarioPrincipalId: null,
+          })),
+        });
+        if (created.count !== imeis.length) throw new Error("La carga no se pudo completar.");
+        await tx.movimientoInventario.createMany({
+          data: imeis.map((imei) => ({
+            imei, tipoMovimiento: "INGRESO_SEDE", referencia, color: color || null,
+            costo, sedeId, deboA, estadoFinanciero, origen: "MANUAL",
+            observacion: `Ingreso manual desde ${distribuidor}`,
+          })),
+        });
+        const item = imeis.length === 1 ? await tx.inventarioSede.findFirst({
+          where: { sedeId, imei: imeis[0] },
+          select: { id: true, imei: true, referencia: true, tipoProducto: true, sedeId: true, estadoActual: true, estadoFinanciero: true },
+        }) : null;
+        return { ok: true, mensaje: "Guardado correctamente", item, insertados: created.count, omitidos: 0, imeisOmitidos: [] as string[] };
       },
     });
-
-    const existentesOtraSede = existentesEnSedes.filter(
-      (item) => item.sedeId !== sedeId
-    );
-
-    if (existentesOtraSede.length > 0) {
-      const detalle = existentesOtraSede
-        .slice(0, 5)
-        .map((item) => `${item.imei} (${item.sede?.nombre || "otra sede"})`)
-        .join(", ");
-
-      return NextResponse.json(
-        {
-          error: `Estos IMEI ya existen en otra sede y deben moverse por el flujo de prestamos: ${detalle}`,
-        },
-        { status: 400 }
-      );
-    }
-
-    const imeisExistentes = new Set(
-      existentesEnSedes
-        .filter((item) => item.sedeId === sedeId)
-        .map((item) => item.imei)
-    );
-    const imeisParaInsertar = imeisUnicos.filter(
-      (item) => !imeisExistentes.has(item)
-    );
-
-    if (imeisParaInsertar.length === 0) {
-      return NextResponse.json(
-        { error: "Todos los IMEIs ya existen en esta sede" },
-        { status: 400 }
-      );
-    }
-
-    const existentesEnPrincipal = await prisma.inventarioPrincipal.findMany({
-      where: {
-        imei: { in: imeisParaInsertar },
-      },
-      select: { imei: true },
-    });
-
-    if (existentesEnPrincipal.length > 0) {
-      const imeisPrincipal = existentesEnPrincipal
-        .map((item) => item.imei)
-        .slice(0, 5)
-        .join(", ");
-
-      return NextResponse.json(
-        {
-          error: `Estos IMEI ya existen en Bodega Principal y deben enviarse desde ese modulo: ${imeisPrincipal}`,
-        },
-        { status: 400 }
-      );
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.inventarioSede.createMany({
-        data: imeisParaInsertar.map((item) => ({
-          imei: item,
-          referencia,
-          tipoProducto,
-          color: color || null,
-          costo,
-          distribuidor,
-          sedeId,
-          estadoFinanciero,
-          deboA,
-          estadoActual: "BODEGA",
-          origen: "MANUAL",
-          inventarioPrincipalId: null,
-        })),
-      });
-
-      await tx.movimientoInventario.createMany({
-        data: imeisParaInsertar.map((item) => ({
-          imei: item,
-          tipoMovimiento: "INGRESO_SEDE",
-          referencia,
-          color: color || null,
-          costo,
-          sedeId,
-          deboA,
-          estadoFinanciero,
-          origen: "MANUAL",
-          observacion: `Ingreso manual desde ${distribuidor}`,
-        })),
-      });
-    });
-
-    const item =
-      imeisParaInsertar.length === 1
-        ? await prisma.inventarioSede.findFirst({
-            where: {
-              sedeId,
-              imei: imeisParaInsertar[0],
-            },
-            select: {
-              id: true,
-              imei: true,
-              referencia: true,
-              tipoProducto: true,
-              sedeId: true,
-              estadoActual: true,
-              estadoFinanciero: true,
-            },
-          })
-        : null;
-
-    return NextResponse.json({
-      ok: true,
-      mensaje: "Guardado correctamente",
-      item,
-      insertados: imeisParaInsertar.length,
-      omitidos: imeisUnicos.length - imeisParaInsertar.length,
-      imeisOmitidos: imeisUnicos.filter((itemImei) =>
-        imeisExistentes.has(itemImei)
-      ),
-    });
+    return NextResponse.json(resultado, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof InventoryIntakeError) {
+      return NextResponse.json({ error: error.message, codigo: error.codigo }, { status: error.status });
+    }
     console.error("ERROR API INVENTARIO:", error);
-
-    return NextResponse.json(
-      { error: "Error interno" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "No se pudo confirmar la carga. Conserva los datos y reintenta para recuperar el resultado sin duplicar equipos." }, { status: 500 });
   }
 }

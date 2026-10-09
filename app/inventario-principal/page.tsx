@@ -1,19 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import { esSedeOperativaInventario } from "@/lib/sedes";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
+import { type NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
 import DashboardIcon, {
   type DashboardIconName,
 } from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import { RecordDeviceVisual } from "@/app/vendedor/registros/buscar/device-visual";
+import styles from "./warehouse.module.css";
 
 type ItemPrincipal = {
   id: number;
@@ -27,6 +27,7 @@ type ItemPrincipal = {
   estado?: string | null;
   sedeDestinoId?: number | null;
   estadoCobro?: string | null;
+  catalogoEquipo?: { referencia: string; imagenUrl: string | null; sistemaOperativo: string | null } | null;
 };
 
 type Sede = {
@@ -62,7 +63,7 @@ const FILTROS_ESTADO: Array<{ value: FiltroEstado; label: string }> = [
   { value: "PAGADOS", label: "Pagados" },
 ];
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
@@ -84,49 +85,14 @@ function mensajeConBloqueos(data: { error?: string; bloqueados?: unknown }, fall
   return `${base}. Detalle: ${bloqueos.join(" | ")}`;
 }
 
-function MetricCard({
-  icon,
-  iconClassName,
-  label,
-  value,
-  detail,
-  valueClass = "text-slate-950",
-}: {
-  icon: DashboardIconName;
-  iconClassName: string;
-  label: string;
-  value: string | number;
-  detail: string;
-  valueClass?: string;
+function MetricCard({ icon, iconClassName, label, value, detail }: {
+  icon: DashboardIconName; iconClassName: string; label: string;
+  value: string | number; detail: string;
 }) {
-  return (
-    <div className="min-h-[148px] min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start gap-4">
-        <span
-          className={[
-            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
-            iconClassName,
-          ].join(" ")}
-        >
-          <DashboardIcon name={icon} className="h-6 w-6" />
-        </span>
-        <div className="min-w-0 pt-0.5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500">
-            {label}
-          </p>
-          <p
-            className={[
-              "mt-2 max-w-full text-[clamp(1.4rem,1.55vw,1.9rem)] font-black leading-tight tracking-tight [overflow-wrap:anywhere]",
-              valueClass,
-            ].join(" ")}
-          >
-            {value}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
-        </div>
-      </div>
-    </div>
-  );
+  return <div className={styles.metric}>
+    <span className={`${styles.metricIcon} ${iconClassName}`}><DashboardIcon name={icon} /></span>
+    <div><p className={styles.metricLabel}>{label}</p><p className={styles.metricValue}>{value}</p><span className="sr-only">{detail}</span></div>
+  </div>;
 }
 
 function IconoEditar() {
@@ -311,13 +277,14 @@ export default function InventarioPrincipalPage() {
   const [edicionFactura, setEdicionFactura] = useState("");
   const [edicionDistribuidor, setEdicionDistribuidor] = useState("");
   const [exportandoExcel, setExportandoExcel] = useState(false);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
+  const [inventoryError, setInventoryError] = useState("");
 
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
 
   const cargarInventarioPrincipal = useCallback(async () => {
+    setInventoryLoading(true);
     try {
-      setMensaje("");
-
       const res = await fetch("/api/inventario-principal", {
         cache: "no-store",
       });
@@ -325,13 +292,16 @@ export default function InventarioPrincipalPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMensaje(`Error: ${data.error || "Error cargando bodega principal"}`);
+        setInventoryError(data.error || "No se pudo cargar la bodega principal");
         return;
       }
 
       setItems(Array.isArray(data) ? data : []);
+      setInventoryError("");
     } catch {
-      setMensaje("Error cargando inventario principal");
+      setInventoryError("No se pudo cargar el inventario principal");
+    } finally {
+      setInventoryLoading(false);
     }
   }, []);
 
@@ -509,6 +479,7 @@ export default function InventarioPrincipalPage() {
 
   useEffect(() => {
     setPagina(1);
+    setIdsSeleccionados([]);
   }, [busqueda, filtroEstado, filtroSedeDestinoId]);
 
   useEffect(() => {
@@ -567,7 +538,7 @@ export default function InventarioPrincipalPage() {
 
   const exportarInventarioExcel = useCallback(async () => {
     if (itemsFiltrados.length === 0) {
-      setMensaje("No hay equipos visibles para exportar");
+      setMensaje("No hay equipos filtrados para exportar");
       return;
     }
 
@@ -608,7 +579,7 @@ export default function InventarioPrincipalPage() {
         if (costoCell) {
           costoCell.t = "n";
           costoCell.v = Number(item.costo || 0);
-          costoCell.z = '"$"#,##0';
+          costoCell.z = Number.isInteger(Number(costoCell.v)) ? '"$"#,##0' : '"$"#,##0.00';
         }
       });
       worksheet["!cols"] = [
@@ -1191,159 +1162,41 @@ export default function InventarioPrincipalPage() {
     { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
     { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
   ];
-  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
-
   return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/inventario"
-        coverageLabel="Bodega principal"
-        items={navigationItems}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
-                Inventario principal
-              </h1>
-              <p className="mt-1 text-sm text-slate-500 sm:text-base">
-                Control de stock, referencias y despachos desde bodega principal
-              </p>
-            </div>
-
-            <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
-              <label className="relative w-full sm:w-[360px] xl:w-[420px]">
-                <span className="sr-only">Buscar en inventario principal</span>
-                <input
-                  type="search"
-                  value={busqueda}
-                  onChange={(event) => setBusqueda(event.target.value)}
-                  placeholder="Buscar por IMEI, referencia, factura o distribuidor..."
-                  className="min-h-12 w-full rounded-xl border border-slate-200 bg-white py-3 pl-4 pr-12 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                />
-                <DashboardIcon
-                  name="search"
-                  className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500"
-                />
-              </label>
-              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || (
-                    <DashboardIcon name="user" className="h-5 w-5" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">
-                    {user?.nombre || user?.usuario || "Cargando usuario"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {user?.rolNombre || "Sesión activa"}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton
-                variant="light"
-                className="min-h-12 shrink-0 rounded-xl"
-              />
-              <Link
-                href="/inventario/nuevo"
-                className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl bg-[#e30613] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#bd0711]"
-              >
-                + Nuevo inventario
-              </Link>
-            </div>
-          </header>
-
-        {mensaje && (
-          <div
-            className={[
-              "mt-5 rounded-2xl border px-5 py-4 text-sm font-medium shadow-sm",
-              mensajeEsError
-                ? "border-rose-200 bg-rose-50 text-rose-800"
-                : "border-emerald-200 bg-emerald-50 text-emerald-800",
-            ].join(" ")}
-          >
-            {mensaje}
-          </div>
-        )}
-
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            icon="inventory"
-            iconClassName="bg-slate-100 text-slate-700"
-            label="Equipos en bodega"
-            value={equiposDisponibles.length}
-            detail="Stock listo para enviar a sede."
-          />
-          <MetricCard
-            icon="cash"
-            iconClassName="bg-emerald-50 text-emerald-600"
-            label="Valor en bodega"
-            value={formatoPesos(valorEnBodega)}
-            detail="Suma solo equipos en estado BODEGA."
-            valueClass="text-emerald-700"
-          />
-          <MetricCard
-            icon="send"
-            iconClassName="bg-blue-50 text-blue-600"
-            label="Enviados a sede"
-            value={equiposEnviados.length}
-            detail="Equipos ya despachados desde bodega."
-            valueClass="text-sky-700"
-          />
-          <MetricCard
-            icon="document"
-            iconClassName="bg-orange-50 text-orange-600"
-            label="Cobro pendiente"
-            value={pendientesCobro.length}
-            detail="Casos enviados con seguimiento de cobro."
-            valueClass="text-amber-600"
-          />
+    <div className={styles.page}>
+      <header className={styles.topbar}>
+        <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS, ir al inicio">
+          <Image src="/branding/conectamos-logo.png" alt="" width={42} height={42} priority />
+          <span>CONECTAMOS</span>
+        </Link>
+        <nav className={styles.navigation} aria-label="Navegación principal">
+          {navigationItems.map((item) => <Link key={item.href} href={item.href} className={item.href === "/inventario" ? styles.navActive : undefined} aria-current={item.href === "/inventario" ? "page" : undefined}>
+            <DashboardIcon name={item.icon} /><span>{item.label}</span>
+          </Link>)}
+        </nav>
+        <SalesProfile name={user?.nombre || user?.usuario || "Usuario"} role={user?.rolNombre || "Sesión activa"} />
+      </header>
+      <main className={styles.main}>
+        <header className={styles.heading}>
+          <div><h1>Inventario principal</h1><p>Bodega principal</p></div>
+          <Link href="/inventario/nuevo" className={styles.primaryButton}><span aria-hidden="true" className={styles.plus}>+</span> Nuevo inventario</Link>
+        </header>
+        {mensaje && <div role={mensajeEsError ? "alert" : "status"} className={`${styles.message} ${mensajeEsError ? styles.error : styles.success}`}>{mensaje}</div>}
+        {inventoryError && <div role="alert" className={`${styles.message} ${styles.error}`}>{inventoryError}<button type="button" onClick={() => void cargarInventarioPrincipal()} disabled={inventoryLoading}>Reintentar</button></div>}
+        <section className={styles.metrics} aria-label="Resumen de bodega principal" aria-busy={inventoryLoading}>
+          <MetricCard icon="inventory" iconClassName={styles.stockIcon} label="Equipos en bodega" value={inventoryLoading && !items.length ? "—" : equiposDisponibles.length.toLocaleString("es-CO")} detail="Stock listo para enviar a sede." />
+          <MetricCard icon="cash" iconClassName={styles.valueIcon} label="Valor en bodega" value={inventoryLoading && !items.length ? "—" : formatoPesos(valorEnBodega)} detail="Suma solo equipos en estado BODEGA." />
+          <MetricCard icon="send" iconClassName={styles.sentIcon} label="Enviados a sede" value={inventoryLoading && !items.length ? "—" : equiposEnviados.length.toLocaleString("es-CO")} detail="Equipos ya despachados desde bodega." />
+          <MetricCard icon="document" iconClassName={styles.debtIcon} label="Cobro pendiente" value={inventoryLoading && !items.length ? "—" : pendientesCobro.length.toLocaleString("es-CO")} detail="Casos enviados con seguimiento de cobro." />
         </section>
-
-        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <button
-            type="button"
-            onClick={() => setMostrarCatalogoReferencias((actual) => !actual)}
-            aria-expanded={mostrarCatalogoReferencias}
-            className="flex w-full items-center justify-between gap-4 px-5 py-5 text-left transition hover:bg-slate-50"
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-5">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                <DashboardIcon name="catalog" className="h-5 w-5" />
-              </span>
-              <h2 className="text-lg font-black tracking-tight text-slate-950">
-                Referencias de bodega
-              </h2>
-              <div className="flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-[0.14em]">
-                <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700 ring-1 ring-emerald-100">
-                  {referenciasActivas.length} activas
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-600 ring-1 ring-slate-200">
-                  {referenciasOcultas.length} ocultas
-                </span>
-              </div>
-            </div>
-            <span
-              className={[
-                "text-xl text-slate-500 transition-transform",
-                mostrarCatalogoReferencias ? "rotate-180" : "",
-              ].join(" ")}
-              aria-hidden="true"
-            >
-              ⌄
-            </span>
+        <section className={styles.references}>
+          <button type="button" onClick={() => setMostrarCatalogoReferencias((actual) => !actual)} aria-expanded={mostrarCatalogoReferencias} aria-controls="warehouse-references" className={styles.referencesToggle}>
+            <span className={styles.sectionIcon}><DashboardIcon name="catalog" /></span><h2>Referencias de bodega</h2>
+            <span className={styles.activeCount}>{referenciasActivas.length} activas</span><span className={styles.hiddenCount}>{referenciasOcultas.length} ocultas</span>
+            <DashboardIcon name="chevron" className={`${styles.chevron} ${mostrarCatalogoReferencias ? styles.chevronOpen : ""}`} />
           </button>
-
           {mostrarCatalogoReferencias && (
-            <div className="border-t border-slate-200 p-5">
+            <div id="warehouse-references" className="border-t border-slate-200 p-5">
               <div className="grid max-w-[760px] gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
                 <input
                   type="text"
@@ -1473,72 +1326,16 @@ export default function InventarioPrincipalPage() {
           )}
         </section>
 
-        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-4">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                <DashboardIcon name="inventory" className="h-6 w-6" />
-              </span>
-              <div>
-                <h2 className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-                  Stock de inventario principal
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-slate-500">
-                  Administra disponibilidad, despachos hacia sedes y eliminación de registros.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <label>
-                <span className="sr-only">Filtrar por sede destino</span>
-                <select
-                  value={filtroSedeDestinoId}
-                  onChange={(event) => setFiltroSedeDestinoId(event.target.value)}
-                  className="min-h-10 min-w-[210px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                >
-                  <option value="">Todas las sedes</option>
-                  {sedesDestinoOperativas.map((sede) => (
-                    <option key={sede.id} value={sede.id}>
-                      {sede.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={() => void exportarInventarioExcel()}
-                disabled={exportandoExcel || itemsFiltrados.length === 0}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <DashboardIcon name="download" className="h-4 w-4" />
-                {exportandoExcel ? "Exportando..." : "Exportar Excel"}
-              </button>
-              <div className="text-sm font-medium tabular-nums text-slate-500">
-                {itemsFiltrados.length} resultado(s)
-              </div>
+        <section className={styles.stockPanel} aria-busy={inventoryLoading}>
+          <div className={styles.stockHeader}>
+            <div className={styles.stockTitle}><span className={styles.sectionIcon}><DashboardIcon name="inventory" /></span><h2>Stock de inventario</h2><span>{itemsFiltrados.length.toLocaleString("es-CO")} registros</span></div>
+            <div className={styles.filters}>
+              <label className={styles.search}><DashboardIcon name="search" /><span className="sr-only">Buscar en inventario principal</span><input type="search" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar IMEI, referencia, factura o distribuidor" /></label>
+              <label><span className="sr-only">Filtrar por sede destino</span><select value={filtroSedeDestinoId} onChange={(event) => setFiltroSedeDestinoId(event.target.value)}><option value="">Todas las sedes</option>{sedesDestinoOperativas.map((sede) => <option key={sede.id} value={sede.id}>{sede.nombre}</option>)}</select></label>
+              <button type="button" onClick={() => void exportarInventarioExcel()} disabled={inventoryLoading || exportandoExcel || itemsFiltrados.length === 0} className={styles.outlineButton}><DashboardIcon name="download" />{exportandoExcel ? "Exportando…" : "Exportar Excel"}</button>
             </div>
           </div>
-
-          <div className="flex flex-wrap gap-2 border-b border-slate-200 px-6 py-3.5">
-            {FILTROS_ESTADO.map((filtro) => (
-              <button
-                key={filtro.value}
-                type="button"
-                onClick={() => setFiltroEstado(filtro.value)}
-                aria-pressed={filtroEstado === filtro.value}
-                className={[
-                  "rounded-xl border px-4 py-2 text-xs font-bold transition",
-                  filtroEstado === filtro.value
-                    ? "border-[#e30613] bg-[#e30613] text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
-                ].join(" ")}
-              >
-                {filtro.label}
-              </button>
-            ))}
-          </div>
-
+          <div className={styles.tabs} aria-label="Estado del inventario">{FILTROS_ESTADO.map((filtro) => <button key={filtro.value} type="button" onClick={() => setFiltroEstado(filtro.value)} aria-pressed={filtroEstado === filtro.value} className={filtroEstado === filtro.value ? styles.tabActive : undefined}>{filtro.label}</button>)}</div>
           {idsSeleccionados.length > 0 && (
             <div className="border-b border-red-100 bg-red-50/60 px-6 py-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -1611,213 +1408,55 @@ export default function InventarioPrincipalPage() {
             </div>
           )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1240px] text-sm">
-              <thead className="sticky top-0 bg-[#f8fafc]">
-                <tr className="border-b border-slate-200 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                  <th className="px-4 py-4">
-                    <input
-                      type="checkbox"
-                      checked={todosVisiblesSeleccionados}
-                      onChange={alternarSeleccionVisibles}
-                      aria-label="Seleccionar equipos visibles"
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                    />
-                  </th>
-                  <th className="px-4 py-4">ID</th>
-                  <th className="px-4 py-4">IMEI</th>
-                  <th className="px-4 py-4">Referencia</th>
-                  <th className="px-4 py-4">Color</th>
-                  <th className="px-4 py-4">Costo</th>
-                  <th className="px-4 py-4">Factura</th>
-                  <th className="px-4 py-4">Distribuidor</th>
-                  <th className="px-4 py-4">Estado</th>
-                  <th className="px-4 py-4">Cobro</th>
-                  <th className="px-4 py-4">Sede destino</th>
-                  <th className="px-4 py-4">Acciones</th>
-                </tr>
-              </thead>
-
+          <div className={styles.tableScroll}>
+            <table className={styles.table}>
+              <thead><tr>
+                <th className={styles.selectionCell}><input type="checkbox" checked={todosVisiblesSeleccionados} onChange={alternarSeleccionVisibles} aria-label="Seleccionar equipos visibles" disabled={inventoryLoading || !itemsPaginados.length} /></th>
+                <th>ID</th><th className={styles.equipmentColumn}>Equipo / IMEI</th><th>Color</th><th>Costo</th><th>Factura / Distribuidor</th><th>Estado</th><th>Cobro</th><th>Sede destino</th><th>Acciones</th>
+              </tr></thead>
               <tbody>
-                {itemsFiltrados.length === 0 ? (
-                  <tr>
-                    <td colSpan={12} className="px-6 py-16 text-center text-slate-500">
-                      No hay equipos que coincidan en inventario principal.
-                    </td>
-                  </tr>
-                ) : (
-                  itemsPaginados.map((item) => {
-                    const estadoNormalizado = String(item.estado || "BODEGA").toUpperCase();
-                    const enviado = estadoNormalizado === "PRESTAMO";
-                    const pagado = estadoNormalizado === "PAGO";
-                    const bloqueadoParaEnvio = estadoNormalizado !== "BODEGA";
-                    const sedeDestino =
-                      sedes.find((sede) => sede.id === item.sedeDestinoId)?.nombre || "-";
-
-                    return (
-                      <tr
-                        key={item.id}
-                        className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-slate-50"
-                      >
-                        <td className="px-4 py-4">
-                          <input
-                            type="checkbox"
-                            checked={idsSeleccionados.includes(item.id)}
-                            onChange={() => alternarSeleccion(item.id)}
-                            aria-label={`Seleccionar ${item.imei}`}
-                            className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                          />
-                        </td>
-                        <td className="px-4 py-4 font-bold text-slate-950">{item.id}</td>
-                        <td className="px-4 py-4 font-semibold text-slate-950">{item.imei}</td>
-                        <td className="px-4 py-4">
-                          <div>{item.referencia}</div>
-                          <span className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                            {item.tipoProducto || "TELEFONIA"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">{item.color ?? "-"}</td>
-                        <td className="px-4 py-4 font-semibold text-slate-950">
-                          {formatoPesos(item.costo)}
-                        </td>
-                        <td className="px-4 py-4">{item.numeroFactura ?? "-"}</td>
-                        <td className="px-4 py-4">{item.distribuidor ?? "-"}</td>
-                        <td className="px-4 py-4">
-                          <span
-                            className={[
-                              "inline-flex rounded-full border px-3 py-1 text-xs font-semibold",
-                              enviado
-                                ? "border-sky-200 bg-sky-50 text-sky-700"
-                                : pagado
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : "border-slate-200 bg-slate-100 text-slate-700",
-                            ].join(" ")}
-                          >
-                            {estadoNormalizado}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span
-                            className={[
-                              "inline-flex rounded-full border px-3 py-1 text-xs font-semibold",
-                              String(item.estadoCobro || "").toUpperCase() === "PENDIENTE"
-                                ? "border-amber-200 bg-amber-50 text-amber-700"
-                                : "border-slate-200 bg-slate-100 text-slate-500",
-                            ].join(" ")}
-                          >
-                            {item.estadoCobro ?? "-"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">{item.sedeDestinoId ? sedeDestino : "-"}</td>
-                        <td className="px-4 py-4">
-                          <div className="flex min-w-[9.5rem] items-center justify-end gap-2">
-                            <ActionIconButton
-                              label="Editar"
-                              onClick={() => abrirModalEdicion([item.id])}
-                              disabled={cargando}
-                              tone="neutral"
-                            >
-                              <IconoEditar />
-                            </ActionIconButton>
-
-                            <ActionIconButton
-                              label="Enviar a sede"
-                              onClick={() => abrirModalEnvio(item)}
-                              disabled={cargando || bloqueadoParaEnvio}
-                              tone="dark"
-                            >
-                              <IconoEnviar />
-                            </ActionIconButton>
-
-                            <ActionIconButton
-                              label="Volver a bodega"
-                              onClick={() => void restaurarBodega(item.id)}
-                              disabled={cargando || estadoNormalizado !== "PRESTAMO"}
-                              tone="success"
-                            >
-                              <IconoVolver />
-                            </ActionIconButton>
-
-                            {puedeEliminar && (
-                              <ActionIconButton
-                                label="Eliminar"
-                                onClick={() => eliminar(item.id)}
-                                disabled={cargando}
-                                tone="danger"
-                              >
-                                <IconoEliminar />
-                              </ActionIconButton>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
+                {!itemsFiltrados.length ? <tr><td colSpan={10} className={styles.empty} role="status">{inventoryLoading ? "Cargando inventario principal…" : inventoryError ? "El inventario no está disponible. Reintenta la consulta." : "No hay equipos que coincidan con los filtros."}</td></tr> : itemsPaginados.map((item) => {
+                  const estadoNormalizado = String(item.estado || "BODEGA").toUpperCase();
+                  const enviado = estadoNormalizado === "PRESTAMO";
+                  const pagado = estadoNormalizado === "PAGO";
+                  const sedeDestino = sedes.find((sede) => sede.id === item.sedeDestinoId)?.nombre || "—";
+                  return <tr key={item.id} className={idsSeleccionados.includes(item.id) ? styles.selectedRow : undefined}>
+                    <td className={styles.selectionCell}><input type="checkbox" checked={idsSeleccionados.includes(item.id)} onChange={() => alternarSeleccion(item.id)} aria-label={`Seleccionar ${item.imei}`} /></td>
+                    <td className={styles.idCell}>{item.id}</td>
+                    <td><div className={styles.equipment}>
+                      <RecordDeviceVisual className={styles.deviceVisual} reference={item.referencia} productType={item.tipoProducto} catalogReference={item.catalogoEquipo?.referencia} imageSrc={item.catalogoEquipo?.imagenUrl} operatingSystem={item.catalogoEquipo?.sistemaOperativo} />
+                      <div><strong>{item.referencia}</strong><span className={styles.imei}>{item.imei}</span></div><span className={styles.productType}>{item.tipoProducto || "TELEFONÍA"}</span>
+                    </div></td>
+                    <td>{item.color || "—"}</td><td className={styles.money}>{formatoPesos(item.costo)}</td>
+                    <td><div>{item.numeroFactura || "—"}</div><span className={styles.muted}>{item.distribuidor || "—"}</span></td>
+                    <td><span className={`${styles.badge} ${enviado ? styles.sentBadge : pagado ? styles.paidBadge : ""}`}>{estadoNormalizado}</span></td>
+                    <td>{item.estadoCobro ? <span className={`${styles.badge} ${String(item.estadoCobro).toUpperCase() === "PENDIENTE" ? styles.debtBadge : ""}`}>{item.estadoCobro}</span> : "—"}</td>
+                    <td>{item.sedeDestinoId ? sedeDestino : "—"}</td>
+                    <td><div className={styles.actions}>
+                      <ActionIconButton label="Editar" onClick={() => abrirModalEdicion([item.id])} disabled={cargando} tone="neutral"><IconoEditar /></ActionIconButton>
+                      <ActionIconButton label="Enviar a sede" onClick={() => abrirModalEnvio(item)} disabled={cargando || estadoNormalizado !== "BODEGA"} tone="dark"><IconoEnviar /></ActionIconButton>
+                      <ActionIconButton label="Volver a bodega" onClick={() => void restaurarBodega(item.id)} disabled={cargando || estadoNormalizado !== "PRESTAMO"} tone="success"><IconoVolver /></ActionIconButton>
+                      {puedeEliminar && <ActionIconButton label="Eliminar" onClick={() => eliminar(item.id)} disabled={cargando} tone="danger"><IconoEliminar /></ActionIconButton>}
+                    </div></td>
+                  </tr>;
+                })}
               </tbody>
             </table>
           </div>
-          <div className="flex flex-col gap-3 border-t border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-slate-500">
-              Mostrando {primerResultado}-{ultimoResultado} de {itemsFiltrados.length} registros
-            </p>
-            <nav
-              className="flex flex-wrap items-center gap-1.5"
-              aria-label="Paginación de inventario"
-            >
-              <button
-                type="button"
-                onClick={() => setPagina((actual) => Math.max(1, actual - 1))}
-                disabled={paginaActual === 1}
-                aria-label="Página anterior"
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-red-200 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                ‹
-              </button>
-              {paginasVisibles.map((numero, index) => {
-                const anterior = paginasVisibles[index - 1];
-
-                return (
-                  <span key={numero} className="flex items-center gap-1.5">
-                    {anterior && numero - anterior > 1 && (
-                      <span className="px-1 text-sm text-slate-400">…</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setPagina(numero)}
-                      aria-current={paginaActual === numero ? "page" : undefined}
-                      className={[
-                        "flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm font-bold transition",
-                        paginaActual === numero
-                          ? "border-[#e30613] bg-red-50 text-[#e30613]"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:text-[#e30613]",
-                      ].join(" ")}
-                    >
-                      {numero}
-                    </button>
-                  </span>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() =>
-                  setPagina((actual) => Math.min(totalPaginas, actual + 1))
-                }
-                disabled={paginaActual === totalPaginas}
-                aria-label="Página siguiente"
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-red-200 hover:text-[#e30613] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                ›
-              </button>
+          <div className={styles.pagination}>
+            <div className={styles.resultCount}><span className={styles.pageSize}>10 por página</span><p>Mostrando {primerResultado} – {ultimoResultado} de {itemsFiltrados.length.toLocaleString("es-CO")}</p></div>
+            <nav aria-label="Paginación de inventario">
+              <button type="button" onClick={() => setPagina((actual) => Math.max(1, actual - 1))} disabled={paginaActual === 1} aria-label="Página anterior">Anterior</button>
+              {paginasVisibles.map((numero, index) => <span key={numero}>{paginasVisibles[index - 1] && numero - paginasVisibles[index - 1] > 1 && <span className={styles.ellipsis}>…</span>}<button type="button" onClick={() => setPagina(numero)} aria-current={paginaActual === numero ? "page" : undefined} className={paginaActual === numero ? styles.currentPage : undefined}>{numero}</button></span>)}
+              <button type="button" onClick={() => setPagina((actual) => Math.min(totalPaginas, actual + 1))} disabled={paginaActual === totalPaginas} aria-label="Página siguiente">Siguiente</button>
             </nav>
           </div>
         </section>
-        </main>
-      </div>
+      </main>
 
       {mostrarModalEdicion && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
+          <div className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
             <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
               Edicion masiva
             </div>
@@ -1940,8 +1579,8 @@ export default function InventarioPrincipalPage() {
       )}
 
       {mostrarModalMasivo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
+          <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
             <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
               Envio masivo
             </div>
@@ -2010,8 +1649,8 @@ export default function InventarioPrincipalPage() {
       )}
 
       {mostrarModal && itemSeleccionado && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
+          <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
             <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
               Envio a sede
             </div>

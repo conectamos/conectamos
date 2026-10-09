@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { normalizarTipoProducto } from "@/lib/product-types";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { enriquecerRegistrosConCatalogo } from "@/lib/record-catalog-media";
+import { InventoryIntakeError, leerClaveCarga, leerImeisCarga, registrarCargaInventarioUnaVez } from "@/lib/inventory-intake-registration";
 import {
   buscarReferenciaInventarioActiva,
   normalizarReferenciaInventario,
@@ -49,7 +51,12 @@ const inventario = await prisma.inventarioPrincipal.findMany({
       },
     });
 
-    return NextResponse.json(inventario);
+    const enriquecido = await enriquecerRegistrosConCatalogo(inventario.map((item) => ({
+      ...item, referenciaEquipo: item.referencia,
+    })));
+    return NextResponse.json(enriquecido.map((item, index) => ({
+      ...inventario[index], catalogoEquipo: item.catalogoEquipo,
+    })));
   } catch (error) {
     console.error("ERROR GET INVENTARIO PRINCIPAL:", error);
 
@@ -63,172 +70,57 @@ const inventario = await prisma.inventarioPrincipal.findMany({
 export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "No autenticado" },
-        { status: 401 }
-      );
-    }
-
+    if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre?.toUpperCase() || "");
+    if (!esAdmin) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
 
-    if (!esAdmin) {
-      return NextResponse.json(
-        { error: "No autorizado" },
-        { status: 403 }
-      );
-    }
-
-    await ensureVendorProfilesSchema();
-
-    const body = await req.json();
-
+    let body: Record<string, unknown>;
+    try {
+      const parsed: unknown = await req.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      body = parsed as Record<string, unknown>;
+    } catch { return NextResponse.json({ error: "La solicitud de carga no es válida." }, { status: 400 }); }
+    const clave = leerClaveCarga(req, body);
+    const imeis = leerImeisCarga(body);
     const referencia = normalizarReferenciaInventario(body.referencia);
     const tipoProducto = normalizarTipoProducto(body.tipoProducto);
     const color = String(body.color ?? "").trim();
-    const costo = Number(body.costo ?? 0);
+    const costo = typeof body.costo === "number" || typeof body.costo === "string" ? Number(body.costo) : NaN;
     const numeroFactura = String(body.numeroFactura ?? "").trim();
     const distribuidor = String(body.distribuidor ?? "").trim();
-
-    const imeisRaw = Array.isArray(body.imeis)
-      ? body.imeis
-      : body.imei
-      ? [body.imei]
-      : [];
-
-const imeisRawTyped = imeisRaw as unknown[];
-
-const imeis: string[] = imeisRawTyped
-  .map((item: unknown) =>
-    String(item ?? "").replace(/\D/g, "").trim()
-  )
-  .filter((item: string) => item.length > 0);
-  
-
-    if (imeis.length === 0) {
-      return NextResponse.json(
-        { error: "Debes ingresar al menos un IMEI" },
-        { status: 400 }
-      );
-    }
-
-    const imeiInvalido = imeis.find((item) => !/^\d{15}$/.test(item));
-    if (imeiInvalido) {
-      return NextResponse.json(
-        { error: "Todos los IMEIs deben tener exactamente 15 digitos" },
-        { status: 400 }
-      );
-    }
-
-    if (!referencia) {
-      return NextResponse.json(
-        { error: "La referencia es obligatoria" },
-        { status: 400 }
-      );
-    }
-
-    const referenciaCatalogo = await buscarReferenciaInventarioActiva(referencia);
-
-    if (!referenciaCatalogo) {
-      return NextResponse.json(
-        { error: "Selecciona una referencia activa del catalogo" },
-        { status: 400 }
-      );
-    }
-
-    const referenciaGuardar = referenciaCatalogo.nombre;
-
-    if (!costo || costo <= 0) {
-      return NextResponse.json(
-        { error: "El costo debe ser mayor a 0" },
-        { status: 400 }
-      );
-    }
-
-    if (!numeroFactura) {
-      return NextResponse.json(
-        { error: "El número de factura es obligatorio" },
-        { status: 400 }
-      );
-    }
-
-    if (!distribuidor) {
-      return NextResponse.json(
-        { error: "El distribuidor es obligatorio" },
-        { status: 400 }
-      );
-    }
-
-    const imeisUnicos = [...new Set(imeis)];
-
-    const existentesEnPrincipal = await prisma.inventarioPrincipal.findMany({
-      where: {
-        imei: { in: imeisUnicos },
+    if (!referencia) throw new InventoryIntakeError("La referencia es obligatoria.");
+    if (!Number.isFinite(costo) || costo <= 0) throw new InventoryIntakeError("El costo debe ser mayor a 0.");
+    if (!numeroFactura) throw new InventoryIntakeError("El número de factura es obligatorio.");
+    if (!distribuidor) throw new InventoryIntakeError("El distribuidor es obligatorio.");
+    await ensureVendorProfilesSchema();
+    const resultado = await registrarCargaInventarioUnaVez({
+      usuarioId: user.id, destino: "PRINCIPAL", clave, imeis,
+      solicitud: { imeis, referencia, tipoProducto, color, costo, numeroFactura, distribuidor },
+      registrar: async (tx) => {
+        // Catalog changes must not prevent recovery of a previously committed response.
+        const referenciaCatalogo = await buscarReferenciaInventarioActiva(referencia);
+        if (!referenciaCatalogo) throw new InventoryIntakeError("Selecciona una referencia activa del catálogo.");
+        const referenciaGuardar = referenciaCatalogo.nombre;
+        const created = await tx.inventarioPrincipal.createMany({
+          data: imeis.map((imei) => ({ imei, referencia: referenciaGuardar, tipoProducto, color: color || null, costo, numeroFactura, distribuidor })),
+        });
+        if (created.count !== imeis.length) throw new Error("La carga no se pudo completar.");
+        await tx.movimientoInventario.createMany({
+          data: imeis.map((imei) => ({
+            imei, tipoMovimiento: "INGRESO_PRINCIPAL", referencia: referenciaGuardar,
+            color: color || null, costo, origen: "PRINCIPAL",
+            observacion: `Ingreso a bodega principal. Factura: ${numeroFactura}. Distribuidor: ${distribuidor}`,
+          })),
+        });
+        return { ok: true, insertados: created.count, omitidos: 0, imeisOmitidos: [] as string[] };
       },
-      select: { imei: true },
     });
-
-    const existentesEnSede = await prisma.inventarioSede.findMany({
-      where: {
-        imei: { in: imeisUnicos },
-      },
-      select: { imei: true },
-    });
-
-    const imeisExistentes = new Set<string>([
-      ...existentesEnPrincipal.map((item) => item.imei),
-      ...existentesEnSede.map((item) => item.imei),
-    ]);
-
-    const imeisParaInsertar = imeisUnicos.filter(
-      (item) => !imeisExistentes.has(item)
-    );
-
-    if (imeisParaInsertar.length === 0) {
-      return NextResponse.json(
-        { error: "Todos los IMEIs ya existen en el sistema" },
-        { status: 400 }
-      );
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.inventarioPrincipal.createMany({
-        data: imeisParaInsertar.map((item: string) => ({
-          imei: item,
-          referencia: referenciaGuardar,
-          tipoProducto,
-          color: color || null,
-          costo,
-          numeroFactura,
-          distribuidor,
-        })),
-      });
-
-      await tx.movimientoInventario.createMany({
-        data: imeisParaInsertar.map((item: string) => ({
-          imei: item,
-          tipoMovimiento: "INGRESO_PRINCIPAL",
-          referencia: referenciaGuardar,
-          color: color || null,
-          costo,
-          origen: "PRINCIPAL",
-          observacion: `Ingreso a bodega principal. Factura: ${numeroFactura}. Distribuidor: ${distribuidor}`,
-        })),
-      });
-    });
-
-    return NextResponse.json({
-      ok: true,
-      insertados: imeisParaInsertar.length,
-      omitidos: imeisUnicos.length - imeisParaInsertar.length,
-      imeisOmitidos: imeisUnicos.filter((item: string) => imeisExistentes.has(item)),
-    });
+    return NextResponse.json(resultado, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof InventoryIntakeError) {
+      return NextResponse.json({ error: error.message, codigo: error.codigo }, { status: error.status });
+    }
     console.error("ERROR POST INVENTARIO PRINCIPAL:", error);
-    return NextResponse.json(
-      { error: "Error interno al guardar en inventario principal" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "No se pudo confirmar la carga. Conserva los datos y reintenta para recuperar el resultado sin duplicar equipos." }, { status: 500 });
   }
 }
