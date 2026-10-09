@@ -533,6 +533,8 @@ function AccessibleDialog({
   onClose,
   title,
   titleId,
+  variant,
+  closeDisabled = false,
 }: {
   children: ReactNode;
   description: string;
@@ -541,6 +543,8 @@ function AccessibleDialog({
   onClose: () => void;
   title: string;
   titleId: string;
+  variant?: "payment";
+  closeDisabled?: boolean;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -605,7 +609,7 @@ function AccessibleDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/65 px-4 py-6 backdrop-blur-sm"
+      className={variant === "payment" ? styles.paymentOverlay : "fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/65 px-4 py-6 backdrop-blur-sm"}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCloseRef.current();
       }}
@@ -617,10 +621,10 @@ function AccessibleDialog({
         aria-labelledby={titleId}
         aria-describedby={`${titleId}-description`}
         tabIndex={-1}
-        className={`max-h-[calc(100vh-3rem)] w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.3)] ${maxWidthClass}`}
+        className={variant === "payment" ? styles.paymentDialog : `max-h-[calc(100vh-3rem)] w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.3)] ${maxWidthClass}`}
       >
-        <div className="h-1 bg-[#e30613]" />
-        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
+        <div className={variant === "payment" ? styles.paymentAccent : "h-1 bg-[#e30613]"} />
+        <header className={variant === "payment" ? styles.paymentHeading : "flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6"}>
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
               Proveedores
@@ -640,6 +644,7 @@ function AccessibleDialog({
           </div>
           <button
             type="button"
+            disabled={closeDisabled}
             onClick={() => onCloseRef.current()}
             aria-label={`Cerrar ${title.toLocaleLowerCase("es-CO")}`}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e30613] focus-visible:ring-offset-2"
@@ -808,6 +813,7 @@ export default function ProveedoresWorkspace({
   const [pushError, setPushError] = useState("");
   const allyInputRef = useRef<HTMLInputElement>(null);
   const paymentAmountInputRef = useRef<HTMLInputElement>(null);
+  const paymentInFlightRef = useRef(false);
 
   const isAdmin = ["ADMIN", "AUDITOR"].includes(
     session.rolNombre.toUpperCase(),
@@ -1159,7 +1165,7 @@ export default function ProveedoresWorkspace({
 
   const approvePayment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!approvalInvoice) return;
+    if (!approvalInvoice || paymentInFlightRef.current) return;
 
     const valorAbono = paymentForm.valorAbono;
     const valorAbonoCentavos = paymentAmountToCents(
@@ -1211,6 +1217,7 @@ export default function ProveedoresWorkspace({
 
     if (!paymentAttempt) setPaymentAttempt(attempt);
 
+    paymentInFlightRef.current = true;
     try {
       setApprovingId(approvalInvoice.id);
       const response = await fetch(
@@ -1266,13 +1273,6 @@ export default function ProveedoresWorkspace({
             ),
           );
           setApprovalInvoice(authoritativeView);
-          setPaymentForm((current) => ({
-            ...current,
-            valorAbono: moneyValueToPaymentInput(
-              authoritativeInvoice.saldoPendiente,
-            ),
-          }));
-
           if (authoritativeBalanceCents <= 0) {
             setPaymentAmountError(
               "Esta factura ya no tiene saldo pendiente.",
@@ -1352,6 +1352,7 @@ export default function ProveedoresWorkspace({
         "No se pudo confirmar la respuesta del servidor. Los datos quedaron bloqueados para reintentar exactamente el mismo pago.",
       );
     } finally {
+      paymentInFlightRef.current = false;
       setApprovingId(null);
     }
   };
@@ -1939,57 +1940,48 @@ export default function ProveedoresWorkspace({
       {approvalInvoice && (
         <AccessibleDialog
           title="Registrar abono"
-          description="Aplica el pago a esta factura. Si cubre todo el saldo, quedará marcada como pagada."
+          description="Aplica un pago a esta factura."
           titleId="approve-supplier-payment-title"
           initialFocusRef={paymentAmountInputRef}
-          maxWidthClass="max-w-2xl"
+          variant="payment"
+          closeDisabled={approvingId !== null || Boolean(paymentAttempt)}
           onClose={closePaymentDialog}
         >
-          <form onSubmit={approvePayment} noValidate>
-            <div className="grid gap-5 px-5 py-6 sm:px-6">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
-                <p className="text-[10px] font-black uppercase tracking-[0.13em] text-slate-500">
-                  Aliado / factura
-                </p>
-                <p className="mt-1 text-base font-black text-slate-950">
-                  {approvalInvoice.aliado} · {approvalInvoice.numeroFactura}
-                </p>
-                <p className="mt-1 text-xs font-semibold text-slate-500">
-                  Vence el {formatDate(approvalInvoice.fechaVencimiento)}
-                </p>
+          <form onSubmit={approvePayment} noValidate aria-busy={approvingId !== null}>
+            <div className={styles.paymentBody}>
+              <div className={styles.paymentInvoice}>
+                <span className={styles.paymentInvoiceIcon}><DashboardIcon name="document" /></span>
+                <div>
+                  <div className={styles.paymentInvoiceName}><strong>{approvalInvoice.aliado}</strong><span>{approvalInvoice.numeroFactura}</span></div>
+                  <p>Vence el {formatDate(approvalInvoice.fechaVencimiento)}</p>
+                </div>
               </div>
 
-              <dl className="grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                <div className="min-w-0 border-r border-slate-200 p-3 sm:p-4">
-                  <dt className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-500 sm:text-[10px]">
-                    Total
-                  </dt>
-                  <dd className="mt-1 break-words text-sm font-black text-slate-950">
+              <dl className={styles.paymentTotals}>
+                <div>
+                  <dt>Total factura</dt>
+                  <dd className={formatMoney(approvalInvoice.valorFactura).length > 15 ? styles.paymentLongAmount : undefined}>
                     {formatMoney(approvalInvoice.valorFactura)}
                   </dd>
                 </div>
-                <div className="min-w-0 border-r border-slate-200 p-3 sm:p-4">
-                  <dt className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-500 sm:text-[10px]">
-                    Abonado
-                  </dt>
-                  <dd className="mt-1 break-words text-sm font-black text-emerald-700">
+                <div>
+                  <dt>Abonado</dt>
+                  <dd className={`${styles.paymentTotalPaid} ${formatMoney(approvalInvoice.valorAbonado).length > 15 ? styles.paymentLongAmount : ""}`}>
                     {formatMoney(approvalInvoice.valorAbonado)}
                   </dd>
                 </div>
-                <div className="min-w-0 p-3 sm:p-4">
-                  <dt className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-500 sm:text-[10px]">
-                    Saldo
-                  </dt>
-                  <dd className="mt-1 break-words text-sm font-black text-slate-950">
+                <div>
+                  <dt>Saldo pendiente</dt>
+                  <dd className={formatMoney(approvalInvoice.saldoPendiente).length > 15 ? styles.paymentLongAmount : undefined}>
                     {formatMoney(approvalInvoice.saldoPendiente)}
                   </dd>
                 </div>
               </dl>
 
-              <label className="flex flex-col gap-2 text-sm font-bold text-slate-700">
+              <label className={styles.paymentField}>
                 Valor del abono
-                <span className="relative block">
-                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">
+                <span className={styles.paymentAmountControl}>
+                  <span aria-hidden="true">
                     $
                   </span>
                   <input
@@ -2036,22 +2028,21 @@ export default function ProveedoresWorkspace({
                         ? "supplier-payment-amount-error"
                         : "supplier-payment-balance-preview"
                     }
-                    className="min-h-[52px] w-full rounded-xl border border-slate-300 bg-white pl-9 pr-4 text-base font-black text-slate-900 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                    className={styles.paymentAmountInput}
                   />
                 </span>
                 {paymentAmountError && (
                   <span
                     id="supplier-payment-amount-error"
-                    className="text-xs font-semibold text-red-600"
+                    className={styles.paymentFieldError}
                   >
                     {paymentAmountError}
                   </span>
                 )}
               </label>
 
-              <div className="grid gap-5 sm:grid-cols-2">
-                <label className="flex flex-col gap-2 text-sm font-bold text-slate-700">
-                  Referencia <span className="font-normal text-slate-400">(opcional)</span>
+                <label className={styles.paymentField}>
+                  <span>Referencia <span className={styles.paymentOptional}>(opcional)</span></span>
                   <input
                     value={paymentForm.referencia}
                     onChange={(event) => {
@@ -2067,13 +2058,12 @@ export default function ProveedoresWorkspace({
                     maxLength={120}
                     autoComplete="off"
                     disabled={approvingId !== null || Boolean(paymentAttempt)}
-                    placeholder="Ej. transferencia 8452"
-                    className="min-h-[52px] rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                    placeholder="Número de transferencia o comprobante"
                   />
                 </label>
 
-                <label className="flex flex-col gap-2 text-sm font-bold text-slate-700">
-                  Observación <span className="font-normal text-slate-400">(opcional)</span>
+                <label className={styles.paymentField}>
+                  <span>Observación <span className={styles.paymentOptional}>(opcional)</span></span>
                   <textarea
                     value={paymentForm.observacion}
                     onChange={(event) => {
@@ -2087,31 +2077,30 @@ export default function ProveedoresWorkspace({
                       setPaymentError("");
                     }}
                     maxLength={500}
-                    rows={2}
+                    rows={3}
                     disabled={approvingId !== null || Boolean(paymentAttempt)}
-                    placeholder="Detalle útil para la trazabilidad"
-                    className="min-h-[52px] resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                    placeholder="Detalle del pago"
                   />
                 </label>
-              </div>
 
               <div
                 id="supplier-payment-balance-preview"
                 aria-live="polite"
                 className={[
-                  "flex flex-col gap-1 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between",
+                  styles.paymentPreview,
                   paymentExceedsBalance
-                    ? "border-red-200 bg-red-50"
+                    ? styles.paymentPreviewError
                     : paymentWillSettle
-                    ? "border-emerald-200 bg-emerald-50"
-                    : "border-slate-200 bg-slate-50",
+                    ? styles.paymentPreviewSettled
+                    : "",
                 ].join(" ")}
               >
+                <span className={styles.paymentPreviewIcon}><DashboardIcon name={paymentExceedsBalance ? "warning" : paymentWillSettle ? "approvals" : "wallet"} /></span>
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.13em] text-slate-500">
-                    Saldo después de este pago
+                  <p className={styles.paymentPreviewTitle}>
+                    Saldo después del abono
                   </p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                  <p className={styles.paymentPreviewHelp}>
                     {paymentExceedsBalance
                       ? `El valor supera el saldo actual de ${formatMoney(
                           approvalInvoice.saldoPendiente,
@@ -2119,19 +2108,11 @@ export default function ProveedoresWorkspace({
                       : paymentWillSettle
                       ? "La factura quedará pagada."
                       : paymentHasAmount
-                        ? "La factura conservará el saldo pendiente."
+                        ? "La factura conservará el saldo restante."
                         : "Ingresa el valor que deseas aplicar."}
                   </p>
                 </div>
-                <p
-                  className={`break-words text-xl font-black ${
-                    paymentExceedsBalance
-                      ? "text-red-700"
-                      : paymentWillSettle
-                        ? "text-emerald-700"
-                        : "text-slate-950"
-                  }`}
-                >
+                <p className={`${styles.paymentPreviewValue} ${paymentBalanceAfter !== null && formatMoney(paymentBalanceAfter).length > 15 ? styles.paymentLongAmount : ""}`}>
                   {paymentBalanceAfter === null
                     ? "No aplicable"
                     : formatMoney(paymentBalanceAfter)}
@@ -2141,25 +2122,21 @@ export default function ProveedoresWorkspace({
               {paymentError && (
                 <div
                   role="alert"
-                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+                  className={styles.paymentError}
                 >
                   {paymentError}
                 </div>
               )}
 
-              <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-                <DashboardIcon name="warning" className="mt-0.5 h-5 w-5 shrink-0" />
-                Verifica el valor y la factura antes de aprobar. El sistema
-                generará un recibo para este abono.
-              </div>
+              <p className={styles.paymentReceiptNote}><DashboardIcon name="document" />Se generará un recibo al aprobar el pago.</p>
             </div>
 
-            <footer className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50/70 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+            <footer className={styles.paymentFooter}>
               <button
                 type="button"
                 onClick={closePaymentDialog}
                 disabled={approvingId !== null || Boolean(paymentAttempt)}
-                className="min-h-11 rounded-xl border border-slate-300 bg-white px-5 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                className={styles.button}
               >
                 Cancelar
               </button>
@@ -2169,14 +2146,14 @@ export default function ProveedoresWorkspace({
                   approvingId !== null ||
                   (!paymentAttempt && approvalInvoice.saldoPendiente <= 0)
                 }
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                className={`${styles.button} ${styles.primary}`}
               >
-                <DashboardIcon name="approvals" className="h-4.5 w-4.5" />
+                <DashboardIcon name={approvingId !== null ? "refresh" : "document"} className={approvingId !== null ? styles.paymentSpinner : undefined} />
                 {approvingId !== null
                   ? "Aprobando..."
                   : paymentAttempt
-                    ? "REINTENTAR PAGO"
-                    : "APROBAR PAGO"}
+                    ? "Reintentar pago"
+                    : "Aprobar pago"}
               </button>
             </footer>
           </form>

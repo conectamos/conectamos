@@ -500,7 +500,7 @@ test("el workspace cubre alta, pago confirmado y configuración push", () => {
     source,
     /`\/api\/proveedores\/\$\{approvalInvoice\.id\}\/aprobar-pago`/,
   );
-  assert.match(source, /APROBAR PAGO/);
+  assert.match(source, /Aprobar pago/i);
   assert.match(source, /role="dialog"/);
   assert.match(source, /aria-modal="true"/);
   assert.match(source, /register\("\/proveedores-sw\.js"/);
@@ -556,7 +556,7 @@ test("el modal aplica un abono a la factura elegida y anticipa el nuevo saldo", 
   assert.match(modal, /inputType === "insertFromPaste"/);
   assert.match(modal, /inputType === "insertFromDrop"/);
   assert.match(modal, /Saldo (?:despu[eé]s|restante)/i);
-  assert.match(modal, /APROBAR PAGO/);
+  assert.match(modal, /Aprobar pago/i);
 });
 
 test("cada intento reutiliza una UUID y la envía en header y body", () => {
