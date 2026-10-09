@@ -517,7 +517,9 @@ export async function GET(req: Request) {
       });
     }
 
-    const cortes = await listStoredPayJoyCuts();
+    const cortes = searchParams.get("completo") === "1"
+      ? await listStoredPayJoyCuts(null)
+      : await listStoredPayJoyCuts();
 
     return NextResponse.json({
       ok: true,

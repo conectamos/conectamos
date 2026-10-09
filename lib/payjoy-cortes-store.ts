@@ -293,11 +293,10 @@ async function ensurePayJoyCutsTable() {
   await ensurePayJoyCutsTablePromise;
 }
 
-export async function listStoredPayJoyCuts(limit = 24) {
+export async function listStoredPayJoyCuts(limit: number | null = 24) {
   await ensurePayJoyCutsTable();
 
-  const rows = await prisma.$queryRawUnsafe<StoredCutRowRecord[]>(
-    `
+  const query = `
       SELECT
         id,
         nombre_registro AS "recordName",
@@ -316,10 +315,13 @@ export async function listStoredPayJoyCuts(limit = 24) {
         updated_at AS "updatedAt"
       FROM payjoy_cortes_guardados
       ORDER BY updated_at DESC, id DESC
-      LIMIT $1
-    `,
-    Math.max(1, Math.floor(limit))
-  );
+    `;
+  const rows = limit === null
+    ? await prisma.$queryRawUnsafe<StoredCutRowRecord[]>(query)
+    : await prisma.$queryRawUnsafe<StoredCutRowRecord[]>(
+        `${query} LIMIT $1`,
+        Math.max(1, Math.floor(limit))
+      );
 
   return rows.map(mapStoredCutRow);
 }

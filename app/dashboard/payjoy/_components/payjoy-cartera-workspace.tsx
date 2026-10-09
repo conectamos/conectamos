@@ -1,13 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
+import { type NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import styles from "../payjoy-cartera.module.css";
 
 type RowStatus = "MORA" | "GESTIONAR" | "PAGO" | "PAGO X";
 
@@ -593,6 +592,7 @@ export default function PayJoyCarteraWorkspace({
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const reloadSummaryRef = useRef<HTMLElement | null>(null);
+  const operationRef = useRef(false);
   const [files, setFiles] = useState<File[]>([]);
   const [data, setData] = useState<PayJoyResponse | null>(null);
   const [rows, setRows] = useState<EditablePayJoyRow[]>([]);
@@ -615,6 +615,7 @@ export default function PayJoyCarteraWorkspace({
   const [savedCutsError, setSavedCutsError] = useState("");
   const [savedCutsExpanded, setSavedCutsExpanded] = useState(false);
   const [rulesExpanded, setRulesExpanded] = useState(false);
+  const [saveExpanded, setSaveExpanded] = useState(false);
   const [merchantSummaryExpanded, setMerchantSummaryExpanded] = useState(false);
   const [consultingCutId, setConsultingCutId] = useState<number | null>(null);
   const [reloadingCutId, setReloadingCutId] = useState<number | null>(null);
@@ -656,12 +657,9 @@ export default function PayJoyCarteraWorkspace({
   const totalSelectedFiles = files.length;
   const canSaveCut = Boolean(data && rows.length);
   const savedCutsCount = savedCuts.length;
-  const inicialesUsuario = String(user.nombre || user.usuario || "Usuario")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
+  const operationBusy = loading || savingCut || updatingCut || consultingCutId !== null || reloadingCutId !== null || deletingCutId !== null;
+  const latestSavedCut = [...savedCuts].sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())[0];
+  const activeStep = loading ? 2 : data ? 3 : files.length ? 2 : 1;
   const navigationItems: NavigationItem[] = [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
@@ -751,7 +749,7 @@ export default function PayJoyCarteraWorkspace({
       setSavedCutsLoading(true);
       setSavedCutsError("");
 
-      const response = await fetch("/api/payjoy/cartera/cortes", {
+      const response = await fetch("/api/payjoy/cartera/cortes?completo=1", {
         method: "GET",
         cache: "no-store",
       });
@@ -762,7 +760,7 @@ export default function PayJoyCarteraWorkspace({
         error?: string;
       };
 
-      if (!response.ok) {
+      if (!response.ok || payload.ok !== true || !Array.isArray(payload.cortes)) {
         setSavedCutsError(
           payload.error || "No fue posible cargar el historial de cortes."
         );
@@ -795,6 +793,7 @@ export default function PayJoyCarteraWorkspace({
     setSaveName(cut.recordName);
     setActiveSavedCutId(cut.id);
     setFiles([]);
+    setSaveExpanded(false);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -802,11 +801,13 @@ export default function PayJoyCarteraWorkspace({
   };
 
   const processSources = async () => {
+    if (operationRef.current) return;
     if (!files.length) {
       setMessage("Debes subir al menos un archivo de transacciones.");
       return;
     }
 
+    operationRef.current = true;
     try {
       setLoading(true);
       setMessage("");
@@ -827,7 +828,7 @@ export default function PayJoyCarteraWorkspace({
         error?: string;
       };
 
-      if (!response.ok) {
+      if (!response.ok || !payload.ok || !Array.isArray(payload.rows)) {
         setMessage(payload.error || "No fue posible procesar las cargas.");
         return;
       }
@@ -839,12 +840,14 @@ export default function PayJoyCarteraWorkspace({
       setMerchantQuery("");
       setSaveName(buildDefaultSaveName(payload.sourceNames));
       setActiveSavedCutId(null);
+      setSaveExpanded(false);
       setMessage(
-        `Se procesaron ${payload.totalSources} carga(s) y se consolidaron ${payload.uniqueRows} transaccion(es) sin duplicados. Ahora puedes filtrar por Merchant name y editar la tabla.`
+        `${payload.totalSources} archivo(s) procesado(s) · ${payload.uniqueRows} transacciones · ${payload.duplicatesRemoved} duplicados eliminados.`
       );
     } catch {
       setMessage("No fue posible procesar las cargas.");
     } finally {
+      operationRef.current = false;
       setLoading(false);
     }
   };
@@ -854,6 +857,7 @@ export default function PayJoyCarteraWorkspace({
     field: EditableField,
     value: string | RowStatus
   ) => {
+    if (operationRef.current) return;
     setRows((currentRows) =>
       currentRows.map((row) => {
         if (row.localId !== localId) {
@@ -896,6 +900,7 @@ export default function PayJoyCarteraWorkspace({
   };
 
   const saveCurrentCut = async () => {
+    if (operationRef.current) return;
     const currentPayload = buildCurrentCutPayload();
 
     if (!currentPayload) {
@@ -903,6 +908,7 @@ export default function PayJoyCarteraWorkspace({
       return;
     }
 
+    operationRef.current = true;
     try {
       setSavingCut(true);
       setMessage("");
@@ -923,14 +929,14 @@ export default function PayJoyCarteraWorkspace({
         error?: string;
       };
 
-      if (!response.ok || !payload.corte) {
+      if (!response.ok || payload.ok !== true || !payload.corte) {
         setMessage(payload.error || "No fue posible guardar el corte.");
         return;
       }
 
       setSaveName(payload.corte.recordName);
       setActiveSavedCutId(payload.corte.id);
-      setSavedCutsExpanded(true);
+      setSaveExpanded(false);
       setMessage(
         payload.mensaje ||
           `Corte guardado correctamente como "${payload.corte.recordName}".`
@@ -939,11 +945,13 @@ export default function PayJoyCarteraWorkspace({
     } catch {
       setMessage("No fue posible guardar el corte.");
     } finally {
+      operationRef.current = false;
       setSavingCut(false);
     }
   };
 
   const updateCurrentStoredCut = async (cutId: number) => {
+    if (operationRef.current) return;
     const currentPayload = buildCurrentCutPayload();
 
     if (!currentPayload) {
@@ -951,6 +959,7 @@ export default function PayJoyCarteraWorkspace({
       return;
     }
 
+    operationRef.current = true;
     try {
       setUpdatingCut(true);
       setMessage("");
@@ -974,14 +983,14 @@ export default function PayJoyCarteraWorkspace({
         error?: string;
       };
 
-      if (!response.ok || !payload.corte) {
+      if (!response.ok || payload.ok !== true || !payload.corte) {
         setMessage(payload.error || "No fue posible actualizar el corte guardado.");
         return;
       }
 
       setSaveName(payload.corte.recordName);
       setActiveSavedCutId(payload.corte.id);
-      setSavedCutsExpanded(true);
+      setSaveExpanded(false);
       setMessage(
         payload.mensaje ||
           `Corte actualizado correctamente como "${payload.corte.recordName}".`
@@ -990,11 +999,14 @@ export default function PayJoyCarteraWorkspace({
     } catch {
       setMessage("No fue posible actualizar el corte guardado.");
     } finally {
+      operationRef.current = false;
       setUpdatingCut(false);
     }
   };
 
   const loadStoredCut = async (cutId: number) => {
+    if (operationRef.current) return;
+    operationRef.current = true;
     try {
       setConsultingCutId(cutId);
       setMessage("");
@@ -1011,7 +1023,7 @@ export default function PayJoyCarteraWorkspace({
         error?: string;
       };
 
-      if (!response.ok || !payload.corte) {
+      if (!response.ok || payload.ok !== true || !payload.corte) {
         setMessage(payload.error || "No fue posible consultar el corte guardado.");
         return;
       }
@@ -1024,11 +1036,14 @@ export default function PayJoyCarteraWorkspace({
     } catch {
       setMessage("No fue posible consultar el corte guardado.");
     } finally {
+      operationRef.current = false;
       setConsultingCutId(null);
     }
   };
 
   const reloadStoredCut = async (cutId: number) => {
+    if (operationRef.current) return;
+    operationRef.current = true;
     try {
       setReloadingCutId(cutId);
       setMessage("");
@@ -1049,7 +1064,7 @@ export default function PayJoyCarteraWorkspace({
         error?: string;
       };
 
-      if (!response.ok || !payload.corte) {
+      if (!response.ok || payload.ok !== true || !payload.corte) {
         setMessage(payload.error || "No fue posible recargar el corte guardado.");
         return;
       }
@@ -1079,11 +1094,13 @@ export default function PayJoyCarteraWorkspace({
     } catch {
       setMessage("No fue posible recargar el corte guardado.");
     } finally {
+      operationRef.current = false;
       setReloadingCutId(null);
     }
   };
 
   const deleteStoredCut = async (cutId: number, recordName: string) => {
+    if (!puedeEliminar || operationRef.current) return;
     const confirmed =
       typeof window === "undefined"
         ? true
@@ -1095,6 +1112,7 @@ export default function PayJoyCarteraWorkspace({
       return;
     }
 
+    operationRef.current = true;
     try {
       setDeletingCutId(cutId);
       setMessage("");
@@ -1124,6 +1142,7 @@ export default function PayJoyCarteraWorkspace({
     } catch {
       setMessage("No fue posible eliminar el corte guardado.");
     } finally {
+      operationRef.current = false;
       setDeletingCutId(null);
     }
   };
@@ -1139,618 +1158,120 @@ export default function PayJoyCarteraWorkspace({
     setMerchantQuery("");
   };
 
+  const selectFiles = (selectedFiles: File[]) => {
+    if (operationRef.current) return;
+    setFiles((current) => [...current, ...selectedFiles].filter((file, index, all) =>
+      all.findIndex((candidate) => candidate.name === file.name && candidate.size === file.size && candidate.lastModified === file.lastModified) === index
+    ));
+    setMessage("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeFile = (index: number) => {
+    if (operationRef.current) return;
+    setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950 [&_button]:uppercase">
-      <DashboardSidebar
-        activeHref="/caja"
-        coverageLabel="Todas las sedes"
-        items={navigationItems}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
+    <div className={styles.page}>
+      <header className={styles.topbar}>
+        <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS, ir al inicio">
+          <Image src="/branding/conectamos-logo.png" alt="" width={40} height={40} priority />
+          <strong>CONECTAMOS</strong>
+        </Link>
+        <nav className={styles.navigation} aria-label="Navegación principal">
+          {navigationItems.map((item) => <Link key={item.href} href={item.href}
+            className={`${styles.navItem} ${item.href === "/caja" ? styles.navActive : ""}`}
+            aria-current={item.href === "/caja" ? "page" : undefined}>
+            <DashboardIcon name={item.icon} /><span>{item.label}</span>
+          </Link>)}
+        </nav>
+        <SalesProfile name={user.nombre || user.usuario} role={user.rolNombre} />
+      </header>
+      <div className={styles.content}>
+        <main className={styles.main}>
+          <div className={styles.heading}>
             <div>
-              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-                <Link href="/dashboard" className="transition hover:text-[#e30613]">
-                  Inicio
-                </Link>
-                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
-                <span className="text-slate-600">Cartera PayJoy</span>
-              </nav>
-              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
-                Cartera PayJoy
-              </h1>
-              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
-                Consolida archivos, revisa la cartera por tienda y administra el historial de cortes.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
-                  Acceso: ADMIN / AUDITOR
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
-                  Formatos: XLSX, CSV y TXT
-                </span>
-              </div>
+              <nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><span>/</span><span>Cartera PayJoy</span></nav>
+              <h1>Cartera PayJoy</h1>
+              <p>Carga, consolida y consulta tus cortes.</p>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Link
-                href="/dashboard/payjoy/40-60"
-                className="inline-flex min-h-[52px] items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
-              >
-                PayJoy 40/60
-              </Link>
-              <div className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || "US"}
-                </span>
-                <div className="min-w-0 pr-2">
-                  <p className="max-w-[170px] truncate text-sm font-bold">
-                    {user.nombre || user.usuario}
-                  </p>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    {user.rolNombre}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
+            <div className={styles.headingActions}>
+              <Link href="/dashboard/payjoy/40-60" className={`${styles.button} ${styles.outlineRed}`}><DashboardIcon name="transfer" />PayJoy 40/60</Link>
+              <span className={styles.coverage}><DashboardIcon name="store" />Todas las sedes</span>
             </div>
-          </header>
+          </div>
 
-          <section className="mt-6 grid gap-4 md:grid-cols-3">
-            {[
-              {
-                icon: "document" as const,
-                label: "Archivos listos",
-                value: totalSelectedFiles,
-                detail: "Archivos seleccionados para el proceso actual.",
-                tone: "bg-blue-50 text-blue-600",
-              },
-              {
-                icon: "catalog" as const,
-                label: "Cortes guardados",
-                value: savedCutsCount,
-                detail: "Registros persistentes disponibles en el historial.",
-                tone: "bg-violet-50 text-violet-600",
-              },
-              {
-                icon: "sales" as const,
-                label: "Filas activas",
-                value: rows.length,
-                detail: "Transacciones consolidadas en la vista actual.",
-                tone: "bg-red-50 text-[#e30613]",
-              },
-            ].map((metric) => (
-              <article
-                key={metric.label}
-                className="flex min-h-[132px] items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
-              >
-                <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${metric.tone}`}>
-                  <DashboardIcon name={metric.icon} className="h-6 w-6" />
-                </span>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                    {metric.label}
-                  </p>
-                  <p className="mt-1.5 text-3xl font-black">{metric.value}</p>
-                  <p className="mt-2 text-xs leading-5 text-slate-500">{metric.detail}</p>
-                </div>
-              </article>
-            ))}
+          <section className={styles.summary} aria-label="Resumen de cartera">
+            <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="document" /></span><strong>{totalSelectedFiles.toLocaleString("es-CO")}</strong><span>Archivos seleccionados</span></div>
+            <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="sales" /></span><strong>{rows.length.toLocaleString("es-CO")}</strong><span>Transacciones cargadas</span></div>
+            <div className={styles.metric}><span className={styles.metricIcon}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1m0-15c3-2 6-2 9-1v15c-3-1-6-1-9 1V5Z" strokeLinejoin="round" /></svg></span><strong>{savedCutsLoading && !savedCutsCount || savedCutsError ? "—" : savedCutsCount.toLocaleString("es-CO")}</strong><span>Cortes guardados</span></div>
           </section>
 
-        {message && (
-          <div className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
-            <DashboardIcon name="bell" className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
-            {message}
-          </div>
-        )}
+          {message && <div className={styles.message} role="status">{message}</div>}
 
-        {reloadSummary && (
-          <section
-            ref={reloadSummaryRef}
-            className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
-          >
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                  Resumen de recarga
-                </div>
-                <p className="mt-3 text-sm text-slate-600">
-                  Resultado del ultimo corte recargado desde PayJoy.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                Total revisado:{" "}
-                <span className="font-semibold text-slate-950">
-                  {reloadSummary.total}
-                </span>
-              </div>
+          <section className={`${styles.panel} ${styles.uploadPanel}`} aria-labelledby="upload-title" aria-busy={loading}>
+            <div className={styles.panelHeading}>
+              <h2 id="upload-title">Cargar transacciones</h2>
+              <button type="button" className={styles.textButton} onClick={() => setRulesExpanded((current) => !current)} aria-expanded={rulesExpanded} aria-controls="payjoy-rules"><DashboardIcon name="document" />{rulesExpanded ? "Ocultar reglas" : "Ver reglas"}<DashboardIcon name="chevron" className={rulesExpanded ? styles.chevronUp : styles.chevronRight} /></button>
             </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-5">
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                  Pasaron a pago
-                </p>
-                <p className="mt-1 text-2xl font-black text-emerald-700">
-                  {reloadSummary.movedToPago}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Siguen en mora
-                </p>
-                <p className="mt-1 text-2xl font-black text-slate-950">
-                  {reloadSummary.stayedMora}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">
-                  Siguen gestionar
-                </p>
-                <p className="mt-1 text-2xl font-black text-rose-700">
-                  {reloadSummary.stayedGestionar}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                  Se conservaron pago
-                </p>
-                <p className="mt-1 text-2xl font-black text-emerald-700">
-                  {reloadSummary.keptPago}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                  Se conservaron pago x
-                </p>
-                <p className="mt-1 text-2xl font-black text-emerald-700">
-                  {reloadSummary.keptPagoX}
-                </p>
-              </div>
+            {rulesExpanded && <div id="payjoy-rules" className={styles.rules}>
+              <ul>
+                <li><strong>Archivos:</strong> XLSX, XLS, CSV, TSV o TXT. Hoja Transacciones o tabla con columnas válidas.</li>
+                <li><strong>Campos base:</strong> transaction time, merchant name, device, device family, imei y national id.</li>
+                <li><strong>Cálculo automático:</strong> fecha de pago +14 días; pago máximo +18 días. Un equipo pagado se marca PAGO.</li>
+              </ul>
+            </div>}
+            <ol className={styles.steps} aria-label="Pasos de carga">
+              {["Seleccionar", "Procesar", "Guardar corte"].map((label, index) => <li key={label} className={activeStep >= index + 1 ? styles.activeStep : undefined} aria-current={activeStep === index + 1 ? "step" : undefined}><span>{index + 1}</span><strong>{label}</strong></li>)}
+            </ol>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" multiple className={styles.hiddenInput} aria-label="Archivos de transacciones PayJoy" disabled={operationBusy} onChange={(event) => selectFiles(Array.from(event.target.files || []))} />
+            <div className={styles.dropzone} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); selectFiles(Array.from(event.dataTransfer.files)); }}>
+              <svg className={styles.uploadIcon} viewBox="0 0 64 68" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M40 5H13a5 5 0 0 0-5 5v49a5 5 0 0 0 5 5h38a5 5 0 0 0 5-5V21L40 5Z" /><path d="M40 5v16h16M32 50V32m-8 8 8-8 8 8" /></svg>
+              <h3>Selecciona tus archivos de PayJoy</h3><p>XLSX, CSV o TXT</p>
+              <button type="button" className={`${styles.button} ${styles.primary} ${styles.selectButton}`} disabled={operationBusy} onClick={() => fileInputRef.current?.click()}>Seleccionar archivos</button>
             </div>
-
-            {reloadSummary.otherChanges > 0 && (
-              <p className="mt-3 text-sm text-slate-500">
-                Otros cambios detectados:{" "}
-                <span className="font-semibold text-slate-950">
-                  {reloadSummary.otherChanges}
-                </span>
-              </p>
-            )}
+            <div className={styles.uploadFooter}>
+              {files.length ? <ul className={styles.fileList} aria-label="Archivos seleccionados">{files.map((file, index) => <li key={`${file.name}-${file.size}-${file.lastModified}`}><DashboardIcon name="document" /><span>{file.name}<small>{(file.size / 1024).toLocaleString("es-CO", { maximumFractionDigits: 1 })} KB</small></span><button type="button" aria-label={`Retirar ${file.name}`} className={styles.removeFile} disabled={operationBusy} onClick={() => removeFile(index)}><DashboardIcon name="close" /></button></li>)}</ul> : <p className={styles.noFiles}><DashboardIcon name="document" />Ningún archivo seleccionado</p>}
+              <button type="button" className={`${styles.button} ${styles.primary}`} onClick={() => void processSources()} disabled={!files.length || operationBusy}>{loading ? "Procesando..." : "Procesar cargas"}</button>
+            </div>
           </section>
-        )}
 
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
-              <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-[#e30613]">
-                Operacion actual
-              </div>
-
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                Cargar transacciones
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Sube archivos exportados desde PayJoy, consolida sin duplicados
-                y deja listo el corte para guardar o analizar.
-              </p>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv,.tsv,.txt"
-                multiple
-                className="hidden"
-                onChange={(event) =>
-                  setFiles(Array.from(event.target.files || []))
-                }
-              />
-
-              <div className="mt-5 flex flex-wrap gap-2.5">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="min-h-[44px] rounded-xl bg-[#e30613] px-5 text-xs font-black tracking-[0.06em] text-white shadow-sm transition hover:bg-[#c9000b]"
-                >
-                  Seleccionar archivos
-                </button>
-                <button
-                  onClick={() => void processSources()}
-                  disabled={loading}
-                  className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-5 text-xs font-black tracking-[0.06em] text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
-                >
-                  {loading ? "Procesando..." : "Procesar cargas"}
-                </button>
-                <div className="flex min-h-[44px] items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600">
-                  {files.length
-                    ? `${files.length} archivo(s) listo(s)`
-                    : "Aun no has seleccionado archivos"}
-                </div>
-              </div>
-
-              {files.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {files.map((file) => (
-                    <span
-                      key={`${file.name}-${file.size}`}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
-                    >
-                      {file.name}
-                    </span>
-                  ))}
-                </div>
-              )}
+          <section className={`${styles.panel} ${styles.compactPanel}`} aria-labelledby="save-title">
+            <div className={styles.compactRow}>
+              <span className={styles.sectionIcon}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true"><path d="M5 3h13l3 3v15H3V3h2Z" /><path d="M7 3v7h10V3M7 21v-7h10v7M14 3v4" /></svg></span>
+              <div className={styles.compactTitle}><h2 id="save-title">Guardar corte</h2><p>{canSaveCut ? `${rows.length.toLocaleString("es-CO")} transacciones listas para guardar.` : "Disponible después de procesar la cartera."}</p></div>
+              <button type="button" className={`${styles.button} ${styles.primary}`} disabled={!canSaveCut || operationBusy} onClick={() => setSaveExpanded((current) => !current)} aria-expanded={saveExpanded} aria-controls="save-cut-form">{saveExpanded ? "Ocultar formulario" : "Guardar corte"}</button>
             </div>
+            {saveExpanded && canSaveCut && <div id="save-cut-form" className={styles.saveForm}>
+              <label>Nombre del registro<input value={saveName} disabled={operationBusy} onChange={(event) => setSaveName(event.target.value)} placeholder="Nombre del corte" /></label>
+              <div className={styles.sources}><strong>Cortes incluidos</strong><span>{data?.sourceNames.join(" · ")}</span></div>
+              <div className={styles.formActions}><button type="button" className={`${styles.button} ${styles.primary}`} disabled={operationBusy} onClick={() => void saveCurrentCut()}>{savingCut ? "Guardando..." : "Guardar corte"}</button>{activeSavedCutId && <button type="button" className={styles.button} disabled={operationBusy} onClick={() => void updateCurrentStoredCut(activeSavedCutId)}>{updatingCut ? "Actualizando..." : "Actualizar corte guardado"}</button>}</div>
+            </div>}
+          </section>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                    Reglas
-                  </div>
-                  <p className="mt-3 text-sm font-semibold text-slate-950">
-                    XLSX, CSV o TXT
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => setRulesExpanded((current) => !current)}
-                  className="min-h-[42px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-100"
-                >
-                  {rulesExpanded ? "Ocultar" : "Ver reglas"}
-                </button>
-              </div>
-
-              {rulesExpanded && (
-                <div className="mt-4 space-y-2">
-                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Validacion
-                    </p>
-                    <p className="mt-1 text-sm leading-5 text-slate-700">
-                      Hoja <span className="font-semibold">Transacciones</span> o tabla con columnas validas.
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Campos base
-                    </p>
-                    <p className="mt-1 text-sm leading-5 text-slate-700">
-                      transaction time, merchant name, device, device family, imei y national id.
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
-                      Calculo automatico
-                    </p>
-                    <p className="mt-1 text-sm leading-5 text-amber-800">
-                      Fecha de pago = +14 dias. Pago maximo = +18 dias. Si el equipo ya esta pagado, se marca como{" "}
-                      <span className="font-semibold">PAGO</span>.
-                    </p>
-                  </div>
-                </div>
-              )}
+          <section className={`${styles.panel} ${styles.compactPanel}`} aria-labelledby="history-title" aria-busy={savedCutsLoading}>
+            <div className={styles.compactRow}>
+              <span className={styles.sectionIcon}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1m0-15c3-2 6-2 9-1v15c-3-1-6-1-9 1V5Z" strokeLinejoin="round" /></svg></span>
+              <div className={styles.compactTitle}><h2 id="history-title">Cortes guardados <span className={styles.count}>{savedCutsError || savedCutsLoading && !savedCutsCount ? "—" : savedCutsCount.toLocaleString("es-CO")}</span></h2><p>{savedCutsLoading && !savedCutsCount ? "Cargando cortes guardados..." : savedCutsError ? "No se pudo consultar el historial." : latestSavedCut ? `Último guardado: ${latestSavedCut.recordName}` : "Aún no hay cortes guardados."}</p></div>
+              <div className={styles.historyActions}><button type="button" className={styles.button} onClick={() => void loadSavedCuts()} disabled={savedCutsLoading || operationBusy}><DashboardIcon name="refresh" />{savedCutsLoading ? "Actualizando..." : "Actualizar"}</button><button type="button" className={`${styles.button} ${styles.graphite}`} onClick={() => setSavedCutsExpanded((current) => !current)} aria-expanded={savedCutsExpanded} aria-controls="saved-cuts-history">{savedCutsExpanded ? "Ocultar historial" : "Ver historial"}<DashboardIcon name="chevron" className={savedCutsExpanded ? styles.chevronUp : styles.chevronRight} /></button></div>
             </div>
-          </div>
-        </section>
+            {savedCutsError && <p className={styles.historyError} role="alert">{savedCutsError}</p>}
+            {savedCutsExpanded && <div id="saved-cuts-history" className={styles.history}>
+              {!savedCuts.length ? <p className={styles.historyEmpty}>{savedCutsLoading ? "Cargando historial..." : savedCutsError ? "Actualiza para volver a consultar los cortes." : "No hay cortes guardados para consultar."}</p> : savedCuts.map((cut) => <article key={cut.id} className={`${styles.cutRow} ${activeSavedCutId === cut.id ? styles.activeCut : ""}`}>
+                <div className={styles.cutInformation}><h3>{cut.recordName}{activeSavedCutId === cut.id && <span className={styles.count}>En pantalla</span>}</h3><p>Guardado el {formatDateTime(cut.savedAt)} por {cut.savedByName || cut.savedByUser || "Admin"}{cut.updatedAt !== cut.savedAt && <> · Actualizado el {formatDateTime(cut.updatedAt)}</>}</p><p>{cut.sourceNames.join(" · ")}</p><dl className={styles.cutMetrics}><div><dt>Transacciones</dt><dd>{cut.uniqueRows.toLocaleString("es-CO")}</dd></div><div><dt>Pago</dt><dd>{cut.summary.pago.toLocaleString("es-CO")}</dd></div><div><dt>Mora / gestionar</dt><dd>{cut.summary.mora.toLocaleString("es-CO")}</dd></div><div><dt>Pago X</dt><dd>{cut.summary.pagoX.toLocaleString("es-CO")}</dd></div></dl></div>
+                <div className={styles.cutActions}><button type="button" className={`${styles.button} ${styles.graphite}`} disabled={operationBusy} onClick={() => void loadStoredCut(cut.id)}>{consultingCutId === cut.id ? "Abriendo..." : "Ver corte"}</button><button type="button" className={styles.button} disabled={operationBusy} onClick={() => void reloadStoredCut(cut.id)}>{reloadingCutId === cut.id ? "Recargando..." : "Recargar PayJoy"}</button>{activeSavedCutId === cut.id && <button type="button" className={styles.button} disabled={operationBusy} onClick={() => void updateCurrentStoredCut(cut.id)}>{updatingCut ? "Guardando..." : "Guardar cambios"}</button>}{puedeEliminar && <button type="button" className={`${styles.button} ${styles.outlineRed}`} disabled={operationBusy} onClick={() => void deleteStoredCut(cut.id, cut.recordName)}>{deletingCutId === cut.id ? "Eliminando..." : "Eliminar corte"}</button>}</div>
+              </article>)}
+            </div>}
+          </section>
+          <p className={styles.access}><DashboardIcon name="lock" />Acceso: ADMIN / AUDITOR</p>
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.22fr)]">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
-              Guardar corte
-            </div>
+          {reloadSummary && <section ref={reloadSummaryRef} className={`${styles.panel} ${styles.reloadSummary}`} aria-label="Resumen de recarga"><h2>Resumen de recarga</h2><p>{describeReloadSummary(reloadSummary)}</p><strong>Total revisado: {reloadSummary.total.toLocaleString("es-CO")}</strong></section>}
 
-            <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-              Registro persistente
-            </h2>
-            <p className="mt-3 text-sm leading-7 text-slate-600">
-              Guarda la cartera actual para volver a consultarla sin recalcular
-              todo el modulo.
-            </p>
-
-            {canSaveCut ? (
-              <>
-                <label className="mt-5 block">
-                  <span className="mb-2 block text-sm font-semibold text-slate-700">
-                    Nombre del registro
-                  </span>
-                  <input
-                    value={saveName}
-                    onChange={(event) => setSaveName(event.target.value)}
-                    placeholder="Ej: Corte abril 4 PayJoy"
-                    className="min-h-[52px] w-full rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
-                  />
-                </label>
-
-                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Cortes incluidos
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {data?.sourceNames.map((name) => (
-                      <span
-                        key={name}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
-                      >
-                        {name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-5 flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={() => void saveCurrentCut()}
-                    disabled={savingCut}
-                    className="min-h-[46px] rounded-xl bg-[#e30613] px-5 text-xs font-black tracking-[0.06em] text-white shadow-sm transition hover:bg-[#c9000b] disabled:opacity-60"
-                  >
-                    {savingCut ? "Guardando..." : "Guardar corte"}
-                  </button>
-                  {activeSavedCutId && (
-                    <button
-                      onClick={() => void updateCurrentStoredCut(activeSavedCutId)}
-                      disabled={updatingCut}
-                      className="min-h-[46px] rounded-xl border border-slate-300 bg-white px-5 text-xs font-black text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
-                    >
-                      {updatingCut
-                        ? "Actualizando..."
-                        : "Actualizar corte guardado"}
-                    </button>
-                  )}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                    {rows.length} fila(s) listas para guardar
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
-                Procesa una cartera primero y luego podras guardarla en el
-                historial.
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
-                  Historial de cortes
-                </div>
-                <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">
-                  Cortes guardados
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-slate-600">
-                  Mantenlo oculto cuando estes trabajando la cartera actual y
-                  expandelo solo cuando necesites consultar o borrar cortes.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
-                  {savedCutsCount} corte(s)
-                </div>
-                <button
-                  onClick={() => setSavedCutsExpanded((current) => !current)}
-                  disabled={!savedCutsCount}
-                  className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {savedCutsExpanded ? "Ocultar cortes" : "Visualizar cortes"}
-                </button>
-                <button
-                  onClick={() => void loadSavedCuts()}
-                  disabled={savedCutsLoading}
-                  className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
-                >
-                  {savedCutsLoading ? "Actualizando..." : "Actualizar"}
-                </button>
-              </div>
-            </div>
-
-            {savedCutsError && (
-              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-                {savedCutsError}
-              </div>
-            )}
-
-            {savedCutsLoading && !savedCuts.length ? (
-              <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
-                Cargando historial de cortes guardados...
-              </div>
-            ) : !savedCuts.length ? (
-              <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
-                Aun no hay cortes guardados. Cuando uses{" "}
-                <span className="font-semibold">Guardar corte</span>, te
-                quedaran listados aqui para futuras consultas.
-              </div>
-            ) : !savedCutsExpanded ? (
-              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-950">
-                      Historial oculto para mantener el panel liviano
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Tienes {savedCutsCount} corte(s) guardado(s). Pulsa{" "}
-                      <span className="font-semibold">Visualizar cortes</span>{" "}
-                      cuando necesites consultarlos.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                    Ultimo guardado:{" "}
-                    <span className="font-semibold text-slate-950">
-                      {savedCuts[0]?.recordName || "-"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-5 max-h-[560px] space-y-3 overflow-y-auto pr-1">
-                {savedCuts.map((cut) => (
-                  <article
-                    key={cut.id}
-                    className={[
-                      "rounded-2xl border px-4 py-4 transition",
-                      activeSavedCutId === cut.id
-                        ? "border-red-200 bg-red-50/40 shadow-sm"
-                        : "border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]",
-                    ].join(" ")}
-                  >
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-black tracking-tight text-slate-950">
-                            {cut.recordName}
-                          </h3>
-                          {activeSavedCutId === cut.id && (
-                            <span className="rounded-full border border-[#e1c38d] bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8f5b24]">
-                              En pantalla
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-2 text-sm text-slate-500">
-                          Guardado el {formatDateTime(cut.savedAt)} por{" "}
-                          <span className="font-semibold text-slate-700">
-                            {cut.savedByName || cut.savedByUser || "Admin"}
-                          </span>
-                        </p>
-                        {cut.updatedAt !== cut.savedAt && (
-                          <p className="mt-1 text-sm text-slate-500">
-                            Actualizado el {formatDateTime(cut.updatedAt)}
-                          </p>
-                        )}
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {cut.sourceNames.map((name) => (
-                            <span
-                              key={`${cut.id}-${name}`}
-                              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
-                            >
-                              {name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="w-full xl:w-[340px]">
-                        <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Acciones del corte
-                          </p>
-                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                            <button
-                              onClick={() => void loadStoredCut(cut.id)}
-                              disabled={consultingCutId === cut.id}
-                              className="rounded-2xl border border-slate-950 bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
-                            >
-                              {consultingCutId === cut.id
-                                ? "Abriendo..."
-                                : "Ver corte"}
-                            </button>
-                            <button
-                              onClick={() => void reloadStoredCut(cut.id)}
-                              disabled={reloadingCutId === cut.id}
-                              className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-70"
-                            >
-                              {reloadingCutId === cut.id
-                                ? "Recargando..."
-                                : "Recargar PayJoy"}
-                            </button>
-                            {activeSavedCutId === cut.id && (
-                              <button
-                                onClick={() => void updateCurrentStoredCut(cut.id)}
-                                disabled={updatingCut}
-                                className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-black text-red-700 transition hover:bg-red-100 disabled:opacity-60"
-                              >
-                                {updatingCut
-                                  ? "Guardando..."
-                                  : "Guardar cambios"}
-                              </button>
-                            )}
-                            {puedeEliminar && (
-                              <button
-                                onClick={() =>
-                                  void deleteStoredCut(cut.id, cut.recordName)
-                                }
-                                disabled={deletingCutId === cut.id}
-                                className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-70"
-                              >
-                                {deletingCutId === cut.id
-                                  ? "Eliminando..."
-                                  : "Eliminar corte"}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-2 sm:grid-cols-4">
-                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Transacciones
-                        </p>
-                        <p className="mt-1 text-lg font-black text-slate-950">
-                          {cut.uniqueRows}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Pago
-                        </p>
-                        <p className="mt-1 text-lg font-black text-emerald-700">
-                          {cut.summary.pago}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Mora / gestionar
-                        </p>
-                        <p className="mt-1 text-lg font-black text-red-700">
-                          {cut.summary.mora}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Pago X
-                        </p>
-                        <p className="mt-1 text-lg font-black text-emerald-700">
-                          {cut.summary.pagoX}
-                        </p>
-                      </div>
-                    </div>
-
-                    {activeSavedCutId === cut.id && reloadSummary && (
-                      <div className="mt-4 rounded-[22px] border border-sky-200 bg-sky-50/80 p-4">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                          <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                              Resumen de recarga
-                            </p>
-                            <p className="mt-1 text-sm text-sky-900">
-                              {describeReloadSummary(reloadSummary)}
-                            </p>
-                          </div>
-                          <div className="rounded-2xl border border-sky-200 bg-white px-4 py-3 text-sm text-sky-900">
-                            Total revisado:{" "}
-                            <span className="font-semibold">
-                              {reloadSummary.total}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </article>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
 
         {data && (
-          <>
+          <div className={styles.results}>
             <section className="mt-4 grid gap-3 md:grid-cols-4">
               <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -1860,6 +1381,7 @@ export default function PayJoyCarteraWorkspace({
                     Merchant filtrado
                   </span>
                   <select
+                    aria-label="Filtrar por tienda"
                     value={selectedMerchant}
                     onChange={(event) =>
                       handleMerchantSelection(event.target.value)
@@ -1917,7 +1439,7 @@ export default function PayJoyCarteraWorkspace({
                   </button>
                   <button
                     onClick={() => void exportVisibleRowsToExcel()}
-                    disabled={exportingExcel || !filteredRows.length}
+                    disabled={exportingExcel || operationBusy || !filteredRows.length}
                     className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {exportingExcel ? "Exportando..." : "Exportar a Excel"}
@@ -2173,6 +1695,8 @@ export default function PayJoyCarteraWorkspace({
                           </td>
                           <td className={tableColMerchantClass}>
                             <input
+                              disabled={operationBusy}
+                              aria-label={`Tienda de ${row.imei || row.device}`}
                               value={row.merchantName}
                               onChange={(event) =>
                                 updateRowField(
@@ -2199,6 +1723,8 @@ export default function PayJoyCarteraWorkspace({
                           <td className={tableColStatusClass}>
                             <div className="flex flex-col gap-2">
                               <select
+                                disabled={operationBusy}
+                                aria-label={`Estado de ${row.imei || row.device}`}
                                 value={statusSelectValue}
                                 onChange={(event) =>
                                   updateRowField(
@@ -2265,7 +1791,7 @@ export default function PayJoyCarteraWorkspace({
                 </table>
               </div>
             </section>
-          </>
+          </div>
         )}
         </main>
       </div>
