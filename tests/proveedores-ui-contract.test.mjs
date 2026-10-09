@@ -186,20 +186,19 @@ test("las opciones de aliados son únicas, ordenadas y parten de todas las factu
 
 test("el selector accesible comparte catálogo y limpiar filtros también restablece el aliado", () => {
   const source = read("app/dashboard/proveedores/workspace.tsx");
-  assert.match(source, /Aliado\s*<select\s*value=\{allyFilter\}/);
   const changes = [];
   jsxValue(workspaceControl("allyFilter"), "onChange", {
     setAllyFilter: (value) => changes.push(value),
     setSelectedInvoiceIds: () => {},
+    setPage: () => {},
   })({ target: { value: "JG COMPANY" } });
   assert.deepEqual(changes, ["JG COMPANY"]);
+  assert.equal(workspaceControl("allyFilter").tagName.getText(), "select");
   assert.match(source, /<option value="">Todos los aliados<\/option>/);
   assert.match(source, /knownAllies\.map\(\(ally\) => \(\s*<option key=\{ally\} value=\{ally\}>/);
   assert.match(source, /\[allyFilter, query, statusFilter, visibleInvoices\]/);
   assert.match(source, /setQuery\(""\);\s*setAllyFilter\(""\);\s*setStatusFilter\("TODAS"\);/);
-  assert.match(source, /\{filteredInvoices\.length\} de \{visibleInvoices\.length\}/);
-  assert.match(source, /selecciona todos los aliados y estados/);
-  assert.match(source, /sm:grid-cols-2 xl:grid-cols-/);
+  assert.match(source, /filteredInvoices\.length/);
 });
 
 test("la selección inicia vacía y el resumen usa las facturas filtradas vigentes", () => {
@@ -253,30 +252,95 @@ test("marcar facturas permite pagadas, alterna la selección y descarta IDs ocul
   assert.deepEqual([...selectedInvoiceIds], [2]);
 });
 
-test("seleccionar todas toma solo las visibles y admite estados vacío, parcial y completo", () => {
-  for (const [count, length, expectedAll, expectedMixed] of [
-    [0, 0, false, false],
-    [0, 2, false, false],
-    [1, 2, false, true],
-    [2, 2, true, false],
+test("el control de selección refleja solo la página visible, incluso con otras páginas marcadas", () => {
+  for (const [selected, length, expectedAll, expectedMixed] of [
+    [[], 0, false, false],
+    [[5], 0, false, false],
+    [[5], 2, false, false],
+    [[1, 5], 2, false, true],
+    [[1, 2, 5], 2, true, false],
   ]) {
-    const filteredInvoices = filterInvoices.slice(0, length);
-    const selectionSummary = { cantidad: count };
-    const allVisibleSelected = workspaceVariable("allVisibleSelected", { filteredInvoices, selectionSummary });
-    const mixed = workspaceVariable("someVisibleSelected", { selectionSummary, allVisibleSelected });
+    const pageInvoices = filterInvoices.slice(0, length);
+    const selectedInvoiceIds = new Set(selected);
+    const allVisibleSelected = workspaceVariable("allVisibleSelected", { pageInvoices, selectedInvoiceIds });
+    const mixed = workspaceVariable("someVisibleSelected", { pageInvoices, selectedInvoiceIds, allVisibleSelected });
     assert.equal(allVisibleSelected, expectedAll);
     assert.equal(mixed, expectedMixed);
-    let selection;
+  }
+});
+
+test("seleccionar o desmarcar una página conserva otras páginas y nunca escribe pagos", () => {
+  const filteredInvoices = filterInvoices;
+  let selection = new Set([5, 999]);
+  const update = (next) => { selection = typeof next === "function" ? next(selection) : next; };
+  const invoke = (pageInvoices, allVisibleSelected) => {
     workspaceVariable("toggleVisibleSelection", {
       allVisibleSelected,
+      pageInvoices,
       filteredInvoices,
-      setSelectedInvoiceIds: (value) => { selection = value; },
+      setSelectedInvoiceIds: update,
+      fetch: () => assert.fail("Selecting visible invoices must not write to the API"),
+      approvePayment: () => assert.fail("Selecting visible invoices must not pay"),
     })();
-    assert.deepEqual(
-      [...selection],
-      allVisibleSelected ? [] : filteredInvoices.map((invoice) => invoice.id),
-    );
-  }
+  };
+
+  invoke(filterInvoices.slice(0, 2), false);
+  assert.deepEqual([...selection].sort((a, b) => a - b), [1, 2, 5]);
+  invoke(filterInvoices.slice(2, 4), false);
+  assert.deepEqual([...selection].sort((a, b) => a - b), [1, 2, 3, 4, 5]);
+  invoke(filterInvoices.slice(0, 2), true);
+  assert.deepEqual([...selection].sort((a, b) => a - b), [3, 4, 5]);
+  invoke([], false);
+  assert.deepEqual([...selection].sort((a, b) => a - b), [3, 4, 5]);
+});
+
+test("la paginación no duplica facturas, completa la última página y ajusta páginas fuera de rango", () => {
+  const invoices = Array.from({ length: 23 }, (_, index) => ({ id: index + 1 }));
+  const renderPage = (filteredInvoices, page, pageSize) => {
+    const totalPages = workspaceVariable("totalPages", { filteredInvoices, pageSize });
+    const currentPage = workspaceVariable("currentPage", { page, totalPages });
+    const start = workspaceVariable("start", { currentPage, pageSize });
+    const pageInvoices = workspaceVariable("pageInvoices", { filteredInvoices, start, pageSize });
+    return { totalPages, currentPage, pageInvoices };
+  };
+  const first = renderPage(invoices, 1, 10);
+  const second = renderPage(invoices, 2, 10);
+  const last = renderPage(invoices, 3, 10);
+  assert.equal(first.totalPages, 3);
+  assert.deepEqual(first.pageInvoices.map(({ id }) => id), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(last.pageInvoices.map(({ id }) => id), [21, 22, 23]);
+  assert.deepEqual([...first.pageInvoices, ...second.pageInvoices, ...last.pageInvoices], invoices);
+  assert.deepEqual(renderPage(invoices, 8, 10), last);
+  assert.deepEqual(renderPage([], 8, 10), { totalPages: 1, currentPage: 1, pageInvoices: [] });
+  assert.deepEqual(renderPage(invoices.slice(0, 3), 8, 10), {
+    totalPages: 1, currentPage: 1, pageInvoices: invoices.slice(0, 3),
+  });
+});
+
+test("cambiar filas por página vuelve al inicio sin perder la selección usada para sumar", () => {
+  let pageSize = 10;
+  let page = 3;
+  const selection = new Set([1, 20]);
+  jsxValue(workspaceControl("pageSize"), "onChange", {
+    setPageSize: (next) => { pageSize = next; },
+    setPage: (next) => { page = next; },
+    setSelectedInvoiceIds: () => assert.fail("Page size must preserve the invoice selection"),
+  })({ target: { value: "5" } });
+  assert.equal(pageSize, 5);
+  assert.equal(page, 1);
+  assert.deepEqual([...selection], [1, 20]);
+});
+
+test("los importes colombianos conservan cifras completas y centavos sin abreviarlos", () => {
+  const [helper] = workspaceNodes(
+    (node) => ts.isFunctionDeclaration(node) && node.name?.text === "formatMoney",
+  );
+  const formatMoney = evaluateWorkspaceExpression(helper.getText(), {
+    moneyFormatter: workspaceVariable("moneyFormatter"),
+  });
+  assert.equal(formatMoney(115157000).replace(/\s+/g, " "), "$ 115.157.000");
+  assert.equal(formatMoney(1234.56).replace(/\s+/g, " "), "$ 1.234,56");
+  assert.equal(formatMoney(0).replace(/\s+/g, " "), "$ 0");
 });
 
 test("búsqueda, aliado, estado y limpiar filtros descartan toda selección anterior", () => {
@@ -287,24 +351,30 @@ test("búsqueda, aliado, estado y limpiar filtros descartan toda selección ante
   ]) {
     let selection = new Set([1, 2]);
     let actualValue;
+    let page = 4;
     jsxValue(workspaceControl(valueName), "onChange", {
       [setterName]: (next) => { actualValue = next; },
       setSelectedInvoiceIds: (next) => { selection = next; },
+      setPage: (next) => { page = next; },
     })({ target: { value } });
     assert.equal(actualValue, value);
     assert.deepEqual([...selection], []);
+    assert.equal(page, 1);
   }
 
   const values = {};
   let selection = new Set([1, 2]);
+  let page = 4;
   jsxValue(workspaceButton("Limpiar filtros"), "onClick", {
     setQuery: (value) => { values.query = value; },
     setAllyFilter: (value) => { values.allyFilter = value; },
     setStatusFilter: (value) => { values.statusFilter = value; },
     setSelectedInvoiceIds: (value) => { selection = value; },
+    setPage: (value) => { page = value; },
   })();
   assert.deepEqual(values, { query: "", allyFilter: "", statusFilter: "TODAS" });
   assert.deepEqual([...selection], []);
+  assert.equal(page, 1);
   selection = new Set([1, 2]);
   jsxValue(workspaceButton("Limpiar selección"), "onClick", {
     setSelectedInvoiceIds: (value) => { selection = value; },
@@ -312,13 +382,13 @@ test("búsqueda, aliado, estado y limpiar filtros descartan toda selección ante
   assert.deepEqual([...selection], []);
 });
 
-test("los checkboxes de escritorio y móvil identifican factura y aliado sin bloquear pagadas", () => {
+test("la tabla adaptable identifica cada factura y permite incluir pagadas en la suma", () => {
   const checkboxes = workspaceNodes(
     (node) => ts.isJsxSelfClosingElement(node) &&
       node.tagName.getText() === "InvoiceSelectionCheckbox" &&
       jsxAttribute(node, "label")?.initializer?.getText().includes("invoice.numeroFactura"),
   );
-  assert.equal(checkboxes.length, 2);
+  assert.equal(checkboxes.length, 1);
   const invoice = filterInvoices[0];
   for (const checkbox of checkboxes) {
     const selected = [];
@@ -340,16 +410,19 @@ test("los checkboxes de escritorio y móvil identifican factura y aliado sin blo
       jsxAttribute(node, "label")?.initializer?.getText() === '"Seleccionar todas las visibles"',
   );
   assert.ok(toolbar);
-  assert.equal(jsxValue(toolbar, "disabled", { loading: true, filteredInvoices: filterInvoices }), true);
-  assert.equal(jsxValue(toolbar, "disabled", { loading: false, filteredInvoices: [] }), true);
-  assert.equal(jsxValue(toolbar, "disabled", { loading: false, filteredInvoices: filterInvoices }), false);
+  assert.equal(jsxValue(toolbar, "disabled", { loading: true, pageInvoices: filterInvoices }), true);
+  assert.equal(jsxValue(toolbar, "disabled", { loading: false, pageInvoices: [] }), true);
+  assert.equal(jsxValue(toolbar, "disabled", { loading: false, pageInvoices: filterInvoices }), false);
 });
 
 test("el checkbox parcial expone estado mixto accesible y los tres totales se anuncian juntos", () => {
   const [component] = workspaceNodes(
     (node) => ts.isFunctionDeclaration(node) && node.name?.text === "InvoiceSelectionCheckbox",
   );
-  const renderCheckbox = evaluateWorkspaceExpression(component.getText(), { React: { createElement } });
+  const renderCheckbox = evaluateWorkspaceExpression(component.getText(), {
+    React: { createElement },
+    styles: { checkbox: "checkbox", srOnly: "srOnly" },
+  });
   const checkbox = renderCheckbox({ checked: false, mixed: true, label: "Facturas visibles", onChange: () => {} });
   assert.equal(checkbox.type, "label");
   const [input, label] = checkbox.props.children;
@@ -372,8 +445,8 @@ test("el checkbox parcial expone estado mixto accesible y los tres totales se an
     assert.ok(summary.includes("formatMoney(selectionSummary." + property + ")"));
   }
   assert.match(summary, />Total facturas</);
-  assert.match(summary, />Total abonado</);
-  assert.match(summary, />Total pendiente por pagar</);
+  assert.match(summary, />(?:Total )?abonado</i);
+  assert.match(summary, />(?:Saldo )?pendiente</i);
 });
 
 test("Proveedores reemplaza Funciones sin perder Radar ni Inconsistencias", () => {
@@ -436,30 +509,28 @@ test("el workspace cubre alta, pago confirmado y configuración push", () => {
   assert.match(source, /recordatorio-local/);
 });
 
-test("la tabla y las tarjetas muestran total, abonado y saldo por factura", () => {
+test("una sola tabla conserva todas las columnas y los saldos por factura en cualquier tamaño", () => {
   const source = read("app/dashboard/proveedores/workspace.tsx");
   const desktopStart = source.indexOf("<table");
   const desktopEnd = source.indexOf("</table>", desktopStart);
-  const mobileStart = source.indexOf('className="grid gap-3 lg:hidden"');
-  const mobileEnd = source.indexOf("</section>", mobileStart);
 
   assert.ok(desktopStart >= 0 && desktopEnd > desktopStart);
-  assert.ok(mobileStart >= 0 && mobileEnd > mobileStart);
+  assert.equal(source.indexOf("<table", desktopEnd), -1);
 
   const desktop = source.slice(desktopStart, desktopEnd);
-  const mobile = source.slice(mobileStart, mobileEnd);
 
-  for (const view of [desktop, mobile]) {
-    assert.match(view, /(?:Valor|Total)(?: de la)? factura|Total/i);
-    assert.match(view, /Abonado/i);
-    assert.match(view, /Saldo/i);
-    assert.match(view, /invoice\.valorFactura/);
-    assert.match(view, /invoice\.valorAbonado/);
-    assert.match(view, /invoice\.saldoPendiente/);
+  assert.match(desktop, /(?:Valor|Total)(?: de la)? factura|Total/i);
+  assert.match(desktop, /Abonado/i);
+  assert.match(desktop, /Saldo/i);
+  assert.match(desktop, /invoice\.valorFactura/);
+  assert.match(desktop, /invoice\.valorAbonado/);
+  assert.match(desktop, /invoice\.saldoPendiente/);
+  for (const heading of ["Aliado", "Vencimiento", "Estado", "Acción"]) {
+    assert.ok(desktop.includes(heading), "Missing table column: " + heading);
   }
 
   assert.match(source, /cantidadAbonos/);
-  assert.match(source, /ABONAR \/ PAGAR/);
+  assert.match(source, /Abonar \/ pagar/i);
 });
 
 test("el modal aplica un abono a la factura elegida y anticipa el nuevo saldo", () => {
@@ -535,7 +606,7 @@ test("el pago exitoso conserva historial y permite abrir cada recibo", () => {
   assert.match(source, /payload\.recibo/);
   assert.match(source, /setReceiptPayment/);
   assert.match(source, /receiptHistoryInvoice/);
-  assert.match(source, /RECIBOS \(\{invoice\.cantidadAbonos\}\)/);
+  assert.match(source, /Recibos \(\{invoice\.cantidadAbonos\}\)/i);
   assert.match(source, /Recibos de la factura/);
   assert.match(source, /ABRIR \/ IMPRIMIR RECIBO/);
   assert.match(source, /openReceipt\(.*reciboUrl/);

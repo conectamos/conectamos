@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import {
   useCallback,
@@ -13,11 +14,9 @@ import {
 import DashboardIcon, {
   type DashboardIconName,
 } from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
+import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import styles from "./proveedores.module.css";
 import {
   triggerLiveRefresh,
   useLiveRefresh,
@@ -207,8 +206,8 @@ function formatDate(value: string) {
   if (!parsed) return "Sin fecha";
 
   return new Intl.DateTimeFormat("es-CO", {
-    day: "numeric",
-    month: "short",
+    day: "2-digit",
+    month: "2-digit",
     timeZone: "UTC",
     year: "numeric",
   }).format(parsed);
@@ -662,7 +661,7 @@ function MetricCard({
   value,
   valueClassName = "text-slate-950",
 }: {
-  detail: string;
+  detail?: string;
   icon: DashboardIconName;
   iconClassName: string;
   label: string;
@@ -670,23 +669,21 @@ function MetricCard({
   valueClassName?: string;
 }) {
   return (
-    <article className="min-h-[142px] rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start gap-4">
+    <article className={styles.metric}>
         <span
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
+          className={`${styles.metricIcon} ${iconClassName}`}
         >
           <DashboardIcon name={icon} className="h-5 w-5" />
         </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-600">{label}</p>
+        <div>
+          <p>{label}</p>
           <p
-            className={`mt-1.5 break-words text-[27px] font-black leading-tight tracking-tight ${valueClassName}`}
+            className={`${styles.metricValue} ${valueClassName}`}
           >
             {value}
           </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+          {detail && <span className={styles.metricDetail}>{detail}</span>}
         </div>
-      </div>
     </article>
   );
 }
@@ -707,7 +704,7 @@ function InvoiceSelectionCheckbox({
   showLabel?: boolean;
 }) {
   return (
-    <label className={`inline-flex min-h-11 min-w-11 items-center gap-3 rounded-lg px-2 text-sm font-semibold normal-case tracking-normal ${disabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer text-slate-700 hover:bg-slate-100"}`}>
+    <label className={styles.checkbox}>
       <input
         type="checkbox"
         checked={checked}
@@ -717,19 +714,18 @@ function InvoiceSelectionCheckbox({
           if (input) input.indeterminate = mixed;
         }}
         onChange={onChange}
-        className="h-5 w-5 shrink-0 cursor-inherit rounded border-slate-300 accent-[#e30613] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e30613] focus-visible:ring-offset-2 disabled:opacity-50"
       />
-      <span className={showLabel ? "min-w-0 break-words" : "sr-only"}>{label}</span>
+      <span className={showLabel ? undefined : styles.srOnly}>{label}</span>
     </label>
   );
 }
 
 function StatusBadge({ invoice }: { invoice: FacturaVista }) {
-  const styles: Record<CategoriaFactura, string> = {
-    PAGADA: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    PENDIENTE: "border-slate-200 bg-slate-50 text-slate-700",
-    POR_VENCER: "border-amber-200 bg-amber-50 text-amber-700",
-    VENCIDA: "border-red-200 bg-red-50 text-red-700",
+  const badgeStyles: Record<CategoriaFactura, string> = {
+    PAGADA: styles.statusPaid,
+    PENDIENTE: "",
+    POR_VENCER: styles.statusUpcoming,
+    VENCIDA: styles.statusOverdue,
   };
   let label = "PENDIENTE";
 
@@ -745,14 +741,14 @@ function StatusBadge({ invoice }: { invoice: FacturaVista }) {
   }
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
+    <span className={styles.statusBadges}>
       <span
-        className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${styles[invoice.categoria]}`}
+        className={`${styles.statusBadge} ${badgeStyles[invoice.categoria]}`}
       >
         {label}
       </span>
       {invoice.categoria !== "PAGADA" && invoice.valorAbonado > 0 && (
-        <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
+        <span className={`${styles.statusBadge} ${styles.statusUpcoming}`}>
           Abono parcial
         </span>
       )}
@@ -772,10 +768,13 @@ export default function ProveedoresWorkspace({
   );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [flash, setFlash] = useState<FlashMessage | null>(null);
   const [query, setQuery] = useState("");
   const [allyFilter, setAllyFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<FiltroEstado>("TODAS");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<number>>(
     () => new Set(),
   );
@@ -813,12 +812,6 @@ export default function ProveedoresWorkspace({
   const isAdmin = ["ADMIN", "AUDITOR"].includes(
     session.rolNombre.toUpperCase(),
   );
-  const initials = session.nombre
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
   const navigationItems = useMemo<NavigationItem[]>(
     () => [
       { href: "/dashboard", icon: "home", label: "Inicio" },
@@ -883,6 +876,7 @@ export default function ProveedoresWorkspace({
             : DEFAULT_NOTIFICATION_DAYS;
 
         setInvoices(nextInvoices);
+        setLoadError("");
         setToday(nextToday);
         setNotificationDays(nextNotificationDays);
         void showDailyLocalReminder(
@@ -893,6 +887,7 @@ export default function ProveedoresWorkspace({
         );
       } catch (error) {
         if (!silent) {
+          setLoadError(error instanceof Error ? error.message : "No se pudieron cargar las facturas.");
           setFlash({
             text:
               error instanceof Error
@@ -1016,10 +1011,17 @@ export default function ProveedoresWorkspace({
     () => resumirFacturasSeleccionadas(filteredInvoices, selectedInvoiceIds),
     [filteredInvoices, selectedInvoiceIds],
   );
+  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const pageInvoices = filteredInvoices.slice(start, start + pageSize);
+  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1).filter(
+    (number) => number === 1 || number === totalPages || Math.abs(number - currentPage) <= 1,
+  );
   const allVisibleSelected =
-    filteredInvoices.length > 0 &&
-    selectionSummary.cantidad === filteredInvoices.length;
-  const someVisibleSelected = selectionSummary.cantidad > 0 && !allVisibleSelected;
+    pageInvoices.length > 0 &&
+    pageInvoices.every((invoice) => selectedInvoiceIds.has(invoice.id));
+  const someVisibleSelected = pageInvoices.some((invoice) => selectedInvoiceIds.has(invoice.id)) && !allVisibleSelected;
 
   const toggleInvoiceSelection = (invoiceId: number) => {
     setSelectedInvoiceIds((current) => {
@@ -1033,11 +1035,14 @@ export default function ProveedoresWorkspace({
   };
 
   const toggleVisibleSelection = () => {
-    setSelectedInvoiceIds(
-      allVisibleSelected
-        ? new Set()
-        : new Set(filteredInvoices.map((invoice) => invoice.id)),
-    );
+    setSelectedInvoiceIds((current) => {
+      const next = new Set(filteredInvoices.filter((invoice) => current.has(invoice.id)).map((invoice) => invoice.id));
+      for (const invoice of pageInvoices) {
+        if (allVisibleSelected) next.delete(invoice.id);
+        else next.add(invoice.id);
+      }
+      return next;
+    });
   };
 
   const knownAllies = useMemo(
@@ -1565,674 +1570,186 @@ export default function ProveedoresWorkspace({
     : null;
 
   return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/dashboard"
-        coverageLabel={session.sedeNombre}
-        items={navigationItems}
-      />
+    <div className={styles.page}>
+      <header className={styles.topbar}>
+        <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS, inicio">
+          <Image src="/branding/conectamos-logo.png" alt="" width={44} height={44} priority />
+          <strong>CONECTAMOS</strong>
+        </Link>
+        <nav className={styles.navigation} aria-label="Navegación principal">
+          {navigationItems.map((item) => (
+            <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === "/dashboard" ? styles.navActive : ""}`} aria-current={item.href === "/dashboard" ? "page" : undefined}>
+              <DashboardIcon name={item.icon} /><span>{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+        <SalesProfile name={session.nombre} role={session.rol} />
+      </header>
 
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <nav
-                aria-label="Ruta de navegación"
-                className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400"
-              >
-                <Link
-                  href="/dashboard"
-                  className="transition hover:text-[#e30613]"
-                >
-                  Inicio
-                </Link>
-                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
-                <span className="text-slate-600">Proveedores</span>
-              </nav>
-              <h1 className="text-[30px] font-black tracking-tight text-slate-950 sm:text-[34px]">
-                Control de proveedores
-              </h1>
-              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
-                Registra facturas de aliados, controla sus vencimientos y deja
-                trazabilidad de cada pago aprobado.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
-                  Corte: {formatDate(today)}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
-                  Aviso anticipado: {notificationDays} días
-                </span>
-              </div>
-            </div>
+      <main className={styles.main}>
+        <nav aria-label="Ruta de navegación" className={styles.breadcrumb}>
+          <Link href="/dashboard">Inicio</Link><DashboardIcon name="chevron" /><span>Proveedores</span>
+        </nav>
+        <header className={styles.heading}>
+          <div>
+            <h1>Control de proveedores</h1>
+            <p>Facturas, vencimientos y pagos.</p>
+            <span className={styles.cutDate}>Corte: {formatDate(today)}</span>
+          </div>
+          <button type="button" onClick={openNewInvoice} className={`${styles.button} ${styles.primary}`}>
+            <DashboardIcon name="document-add" />Nueva factura
+          </button>
+        </header>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                onClick={openNewInvoice}
-                className="inline-flex min-h-[52px] items-center gap-2 rounded-xl bg-[#e30613] px-5 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#c9000b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e30613] focus-visible:ring-offset-2"
-              >
-                <DashboardIcon name="document" className="h-5 w-5" />
-                Nueva factura
+        {flash && (
+          <div role={flash.tone === "error" ? "alert" : "status"} className={`${styles.flash} ${flash.tone === "error" ? styles.flashError : flash.tone === "success" ? styles.flashSuccess : ""}`}>
+            <DashboardIcon name={flash.tone === "error" ? "warning" : "approvals"} />
+            <span>{flash.text}</span>
+            <button type="button" onClick={() => setFlash(null)} aria-label="Cerrar mensaje"><DashboardIcon name="close" /></button>
+          </div>
+        )}
+
+        <section className={styles.summary} aria-label="Resumen de proveedores" aria-busy={loading}>
+          <MetricCard icon="cash" iconClassName={styles.neutralIcon} label="Total por pagar" value={loading || (loadError && !invoices.length) ? "—" : formatMoney(summary.pendingTotal)} />
+          <MetricCard icon="warning" iconClassName={styles.overdueIcon} label="Facturas vencidas" value={loading || (loadError && !invoices.length) ? "—" : summary.overdue.toLocaleString("es-CO")} />
+          <MetricCard icon="calendar" iconClassName={styles.upcomingIcon} label="Próximas a vencer" value={loading || (loadError && !invoices.length) ? "—" : summary.dueSoon.toLocaleString("es-CO")} detail={`Próximos ${notificationDays} días`} />
+          <MetricCard icon="approvals" iconClassName={styles.approvedIcon} label="Pagos aprobados" value={loading || (loadError && !invoices.length) ? "—" : summary.approved.toLocaleString("es-CO")} />
+        </section>
+
+        <section aria-labelledby="supplier-notifications-title" className={styles.notifications}>
+          <span className={styles.bell}><DashboardIcon name="bell" /></span>
+          <h2 id="supplier-notifications-title">Notificaciones de vencimiento</h2>
+          <span className={`${styles.pushState} ${pushStatus === "active" ? styles.pushActive : pushStatus === "error" || pushStatus === "denied" ? styles.pushError : ""}`}><i />{pushCopy.label}</span>
+          <details className={styles.notificationHelp}>
+            <summary aria-label="Ayuda de notificaciones">?</summary>
+            <div><p>{pushCopy.text}</p><p>Aviso anticipado: {notificationDays} días. Si el envío push no está disponible, el sistema intentará mostrar un recordatorio local una vez al día mientras uses la aplicación.</p></div>
+          </details>
+          <div className={styles.notificationActions}>
+            {pushStatus === "active" ? (
+              <button type="button" onClick={() => void deactivatePush()} disabled={Boolean(pushBusy)} className={styles.button}>
+                {pushBusy === "deactivate" ? "Desactivando..." : "Desactivar"}
               </button>
-              <div className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {initials || "US"}
-                </span>
-                <div className="min-w-0 pr-2">
-                  <p className="max-w-[170px] truncate text-sm font-bold">
-                    {session.nombre}
-                  </p>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    {session.rol}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
-            </div>
-          </header>
-
-          {flash && (
-            <div
-              role={flash.tone === "error" ? "alert" : "status"}
-              className={[
-                "mt-5 flex items-start justify-between gap-4 rounded-xl border px-4 py-3 text-sm font-semibold shadow-sm",
-                flash.tone === "error"
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : flash.tone === "success"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-slate-200 bg-white text-slate-700",
-              ].join(" ")}
-            >
-              <span className="flex items-start gap-2">
-                <DashboardIcon
-                  name={flash.tone === "error" ? "warning" : "approvals"}
-                  className="mt-0.5 h-5 w-5 shrink-0"
-                />
-                {flash.text}
-              </span>
-              <button
-                type="button"
-                onClick={() => setFlash(null)}
-                aria-label="Cerrar mensaje"
-                className="rounded-lg p-1 transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
-              >
-                <DashboardIcon name="close" className="h-4 w-4" />
+            ) : (
+              <button type="button" onClick={() => void activatePush()} disabled={Boolean(pushBusy) || pushStatus === "checking" || pushStatus === "denied" || pushStatus === "unsupported"} className={styles.button}>
+                {pushBusy === "activate" ? "Activando..." : "Activar notificaciones"}
               </button>
+            )}
+            <button type="button" onClick={() => void testNotification()} disabled={Boolean(pushBusy) || pushStatus !== "active" || typeof Notification === "undefined" || Notification.permission !== "granted"} className={styles.button}>
+              {pushBusy === "test" ? "Probando..." : "Probar notificación"}
+            </button>
+          </div>
+          {pushError && <p role="alert" className={styles.notificationError}>{pushError}</p>}
+        </section>
+
+        <section className={styles.panel} aria-labelledby="supplier-invoices-title" aria-busy={loading || refreshing}>
+          <div className={styles.listHeading}>
+            <h2 id="supplier-invoices-title">Facturas de proveedores</h2>
+            <span aria-live="polite" aria-atomic="true">{loading ? "Cargando..." : `${filteredInvoices.length.toLocaleString("es-CO")} factura${filteredInvoices.length === 1 ? "" : "s"}`}</span>
+          </div>
+          <div className={styles.filters}>
+            <label className={styles.search}>
+              <span className={styles.srOnly}>Buscar</span><DashboardIcon name="search" />
+              <input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setSelectedInvoiceIds(new Set()); setPage(1); }} placeholder="Aliado o número de factura" />
+            </label>
+            <label className={styles.filterSelect}>
+              <span className={styles.srOnly}>Aliado</span>
+              <select value={allyFilter} onChange={(event) => { setAllyFilter(event.target.value); setSelectedInvoiceIds(new Set()); setPage(1); }}>
+                <option value="">Todos los aliados</option>
+                {knownAllies.map((ally) => (<option key={ally} value={ally}>{ally}</option>))}
+              </select><DashboardIcon name="chevron" />
+            </label>
+            <label className={styles.filterSelect}>
+              <span className={styles.srOnly}>Estado</span>
+              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as FiltroEstado); setSelectedInvoiceIds(new Set()); setPage(1); }}>
+                <option value="TODAS">Todos los estados</option>
+                <option value="PENDIENTE">Pendientes</option>
+                <option value="POR_VENCER">Por vencer</option>
+                <option value="VENCIDA">Vencidas</option>
+                <option value="PAGADA">Pago aprobado</option>
+              </select><DashboardIcon name="chevron" />
+            </label>
+            <button type="button" onClick={() => void loadInvoices(false)} disabled={refreshing || loading} className={styles.button}>
+              <DashboardIcon name="refresh" />{refreshing ? "Actualizando..." : "Actualizar"}
+            </button>
+          </div>
+
+          {loading ? (
+            <div role="status" className={styles.emptyState}><DashboardIcon name="refresh" /><h3>Cargando facturas...</h3></div>
+          ) : loadError && !invoices.length ? (
+            <div className={styles.emptyState}><DashboardIcon name="warning" /><h3>No se pudieron cargar las facturas</h3><button type="button" onClick={() => void loadInvoices(false)} disabled={refreshing} className={styles.button}>Reintentar</button></div>
+          ) : filteredInvoices.length === 0 ? (
+            <div className={styles.emptyState}>
+              <DashboardIcon name={visibleInvoices.length === 0 ? "document" : "search"} />
+              <h3>{visibleInvoices.length === 0 ? "Aún no hay facturas registradas" : "No encontramos facturas"}</h3>
+              <p>{visibleInvoices.length === 0 ? "Registra la primera factura para comenzar el seguimiento." : "Prueba otra búsqueda o selecciona todos los aliados y estados."}</p>
+              {visibleInvoices.length === 0 ? (
+                <button type="button" onClick={openNewInvoice} className={`${styles.button} ${styles.primary}`}>Nueva factura</button>
+              ) : (
+                <button type="button" onClick={() => { setQuery(""); setAllyFilter(""); setStatusFilter("TODAS"); setSelectedInvoiceIds(new Set()); setPage(1); }} className={styles.button}>Limpiar filtros</button>
+              )}
+            </div>
+          ) : (
+            <div className={styles.tableScroll} role="region" aria-label="Facturas de proveedores, tabla desplazable" tabIndex={0}>
+              <table className={styles.table}>
+                <colgroup><col className={styles.checkColumn} /><col className={styles.allyColumn} /><col className={styles.dueColumn} /><col className={styles.moneyColumn} /><col className={styles.paidColumn} /><col className={styles.moneyColumn} /><col className={styles.stateColumn} /><col className={styles.actionsColumn} /></colgroup>
+                <thead><tr>
+                  <th scope="col"><InvoiceSelectionCheckbox checked={allVisibleSelected} mixed={someVisibleSelected} label="Seleccionar todas las facturas visibles" onChange={toggleVisibleSelection} /></th>
+                  <th scope="col">Aliado / factura</th><th scope="col">Vencimiento</th><th scope="col" className={styles.amount}>Total factura</th><th scope="col" className={styles.amount}>Abonado</th><th scope="col" className={styles.amount}>Saldo pendiente</th><th scope="col">Estado</th><th scope="col" className={styles.actionHeading}>Acción</th>
+                </tr></thead>
+                <tbody>
+                  {pageInvoices.map((invoice) => (
+                    <tr key={invoice.id} className={selectedInvoiceIds.has(invoice.id) ? styles.selectedRow : undefined}>
+                      <td><InvoiceSelectionCheckbox checked={selectedInvoiceIds.has(invoice.id)} label={`Seleccionar factura ${invoice.numeroFactura} de ${invoice.aliado}`} onChange={() => toggleInvoiceSelection(invoice.id)} /></td>
+                      <td><strong>{invoice.aliado}</strong><p>Factura {invoice.numeroFactura}</p></td>
+                      <td><div className={styles.dueDate}><span>{formatDate(invoice.fechaVencimiento)}</span>
+                        {invoice.categoria !== "PAGADA" && <span className={`${styles.dueTag} ${invoice.diasCalculados < 0 ? styles.overdueTag : invoice.diasCalculados <= notificationDays ? styles.upcomingTag : ""}`}>
+                          {invoice.diasCalculados < 0 ? `${Math.abs(invoice.diasCalculados)} día${Math.abs(invoice.diasCalculados) === 1 ? "" : "s"} de mora` : invoice.diasCalculados === 0 ? "Hoy" : invoice.diasCalculados === 1 ? "Mañana" : `En ${invoice.diasCalculados} días`}
+                        </span>}
+                      </div></td>
+                      <td className={styles.amount}>{formatMoney(invoice.valorFactura)}</td>
+                      <td className={`${styles.amount} ${styles.paidAmount}`}>{formatMoney(invoice.valorAbonado)}</td>
+                      <td className={`${styles.amount} ${styles.balance} ${invoice.categoria === "VENCIDA" ? styles.overdueAmount : ""}`}>{formatMoney(invoice.saldoPendiente)}</td>
+                      <td><StatusBadge invoice={invoice} />
+                        {invoice.categoria === "PAGADA" && <p className={styles.approvalInfo}>{formatDateTime(invoice.pagoAprobadoEn) || "Pago registrado"}{invoice.pagoAprobadoPor ? ` · ${invoice.pagoAprobadoPor}` : ""}</p>}
+                      </td>
+                      <td><div className={styles.invoiceActions}>
+                        {invoice.saldoPendiente > 0 && <button type="button" onClick={() => openPaymentDialog(invoice)} disabled={approvingId !== null} className={styles.payButton}>Abonar / pagar</button>}
+                        {invoice.cantidadAbonos > 0 && <button type="button" onClick={() => setReceiptHistoryInvoice(invoice)} className={styles.receiptsButton}><DashboardIcon name="document" />Recibos ({invoice.cantidadAbonos})</button>}
+                        {invoice.categoria === "PAGADA" && invoice.cantidadAbonos === 0 && <span className={styles.paidLabel}>Aprobado</span>}
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 
-          <section
-            className="mt-6 grid gap-4 sm:grid-cols-2 2xl:grid-cols-4"
-            aria-label="Resumen de proveedores"
-          >
-            <MetricCard
-              icon="cash"
-              iconClassName="bg-slate-100 text-slate-700"
-              label="Total por pagar"
-              value={loading ? "—" : formatMoney(summary.pendingTotal)}
-              detail="Suma de facturas que aún no tienen pago aprobado."
-            />
-            <MetricCard
-              icon="warning"
-              iconClassName="bg-red-50 text-[#e30613]"
-              label="Facturas vencidas"
-              value={loading ? "—" : String(summary.overdue)}
-              detail="Requieren atención inmediata."
-              valueClassName={summary.overdue > 0 ? "text-[#e30613]" : undefined}
-            />
-            <MetricCard
-              icon="calendar"
-              iconClassName="bg-amber-50 text-amber-600"
-              label="Próximas a vencer"
-              value={loading ? "—" : String(summary.dueSoon)}
-              detail={`Vencen en los próximos ${notificationDays} días.`}
-              valueClassName={summary.dueSoon > 0 ? "text-amber-600" : undefined}
-            />
-            <MetricCard
-              icon="approvals"
-              iconClassName="bg-emerald-50 text-emerald-600"
-              label="Pagos aprobados"
-              value={loading ? "—" : String(summary.approved)}
-              detail="Facturas conservadas como historial."
-              valueClassName="text-emerald-600"
-            />
+          <section aria-labelledby="supplier-selection-title" className={styles.selectionBar}>
+            <h3 id="supplier-selection-title" className={styles.srOnly}>Resumen de facturas seleccionadas</h3>
+            <div className={styles.selectionCount}>
+              <InvoiceSelectionCheckbox checked={allVisibleSelected} mixed={someVisibleSelected} disabled={loading || pageInvoices.length === 0} label="Seleccionar todas las visibles" onChange={toggleVisibleSelection} />
+              <span aria-live="polite" aria-atomic="true"><strong>{selectionSummary.cantidad}</strong> seleccionada{selectionSummary.cantidad === 1 ? "" : "s"}</span>
+            </div>
+            <dl className={styles.selectionTotals} aria-live="polite" aria-atomic="true">
+              <div><dt>Total facturas</dt><dd>{formatMoney(selectionSummary.totalFacturas)}</dd></div>
+              <div><dt>Total abonado</dt><dd>{formatMoney(selectionSummary.totalAbonado)}</dd></div>
+              <div><dt>Saldo pendiente</dt><dd>{formatMoney(selectionSummary.totalPendiente)}</dd></div>
+            </dl>
+            <button type="button" onClick={() => setSelectedInvoiceIds(new Set())} disabled={selectionSummary.cantidad === 0} className={styles.clearSelection}>Limpiar selección</button>
+            <details className={styles.selectionHelp}><summary aria-label="Ayuda de selección">?</summary><p>La selección solo suma importes. Cada pago se registra por factura. Seleccionar todas las visibles marca únicamente la página actual; puedes conservar la selección al pasar de página.</p></details>
           </section>
 
-          <section
-            aria-labelledby="supplier-notifications-title"
-            className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6"
-          >
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex items-start gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
-                  <DashboardIcon name="bell" className="h-5 w-5" />
-                </span>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2
-                      id="supplier-notifications-title"
-                      className="text-xl font-black tracking-tight"
-                    >
-                      Notificaciones de vencimiento
-                    </h2>
-                    <span
-                      className={[
-                        "rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em]",
-                        pushStatus === "active"
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : pushStatus === "denied" || pushStatus === "error"
-                            ? "border-red-200 bg-red-50 text-red-700"
-                            : "border-slate-200 bg-slate-50 text-slate-600",
-                      ].join(" ")}
-                    >
-                      {pushCopy.label}
-                    </span>
-                  </div>
-                  <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-                    {pushCopy.text} Si el envío push no está disponible, el
-                    sistema intentará mostrar un recordatorio local una vez al día
-                    mientras uses la aplicación.
-                  </p>
-                  {pushError && (
-                    <p role="alert" className="mt-2 text-sm font-semibold text-red-700">
-                      {pushError}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                {pushStatus === "active" ? (
-                  <button
-                    type="button"
-                    onClick={() => void deactivatePush()}
-                    disabled={Boolean(pushBusy)}
-                    className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {pushBusy === "deactivate" ? "Desactivando..." : "Desactivar"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void activatePush()}
-                    disabled={
-                      Boolean(pushBusy) ||
-                      pushStatus === "checking" ||
-                      pushStatus === "denied" ||
-                      pushStatus === "unsupported"
-                    }
-                    className="min-h-11 rounded-xl bg-[#11161d] px-4 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#242c35] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {pushBusy === "activate"
-                      ? "Activando..."
-                      : "Activar notificaciones"}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void testNotification()}
-                  disabled={
-                    Boolean(pushBusy) ||
-                    pushStatus !== "active" ||
-                    typeof Notification === "undefined" ||
-                    Notification.permission !== "granted"
-                  }
-                  className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {pushBusy === "test" ? "Probando..." : "Probar notificación"}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
-              <div className="min-w-0 2xl:shrink-0">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                  Cuentas por pagar
-                </p>
-                <h2 className="mt-1 text-2xl font-black tracking-tight">
-                  Facturas de proveedores
-                </h2>
-                <p className="mt-1 text-sm text-slate-500" aria-live="polite" aria-atomic="true">
-                  {filteredInvoices.length} de {visibleInvoices.length} factura
-                  {visibleInvoices.length === 1 ? "" : "s"} visible
-                  {visibleInvoices.length === 1 ? "" : "s"}.
-                </p>
-              </div>
-
-              <div className="grid w-full min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_auto] 2xl:max-w-5xl">
-                <label className="flex min-w-0 flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                  Buscar
-                  <span className="relative block">
-                    <DashboardIcon
-                      name="search"
-                      className="pointer-events-none absolute left-3.5 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-slate-400"
-                    />
-                    <input
-                      type="search"
-                      value={query}
-                      onChange={(event) => {
-                        setQuery(event.target.value);
-                        setSelectedInvoiceIds(new Set());
-                      }}
-                      placeholder="Aliado o número de factura"
-                      className="min-h-[48px] w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
-                    />
-                  </span>
-                </label>
-
-                <label className="flex min-w-0 flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                  Aliado
-                  <select
-                    value={allyFilter}
-                    onChange={(event) => {
-                      setAllyFilter(event.target.value);
-                      setSelectedInvoiceIds(new Set());
-                    }}
-                    className="min-h-[48px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
-                  >
-                    <option value="">Todos los aliados</option>
-                    {knownAllies.map((ally) => (
-                      <option key={ally} value={ally}>
-                        {ally}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex min-w-0 flex-col gap-1.5 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                  Estado
-                  <select
-                    value={statusFilter}
-                    onChange={(event) => {
-                      setStatusFilter(event.target.value as FiltroEstado);
-                      setSelectedInvoiceIds(new Set());
-                    }}
-                    className="min-h-[48px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
-                  >
-                    <option value="TODAS">Todas</option>
-                    <option value="PENDIENTE">Pendientes</option>
-                    <option value="POR_VENCER">Por vencer</option>
-                    <option value="VENCIDA">Vencidas</option>
-                    <option value="PAGADA">Pago aprobado</option>
-                  </select>
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => void loadInvoices(false)}
-                  disabled={refreshing || loading}
-                  className="min-h-[48px] self-end rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {refreshing ? "Actualizando..." : "Actualizar"}
-                </button>
-              </div>
-            </div>
-
-            <section
-              aria-labelledby="supplier-selection-title"
-              className="mt-5 border-y border-slate-200 py-4"
-            >
-              <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-                <div>
-                  <h3 id="supplier-selection-title" className="text-sm font-black text-slate-900">
-                    Resumen de facturas seleccionadas
-                  </h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Marca las facturas que quieres sumar. Al cambiar los filtros se limpia la selección.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <InvoiceSelectionCheckbox
-                    checked={allVisibleSelected}
-                    mixed={someVisibleSelected}
-                    disabled={loading || filteredInvoices.length === 0}
-                    label="Seleccionar todas las visibles"
-                    onChange={toggleVisibleSelection}
-                    showLabel
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInvoiceIds(new Set())}
-                    disabled={selectionSummary.cantidad === 0}
-                    className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e30613] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Limpiar selección
-                  </button>
-                </div>
-              </div>
-              <div className="mt-3" aria-live="polite" aria-atomic="true">
-                <p className="text-sm font-semibold text-slate-600">
-                  {selectionSummary.cantidad} factura{selectionSummary.cantidad === 1 ? "" : "s"} seleccionada{selectionSummary.cantidad === 1 ? "" : "s"}
-                </p>
-                <dl className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <div className="min-w-0 rounded-xl bg-slate-50 p-4">
-                    <dt className="text-sm font-semibold text-slate-600">Total facturas</dt>
-                    <dd className="mt-1 break-words text-2xl font-black tabular-nums tracking-tight text-slate-950">
-                      {formatMoney(selectionSummary.totalFacturas)}
-                    </dd>
-                  </div>
-                  <div className="min-w-0 rounded-xl bg-emerald-50 p-4">
-                    <dt className="text-sm font-semibold text-emerald-800">Total abonado</dt>
-                    <dd className="mt-1 break-words text-2xl font-black tabular-nums tracking-tight text-emerald-700">
-                      {formatMoney(selectionSummary.totalAbonado)}
-                    </dd>
-                  </div>
-                  <div className="min-w-0 rounded-xl bg-red-50 p-4">
-                    <dt className="text-sm font-semibold text-red-800">Total pendiente por pagar</dt>
-                    <dd className="mt-1 break-words text-2xl font-black tabular-nums tracking-tight text-red-700">
-                      {formatMoney(selectionSummary.totalPendiente)}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            </section>
-
-            <div className="mt-5" aria-busy={loading}>
-              {loading ? (
-                <div className="space-y-3" aria-label="Cargando facturas">
-                  {[0, 1, 2].map((item) => (
-                    <div
-                      key={item}
-                      className="h-20 animate-pulse rounded-xl border border-slate-200 bg-slate-50"
-                    />
-                  ))}
-                </div>
-              ) : filteredInvoices.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-12 text-center">
-                  <DashboardIcon
-                    name={visibleInvoices.length === 0 ? "document" : "search"}
-                    className="mx-auto h-8 w-8 text-slate-400"
-                  />
-                  <p className="mt-3 text-base font-black text-slate-800">
-                    {visibleInvoices.length === 0
-                      ? "Aún no hay facturas registradas"
-                      : "No encontramos facturas"}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {visibleInvoices.length === 0
-                      ? "Registra la primera factura para comenzar el seguimiento."
-                      : "Prueba otra búsqueda o selecciona todos los aliados y estados."}
-                  </p>
-                  {visibleInvoices.length === 0 ? (
-                    <button
-                      type="button"
-                      onClick={openNewInvoice}
-                      className="mt-4 min-h-11 rounded-xl bg-[#e30613] px-5 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#c9000b]"
-                    >
-                      Nueva factura
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setQuery("");
-                        setAllyFilter("");
-                        setStatusFilter("TODAS");
-                        setSelectedInvoiceIds(new Set());
-                      }}
-                      className="mt-4 min-h-11 rounded-xl bg-[#11161d] px-5 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#242c35]"
-                    >
-                      Limpiar filtros
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <div className="hidden overflow-x-auto rounded-xl border border-slate-200 lg:block">
-                    <table className="w-full min-w-[1180px] text-sm">
-                      <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
-                        <tr>
-                          <th scope="col" className="w-14 px-2 py-1">
-                            <InvoiceSelectionCheckbox
-                              checked={allVisibleSelected}
-                              mixed={someVisibleSelected}
-                              label="Seleccionar todas las facturas visibles"
-                              onChange={toggleVisibleSelection}
-                            />
-                          </th>
-                          <th className="px-4 py-3.5">Aliado / factura</th>
-                          <th className="px-4 py-3.5">Vencimiento</th>
-                          <th className="px-4 py-3.5 text-right">Total factura</th>
-                          <th className="px-4 py-3.5 text-right">Abonado</th>
-                          <th className="px-4 py-3.5 text-right">Saldo</th>
-                          <th className="px-4 py-3.5">Estado</th>
-                          <th className="px-4 py-3.5 text-right">Acción</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {filteredInvoices.map((invoice) => (
-                          <tr
-                            key={invoice.id}
-                            className={
-                              selectedInvoiceIds.has(invoice.id)
-                                ? "bg-slate-100/80"
-                                : invoice.categoria === "VENCIDA"
-                                  ? "bg-red-50/35"
-                                  : "hover:bg-slate-50/70"
-                            }
-                          >
-                            <td className="px-2 py-3">
-                              <InvoiceSelectionCheckbox
-                                checked={selectedInvoiceIds.has(invoice.id)}
-                                label={`Seleccionar factura ${invoice.numeroFactura} de ${invoice.aliado}`}
-                                onChange={() => toggleInvoiceSelection(invoice.id)}
-                              />
-                            </td>
-                            <td className="px-4 py-4">
-                              <p className="font-black text-slate-950">
-                                {invoice.aliado}
-                              </p>
-                              <p className="mt-1 text-xs font-semibold text-slate-500">
-                                Factura {invoice.numeroFactura}
-                              </p>
-                            </td>
-                            <td className="px-4 py-4">
-                              <p className="font-bold text-slate-800">
-                                {formatDate(invoice.fechaVencimiento)}
-                              </p>
-                              {invoice.categoria !== "PAGADA" && (
-                                <p
-                                  className={`mt-1 text-xs font-semibold ${
-                                    invoice.diasCalculados < 0
-                                      ? "text-red-600"
-                                      : "text-slate-500"
-                                  }`}
-                                >
-                                  {invoice.diasCalculados < 0
-                                    ? `${Math.abs(invoice.diasCalculados)} día${
-                                        Math.abs(invoice.diasCalculados) === 1 ? "" : "s"
-                                      } de mora`
-                                    : `${invoice.diasCalculados} día${
-                                        invoice.diasCalculados === 1 ? "" : "s"
-                                      } restante${invoice.diasCalculados === 1 ? "" : "s"}`}
-                                </p>
-                              )}
-                            </td>
-                            <td className="px-4 py-4 text-right font-bold text-slate-700">
-                              {formatMoney(invoice.valorFactura)}
-                            </td>
-                            <td className="px-4 py-4 text-right font-black text-emerald-700">
-                              {formatMoney(invoice.valorAbonado)}
-                            </td>
-                            <td
-                              className={`px-4 py-4 text-right text-base font-black ${
-                                invoice.categoria === "VENCIDA"
-                                  ? "text-red-700"
-                                  : "text-slate-950"
-                              }`}
-                            >
-                              {formatMoney(invoice.saldoPendiente)}
-                            </td>
-                            <td className="px-4 py-4">
-                              <StatusBadge invoice={invoice} />
-                              {invoice.categoria === "PAGADA" && (
-                                <p className="mt-2 max-w-[220px] text-xs leading-5 text-slate-500">
-                                  {formatDateTime(invoice.pagoAprobadoEn) ||
-                                    "Pago registrado"}
-                                  {invoice.pagoAprobadoPor
-                                    ? ` · ${invoice.pagoAprobadoPor}`
-                                    : ""}
-                                </p>
-                              )}
-                            </td>
-                            <td className="px-4 py-4">
-                              <div className="flex flex-wrap justify-end gap-2">
-                                {invoice.saldoPendiente > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => openPaymentDialog(invoice)}
-                                    disabled={approvingId !== null}
-                                    className="min-h-10 rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase tracking-[0.05em] text-white transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    ABONAR / PAGAR
-                                  </button>
-                                )}
-                                {invoice.cantidadAbonos > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setReceiptHistoryInvoice(invoice)}
-                                    className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.05em] text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
-                                  >
-                                    <DashboardIcon name="document" className="h-4 w-4" />
-                                    RECIBOS ({invoice.cantidadAbonos})
-                                  </button>
-                                )}
-                                {invoice.categoria === "PAGADA" &&
-                                  invoice.cantidadAbonos === 0 && (
-                                 <span className="inline-flex min-h-10 items-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-black uppercase tracking-[0.05em] text-emerald-700">
-                                   Aprobado
-                                 </span>
-                                  )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="grid gap-3 lg:hidden">
-                    {filteredInvoices.map((invoice) => (
-                      <article
-                        key={invoice.id}
-                        className={[
-                          "rounded-2xl border p-4",
-                          selectedInvoiceIds.has(invoice.id) ? "ring-2 ring-slate-500 ring-offset-1" : "",
-                          invoice.categoria === "VENCIDA"
-                            ? "border-red-200 bg-red-50/45"
-                            : "border-slate-200 bg-white",
-                        ].join(" ")}
-                      >
-                        <div className="mb-2">
-                          <InvoiceSelectionCheckbox
-                            checked={selectedInvoiceIds.has(invoice.id)}
-                            label={`Seleccionar factura ${invoice.numeroFactura} de ${invoice.aliado}`}
-                            onChange={() => toggleInvoiceSelection(invoice.id)}
-                            showLabel
-                          />
-                        </div>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-base font-black text-slate-950">
-                              {invoice.aliado}
-                            </p>
-                            <p className="mt-1 text-xs font-semibold text-slate-500">
-                              Factura {invoice.numeroFactura}
-                            </p>
-                          </div>
-                          <StatusBadge invoice={invoice} />
-                        </div>
-
-                        <div className="mt-4">
-                          <dl className="rounded-xl border border-slate-200 bg-white p-3">
-                            <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                              Vencimiento
-                            </dt>
-                            <dd className="mt-1 text-sm font-black text-slate-900">
-                              {formatDate(invoice.fechaVencimiento)}
-                            </dd>
-                          </dl>
-                          <dl className="mt-3 grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                            <div className="min-w-0 border-r border-slate-200 p-3">
-                              <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                                Total
-                              </dt>
-                              <dd className="mt-1 break-words text-xs font-black text-slate-900">
-                                {formatMoney(invoice.valorFactura)}
-                              </dd>
-                            </div>
-                            <div className="min-w-0 border-r border-slate-200 p-3">
-                              <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                                Abonado
-                              </dt>
-                              <dd className="mt-1 break-words text-xs font-black text-emerald-700">
-                                {formatMoney(invoice.valorAbonado)}
-                              </dd>
-                            </div>
-                            <div className="min-w-0 p-3">
-                              <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                                Saldo
-                              </dt>
-                              <dd
-                                className={`mt-1 break-words text-xs font-black ${
-                                  invoice.categoria === "VENCIDA"
-                                    ? "text-red-700"
-                                    : "text-slate-900"
-                                }`}
-                              >
-                                {formatMoney(invoice.saldoPendiente)}
-                              </dd>
-                            </div>
-                          </dl>
-                        </div>
-
-                        {invoice.categoria === "PAGADA" && (
-                          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold leading-5 text-emerald-700">
-                            Pago aprobado
-                            {formatDateTime(invoice.pagoAprobadoEn)
-                              ? ` el ${formatDateTime(invoice.pagoAprobadoEn)}`
-                              : ""}
-                            {invoice.pagoAprobadoPor
-                              ? ` por ${invoice.pagoAprobadoPor}`
-                              : ""}
-                            .
-                          </div>
-                        )}
-
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                          {invoice.saldoPendiente > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => openPaymentDialog(invoice)}
-                              disabled={approvingId !== null}
-                              className="min-h-11 w-full rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              ABONAR / PAGAR
-                            </button>
-                          )}
-                          {invoice.cantidadAbonos > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setReceiptHistoryInvoice(invoice)}
-                              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
-                            >
-                              <DashboardIcon name="document" className="h-4 w-4" />
-                              RECIBOS ({invoice.cantidadAbonos})
-                            </button>
-                          )}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </section>
-        </main>
-      </div>
+          <footer className={styles.footer}>
+            <p>{filteredInvoices.length ? `Mostrando ${start + 1} – ${Math.min(start + pageSize, filteredInvoices.length)} de ${filteredInvoices.length.toLocaleString("es-CO")}` : "0 resultados"}</p>
+            <label className={styles.rowsPerPage}>Filas por página<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option></select></label>
+            <nav className={styles.pagination} aria-label="Páginas de facturas">
+              <button type="button" aria-label="Página anterior" className={styles.previous} disabled={loading || currentPage === 1} onClick={() => setPage(currentPage - 1)}><DashboardIcon name="chevron" /></button>
+              {pageNumbers.map((number, index) => <span key={number} className={styles.pageSlot}>{index > 0 && number - pageNumbers[index - 1] > 1 && <span aria-hidden="true">…</span>}<button type="button" className={number === currentPage ? styles.currentPage : undefined} aria-current={number === currentPage ? "page" : undefined} aria-label={`Página ${number}`} disabled={loading} onClick={() => setPage(number)}>{number}</button></span>)}
+              <button type="button" aria-label="Página siguiente" disabled={loading || currentPage === totalPages} onClick={() => setPage(currentPage + 1)}><DashboardIcon name="chevron" /></button>
+            </nav>
+          </footer>
+        </section>
+      </main>
 
       {newInvoiceOpen && (
         <AccessibleDialog
