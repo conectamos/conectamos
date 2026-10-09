@@ -179,6 +179,125 @@ export async function GET(req: Request) {
       });
     }
 
+    if (requestUrl.searchParams.get("paginated") === "1") {
+      const registrosAutorizados = await prisma.registroVendedorVenta.findMany({
+        where: {
+          eliminadoEn: null,
+          ventaIdRelacionada: null,
+          ...scopeWhere,
+        },
+        select: {
+          id: true,
+          createdAt: true,
+          sedeId: true,
+          sede: { select: { nombre: true } },
+          puntoVenta: true,
+          clienteNombre: true,
+          tipoDocumento: true,
+          documentoNumero: true,
+          referenciaEquipo: true,
+          tipoProducto: true,
+          serialImei: true,
+          asesorNombre: true,
+          jaladorNombre: true,
+          numeroFactura: true,
+          estadoFacturacion: true,
+          estadoVentaRegistro: true,
+          observacion: true,
+          plataformaCredito: true,
+          creditoAutorizado: true,
+          cuotaInicial: true,
+          medioPago1Tipo: true,
+          medioPago1Valor: true,
+          medioPago2Tipo: true,
+          medioPago2Valor: true,
+          financierasDetalle: true,
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      });
+
+      const abiertosAutorizados = registrosAutorizados.filter((registro) =>
+        estadoVentaAbierto(registro.estadoVentaRegistro)
+      );
+      const claveSede = (registro: {
+        sedeId: number | null;
+        puntoVenta: string | null;
+      }) => {
+        if (registro.sedeId !== null && registro.sedeId !== undefined) {
+          return `id:${registro.sedeId}`;
+        }
+
+        const puntoVenta = String(registro.puntoVenta || "").trim();
+        return puntoVenta ? `point:${puntoVenta}` : "none";
+      };
+      const nombreSede = (registro: (typeof abiertosAutorizados)[number]) =>
+        registro.sede?.nombre ||
+        registro.puntoVenta ||
+        (registro.sedeId ? `Sede ${registro.sedeId}` : "Sin sede");
+      const opcionesSede = new Map<string, string>();
+
+      for (const registro of abiertosAutorizados) {
+        const clave = claveSede(registro);
+        if (!opcionesSede.has(clave)) {
+          opcionesSede.set(clave, nombreSede(registro));
+        }
+      }
+
+      const sedes = Array.from(opcionesSede, ([value, label]) => ({ value, label }))
+        .sort((primera, segunda) => primera.label.localeCompare(segunda.label, "es"));
+      const sedeSolicitada = String(requestUrl.searchParams.get("sede") || "").trim();
+      const registrosCobertura = sedeSolicitada
+        ? abiertosAutorizados.filter((registro) => claveSede(registro) === sedeSolicitada)
+        : abiertosAutorizados;
+      const termino = busqueda.toLocaleLowerCase("es-CO");
+      const identificador = /^[\d.\s]+$/.test(termino) ? termino.replace(/[.\s]/g, "") : "";
+      const registrosFiltrados = termino
+        ? registrosCobertura.filter((registro) => [
+            registro.clienteNombre,
+            registro.documentoNumero,
+            registro.serialImei,
+            registro.referenciaEquipo,
+            registro.puntoVenta,
+          ].some((valor) => String(valor || "").toLocaleLowerCase("es-CO").includes(termino))
+            || Boolean(identificador && [registro.documentoNumero, registro.serialImei]
+              .some((valor) => String(valor || "").replace(/[.\s]/g, "").includes(identificador))))
+        : registrosCobertura;
+      const tamanoSolicitado = Number(requestUrl.searchParams.get("pageSize"));
+      const pageSize = [10, 20, 50].includes(tamanoSolicitado) ? tamanoSolicitado : 10;
+      const total = registrosFiltrados.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const paginaSolicitada = Number(requestUrl.searchParams.get("page"));
+      const page = Math.min(
+        totalPages,
+        Number.isInteger(paginaSolicitada) && paginaSolicitada > 0 ? paginaSolicitada : 1
+      );
+      const esAdministrativo =
+        esPerfilAdministrativo(access.session.perfilTipo) ||
+        esRolAdministrativo(access.session.rolNombre);
+      const coberturaGeneral = esAdministrativo
+        ? "Todas las sedes"
+        : access.session.sedeNombre || "Tu sede";
+
+      return NextResponse.json({
+        ok: true,
+        registros: registrosFiltrados
+          .slice((page - 1) * pageSize, page * pageSize)
+          .map(({ sede, ...registro }) => serializarRegistro({
+            ...registro,
+            sedeNombre: sede?.nombre || registro.puntoVenta || null,
+          })),
+        total,
+        totalPendientes: registrosCobertura.length,
+        page,
+        pageSize,
+        totalPages,
+        cobertura: sedeSolicitada
+          ? opcionesSede.get(sedeSolicitada) || coberturaGeneral
+          : coberturaGeneral,
+        sedes,
+      });
+    }
+
     const filtrosAnd: Array<Record<string, unknown>> = [
       {
         eliminadoEn: null,

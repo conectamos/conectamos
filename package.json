@@ -25,6 +25,7 @@
     "test:inventory-dashboard": "node --test tests/inventory-dashboard-contract.test.mjs tests/inventory-debt-payment.test.mjs",
     "test:loans-dashboard": "node --test tests/loans-dashboard-contract.test.mjs",
     "test:approvals": "node --test tests/approvals-workspace-contract.test.mjs",
+    "test:sales-approvals": "node --test tests/sales-approvals-workspace.test.mjs",
     "test:record-search": "node --test tests/record-search-contract.test.mjs tests/record-device-media.test.mjs tests/record-catalog-media.test.mjs",
     "proveedores:vapid": "node scripts/generar-vapid.mjs",
     "proveedores:notificar": "node scripts/notificar-proveedores.mjs",
