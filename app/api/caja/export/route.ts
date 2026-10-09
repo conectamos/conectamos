@@ -12,6 +12,37 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const formatoMonedaExcel = '"$" #,##0.##;[Red]-"$" #,##0.##';
+
+function fechaExcelBogota(value: Date) {
+  const fecha = new Date(value);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(fecha);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((item) => item.type === type)?.value);
+
+  // Excel stores a timezone-free date serial, so preserve the local wall time.
+  return new Date(
+    Date.UTC(
+      part("year"),
+      part("month") - 1,
+      part("day"),
+      part("hour"),
+      part("minute"),
+      part("second"),
+      fecha.getUTCMilliseconds()
+    )
+  );
+}
+
 function slugify(value: string) {
   return String(value || "")
     .normalize("NFD")
@@ -55,6 +86,7 @@ export async function GET(req: Request) {
 
     const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const requestUrl = new URL(req.url);
+    const busqueda = String(requestUrl.searchParams.get("q") || "").trim();
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
     const filtros = buildCajaWhere({
       esAdmin,
@@ -62,6 +94,7 @@ export async function GET(req: Request) {
       sedeIdFiltro,
       fechaDesde: requestUrl.searchParams.get("fechaDesde"),
       fechaHasta: requestUrl.searchParams.get("fechaHasta"),
+      busqueda,
     });
 
     if ("error" in filtros) {
@@ -130,9 +163,10 @@ export async function GET(req: Request) {
         new Intl.DateTimeFormat("es-CO", {
           timeZone: "America/Bogota",
           dateStyle: "medium",
-          timeStyle: "short",
+          timeStyle: "medium",
         }).format(new Date()),
       ],
+      ...(busqueda ? [["Búsqueda", busqueda]] : []),
     ];
 
     resumenRows.forEach(([label, value], index) => {
@@ -154,7 +188,7 @@ export async function GET(req: Request) {
     });
 
     ["B7", "B8", "B9"].forEach((cellRef) => {
-      resumen.getCell(cellRef).numFmt = '"$" #,##0';
+      resumen.getCell(cellRef).numFmt = formatoMonedaExcel;
       resumen.getCell(cellRef).font = { bold: true };
     });
 
@@ -164,18 +198,18 @@ export async function GET(req: Request) {
 
     worksheet.columns = [
       { header: "ID", key: "id", width: 10 },
-      { header: "FECHA", key: "fecha", width: 22, style: { numFmt: "dd/mm/yyyy hh:mm" } },
+      { header: "FECHA", key: "fecha", width: 26, style: { numFmt: "dd/mm/yyyy hh:mm:ss" } },
       { header: "SEDE", key: "sede", width: 28 },
       { header: "TIPO", key: "tipo", width: 14 },
       { header: "CONCEPTO", key: "concepto", width: 30 },
-      { header: "VALOR", key: "valor", width: 18, style: { numFmt: '"$" #,##0' } },
+      { header: "VALOR", key: "valor", width: 22, style: { numFmt: formatoMonedaExcel } },
       { header: "DESCRIPCION", key: "descripcion", width: 46 },
     ];
 
     movimientos.forEach((movimiento) => {
       worksheet.addRow({
         id: movimiento.id,
-        fecha: new Date(movimiento.createdAt),
+        fecha: fechaExcelBogota(movimiento.createdAt),
         sede: movimiento.sede?.nombre ?? "Sede sin configurar",
         tipo: movimiento.tipo,
         concepto: movimiento.concepto,
@@ -205,8 +239,11 @@ export async function GET(req: Request) {
       }
 
       row.height = 22;
-      row.eachCell((cell) => {
-        cell.alignment = { vertical: "middle", horizontal: "left" };
+      row.eachCell((cell, columnNumber) => {
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: columnNumber === 6 ? "right" : "left",
+        };
         cell.border = {
           bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
         };

@@ -1,16 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
-import DashboardIcon, {
-  type DashboardIconName,
-} from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
+import styles from "./cash.module.css";
 
 type CajaMovimiento = {
   id: number;
@@ -21,883 +17,267 @@ type CajaMovimiento = {
   sedeId: number;
   createdAt: string;
   editable: boolean;
-  sede?: {
-    nombre: string;
-  };
+  sede?: { nombre: string };
 };
-
-type CajaResumen = {
-  totalIngresos: number;
-  totalEgresos: number;
-  saldo: number;
-  totalMovimientos: number;
+type CajaResponse = {
+  movimientos: CajaMovimiento[];
+  resumen: { totalIngresos: number; totalEgresos: number; saldo: number; totalMovimientos: number };
+  ultimoMovimiento: CajaMovimiento | null;
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 };
+type SessionUser = { id: number; nombre: string; usuario: string; sedeId: number; sedeNombre: string; rolNombre: string };
+type Sede = { id: number; nombre: string };
 
-type CajaResponse =
-  | CajaMovimiento[]
-  | {
-      movimientos: CajaMovimiento[];
-      resumen: CajaResumen;
-    };
-
-type SessionUser = {
-  id: number;
-  nombre: string;
-  usuario: string;
-  sedeId: number;
-  sedeNombre: string;
-  rolId: number;
-  rolNombre: string;
-};
-
-type Sede = {
-  id: number;
-  nombre: string;
-};
-
-function limpiarNumero(value: string) {
-  return value.replace(/\D/g, "");
+function formatoPesos(value: number | string) {
+  const amount = Number(value || 0);
+  return `${amount < 0 ? "-" : ""}$ ${Math.abs(amount).toLocaleString("es-CO", { maximumFractionDigits: 2 })}`;
 }
-
-function formatoPesos(valor: string | number) {
-  return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
+function formatoFecha(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("es-CO", { timeZone: "America/Bogota", day: "2-digit", month: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
 }
-
-function formatoFecha(valor: string) {
-  return new Date(valor).toLocaleString("es-CO");
-}
-
-function extraerNombreArchivo(
-  contentDisposition: string | null,
-  fallback: string
-) {
-  const match = contentDisposition?.match(/filename="?([^"]+)"?/i);
-  return match?.[1] || fallback;
-}
-
-function describirPeriodo(fechaDesde: string, fechaHasta: string) {
-  if (fechaDesde && fechaHasta) {
-    return fechaDesde === fechaHasta
-      ? fechaDesde
-      : `${fechaDesde} a ${fechaHasta}`;
-  }
-
-  if (fechaDesde) {
-    return `Desde ${fechaDesde}`;
-  }
-
-  if (fechaHasta) {
-    return `Hasta ${fechaHasta}`;
-  }
-
+function describirPeriodo(desde: string, hasta: string) {
+  const format = (value: string) => value.split("-").reverse().join("/");
+  if (desde && hasta) return desde === hasta ? format(desde) : `${format(desde)} al ${format(hasta)}`;
+  if (desde) return `Desde ${format(desde)}`;
+  if (hasta) return `Hasta ${format(hasta)}`;
   return "Todo el historial";
 }
-
-function tipoBadgeClass(tipo: string) {
-  return String(tipo || "").toUpperCase() === "INGRESO"
-    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-    : "border-red-200 bg-red-50 text-red-700";
+function paginasVisibles(page: number, total: number) {
+  return [...new Set([1, page - 1, page, page + 1, total])].filter((item) => item > 0 && item <= total).sort((a, b) => a - b);
 }
-
-function CajaMetricCard({
-  detail,
-  icon,
-  iconClass,
-  label,
-  value,
-  valueClass,
-}: {
-  detail: string;
-  icon: DashboardIconName;
-  iconClass: string;
-  label: string;
-  value: string;
-  valueClass: string;
-}) {
-  return (
-    <article className="min-h-[144px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start gap-4">
-        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
-          <DashboardIcon name={icon} className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-600">{label}</p>
-          <p className={`mt-1.5 break-words text-[27px] font-black leading-tight tracking-tight ${valueClass}`}>
-            {value}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
-        </div>
-      </div>
-    </article>
-  );
+function EditIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15l-1 6Z" /></svg>;
+}
+function DirectionIcon({ down = false }: { down?: boolean }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={down ? "M6 6 18 18M8 18h10V8" : "M6 18 18 6M8 6h10v10"} /></svg>;
+}
+function CashAmount({ value, ready, negative = false }: { value: number; ready: boolean; negative?: boolean }) {
+  const formatted = formatoPesos(value);
+  return <strong className={`${styles.metricMoney} ${negative ? styles.negativeBalance : ""}`} style={{ "--money-length": formatted.length } as CSSProperties}>{ready ? formatted : "—"}</strong>;
 }
 
 export default function CajaPage() {
-  const [movimientos, setMovimientos] = useState<CajaMovimiento[]>([]);
-  const [resumenCaja, setResumenCaja] = useState<CajaResumen | null>(null);
-  const [mensaje, setMensaje] = useState("");
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
-  const [editandoMovimiento, setEditandoMovimiento] =
-    useState<CajaMovimiento | null>(null);
-  const [tipoEdicion, setTipoEdicion] = useState<"INGRESO" | "EGRESO">(
-    "INGRESO"
-  );
+  const [busqueda, setBusqueda] = useState("");
+  const [busquedaAplicada, setBusquedaAplicada] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [data, setData] = useState<CajaResponse | null>(null);
+  const [cargandoCaja, setCargandoCaja] = useState(true);
+  const [errorCaja, setErrorCaja] = useState("");
+  const [mensaje, setMensaje] = useState("");
+  const [exportandoExcel, setExportandoExcel] = useState(false);
+  const [editandoMovimiento, setEditandoMovimiento] = useState<CajaMovimiento | null>(null);
+  const [tipoEdicion, setTipoEdicion] = useState<"INGRESO" | "EGRESO">("INGRESO");
   const [conceptoEdicion, setConceptoEdicion] = useState("");
   const [valorEdicion, setValorEdicion] = useState("");
   const [descripcionEdicion, setDescripcionEdicion] = useState("");
   const [sedeEdicionId, setSedeEdicionId] = useState("");
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
-  const [exportandoExcel, setExportandoExcel] = useState(false);
-  const [cargandoCaja, setCargandoCaja] = useState(true);
-
+  const requestController = useRef<AbortController | null>(null);
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
-
-  const construirParametrosCaja = useCallback(() => {
-    const params = new URLSearchParams();
-
-    if (esAdmin && sedeFiltroId !== "TODAS") {
-      params.set("sedeId", sedeFiltroId);
-    }
-
-    if (fechaDesde) {
-      params.set("fechaDesde", fechaDesde);
-    }
-
-    if (fechaHasta) {
-      params.set("fechaHasta", fechaHasta);
-    }
-
-    return params;
-  }, [esAdmin, fechaDesde, fechaHasta, sedeFiltroId]);
-
-  const cargarUsuario = async () => {
-    try {
-      const res = await fetch("/api/session", { cache: "no-store" });
-      const data = await res.json();
-
-      if (res.ok) {
-        setUser(data);
-      }
-    } catch {}
-  };
-
-  const cargarSedes = async () => {
-    try {
-      const res = await fetch("/api/sedes", { cache: "no-store" });
-      const data = await res.json();
-
-      if (res.ok) {
-        setSedes(Array.isArray(data) ? data : []);
-      }
-    } catch {}
-  };
-
-  const cargarCaja = useCallback(async () => {
-    try {
-      if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
-        setMensaje("La fecha inicial no puede ser mayor que la fecha final");
-        return;
-      }
-
-      const params = construirParametrosCaja();
-
-      params.set("resumen", "1");
-      params.set("limit", "300");
-
-      const endpoint = params.size
-        ? `/api/caja?${params.toString()}`
-        : "/api/caja";
-
-      const res = await fetch(endpoint, { cache: "no-store" });
-      const data = (await res.json()) as CajaResponse;
-
-      if (!res.ok) {
-        setMensaje(
-          typeof data === "object" && data && "error" in data
-            ? String(data.error || "Error cargando caja")
-            : "Error cargando caja"
-        );
-        return;
-      }
-
-      setMovimientos(Array.isArray(data) ? data : data.movimientos ?? []);
-      setResumenCaja(Array.isArray(data) ? null : data.resumen ?? null);
-      setMensaje("");
-    } catch {
-      setMensaje("Error cargando caja");
-    } finally {
-      setCargandoCaja(false);
-    }
-  }, [construirParametrosCaja, fechaDesde, fechaHasta]);
+  const periodoInvalido = Boolean(fechaDesde && fechaHasta && fechaDesde > fechaHasta);
 
   useEffect(() => {
-    const init = async () => {
-      await cargarUsuario();
-      await cargarSedes();
-    };
-
-    void init();
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch("/api/session", { cache: "no-store", signal: controller.signal });
+        const session = await res.json();
+        if (controller.signal.aborted) return;
+        if (!res.ok) { setErrorCaja(session.error || "No se pudo cargar la sesión"); setCargandoCaja(false); return; }
+        setUser(session);
+        const sedesRes = await fetch("/api/sedes", { cache: "no-store", signal: controller.signal });
+        const lista = await sedesRes.json();
+        if (!controller.signal.aborted && sedesRes.ok) setSedes(Array.isArray(lista) ? lista : []);
+      } catch {
+        if (!controller.signal.aborted) { setErrorCaja("No se pudo cargar la sesión o las sedes"); setCargandoCaja(false); }
+      }
+    })();
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
-    if (!user) {
-      return;
-    }
-
     const timer = window.setTimeout(() => {
-      void cargarCaja();
-    }, 0);
-
+      if (busqueda.trim() !== busquedaAplicada) {
+        setCargandoCaja(true);
+        setBusquedaAplicada(busqueda.trim());
+        setPage(1);
+      }
+    }, 250);
     return () => window.clearTimeout(timer);
-  }, [cargarCaja, user]);
+  }, [busqueda, busquedaAplicada]);
 
-  useLiveRefresh(cargarCaja, { intervalMs: 30000 });
+  const construirParametrosCaja = useCallback(() => {
+    const params = new URLSearchParams();
+    if (esAdmin && sedeFiltroId !== "TODAS") params.set("sedeId", sedeFiltroId);
+    if (fechaDesde) params.set("fechaDesde", fechaDesde);
+    if (fechaHasta) params.set("fechaHasta", fechaHasta);
+    if (busquedaAplicada) params.set("q", busquedaAplicada);
+    return params;
+  }, [esAdmin, sedeFiltroId, fechaDesde, fechaHasta, busquedaAplicada]);
+
+  const cargarCaja = useCallback(async () => {
+    if (!user) return;
+    requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
+    setCargandoCaja(true);
+    setErrorCaja("");
+    try {
+      if (periodoInvalido) { setData(null); setErrorCaja("La fecha inicial no puede ser mayor que la fecha final"); return; }
+      const params = construirParametrosCaja();
+      params.set("paginated", "1");
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+      const res = await fetch(`/api/caja?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+      const result = await res.json();
+      if (controller.signal.aborted) return;
+      if (!res.ok) { setData(null); setErrorCaja(result.error || "Error cargando caja"); return; }
+      setData(result);
+      if (result.page !== page) setPage(result.page);
+    } catch {
+      if (!controller.signal.aborted) { setData(null); setErrorCaja("Error cargando caja"); }
+    } finally {
+      if (!controller.signal.aborted) setCargandoCaja(false);
+    }
+  }, [user, periodoInvalido, construirParametrosCaja, page, pageSize]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void cargarCaja(), 0);
+    return () => { window.clearTimeout(timer); requestController.current?.abort(); };
+  }, [cargarCaja]);
+  useLiveRefresh(cargarCaja, { enabled: Boolean(user), intervalMs: 30000 });
 
   const cancelarEdicion = () => {
-    setEditandoMovimiento(null);
-    setTipoEdicion("INGRESO");
-    setConceptoEdicion("");
-    setValorEdicion("");
-    setDescripcionEdicion("");
-    setSedeEdicionId("");
+    setEditandoMovimiento(null); setTipoEdicion("INGRESO"); setConceptoEdicion("");
+    setValorEdicion(""); setDescripcionEdicion(""); setSedeEdicionId("");
   };
-
   const iniciarEdicion = (movimiento: CajaMovimiento) => {
+    if (!esAdmin || !movimiento.editable) return;
     setEditandoMovimiento(movimiento);
-    setTipoEdicion(
-      String(movimiento.tipo || "").toUpperCase() === "EGRESO"
-        ? "EGRESO"
-        : "INGRESO"
-    );
+    setTipoEdicion(movimiento.tipo.toUpperCase() === "EGRESO" ? "EGRESO" : "INGRESO");
     setConceptoEdicion(movimiento.concepto || "");
-    setValorEdicion(String(Math.trunc(Number(movimiento.valor || 0))));
+    setValorEdicion(String(movimiento.valor || 0));
     setDescripcionEdicion(movimiento.descripcion || "");
     setSedeEdicionId(String(movimiento.sedeId || ""));
     setMensaje("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-
   const guardarEdicion = async () => {
-    if (!editandoMovimiento) {
-      return;
-    }
-
+    if (!editandoMovimiento || !esAdmin) return;
     try {
-      setGuardandoEdicion(true);
-      setMensaje("");
-
-      if (!conceptoEdicion.trim()) {
-        setMensaje("Debes ingresar el concepto");
-        return;
-      }
-
-      if (!valorEdicion || Number(valorEdicion) <= 0) {
-        setMensaje("Debes ingresar un valor mayor a 0");
-        return;
-      }
-
-      if (!sedeEdicionId || Number(sedeEdicionId) <= 0) {
-        setMensaje("Debes seleccionar la sede");
-        return;
-      }
-
+      setGuardandoEdicion(true); setMensaje("");
+      if (!conceptoEdicion.trim()) { setMensaje("Debes ingresar el concepto"); return; }
+      if (!valorEdicion || !Number.isFinite(Number(valorEdicion)) || Number(valorEdicion) <= 0) { setMensaje("Debes ingresar un valor mayor a 0"); return; }
+      if (!sedeEdicionId || Number(sedeEdicionId) <= 0) { setMensaje("Debes seleccionar la sede"); return; }
       const res = await fetch(`/api/caja?id=${editandoMovimiento.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          tipo: tipoEdicion,
-          concepto: conceptoEdicion,
-          valor: Number(valorEdicion),
-          descripcion: descripcionEdicion,
-          sedeId: Number(sedeEdicionId),
-        }),
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: tipoEdicion, concepto: conceptoEdicion, valor: Number(valorEdicion), descripcion: descripcionEdicion, sedeId: Number(sedeEdicionId) }),
       });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMensaje(data.error || "No se pudo actualizar el movimiento");
-        return;
-      }
-
-      setMensaje(data.mensaje || "Movimiento actualizado correctamente");
+      const result = await res.json();
+      if (!res.ok) { setMensaje(result.error || "No se pudo actualizar el movimiento"); return; }
+      setMensaje(result.mensaje || "Movimiento actualizado correctamente");
       cancelarEdicion();
       await cargarCaja();
-    } catch {
-      setMensaje("Error actualizando movimiento");
-    } finally {
-      setGuardandoEdicion(false);
-    }
+    } catch { setMensaje("Error actualizando movimiento"); }
+    finally { setGuardandoEdicion(false); }
   };
-
-  const limpiarFiltroFechas = () => {
-    setFechaDesde("");
-    setFechaHasta("");
-  };
-
   const exportarExcel = async () => {
+    if (periodoInvalido) { setMensaje("La fecha inicial no puede ser mayor que la fecha final"); return; }
     try {
-      if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
-        setMensaje("La fecha inicial no puede ser mayor que la fecha final");
-        return;
-      }
-
-      setExportandoExcel(true);
-      setMensaje("");
-
+      setExportandoExcel(true); setMensaje("");
       const params = construirParametrosCaja();
-      const endpoint = params.size
-        ? `/api/caja/export?${params.toString()}`
-        : "/api/caja/export";
-      const res = await fetch(endpoint, { cache: "no-store" });
-
-      if (!res.ok) {
-        const data = (await res.json()) as { error?: string };
-        setMensaje(data.error || "No se pudo exportar el Excel");
-        return;
-      }
-
-      const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
+      const res = await fetch(`/api/caja/export?${params.toString()}`, { cache: "no-store" });
+      if (!res.ok) { const result = await res.json(); setMensaje(result.error || "No se pudo exportar el Excel"); return; }
+      const url = window.URL.createObjectURL(await res.blob());
       const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = extraerNombreArchivo(
-        res.headers.get("Content-Disposition"),
-        "movimientos-caja.xlsx"
-      );
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(downloadUrl);
-    } catch {
-      setMensaje("Error exportando el Excel de caja");
-    } finally {
-      setExportandoExcel(false);
-    }
+      link.href = url;
+      link.download = res.headers.get("Content-Disposition")?.match(/filename="?([^";]+)"?/i)?.[1] || "movimientos-caja.xlsx";
+      document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url);
+    } catch { setMensaje("Error exportando el Excel de caja"); }
+    finally { setExportandoExcel(false); }
   };
 
-  const sedeFiltroNombre = useMemo(() => {
-    if (!esAdmin) {
-      return user?.sedeNombre || "tu sede";
-    }
-
-    if (sedeFiltroId === "TODAS") {
-      return "todas las sedes";
-    }
-
-    return (
-      sedes.find((sede) => String(sede.id) === sedeFiltroId)?.nombre ||
-      "la sede seleccionada"
-    );
-  }, [esAdmin, sedeFiltroId, sedes, user?.sedeNombre]);
-
-  const periodoActivoTexto = useMemo(
-    () => describirPeriodo(fechaDesde, fechaHasta),
-    [fechaDesde, fechaHasta]
-  );
-
-  const totalIngresos = useMemo(
-    () =>
-      resumenCaja?.totalIngresos ??
-      movimientos
-          .filter((movimiento) => movimiento.tipo === "INGRESO")
-          .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0),
-    [movimientos, resumenCaja]
-  );
-
-  const totalEgresos = useMemo(
-    () =>
-      resumenCaja?.totalEgresos ??
-      movimientos
-          .filter((movimiento) => movimiento.tipo === "EGRESO")
-          .reduce((acc, movimiento) => acc + Number(movimiento.valor || 0), 0),
-    [movimientos, resumenCaja]
-  );
-
-  const saldo = resumenCaja?.saldo ?? totalIngresos - totalEgresos;
-  const ultimoMovimiento = movimientos[0] ?? null;
-  const totalMovimientos = resumenCaja?.totalMovimientos ?? movimientos.length;
-  const navigationItems: NavigationItem[] = [
-    { href: "/dashboard", icon: "home", label: "Inicio" },
-    { href: "/ventas", icon: "sales", label: "Ventas" },
-    { href: "/inventario", icon: "inventory", label: "Inventario" },
-    { href: "/prestamos", icon: "loans", label: "Préstamos" },
-    { href: "/caja", icon: "cash", label: "Caja" },
-    {
-      href: "/dashboard/aprobaciones",
-      icon: "approvals",
-      label: "Aprobaciones",
-    },
-    {
-      href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico",
-      icon: "reports",
-      label: "Reportes",
-    },
-    ...(esAdmin
-      ? ([
-          {
-            href: "/dashboard/sedes",
-            icon: "settings",
-            label: "Configuración",
-          },
-        ] satisfies NavigationItem[])
-      : []),
+  const cobertura = !esAdmin ? user?.sedeNombre || "Sede actual" : sedeFiltroId === "TODAS" ? "Todas las sedes" : sedes.find((sede) => String(sede.id) === sedeFiltroId)?.nombre || "Sede seleccionada";
+  const listo = !cargandoCaja && !errorCaja && data;
+  const total = data?.total ?? 0;
+  const totalPages = data?.totalPages ?? 1;
+  const ultimo = data?.ultimoMovimiento;
+  const navigationItems: { href: string; icon: DashboardIconName; label: string }[] = [
+    { href: "/dashboard", icon: "home", label: "Inicio" }, { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" }, { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "cash", label: "Caja" }, { href: "/dashboard/aprobaciones", icon: "approvals", label: "Aprobaciones" },
+    { href: esAdmin ? "/dashboard/reportes" : "/dashboard/analitico", icon: "reports", label: "Reportes" },
+    ...(esAdmin ? [{ href: "/dashboard/sedes", icon: "settings" as const, label: "Configuración" }] : []),
   ];
-  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
+  const resetPage = () => { setCargandoCaja(true); setPage(1); setMensaje(""); };
 
-  return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/caja"
-        coverageLabel={user?.sedeNombre || "Cargando cobertura"}
-        items={navigationItems}
-      />
+  return <div className={styles.page}>
+    <header className={styles.topbar}>
+      <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS · Inicio"><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link>
+      <nav className={styles.navigation} aria-label="Navegación principal">{navigationItems.map((item) => <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === "/caja" ? styles.navActive : ""}`} aria-current={item.href === "/caja" ? "page" : undefined}>{item.label}</Link>)}</nav>
+      <SalesProfile name={user?.nombre || user?.usuario || "Cargando usuario"} role={user?.rolNombre || "Sesión activa"} />
+    </header>
+    <main className={styles.main}>
+      <header className={styles.heading}>
+        <div><h1>{esAdmin ? "Caja consolidada" : "Caja de la sede"}</h1><p>Control de ingresos, egresos y saldo operativo</p></div>
+        <div className={styles.headingActions}><Link href="/caja/gestion" className={`${styles.button} ${styles.primary}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>Registrar movimiento</Link><Link href="/caja/arqueo" className={styles.button}><DashboardIcon name="cash" />Arqueo</Link></div>
+      </header>
 
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
-                {esAdmin ? "Caja consolidada" : "Caja de la sede"}
-              </h1>
-              <p className="mt-1 text-sm text-slate-500 sm:text-base">
-                Control de ingresos, egresos y saldo operativo
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  Cobertura: {sedeFiltroNombre}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  {cargandoCaja ? "Actualizando movimientos" : `${totalMovimientos} movimientos`}
-                </span>
-              </div>
-            </div>
+      <section className={styles.summary} aria-label={`Resumen de caja de ${cobertura}`} aria-busy={cargandoCaja}>
+        <article className={styles.metric}><span className={`${styles.metricIcon} ${styles.incomeIcon}`}><DirectionIcon /></span><div><p>Ingresos</p><CashAmount value={data?.resumen.totalIngresos ?? 0} ready={Boolean(listo)} /></div></article>
+        <article className={styles.metric}><span className={`${styles.metricIcon} ${styles.expenseIcon}`}><DirectionIcon down /></span><div><p>Egresos</p><CashAmount value={data?.resumen.totalEgresos ?? 0} ready={Boolean(listo)} /></div></article>
+        <article className={styles.metric}><span className={`${styles.metricIcon} ${styles.balanceIcon}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M6 8h12M6 15h12" /></svg></span><div><p>Saldo</p><CashAmount value={data?.resumen.saldo ?? 0} ready={Boolean(listo)} negative={(data?.resumen.saldo ?? 0) < 0} /></div></article>
+        <article className={`${styles.metric} ${styles.lastMetric}`}><span className={styles.metricIcon}><DashboardIcon name="clock" /></span><div><p>Último movimiento</p><strong>{listo ? ultimo?.concepto || "Sin registros" : "—"}</strong>{listo && ultimo && <time dateTime={ultimo.createdAt}>{formatoFecha(ultimo.createdAt)}</time>}</div></article>
+      </section>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href="/caja/gestion"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#bd0711]"
-              >
-                <span className="text-lg leading-none">+</span>
-                Registrar movimiento
-              </Link>
-              <Link
-                href="/caja/arqueo"
-                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
-              >
-                Arqueo
-              </Link>
-              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || <DashboardIcon name="user" className="h-5 w-5" />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">
-                    {user?.nombre || user?.usuario || "Cargando usuario"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {user?.rolNombre || "Sesión activa"}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
-            </div>
-          </header>
+      <section className={styles.filtersPanel} aria-label="Filtros de caja">
+        <div className={styles.filters}>
+          <label>Cobertura{esAdmin ? <select value={sedeFiltroId} onChange={(event) => { resetPage(); setSedeFiltroId(event.target.value); }}><option value="TODAS">Todas las sedes</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</select> : <span className={styles.fixedCoverage}>{cobertura}</span>}</label>
+          <label>Desde<input type="date" value={fechaDesde} onInput={(event) => { if (event.currentTarget.value !== fechaDesde) { resetPage(); setFechaDesde(event.currentTarget.value); } }} onChange={(event) => { if (event.target.value !== fechaDesde) { resetPage(); setFechaDesde(event.target.value); } }} /></label>
+          <label>Hasta<input type="date" value={fechaHasta} onInput={(event) => { if (event.currentTarget.value !== fechaHasta) { resetPage(); setFechaHasta(event.currentTarget.value); } }} onChange={(event) => { if (event.target.value !== fechaHasta) { resetPage(); setFechaHasta(event.target.value); } }} /></label>
+          <button type="button" className={styles.button} onClick={() => { if (!fechaDesde && !fechaHasta) return; resetPage(); setFechaDesde(""); setFechaHasta(""); }}>Limpiar periodo</button>
+          <div className={styles.exportAction}><button type="button" className={styles.button} disabled={!user || cargandoCaja || Boolean(errorCaja) || exportandoExcel || busqueda.trim() !== busquedaAplicada} onClick={() => void exportarExcel()}><DashboardIcon name="download" />{exportandoExcel ? "Exportando..." : "Exportar Excel"}</button></div>
+        </div>
+        <p className={styles.period}><strong>{describirPeriodo(fechaDesde, fechaHasta)}</strong><span> · {listo ? `${total.toLocaleString("es-CO")} movimientos` : cargandoCaja ? "Actualizando movimientos..." : "Consulta no disponible"}</span>{busquedaAplicada && <span> · Búsqueda: {busquedaAplicada}</span>}</p>
+      </section>
 
-          <section className="mt-6 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(210px,1fr)_180px_180px_auto_auto] xl:items-end">
-              {esAdmin ? (
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Cobertura
-                  <select
-                    value={sedeFiltroId}
-                    onChange={(event) => {
-                      setCargandoCaja(true);
-                      setSedeFiltroId(event.target.value);
-                    }}
-                    className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                  >
-                    <option value="TODAS">Todas las sedes</option>
-                    {sedes.map((sede) => (
-                      <option key={sede.id} value={String(sede.id)}>
-                        {sede.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <div className="flex min-h-[46px] items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700">
-                  {user?.sedeNombre || "Sede actual"}
-                </div>
-              )}
+      {mensaje && <p className={styles.notice} role="status">{mensaje}</p>}
+      {esAdmin && editandoMovimiento && <section className={styles.editPanel} aria-label={`Editar movimiento ${editandoMovimiento.id}`}>
+        <div className={styles.editHeading}><div><h2>Editar movimiento #{editandoMovimiento.id}</h2><p>Ajusta el ingreso o egreso manual registrado por la sede.</p></div><button type="button" className={styles.button} disabled={guardandoEdicion} onClick={cancelarEdicion}>Cancelar</button></div>
+        <form onSubmit={(event) => { event.preventDefault(); void guardarEdicion(); }}>
+          <div className={styles.editFields}>
+            <label>Tipo<select value={tipoEdicion} onChange={(event) => setTipoEdicion(event.target.value as "INGRESO" | "EGRESO")}><option value="INGRESO">INGRESO</option><option value="EGRESO">EGRESO</option></select></label>
+            <label>Sede<select value={sedeEdicionId} onChange={(event) => setSedeEdicionId(event.target.value)}><option value="">Seleccionar sede</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</select></label>
+            <label>Concepto<input value={conceptoEdicion} onChange={(event) => setConceptoEdicion(event.target.value)} /></label>
+            <label>Valor ($)<input type="number" step="any" inputMode="decimal" value={valorEdicion} onChange={(event) => setValorEdicion(event.target.value)} /></label>
+            <label>Descripción<input value={descripcionEdicion} onChange={(event) => setDescripcionEdicion(event.target.value)} placeholder="Detalle opcional" /></label>
+          </div><div className={styles.editFooter}><button type="submit" className={`${styles.button} ${styles.primary}`} disabled={guardandoEdicion}>{guardandoEdicion ? "Guardando..." : "Guardar cambios"}</button></div>
+        </form>
+      </section>}
 
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Desde
-                <input
-                  type="date"
-                  value={fechaDesde}
-                  onChange={(event) => {
-                    setCargandoCaja(true);
-                    setFechaDesde(event.target.value);
-                  }}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Hasta
-                <input
-                  type="date"
-                  value={fechaHasta}
-                  onChange={(event) => {
-                    setCargandoCaja(true);
-                    setFechaHasta(event.target.value);
-                  }}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                />
-              </label>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setCargandoCaja(true);
-                  limpiarFiltroFechas();
-                }}
-                className="min-h-[46px] rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-red-200 hover:text-[#e30613]"
-              >
-                Limpiar periodo
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void exportarExcel()}
-                disabled={exportandoExcel}
-                className="min-h-[46px] rounded-xl bg-[#11161d] px-5 text-sm font-bold text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {exportandoExcel ? "Exportando..." : "Exportar Excel"}
-              </button>
-            </div>
-            <p className="mt-4 text-xs text-slate-500">
-              Periodo activo: <span className="font-bold text-slate-700">{periodoActivoTexto}</span>
-              {ultimoMovimiento && (
-                <> · Último registro: <span className="font-bold text-slate-700">{formatoFecha(ultimoMovimiento.createdAt)}</span></>
-              )}
-            </p>
-          </section>
-
-        {mensaje && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
-            {mensaje}
-          </div>
-        )}
-
-        {esAdmin && editandoMovimiento && (
-          <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                  Edición de caja
-                </div>
-                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                  Movimiento #{editandoMovimiento.id}
-                </h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  Ajusta el ingreso o egreso manual registrado por la sede.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={cancelarEdicion}
-                className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 xl:grid-cols-5">
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Tipo
-                <select
-                  value={tipoEdicion}
-                  onChange={(event) =>
-                    setTipoEdicion(event.target.value as "INGRESO" | "EGRESO")
-                  }
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                >
-                  <option value="INGRESO">INGRESO</option>
-                  <option value="EGRESO">EGRESO</option>
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Sede
-                <select
-                  value={sedeEdicionId}
-                  onChange={(event) => setSedeEdicionId(event.target.value)}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                >
-                  <option value="">Seleccionar sede</option>
-                  {sedes.map((sede) => (
-                    <option key={sede.id} value={String(sede.id)}>
-                      {sede.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Concepto
-                <input
-                  value={conceptoEdicion}
-                  onChange={(event) => setConceptoEdicion(event.target.value)}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Valor
-                <input
-                  value={valorEdicion ? formatoPesos(valorEdicion) : ""}
-                  onChange={(event) =>
-                    setValorEdicion(limpiarNumero(event.target.value))
-                  }
-                  placeholder="$ 0"
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Descripcion
-                <input
-                  value={descripcionEdicion}
-                  onChange={(event) => setDescripcionEdicion(event.target.value)}
-                  placeholder="Detalle opcional"
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-200"
-                />
-              </label>
-            </div>
-
-            <div className="flex justify-end border-t border-slate-200 px-6 py-5">
-              <button
-                type="button"
-                onClick={() => void guardarEdicion()}
-                disabled={guardandoEdicion}
-                className="rounded-xl bg-[#e30613] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#bd0711] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {guardandoEdicion ? "Guardando..." : "Guardar cambios"}
-              </button>
-            </div>
-          </section>
-        )}
-
-        <section className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <CajaMetricCard
-            label="Ingresos"
-            value={cargandoCaja ? "—" : formatoPesos(totalIngresos)}
-            detail="Entradas registradas en caja."
-            icon="trend"
-            iconClass="bg-emerald-50 text-emerald-600"
-            valueClass="text-emerald-600"
-          />
-          <CajaMetricCard
-            label="Egresos"
-            value={cargandoCaja ? "—" : formatoPesos(totalEgresos)}
-            detail="Salidas operativas acumuladas."
-            icon="cash"
-            iconClass="bg-red-50 text-[#e30613]"
-            valueClass="text-[#e30613]"
-          />
-          <CajaMetricCard
-            label="Saldo"
-            value={cargandoCaja ? "—" : formatoPesos(saldo)}
-            detail="Balance neto de la vista actual."
-            icon="cash"
-            iconClass={saldo >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600"}
-            valueClass={saldo >= 0 ? "text-emerald-600" : "text-orange-600"}
-          />
-          <CajaMetricCard
-            label="Último movimiento"
-            value={cargandoCaja ? "—" : ultimoMovimiento?.concepto || "Sin registros"}
-            detail={
-              ultimoMovimiento
-                ? formatoFecha(ultimoMovimiento.createdAt)
-                : "Todavía no hay actividad en caja."
-            }
-            icon="reports"
-            iconClass="bg-slate-100 text-slate-600"
-            valueClass="text-slate-950"
-          />
-        </section>
-
-        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Detalle operativo
-              </div>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                Movimientos de caja
-              </h2>
-              <p className="mt-2 text-sm text-slate-500">
-                Historial limpio y legible de ingresos y egresos dentro de la
-                cobertura actual.
-              </p>
-            </div>
-
-            <div className="text-sm text-slate-500">
-              Vista activa:{" "}
-              <span className="font-semibold text-slate-900">
-                {esAdmin
-                  ? sedeFiltroId === "TODAS"
-                    ? "Todas las sedes"
-                    : sedeFiltroNombre
-                  : user?.sedeNombre || "Sede actual"}
-              </span>
-              {" · "}Periodo:{" "}
-              <span className="font-semibold text-slate-900">{periodoActivoTexto}</span>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-[1280px] text-sm">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="px-5 py-4 text-left font-semibold">ID</th>
-                  <th className="px-5 py-4 text-left font-semibold">Tipo</th>
-                  <th className="px-5 py-4 text-left font-semibold">Concepto</th>
-                  <th className="px-5 py-4 text-left font-semibold">Valor</th>
-                  <th className="px-5 py-4 text-left font-semibold">Descripcion</th>
-                  <th className="px-5 py-4 text-left font-semibold">Sede</th>
-                  <th className="px-5 py-4 text-left font-semibold">Fecha</th>
-                  {esAdmin && (
-                    <th className="px-5 py-4 text-left font-semibold">Acciones</th>
-                  )}
-                </tr>
-              </thead>
-
-              <tbody>
-                {cargandoCaja ? (
-                  <tr>
-                    <td
-                      colSpan={esAdmin ? 8 : 7}
-                      className="px-6 py-16 text-center text-slate-500"
-                    >
-                      <span className="inline-flex items-center gap-3 font-semibold">
-                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-[#e30613]" />
-                        Cargando movimientos de caja...
-                      </span>
-                    </td>
-                  </tr>
-                ) : movimientos.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={esAdmin ? 8 : 7}
-                      className="px-6 py-16 text-center"
-                    >
-                      <div className="mx-auto max-w-md">
-                        <p className="text-base font-semibold text-slate-900">
-                          No hay movimientos para esta vista
-                        </p>
-                        <p className="mt-2 text-sm text-slate-500">
-                          Cuando haya actividad en caja, aparecera aqui con el
-                          mismo detalle operativo del resto del sistema.
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  movimientos.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="border-t border-slate-100 align-top transition hover:bg-slate-50/80"
-                    >
-                      <td className="px-5 py-5">
-                        <span className="font-bold text-slate-950">#{item.id}</span>
-                      </td>
-
-                      <td className="px-5 py-5">
-                        <span
-                          className={[
-                            "inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]",
-                            tipoBadgeClass(item.tipo),
-                          ].join(" ")}
-                        >
-                          {item.tipo}
-                        </span>
-                      </td>
-
-                      <td className="px-5 py-5">
-                        <p className="max-w-[240px] font-semibold text-slate-950">
-                          {item.concepto}
-                        </p>
-                      </td>
-
-                      <td className="px-5 py-5">
-                        <p
-                          className={[
-                            "text-lg font-black",
-                            item.tipo === "INGRESO"
-                              ? "text-emerald-600"
-                              : "text-red-600",
-                          ].join(" ")}
-                        >
-                          {formatoPesos(item.valor)}
-                        </p>
-                      </td>
-
-                      <td className="px-5 py-5">
-                        <p className="max-w-[360px] leading-6 text-slate-600">
-                          {item.descripcion ?? "-"}
-                        </p>
-                      </td>
-
-                      <td className="px-5 py-5">
-                        <span className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {item.sede?.nombre ?? "Sede sin configurar"}
-                        </span>
-                      </td>
-
-                      <td className="px-5 py-5 text-slate-600">
-                        {formatoFecha(item.createdAt)}
-                      </td>
-
-                      {esAdmin && (
-                        <td className="px-5 py-5">
-                          {item.editable ? (
-                            <button
-                              type="button"
-                              onClick={() => iniciarEdicion(item)}
-                              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                            >
-                              Editar
-                            </button>
-                          ) : (
-                            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                              Protegido
-                            </span>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-        </main>
-      </div>
-    </div>
-  );
+      <section className={styles.panel} aria-label="Movimientos de caja" aria-busy={cargandoCaja}>
+        <header className={styles.panelHeading}><div><h2>Movimientos de caja</h2><p>Historial de ingresos y egresos dentro de la cobertura actual.</p></div><label className={styles.search}><DashboardIcon name="search" /><input aria-label="Buscar movimiento" placeholder="Buscar movimiento" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} />{busqueda && <button type="button" aria-label="Limpiar búsqueda" onClick={() => setBusqueda("")}><DashboardIcon name="close" /></button>}</label></header>
+        <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Tabla de movimientos, desplazamiento horizontal">
+          <table className={styles.table}><caption className={styles.srOnly}>Movimientos de caja de {cobertura} · {describirPeriodo(fechaDesde, fechaHasta)}</caption><colgroup><col className={styles.idCol} /><col className={styles.typeCol} /><col className={styles.conceptCol} /><col className={styles.valueCol} /><col className={styles.descriptionCol} /><col className={styles.siteCol} /><col className={styles.dateCol} /><col className={styles.actionsCol} /></colgroup>
+            <thead><tr>{["ID", "Tipo", "Concepto", "Valor", "Descripción", "Sede", "Fecha", "Acciones"].map((label) => <th key={label} scope="col" className={label === "Valor" ? styles.moneyCell : undefined}>{label}</th>)}</tr></thead>
+            <tbody>{cargandoCaja ? <tr><td colSpan={8} className={styles.state}><span className={styles.spinner} />Cargando movimientos de caja...</td></tr> : errorCaja ? <tr><td colSpan={8} className={styles.state}><div role="alert"><strong>{errorCaja}</strong><button type="button" className={styles.button} onClick={() => void cargarCaja()}>Reintentar</button></div></td></tr> : !data?.movimientos.length ? <tr><td colSpan={8} className={styles.state}><strong>No hay movimientos para esta consulta</strong><p>Revisa la cobertura, el periodo o la búsqueda.</p></td></tr> : data.movimientos.map((item) => {
+              const ingreso = item.tipo.toUpperCase() === "INGRESO";
+              return <tr key={item.id}><td className={styles.identifier}>#{item.id}</td><td><span className={`${styles.typeBadge} ${ingreso ? styles.incomeBadge : styles.expenseBadge}`}>{item.tipo}</span></td><td className={styles.concept}>{item.concepto}</td><td className={`${styles.moneyCell} ${ingreso ? styles.income : styles.expense}`}>{formatoPesos(item.valor)}</td><td className={styles.description}>{item.descripcion || "—"}</td><td><span className={styles.siteBadge}>{item.sede?.nombre || "Sede sin configurar"}</span></td><td className={styles.date}><time dateTime={item.createdAt}>{formatoFecha(item.createdAt)}</time></td><td>{esAdmin ? item.editable ? <button type="button" className={styles.editButton} onClick={() => iniciarEdicion(item)}><EditIcon />Editar</button> : <span className={styles.protected}>Protegido</span> : <span className={styles.protected}>—</span>}</td></tr>;
+            })}</tbody>
+          </table>
+        </div>
+        <footer className={styles.footer}><p role="status">{cargandoCaja ? "Cargando resultados..." : errorCaja ? "Consulta no disponible" : `Mostrando ${total ? (page - 1) * pageSize + 1 : 0}–${Math.min(page * pageSize, total)} de ${total.toLocaleString("es-CO")} movimientos`}</p><label className={styles.rowsPerPage}>Filas por página<select value={pageSize} onChange={(event) => { resetPage(); setPageSize(Number(event.target.value)); }}>{[10, 20, 50].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><nav className={styles.pagination} aria-label="Paginación de movimientos"><button type="button" aria-label="Página anterior" disabled={page <= 1 || !listo} onClick={() => { setCargandoCaja(true); setPage((value) => value - 1); }}><DashboardIcon name="chevron" className={styles.previous} /></button>{paginasVisibles(page, totalPages).map((number, index, pages) => <span className={styles.pageSlot} key={number}>{index > 0 && number > pages[index - 1] + 1 && <span className={styles.ellipsis}>…</span>}<button type="button" aria-label={`Página ${number}`} aria-current={number === page ? "page" : undefined} className={number === page ? styles.currentPage : undefined} disabled={!listo} onClick={() => { if (number === page) return; setCargandoCaja(true); setPage(number); }}>{number}</button></span>)}<button type="button" aria-label="Página siguiente" disabled={page >= totalPages || !listo} onClick={() => { setCargandoCaja(true); setPage((value) => value + 1); }}><DashboardIcon name="chevron" className={styles.next} /></button></nav></footer>
+      </section>
+    </main>
+  </div>;
 }

@@ -10,6 +10,7 @@ import {
   CAJA_MOVIMIENTO_SELECT,
   esMovimientoEditable,
   normalizarConcepto,
+  parseCajaPagination,
   parseLimit,
   parseMovimientoId,
   parseSedeId,
@@ -34,6 +35,7 @@ export async function GET(req: Request) {
     const requestUrl = new URL(req.url);
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
     const limit = parseLimit(requestUrl.searchParams.get("limit"));
+    const paginado = requestUrl.searchParams.get("paginated") === "1";
     const incluirResumen = ["1", "true", "si"].includes(
       String(requestUrl.searchParams.get("resumen") || "").trim().toLowerCase()
     );
@@ -43,10 +45,70 @@ export async function GET(req: Request) {
       sedeIdFiltro,
       fechaDesde: requestUrl.searchParams.get("fechaDesde"),
       fechaHasta: requestUrl.searchParams.get("fechaHasta"),
+      ...(paginado ? { busqueda: requestUrl.searchParams.get("q") } : {}),
     });
 
     if ("error" in filtros) {
       return NextResponse.json({ error: filtros.error }, { status: 400 });
+    }
+
+    if (paginado) {
+      const pagination = parseCajaPagination(
+        requestUrl.searchParams.get("page"),
+        requestUrl.searchParams.get("pageSize")
+      );
+      const [total, resumenes, ultimoMovimiento] = await Promise.all([
+        prisma.cajaMovimiento.count({ where: filtros.where }),
+        prisma.cajaMovimiento.groupBy({
+          by: ["tipo"],
+          where: filtros.where,
+          _sum: { valor: true },
+        }),
+        prisma.cajaMovimiento.findFirst({
+          where: filtros.where,
+          orderBy: { id: "desc" },
+          select: CAJA_MOVIMIENTO_SELECT,
+        }),
+      ]);
+      const totalPages = Math.max(1, Math.ceil(total / pagination.pageSize));
+      const page = Math.min(pagination.page, totalPages);
+      const movimientos = await prisma.cajaMovimiento.findMany({
+        where: filtros.where,
+        orderBy: { id: "desc" },
+        skip: (page - 1) * pagination.pageSize,
+        take: pagination.pageSize,
+        select: CAJA_MOVIMIENTO_SELECT,
+      });
+      const totalIngresos = Number(
+        resumenes.find((item) => item.tipo === "INGRESO")?._sum.valor || 0
+      );
+      const totalEgresos = Number(
+        resumenes.find((item) => item.tipo === "EGRESO")?._sum.valor || 0
+      );
+
+      return NextResponse.json({
+        movimientos: movimientos.map((movimiento) => ({
+          ...movimiento,
+          editable: esMovimientoEditable(movimiento.concepto),
+        })),
+        resumen: {
+          totalIngresos,
+          totalEgresos,
+          saldo: totalIngresos - totalEgresos,
+          totalMovimientos: total,
+        },
+        ultimoMovimiento: ultimoMovimiento
+          ? {
+              ...ultimoMovimiento,
+              editable: esMovimientoEditable(ultimoMovimiento.concepto),
+            }
+          : null,
+        total,
+        page,
+        pageSize: pagination.pageSize,
+        totalPages,
+        rango: filtros.rango,
+      });
     }
 
     const movimientosQuery =

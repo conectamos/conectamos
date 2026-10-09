@@ -44,6 +44,7 @@ type BuildCajaWhereOptions = {
   sedeIdFiltro?: number | null;
   fechaDesde?: string | null;
   fechaHasta?: string | null;
+  busqueda?: string | null;
 };
 
 type BuildCajaWhereResult =
@@ -82,6 +83,24 @@ export function parseLimit(value: string | null | undefined) {
   }
 
   return Math.min(limit, CAJA_MOVIMIENTOS_LIMIT_MAX);
+}
+
+export function parseCajaPagination(
+  pageValue: string | null,
+  pageSizeValue: string | null
+) {
+  const requestedPage = Number(pageValue);
+  const requestedPageSize = Number(pageSizeValue);
+
+  return {
+    page:
+      Number.isSafeInteger(requestedPage) && requestedPage > 0
+        ? requestedPage
+        : 1,
+    pageSize: [10, 20, 50, 100].includes(requestedPageSize)
+      ? requestedPageSize
+      : 10,
+  };
 }
 
 export function normalizarConcepto(value: unknown) {
@@ -123,9 +142,25 @@ export function buildCajaWhere(
       : undefined;
 
   const sedeId = options.esAdmin ? options.sedeIdFiltro ?? null : options.sedeIdUsuario;
+  const busqueda = String(options.busqueda ?? "").trim();
+  const idBuscado = /^#?\d+$/.test(busqueda)
+    ? Number(busqueda.replace(/^#/, ""))
+    : null;
+  const busquedaWhere: Prisma.CajaMovimientoWhereInput[] = busqueda
+    ? [
+        { tipo: { contains: busqueda, mode: "insensitive" } },
+        { concepto: { contains: busqueda, mode: "insensitive" } },
+        { descripcion: { contains: busqueda, mode: "insensitive" } },
+        { sede: { nombre: { contains: busqueda, mode: "insensitive" } } },
+        ...(idBuscado && Number.isSafeInteger(idBuscado) && idBuscado <= 2147483647
+          ? [{ id: idBuscado }]
+          : []),
+      ]
+    : [];
   const where: Prisma.CajaMovimientoWhereInput = {
     ...(sedeId ? { sedeId } : {}),
     ...(createdAt ? { createdAt } : {}),
+    ...(busquedaWhere.length ? { OR: busquedaWhere } : {}),
     NOT: {
       concepto: CONCEPTO_GASTO_CARTERA,
     },
