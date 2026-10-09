@@ -108,6 +108,7 @@ export default function PrestamosPage() {
   const [lotesImeisExpandidos, setLotesImeisExpandidos] = useState<string[]>([]);
   const [idsSolicitudPago, setIdsSolicitudPago] = useState<number[]>([]);
   const [pestana, setPestana] = useState<LoanTab>("Todos");
+  const [soloPagables, setSoloPagables] = useState(false);
   const [pagina, setPagina] = useState(1);
   const [filasPorPagina, setFilasPorPagina] = useState(5);
   const [detalleId, setDetalleId] = useState<number | null>(null);
@@ -587,7 +588,7 @@ export default function PrestamosPage() {
     );
   };
 
-  const prestamosFiltrados = useMemo(() => {
+  const prestamosConsulta = useMemo(() => {
     return prestamos
       .filter((prestamo) => prestamoEnPestana(prestamo.estado, pestana))
       .filter((prestamo) => {
@@ -612,6 +613,9 @@ export default function PrestamosPage() {
         );
       });
   }, [prestamos, filtroEstado, busqueda, pestana]);
+  const prestamosFiltrados = soloPagables
+    ? prestamosConsulta.filter(puedeSolicitarPago)
+    : prestamosConsulta;
   const totalPaginas = paginasPrestamos(prestamosFiltrados.length, filasPorPagina);
   const paginaActual = Math.min(pagina, totalPaginas);
 
@@ -631,6 +635,15 @@ export default function PrestamosPage() {
       (acumulado, prestamo) => acumulado + Number(prestamo.costo || 0),
       0
     );
+  const todosDisponiblesSeleccionados = prestamosSeleccionablesPago.length > 0 &&
+    prestamosSeleccionablesPago.every((item) => idsSolicitudPago.includes(item.id));
+  const seleccionarDisponibles = () => {
+    if (cargando || cargandoListado || prestamosSeleccionablesPago.length === 0) return;
+    const ids = prestamosSeleccionablesPago.map((item) => item.id);
+    setIdsSolicitudPago((actuales) => todosDisponiblesSeleccionados
+      ? actuales.filter((id) => !ids.includes(id))
+      : Array.from(new Set([...actuales, ...ids])));
+  };
   const lotesSolicitudPago: SolicitudPagoLoteSeleccionable[] = Array.from(
     prestamosSeleccionablesPago
       .reduce((mapa, prestamo) => {
@@ -921,6 +934,14 @@ export default function PrestamosPage() {
       ? actuales.filter((id) => !ids.includes(id)) : Array.from(new Set([...actuales, ...ids])));
   };
   const cambiarConsulta = () => { setPagina(1); setIdsSolicitudPago([]); setDetalleId(null); };
+  const mostrarDisponiblesPago = () => { cambiarConsulta(); setSoloPagables(true); };
+  const quitarFiltroDisponibles = () => { cambiarConsulta(); setSoloPagables(false); };
+  const motivoNoSeleccionPago = (item: Prestamo) => {
+    if (puedeSolicitarPago(item)) return "";
+    if (item.estado !== "APROBADO") return `No disponible para pago: préstamo ${textoEstadoPrestamo(item.estado).toLowerCase()}.`;
+    if (!item.requiereAprobacionEntreSedes) return "No tiene un pago entre sedes disponible. La deuda con proveedor se gestiona desde Inventario.";
+    return "Solo la sede destino o un administrador pueden solicitar este pago.";
+  };
   const accionesPrestamo = (item: Prestamo) => [
     { label: "Solicitar devolución", allowed: puedeSolicitarDevolucion(item), run: () => solicitarDevolucionPrestamo(item.id) },
     { label: "Aprobar devolución", allowed: puedeAprobarDevolucion(item), run: () => aprobarDevolucionPrestamo(item.id) },
@@ -980,16 +1001,17 @@ export default function PrestamosPage() {
       <section className={styles.panel} aria-label="Préstamos registrados">
         <div className={styles.filterBar}>
           <div className={styles.tabs} role="tablist" aria-label="Estado de los préstamos">{LOAN_TABS.map((tab) => <button key={tab} type="button" role="tab" aria-selected={pestana === tab} aria-controls="prestamos-listado"
-            className={`${styles.tab} ${pestana === tab ? styles.tabActive : ""}`} onClick={() => { cambiarConsulta(); setPestana(tab); setFiltroEstado("TODOS"); }}>{tab}</button>)}</div>
+            className={`${styles.tab} ${pestana === tab ? styles.tabActive : ""}`} onClick={() => { cambiarConsulta(); setSoloPagables(false); setPestana(tab); setFiltroEstado("TODOS"); }}>{tab}</button>)}</div>
           <div className={styles.filters}>
             {esAdmin ? <select aria-label="Filtrar por sede" value={sedeFiltroId} disabled={cargando} onChange={(event) => { cambiarConsulta(); setPrestamos([]); setMensaje(""); setCargandoListado(true); setSedeFiltroId(event.target.value); }}><option value="TODAS">Todas las sedes</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</select>
               : <span aria-label="Cobertura">{user?.sedeNombre || "Tu sede"}</span>}
-            <select aria-label="Filtrar por estado" value={filtroEstado} onChange={(event) => { cambiarConsulta(); setPestana("Todos"); setFiltroEstado(event.target.value); }}>
+            <select aria-label="Filtrar por estado" value={filtroEstado} onChange={(event) => { cambiarConsulta(); setSoloPagables(false); setPestana("Todos"); setFiltroEstado(event.target.value); }}>
               {estadosFiltro.map((estado) => <option key={estado} value={estado}>{estado === "TODOS" ? "Todos los estados" : textoEstadoPrestamo(estado)}</option>)}
             </select>
           </div>
         </div>
         <div className={styles.searchLine}><label className={styles.search}><DashboardIcon name="search" /><input aria-label="Buscar préstamos" placeholder="Buscar por IMEI, referencia o sede" value={busqueda} onChange={(event) => { cambiarConsulta(); setBusqueda(event.target.value); }} /></label><span className={styles.resultCount} aria-live="polite">{cargandoListado ? "Cargando…" : `${prestamosFiltrados.length.toLocaleString("es-CO")} registros`}</span></div>
+        {soloPagables && <div className={styles.availableFilter} role="status"><span>Mostrando solo disponibles para pago</span><button type="button" onClick={quitarFiltroDisponibles} aria-label="Quitar filtro de disponibles">Mostrar todos <DashboardIcon name="close" /></button></div>}
         <div id="prestamos-listado" role="tabpanel" aria-label={pestana} className={styles.tableWrap}>
           <table className={styles.table}>
             <thead><tr><th className={styles.selectionCell}><input type="checkbox" aria-label="Seleccionar préstamos pagables visibles" checked={todosPagablesPaginaSeleccionados} disabled={cargando || cargandoListado || pagablesPagina.length === 0} onChange={seleccionarPagina} /></th><th>Equipo e IMEI</th><th>Origen</th><th>Destino</th><th>Estado</th><th>Financiero</th><th>Acciones</th></tr></thead>
@@ -1001,7 +1023,7 @@ export default function PrestamosPage() {
                 const paso = resolverSiguientePaso(item);
                 return <Fragment key={item.id}>
                   <tr className={styles.loanRow}>
-                    <td data-label="Seleccionar" className={styles.selectionCell}><input type="checkbox" aria-label={`Seleccionar préstamo ${item.id}`} checked={idsSolicitudPago.includes(item.id) && idsSolicitudPagoValidos.has(item.id)} disabled={cargando || !puedeSolicitarPago(item)} onChange={() => alternarSeleccionSolicitudPago(item.id)} /></td>
+                    <td data-label="Seleccionar" className={styles.selectionCell}><span title={motivoNoSeleccionPago(item)}><input type="checkbox" aria-label={`Seleccionar préstamo ${item.id}`} title={motivoNoSeleccionPago(item)} checked={idsSolicitudPago.includes(item.id) && idsSolicitudPagoValidos.has(item.id)} disabled={cargando || !puedeSolicitarPago(item)} onChange={() => alternarSeleccionSolicitudPago(item.id)} /></span></td>
                     <td data-label="Equipo e IMEI"><div className={styles.equipment}><span className={styles.phoneIcon} aria-hidden="true"><svg viewBox="0 0 28 42" fill="none"><rect x="4" y="2" width="20" height="38" rx="4" stroke="currentColor" strokeWidth="1.7" /><path d="M10 2v3h8V2" stroke="currentColor" strokeWidth="1.7" /></svg></span><div className={styles.equipmentCopy}><strong>{item.referencia}</strong><p>IMEI <span>{item.imei}</span></p><p>{item.color || "Sin color"} · ID {item.id}</p></div></div></td>
                     <td data-label="Origen">{item.sedeOrigenNombre ?? "Sede sin configurar"}</td><td data-label="Destino">{item.sedeDestinoNombre ?? "Sede sin configurar"}</td>
                     <td data-label="Estado"><span className={styles.status}><i className={`${styles.dot} ${tonoEstado(item.estado)}`} />{textoEstadoPrestamo(item.estado)}</span></td>
@@ -1020,6 +1042,7 @@ export default function PrestamosPage() {
                         <div><dt>Monto de pago</dt><dd>{item.montoPago == null ? "Sin solicitud" : formatoPesos(Number(item.montoPago))}</dd></div><div><dt>Solicitud de pago</dt><dd>{item.fechaSolicitudPago ? new Date(item.fechaSolicitudPago).toLocaleString("es-CO") : "Sin solicitud"}</dd></div>
                       </dl>
                       <p><strong>{paso.titulo}.</strong> {paso.detalle}</p>
+                      {!puedeSolicitarPago(item) && <p className={styles.muted}>{motivoNoSeleccionPago(item)}</p>}
                       <div className={styles.detailActions}>{actions.map((action) => <button key={action.label} type="button" className={styles.button} disabled={cargando || cargandoListado} onClick={() => void action.run()}>{action.label}</button>)}
                         {puedeAprobarPago(item) && idsEnLotesMultiples.has(item.id) && <button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado} onClick={() => {
                           const lote = lotesPagoPendiente.find((group) => group.items.some((loan) => loan.id === item.id));
@@ -1035,10 +1058,10 @@ export default function PrestamosPage() {
         </div>
       </section>
       <section className={styles.batchBar} aria-label="Pago por lote">
-        <div className={styles.batchAvailable}><input type="checkbox" aria-label="Seleccionar préstamos pagables de esta página" checked={todosPagablesPaginaSeleccionados} disabled={cargando || cargandoListado || pagablesPagina.length === 0} onChange={seleccionarPagina} /><span><strong>{prestamosSeleccionablesPago.length.toLocaleString("es-CO")}</strong> disponibles para pago</span></div>
+        <div className={styles.batchAvailable}><input type="checkbox" aria-label={`Seleccionar todos los disponibles para pago (${prestamosSeleccionablesPago.length})`} aria-describedby="alcance-seleccion-disponibles" checked={todosDisponiblesSeleccionados} disabled={cargando || cargandoListado || prestamosSeleccionablesPago.length === 0} onChange={seleccionarDisponibles} /><button type="button" className={styles.availableButton} aria-label="Ver disponibles para pago" aria-pressed={soloPagables} disabled={cargando || cargandoListado || prestamosSeleccionablesPago.length === 0} onClick={mostrarDisponiblesPago}><span><strong>{prestamosSeleccionablesPago.length.toLocaleString("es-CO")}</strong> disponibles para pago</span><small id="alcance-seleccion-disponibles">Ver disponibles · selección en todas las páginas</small></button></div>
         <div className={styles.batchSelected}><strong>{prestamosSolicitudPagoSeleccionados.length}</strong> seleccionados</div>
         <div className={styles.batchTotal}><span>Total</span><strong>{formatoPesos(totalSolicitudPagoSeleccionada)}</strong></div>
-        <div className={styles.batchActions}><button type="button" className={styles.textButton} onClick={seleccionarPagina} disabled={cargando || cargandoListado || pagablesPagina.length === 0}>{todosPagablesPaginaSeleccionados ? "Quitar visibles" : "Seleccionar visibles"}</button><button type="button" className={styles.button} onClick={limpiarSeleccionSolicitudPago} disabled={cargando || prestamosSolicitudPagoSeleccionados.length === 0}>Limpiar</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado || prestamosSolicitudPagoSeleccionados.length === 0} onClick={() => setConfirmacionPago({ tipo: "solicitar", ids: prestamosSolicitudPagoSeleccionados.map((item) => item.id) })}>{cargando ? "Procesando…" : "Enviar a pagar"}</button></div>
+        <div className={styles.batchActions}><button type="button" className={styles.textButton} title="Selecciona únicamente los préstamos elegibles de la página actual" onClick={seleccionarPagina} disabled={cargando || cargandoListado || pagablesPagina.length === 0}>{todosPagablesPaginaSeleccionados ? "Quitar visibles" : "Seleccionar visibles"}</button><button type="button" className={styles.button} onClick={limpiarSeleccionSolicitudPago} disabled={cargando || prestamosSolicitudPagoSeleccionados.length === 0}>Limpiar</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado || prestamosSolicitudPagoSeleccionados.length === 0} onClick={() => setConfirmacionPago({ tipo: "solicitar", ids: prestamosSolicitudPagoSeleccionados.map((item) => item.id) })}>{cargando ? "Procesando…" : "Enviar a pagar"}</button></div>
       </section>
       <footer className={styles.pagination}>
         <span>{cargandoListado ? "Cargando registros…" : `Mostrando ${prestamosFiltrados.length ? (paginaActual - 1) * filasPorPagina + 1 : 0}–${Math.min(paginaActual * filasPorPagina, prestamosFiltrados.length)} de ${prestamosFiltrados.length.toLocaleString("es-CO")}`}</span>

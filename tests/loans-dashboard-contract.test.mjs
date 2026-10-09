@@ -286,6 +286,129 @@ test("seleccionar visibles afecta solo la página actual y conserva selección a
   assert.deepEqual(probe.state.idsSolicitudPago, [1]);
 });
 
+// Reproduces the reported screen: the first five records cannot be paid, while
+// 119 eligible records exist on later pages of the same authorized query.
+const loansWithPayablesAfterFirstPage = Array.from({ length: 124 }, (_, index) => {
+  const id = index + 1;
+  return {
+    ...loans[0], id, referencia: `Equipo ${id}`, imei: String(5000 + id).padStart(15, "0"),
+    costo: id * 100.25, estado: ["FINALIZADO", "APROBADO", "PENDIENTE", "PAGO_PENDIENTE_APROBACION", "DEVUELTO"][index] ?? "APROBADO",
+    prestamoDesdePrincipal: id === 2, requiereAprobacionEntreSedes: id !== 2,
+    sedeOrigenId: id === 2 ? 99 : id % 2 ? 1 : 3, sedeDestinoId: 2,
+    sedeOrigenNombre: id === 2 ? "BODEGA PRINCIPAL" : `SEDE ${id % 2 ? 1 : 3}`,
+    sedeDestinoNombre: "SEDE 2", fechaSolicitudPago: null,
+  };
+});
+
+test("119 disponibles siguen seleccionables aunque ningún préstamo de la página sea pagable", { skip: baseline }, () => {
+  const probe = pageProbe({ prestamos: loansWithPayablesAfterFirstPage });
+  const expected = loansWithPayablesAfterFirstPage.slice(5);
+  assert.equal(probe.view.prestamosSeleccionablesPago.length, 119);
+  assert.equal(probe.view.pagablesPagina.length, 0);
+  let tree = probe.render().tree;
+  const bar = control(tree, (node) => node.props?.["aria-label"] === "Pago por lote");
+  const allAvailable = control(bar, (node) => node.type === "input" && node.props?.type === "checkbox");
+  assert.equal(allAvailable.props.disabled, false);
+  assert.equal(control(tree, (node) => node.props?.["aria-label"] === "Seleccionar préstamos pagables visibles").props.disabled, true);
+  for (const loan of loansWithPayablesAfterFirstPage.slice(0, 5)) {
+    assert.equal(control(tree, (node) => node.props?.["aria-label"] === `Seleccionar préstamo ${loan.id}`).props.disabled, true);
+  }
+  const visibleButton = control(bar, (node) => node.type === "button" && textOf(node) === "Seleccionar visibles");
+  assert.equal(visibleButton.props.disabled, true);
+  allAvailable.props.onChange();
+  tree = probe.render().tree;
+  assert.deepEqual(probe.state.idsSolicitudPago, expected.map((loan) => loan.id));
+  assert.equal(probe.view.totalSolicitudPagoSeleccionada, expected.reduce((sum, loan) => sum + loan.costo, 0));
+  assert.equal(probe.view.lotesConSeleccionPago.length, 2);
+  assert.equal(probe.view.lotesConSeleccionPago.reduce((sum, group) => sum + group.totalSeleccionado, 0), probe.view.totalSolicitudPagoSeleccionada);
+  assert.equal(control(tree, (node) => node.type === "button" && textOf(node) === "Enviar a pagar").props.disabled, false);
+  const selectedCheckbox = control(control(tree, (node) => node.props?.["aria-label"] === "Pago por lote"), (node) => node.type === "input" && node.props?.type === "checkbox");
+  assert.equal(selectedCheckbox.props.checked, true);
+  selectedCheckbox.props.onChange();
+  probe.render();
+  assert.deepEqual(probe.state.idsSolicitudPago, []);
+  assert.equal(probe.view.totalSolicitudPagoSeleccionada, 0);
+  assert.equal(probe.calls.length, 0, "Seleccionar préstamos no debe enviar solicitudes de pago");
+});
+
+test("Ver disponibles para pago abre los elegibles desde la primera página y permite seleccionar solo los visibles", { skip: baseline }, () => {
+  const probe = pageProbe({ prestamos: loansWithPayablesAfterFirstPage, pagina: 12, idsSolicitudPago: [6], detalleId: 6 });
+  control(probe.render().tree, (node) => node.type === "button" && node.props?.["aria-label"] === "Ver disponibles para pago").props.onClick();
+  let tree = probe.render().tree;
+  assert.equal(probe.state.soloPagables, true);
+  assert.equal(probe.state.pagina, 1);
+  assert.equal(probe.state.detalleId, null);
+  assert.deepEqual(probe.state.idsSolicitudPago, []);
+  assert.deepEqual(probe.view.prestamosFiltrados.map((loan) => loan.id), loansWithPayablesAfterFirstPage.slice(5).map((loan) => loan.id));
+  assert.deepEqual(probe.view.prestamosPagina.map((loan) => loan.id), [6, 7, 8, 9, 10]);
+  const headerCheckbox = control(tree, (node) => node.props?.["aria-label"] === "Seleccionar préstamos pagables visibles");
+  assert.equal(headerCheckbox.props.disabled, false);
+  headerCheckbox.props.onChange();
+  tree = probe.render().tree;
+  assert.deepEqual(probe.state.idsSolicitudPago, [6, 7, 8, 9, 10]);
+  control(tree, (node) => node.type === "button" && node.props?.["aria-label"] === "Quitar filtro de disponibles").props.onClick();
+  probe.render();
+  assert.equal(probe.state.soloPagables, false);
+  assert.equal(probe.state.pagina, 1);
+  assert.deepEqual(probe.state.idsSolicitudPago, []);
+  assert.equal(probe.view.prestamosFiltrados.length, 124);
+  assert.equal(probe.view.totalSolicitudPagoSeleccionada, 0);
+});
+
+test("el filtro de disponibles conserva búsqueda, sede, estado y pestaña sin ampliar la consulta", { skip: baseline }, () => {
+  const probe = pageProbe({ prestamos: loansWithPayablesAfterFirstPage, busqueda: "Equipo 1", sedeFiltroId: "2", filtroEstado: "APROBADO", pestana: "Aprobados" });
+  const before = probe.view.prestamosSeleccionablesPago.map((loan) => loan.id);
+  control(probe.render().tree, (node) => node.type === "button" && node.props?.["aria-label"] === "Ver disponibles para pago").props.onClick();
+  probe.render();
+  assert.equal(probe.state.busqueda, "Equipo 1");
+  assert.equal(probe.state.sedeFiltroId, "2");
+  assert.equal(probe.state.filtroEstado, "APROBADO");
+  assert.equal(probe.state.pestana, "Aprobados");
+  assert.deepEqual(probe.view.prestamosFiltrados.map((loan) => loan.id), before);
+  probe.view.seleccionarDisponibles();
+  probe.render();
+  assert.deepEqual(probe.state.idsSolicitudPago, before);
+  assert.ok(probe.view.prestamosSolicitudPagoSeleccionados.every((loan) => loan.referencia.includes("Equipo 1") && probe.view.puedeSolicitarPago(loan)));
+  assert.equal(probe.calls.length, 0);
+});
+
+test("seleccionar disponibles respeta el permiso del destinatario y permanece inactivo durante carga o sin resultados", { skip: baseline }, () => {
+  const scopedLoans = loansWithPayablesAfterFirstPage.map((loan) => loan.id % 3 === 0 ? { ...loan, sedeDestinoId: 4, sedeDestinoNombre: "SEDE 4" } : loan);
+  const probe = pageProbe({ prestamos: scopedLoans, user: { ...session, rolNombre: "SUPERVISOR", perfilTipo: "SUPERVISOR_TIENDA" } });
+  const eligible = scopedLoans.filter((loan) => loan.id > 5 && loan.sedeDestinoId === 2);
+  probe.view.seleccionarDisponibles();
+  probe.render();
+  assert.deepEqual(probe.state.idsSolicitudPago, eligible.map((loan) => loan.id));
+  assert.equal(probe.view.totalSolicitudPagoSeleccionada, eligible.reduce((sum, loan) => sum + loan.costo, 0));
+  for (const initial of [{ prestamos: scopedLoans, cargando: true }, { prestamos: scopedLoans, cargandoListado: true }, { prestamos: scopedLoans, busqueda: "No existe" }]) {
+    const disabled = pageProbe(initial);
+    const bar = control(disabled.render().tree, (node) => node.props?.["aria-label"] === "Pago por lote");
+    assert.equal(control(bar, (node) => node.type === "input" && node.props?.type === "checkbox").props.disabled, true);
+    disabled.view.seleccionarDisponibles();
+    assert.deepEqual(disabled.state.idsSolicitudPago, []);
+  }
+});
+
+test("el lote seleccionado entre todas las páginas solo se envía después de confirmar sus equipos y destinatarios", { skip: baseline }, async () => {
+  const probe = pageProbe({ prestamos: loansWithPayablesAfterFirstPage });
+  const expectedIds = loansWithPayablesAfterFirstPage.slice(5).map((loan) => loan.id);
+  const bar = control(probe.render().tree, (node) => node.props?.["aria-label"] === "Pago por lote");
+  control(bar, (node) => node.type === "input" && node.props?.type === "checkbox").props.onChange();
+  control(probe.render().tree, (node) => node.type === "button" && textOf(node) === "Enviar a pagar").props.onClick();
+  probe.render();
+  assert.deepEqual(probe.state.confirmacionPago, { tipo: "solicitar", ids: expectedIds });
+  assert.equal(probe.calls.length, 0);
+  assert.equal(probe.view.confirmacionValida, true);
+  assert.equal(probe.view.itemsConfirmacion.length, 119);
+  assert.equal(probe.view.gruposConfirmacion.length, 2);
+  assert.equal(probe.view.totalConfirmacion, probe.view.totalSolicitudPagoSeleccionada);
+  assert.deepEqual(probe.view.itemsConfirmacion.map((loan) => loan.imei), loansWithPayablesAfterFirstPage.slice(5).map((loan) => loan.imei));
+  await probe.view.confirmarPago();
+  assert.deepEqual(JSON.parse(probe.calls.find((call) => call.url === "/api/prestamos/solicitar-pago-lote").options.body), { prestamoIds: expectedIds });
+  assert.deepEqual(probe.state.idsSolicitudPago, []);
+  assert.equal(probe.state.confirmacionPago, null);
+});
+
 test("cambiar búsqueda, sede, estado o pestaña limpia selección y detalle sin permitir pagar equipos ocultos", { skip: baseline }, () => {
   for (const label of ["Buscar préstamos", "Filtrar por sede", "Filtrar por estado"]) {
     const probe = pageProbe({ idsSolicitudPago: [1], detalleId: 1, pagina: 3 });
