@@ -1,15 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
-import DashboardIcon, {
-  type DashboardIconName,
-} from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
+import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
+import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import styles from "./approvals.module.css";
 
 type Categoria = "prestamos" | "pagos" | "devoluciones" | "ventas";
 
@@ -63,58 +60,22 @@ const filtros: Array<{ key: Filtro; label: string }> = [
   { key: "ventas", label: "Ventas" },
 ];
 
-const categoriaConfig: Record<
-  Categoria,
-  {
-    icon: DashboardIconName;
-    label: string;
-    tone: string;
-    iconTone: string;
-  }
-> = {
-  devoluciones: {
-    icon: "arrow",
-    label: "Devolución",
-    tone: "border-violet-200 bg-violet-50 text-violet-700",
-    iconTone: "bg-violet-50 text-violet-600",
-  },
-  pagos: {
-    icon: "cash",
-    label: "Pago",
-    tone: "border-amber-200 bg-amber-50 text-amber-700",
-    iconTone: "bg-amber-50 text-amber-600",
-  },
-  prestamos: {
-    icon: "loans",
-    label: "Préstamo",
-    tone: "border-blue-200 bg-blue-50 text-blue-700",
-    iconTone: "bg-blue-50 text-blue-600",
-  },
-  ventas: {
-    icon: "sales",
-    label: "Venta",
-    tone: "border-red-200 bg-red-50 text-[#e30613]",
-    iconTone: "bg-red-50 text-[#e30613]",
-  },
+const categoriaConfig: Record<Categoria, { icon: DashboardIconName; label: string }> = {
+  devoluciones: { icon: "arrow", label: "Devolución" },
+  pagos: { icon: "cash", label: "Pago" },
+  prestamos: { icon: "loans", label: "Préstamo" },
+  ventas: { icon: "sales", label: "Venta" },
 };
 
 function formatoPesos(valor: number | null | undefined) {
   if (valor === null || valor === undefined) return "Sin valor asociado";
-
-  return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
+  return "$ " + Number(valor || 0).toLocaleString("es-CO");
 }
 
 function formatoFecha(valor: string) {
   const fecha = new Date(valor);
-
-  if (Number.isNaN(fecha.getTime())) {
-    return "-";
-  }
-
-  return fecha.toLocaleString("es-CO", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
+  if (Number.isNaN(fecha.getTime())) return "-";
+  return fecha.toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" });
 }
 
 function prioridadLabel(prioridad: BandejaItem["prioridad"]) {
@@ -123,171 +84,51 @@ function prioridadLabel(prioridad: BandejaItem["prioridad"]) {
   return "Prioridad normal";
 }
 
-function prioridadTone(prioridad: BandejaItem["prioridad"]) {
-  if (prioridad === "alta") {
-    return "border-red-200 bg-red-50 text-red-700";
-  }
-
-  if (prioridad === "media") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
-  }
-
-  return "border-slate-200 bg-slate-50 text-slate-600";
-}
-
-function MetricCard({
-  detail,
-  icon,
-  iconClassName,
-  label,
-  value,
-  valueClassName = "text-slate-950",
-}: {
-  detail: string;
-  icon: DashboardIconName;
-  iconClassName: string;
-  label: string;
-  value: string | number;
-  valueClassName?: string;
-}) {
-  return (
-    <article className="min-h-[142px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start gap-4">
-        <span
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
-        >
-          <DashboardIcon name={icon} className="h-6 w-6" />
-        </span>
-        <div className="min-w-0 pt-0.5">
-          <p className="text-sm font-semibold text-slate-600">{label}</p>
-          <p
-            className={`mt-1.5 text-[27px] font-black leading-tight tracking-tight ${valueClassName}`}
-          >
-            {value}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function DetailCell({
-  detail,
-  label,
-}: {
-  detail?: string | null;
-  label: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-1.5 break-words text-sm font-bold leading-5 text-slate-950">
-        {detail || "-"}
-      </p>
-    </div>
-  );
-}
-
 function ApprovalCard({ item }: { item: BandejaItem }) {
   const config = categoriaConfig[item.categoria];
-  const clienteImei = [item.cliente, item.imei].filter(Boolean).join(" · ");
-  const recorrido =
-    item.sedeOrigen && item.sedeDestino && item.sedeOrigen !== item.sedeDestino
-      ? `${item.sedeOrigen} → ${item.sedeDestino}`
-      : item.sedeDestino || item.sedeOrigen || "-";
-
-  return (
-    <article className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <span className="absolute inset-y-0 left-0 w-1 bg-[#e30613]" />
-      <div className="p-5 sm:p-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="flex min-w-0 items-start gap-4">
-            <span
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${config.iconTone}`}
-            >
-              <DashboardIcon name={config.icon} className="h-5 w-5" />
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap gap-2">
-                <span
-                  className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.13em] ${config.tone}`}
-                >
-                  {config.label}
-                </span>
-                <span
-                  className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.13em] ${prioridadTone(item.prioridad)}`}
-                >
-                  {prioridadLabel(item.prioridad)}
-                </span>
-              </div>
-
-              <h3 className="mt-3 text-xl font-black tracking-tight text-slate-950">
-                {item.titulo}
-              </h3>
-              <p className="mt-1.5 text-sm leading-6 text-slate-500">{item.detalle}</p>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
-            <DashboardIcon name="calendar" className="h-4 w-4 text-slate-400" />
-            {formatoFecha(item.fecha)}
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <DetailCell label="Cliente / IMEI" detail={clienteImei} />
-          <DetailCell label="Referencia" detail={item.referencia} />
-          <DetailCell label="Ruta / Sede" detail={recorrido} />
-          <DetailCell label="Valor" detail={formatoPesos(item.valor)} />
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span className="h-2 w-2 rounded-full bg-amber-500" />
-            Estado
-            <span className="font-bold text-slate-900">{item.estado}</span>
-          </div>
-          <Link
-            href={item.href}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-5 text-sm font-bold text-white transition hover:bg-[#c9000b]"
-          >
-            {item.accion}
-            <DashboardIcon name="arrow" className="h-4 w-4" />
-          </Link>
-        </div>
+  const recorrido = item.sedeOrigen && item.sedeDestino && item.sedeOrigen !== item.sedeDestino
+    ? item.sedeOrigen + " → " + item.sedeDestino
+    : item.sedeDestino || item.sedeOrigen || "-";
+  return <article className={styles.request} aria-label={item.titulo}>
+    <div className={styles.requestHeader}>
+      <span className={styles.requestIcon}><DashboardIcon name={config.icon} /></span>
+      <div className={styles.requestTitle}>
+        <div className={styles.badges}><span>{config.label}</span><span className={item.prioridad === "alta" ? styles.highPriority : styles.priority}>{prioridadLabel(item.prioridad)}</span></div>
+        <h2>{item.titulo}</h2><p>{item.detalle}</p>
       </div>
-    </article>
-  );
+      <time className={styles.requestDate} dateTime={item.fecha}><DashboardIcon name="calendar" />{formatoFecha(item.fecha)}</time>
+    </div>
+    <dl className={styles.requestDetails}>
+      <div><dt>Referencia</dt><dd>{item.referencia || "-"}</dd></div>
+      <div><dt>Cliente / IMEI</dt><dd>{item.cliente && <span>{item.cliente}</span>}<span>{item.imei || "-"}</span></dd></div>
+      <div><dt>Ruta / Sede</dt><dd>{recorrido}</dd></div>
+      <div><dt>Valor</dt><dd className={item.valor != null && item.valor < 0 ? styles.negative : undefined}>{formatoPesos(item.valor)}</dd></div>
+    </dl>
+    <div className={styles.requestFooter}><p><span className={styles.statusDot} />Estado <strong>{item.estado}</strong></p><Link href={item.href} className={styles.actionLink}>{item.accion}<DashboardIcon name="arrow" /></Link></div>
+  </article>;
+}
+
+function EmptyInboxIllustration() {
+  return <svg className={styles.emptyIllustration} width="220" height="180" viewBox="0 0 220 180" fill="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="approval-paper" x1="90" y1="23" x2="142" y2="128" gradientUnits="userSpaceOnUse"><stop stopColor="#FAFAFA" /><stop offset="1" stopColor="#D6D8D8" /></linearGradient>
+      <linearGradient id="approval-tray" x1="40" y1="116" x2="183" y2="162" gradientUnits="userSpaceOnUse"><stop stopColor="#777C7E" /><stop offset=".45" stopColor="#353B3E" /><stop offset="1" stopColor="#565C60" /></linearGradient>
+      <filter id="approval-shadow" x="10" y="125" width="200" height="55" filterUnits="userSpaceOnUse"><feGaussianBlur stdDeviation="7" /></filter>
+    </defs>
+    <ellipse cx="110" cy="153" rx="75" ry="10" fill="#11161D" opacity=".18" filter="url(#approval-shadow)" />
+    <path d="M48 76h124l20 64H28l20-64Z" fill="#333A3E" stroke="#7D8385" strokeWidth="3" />
+    <path d="M52 82h116l13 45H39l13-45Z" fill="#1C2226" />
+    <path d="M65 24a5 5 0 0 1 5-5h79a5 5 0 0 1 5 5v103l-12 12H65V24Z" fill="url(#approval-paper)" stroke="#E5E7E7" />
+    <path d="M82 48h37M82 64h56M82 80h56M82 96h46" stroke="#CACDCE" strokeWidth="6" strokeLinecap="round" />
+    <path d="M30 119h43c5 0 8 4 11 10l4 6h43l5-6c3-6 6-10 12-10h43v32a8 8 0 0 1-8 8H38a8 8 0 0 1-8-8v-32Z" fill="url(#approval-tray)" stroke="#8C9193" strokeWidth="2" />
+    <path d="M35 122h37c5 0 8 3 12 10l4 6h44l6-8c3-5 6-8 11-8h37" stroke="#B6BABC" strokeWidth="2" opacity=".7" />
+    <circle cx="164" cy="33" r="22" fill="#fff" stroke="#288A3D" strokeWidth="2.5" />
+    <path d="m153 33 7 7 14-15" stroke="#288A3D" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>;
 }
 
 function LoadingCards() {
-  return (
-    <div className="space-y-4" aria-label="Cargando aprobaciones">
-      {[0, 1, 2].map((item) => (
-        <div
-          key={item}
-          className="animate-pulse rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-        >
-          <div className="flex gap-4">
-            <div className="h-11 w-11 rounded-xl bg-slate-100" />
-            <div className="flex-1">
-              <div className="h-3 w-28 rounded bg-slate-100" />
-              <div className="mt-4 h-5 w-64 max-w-full rounded bg-slate-100" />
-              <div className="mt-3 h-3 w-96 max-w-full rounded bg-slate-100" />
-            </div>
-          </div>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[0, 1, 2, 3].map((cell) => (
-              <div key={cell} className="h-16 rounded-xl bg-slate-100" />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  return <div className={styles.loading} role="status" aria-label="Cargando aprobaciones"><span className={styles.spinner} /><p>Cargando aprobaciones…</p><div className={styles.skeletonRows} aria-hidden="true">{[0, 1, 2].map((row) => <div key={row}><span /><span /><span /></div>)}</div></div>;
 }
 
 export default function AprobacionesWorkspace({
@@ -393,225 +234,44 @@ export default function AprobacionesWorkspace({
       });
   }, [busqueda, filtro, items]);
   const usuario = session.perfilNombre || session.nombre;
-  const inicialesUsuario = usuario
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
   const cobertura = data?.cobertura || (esAdmin ? "Todas las sedes" : session.sedeNombre);
+  const hayDatos = Boolean(data && !mensaje);
+  const bandejaVacia = hayDatos && !cargando && items.length === 0;
+  const limpiarFiltros = () => { setBusqueda(""); setFiltro("todos"); };
+  const indicadores: Array<{ label: string; icon: DashboardIconName; value: number }> = [
+    { label: "Total pendientes", icon: "approvals", value: resumen.total },
+    { label: "Préstamos", icon: "loans", value: resumen.prestamos },
+    { label: "Pagos", icon: "cash", value: resumen.pagos },
+    { label: "Devoluciones", icon: "arrow", value: resumen.devoluciones },
+    { label: "Ventas", icon: "sales", value: resumen.ventas },
+  ];
 
-  return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/dashboard/aprobaciones"
-        coverageLabel={cobertura}
-        items={navigationItems}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
-                Bandeja de aprobaciones
-              </h1>
-              <p className="mt-1 max-w-3xl text-sm text-slate-500 sm:text-base">
-                Préstamos, pagos, devoluciones y ventas que requieren gestión
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  <DashboardIcon name="store" className="h-4 w-4 text-slate-500" />
-                  Cobertura: {cobertura}
-                </span>
-                {!cargando && resumen.alta > 0 && (
-                  <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-red-700">
-                    {resumen.alta} de prioridad alta
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void cargarBandeja()}
-                disabled={cargando}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613] disabled:cursor-wait disabled:opacity-60"
-              >
-                <DashboardIcon name="approvals" className="h-4 w-4" />
-                {cargando ? "Actualizando..." : "Actualizar"}
-              </button>
-              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[205px]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || (
-                    <DashboardIcon name="user" className="h-5 w-5" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">{usuario}</p>
-                  <p className="truncate text-xs text-slate-500">
-                    {session.perfilTipoLabel}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-12 shrink-0 rounded-xl" />
-            </div>
-          </header>
-
-          {mensaje && (
-            <section className="mt-5 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2 font-semibold">
-                <DashboardIcon name="warning" className="h-5 w-5 shrink-0" />
-                {mensaje}
-              </div>
-              <button
-                type="button"
-                onClick={() => void cargarBandeja()}
-                className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100"
-              >
-                Reintentar
-              </button>
-            </section>
-          )}
-
-          <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-            <MetricCard
-              icon="approvals"
-              iconClassName="bg-red-50 text-[#e30613]"
-              label="Total pendientes"
-              value={cargando && !data ? "—" : resumen.total}
-              detail="Gestiones visibles en esta cobertura."
-            />
-            <MetricCard
-              icon="loans"
-              iconClassName="bg-blue-50 text-blue-600"
-              label="Préstamos"
-              value={resumen.prestamos}
-              detail="Solicitudes pendientes de decisión."
-            />
-            <MetricCard
-              icon="cash"
-              iconClassName="bg-amber-50 text-amber-600"
-              label="Pagos"
-              value={resumen.pagos}
-              detail="Pagos que requieren aprobación."
-              valueClassName="text-amber-600"
-            />
-            <MetricCard
-              icon="arrow"
-              iconClassName="bg-violet-50 text-violet-600"
-              label="Devoluciones"
-              value={resumen.devoluciones}
-              detail="Equipos con devolución solicitada."
-            />
-            <MetricCard
-              icon="sales"
-              iconClassName="bg-rose-50 text-rose-600"
-              label="Ventas"
-              value={resumen.ventas}
-              detail="Registros comerciales por completar."
-              valueClassName="text-[#e30613]"
-            />
-          </section>
-
-          <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                  Pendientes operativos
-                </p>
-                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                  Filtra y abre el módulo responsable
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Esta bandeja centraliza la consulta; cada acción mantiene su flujo actual.
-                </p>
-              </div>
-
-              <div className="relative w-full xl:max-w-[460px]">
-                <DashboardIcon
-                  name="search"
-                  className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  value={busqueda}
-                  onChange={(event) => setBusqueda(event.target.value)}
-                  placeholder="Buscar IMEI, cliente, referencia o sede..."
-                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white py-3 pl-12 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                />
-                {busqueda && (
-                  <button
-                    type="button"
-                    onClick={() => setBusqueda("")}
-                    aria-label="Limpiar búsqueda"
-                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                  >
-                    <DashboardIcon name="close" className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap items-center gap-2">
-              {filtros.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setFiltro(item.key)}
-                  className={[
-                    "rounded-xl border px-4 py-2.5 text-sm font-semibold transition",
-                    filtro === item.key
-                      ? "border-slate-950 bg-slate-950 text-white shadow-sm"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]",
-                  ].join(" ")}
-                >
-                  {item.label}
-                </button>
-              ))}
-              <span className="ml-auto text-xs font-semibold text-slate-500" aria-live="polite">
-                {cargando ? "Consultando..." : `${itemsFiltrados.length} resultado(s)`}
-              </span>
-            </div>
-          </section>
-
-          <section className="mt-5">
-            {cargando && !data ? (
-              <LoadingCards />
-            ) : itemsFiltrados.length === 0 ? (
-              <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 text-center">
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                  <DashboardIcon name="approvals" className="h-7 w-7" />
-                </span>
-                <p className="mt-4 text-lg font-black text-slate-950">
-                  No hay pendientes en esta vista
-                </p>
-                <p className="mt-1 max-w-md text-sm leading-6 text-slate-500">
-                  Cambia el filtro, limpia la búsqueda o actualiza la bandeja.
-                </p>
-                {(busqueda || filtro !== "todos") && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBusqueda("");
-                      setFiltro("todos");
-                    }}
-                    className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-100"
-                  >
-                    Limpiar filtros
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {itemsFiltrados.map((item) => (
-                  <ApprovalCard key={item.id} item={item} />
-                ))}
-              </div>
-            )}
-          </section>
-        </main>
-      </div>
-    </div>
-  );
+  return <div className={styles.page}>
+    <header className={styles.topbar}>
+      <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS · Inicio"><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link>
+      <nav className={styles.navigation} aria-label="Navegación principal">{navigationItems.map((item) => <Link key={item.href} href={item.href} aria-current={item.href === "/dashboard/aprobaciones" ? "page" : undefined} className={styles.navItem + " " + (item.href === "/dashboard/aprobaciones" ? styles.navActive : "")}><DashboardIcon name={item.icon} /><span>{item.label}</span></Link>)}</nav>
+      <SalesProfile name={usuario} role={session.perfilTipoLabel} />
+    </header>
+    <main className={styles.main}>
+      <header className={styles.heading}>
+        <div><h1>Bandeja de aprobaciones</h1><p>Préstamos, pagos, devoluciones y ventas</p></div>
+        <div className={styles.headingActions}><span className={styles.coverage} aria-label={"Sede consultada: " + cobertura}><DashboardIcon name="store" />{cobertura}</span><button type="button" className={styles.button + " " + styles.primary} disabled={cargando} onClick={() => void cargarBandeja()}><DashboardIcon name="refresh" className={cargando ? styles.spinning : undefined} />{cargando ? "Actualizando…" : "Actualizar"}</button></div>
+      </header>
+      <section className={styles.metrics} aria-label="Resumen de aprobaciones" aria-busy={cargando}>{indicadores.map((item) => <article className={styles.metric} key={item.label}><span className={styles.metricIcon}><DashboardIcon name={item.icon} /></span><div><p>{item.label}</p><strong>{hayDatos ? item.value.toLocaleString("es-CO") : "—"}</strong></div></article>)}</section>
+      <section className={styles.panel} aria-label="Solicitudes de aprobación" aria-busy={cargando}>
+        <div className={styles.panelHeader}>
+          <div className={styles.tabs} role="tablist" aria-label="Filtrar aprobaciones">{filtros.map((item) => <button key={item.key} id={"aprobaciones-tab-" + item.key} type="button" role="tab" aria-selected={filtro === item.key} aria-controls="aprobaciones-resultados" className={styles.tab + " " + (filtro === item.key ? styles.tabActive : "")} onClick={() => setFiltro(item.key)}>{item.label}<span>{hayDatos ? (item.key === "todos" ? resumen.total : resumen[item.key]).toLocaleString("es-CO") : "—"}</span></button>)}</div>
+          <label className={styles.search}><DashboardIcon name="search" /><input aria-label="Buscar aprobaciones" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar IMEI, cliente, referencia o sede..." />{busqueda && <button type="button" aria-label="Limpiar búsqueda" onClick={() => setBusqueda("")}><DashboardIcon name="close" /></button>}</label>
+        </div>
+        <div id="aprobaciones-resultados" role="tabpanel" aria-labelledby={"aprobaciones-tab-" + filtro} className={styles.results}>
+          {mensaje ? <div className={styles.errorState} role="alert"><span className={styles.errorIcon}><DashboardIcon name="warning" /></span><h2>No se pudo cargar la bandeja</h2><p>{mensaje}</p><button type="button" className={styles.button} disabled={cargando} onClick={() => void cargarBandeja()}><DashboardIcon name="refresh" />Reintentar</button></div>
+            : cargando && (!data || itemsFiltrados.length === 0) ? <LoadingCards />
+            : bandejaVacia ? <div className={styles.emptyState}><EmptyInboxIllustration /><h2>No tienes aprobaciones pendientes</h2><p>No hay solicitudes pendientes para {cobertura}.</p><button type="button" className={styles.button} onClick={() => void cargarBandeja()}><DashboardIcon name="refresh" />Actualizar bandeja</button>{(busqueda || filtro !== "todos") && <button type="button" className={styles.textButton} onClick={limpiarFiltros}>Limpiar filtros</button>}</div>
+            : itemsFiltrados.length === 0 && !cargando ? <div className={styles.emptyState}><span className={styles.noMatchIcon}><DashboardIcon name="search" /></span><h2>No hay solicitudes en esta vista</h2><p>{busqueda ? "No encontramos coincidencias para tu búsqueda." : "No hay pendientes en la categoría seleccionada."}</p><button type="button" className={styles.button} onClick={limpiarFiltros}><DashboardIcon name="refresh" />Limpiar filtros</button></div>
+            : <>{cargando && <p className={styles.refreshNotice} role="status"><span className={styles.spinner} />Actualizando bandeja…</p>}<div className={styles.requests}>{itemsFiltrados.map((item) => <ApprovalCard key={item.id} item={item} />)}</div></>}
+        </div>
+        <footer className={styles.panelFooter}><span aria-live="polite">{cargando ? "Consultando…" : !hayDatos ? "Resultados no disponibles" : itemsFiltrados.length.toLocaleString("es-CO") + " " + (itemsFiltrados.length === 1 ? "resultado" : "resultados")}</span>{hayDatos && resumen.alta > 0 && <span className={styles.priorityNotice}><DashboardIcon name="warning" />{resumen.alta.toLocaleString("es-CO")} de prioridad alta</span>}</footer>
+      </section>
+    </main>
+  </div>;
 }
