@@ -36,6 +36,7 @@ export async function GET(req: Request) {
     const sedeIdFiltro = parseSedeId(requestUrl.searchParams.get("sedeId"));
     const limit = parseLimit(requestUrl.searchParams.get("limit"));
     const paginado = requestUrl.searchParams.get("paginated") === "1";
+    const incluirGestion = requestUrl.searchParams.get("resumenGestion") === "1";
     const incluirResumen = ["1", "true", "si"].includes(
       String(requestUrl.searchParams.get("resumen") || "").trim().toLowerCase()
     );
@@ -57,7 +58,7 @@ export async function GET(req: Request) {
         requestUrl.searchParams.get("page"),
         requestUrl.searchParams.get("pageSize")
       );
-      const [total, resumenes, ultimoMovimiento] = await Promise.all([
+      const [total, resumenes, ultimoMovimiento, conceptosGestion] = await Promise.all([
         prisma.cajaMovimiento.count({ where: filtros.where }),
         prisma.cajaMovimiento.groupBy({
           by: ["tipo"],
@@ -69,6 +70,13 @@ export async function GET(req: Request) {
           orderBy: { id: "desc" },
           select: CAJA_MOVIMIENTO_SELECT,
         }),
+        incluirGestion
+          ? prisma.cajaMovimiento.groupBy({
+              by: ["concepto"],
+              where: filtros.where,
+              _count: { _all: true },
+            })
+          : Promise.resolve([]),
       ]);
       const totalPages = Math.max(1, Math.ceil(total / pagination.pageSize));
       const page = Math.min(pagination.page, totalPages);
@@ -84,6 +92,19 @@ export async function GET(req: Request) {
       );
       const totalEgresos = Number(
         resumenes.find((item) => item.tipo === "EGRESO")?._sum.valor || 0
+      );
+      const gestion = conceptosGestion.reduce(
+        (totales, grupo) => {
+          const cantidad = grupo._count._all;
+          totales.totalMovimientos += cantidad;
+          if (esMovimientoEditable(grupo.concepto)) {
+            totales.totalManuales += cantidad;
+          } else {
+            totales.totalAutomaticos += cantidad;
+          }
+          return totales;
+        },
+        { totalMovimientos: 0, totalManuales: 0, totalAutomaticos: 0 }
       );
 
       return NextResponse.json({
@@ -108,6 +129,7 @@ export async function GET(req: Request) {
         pageSize: pagination.pageSize,
         totalPages,
         rango: filtros.rango,
+        ...(incluirGestion ? { gestion } : {}),
       });
     }
 
