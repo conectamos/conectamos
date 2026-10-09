@@ -1,13 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
-import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
+import { useCallback, useEffect, useRef, useState } from "react";
+import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import styles from "./sedes.module.css";
 
 type SessionUser = {
   id: number;
@@ -415,161 +413,170 @@ function payloadSedePatch(sedeId: number, payload?: SedeEdicion) {
 export default function GestionSedesPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sedes, setSedes] = useState<SedeAdminItem[]>([]);
-  const [mensaje, setMensaje] = useState("");
+  const [ediciones, setEdiciones] = useState<Record<number, SedeEdicion>>({});
   const [cargando, setCargando] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [mensaje, setMensaje] = useState("");
   const [guardandoNueva, setGuardandoNueva] = useState(false);
   const [procesandoId, setProcesandoId] = useState<number | null>(null);
-  const [cargandoCatalogosSiigo, setCargandoCatalogosSiigo] = useState(false);
-  const [guardandoSiigoMasivo, setGuardandoSiigoMasivo] = useState(false);
-  const [catalogosSiigo, setCatalogosSiigo] = useState<CatalogosSiigo | null>(
-    null,
-  );
-  const [catalogosSiigoError, setCatalogosSiigoError] = useState("");
-
+  const [editor, setEditor] = useState<number | "new" | null>(null);
+  const [siigoOpen, setSiigoOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
   const [nuevaSedeNombre, setNuevaSedeNombre] = useState("");
   const [nuevaSedeCodigo, setNuevaSedeCodigo] = useState("");
   const [nuevoUsuario, setNuevoUsuario] = useState("");
   const [nuevaClave, setNuevaClave] = useState("");
-  const [nuevaSoloInventarioPorCobrar, setNuevaSoloInventarioPorCobrar] =
-    useState(false);
+  const [nuevaSoloInventarioPorCobrar, setNuevaSoloInventarioPorCobrar] = useState(false);
+  const [cargandoCatalogosSiigo, setCargandoCatalogosSiigo] = useState(false);
+  const [guardandoSiigoMasivo, setGuardandoSiigoMasivo] = useState(false);
+  const [catalogosSiigo, setCatalogosSiigo] = useState<CatalogosSiigo | null>(null);
+  const [catalogosSiigoError, setCatalogosSiigoError] = useState("");
+  const [catalogTab, setCatalogTab] = useState("documents");
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const catalogDialog = useRef<HTMLDialogElement>(null);
+  const editorRef = useRef<HTMLElement>(null);
+  const editorHeadingRef = useRef<HTMLHeadingElement>(null);
+  const editorTriggerRef = useRef<HTMLElement | null>(null);
+  const catalogTriggerRef = useRef<HTMLElement | null>(null);
 
-  const [ediciones, setEdiciones] = useState<Record<number, SedeEdicion>>({});
-
-  const esAdmin = ["ADMIN", "AUDITOR"].includes(
-    user?.rolNombre?.toUpperCase() || "",
-  );
+  const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.trim().toUpperCase() || "");
+  const busy = guardandoNueva || procesandoId !== null || guardandoSiigoMasivo;
+  const selectedSede = typeof editor === "number" ? sedes.find((sede) => sede.id === editor) : undefined;
+  const edicion = selectedSede ? ediciones[selectedSede.id] || crearEdicionDesdeSede(selectedSede) : undefined;
   const documentosSiigo = extraerItemsCatalogo(catalogosSiigo?.documentTypes);
-  const notasCreditoSiigo = extraerItemsCatalogo(
-    catalogosSiigo?.creditNoteDocumentTypes,
-  );
+  const notasCreditoSiigo = extraerItemsCatalogo(catalogosSiigo?.creditNoteDocumentTypes);
   const usuariosSiigo = extraerItemsCatalogo(catalogosSiigo?.users);
   const pagosSiigo = extraerItemsCatalogo(catalogosSiigo?.paymentTypes);
   const productosSiigo = extraerItemsCatalogo(catalogosSiigo?.products);
   const centrosCostoSiigo = extraerItemsCatalogo(catalogosSiigo?.costCenters);
 
-  const cargarTodo = async () => {
+  const actualizarSedes = useCallback((items: SedeAdminItem[], savedId?: number) => {
+    setSedes(items);
+    setEdiciones((previous) => Object.fromEntries(items.map((sede) => [sede.id,
+      savedId !== undefined && sede.id !== savedId && previous[sede.id]
+        ? previous[sede.id] : crearEdicionDesdeSede(sede),
+    ])));
+  }, []);
+
+  const cargarTodo = useCallback(async () => {
+    setCargando(true);
+    setLoadError("");
     try {
       const [resSession, resSedes] = await Promise.all([
         fetch("/api/session", { cache: "no-store" }),
         fetch("/api/sedes/admin", { cache: "no-store" }),
       ]);
-
       const sessionData = await resSession.json();
       const sedesData = await resSedes.json();
-
-      if (resSession.ok) {
-        setUser(sessionData);
+      if (!resSession.ok) throw new Error(sessionData.error || "No se pudo verificar tu sesión.");
+      setUser(sessionData);
+      if (!resSedes.ok || !sedesData.ok || !Array.isArray(sedesData.sedes)) {
+        throw new Error(sedesData.error || "No se pudo cargar la gestión de sedes.");
       }
-
-      if (resSedes.ok) {
-        const items = Array.isArray(sedesData?.sedes) ? sedesData.sedes : [];
-        setSedes(items);
-        setEdiciones(
-          items.reduce(
-            (acc: Record<number, SedeEdicion>, sede: SedeAdminItem) => {
-              acc[sede.id] = crearEdicionDesdeSede(sede);
-              return acc;
-            },
-            {},
-          ),
-        );
-      } else {
-        setMensaje(sedesData.error || "No se pudo cargar la gestion de sedes");
-      }
-    } catch {
-      setMensaje("Error cargando la gestion de sedes");
+      actualizarSedes(sedesData.sedes);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Error cargando la gestión de sedes.");
     } finally {
       setCargando(false);
     }
+  }, [actualizarSedes]);
+
+  useEffect(() => { void cargarTodo(); }, [cargarTodo]);
+
+  useEffect(() => {
+    if (editor === null) return;
+    const media = window.matchMedia("(max-width: 900px)");
+    const previousOverflow = document.body.style.overflow;
+    const syncModal = () => {
+      document.body.style.overflow = media.matches ? "hidden" : previousOverflow;
+      if (media.matches) editorRef.current?.setAttribute("aria-modal", "true");
+      else editorRef.current?.removeAttribute("aria-modal");
+    };
+    syncModal();
+    media.addEventListener("change", syncModal);
+    editorHeadingRef.current?.focus({ preventScroll: true });
+    return () => {
+      media.removeEventListener("change", syncModal);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [editor]);
+
+  const abrirEditor = (value: number | "new", trigger: HTMLElement) => {
+    if (busy) return;
+    editorTriggerRef.current = trigger;
+    setEditor(value);
+    setSiigoOpen(false);
+    setShowPassword(false);
+    setFormError("");
+    setMensaje("");
   };
 
-  useEffect(() => {
-    void cargarTodo();
-  }, []);
-
-  useEffect(() => {
-    if (!nuevoUsuario || nuevoUsuario === slugUsuarioSede(nuevaSedeNombre)) {
-      setNuevoUsuario(slugUsuarioSede(nuevaSedeNombre));
+  const cerrarEditor = () => {
+    if (busy) return;
+    if (typeof editor === "number" && selectedSede) {
+      setEdiciones((previous) => ({ ...previous, [selectedSede.id]: crearEdicionDesdeSede(selectedSede) }));
     }
-  }, [nuevaSedeNombre, nuevoUsuario]);
+    setEditor(null);
+    setFormError("");
+    setShowPassword(false);
+    editorTriggerRef.current?.focus();
+  };
 
-  const actualizarEdicion = <Campo extends keyof SedeEdicion>(
-    sedeId: number,
-    campo: Campo,
-    valor: SedeEdicion[Campo],
-  ) => {
-    setEdiciones((actual) => ({
-      ...actual,
-      [sedeId]: {
-        ...actual[sedeId],
-        [campo]: valor,
-      },
-    }));
+  const actualizarEdicion = <Campo extends keyof SedeEdicion>(sedeId: number, campo: Campo, valor: SedeEdicion[Campo]) => {
+    setEdiciones((actual) => ({ ...actual, [sedeId]: { ...actual[sedeId], [campo]: valor } }));
   };
 
   const crearSede = async () => {
+    setGuardandoNueva(true);
+    setFormError("");
+    setMensaje("");
     try {
-      setGuardandoNueva(true);
-      setMensaje("");
-
       const res = await fetch("/api/sedes/admin", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          nombre: nuevaSedeNombre,
-          codigo: nuevaSedeCodigo,
-          usuario: nuevoUsuario,
-          clave: nuevaClave,
-          soloInventarioPorCobrar: nuevaSoloInventarioPorCobrar,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: nuevaSedeNombre, codigo: nuevaSedeCodigo, usuario: nuevoUsuario,
+          clave: nuevaClave, soloInventarioPorCobrar: nuevaSoloInventarioPorCobrar }),
       });
-
       const data = await res.json();
-
-      if (!res.ok) {
-        setMensaje(data.error || "No se pudo crear la sede");
-        return;
-      }
-
-      setMensaje(data.mensaje || "Sede creada correctamente");
-      setNuevaSedeNombre("");
-      setNuevaSedeCodigo("");
-      setNuevoUsuario("");
-      setNuevaClave("");
+      if (!res.ok || !data.ok || !Array.isArray(data.sedes)) throw new Error(data.error || "No se pudo crear la sede.");
+      actualizarSedes(data.sedes);
+      setNuevaSedeNombre(""); setNuevaSedeCodigo(""); setNuevoUsuario(""); setNuevaClave("");
       setNuevaSoloInventarioPorCobrar(false);
-      await cargarTodo();
-    } catch {
-      setMensaje("Error creando la sede");
-    } finally {
-      setGuardandoNueva(false);
-    }
+      setEditor(null);
+      setMensaje(data.mensaje || "Sede creada correctamente.");
+      editorTriggerRef.current?.focus();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Error creando la sede.");
+    } finally { setGuardandoNueva(false); }
   };
 
   const cargarCatalogosSiigo = async () => {
+    setCargandoCatalogosSiigo(true);
+    setCatalogosSiigoError("");
     try {
-      setCargandoCatalogosSiigo(true);
-      setCatalogosSiigoError("");
-
-      const res = await fetch("/api/facturador/siigo/catalogos", {
-        cache: "no-store",
-      });
+      const res = await fetch("/api/facturador/siigo/catalogos", { cache: "no-store" });
       const data = await res.json();
+      if (!res.ok || !data.ok || !data.catalogos) throw new Error(data.error || "No se pudieron consultar los catálogos de Siigo.");
+      setCatalogosSiigo(data.catalogos as CatalogosSiigo);
+    } catch (error) {
+      setCatalogosSiigoError(error instanceof Error ? error.message : "Error consultando catálogos de Siigo.");
+    } finally { setCargandoCatalogosSiigo(false); }
+  };
 
-      if (!res.ok) {
-        setCatalogosSiigoError(
-          data.error || "No se pudieron consultar los catalogos de Siigo",
-        );
-        return;
-      }
+  const abrirCatalogos = (trigger: HTMLElement) => {
+    catalogTriggerRef.current = trigger;
+    catalogDialog.current?.showModal();
+    if (!catalogosSiigo) void cargarCatalogosSiigo();
+  };
 
-      setCatalogosSiigo((data.catalogos || null) as CatalogosSiigo | null);
-    } catch {
-      setCatalogosSiigoError("Error consultando catalogos de Siigo");
-    } finally {
-      setCargandoCatalogosSiigo(false);
-    }
+  const cerrarCatalogos = () => {
+    if (guardandoSiigoMasivo) return;
+    catalogDialog.current?.close();
+    catalogTriggerRef.current?.focus();
   };
 
   const crearEdicionesSiigoSugeridas = () => {
@@ -639,6 +646,7 @@ export default function GestionSedesPage() {
   const guardarSiigoSugerido = async () => {
     try {
       setGuardandoSiigoMasivo(true);
+      setCatalogosSiigoError("");
       setMensaje("");
 
       const { configuradas, faltantes, siguientes } =
@@ -663,12 +671,12 @@ export default function GestionSedesPage() {
         });
         const data = await res.json();
 
-        if (!res.ok) {
+        if (!res.ok || !data.ok || !Array.isArray(data.sedes)) {
           throw new Error(data.error || `No se pudo guardar ${sede.nombre}`);
         }
+        actualizarSedes(data.sedes, sede.id);
       }
 
-      await cargarTodo();
       setMensaje(
         [
           `Configuracion Siigo guardada para ${configuradas.length} sedes.`,
@@ -681,7 +689,7 @@ export default function GestionSedesPage() {
           .join(" "),
       );
     } catch (error) {
-      setMensaje(
+      setCatalogosSiigoError(
         error instanceof Error
           ? error.message
           : "Error guardando la configuracion Siigo",
@@ -691,1028 +699,203 @@ export default function GestionSedesPage() {
     }
   };
 
+
+
   const guardarSede = async (sedeId: number) => {
+    setProcesandoId(sedeId);
+    setFormError(""); setMensaje("");
     try {
-      setProcesandoId(sedeId);
-      setMensaje("");
-
-      const payload = ediciones[sedeId];
-
       const res = await fetch("/api/sedes/admin", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payloadSedePatch(sedeId, payload)),
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payloadSedePatch(sedeId, ediciones[sedeId])),
       });
-
       const data = await res.json();
-
-      if (!res.ok) {
-        setMensaje(data.error || "No se pudo guardar la sede");
-        return;
-      }
-
-      setMensaje(data.mensaje || "Sede actualizada correctamente");
-      await cargarTodo();
-    } catch {
-      setMensaje("Error actualizando la sede");
-    } finally {
-      setProcesandoId(null);
-    }
+      if (!res.ok || !data.ok || !Array.isArray(data.sedes)) throw new Error(data.error || "No se pudo guardar la sede.");
+      actualizarSedes(data.sedes, sedeId);
+      setShowPassword(false);
+      setMensaje(data.mensaje || "Sede actualizada correctamente.");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Error actualizando la sede.");
+    } finally { setProcesandoId(null); }
   };
 
-  if (cargando) {
-    return (
-      <div className="min-h-screen bg-[#eef2f7] px-4 py-8">
-        <div className="mx-auto max-w-7xl rounded-[32px] bg-white px-8 py-12 shadow-sm ring-1 ring-slate-200">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Sedes
-          </p>
-          <h1 className="mt-3 text-3xl font-black text-slate-950">
-            Cargando gestion de sedes...
-          </h1>
-        </div>
-      </div>
-    );
-  }
-
-  if (!esAdmin) {
-    return (
-      <div className="min-h-screen bg-[#eef2f7] px-4 py-8">
-        <div className="mx-auto max-w-4xl rounded-[32px] bg-white p-8 shadow-sm ring-1 ring-slate-200">
-          <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
-            Acceso restringido
-          </div>
-          <h1 className="mt-4 text-3xl font-black text-slate-950">
-            Solo el administrador puede gestionar sedes
-          </h1>
-          <p className="mt-3 text-sm text-slate-500">
-            Esta pantalla permite crear sedes y administrar sus credenciales de
-            acceso.
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/dashboard"
-              className="inline-flex rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              Volver al dashboard
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const navigationItems: NavigationItem[] = [
+  const navigationItems: { href: string; icon: DashboardIconName; label: string }[] = [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" },
     { href: "/prestamos", icon: "loans", label: "Préstamos" },
     { href: "/caja", icon: "cash", label: "Caja" },
-    {
-      href: "/dashboard/aprobaciones",
-      icon: "approvals",
-      label: "Aprobaciones",
-    },
+    { href: "/dashboard/aprobaciones", icon: "approvals", label: "Aprobaciones" },
     { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
     { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
   ];
-  const inicialesUsuario = String(user?.nombre || user?.usuario || "Admin")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
+  const activos = sedes.filter((sede) => sede.acceso?.activo).length;
+  const filteredSedes = sedes.filter((sede) => {
+    const matchText = normalizarTexto([sede.nombre, sede.codigo, sede.acceso?.usuario].join(" ")).includes(normalizarTexto(search));
+    const matchFilter = filter === "all" || (filter === "active" && Boolean(sede.acceso?.activo))
+      || (filter === "inactive" && Boolean(sede.acceso) && !sede.acceso?.activo)
+      || (filter === "noaccess" && !sede.acceso) || (filter === "siigo" && sede.siigoEnabled)
+      || (filter === "credit" && sede.soloInventarioPorCobrar);
+    return matchText && matchFilter;
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredSedes.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const pageSedes = filteredSedes.slice(start, start + pageSize);
+  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1).filter((value) =>
+    value === 1 || value === totalPages || Math.abs(value - currentPage) <= 1);
+  const setQueryFilter = (value: string) => { setFilter(value); setPage(1); };
+  const catalogGroups = [
+    { id: "documents", label: "Resoluciones", items: documentosSiigo, title: tituloDocumentoSiigo, detail: detalleDocumentoSiigo },
+    { id: "credit-notes", label: "Notas crédito", items: notasCreditoSiigo, title: tituloDocumentoSiigo, detail: detalleDocumentoSiigo },
+    { id: "users", label: "Vendedores", items: usuariosSiigo, title: (item: Record<string, unknown>) => [textoCatalogo(item, ["id"]), nombreUsuarioSiigo(item)].filter(Boolean).join(" - ") },
+    { id: "payments", label: "Formas de pago", items: pagosSiigo, title: (item: Record<string, unknown>) => [textoCatalogo(item, ["id"]), textoCatalogo(item, ["name"])].filter(Boolean).join(" - ") },
+    { id: "products", label: "Productos", items: productosSiigo, title: (item: Record<string, unknown>) => [textoCatalogo(item, ["code"]), textoCatalogo(item, ["name", "description"])].filter(Boolean).join(" - ") },
+    { id: "cost-centers", label: "Centros de costo", items: centrosCostoSiigo, title: tituloCentroCostoSiigo },
+  ];
+  const currentCatalog = catalogGroups.find((group) => group.id === catalogTab) || catalogGroups[0];
+  const filteredCatalog = currentCatalog.items.filter((item) => normalizarTexto(JSON.stringify(item)).includes(normalizarTexto(catalogSearch)));
+  const EditIcon = () => <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m15 5 4 4M4 20l4-1 12-12a2.8 2.8 0 0 0-4-4L4 15v5Z" /></svg>;
+  const EyeIcon = () => <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />{showPassword && <path d="m3 3 18 18" />}</svg>;
 
-  return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/dashboard/sedes"
-        coverageLabel="Todas las sedes"
-        items={navigationItems}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h1 className="text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
-                Gestión de sedes
-              </h1>
-              <p className="mt-1 text-sm text-slate-500 sm:text-base">
-                Accesos, configuración operativa e integración Siigo
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[185px]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || (
-                    <DashboardIcon name="user" className="h-5 w-5" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">
-                    {user?.nombre || user?.usuario}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {user?.rolNombre}
-                  </p>
-                </div>
+  return <div className={styles.page}>
+    <header className={styles.topbar}>
+      <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS, Inicio"><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link>
+      <nav className={styles.navigation} aria-label="Navegación principal">{navigationItems.map((item) => <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === "/dashboard/sedes" ? styles.navActive : ""}`} aria-current={item.href === "/dashboard/sedes" ? "page" : undefined}><DashboardIcon name={item.icon} /><span>{item.label}</span></Link>)}</nav>
+      {user && <SalesProfile name={user.nombre || user.usuario} role={user.rolNombre} />}
+    </header>
+    <main className={styles.main}>
+      <header className={styles.heading}><div><h1>Gestión de sedes</h1><p>Accesos e integración Siigo.</p></div><div className={styles.headingActions}>
+        <button className={styles.button} type="button" onClick={(event) => abrirCatalogos(event.currentTarget)} disabled={!esAdmin || cargando || Boolean(loadError) || busy}><DashboardIcon name="database" />Consultar catálogos</button>
+        <button className={`${styles.button} ${styles.primary}`} type="button" onClick={(event) => abrirEditor("new", event.currentTarget)} disabled={!esAdmin || cargando || Boolean(loadError) || busy}><span className={styles.plus} aria-hidden="true">+</span>Nueva sede</button>
+      </div></header>
+      {cargando ? <div className={`${styles.panel} ${styles.loading}`} role="status"><DashboardIcon name="refresh" /><p>Cargando gestión de sedes…</p></div>
+      : loadError ? <div className={`${styles.panel} ${styles.error}`} role="alert"><DashboardIcon name="warning" /><p>{loadError}</p><button type="button" className={styles.button} onClick={() => void cargarTodo()}>Reintentar</button></div>
+      : !esAdmin ? <div className={`${styles.panel} ${styles.error}`} role="alert"><p>Solo el administrador o auditor puede gestionar sedes.</p><Link href="/dashboard" className={styles.button}>Volver al inicio</Link></div>
+      : <>
+        <section className={styles.summary} aria-label="Resumen de sedes">
+          <div className={styles.metric}><DashboardIcon name="store" /><div><strong>{sedes.length.toLocaleString("es-CO")}</strong><span>Sedes registradas</span></div></div>
+          <div className={styles.metric}><DashboardIcon name="users" /><div><strong>{activos.toLocaleString("es-CO")}</strong><span>Accesos activos</span></div></div>
+          <div className={`${styles.metric} ${styles.siigoIcon}`}><DashboardIcon name="document" /><div><strong>{sedes.filter((sede) => sede.siigoEnabled).length.toLocaleString("es-CO")}</strong><span>Siigo activo</span></div></div>
+          <div className={`${styles.metric} ${styles.creditIcon}`}><DashboardIcon name="inventory" /><div><strong>{sedes.filter((sede) => sede.soloInventarioPorCobrar).length.toLocaleString("es-CO")}</strong><span>Solo por cobrar</span></div></div>
+        </section>
+        {mensaje && <div className={styles.notice} role="status">{mensaje}</div>}
+        <div className={`${styles.workspace} ${editor !== null ? styles.withEditor : ""}`}>
+          <div className={styles.listColumn}>
+            <section className={styles.panel} aria-labelledby="sedes-list-title">
+              <div className={styles.listHeading}><h2 id="sedes-list-title">Sedes registradas</h2><p>Puedes cambiar nombre, código, usuario de acceso y asignar una nueva clave.</p></div>
+              <div className={styles.filters}>
+                <label className={styles.search}><DashboardIcon name="search" /><input type="search" aria-label="Buscar sede o usuario" placeholder="Buscar sede o usuario" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} /></label>
+                <div className={styles.filterButtons}><button type="button" className={filter === "all" ? styles.filterActive : undefined} aria-pressed={filter === "all"} onClick={() => setQueryFilter("all")}>Todas <span>{sedes.length}</span></button><button type="button" className={filter === "active" ? styles.filterActive : undefined} aria-pressed={filter === "active"} onClick={() => setQueryFilter("active")}>Activas <span>{activos}</span></button></div>
+                <select aria-label="Filtrar sedes" value={filter} onChange={(event) => setQueryFilter(event.target.value)}><option value="all">Todos los estados</option><option value="active">Accesos activos</option><option value="inactive">Accesos inactivos</option><option value="noaccess">Sin acceso</option><option value="siigo">Siigo activo</option><option value="credit">Solo por cobrar</option></select>
               </div>
-              <LogoutButton
-                variant="light"
-                className="min-h-12 shrink-0 rounded-xl"
-              />
-            </div>
-          </header>
-
-          <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <article className="flex min-h-[112px] items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                <DashboardIcon name="store" className="h-6 w-6" />
-              </span>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                  Sedes registradas
-                </p>
-                <p className="mt-1 text-2xl font-black text-slate-950">
-                  {sedes.length}
-                </p>
-              </div>
-            </article>
-
-            <article className="flex min-h-[112px] items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
-                <DashboardIcon name="user" className="h-6 w-6" />
-              </span>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                  Accesos activos
-                </p>
-                <p className="mt-1 text-2xl font-black text-slate-950">
-                  {sedes.filter((sede) => Boolean(sede.acceso)).length}
-                </p>
-              </div>
-            </article>
-
-            <article className="flex min-h-[112px] items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-                <DashboardIcon name="document" className="h-6 w-6" />
-              </span>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                  Siigo activo
-                </p>
-                <p className="mt-1 text-2xl font-black text-slate-950">
-                  {sedes.filter((sede) => sede.siigoEnabled).length}
-                </p>
-              </div>
-            </article>
-
-            <article className="flex min-h-[112px] items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
-                <DashboardIcon name="inventory" className="h-6 w-6" />
-              </span>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                  Solo por cobrar
-                </p>
-                <p className="mt-1 text-2xl font-black text-slate-950">
-                  {sedes.filter((sede) => sede.soloInventarioPorCobrar).length}
-                </p>
-              </div>
-            </article>
-          </section>
-
-          {mensaje && (
-            <div
-              role="status"
-              className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm"
-            >
-              <DashboardIcon
-                name="approvals"
-                className="mt-0.5 h-5 w-5 shrink-0 text-[#e30613]"
-              />
-              {mensaje}
-            </div>
-          )}
-
-          <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
-                  Integración Siigo
-                </div>
-                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-                  Catálogos para configurar sedes
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Consulta resoluciones, vendedores, formas de pago, productos y
-                  centros de costo directamente desde Siigo.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void cargarCatalogosSiigo()}
-                  disabled={cargandoCatalogosSiigo}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  <DashboardIcon name="reports" className="h-4 w-4" />
-                  {cargandoCatalogosSiigo
-                    ? "Consultando..."
-                    : "Consultar catálogos"}
-                </button>
-                {catalogosSiigo && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={aplicarSiigoSugerido}
-                      disabled={guardandoSiigoMasivo}
-                      className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      Autocompletar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void guardarSiigoSugerido()}
-                      disabled={guardandoSiigoMasivo}
-                      className="min-h-11 rounded-xl bg-[#e30613] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:bg-slate-300"
-                    >
-                      {guardandoSiigoMasivo
-                        ? "Guardando..."
-                        : "Guardar Siigo sugerido"}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {catalogosSiigoError && (
-              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-                {catalogosSiigoError}
-              </div>
-            )}
-
-            {catalogosSiigo && (
-              <div className="mt-5 grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                    Resoluciones
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {documentosSiigo.slice(0, 12).map((item, index) => (
-                      <div key={`siigo-doc-${index}`}>
-                        <p className="font-semibold text-slate-800">
-                          {tituloDocumentoSiigo(item)}
-                        </p>
-                        {detalleDocumentoSiigo(item) && (
-                          <p className="mt-0.5 text-xs font-medium text-slate-500">
-                            {detalleDocumentoSiigo(item)}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                    Notas crédito
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {notasCreditoSiigo.slice(0, 12).map((item, index) => (
-                      <div key={`siigo-credit-note-${index}`}>
-                        <p className="font-semibold text-slate-800">
-                          {tituloDocumentoSiigo(item)}
-                        </p>
-                        {detalleDocumentoSiigo(item) && (
-                          <p className="mt-0.5 text-xs font-medium text-slate-500">
-                            {detalleDocumentoSiigo(item)}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                    Vendedores
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {usuariosSiigo.slice(0, 12).map((item, index) => (
-                      <p
-                        key={`siigo-user-${index}`}
-                        className="font-semibold text-slate-800"
-                      >
-                        {textoCatalogo(item, ["id"])} -{" "}
-                        {nombreUsuarioSiigo(item)}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                    Formas de pago
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {pagosSiigo.slice(0, 12).map((item, index) => (
-                      <p
-                        key={`siigo-payment-${index}`}
-                        className="font-semibold text-slate-800"
-                      >
-                        {textoCatalogo(item, ["id"])} -{" "}
-                        {textoCatalogo(item, ["name"])}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                    Productos
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {productosSiigo.slice(0, 12).map((item, index) => (
-                      <p
-                        key={`siigo-product-${index}`}
-                        className="font-semibold text-slate-800"
-                      >
-                        {textoCatalogo(item, ["code"])} -{" "}
-                        {textoCatalogo(item, ["name", "description"])}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                    Centros de costo
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {centrosCostoSiigo.slice(0, 12).map((item, index) => (
-                      <p
-                        key={`siigo-cost-center-${index}`}
-                        className="font-semibold text-slate-800"
-                      >
-                        {tituloCentroCostoSiigo(item)}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-
-          <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
-                  Nueva sede
-                </div>
-                <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-                  Crear sede con acceso
-                </h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  El usuario de acceso se usa directamente en el login del
-                  sistema.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Nombre de sede
-                <input
-                  value={nuevaSedeNombre}
-                  onChange={(event) => setNuevaSedeNombre(event.target.value)}
-                  placeholder="Ej: Stand PuntoNet"
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Código
-                <input
-                  value={nuevaSedeCodigo}
-                  onChange={(event) => setNuevaSedeCodigo(event.target.value)}
-                  placeholder="Opcional"
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Usuario de acceso
-                <input
-                  value={nuevoUsuario}
-                  onChange={(event) =>
-                    setNuevoUsuario(slugUsuarioSede(event.target.value))
-                  }
-                  placeholder="sede8"
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Clave inicial
-                <input
-                  type="password"
-                  value={nuevaClave}
-                  onChange={(event) => setNuevaClave(event.target.value)}
-                  placeholder="Asignar clave"
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
-                />
-              </label>
-
-              <label className="flex min-h-[76px] items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 md:col-span-1 xl:col-span-3">
-                <input
-                  type="checkbox"
-                  checked={nuevaSoloInventarioPorCobrar}
-                  onChange={(event) =>
-                    setNuevaSoloInventarioPorCobrar(event.target.checked)
-                  }
-                  className="h-4 w-4 rounded border-amber-300 text-amber-700"
-                />
-                <span>
-                  Solo inventario por cobrar
-                  <span className="mt-1 block text-xs font-medium leading-5 text-amber-700">
-                    Al pagar, el equipo se oculta del stand.
-                  </span>
-                </span>
-              </label>
-
-              <div className="flex flex-col justify-end">
-                <button
-                  type="button"
-                  onClick={() => void crearSede()}
-                  disabled={guardandoNueva}
-                  className="min-h-12 rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {guardandoNueva ? "Creando..." : "Crear sede"}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div>
-              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-[#e30613]">
-                Accesos existentes
-              </div>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
-                Sedes registradas
-              </h2>
-              <p className="mt-2 text-sm text-slate-500">
-                Puedes cambiar nombre, código, usuario de acceso y asignar una
-                nueva clave.
-              </p>
-            </div>
-
-            <div className="mt-5 grid gap-4 2xl:grid-cols-2">
-              {sedes.map((sede) => {
-                const edicion =
-                  ediciones[sede.id] || crearEdicionDesdeSede(sede);
-                const facturaComoOnline =
-                  usaResolucionOnline(sede) && !esSedeOnline(sede);
-
-                return (
-                  <section
-                    key={sede.id}
-                    className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5"
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <div className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-                          Sede #{sede.id}
-                        </div>
-                        <h3 className="mt-2 text-xl font-black text-slate-950">
-                          {sede.nombre}
-                        </h3>
-                        <p className="mt-2 text-sm text-slate-500">
-                          {sede.acceso
-                            ? `Acceso actual: ${sede.acceso.usuario}`
-                            : "Esta sede aún no tiene usuario de acceso."}
-                        </p>
-                      </div>
-
-                      <div className="min-w-[170px] rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">
-                        <p className="font-semibold text-slate-900">
-                          {sede.acceso ? "Acceso activo" : "Sin acceso"}
-                        </p>
-                        <p className="mt-1 text-slate-500">
-                          {sede.codigo
-                            ? `Código: ${sede.codigo}`
-                            : "Sin código"}
-                        </p>
-                        {sede.soloInventarioPorCobrar && (
-                          <p className="mt-1 font-semibold text-amber-700">
-                            Solo inventario por cobrar
-                          </p>
-                        )}
-                        {sede.siigoEnabled && (
-                          <p className="mt-1 font-semibold text-emerald-700">
-                            Siigo activo
-                          </p>
-                        )}
-                      </div>
+              <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th scope="col">Sede y código</th><th scope="col">Usuario</th><th scope="col">Acceso</th><th scope="col">Siigo</th><th scope="col">Editar</th></tr></thead><tbody>
+                {pageSedes.map((sede) => <tr key={sede.id} className={editor === sede.id ? styles.selectedRow : undefined}>
+                  <td><strong>{sede.nombre}</strong><p className={styles.muted}>Código: {sede.codigo || "Sin código"}</p>{sede.soloInventarioPorCobrar && <span className={styles.creditLabel}>Solo por cobrar</span>}{!sede.activa && <span className={styles.siteInactive}>Sede inactiva</span>}</td>
+                  <td>{sede.acceso?.usuario || <span className={styles.muted}>Sin usuario</span>}</td>
+                  <td><span className={`${styles.state} ${sede.acceso?.activo ? styles.active : styles.inactive}`}><i aria-hidden="true" />{sede.acceso ? sede.acceso.activo ? "Activo" : "Inactivo" : "Sin acceso"}</span></td>
+                  <td>{sede.siigoEnabled ? <span className={`${styles.state} ${styles.active}`}><i aria-hidden="true" />Activo</span> : <span className={styles.muted}>—</span>}</td>
+                  <td><button type="button" className={`${styles.editButton} ${editor === sede.id ? styles.editSelected : ""}`} aria-label={`Editar ${sede.nombre}`} aria-expanded={editor === sede.id} aria-controls="sede-editor" onClick={(event) => abrirEditor(sede.id, event.currentTarget)} disabled={busy}><EditIcon />Editar</button></td>
+                </tr>)}
+                {!pageSedes.length && <tr><td colSpan={5}><div className={styles.empty}><DashboardIcon name="search" /><p>{sedes.length ? "No hay sedes que coincidan con los filtros." : "No hay sedes registradas."}</p>{(search || filter !== "all") && <button type="button" className={styles.button} onClick={() => { setSearch(""); setQueryFilter("all"); }}>Limpiar filtros</button>}</div></td></tr>}
+              </tbody></table></div>
+              <footer className={styles.footer}><p>{filteredSedes.length ? `Mostrando ${start + 1}–${Math.min(start + pageSize, filteredSedes.length)} de ${filteredSedes.length.toLocaleString("es-CO")} sedes` : "0 resultados"}</p><label className={styles.rowsPerPage}>Filas por página<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option></select></label><nav className={styles.pagination} aria-label="Páginas de sedes"><button type="button" className={styles.previous} aria-label="Página anterior" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><DashboardIcon name="chevron" /></button>{pageNumbers.map((number, index) => <span key={number} className={styles.pageSlot}>{index > 0 && number - pageNumbers[index - 1] > 1 && <span aria-hidden="true">…</span>}<button type="button" className={number === currentPage ? styles.currentPage : undefined} aria-current={number === currentPage ? "page" : undefined} aria-label={`Página ${number}`} onClick={() => setPage(number)}>{number}</button></span>)}<button type="button" aria-label="Página siguiente" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}><DashboardIcon name="chevron" /></button></nav></footer>
+            </section>
+            <section className={`${styles.panel} ${styles.catalogCard}`}><span className={styles.catalogIcon}><DashboardIcon name="database" /></span><div><h2>Catálogos Siigo</h2><p>Resoluciones, vendedores, pagos, productos y centros de costo.</p></div><button type="button" className={styles.button} onClick={(event) => abrirCatalogos(event.currentTarget)} disabled={busy}>Consultar <DashboardIcon name="arrow" /></button></section>
+          </div>
+          {editor !== null && <>
+            <button type="button" className={styles.editorBackdrop} aria-label="Cerrar editor de sede" onClick={cerrarEditor} tabIndex={-1} disabled={busy} />
+            <aside ref={editorRef} id="sede-editor" className={`${styles.panel} ${styles.editor}`} role="dialog" aria-labelledby="sede-editor-title" onKeyDown={(event) => {
+              if (catalogDialog.current?.open) return;
+              if (event.key === "Escape") { event.preventDefault(); cerrarEditor(); }
+              if (event.key === "Tab" && window.matchMedia("(max-width: 900px)").matches) {
+                const controls = Array.from(editorRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]') || []).filter((element) => element.getClientRects().length > 0);
+                const first = controls[0], last = controls[controls.length - 1];
+                if (event.shiftKey && (document.activeElement === first || document.activeElement === editorHeadingRef.current)) { event.preventDefault(); last?.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+              }
+            }}>
+              <div className={styles.editorHeading}><div><h2 id="sede-editor-title" ref={editorHeadingRef} tabIndex={-1}>{editor === "new" ? "Nueva sede" : "Editar sede"}</h2>{selectedSede && <span className={styles.siteTag}>{selectedSede.nombre}</span>}</div><button type="button" className={styles.iconButton} aria-label="Cerrar editor" onClick={cerrarEditor} disabled={busy}><DashboardIcon name="close" /></button></div>
+              <form className={styles.editorForm} onSubmit={(event) => { event.preventDefault(); if (!busy) { if (editor === "new") void crearSede(); else if (selectedSede) void guardarSede(selectedSede.id); } }}>
+                <div className={styles.formBody}>
+                  {editor === "new" ? <>
+                    <div className={styles.fields}>
+                      <label>Nombre de sede<input required value={nuevaSedeNombre} onChange={(event) => { const next = event.target.value; if (!nuevoUsuario || nuevoUsuario === slugUsuarioSede(nuevaSedeNombre)) setNuevoUsuario(slugUsuarioSede(next)); setNuevaSedeNombre(next); }} placeholder="Nombre de sede" autoComplete="off" disabled={busy} /></label>
+                      <label>Código<input value={nuevaSedeCodigo} onChange={(event) => setNuevaSedeCodigo(event.target.value.toUpperCase())} placeholder="Opcional" autoComplete="off" disabled={busy} /></label>
+                      <label>Usuario de acceso<input required value={nuevoUsuario} onChange={(event) => setNuevoUsuario(slugUsuarioSede(event.target.value))} autoComplete="off" disabled={busy} /></label>
+                      <label>Clave inicial<div className={styles.password}><input required type={showPassword ? "text" : "password"} value={nuevaClave} onChange={(event) => setNuevaClave(event.target.value)} autoComplete="new-password" disabled={busy} /><button type="button" aria-label={showPassword ? "Ocultar clave nueva" : "Mostrar clave nueva"} onClick={() => setShowPassword(!showPassword)} disabled={busy}><EyeIcon /></button></div></label>
                     </div>
-
-                    <div className="mt-5 grid gap-4 md:grid-cols-2">
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Nombre de sede
-                        <input
-                          value={edicion.nombre}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "nombre",
-                              event.target.value,
-                            )
-                          }
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Código
-                        <input
-                          value={edicion.codigo}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "codigo",
-                              event.target.value.toUpperCase(),
-                            )
-                          }
-                          placeholder="Opcional"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Usuario de acceso
-                        <input
-                          value={edicion.usuario}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "usuario",
-                              slugUsuarioSede(event.target.value),
-                            )
-                          }
-                          placeholder="usuario de login"
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                        Nueva clave
-                        <input
-                          type="password"
-                          value={edicion.clave}
-                          onChange={(event) =>
-                            actualizarEdicion(
-                              sede.id,
-                              "clave",
-                              event.target.value,
-                            )
-                          }
-                          placeholder={
-                            sede.acceso
-                              ? "Dejar vacio para conservarla"
-                              : "Clave inicial"
-                          }
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
+                    <section className={styles.formSection}><h3>Inventario</h3><label className={styles.checkbox}><input type="checkbox" checked={nuevaSoloInventarioPorCobrar} onChange={(event) => setNuevaSoloInventarioPorCobrar(event.target.checked)} disabled={busy} /><span>Solo inventario por cobrar<small>Al pagar, el equipo se oculta del stand.</small></span></label></section>
+                  </> : selectedSede && edicion ? <>
+                    {!selectedSede.acceso && <p className={styles.formNotice}>Esta sede no tiene acceso. Define un usuario y su clave inicial.</p>}
+                    <div className={styles.fields}>
+                      <label>Nombre de sede<input required value={edicion.nombre} onChange={(event) => actualizarEdicion(selectedSede.id, "nombre", event.target.value)} disabled={busy} /></label>
+                      <label>Código<input value={edicion.codigo} onChange={(event) => actualizarEdicion(selectedSede.id, "codigo", event.target.value.toUpperCase())} placeholder="Opcional" disabled={busy} /></label>
+                      <label>Usuario de acceso<input required={!selectedSede.acceso} value={edicion.usuario} onChange={(event) => actualizarEdicion(selectedSede.id, "usuario", slugUsuarioSede(event.target.value))} autoComplete="off" disabled={busy} /></label>
+                      <label>Nueva clave<div className={styles.password}><input required={!selectedSede.acceso} type={showPassword ? "text" : "password"} value={edicion.clave} onChange={(event) => actualizarEdicion(selectedSede.id, "clave", event.target.value)} placeholder={selectedSede.acceso ? "Sin cambios" : "Clave inicial"} autoComplete="new-password" disabled={busy} /><button type="button" aria-label={showPassword ? "Ocultar clave nueva" : "Mostrar clave nueva"} onClick={() => setShowPassword(!showPassword)} disabled={busy}><EyeIcon /></button></div></label>
                     </div>
-
-                    <label className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(edicion.soloInventarioPorCobrar)}
-                        onChange={(event) =>
-                          actualizarEdicion(
-                            sede.id,
-                            "soloInventarioPorCobrar",
-                            event.target.checked,
-                          )
-                        }
-                        className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-700"
-                      />
-                      <span>
-                        Solo inventario por cobrar
-                        <span className="mt-1 block text-xs font-medium leading-5 text-amber-700">
-                          Para stands que no operan ventas ni caja propia de
-                          inventario. Al aprobar el pago, el IMEI se borra de la
-                          vista del stand.
-                        </span>
-                      </span>
-                    </label>
-
-                    {edicion.soloInventarioPorCobrar && (
-                      <section className="mt-5 border-t border-slate-200 pt-5">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                          <div>
-                            <p className="text-sm font-black uppercase tracking-[0.16em] text-slate-800">
-                              Datos fiscales del stand
-                            </p>
-                            <p className="mt-1 text-xs leading-5 text-slate-500">
-                              Se usan como cliente de la factura electronica de los equipos seleccionados.
-                            </p>
-                          </div>
-                          <span className="text-xs font-semibold text-amber-700">
-                            Obligatorios al momento de facturar
-                          </span>
+                    {selectedSede.acceso && <p className={styles.passwordHint}>Deja la nueva clave vacía para conservar la actual.</p>}
+                    <section className={styles.formSection}><h3>Inventario</h3><label className={styles.checkbox}><input type="checkbox" checked={edicion.soloInventarioPorCobrar} onChange={(event) => actualizarEdicion(selectedSede.id, "soloInventarioPorCobrar", event.target.checked)} disabled={busy} /><span>Solo inventario por cobrar<small>Al aprobar el pago, el equipo se oculta del stand.</small></span></label></section>
+                    {edicion.soloInventarioPorCobrar && <section className={styles.formSection}><h3>Datos fiscales del stand</h3><p className={styles.muted}>Se usan como cliente de la factura electrónica. Obligatorios al facturar.</p><div className={styles.fields}>
+                      <label>Nombre o razón social<input value={edicion.facturacionNombre} onChange={(event) => actualizarEdicion(selectedSede.id, "facturacionNombre", event.target.value)} disabled={busy} /></label>
+                      <label>Tipo de documento<select value={edicion.facturacionTipoDocumento} onChange={(event) => actualizarEdicion(selectedSede.id, "facturacionTipoDocumento", event.target.value)} disabled={busy}><option>NIT</option><option>CC</option><option>CE</option><option>PPT</option></select></label>
+                      <label>Número de documento<input value={edicion.facturacionDocumento} onChange={(event) => actualizarEdicion(selectedSede.id, "facturacionDocumento", event.target.value)} placeholder="NIT con DV: 900123456-7" disabled={busy} /></label>
+                      <label>Correo de facturación<input type="email" value={edicion.facturacionCorreo} onChange={(event) => actualizarEdicion(selectedSede.id, "facturacionCorreo", event.target.value)} disabled={busy} /></label>
+                      <label>Teléfono<input value={edicion.facturacionTelefono} onChange={(event) => actualizarEdicion(selectedSede.id, "facturacionTelefono", event.target.value)} disabled={busy} /></label>
+                      <label>Dirección fiscal<input value={edicion.facturacionDireccion} onChange={(event) => actualizarEdicion(selectedSede.id, "facturacionDireccion", event.target.value)} disabled={busy} /></label>
+                    </div></section>}
+                    <section className={styles.formSection}><div className={styles.siigoHeading}><h3>Integración Siigo</h3><span className={`${styles.state} ${edicion.siigoEnabled ? styles.active : styles.inactive}`}><i aria-hidden="true" />{edicion.siigoEnabled ? "Activa" : "Inactiva"}</span><button type="button" className={styles.button} aria-expanded={siigoOpen} aria-controls="siigo-settings" onClick={() => setSiigoOpen(!siigoOpen)} disabled={busy}><DashboardIcon name="settings" />{siigoOpen ? "Ocultar configuración" : "Configurar Siigo"}</button></div>
+                      {siigoOpen && <div id="siigo-settings" className={styles.siigoFields}>
+                        <p className={styles.muted}>{usaResolucionOnline(selectedSede) && !esSedeOnline(selectedSede) ? "Este stand factura usando la configuración Siigo de ONLINE." : "Resolución y parámetros de facturación de esta sede."}</p>
+                        <label className={styles.checkbox}><input type="checkbox" checked={edicion.siigoEnabled} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoEnabled", event.target.checked)} disabled={busy} /><span>Activar Siigo</span></label>
+                        <div className={styles.fields}>
+                          <label>Documento / resolución<input inputMode="numeric" value={edicion.siigoInvoiceDocumentId} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoInvoiceDocumentId", soloDigitos(event.target.value))} placeholder="ID document-types FV" disabled={busy} /></label>
+                          <label>Vendedor Siigo<input inputMode="numeric" value={edicion.siigoSellerId} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoSellerId", soloDigitos(event.target.value))} placeholder="ID users" disabled={busy} /></label>
+                          <label>Forma de pago<input inputMode="numeric" value={edicion.siigoPaymentTypeId} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoPaymentTypeId", soloDigitos(event.target.value))} placeholder="ID payment-types" disabled={busy} /></label>
+                          <label>Código producto telefonía<input value={edicion.siigoItemCode} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoItemCode", event.target.value)} placeholder="Opcional" disabled={busy} /><small>Telefonía usa el código configurado. Electrodomestico siempre usa 001 con IVA 19%.</small></label>
+                          <label>Centro de costo<input inputMode="numeric" value={edicion.siigoCostCenterId} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoCostCenterId", soloDigitos(event.target.value))} placeholder="Opcional" disabled={busy} /></label>
+                          <label>Días de vencimiento<input inputMode="numeric" value={edicion.siigoPaymentDueDays} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoPaymentDueDays", soloDigitos(event.target.value))} placeholder="0" disabled={busy} /></label>
+                          <label>País<input value={edicion.siigoDefaultCountryCode} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoDefaultCountryCode", event.target.value.toUpperCase())} placeholder="CO" disabled={busy} /></label>
+                          <label>Departamento<input inputMode="numeric" value={edicion.siigoDefaultStateCode} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoDefaultStateCode", soloDigitos(event.target.value))} disabled={busy} /></label>
+                          <label>Ciudad<input inputMode="numeric" value={edicion.siigoDefaultCityCode} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoDefaultCityCode", soloDigitos(event.target.value))} disabled={busy} /></label>
+                          <label>Código postal<input inputMode="numeric" value={edicion.siigoDefaultPostalCode} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoDefaultPostalCode", soloDigitos(event.target.value))} placeholder="Opcional" disabled={busy} /></label>
                         </div>
-
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Nombre o razon social
-                            <input
-                              value={edicion.facturacionNombre}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "facturacionNombre",
-                                  event.target.value,
-                                )
-                              }
-                              placeholder="Nombre fiscal del stand"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <div className="grid gap-4 sm:grid-cols-[150px_1fr]">
-                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                              Documento
-                              <select
-                                value={edicion.facturacionTipoDocumento}
-                                onChange={(event) =>
-                                  actualizarEdicion(
-                                    sede.id,
-                                    "facturacionTipoDocumento",
-                                    event.target.value,
-                                  )
-                                }
-                                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                              >
-                                <option value="NIT">NIT</option>
-                                <option value="CC">CC</option>
-                                <option value="CE">CE</option>
-                                <option value="PPT">PPT</option>
-                              </select>
-                            </label>
-
-                            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                              Numero
-                              <input
-                                value={edicion.facturacionDocumento}
-                                onChange={(event) =>
-                                  actualizarEdicion(
-                                    sede.id,
-                                    "facturacionDocumento",
-                                    event.target.value,
-                                  )
-                                }
-                                placeholder="NIT con DV: 900123456-7"
-                                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                              />
-                            </label>
-                          </div>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Correo de facturacion
-                            <input
-                              type="email"
-                              value={edicion.facturacionCorreo}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "facturacionCorreo",
-                                  event.target.value,
-                                )
-                              }
-                              placeholder="facturacion@stand.com"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Telefono
-                            <input
-                              value={edicion.facturacionTelefono}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "facturacionTelefono",
-                                  event.target.value,
-                                )
-                              }
-                              placeholder="Numero de contacto"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700 md:col-span-2">
-                            Direccion fiscal
-                            <input
-                              value={edicion.facturacionDireccion}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "facturacionDireccion",
-                                  event.target.value,
-                                )
-                              }
-                              placeholder="Direccion registrada para facturacion"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-                        </div>
-                      </section>
-                    )}
-
-                    <details className="group mt-5 border-t border-slate-200 pt-4">
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-xl px-1 py-2 text-sm font-bold text-slate-800 marker:content-none">
-                        <span className="flex items-center gap-2">
-                          <DashboardIcon
-                            name="settings"
-                            className="h-5 w-5 text-[#e30613]"
-                          />
-                          Configuración Siigo
-                        </span>
-                        <span className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-500 shadow-sm ring-1 ring-slate-200 group-open:hidden">
-                          Mostrar
-                        </span>
-                        <span className="hidden rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-500 shadow-sm ring-1 ring-slate-200 group-open:inline-flex">
-                          Ocultar
-                        </span>
-                      </summary>
-
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                          <div>
-                            <p className="text-sm font-black uppercase tracking-[0.16em] text-slate-700">
-                              Siigo por sede
-                            </p>
-                            <p className="mt-2 text-sm leading-6 text-slate-500">
-                              {facturaComoOnline
-                                ? "Este stand factura usando la configuración Siigo de ONLINE."
-                                : "Estos parámetros determinan la resolución y el comportamiento de facturación de esta sede."}
-                            </p>
-                          </div>
-
-                          <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(edicion.siigoEnabled)}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoEnabled",
-                                  event.target.checked,
-                                )
-                              }
-                              className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                            />
-                            Activar Siigo
-                          </label>
-                        </div>
-
-                        <div className="mt-5 grid gap-4 md:grid-cols-3">
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Documento / resolución
-                            <input
-                              inputMode="numeric"
-                              value={edicion.siigoInvoiceDocumentId}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoInvoiceDocumentId",
-                                  soloDigitos(event.target.value),
-                                )
-                              }
-                              placeholder="ID document-types FV"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Vendedor Siigo
-                            <input
-                              inputMode="numeric"
-                              value={edicion.siigoSellerId}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoSellerId",
-                                  soloDigitos(event.target.value),
-                                )
-                              }
-                              placeholder="ID users"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Forma de pago
-                            <input
-                              inputMode="numeric"
-                              value={edicion.siigoPaymentTypeId}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoPaymentTypeId",
-                                  soloDigitos(event.target.value),
-                                )
-                              }
-                              placeholder="ID payment-types"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Código producto telefonía
-                            <input
-                              value={edicion.siigoItemCode}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoItemCode",
-                                  event.target.value,
-                                )
-                              }
-                              placeholder="Opcional"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                            <span className="text-xs font-medium leading-5 text-slate-500">
-                              Telefonia usa el codigo configurado.
-                              Electrodomestico siempre usa 001 con IVA 19%.
-                            </span>
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Centro de costo
-                            <input
-                              inputMode="numeric"
-                              value={edicion.siigoCostCenterId}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoCostCenterId",
-                                  soloDigitos(event.target.value),
-                                )
-                              }
-                              placeholder="Opcional"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Días vencimiento
-                            <input
-                              inputMode="numeric"
-                              value={edicion.siigoPaymentDueDays}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoPaymentDueDays",
-                                  soloDigitos(event.target.value),
-                                )
-                              }
-                              placeholder="0"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Pais
-                            <input
-                              value={edicion.siigoDefaultCountryCode}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoDefaultCountryCode",
-                                  event.target.value.toUpperCase(),
-                                )
-                              }
-                              placeholder="CO"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium uppercase text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Departamento
-                            <input
-                              value={edicion.siigoDefaultStateCode}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoDefaultStateCode",
-                                  soloDigitos(event.target.value),
-                                )
-                              }
-                              placeholder="Ej: 73"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Ciudad
-                            <input
-                              value={edicion.siigoDefaultCityCode}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoDefaultCityCode",
-                                  soloDigitos(event.target.value),
-                                )
-                              }
-                              placeholder="Ej: 73001"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-
-                          <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                            Código postal
-                            <input
-                              value={edicion.siigoDefaultPostalCode}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoDefaultPostalCode",
-                                  soloDigitos(event.target.value),
-                                )
-                              }
-                              placeholder="Opcional"
-                              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-                            />
-                          </label>
-                        </div>
-
-                        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                          <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(edicion.siigoStampSend)}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoStampSend",
-                                  event.target.checked,
-                                )
-                              }
-                              className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                            />
-                            Enviar a DIAN al crear
-                          </label>
-
-                          <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(edicion.siigoMailSend)}
-                              onChange={(event) =>
-                                actualizarEdicion(
-                                  sede.id,
-                                  "siigoMailSend",
-                                  event.target.checked,
-                                )
-                              }
-                              className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                            />
-                            Enviar correo desde Siigo
-                          </label>
-                        </div>
-                      </div>
-                    </details>
-
-                    <div className="mt-5 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => void guardarSede(sede.id)}
-                        disabled={procesandoId === sede.id}
-                        className="min-h-11 rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-70"
-                      >
-                        {procesandoId === sede.id
-                          ? "Guardando..."
-                          : sede.acceso
-                            ? "Guardar cambios"
-                            : "Crear acceso"}
-                      </button>
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-          </section>
-        </main>
-      </div>
-    </div>
-  );
+                        <label className={styles.checkbox}><input type="checkbox" checked={edicion.siigoStampSend} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoStampSend", event.target.checked)} disabled={busy} /><span>Enviar a DIAN al crear</span></label>
+                        <label className={styles.checkbox}><input type="checkbox" checked={edicion.siigoMailSend} onChange={(event) => actualizarEdicion(selectedSede.id, "siigoMailSend", event.target.checked)} disabled={busy} /><span>Enviar correo desde Siigo</span></label>
+                        <button type="button" className={styles.button} onClick={(event) => abrirCatalogos(event.currentTarget)} disabled={busy}><DashboardIcon name="database" />Consultar catálogos</button>
+                      </div>}
+                    </section>
+                  </> : <p className={styles.formError}>La sede seleccionada ya no está disponible.</p>}
+                  {formError && <p className={styles.formError} role="alert">{formError}</p>}
+                </div>
+                <footer className={styles.editorFooter}><button type="button" className={styles.button} onClick={cerrarEditor} disabled={busy}>Cancelar</button><button type="submit" className={`${styles.button} ${styles.primary}`} disabled={busy || (editor !== "new" && !selectedSede)}>{guardandoNueva ? "Creando…" : procesandoId !== null ? "Guardando…" : editor === "new" ? "Crear sede" : selectedSede?.acceso ? "Guardar cambios" : "Crear acceso"}</button></footer>
+              </form>
+            </aside>
+          </>}
+        </div>
+      </>}
+    </main>
+    <dialog ref={catalogDialog} className={styles.catalogDialog} aria-labelledby="catalog-title" onCancel={(event) => { if (guardandoSiigoMasivo) event.preventDefault(); }} onClose={() => catalogTriggerRef.current?.focus()}>
+      <header className={styles.dialogHeading}><div><h2 id="catalog-title">Catálogos Siigo</h2><p>Resoluciones, notas crédito, vendedores, formas de pago, productos y centros de costo.</p></div><button type="button" className={styles.iconButton} aria-label="Cerrar catálogos" onClick={cerrarCatalogos} disabled={guardandoSiigoMasivo}><DashboardIcon name="close" /></button></header>
+      <div className={styles.catalogActions}><button type="button" className={styles.button} onClick={() => void cargarCatalogosSiigo()} disabled={cargandoCatalogosSiigo || busy}><DashboardIcon name="refresh" />{cargandoCatalogosSiigo ? "Consultando…" : "Actualizar catálogos"}</button>{catalogosSiigo && <><button type="button" className={styles.button} onClick={aplicarSiigoSugerido} disabled={busy}>Autocompletar</button><button type="button" className={`${styles.button} ${styles.primary}`} onClick={() => void guardarSiigoSugerido()} disabled={busy}>{guardandoSiigoMasivo ? "Guardando…" : "Guardar Siigo sugerido"}</button></>}</div>
+      {catalogosSiigoError && <div role="alert" className={styles.formError}>{catalogosSiigoError}</div>}
+      {mensaje && <p className={styles.formNotice} role="status">{mensaje}</p>}
+      {cargandoCatalogosSiigo ? <div className={styles.loading} role="status">Consultando catálogos de Siigo…</div> : catalogosSiigo && <>
+        <div className={styles.catalogTabs} role="tablist" aria-label="Tipos de catálogo">{catalogGroups.map((group) => <button type="button" key={group.id} id={`catalog-tab-${group.id}`} role="tab" tabIndex={catalogTab === group.id ? 0 : -1} onKeyDown={(event) => {
+          if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const current = catalogGroups.findIndex((item) => item.id === group.id);
+          const index = event.key === "Home" ? 0 : event.key === "End" ? catalogGroups.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + catalogGroups.length) % catalogGroups.length;
+          setCatalogTab(catalogGroups[index].id); setCatalogSearch("");
+          document.getElementById(`catalog-tab-${catalogGroups[index].id}`)?.focus();
+        }} aria-selected={catalogTab === group.id} aria-controls={`catalog-panel-${group.id}`} onClick={() => { setCatalogTab(group.id); setCatalogSearch(""); }} className={catalogTab === group.id ? styles.filterActive : undefined}>{group.label}<span>{group.items.length}</span></button>)}</div>
+        <label className={`${styles.search} ${styles.catalogSearch}`}><DashboardIcon name="search" /><input type="search" aria-label="Buscar en catálogo" placeholder="Buscar por nombre, código o ID" value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} /></label>
+        <section className={styles.catalogContent} id={`catalog-panel-${currentCatalog.id}`} role="tabpanel" aria-labelledby={`catalog-tab-${currentCatalog.id}`}>
+          <p className={styles.muted}>{filteredCatalog.length.toLocaleString("es-CO")} resultados</p>
+          <ul className={styles.catalogRows}>{filteredCatalog.map((item, index) => <li key={`${currentCatalog.id}-${index}`}><strong>{currentCatalog.title(item) || "Sin nombre"}</strong>{"detail" in currentCatalog && currentCatalog.detail?.(item) && <p>{currentCatalog.detail(item)}</p>}</li>)}</ul>
+          {!filteredCatalog.length && <p className={styles.empty}>No hay resultados en este catálogo.</p>}
+        </section>
+      </>}
+    </dialog>
+  </div>;
 }
