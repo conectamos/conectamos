@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 export type ReferenciaInventarioCatalogo = {
   id: number;
   nombre: string;
+  imagenUrl: string | null;
+  sistemaOperativo: string | null;
   activo: boolean;
   eliminado: boolean;
   createdAt: Date;
@@ -35,6 +37,12 @@ export async function asegurarTablaCatalogoReferenciasInventario() {
   await prisma.$executeRawUnsafe(`
     ALTER TABLE "CatalogoReferenciaInventario"
     ADD COLUMN IF NOT EXISTS "eliminado" BOOLEAN NOT NULL DEFAULT false
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "CatalogoReferenciaInventario"
+    ADD COLUMN IF NOT EXISTS "imagenUrl" TEXT,
+    ADD COLUMN IF NOT EXISTS "sistemaOperativo" TEXT
   `);
 }
 

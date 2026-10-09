@@ -432,6 +432,8 @@ model CatalogoReferenciaInventario {
   id                Int      @id @default(autoincrement())
   nombre            String
   nombreNormalizado String   @unique
+  imagenUrl         String?
+  sistemaOperativo  String?
   activo            Boolean  @default(true)
   eliminado         Boolean  @default(false)
   createdAt         DateTime @default(now())

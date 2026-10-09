@@ -1,0 +1,33 @@
+.visual {
+  width: 128px;
+  height: 144px;
+  flex: 0 0 128px;
+  display: grid;
+  place-items: center;
+  color: #364152;
+}
+
+.photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.apple { width: 74px; height: 84px; color: #11161d; }
+.android { width: 78px; height: 88px; color: #617464; }
+.device { width: 65px; height: 86px; }
+
+@media (max-width: 600px) {
+  .visual { width: 96px; height: 120px; flex-basis: 96px; }
+  .apple { width: 62px; height: 72px; }
+  .android { width: 65px; height: 75px; }
+  .device { width: 54px; height: 72px; }
+}

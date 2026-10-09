@@ -41,6 +41,7 @@ import {
   validarDocumentoDiferenteDeContactos,
 } from "@/lib/vendor-sale-records";
 import { syncVendorRewardSnapshotForSale } from "@/lib/vendor-earnings";
+import { enriquecerRegistrosConCatalogo } from "@/lib/record-catalog-media";
 import {
   esServicioContadoRegistro as esServicioContado,
 } from "@/lib/vendor-sale-service";
@@ -332,6 +333,7 @@ function serializarRegistroResumen(
 
 function serializarRegistroDetalle(
   registro: {
+    referenciaEquipo?: string | null;
     creditoAutorizado: unknown;
     cuotaInicial: unknown;
     valorCuota: unknown;
@@ -1167,9 +1169,13 @@ export async function GET(req: NextRequest) {
         );
       }
 
+      const [registroConCatalogo] = await enriquecerRegistrosConCatalogo([
+        serializarRegistroDetalle(registro),
+      ]);
+
       return NextResponse.json({
         ok: true,
-        registro: serializarRegistroDetalle(registro),
+        registro: registroConCatalogo,
       });
     }
 
@@ -1207,9 +1213,13 @@ export async function GET(req: NextRequest) {
         take: 12,
       });
 
+      const resultadosConCatalogo = await enriquecerRegistrosConCatalogo(
+        resultados.map(serializarRegistroDetalle)
+      );
+
       return NextResponse.json({
         ok: true,
-        resultados: resultados.map(serializarRegistroDetalle),
+        resultados: resultadosConCatalogo,
       });
     }
 

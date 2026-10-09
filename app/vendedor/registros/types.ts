@@ -9,6 +9,11 @@ export type FinancieraDetalleRegistro = {
 };
 
 export type RegistroVendedorDetalle = {
+  catalogoEquipo?: {
+    referencia: string;
+    imagenUrl: string | null;
+    sistemaOperativo: string | null;
+  } | null;
   id: number;
   createdAt: string;
   updatedAt: string;
