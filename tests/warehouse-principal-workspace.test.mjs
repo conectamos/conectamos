@@ -146,6 +146,43 @@ test('filtros de deuda, pagados, enviados y sede se combinan antes de paginar si
   assert.equal(legacy.view.equiposDisponibles.length, 1); assert.equal(legacy.view.equiposEnviados.length, 0); assert.equal(legacy.view.pendientesCobro.length, 1);
 });
 
+test('Deuda muestra quién debe junto al ID con la sede actual, sin confundir al distribuidor con el deudor', () => {
+  const debts = [
+    { ...rows[5], sedeDestinoId: 2, sedeDestinoNombre: 'SEDE ACTUAL QA', distribuidor: 'PROVEEDOR ACREEDOR QA' },
+    { ...rows[12], sedeDestinoId: 99, sedeDestinoNombre: null },
+    { ...rows[19], sedeDestinoId: null, sedeDestinoNombre: null },
+  ];
+  const instance = probe({ initial: { items: debts, filtroEstado: 'COBRO_PENDIENTE' } });
+  const { tree } = instance.render();
+  assert.ok(textOf(tree).includes('Equipos con deuda'));
+  assert.deepEqual(elements(tree).filter(node => node.type === 'th').map(textOf), ['', 'ID', 'Quién me debe', 'Equipo / IMEI', 'Color', 'Costo', 'Factura / Distribuidor', 'Estado', 'Cobro', 'Acciones']);
+  const debtorCells = elements(tree).filter(node => node.type === 'td' && node.props.className === 'debtor').map(normalizedText);
+  assert.deepEqual(debtorCells, ['SEDE ACTUAL QA', 'Sede #99', 'Deudor no identificado']);
+  assert.ok(textOf(tree).includes('PROVEEDOR ACREEDOR QA'));
+  assert.equal(control(tree, node => node.type === 'option' && node.props.value === '').props.children, 'Todos los deudores');
+  instance.state.busqueda = 'sede actual qa'; instance.state.sedes = []; instance.render(); instance.flushEffects();
+  assert.equal(instance.view.itemsFiltrados.length, 1); assert.equal(instance.view.itemsFiltrados[0].id, debts[0].id);
+  instance.state.filtroSedeDestinoId = '3'; instance.render(); instance.flushEffects();
+  assert.equal(instance.view.itemsFiltrados.length, 0);
+});
+
+test('Excel incluye el deudor actual solo cuando hay cobro pendiente y conserva el destino de equipos pagados', async () => {
+  const items = [
+    { ...rows[5], sedeDestinoNombre: 'SEDE DEUDORA QA' },
+    { ...rows[6], sedeDestinoNombre: 'SEDE PAGADA QA' },
+    { ...rows[12], sedeDestinoId: null, sedeDestinoNombre: null },
+  ];
+  const instance = probe({ initial: { items } });
+  await instance.view.exportarInventarioExcel();
+  const sheet = instance.captures[0].book.Sheets['Inventario principal'];
+  const exported = XLSX.utils.sheet_to_json(sheet);
+  assert.deepEqual(exported.map(row => row.DEUDOR), ['SEDE DEUDORA QA', '-', 'Deudor no identificado']);
+  assert.deepEqual(exported.map(row => row['SEDE DESTINO']), ['SEDE DEUDORA QA', 'SEDE PAGADA QA', '-']);
+  instance.state.filtroEstado = 'COBRO_PENDIENTE'; instance.render();
+  await instance.view.exportarInventarioExcel();
+  assert.equal(XLSX.utils.sheet_to_json(instance.captures[1].book.Sheets['Inventario principal']).length, 2);
+});
+
 test('selección visible conserva otras páginas y mantiene elegibilidad de envío y devolución', () => {
   const instance = probe(); instance.view.alternarSeleccionVisibles(); instance.render();
   assert.equal(instance.state.idsSeleccionados.length, 10); assert.equal(instance.view.todosVisiblesSeleccionados, true);

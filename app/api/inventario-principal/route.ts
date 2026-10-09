@@ -54,8 +54,15 @@ const inventario = await prisma.inventarioPrincipal.findMany({
     const enriquecido = await enriquecerRegistrosConCatalogo(inventario.map((item) => ({
       ...item, referenciaEquipo: item.referencia,
     })));
+    const sedeIds = [...new Set(inventario.flatMap((item) => item.sedeDestinoId ? [item.sedeDestinoId] : []))];
+    const sedesDestino = sedeIds.length ? await prisma.sede.findMany({
+      where: { id: { in: sedeIds } },
+      select: { id: true, nombre: true },
+    }) : [];
+    const nombresDestino = new Map(sedesDestino.map((sede) => [sede.id, sede.nombre]));
     return NextResponse.json(enriquecido.map((item, index) => ({
       ...inventario[index], catalogoEquipo: item.catalogoEquipo,
+      sedeDestinoNombre: item.sedeDestinoId ? nombresDestino.get(item.sedeDestinoId) || null : null,
     })));
   } catch (error) {
     console.error("ERROR GET INVENTARIO PRINCIPAL:", error);

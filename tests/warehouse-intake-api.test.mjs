@@ -33,7 +33,7 @@ const SECOND = "101234567890123";
 const THIRD = "201234567890123";
 
 function databaseProbe() {
-  const state = { journal: new Map(), principal: [], sedes: [], movements: [], sql: [], schemaAttempts: 0, failSchema: false, failMovement: false, failResult: false, incompleteCreate: false };
+  const state = { journal: new Map(), principal: [], sedes: [], sedeLookups: [], movements: [], sql: [], schemaAttempts: 0, failSchema: false, failMovement: false, failResult: false, incompleteCreate: false };
   let queue = Promise.resolve();
   const clone = value => structuredClone(value);
   const find = kind => async ({ where = {} } = {}) => state[kind].filter(item => {
@@ -43,7 +43,13 @@ function databaseProbe() {
     return true;
   }).map(clone);
   const makeModels = () => ({
-    sede: { findUnique: async ({ where }) => [1, 2, 3].includes(where.id) ? { nombre: `SEDE ${where.id}` } : where.id === 4 ? { nombre: "VENTAS" } : null },
+    sede: {
+      findUnique: async ({ where }) => [1, 2, 3].includes(where.id) ? { nombre: `SEDE ${where.id}` } : where.id === 4 ? { nombre: "VENTAS" } : null,
+      findMany: async args => {
+        state.sedeLookups.push(clone(args));
+        return [1, 2, 3, 4].filter(id => args.where.id.in.includes(id)).map(id => ({ id, nombre: id === 4 ? "VENTAS" : `SEDE ${id}` }));
+      },
+    },
     inventarioPrincipal: {
       findMany: find("principal"),
       createMany: async ({ data }) => {
@@ -305,4 +311,27 @@ test("principal GET keeps its array contract and enriches optional catalog media
   assert.equal(response.status, 200); assert.equal(items[0].imei, FIRST);
   assert.equal(items[0].catalogoEquipo.imagenUrl, "/qa-real.jpg"); assert.equal(items[0].referenciaEquipo, undefined);
   assert.equal((await serverProbe({ user: SUPERVISOR }).getPrincipal()).status, 403);
+});
+
+test("principal GET resolves current debtor by destination ID in one lookup without changing debt or exposing unauthorized data", async () => {
+  const server = serverProbe();
+  server.state.principal.push(
+    { id: 21, imei: FIRST, referencia: "TECNO QA", estado: "PRESTAMO", estadoCobro: "PENDIENTE", sedeDestinoId: 3 },
+    { id: 22, imei: SECOND, referencia: "TECNO QA", estado: "PRESTAMO", estadoCobro: "PENDIENTE", sedeDestinoId: 3 },
+    { id: 23, imei: THIRD, referencia: "TECNO QA", estado: "PAGO", estadoCobro: "PAGADO", sedeDestinoId: 2 },
+    { id: 24, imei: "301234567890123", referencia: "TECNO QA", estado: "PRESTAMO", estadoCobro: "PENDIENTE", sedeDestinoId: 99 },
+    { id: 25, imei: "401234567890123", referencia: "TECNO QA", estado: "BODEGA", estadoCobro: null, sedeDestinoId: null },
+  );
+  let response = await server.getPrincipal(); let items = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(items.map(item => item.sedeDestinoNombre), ["SEDE 3", "SEDE 3", "SEDE 2", null, null]);
+  assert.deepEqual(items.map(item => item.estadoCobro), ["PENDIENTE", "PENDIENTE", "PAGADO", "PENDIENTE", null]);
+  assert.deepEqual(server.state.sedeLookups, [{ where: { id: { in: [3, 2, 99] } }, select: { id: true, nombre: true } }]);
+  // A debt transfer changes its current destination; an old historical location must not remain the debtor.
+  server.state.principal[0].sedeDestinoId = 2;
+  response = await server.getPrincipal(); items = await response.json();
+  assert.equal(items[0].sedeDestinoNombre, "SEDE 2"); assert.equal(items[0].sedeDestinoId, 2);
+  const denied = serverProbe({ user: SUPERVISOR });
+  denied.state.principal.push(...server.state.principal);
+  assert.equal((await denied.getPrincipal()).status, 403); assert.equal(denied.state.sedeLookups.length, 0);
 });

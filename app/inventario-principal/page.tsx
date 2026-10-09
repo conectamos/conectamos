@@ -26,6 +26,7 @@ type ItemPrincipal = {
   distribuidor: string | null;
   estado?: string | null;
   sedeDestinoId?: number | null;
+  sedeDestinoNombre?: string | null;
   estadoCobro?: string | null;
   catalogoEquipo?: { referencia: string; imagenUrl: string | null; sistemaOperativo: string | null } | null;
 };
@@ -64,6 +65,11 @@ const FILTROS_ESTADO: Array<{ value: FiltroEstado; label: string }> = [
 ];
 
 const PAGE_SIZE = 10;
+
+function nombreDestino(item: ItemPrincipal, sedes: Sede[]) {
+  if (!item.sedeDestinoId) return "";
+  return item.sedeDestinoNombre?.trim() || sedes.find((sede) => sede.id === item.sedeDestinoId)?.nombre || `Sede #${item.sedeDestinoId}`;
+}
 
 function formatoPesos(valor: number) {
   return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
@@ -281,6 +287,7 @@ export default function InventarioPrincipalPage() {
   const [inventoryError, setInventoryError] = useState("");
 
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
+  const mostrarDeudor = filtroEstado === "COBRO_PENDIENTE";
 
   const cargarInventarioPrincipal = useCallback(async () => {
     setInventoryLoading(true);
@@ -406,8 +413,7 @@ export default function InventarioPrincipalPage() {
     const termino = busqueda.trim().toLowerCase();
 
     return items.filter((item) => {
-      const sedeDestino =
-        sedes.find((sede) => sede.id === item.sedeDestinoId)?.nombre || "";
+      const sedeDestino = nombreDestino(item, sedes);
       const estadoNormalizado = String(item.estado || "BODEGA").toUpperCase();
       const cobroNormalizado = String(item.estadoCobro || "").toUpperCase();
       const cumpleEstado =
@@ -547,9 +553,6 @@ export default function InventarioPrincipalPage() {
       setMensaje("");
 
       const XLSX = await import("xlsx");
-      const nombreSedeDestino = (id?: number | null) =>
-        sedes.find((sede) => sede.id === id)?.nombre || "-";
-
       const filas = itemsFiltrados.map((item) => ({
         ID: item.id,
         IMEI: String(item.imei || ""),
@@ -561,7 +564,8 @@ export default function InventarioPrincipalPage() {
         DISTRIBUIDOR: item.distribuidor || "",
         ESTADO: String(item.estado || "BODEGA").toUpperCase(),
         COBRO: item.estadoCobro || "-",
-        "SEDE DESTINO": item.sedeDestinoId ? nombreSedeDestino(item.sedeDestinoId) : "-",
+        "SEDE DESTINO": nombreDestino(item, sedes) || "-",
+        DEUDOR: String(item.estadoCobro || "").toUpperCase() === "PENDIENTE" ? nombreDestino(item, sedes) || "Deudor no identificado" : "-",
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(filas);
@@ -594,6 +598,7 @@ export default function InventarioPrincipalPage() {
         { wch: 14 },
         { wch: 14 },
         { wch: 22 },
+        { wch: 24 },
       ];
 
       const workbook = XLSX.utils.book_new();
@@ -1328,10 +1333,10 @@ export default function InventarioPrincipalPage() {
 
         <section className={styles.stockPanel} aria-busy={inventoryLoading}>
           <div className={styles.stockHeader}>
-            <div className={styles.stockTitle}><span className={styles.sectionIcon}><DashboardIcon name="inventory" /></span><h2>Stock de inventario</h2><span>{itemsFiltrados.length.toLocaleString("es-CO")} registros</span></div>
+            <div className={styles.stockTitle}><span className={styles.sectionIcon}><DashboardIcon name="inventory" /></span><h2>{mostrarDeudor ? "Equipos con deuda" : "Stock de inventario"}</h2><span>{itemsFiltrados.length.toLocaleString("es-CO")} registros</span></div>
             <div className={styles.filters}>
-              <label className={styles.search}><DashboardIcon name="search" /><span className="sr-only">Buscar en inventario principal</span><input type="search" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar IMEI, referencia, factura o distribuidor" /></label>
-              <label><span className="sr-only">Filtrar por sede destino</span><select value={filtroSedeDestinoId} onChange={(event) => setFiltroSedeDestinoId(event.target.value)}><option value="">Todas las sedes</option>{sedesDestinoOperativas.map((sede) => <option key={sede.id} value={sede.id}>{sede.nombre}</option>)}</select></label>
+              <label className={styles.search}><DashboardIcon name="search" /><span className="sr-only">Buscar en inventario principal</span><input type="search" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder={mostrarDeudor ? "Buscar IMEI, referencia, factura o deudor" : "Buscar IMEI, referencia, factura o distribuidor"} /></label>
+              <label><span className="sr-only">{mostrarDeudor ? "Filtrar por deudor" : "Filtrar por sede destino"}</span><select value={filtroSedeDestinoId} onChange={(event) => setFiltroSedeDestinoId(event.target.value)}><option value="">{mostrarDeudor ? "Todos los deudores" : "Todas las sedes"}</option>{sedesDestinoOperativas.map((sede) => <option key={sede.id} value={sede.id}>{sede.nombre}</option>)}</select></label>
               <button type="button" onClick={() => void exportarInventarioExcel()} disabled={inventoryLoading || exportandoExcel || itemsFiltrados.length === 0} className={styles.outlineButton}><DashboardIcon name="download" />{exportandoExcel ? "Exportando…" : "Exportar Excel"}</button>
             </div>
           </div>
@@ -1412,17 +1417,18 @@ export default function InventarioPrincipalPage() {
             <table className={styles.table}>
               <thead><tr>
                 <th className={styles.selectionCell}><input type="checkbox" checked={todosVisiblesSeleccionados} onChange={alternarSeleccionVisibles} aria-label="Seleccionar equipos visibles" disabled={inventoryLoading || !itemsPaginados.length} /></th>
-                <th>ID</th><th className={styles.equipmentColumn}>Equipo / IMEI</th><th>Color</th><th>Costo</th><th>Factura / Distribuidor</th><th>Estado</th><th>Cobro</th><th>Sede destino</th><th>Acciones</th>
+                <th>ID</th>{mostrarDeudor && <th>Quién me debe</th>}<th className={styles.equipmentColumn}>Equipo / IMEI</th><th>Color</th><th>Costo</th><th>Factura / Distribuidor</th><th>Estado</th><th>Cobro</th>{!mostrarDeudor && <th>Sede destino</th>}<th>Acciones</th>
               </tr></thead>
               <tbody>
                 {!itemsFiltrados.length ? <tr><td colSpan={10} className={styles.empty} role="status">{inventoryLoading ? "Cargando inventario principal…" : inventoryError ? "El inventario no está disponible. Reintenta la consulta." : "No hay equipos que coincidan con los filtros."}</td></tr> : itemsPaginados.map((item) => {
                   const estadoNormalizado = String(item.estado || "BODEGA").toUpperCase();
                   const enviado = estadoNormalizado === "PRESTAMO";
                   const pagado = estadoNormalizado === "PAGO";
-                  const sedeDestino = sedes.find((sede) => sede.id === item.sedeDestinoId)?.nombre || "—";
+                  const sedeDestino = nombreDestino(item, sedes);
                   return <tr key={item.id} className={idsSeleccionados.includes(item.id) ? styles.selectedRow : undefined}>
                     <td className={styles.selectionCell}><input type="checkbox" checked={idsSeleccionados.includes(item.id)} onChange={() => alternarSeleccion(item.id)} aria-label={`Seleccionar ${item.imei}`} /></td>
                     <td className={styles.idCell}>{item.id}</td>
+                    {mostrarDeudor && <td className={styles.debtor}><strong>{sedeDestino || "Deudor no identificado"}</strong></td>}
                     <td><div className={styles.equipment}>
                       <RecordDeviceVisual className={styles.deviceVisual} reference={item.referencia} productType={item.tipoProducto} catalogReference={item.catalogoEquipo?.referencia} imageSrc={item.catalogoEquipo?.imagenUrl} operatingSystem={item.catalogoEquipo?.sistemaOperativo} />
                       <div><strong>{item.referencia}</strong><span className={styles.imei}>{item.imei}</span></div><span className={styles.productType}>{item.tipoProducto || "TELEFONÍA"}</span>
@@ -1431,7 +1437,7 @@ export default function InventarioPrincipalPage() {
                     <td><div>{item.numeroFactura || "—"}</div><span className={styles.muted}>{item.distribuidor || "—"}</span></td>
                     <td><span className={`${styles.badge} ${enviado ? styles.sentBadge : pagado ? styles.paidBadge : ""}`}>{estadoNormalizado}</span></td>
                     <td>{item.estadoCobro ? <span className={`${styles.badge} ${String(item.estadoCobro).toUpperCase() === "PENDIENTE" ? styles.debtBadge : ""}`}>{item.estadoCobro}</span> : "—"}</td>
-                    <td>{item.sedeDestinoId ? sedeDestino : "—"}</td>
+                    {!mostrarDeudor && <td>{sedeDestino || "—"}</td>}
                     <td><div className={styles.actions}>
                       <ActionIconButton label="Editar" onClick={() => abrirModalEdicion([item.id])} disabled={cargando} tone="neutral"><IconoEditar /></ActionIconButton>
                       <ActionIconButton label="Enviar a sede" onClick={() => abrirModalEnvio(item)} disabled={cargando || estadoNormalizado !== "BODEGA"} tone="dark"><IconoEnviar /></ActionIconButton>

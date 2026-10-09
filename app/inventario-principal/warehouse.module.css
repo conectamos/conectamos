@@ -66,6 +66,8 @@
 .table .selectionCell { width:56px; text-align:center; padding:7px 10px; }
 .table input[type=checkbox] { width:15px; height:15px; accent-color:#e30613; cursor:pointer; }
 .table .idCell { text-align:center; min-width:68px; }
+.table .debtor { min-width:145px; max-width:220px; color:#172033; overflow-wrap:anywhere; }
+.debtor strong { font-size:13px; font-weight:700; }
 .equipmentColumn { min-width:320px; }
 .equipment { display:flex; align-items:center; gap:15px; }
 .equipment strong { display:block; max-width:300px; overflow-wrap:anywhere; font-size:12px; font-weight:600; line-height:1.4; }
