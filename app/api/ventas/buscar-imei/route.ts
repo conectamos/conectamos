@@ -38,17 +38,21 @@ function registroScopeWhere(
 
 const REGISTRO_VENTA_SELECT = {
   id: true,
+  updatedAt: true,
   sedeId: true,
+  sede: { select: { nombre: true } },
   puntoVenta: true,
   clienteNombre: true,
   tipoDocumento: true,
   documentoNumero: true,
   correo: true,
   whatsapp: true,
+  telefono: true,
   direccion: true,
   barrio: true,
   referenciaContacto: true,
   referenciaEquipo: true,
+  serialImei: true,
   asesorNombre: true,
   jaladorNombre: true,
   numeroFactura: true,
@@ -198,15 +202,15 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const serial = String(body.serial ?? "").replace(/\D/g, "").slice(0, 15);
+    const serial = typeof body.serial === "string" ? body.serial.trim() : "";
     const registroVendedorId = Number(body.registroVendedorId);
     const registroId =
       Number.isInteger(registroVendedorId) && registroVendedorId > 0
         ? registroVendedorId
         : null;
 
-    if (!serial) {
-      return NextResponse.json({ error: "IMEI invalido" }, { status: 400 });
+    if (!/^\d{15}$/.test(serial)) {
+      return NextResponse.json({ error: "El IMEI debe ser texto con exactamente 15 digitos" }, { status: 400 });
     }
 
     const registroVenta = await buscarRegistroVentaAbierto(
@@ -214,10 +218,38 @@ export async function POST(req: Request) {
       user,
       registroId
     );
+    if (registroId && !registroVenta) {
+      return NextResponse.json(
+        { error: "El registro ya no esta disponible para aprobar esta venta" },
+        { status: 409 }
+      );
+    }
     const sedeVentaId = registroVenta?.sedeId ?? user.sedeId;
 
+    const devolucionPendiente = await prisma.prestamoSede.findFirst({
+      where: { imei: serial, estado: "DEVOLUCION_PENDIENTE" },
+      select: { id: true },
+    });
+    if (devolucionPendiente) {
+      return NextResponse.json(
+        { error: "Este equipo tiene una devolucion pendiente por aprobar o rechazar", bloqueado: true },
+        { status: 400 }
+      );
+    }
+
+    const ventaPrevia = await prisma.venta.findFirst({ where: { serial }, select: { id: true } });
+    if (ventaPrevia) {
+      return NextResponse.json(
+        { error: "Ese IMEI ya tiene una venta registrada", bloqueado: true },
+        { status: 409 }
+      );
+    }
+
     const inventarioSedes = await prisma.inventarioSede.findMany({
-      where: { imei: serial },
+      where: {
+        imei: serial,
+        ...(puedeVerTodasLasSedes(user) ? {} : { sedeId: sedeVentaId }),
+      },
       select: {
         id: true,
         imei: true,
@@ -225,6 +257,7 @@ export async function POST(req: Request) {
         color: true,
         costo: true,
         sedeId: true,
+        sede: { select: { nombre: true } },
         estadoActual: true,
         estadoFinanciero: true,
       },
@@ -276,11 +309,12 @@ export async function POST(req: Request) {
         color: itemActual.color,
         costo: itemActual.costo,
         sedeId: itemActual.sedeId,
+        sedeNombre: itemActual.sede.nombre,
         estadoActual: itemActual.estadoActual,
         estadoFinanciero: itemActual.estadoFinanciero,
         origen: "SEDE_ACTUAL",
         registroVenta,
-        mensaje: "Equipo encontrado en tu sede",
+        mensaje: `Equipo disponible en ${itemActual.sede.nombre}`,
       });
     }
 

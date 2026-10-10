@@ -37,6 +37,7 @@ type VentaInput = {
     valor: number;
   }>;
   ingreso1Base: number;
+  ingreso1Informado: boolean;
   ingreso2Base: number;
   jalador: string;
   registroVendedorId: number | null;
@@ -203,10 +204,10 @@ function servicioOcultaFinancieras(servicio: string): boolean {
 }
 
 function parseVentaInput(data: Record<string, unknown>): VentaInput {
+  const moneda = (value: unknown) =>
+    value === null || value === undefined || value === "" ? 0 : Number(value);
   return {
-    serial: String(data.serial ?? "")
-      .replace(/\D/g, "")
-      .slice(0, 15),
+    serial: typeof data.serial === "string" ? data.serial.trim() : "",
     servicio: String(data.servicio ?? "").trim(),
     descripcion: String(data.descripcion ?? "").trim(),
     jalador: String(data.jalador ?? "").trim(),
@@ -216,34 +217,49 @@ function parseVentaInput(data: Record<string, unknown>): VentaInput {
     confirmoTransferenciaValidada: toBoolean(data.confirmoTransferenciaValidada),
     tipoIngreso1: normalizeTipoIngreso(data.tipoIngreso1, "EFECTIVO"),
     tipoIngreso2: normalizeTipoIngreso(data.tipoIngreso2),
-    ingreso1Base: toNumber(data.ingreso1Base),
-    ingreso2Base: toNumber(data.ingreso2Base),
-    comision: toNumber(data.comision),
-    salida: toNumber(data.salida),
-    finanzas: [
-      {
-        nombre: String(data.fin1Nombre ?? "").trim(),
-        valor: toNumber(data.fin1Valor),
-      },
-      {
-        nombre: String(data.fin2Nombre ?? "").trim(),
-        valor: toNumber(data.fin2Valor),
-      },
-      {
-        nombre: String(data.fin3Nombre ?? "").trim(),
-        valor: toNumber(data.fin3Valor),
-      },
-      {
-        nombre: String(data.fin4Nombre ?? "").trim(),
-        valor: toNumber(data.fin4Valor),
-      },
-    ],
+    ingreso1Base: moneda(data.ingreso1Base),
+    ingreso1Informado:
+      data.ingreso1Base !== null &&
+      data.ingreso1Base !== undefined &&
+      String(data.ingreso1Base).trim() !== "",
+    ingreso2Base: moneda(data.ingreso2Base),
+    comision: moneda(data.comision),
+    salida: moneda(data.salida),
+    finanzas: Array.isArray(data.financierasDetalle)
+      ? data.financierasDetalle.map((value) => {
+          const row = value && typeof value === "object"
+            ? value as Record<string, unknown>
+            : {};
+          return { nombre: String(row.nombre ?? "").trim(), valor: moneda(row.valor) };
+        })
+      : [
+          {
+            nombre: String(data.fin1Nombre ?? "").trim(),
+            valor: moneda(data.fin1Valor),
+          },
+          {
+            nombre: String(data.fin2Nombre ?? "").trim(),
+            valor: moneda(data.fin2Valor),
+          },
+          {
+            nombre: String(data.fin3Nombre ?? "").trim(),
+            valor: moneda(data.fin3Valor),
+          },
+          {
+            nombre: String(data.fin4Nombre ?? "").trim(),
+            valor: moneda(data.fin4Valor),
+          },
+        ],
   };
 }
 
 function validateVentaInput(input: VentaInput, options?: { requireSerial?: boolean }) {
   if (options?.requireSerial !== false && !input.serial) {
     return "El IMEI es obligatorio";
+  }
+
+  if (options?.requireSerial !== false && !/^\d{15}$/.test(input.serial)) {
+    return "El IMEI debe tener exactamente 15 digitos";
   }
 
   if (!input.servicio) {
@@ -262,8 +278,29 @@ function validateVentaInput(input: VentaInput, options?: { requireSerial?: boole
     return "Debes seleccionar el cerrador";
   }
 
-  if (input.ingreso1Base < 0) {
+  if (!input.ingreso1Informado || !Number.isFinite(input.ingreso1Base) || input.ingreso1Base < 0) {
     return "Debes ingresar el valor del ingreso 1";
+  }
+
+  if (!Number.isFinite(input.ingreso2Base) || input.ingreso2Base < 0) {
+    return "El valor del ingreso 2 no es valido";
+  }
+
+  if (!Number.isFinite(input.comision) || input.comision < 0) {
+    return "La comision no es valida";
+  }
+
+  if (!Number.isFinite(input.salida) || input.salida < 0) {
+    return "La salida no es valida";
+  }
+
+  if (
+    !servicioOcultaFinancieras(input.servicio) &&
+    input.finanzas.some((item) =>
+      !Number.isFinite(item.valor) || item.valor < 0 || (item.valor > 0 && !item.nombre)
+    )
+  ) {
+    return "Revisa el nombre y el valor de cada financiera";
   }
 
   if (input.ingreso2Base > 0 && !input.tipoIngreso2) {
@@ -452,16 +489,14 @@ function aplicarRegistroVendedorInput<
 
   if (finanzasRegistro.length) {
     next.servicio = "FINANCIERA";
-    next.finanzas = Array.from({ length: 4 }, (_, index) => ({
-      nombre: finanzasRegistro[index]?.nombre || "",
-      valor: finanzasRegistro[index]?.valor || 0,
-    }));
+    next.finanzas = finanzasRegistro;
   } else if (servicioOcultaFinancieras(String(registro.plataformaCredito || ""))) {
     next.servicio = "CONTADO";
     next.finanzas = input.finanzas.map(() => ({ nombre: "", valor: 0 }));
   }
 
   const pagosRegistro = extraerPagosRegistro(registro);
+  next.ingreso1Informado = pagosRegistro.length > 0;
 
   if (pagosRegistro.length === 1) {
     next.ingreso1Base = pagosRegistro[0].valor;
@@ -1036,152 +1071,218 @@ export async function POST(req: Request) {
     const data = (await req.json()) as Record<string, unknown>;
     const input = parseVentaInput(data);
     const adminPuedeEditarRegistroVendedor = puedeConvertirRegistrosDeTodasLasSedes(user);
+    const tieneRevision = Object.prototype.hasOwnProperty.call(data, "registroRevision");
+    const registroRevision = typeof data.registroRevision === "string" ? data.registroRevision : "";
+    const fechaRevision = new Date(registroRevision);
+    if (tieneRevision && (
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(registroRevision) ||
+      !Number.isFinite(fechaRevision.getTime()) || fechaRevision.toISOString() !== registroRevision
+    )) {
+      return NextResponse.json({ error: "La revision del registro no es valida" }, { status: 400 });
+    }
+    const tieneCostoEsperado = Object.prototype.hasOwnProperty.call(data, "costoEquipoEsperado");
+    const costoEquipoEsperado = Number(data.costoEquipoEsperado);
+    if (tieneCostoEsperado && (
+      !["number", "string"].includes(typeof data.costoEquipoEsperado) ||
+      String(data.costoEquipoEsperado).trim() === "" ||
+      !Number.isFinite(costoEquipoEsperado) || costoEquipoEsperado < 0
+    )) {
+      return NextResponse.json({ error: "El costo esperado del equipo no es valido" }, { status: 400 });
+    }
+
+    if (!/^\d{15}$/.test(input.serial)) {
+      return NextResponse.json(
+        { error: "El IMEI debe ser texto con exactamente 15 digitos" },
+        { status: 400 }
+      );
+    }
 
     await ensureVendorProfilesSchema();
-
-    const registroVendedor = input.registroVendedorId
-      ? await prisma.registroVendedorVenta.findFirst({
-          where: {
-            id: input.registroVendedorId,
-            ...(adminPuedeEditarRegistroVendedor ? {} : { serialImei: input.serial }),
-            eliminadoEn: null,
-            ventaIdRelacionada: null,
-            ...registroVentaScopeWhere(user),
-          },
-          select: {
-            id: true,
-            sedeId: true,
-            estadoVentaRegistro: true,
-            referenciaEquipo: true,
-            asesorNombre: true,
-            jaladorNombre: true,
-            plataformaCredito: true,
-            creditoAutorizado: true,
-            cuotaInicial: true,
-            medioPago1Tipo: true,
-            medioPago1Valor: true,
-            medioPago2Tipo: true,
-            medioPago2Valor: true,
-            financierasDetalle: true,
-          },
-        })
-      : null;
-
-    if (
-      input.registroVendedorId &&
-      (!registroVendedor ||
-        ["CANCELADO", "CONVERTIDO_EN_VENTA"].includes(
-          String(registroVendedor.estadoVentaRegistro || "").trim().toUpperCase()
-        ))
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "El registro del vendedor ya no esta disponible para convertir esta venta",
-        },
-        { status: 400 }
-      );
-    }
-
-    const inputVenta = registroVendedor && !adminPuedeEditarRegistroVendedor
-      ? aplicarRegistroVendedorInput(input, registroVendedor)
-      : input;
-    const validationError = validateVentaInput(inputVenta);
-
-    if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 });
-    }
-
-    if (registroVendedor) {
-      const confirmacionesError = validateConfirmacionesRegistroVendedor(inputVenta);
-
-      if (confirmacionesError) {
-        return NextResponse.json({ error: confirmacionesError }, { status: 400 });
-      }
-    }
-
-    const sedeVentaId = registroVendedor?.sedeId ?? user.sedeId;
-
-    const inventario = await prisma.inventarioSede.findFirst({
-      where: {
-        imei: inputVenta.serial,
-        sedeId: sedeVentaId,
-      },
-      select: {
-        id: true,
-        imei: true,
-        referencia: true,
-        color: true,
-        costo: true,
-        estadoFinanciero: true,
-        origen: true,
-        estadoActual: true,
-      },
-    });
-
-    if (!inventario) {
-      return NextResponse.json(
-        {
-          error:
-            "IMEI no registra en el inventario de la sede donde se esta guardando la venta",
-        },
-        { status: 404 }
-      );
-    }
-
-    const estadoActual = String(inventario.estadoActual ?? "").trim().toUpperCase();
-
-    if (estadoActual && estadoActual !== "BODEGA") {
-      return NextResponse.json(
-        { error: `No se puede vender. Estado actual: ${inventario.estadoActual}` },
-        { status: 400 }
-      );
-    }
-
-    const devolucionPendiente = await prisma.prestamoSede.findFirst({
-      where: {
-        imei: inputVenta.serial,
-        estado: "DEVOLUCION_PENDIENTE",
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (devolucionPendiente) {
-      return NextResponse.json(
-        {
-          error:
-            "No se puede vender. Este IMEI tiene una devolucion pendiente por aprobar o rechazar.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const yaVendido = await prisma.venta.findFirst({
-      where: {
-        serial: inputVenta.serial,
-      },
-      select: { id: true },
-    });
-
-    if (yaVendido) {
-      return NextResponse.json(
-        { error: "Ese IMEI ya tiene una venta registrada" },
-        { status: 400 }
-      );
-    }
-
-    const now = new Date();
-    const idVenta = `VTA-${Date.now()}`;
     const catalogo = await obtenerCatalogoPersonalVenta();
-    const calculo = buildVentaData(
-      inputVenta,
-      inventario.costo,
-      catalogo.financieras
-    );
 
-    const venta = await prisma.$transaction(async (tx) => {
+    const resultado = await prisma.$transaction(async (tx) => {
+      // Serialise approvals of the same physical device, including requests
+      // from different records or sedes. Re-read the record and stock only
+      // after locking them so a retry observes the completed transaction.
+      await tx.$queryRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${`venta-imei:${input.serial}`}, 0))::text
+      `;
+      if (input.registroVendedorId) {
+        await tx.$queryRaw`
+          SELECT "id" FROM "RegistroVendedorVenta"
+          WHERE "id" = ${input.registroVendedorId} FOR UPDATE
+        `;
+      }
+
+      const registroVendedor = input.registroVendedorId
+        ? await tx.registroVendedorVenta.findFirst({
+            where: {
+              id: input.registroVendedorId,
+              ...(adminPuedeEditarRegistroVendedor ? {} : { serialImei: input.serial }),
+              eliminadoEn: null,
+              ventaIdRelacionada: null,
+              ...registroVentaScopeWhere(user),
+            },
+            select: {
+              id: true,
+              updatedAt: true,
+              sedeId: true,
+              estadoVentaRegistro: true,
+              referenciaEquipo: true,
+              asesorNombre: true,
+              jaladorNombre: true,
+              plataformaCredito: true,
+              creditoAutorizado: true,
+              cuotaInicial: true,
+              medioPago1Tipo: true,
+              medioPago1Valor: true,
+              medioPago2Tipo: true,
+              medioPago2Valor: true,
+              financierasDetalle: true,
+            },
+          })
+        : null;
+
+      if (
+        input.registroVendedorId &&
+        (!registroVendedor ||
+          ["CANCELADO", "CONVERTIDO_EN_VENTA"].includes(
+            String(registroVendedor.estadoVentaRegistro || "").trim().toUpperCase()
+          ))
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "El registro del vendedor ya no esta disponible para convertir esta venta",
+          },
+          { status: 409 }
+        );
+      }
+
+      if (registroVendedor && tieneRevision && registroVendedor.updatedAt.toISOString() !== registroRevision) {
+        return NextResponse.json(
+          {
+            code: "REGISTRO_CAMBIO",
+            error: "Los datos del registro cambiaron. Actualiza el registro y revisa la proyeccion antes de aprobar.",
+          },
+          { status: 409 }
+        );
+      }
+
+      const inputVenta = registroVendedor && !adminPuedeEditarRegistroVendedor
+        ? aplicarRegistroVendedorInput(input, registroVendedor)
+        : input;
+      const validationError = validateVentaInput(inputVenta);
+
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 });
+      }
+
+      if (registroVendedor) {
+        const confirmacionesError = validateConfirmacionesRegistroVendedor(inputVenta);
+
+        if (confirmacionesError) {
+          return NextResponse.json({ error: confirmacionesError }, { status: 400 });
+        }
+      }
+
+      const sedeVentaId = registroVendedor?.sedeId ?? user.sedeId;
+
+      await tx.$queryRaw`
+        SELECT "id" FROM "InventarioSede"
+        WHERE "imei" = ${inputVenta.serial} AND "sedeId" = ${sedeVentaId}
+        ORDER BY "id" DESC FOR UPDATE
+      `;
+
+      const inventario = await tx.inventarioSede.findFirst({
+        where: {
+          imei: inputVenta.serial,
+          sedeId: sedeVentaId,
+        },
+        select: {
+          id: true,
+          imei: true,
+          referencia: true,
+          color: true,
+          costo: true,
+          estadoFinanciero: true,
+          origen: true,
+          estadoActual: true,
+        },
+        orderBy: { id: "desc" },
+      });
+
+      if (!inventario) {
+        return NextResponse.json(
+          {
+            error:
+              "IMEI no registra en el inventario de la sede donde se esta guardando la venta",
+          },
+          { status: 404 }
+        );
+      }
+
+      const estadoActual = String(inventario.estadoActual ?? "").trim().toUpperCase();
+
+      if (estadoActual !== "BODEGA") {
+        return NextResponse.json(
+          { error: `No se puede vender. Estado actual: ${inventario.estadoActual}` },
+          { status: 400 }
+        );
+      }
+
+      if (tieneCostoEsperado && costoEquipoEsperado !== inventario.costo) {
+        return NextResponse.json(
+          {
+            code: "COSTO_CAMBIO",
+            error: "El costo del equipo cambio. Actualiza el registro y revisa la proyeccion antes de aprobar.",
+          },
+          { status: 409 }
+        );
+      }
+
+      const devolucionPendiente = await tx.prestamoSede.findFirst({
+        where: {
+          imei: inputVenta.serial,
+          estado: "DEVOLUCION_PENDIENTE",
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (devolucionPendiente) {
+        return NextResponse.json(
+          {
+            error:
+              "No se puede vender. Este IMEI tiene una devolucion pendiente por aprobar o rechazar.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const yaVendido = await tx.venta.findFirst({
+        where: {
+          serial: inputVenta.serial,
+        },
+        select: { id: true },
+      });
+
+      if (yaVendido) {
+        return NextResponse.json(
+          { error: "Ese IMEI ya tiene una venta registrada" },
+          { status: 409 }
+        );
+      }
+
+      const now = new Date();
+      const idVenta = `VTA-${Date.now()}`;
+      const calculo = buildVentaData(
+        inputVenta,
+        inventario.costo,
+        catalogo.financieras
+      );
+
       const creada = await tx.venta.create({
         data: {
           idVenta,
@@ -1256,12 +1357,18 @@ export async function POST(req: Request) {
         });
       }
 
-      return creada;
-    });
+      return { venta: creada, registroVendedorId: registroVendedor?.id ?? null };
+    }, { maxWait: 10000, timeout: 20000 });
+
+    if (resultado instanceof NextResponse) {
+      return resultado;
+    }
+
+    const { venta, registroVendedorId } = resultado;
 
     const siigo =
-      registroVendedor && siigoAutoInvoiceOnSaleEnabled()
-        ? await emitirFacturaSiigoAlConvertir(registroVendedor.id)
+      registroVendedorId && siigoAutoInvoiceOnSaleEnabled()
+        ? await emitirFacturaSiigoAlConvertir(registroVendedorId)
         : null;
 
     const mensaje = siigo?.ok
