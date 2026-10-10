@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import { esSedeOperativaInventario } from "@/lib/sedes";
@@ -13,6 +13,7 @@ import DashboardIcon, {
 } from "@/app/dashboard/_components/dashboard-icon";
 import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import { RecordDeviceVisual } from "@/app/vendedor/registros/buscar/device-visual";
+import { agruparDeudasPorSede, claveSedeDeudora } from "@/lib/warehouse-debt-groups";
 import styles from "./warehouse.module.css";
 
 type ItemPrincipal = {
@@ -263,6 +264,11 @@ export default function InventarioPrincipalPage() {
   const [filtroSedeDestinoId, setFiltroSedeDestinoId] = useState("");
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("TODOS");
   const [pagina, setPagina] = useState(1);
+  const [paginaSedes, setPaginaSedes] = useState(1);
+  const [sedeDeudaAbierta, setSedeDeudaAbierta] = useState<string | null>(null);
+  const volverSedesRef = useRef<HTMLButtonElement>(null);
+  const sedeResumenRefs = useRef(new Map<string, HTMLButtonElement>());
+  const sedeParaEnfocar = useRef<string | null>(null);
   const [nuevaReferencia, setNuevaReferencia] = useState("");
   const [referenciaEditada, setReferenciaEditada] = useState("");
   const [editandoReferenciaId, setEditandoReferenciaId] = useState<number | null>(null);
@@ -288,6 +294,7 @@ export default function InventarioPrincipalPage() {
 
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
   const mostrarDeudor = filtroEstado === "COBRO_PENDIENTE";
+  const mostrarResumenDeuda = mostrarDeudor && !sedeDeudaAbierta;
 
   const cargarInventarioPrincipal = useCallback(async () => {
     setInventoryLoading(true);
@@ -457,12 +464,23 @@ export default function InventarioPrincipalPage() {
     });
   }, [busqueda, filtroEstado, filtroSedeDestinoId, items, sedes]);
 
-  const totalPaginas = Math.max(1, Math.ceil(itemsFiltrados.length / PAGE_SIZE));
+  const deudasPorSede = useMemo(() => agruparDeudasPorSede(itemsFiltrados, sedes), [itemsFiltrados, sedes]);
+  const grupoDeudaAbierto = deudasPorSede.find((grupo) => grupo.key === sedeDeudaAbierta);
+  const totalDeudaConsulta = deudasPorSede.reduce((centavos, grupo) => centavos + Math.round(grupo.totalPendiente * 100), 0) / 100;
+  const totalPaginasSedes = Math.max(1, Math.ceil(deudasPorSede.length / PAGE_SIZE));
+  const paginaSedesActual = Math.min(paginaSedes, totalPaginasSedes);
+  const deudasPaginadas = deudasPorSede.slice((paginaSedesActual - 1) * PAGE_SIZE, paginaSedesActual * PAGE_SIZE);
+  const paginasSedesVisibles = [...new Set([1, totalPaginasSedes, paginaSedesActual - 1, paginaSedesActual, paginaSedesActual + 1])]
+    .filter((numero) => numero >= 1 && numero <= totalPaginasSedes).sort((a, b) => a - b);
+  const itemsTabla = useMemo(() => mostrarDeudor && sedeDeudaAbierta
+    ? itemsFiltrados.filter((item) => claveSedeDeudora(item) === sedeDeudaAbierta)
+    : itemsFiltrados, [itemsFiltrados, mostrarDeudor, sedeDeudaAbierta]);
+  const totalPaginas = Math.max(1, Math.ceil(itemsTabla.length / PAGE_SIZE));
   const paginaActual = Math.min(pagina, totalPaginas);
   const itemsPaginados = useMemo(() => {
     const inicio = (paginaActual - 1) * PAGE_SIZE;
-    return itemsFiltrados.slice(inicio, inicio + PAGE_SIZE);
-  }, [itemsFiltrados, paginaActual]);
+    return itemsTabla.slice(inicio, inicio + PAGE_SIZE);
+  }, [itemsTabla, paginaActual]);
   const paginasVisibles = useMemo(() => {
     const candidatas = new Set([
       1,
@@ -477,16 +495,32 @@ export default function InventarioPrincipalPage() {
       .sort((a, b) => a - b);
   }, [paginaActual, totalPaginas]);
   const primerResultado =
-    itemsFiltrados.length === 0 ? 0 : (paginaActual - 1) * PAGE_SIZE + 1;
+    itemsTabla.length === 0 ? 0 : (paginaActual - 1) * PAGE_SIZE + 1;
   const ultimoResultado = Math.min(
     paginaActual * PAGE_SIZE,
-    itemsFiltrados.length
+    itemsTabla.length
   );
 
   useEffect(() => {
     setPagina(1);
+    setPaginaSedes(1);
+    setSedeDeudaAbierta(null);
     setIdsSeleccionados([]);
   }, [busqueda, filtroEstado, filtroSedeDestinoId]);
+
+  useEffect(() => {
+    if (sedeDeudaAbierta) volverSedesRef.current?.focus();
+    else if (sedeParaEnfocar.current) {
+      sedeResumenRefs.current.get(sedeParaEnfocar.current)?.focus();
+      sedeParaEnfocar.current = null;
+    }
+  }, [sedeDeudaAbierta]);
+
+  useEffect(() => {
+    if (!mostrarDeudor || !sedeDeudaAbierta) return;
+    // A payment, return or debt transfer can remove equipment from this detail during refresh.
+    setIdsSeleccionados((actuales) => actuales.filter((id) => itemsTabla.some((item) => item.id === id)));
+  }, [itemsTabla, mostrarDeudor, sedeDeudaAbierta]);
 
   useEffect(() => {
     if (pagina > totalPaginas) {
@@ -494,9 +528,13 @@ export default function InventarioPrincipalPage() {
     }
   }, [pagina, totalPaginas]);
 
+  useEffect(() => {
+    if (paginaSedes > totalPaginasSedes) setPaginaSedes(totalPaginasSedes);
+  }, [paginaSedes, totalPaginasSedes]);
+
   const idsVisibles = useMemo(
-    () => itemsPaginados.map((item) => item.id),
-    [itemsPaginados]
+    () => mostrarResumenDeuda ? [] : itemsPaginados.map((item) => item.id),
+    [itemsPaginados, mostrarResumenDeuda]
   );
 
   const todosVisiblesSeleccionados = useMemo(
@@ -543,7 +581,7 @@ export default function InventarioPrincipalPage() {
   );
 
   const exportarInventarioExcel = useCallback(async () => {
-    if (itemsFiltrados.length === 0) {
+    if (itemsTabla.length === 0) {
       setMensaje("No hay equipos filtrados para exportar");
       return;
     }
@@ -553,7 +591,7 @@ export default function InventarioPrincipalPage() {
       setMensaje("");
 
       const XLSX = await import("xlsx");
-      const filas = itemsFiltrados.map((item) => ({
+      const filas = itemsTabla.map((item) => ({
         ID: item.id,
         IMEI: String(item.imei || ""),
         REFERENCIA: item.referencia || "",
@@ -569,7 +607,7 @@ export default function InventarioPrincipalPage() {
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(filas);
-      itemsFiltrados.forEach((item, index) => {
+      itemsTabla.forEach((item, index) => {
         const row = index + 2;
         const imeiCell = worksheet[`B${row}`];
         const costoCell = worksheet[`F${row}`];
@@ -606,13 +644,25 @@ export default function InventarioPrincipalPage() {
       const fecha = new Date().toISOString().slice(0, 10);
       XLSX.writeFile(workbook, `inventario-principal-${fecha}.xlsx`);
 
-      setMensaje(`Exportacion completada: ${itemsFiltrados.length} equipo(s) en Excel.`);
+      setMensaje(`Exportacion completada: ${itemsTabla.length} equipo(s) en Excel.`);
     } catch {
       setMensaje("Error: No fue posible exportar el inventario a Excel");
     } finally {
       setExportandoExcel(false);
     }
-  }, [itemsFiltrados, sedes]);
+  }, [itemsTabla, sedes]);
+
+  const abrirDetalleDeuda = (key: string) => {
+    sedeParaEnfocar.current = key;
+    setSedeDeudaAbierta(key);
+    setPagina(1);
+    setIdsSeleccionados([]);
+  };
+
+  const cerrarDetalleDeuda = () => {
+    setSedeDeudaAbierta(null);
+    setIdsSeleccionados([]);
+  };
 
   const alternarSeleccion = (id: number) => {
     setIdsSeleccionados((actuales) =>
@@ -1333,14 +1383,44 @@ export default function InventarioPrincipalPage() {
 
         <section className={styles.stockPanel} aria-busy={inventoryLoading}>
           <div className={styles.stockHeader}>
-            <div className={styles.stockTitle}><span className={styles.sectionIcon}><DashboardIcon name="inventory" /></span><h2>{mostrarDeudor ? "Equipos con deuda" : "Stock de inventario"}</h2><span>{itemsFiltrados.length.toLocaleString("es-CO")} registros</span></div>
+            <div className={styles.stockTitle}><span className={styles.sectionIcon}><DashboardIcon name={mostrarResumenDeuda ? "store" : "inventory"} /></span><h2>{mostrarResumenDeuda ? "Deudas por sede" : mostrarDeudor ? "Equipos con deuda" : "Stock de inventario"}</h2><span>{(mostrarResumenDeuda ? deudasPorSede.length : itemsTabla.length).toLocaleString("es-CO")} {mostrarResumenDeuda ? "sedes" : "registros"}</span></div>
             <div className={styles.filters}>
               <label className={styles.search}><DashboardIcon name="search" /><span className="sr-only">Buscar en inventario principal</span><input type="search" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder={mostrarDeudor ? "Buscar IMEI, referencia, factura o deudor" : "Buscar IMEI, referencia, factura o distribuidor"} /></label>
               <label><span className="sr-only">{mostrarDeudor ? "Filtrar por deudor" : "Filtrar por sede destino"}</span><select value={filtroSedeDestinoId} onChange={(event) => setFiltroSedeDestinoId(event.target.value)}><option value="">{mostrarDeudor ? "Todos los deudores" : "Todas las sedes"}</option>{sedesDestinoOperativas.map((sede) => <option key={sede.id} value={sede.id}>{sede.nombre}</option>)}</select></label>
-              <button type="button" onClick={() => void exportarInventarioExcel()} disabled={inventoryLoading || exportandoExcel || itemsFiltrados.length === 0} className={styles.outlineButton}><DashboardIcon name="download" />{exportandoExcel ? "Exportando…" : "Exportar Excel"}</button>
+              <button type="button" onClick={() => void exportarInventarioExcel()} disabled={inventoryLoading || exportandoExcel || itemsTabla.length === 0} className={styles.outlineButton}><DashboardIcon name="download" />{exportandoExcel ? "Exportando…" : "Exportar Excel"}</button>
             </div>
           </div>
           <div className={styles.tabs} aria-label="Estado del inventario">{FILTROS_ESTADO.map((filtro) => <button key={filtro.value} type="button" onClick={() => setFiltroEstado(filtro.value)} aria-pressed={filtroEstado === filtro.value} className={filtroEstado === filtro.value ? styles.tabActive : undefined}>{filtro.label}</button>)}</div>
+          {mostrarResumenDeuda ? <>
+            <div className={styles.debtSummary}>
+              <div><strong>{itemsFiltrados.length.toLocaleString("es-CO")} equipos con deuda</strong><span>Selecciona una sede para consultar el detalle.</span></div>
+              <div className={styles.debtTotal}><span>Total pendiente</span><strong>{formatoPesos(totalDeudaConsulta)}</strong></div>
+            </div>
+            <div className={styles.tableScroll}>
+              <table className={`${styles.table} ${styles.debtGroupsTable}`} aria-label="Deudas agrupadas por sede">
+                <thead><tr><th>Sede deudora</th><th className={styles.number}>Equipos con deuda</th><th className={styles.money}>Total pendiente</th><th>Detalle</th></tr></thead>
+                <tbody>{!deudasPaginadas.length ? <tr><td colSpan={4} className={styles.empty} role="status">{inventoryLoading ? "Cargando deudas por sede…" : inventoryError ? "Las deudas no están disponibles. Reintenta la consulta." : "No hay deudas que coincidan con los filtros."}</td></tr> : deudasPaginadas.map((grupo) => <tr key={grupo.key} onClick={() => abrirDetalleDeuda(grupo.key)} className={styles.debtGroupRow}>
+                  <td><div className={styles.debtSede}><span className={styles.sedeIcon}><DashboardIcon name="store" /></span><strong>{grupo.nombre}</strong></div></td>
+                  <td className={styles.number}>{grupo.equipos.toLocaleString("es-CO")}</td>
+                  <td className={styles.money}>{formatoPesos(grupo.totalPendiente)}</td>
+                  <td><button type="button" ref={(element) => { if (element) sedeResumenRefs.current.set(grupo.key, element); else sedeResumenRefs.current.delete(grupo.key); }} className={styles.detailButton} aria-label={`Ver detalle de ${grupo.nombre}`} onClick={(event) => { event.stopPropagation(); abrirDetalleDeuda(grupo.key); }}>Ver detalle<DashboardIcon name="chevron" /></button></td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+            <div className={styles.pagination}>
+              <div className={styles.resultCount}><span className={styles.pageSize}>10 sedes por página</span><p>Mostrando {deudasPorSede.length ? (paginaSedesActual - 1) * PAGE_SIZE + 1 : 0} – {Math.min(paginaSedesActual * PAGE_SIZE, deudasPorSede.length)} de {deudasPorSede.length.toLocaleString("es-CO")} sedes</p></div>
+              <nav aria-label="Paginación de sedes deudoras">
+                <button type="button" onClick={() => setPaginaSedes((actual) => Math.max(1, actual - 1))} disabled={paginaSedesActual === 1} aria-label="Página anterior">Anterior</button>
+                {paginasSedesVisibles.map((numero, index) => <span key={numero}>{paginasSedesVisibles[index - 1] && numero - paginasSedesVisibles[index - 1] > 1 && <span className={styles.ellipsis}>…</span>}<button type="button" onClick={() => setPaginaSedes(numero)} aria-current={paginaSedesActual === numero ? "page" : undefined} className={paginaSedesActual === numero ? styles.currentPage : undefined}>{numero}</button></span>)}
+                <button type="button" onClick={() => setPaginaSedes((actual) => Math.min(totalPaginasSedes, actual + 1))} disabled={paginaSedesActual === totalPaginasSedes} aria-label="Página siguiente">Siguiente</button>
+              </nav>
+            </div>
+          </> : <>
+          {mostrarDeudor && sedeDeudaAbierta && <div className={styles.debtDetailHeader}>
+            <button type="button" ref={volverSedesRef} onClick={cerrarDetalleDeuda} className={styles.outlineButton}><span className={styles.backIcon}><DashboardIcon name="arrow" /></span>Volver a sedes</button>
+            <div className={styles.debtDetailTitle}><span>Detalle de deuda</span><h3>{grupoDeudaAbierto?.nombre || "Sede sin equipos pendientes"}</h3><span>{itemsTabla.length.toLocaleString("es-CO")} equipos</span></div>
+            <div className={styles.debtTotal}><span>Total pendiente</span><strong>{formatoPesos(grupoDeudaAbierto?.totalPendiente || 0)}</strong></div>
+          </div>}
           {idsSeleccionados.length > 0 && (
             <div className="border-b border-red-100 bg-red-50/60 px-6 py-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -1420,7 +1500,7 @@ export default function InventarioPrincipalPage() {
                 <th>ID</th>{mostrarDeudor && <th>Quién me debe</th>}<th className={styles.equipmentColumn}>Equipo / IMEI</th><th>Color</th><th>Costo</th><th>Factura / Distribuidor</th><th>Estado</th><th>Cobro</th>{!mostrarDeudor && <th>Sede destino</th>}<th>Acciones</th>
               </tr></thead>
               <tbody>
-                {!itemsFiltrados.length ? <tr><td colSpan={10} className={styles.empty} role="status">{inventoryLoading ? "Cargando inventario principal…" : inventoryError ? "El inventario no está disponible. Reintenta la consulta." : "No hay equipos que coincidan con los filtros."}</td></tr> : itemsPaginados.map((item) => {
+                {!itemsTabla.length ? <tr><td colSpan={10} className={styles.empty} role="status">{inventoryLoading ? "Cargando inventario principal…" : inventoryError ? "El inventario no está disponible. Reintenta la consulta." : "No hay equipos que coincidan con los filtros."}</td></tr> : itemsPaginados.map((item) => {
                   const estadoNormalizado = String(item.estado || "BODEGA").toUpperCase();
                   const enviado = estadoNormalizado === "PRESTAMO";
                   const pagado = estadoNormalizado === "PAGO";
@@ -1450,13 +1530,14 @@ export default function InventarioPrincipalPage() {
             </table>
           </div>
           <div className={styles.pagination}>
-            <div className={styles.resultCount}><span className={styles.pageSize}>10 por página</span><p>Mostrando {primerResultado} – {ultimoResultado} de {itemsFiltrados.length.toLocaleString("es-CO")}</p></div>
+            <div className={styles.resultCount}><span className={styles.pageSize}>10 por página</span><p>Mostrando {primerResultado} – {ultimoResultado} de {itemsTabla.length.toLocaleString("es-CO")}</p></div>
             <nav aria-label="Paginación de inventario">
               <button type="button" onClick={() => setPagina((actual) => Math.max(1, actual - 1))} disabled={paginaActual === 1} aria-label="Página anterior">Anterior</button>
               {paginasVisibles.map((numero, index) => <span key={numero}>{paginasVisibles[index - 1] && numero - paginasVisibles[index - 1] > 1 && <span className={styles.ellipsis}>…</span>}<button type="button" onClick={() => setPagina(numero)} aria-current={paginaActual === numero ? "page" : undefined} className={paginaActual === numero ? styles.currentPage : undefined}>{numero}</button></span>)}
               <button type="button" onClick={() => setPagina((actual) => Math.min(totalPaginas, actual + 1))} disabled={paginaActual === totalPaginas} aria-label="Página siguiente">Siguiente</button>
             </nav>
           </div>
+          </>}
         </section>
       </main>
 

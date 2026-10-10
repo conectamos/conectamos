@@ -22,6 +22,7 @@ function load(file, imports = {}, injected = {}, transform = value => value) {
 const sedesModule = load('lib/sedes.ts');
 const products = load('lib/product-types.ts');
 const media = load('lib/record-device-media.ts');
+const debtGroups = load('lib/warehouse-debt-groups.ts');
 const css = { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) };
 const administrator = { nombre: 'Administrador de prueba', usuario: 'admin.qa', rolNombre: 'ADMIN' };
 const sedes = [{ id: 1, nombre: 'BODEGA PRINCIPAL' }, { id: 2, nombre: 'SEDE 1' }, { id: 3, nombre: 'ONLINE' }, { id: 4, nombre: 'VENTAS' }];
@@ -58,12 +59,12 @@ function probe({ initial = {}, fetchImpl, confirmation = true } = {}) {
   const locals = declarations.filter(node => ts.isIdentifier(node.name)).map(node => node.name.text);
   const finalReturn = component.body.statements.find(ts.isReturnStatement); assert.ok(finalReturn);
   const state = { items: rows, user: administrator, sedes, referenciasCatalogo: references, puedeEliminar: true, inventoryLoading: false, ...initial };
-  const calls = [], effects = [], dependencies = [], callbackMemo = [], captures = [], confirmations = [], refs = [];
-  let cursor = 0, effectCursor = 0, callbackCursor = 0, refCursor = 0, captured;
+  const calls = [], effects = [], dependencies = [], callbackMemo = [], memos = [], captures = [], confirmations = [], refs = [];
+  let cursor = 0, effectCursor = 0, callbackCursor = 0, memoCursor = 0, refCursor = 0, captured;
   const equal = (left, right) => left && right && left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
   const react = {
     useState(value) { const name = states[cursor++]; assert.ok(name, 'Estado inesperado'); if (!(name in state)) state[name] = typeof value === 'function' ? value() : value; return [state[name], next => { state[name] = typeof next === 'function' ? next(state[name]) : next; }]; },
-    useMemo: callback => callback(),
+    useMemo(callback, deps) { const index = memoCursor++; if (!memos[index] || !equal(memos[index].deps, deps)) memos[index] = { value: callback(), deps }; return memos[index].value; },
     useCallback(callback, deps) { const index = callbackCursor++; if (!callbackMemo[index] || !equal(callbackMemo[index].deps, deps)) callbackMemo[index] = { callback, deps }; return callbackMemo[index].callback; },
     // Initial data is supplied by this probe; skip only mount effects, then execute actual dependency changes.
     useEffect(callback, deps) { const index = effectCursor++; if (dependencies[index] && !equal(dependencies[index], deps)) effects.push(callback); dependencies[index] = deps || []; },
@@ -74,6 +75,7 @@ function probe({ initial = {}, fetchImpl, confirmation = true } = {}) {
     'next/link': { __esModule: true, default: ({ children, ...props }) => jsx.jsx('a', { ...props, children }) },
     'next/image': { __esModule: true, default: props => jsx.jsx('img', props) },
     '@/lib/prestamos': { NOMBRE_SEDE_BODEGA: 'BODEGA PRINCIPAL' }, '@/lib/product-types': products, '@/lib/sedes': sedesModule,
+    '@/lib/warehouse-debt-groups': debtGroups,
     '@/lib/use-live-refresh': { useLiveRefresh() {} },
     '@/app/dashboard/_components/dashboard-icon': { __esModule: true, default: () => null },
     '@/app/ventas/_components/sales-dashboard-parts': { SalesProfile: props => jsx.jsx('div', { 'data-profile': true, children: `${props.name} ${props.role}` }) },
@@ -91,7 +93,7 @@ function probe({ initial = {}, fetchImpl, confirmation = true } = {}) {
   }, text => text.slice(0, finalReturn.getStart(ast)) + `__capture({${locals.join(',')}});\n` + text.slice(finalReturn.getStart(ast)));
   const instance = {
     state, calls, effects, captures, confirmations,
-    render() { cursor = effectCursor = callbackCursor = refCursor = 0; return { tree: resolve(workspace.default()) }; },
+    render() { cursor = effectCursor = callbackCursor = memoCursor = refCursor = 0; return { tree: resolve(workspace.default()) }; },
     flushEffects() { for (let count = 0; effects.length && count < 8; count++) { const queued = effects.splice(0); queued.forEach(effect => effect()); this.render(); } assert.equal(effects.length, 0); },
     get view() { return captured; },
   };
@@ -146,27 +148,100 @@ test('filtros de deuda, pagados, enviados y sede se combinan antes de paginar si
   assert.equal(legacy.view.equiposDisponibles.length, 1); assert.equal(legacy.view.equiposEnviados.length, 0); assert.equal(legacy.view.pendientesCobro.length, 1);
 });
 
-test('Deuda muestra quién debe junto al ID con la sede actual, sin confundir al distribuidor con el deudor', () => {
+test('Deuda abre un resumen por sede y revela los equipos solo al pulsar Ver detalle', () => {
   const debts = [
     { ...rows[5], sedeDestinoId: 2, sedeDestinoNombre: 'SEDE ACTUAL QA', distribuidor: 'PROVEEDOR ACREEDOR QA' },
     { ...rows[12], sedeDestinoId: 99, sedeDestinoNombre: null },
     { ...rows[19], sedeDestinoId: null, sedeDestinoNombre: null },
   ];
   const instance = probe({ initial: { items: debts, filtroEstado: 'COBRO_PENDIENTE' } });
-  const { tree } = instance.render();
-  assert.ok(textOf(tree).includes('Equipos con deuda'));
+  let { tree } = instance.render();
+  assert.equal(instance.view.mostrarResumenDeuda, true);
+  assert.ok(textOf(tree).includes('Deudas por sede'));
+  assert.deepEqual(elements(tree).filter(node => node.type === 'th').map(textOf), ['Sede deudora', 'Equipos con deuda', 'Total pendiente', 'Detalle']);
+  assert.deepEqual(instance.view.deudasPorSede.map(group => group.nombre).sort(), ['SEDE ACTUAL QA', 'Sede #99', 'Deudor no identificado'].sort());
+  assert.equal(instance.view.totalDeudaConsulta, 1830000);
+  assert.deepEqual(instance.view.idsVisibles, []);
+  assert.ok(!elements(tree).some(node => node.type === 'input' && node.props.type === 'checkbox'));
+  assert.ok(!textOf(tree).includes('PROVEEDOR ACREEDOR QA'));
+  assert.ok(!textOf(tree).includes(debts[0].imei));
+  control(tree, node => node.type === 'button' && node.props['aria-label'] === 'Ver detalle de SEDE ACTUAL QA').props.onClick({ stopPropagation() {} });
+  tree = instance.render().tree; instance.flushEffects(); tree = instance.render().tree;
+  assert.equal(instance.state.sedeDeudaAbierta, 'sede:2');
+  assert.equal(instance.view.mostrarResumenDeuda, false);
+  assert.deepEqual(instance.view.itemsTabla.map(item => item.id), [debts[0].id]);
   assert.deepEqual(elements(tree).filter(node => node.type === 'th').map(textOf), ['', 'ID', 'Quién me debe', 'Equipo / IMEI', 'Color', 'Costo', 'Factura / Distribuidor', 'Estado', 'Cobro', 'Acciones']);
   const debtorCells = elements(tree).filter(node => node.type === 'td' && node.props.className === 'debtor').map(normalizedText);
-  assert.deepEqual(debtorCells, ['SEDE ACTUAL QA', 'Sede #99', 'Deudor no identificado']);
+  assert.deepEqual(debtorCells, ['SEDE ACTUAL QA']);
   assert.ok(textOf(tree).includes('PROVEEDOR ACREEDOR QA'));
+  assert.ok(textOf(tree).includes(debts[0].imei));
+  assert.ok(!textOf(tree).includes(debts[1].imei));
   assert.equal(control(tree, node => node.type === 'option' && node.props.value === '').props.children, 'Todos los deudores');
   instance.state.busqueda = 'sede actual qa'; instance.state.sedes = []; instance.render(); instance.flushEffects();
   assert.equal(instance.view.itemsFiltrados.length, 1); assert.equal(instance.view.itemsFiltrados[0].id, debts[0].id);
+  assert.equal(instance.view.mostrarResumenDeuda, true);
   instance.state.filtroSedeDestinoId = '3'; instance.render(); instance.flushEffects();
   assert.equal(instance.view.itemsFiltrados.length, 0);
 });
 
-test('Excel incluye el deudor actual solo cuando hay cobro pendiente y conserva el destino de equipos pagados', async () => {
+test('sedes con el mismo nombre permanecen separadas por ID y cada fila abre exclusivamente su deuda', () => {
+  const debts = [
+    { ...rows[5], sedeDestinoId: 2, sedeDestinoNombre: 'SEDE CON NOMBRE REPETIDO', costo: 400.25 },
+    { ...rows[12], sedeDestinoId: 2, sedeDestinoNombre: 'SEDE CON NOMBRE REPETIDO', costo: 500.25 },
+    { ...rows[19], sedeDestinoId: 3, sedeDestinoNombre: 'SEDE CON NOMBRE REPETIDO', costo: 900.25 },
+  ];
+  const instance = probe({ initial: { items: debts, filtroEstado: 'COBRO_PENDIENTE' } });
+  assert.deepEqual(instance.view.deudasPorSede.map(group => [group.key, group.equipos, group.totalPendiente]), [['sede:2', 2, 900.5], ['sede:3', 1, 900.25]]);
+  assert.equal(instance.view.totalDeudaConsulta, 1800.75);
+  const groupRow = control(instance.render().tree, node => node.type === 'tr' && node.key === 'sede:3');
+  groupRow.props.onClick(); instance.render(); instance.flushEffects();
+  assert.equal(instance.state.sedeDeudaAbierta, 'sede:3');
+  assert.deepEqual(instance.view.itemsTabla.map(item => item.id), [debts[2].id]);
+});
+
+test('detalle conserva la página de sedes al volver y pagina los equipos con sus acciones y selección', () => {
+  const debts = Array.from({ length: 12 }, (_, index) => ({ ...rows[5], id: 7000 + index, imei: String(7000 + index).padStart(15, '0'), sedeDestinoId: index + 2, sedeDestinoNombre: `SEDE QA ${index + 2}`, costo: 10000 - index * 100 }));
+  const instance = probe({ initial: { items: debts, filtroEstado: 'COBRO_PENDIENTE', paginaSedes: 2, idsSeleccionados: [debts[0].id] } });
+  const summaryKeys = instance.view.deudasPaginadas.map(group => group.key);
+  assert.equal(instance.view.totalPaginasSedes, 2); assert.equal(summaryKeys.length, 2);
+  assert.ok(normalizedText(instance.render().tree).includes('Mostrando 11 – 12 de 12 sedes'));
+  control(instance.render().tree, node => node.type === 'tr' && node.key === summaryKeys[0]).props.onClick();
+  instance.render(); instance.flushEffects();
+  assert.equal(instance.state.pagina, 1); assert.equal(instance.state.paginaSedes, 2);
+  assert.deepEqual(instance.state.idsSeleccionados, []);
+  instance.view.alternarSeleccionVisibles(); instance.render();
+  assert.equal(instance.state.idsSeleccionados.length, 1);
+  control(instance.render().tree, node => node.type === 'button' && normalizedText(node) === 'Volver a sedes').props.onClick();
+  instance.render(); instance.flushEffects();
+  assert.equal(instance.view.mostrarResumenDeuda, true); assert.equal(instance.state.paginaSedes, 2);
+  assert.deepEqual(instance.view.deudasPaginadas.map(group => group.key), summaryKeys);
+  assert.deepEqual(instance.state.idsSeleccionados, []);
+  assert.equal(instance.state.filtroEstado, 'COBRO_PENDIENTE');
+
+  const many = Array.from({ length: 16 }, (_, index) => ({ ...rows[5], id: 8000 + index, imei: String(8000 + index).padStart(15, '0'), sedeDestinoId: index < 13 ? 2 : 3, sedeDestinoNombre: index < 13 ? 'SEDE DETALLE QA' : 'OTRA SEDE QA' }));
+  const detail = probe({ initial: { items: many, filtroEstado: 'COBRO_PENDIENTE' } });
+  control(detail.render().tree, node => node.type === 'button' && node.props['aria-label'] === 'Ver detalle de SEDE DETALLE QA').props.onClick({ stopPropagation() {} });
+  detail.render(); detail.flushEffects();
+  assert.equal(detail.view.itemsTabla.length, 13); assert.equal(detail.view.totalPaginas, 2);
+  detail.view.alternarSeleccionVisibles(); detail.render(); assert.equal(detail.state.idsSeleccionados.length, 10);
+  detail.state.pagina = 2; let tree = detail.render().tree;
+  assert.equal(detail.view.itemsPaginados.length, 3); assert.ok(normalizedText(tree).includes('Mostrando 11 – 13 de 13'));
+  detail.view.alternarSeleccionVisibles(); tree = detail.render().tree;
+  assert.deepEqual(detail.state.idsSeleccionados, many.slice(0, 13).map(item => item.id));
+  for (const row of many.slice(10, 13)) {
+    const tr = control(tree, node => node.type === 'tr' && textOf(node).includes(row.imei));
+    assert.equal(control(tr, node => node.type === 'button' && node.props['aria-label'] === 'Enviar a sede').props.disabled, true);
+    assert.equal(control(tr, node => node.type === 'button' && node.props['aria-label'] === 'Volver a bodega').props.disabled, false);
+    assert.ok(elements(tr).some(node => node.type === 'button' && node.props['aria-label'] === 'Editar'));
+  }
+  detail.state.items = many.map(item => item.id === many[0].id ? { ...item, sedeDestinoId: 3, sedeDestinoNombre: 'OTRA SEDE QA' } : item);
+  detail.render(); detail.flushEffects();
+  assert.equal(detail.view.itemsTabla.length, 12);
+  assert.ok(!detail.state.idsSeleccionados.includes(many[0].id));
+  assert.ok(detail.view.itemsSeleccionados.every(item => item.sedeDestinoId === 2));
+});
+
+test('Excel mantiene todos los deudores del resumen y exporta solo la sede abierta en el detalle', async () => {
   const items = [
     { ...rows[5], sedeDestinoNombre: 'SEDE DEUDORA QA' },
     { ...rows[6], sedeDestinoNombre: 'SEDE PAGADA QA' },
@@ -178,9 +253,31 @@ test('Excel incluye el deudor actual solo cuando hay cobro pendiente y conserva 
   const exported = XLSX.utils.sheet_to_json(sheet);
   assert.deepEqual(exported.map(row => row.DEUDOR), ['SEDE DEUDORA QA', '-', 'Deudor no identificado']);
   assert.deepEqual(exported.map(row => row['SEDE DESTINO']), ['SEDE DEUDORA QA', 'SEDE PAGADA QA', '-']);
-  instance.state.filtroEstado = 'COBRO_PENDIENTE'; instance.render();
+  instance.state.filtroEstado = 'COBRO_PENDIENTE'; instance.render(); instance.flushEffects();
   await instance.view.exportarInventarioExcel();
   assert.equal(XLSX.utils.sheet_to_json(instance.captures[1].book.Sheets['Inventario principal']).length, 2);
+  control(instance.render().tree, node => node.type === 'button' && node.props['aria-label'] === 'Ver detalle de SEDE DEUDORA QA').props.onClick({ stopPropagation() {} });
+  instance.render(); instance.flushEffects();
+  await instance.view.exportarInventarioExcel();
+  const detail = XLSX.utils.sheet_to_json(instance.captures[2].book.Sheets['Inventario principal']);
+  assert.equal(detail.length, 1); assert.equal(detail[0].DEUDOR, 'SEDE DEUDORA QA'); assert.equal(detail[0].IMEI, items[0].imei);
+  control(instance.render().tree, node => node.type === 'button' && normalizedText(node) === 'Volver a sedes').props.onClick();
+  instance.render(); instance.flushEffects();
+  await instance.view.exportarInventarioExcel();
+  assert.equal(XLSX.utils.sheet_to_json(instance.captures[3].book.Sheets['Inventario principal']).length, 2);
+});
+
+test('refrescar deudas ajusta una página de sedes eliminada y Anterior avanza sin quedar detenido', () => {
+  const debts = Array.from({ length: 21 }, (_, index) => ({ ...rows[5], id: 7500 + index, imei: String(7500 + index).padStart(15, '0'), sedeDestinoId: index + 2, sedeDestinoNombre: `SEDE QA ${index + 2}`, costo: 10000 - index * 100 }));
+  const instance = probe({ initial: { items: debts, filtroEstado: 'COBRO_PENDIENTE', paginaSedes: 3 } });
+  assert.equal(instance.view.totalPaginasSedes, 3); assert.equal(instance.view.deudasPaginadas.length, 1);
+  instance.state.items = debts.slice(0, 12); instance.render(); instance.flushEffects();
+  assert.equal(instance.view.totalPaginasSedes, 2); assert.equal(instance.state.paginaSedes, 2);
+  assert.ok(normalizedText(instance.render().tree).includes('Mostrando 11 – 12 de 12 sedes'));
+  control(instance.render().tree, node => node.type === 'button' && node.props['aria-label'] === 'Página anterior').props.onClick();
+  instance.render(); instance.flushEffects();
+  assert.equal(instance.state.paginaSedes, 1); assert.equal(instance.view.deudasPaginadas.length, 10);
+  assert.ok(normalizedText(instance.render().tree).includes('Mostrando 1 – 10 de 12 sedes'));
 });
 
 test('selección visible conserva otras páginas y mantiene elegibilidad de envío y devolución', () => {
@@ -206,6 +303,13 @@ test('cambiar búsqueda, estado o sede limpia selección y regresa a la primera 
     const instance = probe({ initial: { pagina: 2, idsSeleccionados: [rows[0].id, rows[15].id] } });
     Object.assign(instance.state, change); instance.render(); instance.flushEffects();
     assert.equal(instance.state.pagina, 1); assert.deepEqual(instance.state.idsSeleccionados, []);
+  }
+  for (const change of [{ busqueda: 'TECNO' }, { filtroEstado: 'ENVIADOS' }, { filtroSedeDestinoId: '3' }]) {
+    const instance = probe({ initial: { filtroEstado: 'COBRO_PENDIENTE', sedeDeudaAbierta: 'sede:2', pagina: 2, paginaSedes: 2, idsSeleccionados: [rows[5].id] } });
+    Object.assign(instance.state, change); instance.render(); instance.flushEffects();
+    assert.equal(instance.state.sedeDeudaAbierta, null);
+    assert.equal(instance.state.pagina, 1); assert.equal(instance.state.paginaSedes, 1);
+    assert.deepEqual(instance.state.idsSeleccionados, []);
   }
 });
 
@@ -258,7 +362,7 @@ test('cada equipo entrega su propia imagen de catálogo o alternativa Apple, And
 });
 
 test('carga, error y ausencia de equipos tienen estados distintos y un error permite reintentar', async () => {
-  for (const [initial, expected] of [[{ items: [], inventoryLoading: true }, 'Cargando inventario principal…'], [{ items: [], inventoryError: 'Error servidor QA' }, 'El inventario no está disponible'], [{ items: [] }, 'No hay equipos que coincidan']]) {
+  for (const [initial, expected] of [[{ items: [], inventoryLoading: true }, 'Cargando inventario principal…'], [{ items: [], inventoryError: 'Error servidor QA' }, 'El inventario no está disponible'], [{ items: [] }, 'No hay equipos que coincidan'], [{ items: [], filtroEstado: 'COBRO_PENDIENTE', inventoryLoading: true }, 'Cargando deudas por sede…'], [{ items: [], filtroEstado: 'COBRO_PENDIENTE', inventoryError: 'Error servidor QA' }, 'Las deudas no están disponibles'], [{ items: [], filtroEstado: 'COBRO_PENDIENTE' }, 'No hay deudas que coincidan']]) {
     const { tree } = probe({ initial }).render(); assert.ok(textOf(tree).includes(expected));
   }
   const failed = probe({ fetchImpl: async () => ({ ok: false, data: { error: 'Sin permiso QA' } }) });

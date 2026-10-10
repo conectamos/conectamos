@@ -68,6 +68,32 @@
 .table .idCell { text-align:center; min-width:68px; }
 .table .debtor { min-width:145px; max-width:220px; color:#172033; overflow-wrap:anywhere; }
 .debtor strong { font-size:13px; font-weight:700; }
+.debtSummary,.debtDetailHeader { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; padding:17px 20px; border-bottom:1px solid #d4dce7; background:#f8f9fb; }
+.debtSummary > div:first-child { display:grid; gap:5px; }
+.debtSummary strong { font-size:14px; }
+.debtSummary span,.debtDetailTitle > span { color:#64748b; font-size:12px; }
+.debtTotal { display:grid; gap:5px; text-align:right; margin-left:auto; }
+.debtTotal > span { font-size:12px; color:#64748b; }
+.debtTotal > strong { font-size:21px; font-weight:800; color:#172033; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.table.debtGroupsTable { min-width:650px; font-size:14px; }
+.debtGroupsTable th { font-size:12px; }
+.debtGroupsTable td { height:65px; padding:11px 20px; }
+.debtGroupsTable th { padding-inline:20px; }
+.debtGroupsTable th:first-child { width:46%; }
+.table .number { text-align:right; font-variant-numeric:tabular-nums; }
+.debtGroupRow { cursor:pointer; }
+.table tbody tr.debtGroupRow:hover { background:#fff5f5; }
+.debtSede { display:flex; align-items:center; gap:13px; }
+.debtSede strong { overflow-wrap:anywhere; font-size:14px; }
+.sedeIcon { display:flex; align-items:center; justify-content:center; width:36px; height:36px; flex-shrink:0; border-radius:9px; background:#eef2f6; color:#52637a; }
+.sedeIcon svg { width:20px; height:20px; }
+.detailButton { display:inline-flex; gap:12px; align-items:center; justify-content:center; min-height:40px; padding:9px 13px; border:1px solid #d4dce7; border-radius:8px; background:#fff; white-space:nowrap; font-size:12px; font-weight:700; cursor:pointer; }
+.detailButton:hover { color:#e30613; border-color:#e30613; }
+.detailButton svg { width:16px; height:16px; transform:rotate(-90deg); }
+.debtDetailTitle { min-width:0; }
+.debtDetailTitle h3 { margin:3px 0; font-size:19px; font-weight:800; overflow-wrap:anywhere; }
+.backIcon svg { width:17px; height:17px; transform:rotate(180deg); }
+@media(max-width:700px) { .debtSummary,.debtDetailHeader { padding:15px 12px; gap:12px; }.debtDetailHeader > button { flex-basis:100%; justify-self:start; }.debtTotal > strong { font-size:18px; }.debtGroupsTable td { padding:10px 12px; }.debtGroupsTable th { padding-inline:12px; }.debtGroupsTable th:first-child { width:auto; }.debtSummary .debtTotal { margin-left:0; text-align:left; }.debtSede strong { max-width:220px; } }
 .equipmentColumn { min-width:320px; }
 .equipment { display:flex; align-items:center; gap:15px; }
 .equipment strong { display:block; max-width:300px; overflow-wrap:anywhere; font-size:12px; font-weight:600; line-height:1.4; }
