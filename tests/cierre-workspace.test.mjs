@@ -12,6 +12,7 @@ const report = {
   scope: { sedeId: null, label: "Todas las sedes" }, totals: { units: 12, amount: 12_345_678 },
   financiers: [financier, { ...financier, key: "ADDI", name: "ADDI", units: null, amount: null, complete: false, source: "CONECTAMOS" }, { ...financier, key: "OTRA", name: "Otra financiera", units: 0, amount: 0 }],
   complete: false, lastUpdatedAt: "2026-10-13T05:15:00Z",
+  localSync: { complete: true, pending: 0, lastUpdatedAt: "2026-10-13T05:15:00Z" },
   options: { canSelectSede: true, sedes: [{ id: 2, nombre: "SEDE 2" }, { id: 3, nombre: "SEDE 3" }] },
 };
 
@@ -28,12 +29,18 @@ function textOf(node) {
   return textOf(node.props?.children);
 }
 
-function harness({ admin = true, delayed = false } = {}) {
+function harness({ admin = true, delayed = false, reports = [report] } = {}) {
   const slots = [];
   const effects = [];
   const calls = [];
   const pending = [];
   const downloads = [];
+  const timers = new Map();
+  const dialogCalls = { opened: 0, closed: 0 };
+  const dialogElement = { showModal() { dialogCalls.opened++; }, close() { dialogCalls.closed++; } };
+  let timerId = 0;
+  let now = 0;
+  let reportIndex = 0;
   let index = 0;
   let dirty = true;
   let tree;
@@ -71,7 +78,9 @@ function harness({ admin = true, delayed = false } = {}) {
       const page = Number(new URL(url, "http://localhost").searchParams.get("page"));
       return { ok: true, json: async () => ({ page, pageSize: 10, total: 12, units: 12, amount: 12_345_678, complete: true, items: Array.from({ length: page === 1 ? 10 : 2 }, (_, i) => ({ id: `${page}-${i}`, date: "2026-09-01T04:59:00Z", creditNumber: `C-${page}-${i}`, customerName: "Cliente", customerDocument: "1.234.567", sedeName: "SEDE 2", amount: 1_000_000, status: "Efectivo", source: "API PayJoy" })) }) };
     }
-    const result = { ...report, options: { ...report.options, canSelectSede: admin } };
+    const next = reports[Math.min(reportIndex++, reports.length - 1)];
+    if (next instanceof Error) return { ok: false, json: async () => ({ error: next.message }) };
+    const result = { ...next, options: { ...next.options, canSelectSede: admin } };
     if (delayed) return new Promise((resolve) => pending.push({ signal: options.signal, resolve: (value = result) => resolve({ ok: true, json: async () => value }) }));
     return { ok: true, json: async () => result };
   };
@@ -80,16 +89,20 @@ function harness({ admin = true, delayed = false } = {}) {
     createElement: () => { const link = { click() { downloads.push(this.download); }, remove() {} }; return link; },
   };
   const urlMock = { createObjectURL: () => "blob:excel", revokeObjectURL() {} };
-  new Function("require", "module", "exports", "fetch", "document", "URL", "setTimeout", code)((name) => {
+  new Function("require", "module", "exports", "fetch", "document", "URL", "setTimeout", "clearTimeout", code)((name) => {
     assert.ok(name in imports, `Unexpected UI dependency: ${name}`);
     return imports[name];
-  }, testModule, testModule.exports, mockFetch, documentMock, urlMock, (callback) => callback());
+  }, testModule, testModule.exports, mockFetch, documentMock, urlMock, (callback, delay) => {
+    const id = ++timerId;
+    timers.set(id, { callback, at: now + delay });
+    return id;
+  }, (id) => timers.delete(id));
   function render() {
     index = 0;
     dirty = false;
     tree = testModule.exports.default({ today: "2026-10-13", user: { name: "Ana", sedeId: 2, sedeName: "SEDE 2", isAdmin: admin, operational: true } });
     for (const node of descendants(tree)) {
-      if (node.type === "dialog" && node.props.ref) node.props.ref.current = { showModal() {}, close() {} };
+      if (node.type === "dialog" && node.props.ref) node.props.ref.current = dialogElement;
     }
     while (effects.length) effects.shift()();
   }
@@ -108,7 +121,21 @@ function harness({ admin = true, delayed = false } = {}) {
     control.props.onChange({ target: { value } });
     await settle();
   }
-  return { calls, downloads, pending, settle, find, setControl, nodes: () => descendants(tree), text: () => textOf(tree), submit: async () => { find("form").props.onSubmit({ preventDefault() {} }); await settle(); } };
+  async function advance(milliseconds) {
+    const end = now + milliseconds;
+    while (true) {
+      const next = [...timers.entries()].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!next) break;
+      now = next[1].at;
+      timers.delete(next[0]);
+      next[1].callback();
+      await settle();
+    }
+    now = end;
+    await settle();
+  }
+  function unmount() { for (const slot of slots) slot?.cleanup?.(); }
+  return { calls, downloads, pending, settle, advance, unmount, timers, dialogCalls, find, setControl, nodes: () => descendants(tree), text: () => textOf(tree), submit: async () => { find("form").props.onSubmit({ preventDefault() {} }); await settle(); } };
 }
 
 test("cierre distinguishes pending from confirmed zero, keeps full COP totals and pages the detail", async () => {
@@ -190,4 +217,117 @@ test("invalid custom range preserves the applied result and disables querying", 
   await ui.submit();
   assert.equal(ui.calls.length, before);
   assert.match(ui.text(), /12\.345\.678/);
+});
+
+test("pending local sales show progress and poll only the applied period every ten seconds until complete", async () => {
+  const awaiting = { ...report, totals: { units: null, amount: null }, financiers: report.financiers.map((row) => ({ ...row, units: null, amount: null, complete: false })), localSync: { complete: false, pending: 23, lastUpdatedAt: null } };
+  const partial = { ...report, localSync: { complete: false, pending: 4, lastUpdatedAt: "2026-10-13T05:15:00Z" } };
+  const ui = harness({ reports: [awaiting, partial, report] });
+  await ui.settle();
+  assert.match(ui.text(), /Consulta finalizada/);
+  assert.match(ui.text(), /Cargando ventas del periodo: 23 pendientes/);
+  assert.match(ui.text(), /Todavía no hay créditos cargados/);
+  assert.doesNotMatch(ui.text(), /\$\s*0/);
+  const appliedUrl = ui.calls[0].url;
+  await ui.setControl("Mes", "2025-09");
+  await ui.advance(9999);
+  assert.equal(ui.calls.length, 1);
+  await ui.advance(1);
+  assert.equal(ui.calls.length, 2);
+  assert.equal(ui.calls[1].url, appliedUrl);
+  assert.match(ui.text(), /Cargando ventas del periodo: 4 pendientes/);
+  assert.match(ui.text(), /12\.345\.678/);
+  await ui.advance(10_000);
+  assert.equal(ui.calls.length, 3);
+  assert.doesNotMatch(ui.text(), /Cargando ventas del periodo/);
+  assert.match(ui.text(), /Información pendiente/); // Provider coverage remains partial.
+  await ui.advance(60_000);
+  assert.equal(ui.calls.length, 3);
+  assert.equal(ui.timers.size, 0);
+  assert.ok(ui.calls.every((call) => call.url === appliedUrl));
+});
+
+test("Consultar acknowledges a fresh request even when its filter and result do not change", async () => {
+  const ui = harness({ delayed: true });
+  await ui.settle();
+  ui.pending[0].resolve();
+  await ui.settle();
+  assert.match(ui.text(), /Consulta finalizada/);
+  await ui.submit();
+  assert.equal(ui.calls.length, 2);
+  assert.equal(ui.calls[0].url, ui.calls[1].url);
+  assert.match(ui.text(), /Consultando el periodo seleccionado/);
+  assert.doesNotMatch(ui.text(), /Consulta finalizada/);
+  ui.pending[1].resolve();
+  await ui.settle();
+  assert.match(ui.text(), /Consulta finalizada/);
+  assert.match(ui.text(), /Ventas locales cargadas; conciliación de financieras pendiente/);
+});
+
+test("automatic updates refresh the open detail with its applied scope and page without reopening the dialog", async () => {
+  const partial = { ...report, localSync: { ...report.localSync, complete: false, pending: 4 } };
+  const ui = harness({ admin: false, reports: [partial, report] });
+  await ui.settle();
+  ui.find("button", "PAYJOY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  ui.find("button", "Siguiente").props.onClick();
+  await ui.settle();
+  const appliedDetail = ui.calls.at(-1).url;
+  await ui.setControl("Mes", "2025-08");
+  await ui.advance(10_000);
+  assert.equal(ui.calls.at(-1).url, appliedDetail);
+  assert.match(appliedDetail, /sedeId=2/);
+  assert.match(appliedDetail, /page=2/);
+  assert.match(ui.text(), /Página 2 de 2/);
+  assert.equal(ui.dialogCalls.opened, 1);
+  assert.equal(ui.dialogCalls.closed, 0);
+  assert.equal(ui.timers.size, 0);
+});
+
+test("failed automatic updates preserve displayed data and retry without calling providers", async () => {
+  const partial = { ...report, localSync: { ...report.localSync, complete: false, pending: 4 } };
+  const ui = harness({ reports: [partial, new Error("Conexión temporalmente no disponible"), report] });
+  await ui.settle();
+  await ui.advance(10_000);
+  assert.match(ui.text(), /Se conservan los últimos datos/);
+  assert.match(ui.text(), /12\.345\.678/);
+  assert.equal(ui.find("button", "Consultar").props.disabled, false);
+  await ui.advance(10_000);
+  assert.doesNotMatch(ui.text(), /Se conservan los últimos datos/);
+  assert.match(ui.text(), /Consulta finalizada/);
+  assert.equal(ui.timers.size, 0);
+  assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre?")));
+});
+
+test("changing the applied filter cancels an in-flight poll and ignores its stale result", async () => {
+  const partial = { ...report, localSync: { ...report.localSync, complete: false, pending: 4 } };
+  const ui = harness({ delayed: true, reports: [partial, partial, report] });
+  await ui.settle();
+  ui.pending[0].resolve();
+  await ui.settle();
+  await ui.advance(10_000);
+  assert.match(ui.text(), /Actualizando los datos/);
+  await ui.setControl("Mes", "2025-02");
+  await ui.submit();
+  assert.equal(ui.pending[1].signal.aborted, true);
+  ui.pending[2].resolve({ ...report, period: { ...report.period, label: "Febrero de 2025" } });
+  await ui.settle();
+  ui.pending[1].resolve({ ...partial, period: { ...report.period, label: "Respuesta anterior" } });
+  await ui.settle();
+  assert.match(ui.text(), /Febrero de 2025/);
+  assert.doesNotMatch(ui.text(), /Respuesta anterior/);
+  await ui.advance(30_000);
+  assert.equal(ui.calls.length, 3);
+  ui.unmount();
+  assert.equal(ui.timers.size, 0);
+});
+
+test("unmount cancels the next automatic update", async () => {
+  const ui = harness({ reports: [{ ...report, localSync: { ...report.localSync, complete: false, pending: 1 } }] });
+  await ui.settle();
+  assert.equal(ui.timers.size, 1);
+  ui.unmount();
+  await ui.advance(30_000);
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.timers.size, 0);
 });

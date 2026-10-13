@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { canonicalFinancialName, resolveCierrePeriod, resolveCierreSede, canViewGlobalCierre, CierreInputError } from "@/lib/cierre-domain";
+import { readCierreLocalCoverage } from "@/lib/cierre-coverage";
 
 export class CierreRequestError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -42,14 +43,16 @@ export async function readCierreReport(params: URLSearchParams, session: Session
     if (sedeId !== null && !sedes.some((s) => s.id === sedeId)) throw new CierreRequestError("Sede no encontrada", 404);
     const scopeWhere = sedeId === null ? {} : { sedeId };
     const where = { ...scopeWhere, effectiveAt: { gte: period.start, lt: period.end }, status: "EFECTIVO", amount: { gt: 0 }, ...(financier ? { financial: financier } : {}) };
-    const [groups, state, pending, knownFinancials, sources] = await Promise.all([
+    const [groups, state, coverage, knownFinancials, sources] = await Promise.all([
       tx.cierreCredito.groupBy({ by: ["financial"], where, _count: { _all: true }, _sum: { amount: true }, _max: { syncedAt: true } }),
       tx.cierreSyncEstado.findUnique({ where: { key: "LOCAL" } }),
-      tx.cierreVentaPendiente.count(),
+      readCierreLocalCoverage(tx, { sedeId, start: period.start, end: period.end }),
       tx.cierreCredito.findMany({ where: scopeWhere, distinct: ["financial"], select: { financial: true } }),
       tx.cierreCredito.findMany({ where, distinct: ["financial", "source"], select: { financial: true, source: true } }),
     ]);
-    const localComplete = Boolean(state?.initialized && pending === 0);
+    // LOCAL is inserted atomically with the historical outbox seed. Its presence
+    // proves the queue was prepared; other periods need not finish before this one.
+    const localComplete = Boolean(state && coverage.pending === 0 && !coverage.unresolved);
     // API readers discover credits only for known local references. Their existing
     // contracts do not establish exhaustive coverage, even when every job succeeds.
     const rows = Array.from(new Set([...PROVIDERS, ...knownFinancials.map((r) => r.financial)]))
@@ -71,6 +74,7 @@ export async function readCierreReport(params: URLSearchParams, session: Session
       scope: { sedeId, label: sedeId === null ? "Todas las sedes" : sedes.find((s) => s.id === sedeId)!.nombre },
       options: { sedes, canSelectSede: canViewGlobalCierre(session) },
       totals: { units: units || (complete ? 0 : null), amount: amount || (complete ? 0 : null) },
+      localSync: { pending: coverage.pending, complete: localComplete, lastUpdatedAt: state?.lastSuccess?.toISOString() || null },
       financiers: rows, complete, lastUpdatedAt: state?.lastSuccess?.toISOString() || null,
     };
     if (!detail && !exporting) return { ...base, items: [], total: units, page: 1, pageSize: 10 as const, units: base.totals.units, amount: base.totals.amount };

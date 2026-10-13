@@ -196,6 +196,98 @@ test("pendientes no se presentan como ceros confirmados y fuentes locales sin AP
   assert.equal(report.complete, false, "Consultar referencias conocidas no prueba cobertura API exhaustiva");
 });
 
+test("septiembre local se completa aunque queden otros meses o sedes en la carga inicial", async () => {
+  const db = database({
+    cierreSyncEstado: [{ key: "LOCAL", initialized: false, lastSuccess: new Date("2026-10-13T12:00:00Z") }],
+    venta: [sale(1, { fecha: new Date("2026-08-20T17:00:00Z") }), sale(2, { sedeId: 2, fecha: new Date("2026-09-20T17:00:00Z") })],
+    cierreVentaPendiente: [{ ventaId: 1 }, { ventaId: 2 }],
+  });
+  const { readCierreReport } = modules(db.prisma).load("lib/cierre-report.ts");
+  const september = new URLSearchParams("mode=month&month=2026-09");
+  const report = await readCierreReport(september, supervisor);
+  assert.deepEqual(report.localSync, { pending: 0, complete: true, lastUpdatedAt: "2026-10-13T12:00:00.000Z" });
+  assert.equal(report.financiers.find((row) => row.name === "SISTECREDITO").units, 0);
+  assert.equal(report.financiers.find((row) => row.name === "PAYJOY").complete, false);
+  assert.equal(report.complete, false, "La cobertura local no acredita una API exhaustiva");
+  assert.equal((await readCierreReport(september, admin)).localSync.pending, 1);
+  assert.equal((await readCierreReport(new URLSearchParams("mode=month&month=2026-08"), supervisor)).localSync.pending, 1);
+});
+
+test("una eliminación pendiente conserva el periodo y sede del snapshot sin filtrar por financiera", async () => {
+  const db = database({ cierreVentaPendiente: [
+    { ventaId: 1, snapshot: { sedeId: 1, fecha: "2026-09-30T23:30:00" } },
+    { ventaId: 2, snapshot: { sedeId: 2, fecha: "2026-09-30T23:30:00" } },
+  ] });
+  const { readCierreReport } = modules(db.prisma).load("lib/cierre-report.ts");
+  const report = await readCierreReport(new URLSearchParams("mode=month&month=2026-09&financier=SISTECREDITO"), supervisor, true);
+  assert.deepEqual(report.localSync, { pending: 1, complete: false, lastUpdatedAt: "2026-10-13T12:00:00.000Z" });
+  assert.equal(report.totals.units, null);
+  assert.equal(report.complete, false);
+});
+
+test("editar fecha y sede mantiene pendientes el ledger anterior, snapshot y venta actual", async () => {
+  const db = database({
+    cierreVentaPendiente: [{ ventaId: 1, snapshot: { sedeId: 1, fecha: "2026-08-15T18:00:00.000Z" } }],
+    venta: [sale(1, { sedeId: 2, fecha: new Date("2026-10-10T18:00:00Z") })],
+    cierreCredito: [credit(1, { effectiveAt: new Date("2026-09-15T18:00:00Z") }), credit(2, { ventaId: 1, effectiveAt: new Date("2026-09-15T18:00:00Z") })],
+  });
+  const { readCierreReport } = modules(db.prisma).load("lib/cierre-report.ts");
+  for (const month of ["2026-08", "2026-09"]) {
+    assert.equal((await readCierreReport(new URLSearchParams(`mode=month&month=${month}`), supervisor)).localSync.pending, 1);
+  }
+  assert.equal((await readCierreReport(params("&sedeId=2"), admin)).localSync.pending, 1);
+  assert.equal((await readCierreReport(params(), supervisor)).localSync.pending, 0);
+  assert.equal((await readCierreReport(params(), supervisor)).localSync.complete, true);
+});
+
+test("snapshot inválido no falla ni certifica cero y datos sin sede no exponen conteos", async () => {
+  const db = database({ cierreVentaPendiente: [
+    { ventaId: 1, snapshot: { sedeId: 2, fecha: "no-es-fecha" } },
+    { ventaId: 2, snapshot: { fecha: "2026-09-15T18:00:00Z" } },
+  ] });
+  const { readCierreReport } = modules(db.prisma).load("lib/cierre-report.ts");
+  const september = new URLSearchParams("mode=month&month=2026-09");
+  let report = await readCierreReport(september, supervisor);
+  assert.equal(report.localSync.pending, 0, "Ningún conteo de sede ajena o desconocida sale al usuario de sede");
+  assert.equal(report.localSync.complete, false);
+  assert.equal(report.financiers.find((row) => row.name === "SISTECREDITO").units, null);
+  for (const date of ["no-es-fecha", "2026-02-30T12:00:00Z", "2026-09-15T25:00:00Z", { unexpected: true }]) {
+    db.tables.cierreVentaPendiente[1].snapshot = { sedeId: 1, fecha: date };
+    report = await readCierreReport(september, supervisor);
+    assert.equal(report.localSync.pending, 1);
+    assert.equal(report.localSync.complete, false);
+  }
+});
+
+test("snapshot PostgreSQL sin offset conserva el instante UTC al aplicar límites Bogotá", async () => {
+  const db = database({ cierreVentaPendiente: [{ ventaId: 1, snapshot: { sedeId: 1, fecha: "2026-09-01T04:30:00" } }] });
+  const { readCierreReport } = modules(db.prisma).load("lib/cierre-report.ts");
+  assert.equal((await readCierreReport(new URLSearchParams("mode=month&month=2026-09"), supervisor)).localSync.pending, 0);
+  assert.equal((await readCierreReport(new URLSearchParams("mode=day&date=2026-08-31"), supervisor)).localSync.pending, 1);
+  db.tables.cierreVentaPendiente[0].snapshot.fecha = "2026-09-01T00:30:00-05:00";
+  assert.equal((await readCierreReport(new URLSearchParams("mode=month&month=2026-09"), supervisor)).localSync.pending, 1);
+});
+
+test("sin marcador transaccional de seed no se declara completo un periodo vacío", async () => {
+  const db = database({ cierreSyncEstado: [] });
+  const report = await modules(db.prisma).load("lib/cierre-report.ts").readCierreReport(params(), supervisor);
+  assert.deepEqual(report.localSync, { pending: 0, complete: false, lastUpdatedAt: null });
+  assert.ok(report.financiers.every((row) => !row.complete && row.units === null && row.amount === null));
+  assert.equal(report.totals.units, null);
+});
+
+test("cobertura pagina la cola sin perder el último lote ni inflar cantidades por créditos múltiples", async () => {
+  const rows = Array.from({ length: 501 }, (_, index) => ({ ventaId: index + 1,
+    snapshot: { sedeId: index === 500 ? 1 : 2, fecha: "2026-09-15T18:00:00Z" } }));
+  const db = database({ cierreVentaPendiente: rows });
+  const report = await modules(db.prisma).load("lib/cierre-report.ts").readCierreReport(new URLSearchParams("mode=month&month=2026-09"), supervisor);
+  assert.equal(report.localSync.pending, 1);
+  const reads = db.calls.filter((call) => call.table === "cierreVentaPendiente" && call.method === "findMany");
+  assert.equal(reads.length, 2);
+  assert.ok(reads.every((call) => call.args.take === 500));
+  assert.deepEqual(reads[1].args.where, { ventaId: { gt: 500 } });
+});
+
 test("día, semana, mes y rango históricos del servidor no importan ni llaman proveedores", async () => {
   const db = database({ cierreCredito: [credit(1, { effectiveAt: new Date("2024-02-29T23:00:00Z") })] });
   const fixture = modules(db.prisma);
@@ -263,7 +355,10 @@ test("histórico se procesa por lotes reanudables sin perder fechas ni completar
   const { drainCierreLocalQueue } = modules(db.prisma).load("lib/cierre-store.ts");
   assert.deepEqual(await drainCierreLocalQueue(100), { processed: 100, remaining: 5 });
   assert.equal(db.tables.cierreSyncEstado[0].initialized, false);
+  assert.ok(db.tables.cierreSyncEstado[0].lastSuccess instanceof Date, "La actualización se informa antes de terminar todo el histórico");
   assert.equal(db.tables.cierreCredito.length, 100);
+  assert.equal(db.tables.cierreCredito[0].ventaId, 105, "La carga inicial prioriza ventas recientes dentro de la misma fecha de cola");
+  assert.ok(!db.tables.cierreCredito.some((row) => row.ventaId === 1));
   assert.deepEqual(await drainCierreLocalQueue(100), { processed: 5, remaining: 0 });
   assert.equal(db.tables.cierreSyncEstado[0].initialized, true);
   assert.equal(db.tables.cierreCredito.length, 105);
@@ -322,6 +417,17 @@ async function withProviderEnabled(run) {
   try { return await run(); }
   finally { if (previous === undefined) delete process.env.CIERRE_PROVIDER_SYNC_ENABLED; else process.env.CIERRE_PROVIDER_SYNC_ENABLED = previous; }
 }
+
+test("lote local acelerado nunca consulta proveedores aunque estén habilitados y haya trabajos listos", async () => withProviderEnabled(async () => {
+  const db = database({ venta: [sale(1)], cierreCredito: [credit(1)],
+    cierreSyncTrabajo: [{ key: "job-1", financial: "PAYJOY", localKey: "VENTA:1:PAYJOY", state: "PENDIENTE", attempts: 0, nextAttempt: new Date(0) }] });
+  let calls = 0;
+  const provider = async () => { calls++; throw new Error("No debe consultar en localOnly"); };
+  const result = await modules(db.prisma, { provider }).load("lib/cierre-sync.ts").runCierreSyncBatch({ localOnly: true });
+  assert.equal(calls, 0);
+  assert.deepEqual(result.provider, { processed: 0, deferred: true });
+  assert.equal(db.tables.cierreSyncTrabajo[0].attempts, 0);
+}));
 
 test("worker enlaza ID real sin duplicar, aplica reverso y preserva créditos independientes", async () => withProviderEnabled(async () => {
   const db = database({ venta: [sale(1)], cierreCredito: [credit(1)],

@@ -52,7 +52,10 @@ const recordSelect = {
 export async function drainCierreLocalQueue(limit = 100) {
   const startedAt = Date.now();
   let processed = 0;
-  const queue = await prisma.cierreVentaPendiente.findMany({ where: { nextAttempt: { lte: new Date() } }, orderBy: [{ updatedAt: "asc" }, { ventaId: "asc" }], take: limit });
+  let succeeded = 0;
+  // Initial history shares one timestamp: start with recent sales, while older
+  // queued changes retain priority over newly arriving edits.
+  const queue = await prisma.cierreVentaPendiente.findMany({ where: { nextAttempt: { lte: new Date() } }, orderBy: [{ updatedAt: "asc" }, { ventaId: "desc" }], take: limit });
   for (const pending of queue) {
     if (Date.now() - startedAt > 30_000) break;
     try { await prisma.$transaction(async (tx) => {
@@ -99,7 +102,7 @@ export async function drainCierreLocalQueue(limit = 100) {
       }
       // Do not lose an update arriving after this batch's read.
       await tx.cierreVentaPendiente.deleteMany({ where: { ventaId: pending.ventaId, revision: pending.revision } });
-    }, { timeout: 20_000 }); }
+    }, { timeout: 20_000 }); succeeded++; }
     catch {
       await prisma.cierreVentaPendiente.updateMany({ where: { ventaId: pending.ventaId, revision: pending.revision }, data: {
         attempts: { increment: 1 }, nextAttempt: new Date(Date.now() + Math.min(1440, 5 * 2 ** Math.min(pending.attempts, 8)) * 60_000),
@@ -109,6 +112,8 @@ export async function drainCierreLocalQueue(limit = 100) {
     processed++;
   }
   const remaining = await prisma.cierreVentaPendiente.count();
-  if (remaining === 0) await prisma.cierreSyncEstado.update({ where: { key: "LOCAL" }, data: { initialized: true, lastSuccess: new Date() } });
+  if (remaining === 0 || succeeded > 0) await prisma.cierreSyncEstado.update({ where: { key: "LOCAL" }, data: {
+    ...(remaining === 0 ? { initialized: true } : {}), lastSuccess: new Date(),
+  } });
   return { processed, remaining };
 }

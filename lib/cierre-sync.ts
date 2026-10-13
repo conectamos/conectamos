@@ -102,7 +102,7 @@ async function syncOneProviderReference() {
   }
 }
 
-export async function runCierreSyncBatch() {
+export async function runCierreSyncBatch(options: { localOnly?: boolean } = {}) {
   const token = randomUUID();
   const now = new Date();
   await prisma.cierreSyncEstado.upsert({ where: { key: "WORKER" }, create: { key: "WORKER" }, update: {} });
@@ -110,10 +110,11 @@ export async function runCierreSyncBatch() {
     data: { lockToken: token, lockedUntil: new Date(now.getTime() + 10 * 60_000) } });
   if (lease.count !== 1) return { busy: true };
   try {
-    const local = await drainCierreLocalQueue(100);
+    const local = await drainCierreLocalQueue(500);
     // Explicit deployment switch allows operators to verify limits/costs before
     // enabling existing read APIs. Local history does not depend on this switch.
-    const provider = process.env.CIERRE_PROVIDER_SYNC_ENABLED === "1" ? await syncOneProviderReference() : { processed: 0, disabled: true };
+    const provider = process.env.CIERRE_PROVIDER_SYNC_ENABLED !== "1" ? { processed: 0, disabled: true }
+      : options.localOnly ? { processed: 0, deferred: true } : await syncOneProviderReference();
     return { busy: false, local, provider };
   } finally {
     await prisma.cierreSyncEstado.updateMany({ where: { key: "WORKER", lockToken: token }, data: { lockedUntil: null, lockToken: null } });

@@ -26,6 +26,7 @@ export type CierreReport = {
   financiers: CierreFinancier[];
   complete: boolean;
   lastUpdatedAt: string | null;
+  localSync: { pending: number; complete: boolean; lastUpdatedAt: string | null };
   options: { sedes: { id: number; nombre: string }[]; canSelectSede: boolean };
 };
 

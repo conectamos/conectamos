@@ -14,6 +14,9 @@ const pesos = (value: number | null) => value === null ? "Pendiente" : new Intl.
 const dateTime = (value: string) => new Intl.DateTimeFormat("es-CO", {
   timeZone: "America/Bogota", dateStyle: "medium", timeStyle: "short",
 }).format(new Date(value));
+const timeLabel = (value: string) => new Intl.DateTimeFormat("es-CO", {
+  timeZone: "America/Bogota", hour: "2-digit", minute: "2-digit", second: "2-digit",
+}).format(new Date(value));
 const dateLabel = (value: string) => new Intl.DateTimeFormat("es-CO", {
   timeZone: "America/Bogota", day: "2-digit", month: "short", year: "numeric",
 }).format(new Date(value.length === 10 ? `${value}T12:00:00Z` : value));
@@ -65,25 +68,54 @@ export default function CierreWorkspace({ today, user }: {
   const [detailError, setDetailError] = useState("");
   const [detailReload, setDetailReload] = useState(0);
   const [page, setPage] = useState(1);
+  const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const [detailSettledKey, setDetailSettledKey] = useState("");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const invalidRange = filters.mode === "range" && filters.from > filters.to;
   const unapplied = queryFor(filters) !== query;
+  const detailRequestKey = `${query}:${selected?.key || ""}:${page}:${detailReload}`;
+  const detailRefreshing = Boolean(selected && detail && detailSettledKey !== detailRequestKey);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/cierre?${query}`, { cache: "no-store", signal: controller.signal })
-      .then(readJson<CierreReport>)
-      .then((result) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let continuePolling = false;
+
+    async function requestReport(background = false) {
+      try {
+        const result = await readJson<CierreReport>(await fetch(`/api/cierre?${query}`, { cache: "no-store", signal: controller.signal }));
         if (controller.signal.aborted) return;
         setReport(result);
         setOptions(result.options);
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "No fue posible cargar el cierre.");
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
+        setCheckedAt(new Date().toISOString());
+        setError("");
+        setRefreshError("");
+        // Poll the applied report only while its local sales are being loaded.
+        // Provider coverage may remain partial after this work has finished.
+        continuePolling = Boolean(result.localSync && !result.localSync.complete);
+        if (background) setDetailReload((value) => value + 1);
+      } catch (reason) {
+        if (controller.signal.aborted) return;
+        const message = reason instanceof Error ? reason.message : "No fue posible cargar el cierre.";
+        if (background) setRefreshError(message);
+        else setError(message);
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setRefreshing(false);
+          if (continuePolling) timer = setTimeout(() => {
+            setRefreshing(true);
+            void requestReport(true);
+          }, 10_000);
+        }
+      }
+    }
+
+    void requestReport();
+    return () => { controller.abort(); if (timer !== undefined) clearTimeout(timer); };
   }, [query, reload]);
 
   useEffect(() => {
@@ -103,19 +135,27 @@ export default function CierreWorkspace({ today, user }: {
     params.set("page", String(page));
     fetch(`/api/cierre/detalle?${params}`, { cache: "no-store", signal: controller.signal })
       .then(readJson<CierreDetail>)
-      .then((result) => { if (!controller.signal.aborted) setDetail(result); })
+      .then((result) => {
+        if (!controller.signal.aborted) { setDetail(result); setDetailError(""); }
+      })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setDetailError(reason instanceof Error ? reason.message : "No fue posible cargar el detalle.");
       })
-      .finally(() => { if (!controller.signal.aborted) setDetailLoading(false); });
+      .finally(() => {
+        if (!controller.signal.aborted) { setDetailLoading(false); setDetailSettledKey(detailRequestKey); }
+      });
     return () => controller.abort();
-  }, [selected, query, page, detailReload]);
+  }, [selected, query, page, detailReload, detailRequestKey]);
 
   function loadReport(event?: FormEvent) {
     event?.preventDefault();
     if (invalidRange) return;
+    if (selected) closeDetail();
     setLoading(true);
     setError("");
+    setRefreshError("");
+    setRefreshing(false);
+    setCheckedAt(null);
     setExportError("");
     setReport(null);
     setQuery(queryFor(filters));
@@ -183,6 +223,12 @@ export default function CierreWorkspace({ today, user }: {
   ];
   const pending = !report?.complete;
   const currentPage = detail?.page ?? page;
+  const currentFinancier = report?.financiers.find((financier) => financier.key === selected?.key) || selected;
+  const loadingSales = Boolean(report?.localSync && !report.localSync.complete);
+  const syncMessage = report?.localSync?.pending
+    ? `Cargando ventas del periodo: ${count(report.localSync.pending)} pendientes.`
+    : "Preparando las ventas del periodo…";
+  const noLoadedCredits = report && !report.financiers.some((financier) => (financier.units ?? 0) > 0);
 
   return <div className={styles.shell}>
     <DashboardSidebar activeHref="/cierre" coverageLabel={report?.scope.label || (user.isAdmin ? "Todas las sedes" : user.sedeName)} items={navigation} />
@@ -213,6 +259,13 @@ export default function CierreWorkspace({ today, user }: {
           <div><h2>{report?.period.label || "Consultando periodo…"}</h2>{report && <p>{report.scope.label}</p>}</div>
           {report && <Completeness complete={report.complete} />}
         </div>
+        <div className={styles.queryFeedback} role="status" aria-live="polite" aria-atomic="true">
+          <span className={styles.queryResult}><DashboardIcon name={loading || refreshing ? "refresh" : "search"} className="h-4 w-4" />{loading ? "Consultando el periodo seleccionado…" : refreshing ? "Actualizando los datos del periodo…" : checkedAt ? <>Consulta finalizada · <time dateTime={checkedAt}>{timeLabel(checkedAt)}</time></> : null}</span>
+          {loadingSales && <span>{syncMessage} El cierre se actualiza automáticamente.</span>}
+          {report?.localSync?.complete && pending && <span>Ventas locales cargadas; conciliación de financieras pendiente.</span>}
+          {noLoadedCredits && pending && <span>{loadingSales ? "Todavía no hay créditos cargados; los totales aparecerán a medida que avance la carga." : "Aún no hay créditos confirmados para este periodo; queda información pendiente."}</span>}
+        </div>
+        {refreshError && <p className={styles.refreshError} role="alert">No se pudo actualizar el cierre. Se conservan los últimos datos y se reintentará automáticamente. <span>{refreshError}</span></p>}
         <section className={styles.metrics} aria-label="Totales del periodo">
           <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="document" className="h-6 w-6" /></span><div><h3>Total de créditos</h3><p className={styles.metricValue}>{loading ? "—" : count(report?.totals.units ?? null)}</p><span>{pending ? "Unidades confirmadas · total parcial" : "Unidades de créditos efectivos"}</span></div></div>
           <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="wallet" className="h-6 w-6" /></span><div><h3>Valor total de los créditos</h3><p className={styles.metricValue}>{loading ? "—" : pesos(report?.totals.amount ?? null)}</p><span>{pending ? "Valor confirmado · total parcial" : "Pesos colombianos"}</span></div></div>
@@ -236,16 +289,18 @@ export default function CierreWorkspace({ today, user }: {
 
     {selected && report && <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="detail-title" aria-describedby="detail-context" onCancel={(event) => { event.preventDefault(); closeDetail(); }} onClose={() => { setSelected(null); triggerRef.current?.focus({ preventScroll: true }); }}>
       <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Detalle de créditos</p><h2 id="detail-title">{selected.name}</h2><p id="detail-context">{report.period.label} · {report.scope.label}</p></div><button type="button" className={styles.closeButton} aria-label="Cerrar detalle" onClick={closeDetail} autoFocus><DashboardIcon name="close" /></button></div>
-      <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? selected.units)}</strong> créditos</span><span><strong>{pesos(detail?.amount ?? selected.amount)}</strong></span><Completeness complete={detail?.complete ?? selected.complete} /></div>
-      {detailError ? <div className={styles.error} role="alert"><p>{detailError}</p><button type="button" className={styles.secondaryButton} onClick={() => { setDetailError(""); setDetailLoading(true); setDetailReload((value) => value + 1); }}>Reintentar</button></div> : <>
-        <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`Créditos de ${selected.name}`} aria-busy={detailLoading}>
+      <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detail?.amount ?? currentFinancier?.amount ?? null)}</strong></span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} /></div>
+      {(loadingSales || detailRefreshing) && <p className={styles.detailProgress} role="status">{detailRefreshing ? "Actualizando el listado de créditos…" : `${syncMessage} El listado se actualiza automáticamente.`}</p>}
+      {detailError && <div className={styles.error} role="alert"><p>{detail && "No se pudo actualizar el detalle. Se conserva el último listado. "}{detailError}</p><button type="button" className={styles.secondaryButton} onClick={() => { setDetailError(""); if (!detail) setDetailLoading(true); setDetailReload((value) => value + 1); }}>Reintentar</button></div>}
+      {(!detailError || detail) && <>
+        <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`Créditos de ${selected.name}`} aria-busy={detailLoading || detailRefreshing}>
           <table className={`${styles.table} ${styles.detailTable}`}><thead><tr><th scope="col">Fecha</th><th scope="col">Número del crédito</th><th scope="col">Cliente</th><th scope="col">Cédula</th><th scope="col">Sede</th><th scope="col">Valor del crédito</th><th scope="col">Estado</th><th scope="col">Fuente de la información</th></tr></thead><tbody>
-            {detailLoading ? <tr><td colSpan={8} className={styles.empty} role="status">Cargando detalle…</td></tr> : detail?.items.length ? detail.items.slice(0, 10).map((credit) => <tr key={credit.id}><td>{dateLabel(credit.date)}</td><td>{credit.creditNumber || "Sin número registrado"}</td><td>{credit.customerName || "Sin registrar"}</td><td>{credit.customerDocument?.replace(/\./g, "") || "Sin registrar"}</td><td>{credit.sedeName}</td><td>{pesos(credit.amount)}</td><td><span className={styles.creditStatus}>{credit.status}</span></td><td>{credit.source}</td></tr>) : <tr><td colSpan={8} className={styles.empty}>No hay créditos efectivos registrados.{!selected.complete && " Información pendiente de sincronizar."}</td></tr>}
+            {detailLoading ? <tr><td colSpan={8} className={styles.empty} role="status">Cargando detalle…</td></tr> : detail?.items.length ? detail.items.slice(0, 10).map((credit) => <tr key={credit.id}><td>{dateLabel(credit.date)}</td><td>{credit.creditNumber || "Sin número registrado"}</td><td>{credit.customerName || "Sin registrar"}</td><td>{credit.customerDocument?.replace(/\./g, "") || "Sin registrar"}</td><td>{credit.sedeName}</td><td>{pesos(credit.amount)}</td><td><span className={styles.creditStatus}>{credit.status}</span></td><td>{credit.source}</td></tr>) : <tr><td colSpan={8} className={styles.empty}>No hay créditos efectivos registrados.{!(detail?.complete ?? currentFinancier?.complete) && " Información pendiente de sincronizar."}</td></tr>}
           </tbody></table>
         </div>
         <div className={styles.pagination}><span>{detail ? `${count(detail.total)} registros · máximo 10 por página` : "Máximo 10 registros por página"}</span><div><button type="button" className={styles.secondaryButton} disabled={detailLoading || currentPage <= 1} onClick={() => changePage(currentPage - 1)}>Anterior</button><span aria-live="polite">Página {currentPage}{detail ? ` de ${Math.max(1, Math.ceil(detail.total / 10))}` : ""}</span><button type="button" className={styles.secondaryButton} disabled={detailLoading || !detail || currentPage * 10 >= detail.total} onClick={() => changePage(currentPage + 1)}>Siguiente</button></div></div>
       </>}
-      <footer className={styles.dialogFooter}><span>Última actualización: {selected.lastUpdatedAt ? dateTime(selected.lastUpdatedAt) : "pendiente"}</span><button type="button" className={styles.secondaryButton} onClick={closeDetail}>Cerrar</button></footer>
+      <footer className={styles.dialogFooter}><span>Última actualización: {currentFinancier?.lastUpdatedAt ? dateTime(currentFinancier.lastUpdatedAt) : "pendiente"}</span><button type="button" className={styles.secondaryButton} onClick={closeDetail}>Cerrar</button></footer>
     </dialog>}
   </div>;
 }
