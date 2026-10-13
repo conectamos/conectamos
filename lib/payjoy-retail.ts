@@ -124,6 +124,32 @@ export function isPayJoyRetailConfigured() {
   return getConfiguredApiKey().length > 0;
 }
 
+/** Read-only ledger source. Never falls back to customer/eligibility/payment calls. */
+export async function readPayJoyCierreTransactions(
+  imeiValue: string,
+  fechaInicio: Date,
+  fechaFin: Date
+): Promise<unknown> {
+  const imei = normalizeImei(imeiValue);
+  if (!/^\d{15,16}$/.test(imei) || !Number.isFinite(fechaInicio.getTime()) ||
+      !Number.isFinite(fechaFin.getTime()) || fechaFin <= fechaInicio) {
+    throw new PayJoyRetailLookupError("Referencia o periodo de CIERRE invalido.");
+  }
+  const data = await fetchPayJoy<PayJoyTransactionResponse>(
+    "list-transactions.php",
+    {
+      starttime: Math.floor(fechaInicio.getTime() / 1000),
+      endtime: Math.min(Math.ceil(fechaFin.getTime() / 1000) - 1, getUnixNow()),
+      filter: `device.imei:${imei}`,
+    },
+    { timeoutMs: 20_000 }
+  );
+  if (!data.valid || !Array.isArray(data.transactions)) {
+    throw new PayJoyRetailLookupError("PAYJOY no devolvio un listado valido para CIERRE.");
+  }
+  return data;
+}
+
 function normalizeImei(value: unknown) {
   return String(value || "").replace(/\D/g, "").trim();
 }

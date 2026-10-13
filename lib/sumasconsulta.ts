@@ -443,6 +443,9 @@ async function requestJson(
 ) {
   const response = await fetch(url, {
     ...init,
+    // Authentication is part of the durable CIERRE job too; a hung login must
+    // not retain the in-process worker indefinitely or outlive its DB lease.
+    signal: init.signal ?? AbortSignal.timeout(20_000),
     cache: "no-store",
     headers: {
       Accept: "application/json",
@@ -2302,6 +2305,33 @@ function isSumasLikeConsultaConfigured(provider: SumasConsultaProvider) {
 
 export function isSumasConsultaConfigured() {
   return isSumasLikeConsultaConfigured(SUMASPAY_PROVIDER);
+}
+
+/** Only existing credit history/detail GETs; never POS eligibility or payment-plan simulation. */
+export async function readSumasCierreHistory(
+  documentoValue: string,
+  providerId?: string
+): Promise<Array<{ source: string; data: unknown; loanId?: string }>> {
+  const documento = normalizeDocumento(documentoValue);
+  if (!/^\d{5,15}$/.test(documento)) {
+    throw new SumasConsultaLookupError("Referencia de CIERRE invalida.");
+  }
+  const session = await loginSumas(SUMASPAY_PROVIDER);
+  const path = providerId
+    ? `service-credit/manage/loan/${encodeURIComponent(providerId)}`
+    : `service-credit/manage/core-bridge/credits-by-client/all?identification=${encodeURIComponent(documento)}`;
+  const result = await requestProtectedJsonWithStatus(
+    session.apiBaseUrl, session.accessToken, path,
+    { method: "GET", signal: AbortSignal.timeout(20_000) }, SUMASPAY_PROVIDER
+  );
+  if (!result.ok || result.payload === null || result.payload === undefined) {
+    throw new SumasConsultaLookupError("SUMASPAY no devolvio un historial valido para CIERRE.");
+  }
+  return [{
+    source: providerId ? "loan-detail" : "credits-by-client",
+    data: result.payload,
+    ...(providerId ? { loanId: providerId } : {}),
+  }];
 }
 
 export function isEsmioOpcionConsultaConfigured() {

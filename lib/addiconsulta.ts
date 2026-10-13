@@ -1281,6 +1281,41 @@ export function isAddiConsultaConfigured() {
   );
 }
 
+/** Preserve all transaction states for CIERRE; an approved application is not a sale. */
+export async function readAddiCierreTransactions(
+  documentoValue: string,
+  fechaDesde: string,
+  fechaHasta: string
+): Promise<Array<{ source: string; data: unknown }>> {
+  validateAddiAuditRange(fechaDesde, fechaHasta);
+  const documento = normalizeDocumento(documentoValue);
+  if (!/^\d{5,15}$/.test(documento)) {
+    throw new AddiConsultaLookupError("Referencia de CIERRE invalida.");
+  }
+  const session = await loginAddi();
+  const query = new URLSearchParams({
+    limit: "5000",
+    offset: "0",
+    searchField: documento,
+    createdAtFrom: toAddiAuditDateTime(fechaDesde),
+    createdAtTo: toAddiAuditDateTime(fechaHasta, true),
+  });
+  const payloads: Array<{ source: string; data: unknown }> = [];
+  // These are the existing transaction endpoints. No approval/status filter and
+  // no automatic retry: the durable worker owns retry/backoff and request costs.
+  for (const request of [
+    { source: "ally-portal-transactions", base: ADDI_PORTAL_API_BASE_URL, path: "transactions" },
+    { source: "ally-portal-external-transactions", base: ADDI_PORTAL_EXTERNAL_API_BASE_URL, path: "v1/transactions" },
+  ]) {
+    const data = await getProtectedJsonStrict(request.base, session, `${request.path}?${query}`);
+    if (data === null || data === undefined || typeof data !== "object") {
+      throw new AddiConsultaLookupError("ADDI no devolvio un listado valido para CIERRE.");
+    }
+    payloads.push({ source: request.source, data });
+  }
+  return payloads;
+}
+
 function isValidAddiAuditDateKey(value: string) {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
 

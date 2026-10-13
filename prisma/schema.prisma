@@ -7,6 +7,79 @@ datasource db {
   provider = "postgresql"
 }
 
+// CIERRE is a durable read model. Source sales may be deleted; these rows and
+// their event history deliberately have no cascading foreign keys to Venta.
+model CierreCredito {
+  id               String   @id @default(cuid())
+  financial        String
+  providerCreditId String?
+  localKey         String?  @unique
+  ventaId          Int?
+  registroId       Int?
+  localReference   String?
+  sedeId           Int?
+  effectiveAt      DateTime?
+  amount           Decimal? @db.Decimal(16, 2)
+  customerName     String?
+  documentNumber   String?
+  creditNumber     String?
+  imei             String?
+  status           String
+  source           String
+  evidence         Json?
+  providerUpdatedAt DateTime?
+  syncedAt         DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([financial, providerCreditId])
+  @@index([sedeId, effectiveAt, status])
+  @@index([financial, effectiveAt, status])
+  @@index([ventaId])
+}
+
+model CierreEvento {
+  id        Int      @id @default(autoincrement())
+  creditId  String
+  eventKey  String   @unique
+  snapshot  Json
+  createdAt DateTime @default(now())
+
+  @@index([creditId, createdAt])
+}
+
+model CierreVentaPendiente {
+  ventaId   Int      @id
+  revision  Int      @default(1)
+  snapshot  Json?
+  attempts  Int      @default(0)
+  nextAttempt DateTime @default(now())
+  lastError String?
+  updatedAt DateTime @default(now())
+}
+
+model CierreSyncEstado {
+  key          String   @id
+  initialized  Boolean  @default(false)
+  lastSuccess  DateTime?
+  lockedUntil  DateTime?
+  lockToken    String?
+  updatedAt    DateTime @updatedAt
+}
+
+model CierreSyncTrabajo {
+  key          String   @id
+  financial    String
+  localKey     String
+  state        String   @default("PENDIENTE")
+  attempts     Int      @default(0)
+  nextAttempt  DateTime @default(now())
+  lastSuccess  DateTime?
+  limitation   String?
+  updatedAt    DateTime @updatedAt
+
+  @@index([state, nextAttempt])
+}
+
 enum TipoPerfilVendedor {
   ADMINISTRADOR
   AUDITOR

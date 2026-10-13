@@ -25,6 +25,16 @@ type NavigationItem = {
 
 export type { NavigationItem };
 
+const cierreNavigationItem: NavigationItem = { href: "/cierre", icon: "reports", label: "CIERRE" };
+
+function withCierreNavigation(items: NavigationItem[]): NavigationItem[] {
+  if (items.some((item) => item.href === cierreNavigationItem.href)) return items;
+  const cashIndex = items.findIndex((item) => item.href === "/caja");
+  const homeIndex = items.findIndex((item) => item.href === "/dashboard");
+  const insertAfter = cashIndex >= 0 ? cashIndex : homeIndex >= 0 ? homeIndex : items.length - 1;
+  return [...items.slice(0, insertAfter + 1), cierreNavigationItem, ...items.slice(insertAfter + 1)];
+}
+
 type SedeOption = {
   id: number;
   nombre: string;
@@ -46,6 +56,7 @@ function SidebarContent({
   panelLabel: string;
 }) {
   const financial = appearance === "financial";
+  const navigationItems = withCierreNavigation(items);
 
   if (appearance === "white") {
     return (
@@ -65,7 +76,7 @@ function SidebarContent({
         </div>
 
         <nav className={whiteSidebarStyles.navigation} aria-label="Navegación principal">
-          {items.map((item, index) => {
+          {navigationItems.map((item, index) => {
             const activo = activeHref ? item.href === activeHref : index === 0;
 
             return (
@@ -132,7 +143,7 @@ function SidebarContent({
       <nav className={financial
         ? "min-h-0 flex-1 overflow-y-auto py-[6px]"
         : "min-h-0 flex-1 space-y-1 overflow-y-auto py-5"} aria-label="Navegación principal">
-        {items.map((item, index) => {
+        {navigationItems.map((item, index) => {
           const activo = activeHref ? item.href === activeHref : index === 0;
 
           return (
@@ -880,6 +891,7 @@ export default function OperationsDashboard({
       description: "Cierres, arqueo, cartera y control financiero.",
       icon: "cash",
       links: [
+        { href: "/cierre", label: "CIERRE", description: "Créditos efectivos por financiera y periodo.", icon: "reports" },
         { href: "/caja/cierre-dia", label: "Cierre del día" },
         { href: "/caja/gestion", label: "Ingresos / gastos" },
         { href: "/caja/arqueo", label: "Arqueo" },
@@ -1024,6 +1036,7 @@ export default function OperationsDashboard({
       description: "Movimientos, cierre y control diario del stand.",
       icon: "cash",
       links: [
+        { href: "/cierre", label: "CIERRE", description: "Créditos efectivos por financiera y periodo.", icon: "reports" },
         { href: "/caja", label: "Ver caja" },
         { href: "/caja/cierre-dia", label: "Cierre del día" },
         { href: "/caja/gestion", label: "Ingresos / gastos" },
