@@ -20,7 +20,7 @@ async function main() {
       if (
         typeof modules[i] === "function" &&
         modules[i].toString().includes('"generarReciboAbonoProveedorPdf"') &&
-        modules[i].toString().includes("RECIBO DE ABONO A PROVEEDOR")
+        modules[i].toString().includes("RECIBO DE ABONO")
       ) {
         generatorId = modules[i - 1];
       }
@@ -30,7 +30,8 @@ async function main() {
 
   const trace = JSON.parse(fs.readFileSync(routeFile + ".nft.json", "utf8"));
   for (const asset of [
-    "public/pdf-fonts/Geist-Regular.ttf",
+    "public/pdf-fonts/LiberationSans-Regular.ttf",
+    "public/pdf-fonts/LiberationSans-Bold.ttf",
     "public/branding/conectamos-logo.png",
   ]) {
     assert.ok(trace.files.some((file) => file.replaceAll("\\", "/").endsWith(asset)),
@@ -41,9 +42,9 @@ async function main() {
   const originalExists = fs.existsSync;
   const originalRead = fs.readFileSync;
   let afmAttempts = 0;
-  let bundledFontReads = 0;
+  const bundledFontReads = new Set();
   fs.existsSync = function (file) {
-    if (/[/\\]arial(?:bd)?\.ttf$/i.test(String(file))) return false;
+    if (/\.ttf$/i.test(String(file)) && !/[/\\]LiberationSans-(Regular|Bold)\.ttf$/.test(String(file))) return false;
     return originalExists.apply(this, arguments);
   };
   fs.readFileSync = function (file) {
@@ -51,7 +52,7 @@ async function main() {
       afmAttempts++;
       throw Object.assign(new Error("AFM unavailable in production"), { code: "ENOENT" });
     }
-    if (String(file).endsWith("Geist-Regular.ttf")) bundledFontReads++;
+    if (/[/\\]LiberationSans-(Regular|Bold)\.ttf$/.test(String(file))) bundledFontReads.add(String(file));
     return originalRead.apply(this, arguments);
   };
   try {
@@ -75,13 +76,13 @@ async function main() {
     assert.match(pdf.subarray(-100).toString(), /%%EOF/);
     assert.ok(pdf.includes(Buffer.from("/FontFile2")), "TTF must be embedded");
     assert.equal(afmAttempts, 0, "Must never request default PDFKit fonts");
-    assert.ok(bundledFontReads > 0, "Must use the deployed Geist font");
+    assert.equal(bundledFontReads.size, 2, "Must use both deployed Liberation Sans fonts");
     console.log(JSON.stringify({
       ok: true,
       artifact: "production-bundle",
       bytes: pdf.length,
       afmAttempts,
-      bundledFontReads,
+      bundledFontReads: bundledFontReads.size,
       databaseAccess: false,
     }));
   } finally {

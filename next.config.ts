@@ -4,7 +4,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingIncludes: {
     "/api/proveedores/*/abonos/*/recibo": [
-      "./public/pdf-fonts/Geist-Regular.ttf",
+      "./public/pdf-fonts/LiberationSans-Regular.ttf",
+      "./public/pdf-fonts/LiberationSans-Bold.ttf",
       "./public/branding/conectamos-logo.png",
     ],
     "/api/caja/cierre-dia": [
