@@ -252,3 +252,33 @@ test("prioridad válida encola los días PAYJOY del rango antes del histórico n
   process.env.CIERRE_PRIORITY_FROM = "2026-09-31";
   assert.equal(modules(db.prisma).load("lib/cierre-priority.ts").getCierrePriority(), null, "No aceptar prioridades con fechas inexistentes");
 });
+
+test("diagnóstico administrativo muestra lease y gate sin tokens ni mutaciones durante worker ocupado", async (t) => {
+  setup(t);
+  const previous = [process.env.CIERRE_PRIORITY_FROM, process.env.CIERRE_PRIORITY_TO];
+  process.env.CIERRE_PRIORITY_FROM = "2026-09-01";
+  process.env.CIERRE_PRIORITY_TO = "2026-09-30";
+  t.after(() => {
+    for (const [index, key] of ["CIERRE_PRIORITY_FROM", "CIERRE_PRIORITY_TO"].entries()) {
+      if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index];
+    }
+  });
+  const leaseUntil = new Date(now.getTime() + 600_000);
+  const rateUntil = new Date(now.getTime() + 60_000);
+  const db = database({ cierreSyncEstado: [
+    { key: "WORKER", updatedAt: now, lockedUntil: leaseUntil, lockToken: "secret-lease" },
+    { key: "PROVIDER_RATE", updatedAt: now, lockedUntil: rateUntil, lockToken: "ADDI" },
+    { key: "PROVIDER_ACTIVITY", updatedAt: now, lockedUntil: leaseUntil, lockToken: "private-reference-payload" },
+  ] });
+  const sync = modules(db.prisma).load("lib/cierre-sync.ts");
+  const summary = await sync.readCierrePriorityProgress();
+  assert.equal(summary.runtime.workerUpdatedAt, now.toISOString());
+  assert.equal(summary.runtime.workerLeaseUntil, leaseUntil.toISOString());
+  assert.equal(summary.runtime.rateUntil, rateUntil.toISOString());
+  assert.equal(summary.runtime.providerActivityUntil, leaseUntil.toISOString());
+  assert.equal(summary.runtime.providerEnabled, true);
+  assert.ok(!JSON.stringify(summary).includes("secret-lease"));
+  assert.ok(!JSON.stringify(summary).includes("private-reference-payload"));
+  assert.equal(db.tables.cierreSyncEstado.find((row) => row.key === "WORKER").lockToken, "secret-lease");
+  assert.deepEqual(await sync.runCierreSyncBatch(), { busy: true });
+});

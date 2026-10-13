@@ -7,18 +7,19 @@ const code = ts.transpileModule(readFileSync(new URL("../instrumentation.ts", im
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-function scheduler(runBatch, env = {}) {
-  const state = {}, timers = [], calls = [], logs = [];
+function scheduler(runBatch, env = {}, readProgress) {
+  const state = {}, timers = [], calls = [], logs = [], progressCalls = [];
   let now = 1_000_000;
   const mod = { exports: {} };
   new Function("require", "exports", "module", "process", "globalThis", "setTimeout", "Date", "console", code)(
-    () => ({ runCierreSyncBatch: async (options) => { calls.push(options); return runBatch(options); } }),
+    () => ({ runCierreSyncBatch: async (options) => { calls.push(options); return runBatch(options); },
+      readCierrePriorityProgress: readProgress ? async () => { progressCalls.push(now); return readProgress(); } : undefined }),
     mod.exports, mod, { env: { NEXT_RUNTIME: "nodejs", CIERRE_SYNC_ENABLED: "1", ...env } }, state,
     (fn, delay) => { const timer = { fn, delay, unref() {} }; timers.push(timer); return timer; },
     { now: () => now }, { info: (...args) => logs.push(args), error: (...args) => logs.push(args) },
   );
   const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
-  return { register: mod.exports.register, calls, timers, logs, settle,
+  return { register: mod.exports.register, calls, timers, logs, progressCalls, settle,
     async tick() { const timer = timers.shift(); assert.ok(timer); now += timer.delay; timer.fn(); await settle(); },
     advance(ms) { now += ms; },
   };
@@ -69,4 +70,31 @@ test("build, Edge y trabajador desactivado nunca ejecutan sincronización", asyn
     assert.equal(app.calls.length, 0);
     assert.equal(app.timers.length, 0);
   }
+});
+
+test("heartbeat informa lease ocupado, espera de rate y fallos aunque ningún proveedor sea consultado", async () => {
+  const outcomes = [{ busy: true }, { busy: false, local: { processed: 0 }, provider: { processed: 0, rateLimited: true } }, new Error("private")];
+  const app = scheduler(async () => {
+    const result = outcomes.shift();
+    if (result instanceof Error) throw result;
+    return result;
+  }, {}, async () => ({ runtime: { workerLeaseUntil: "2026-10-13T18:10:00.000Z" } }));
+  await app.register(); await app.settle();
+  await app.tick(); await app.tick();
+  assert.equal(app.progressCalls.length, 3);
+  const sync = app.logs.filter(([name]) => name === "CIERRE_SYNC").map(([, value]) => JSON.parse(value));
+  assert.equal(sync[0].busy, true);
+  assert.equal(sync[1].provider.rateLimited, true);
+  assert.equal(app.logs.filter(([name]) => name === "CIERRE_PRIORITY_PROGRESS").length, 3);
+  assert.ok(!JSON.stringify(app.logs).includes("private"));
+  assert.equal(app.timers[0].delay, 60_000);
+});
+
+test("heartbeat durante carga local sólo lee progreso una vez por minuto sin acelerar proveedores", async () => {
+  const app = scheduler(async () => ({ busy: false, local: { processed: 500, remaining: 1000 }, provider: { processed: 0 } }), {}, async () => ({}));
+  await app.register(); await app.settle();
+  for (let index = 0; index < 40; index++) await app.tick();
+  assert.equal(app.progressCalls.length, 2);
+  assert.equal(app.progressCalls[1] - app.progressCalls[0], 60_000);
+  assert.equal(app.calls.filter((call) => !call.localOnly).length, 2);
 });

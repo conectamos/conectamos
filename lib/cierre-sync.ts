@@ -242,8 +242,26 @@ export async function readCierrePriorityProgress() {
   const priority = getCierrePriority();
   if (!priority) return null;
   return prisma.$transaction(async (tx) => {
+    // Administrative diagnostics only. Never expose lease tokens, reference
+    // keys or provider activity payloads in logs or the report response.
+    const states = await tx.cierreSyncEstado.findMany({
+      where: { key: { in: ["WORKER", "PROVIDER_RATE", "PROVIDER_ACTIVITY"] } },
+      select: { key: true, updatedAt: true, lockedUntil: true },
+    });
+    const worker = states.find((state) => state.key === "WORKER");
+    const rate = states.find((state) => state.key === "PROVIDER_RATE");
+    const activity = states.find((state) => state.key === "PROVIDER_ACTIVITY");
+    const runtime = {
+      checkedAt: new Date().toISOString(),
+      schedulerEnabled: process.env.CIERRE_SYNC_ENABLED === "1",
+      providerEnabled: process.env.CIERRE_PROVIDER_SYNC_ENABLED === "1",
+      workerUpdatedAt: worker?.updatedAt?.toISOString() ?? null,
+      workerLeaseUntil: worker?.lockedUntil?.toISOString() ?? null,
+      providerActivityUntil: activity?.lockedUntil?.toISOString() ?? null,
+      rateUntil: rate?.lockedUntil?.toISOString() ?? null,
+    };
     const sources = await readCierreProviderProgress(tx, { sedeId: null, start: priority.start, end: priority.end, financial: null });
-    return { priority: { from: priority.from, to: priority.to },
+    return { priority: { from: priority.from, to: priority.to }, runtime,
       totals: aggregateCierreProviderSync([...sources.values()]), sources: Object.fromEntries(sources) };
   }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
 }

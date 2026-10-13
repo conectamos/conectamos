@@ -49,6 +49,18 @@ export async function GET(request: Request) {
     ];
     const syncLabels = { DESACTIVADA: "Desactivada", EN_COLA: "En cola", REVISADA_LIMITADA: "Revisada · cobertura parcial", ERROR: "Error de sincronización", SIN_REFERENCIA: "Sin referencia para consultar",
       CONSULTANDO: "Consulta en curso", PAUSADA: "Consultas en pausa", DETENIDA: "Sin actividad reciente" };
+    const reasonLabels: Record<string, string> = {
+      MISSING_PRINCIPAL: "Falta el importe real del crédito",
+      MISSING_EFFECTIVE_DATE: "Falta la fecha efectiva del crédito",
+      UNCONFIRMED_STATUS: "El estado recibido no confirma un crédito efectivo",
+      MISSING_IDENTITY: "Faltan datos para identificar el crédito",
+      IDENTITY_CONFLICT: "Los datos de identificación no coinciden",
+      NO_LOCAL_MATCH: "No se encontró una venta local coincidente",
+      AMBIGUOUS_LOCAL_MATCH: "Hay varias ventas locales posibles",
+      AMBIGUOUS_PROVIDER_MATCH: "Hay varios créditos posibles",
+      STALE_OBSERVATION: "La respuesta es anterior a la información guardada",
+      LOCAL_TERMINAL_PRESERVED: "Se conserva la anulación, reverso o rechazo registrado",
+    };
     for (const row of report.financiers) sources.addRow({
       name: row.name, source: row.source, coverage: row.coverageLabel,
       sync: row.providerSync ? syncLabels[row.providerSync.status] : "Fuente local",
@@ -60,8 +72,9 @@ export async function GET(request: Request) {
       lastSuccess: row.providerSync?.lastSuccessAt || "Sin consulta registrada", limitation: row.limitation,
       lastActivity: row.providerSync?.lastActivityAt || "Sin actividad registrada", resumeAt: row.providerSync?.resumeAt || "No aplica",
       priority: row.providerSync?.priority?.applies ? `${row.providerSync.priority.from} — ${row.providerSync.priority.to}` : "No aplica al filtro",
-      reasons: row.providerSync?.reasons.join(", ") || "Sin observaciones registradas",
+      reasons: row.providerSync?.reasons.map((reason) => reasonLabels[reason]).filter(Boolean).join("; ") || "Sin observaciones registradas",
     });
+    sources.getColumn("reasons").alignment = { wrapText: true, vertical: "top" };
     sources.getColumn("limitation").alignment = { wrapText: true, vertical: "top" };
     for (const [ws, index] of [[summary, 5], [sheet, 1], [sources, 1]] as const) {
       ws.getRow(index).eachCell((cell) => { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF11161D" } }; });
