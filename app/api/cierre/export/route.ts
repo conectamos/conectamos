@@ -39,20 +39,28 @@ export async function GET(request: Request) {
       { header: "Financiera", key: "name", width: 22 }, { header: "Fuente utilizada", key: "source", width: 44 },
       { header: "Estado del cierre", key: "coverage", width: 28 }, { header: "Conciliación API", key: "sync", width: 28 },
       { header: "Periodo", key: "period", width: 26 }, { header: "Sede", key: "scope", width: 28 },
-      { header: "Referencias", key: "total", width: 16 }, { header: "Revisadas", key: "reviewed", width: 16 },
+      { header: "Referencias", key: "total", width: 16 }, { header: "Consultadas vigentes", key: "consulted", width: 22 },
+      { header: "Vinculadas con API", key: "linked", width: 22 }, { header: "Sin confirmación API", key: "unconfirmed", width: 22 },
       { header: "En cola", key: "queued", width: 16 }, { header: "Errores", key: "errors", width: 16 },
       { header: "Sin referencia", key: "withoutReference", width: 20 }, { header: "Última consulta exitosa", key: "lastSuccess", width: 30 },
+      { header: "Última actividad", key: "lastActivity", width: 30 }, { header: "Disponible para reintento", key: "resumeAt", width: 30 },
+      { header: "Periodo prioritario", key: "priority", width: 30 }, { header: "Observaciones de la respuesta", key: "reasons", width: 48 },
       { header: "Limitación de la fuente", key: "limitation", width: 90 },
     ];
-    const syncLabels = { DESACTIVADA: "Desactivada", EN_COLA: "En cola", REVISADA_LIMITADA: "Revisada · cobertura parcial", ERROR: "Error de sincronización", SIN_REFERENCIA: "Sin referencia para consultar" };
+    const syncLabels = { DESACTIVADA: "Desactivada", EN_COLA: "En cola", REVISADA_LIMITADA: "Revisada · cobertura parcial", ERROR: "Error de sincronización", SIN_REFERENCIA: "Sin referencia para consultar",
+      CONSULTANDO: "Consulta en curso", PAUSADA: "Consultas en pausa", DETENIDA: "Sin actividad reciente" };
     for (const row of report.financiers) sources.addRow({
       name: row.name, source: row.source, coverage: row.coverageLabel,
       sync: row.providerSync ? syncLabels[row.providerSync.status] : "Fuente local",
       period: report.period.label, scope: report.scope.label,
-      total: row.providerSync?.total ?? "No aplica", reviewed: row.providerSync?.reviewed ?? "No aplica",
+      total: row.providerSync?.total ?? "No aplica", consulted: row.providerSync?.consulted ?? "No aplica",
+      linked: row.providerSync?.linked ?? "No aplica", unconfirmed: row.providerSync?.unconfirmed ?? "No aplica",
       queued: row.providerSync?.queued ?? "No aplica", errors: row.providerSync?.errors ?? "No aplica",
       withoutReference: row.providerSync?.withoutReference ?? "No aplica",
       lastSuccess: row.providerSync?.lastSuccessAt || "Sin consulta registrada", limitation: row.limitation,
+      lastActivity: row.providerSync?.lastActivityAt || "Sin actividad registrada", resumeAt: row.providerSync?.resumeAt || "No aplica",
+      priority: row.providerSync?.priority?.applies ? `${row.providerSync.priority.from} — ${row.providerSync.priority.to}` : "No aplica al filtro",
+      reasons: row.providerSync?.reasons.join(", ") || "Sin observaciones registradas",
     });
     sources.getColumn("limitation").alignment = { wrapText: true, vertical: "top" };
     for (const [ws, index] of [[summary, 5], [sheet, 1], [sources, 1]] as const) {

@@ -2,14 +2,17 @@ import type { CierreCredito, Prisma } from "@/app/generated/prisma/client";
 import type { CierreProviderCredit } from "@/lib/cierre-providers";
 import { getDateKeyInColombia } from "@/lib/credit-date-utils";
 import { saveCierreCredit } from "@/lib/cierre-store";
+import { CIERRE_RECONCILIATION_REASONS, type CierreReconciliationReason, type CierreReasonCounts } from "@/lib/cierre-reconciliation-reasons";
+export { CIERRE_RECONCILIATION_REASONS } from "@/lib/cierre-reconciliation-reasons";
+export type { CierreReconciliationReason, CierreReasonCounts } from "@/lib/cierre-reconciliation-reasons";
 
 const terminal = new Set(["ANULADO", "REVERSADO", "RECHAZADO"]);
-function identityMatches(credit: CierreProviderCredit, local: CierreCredito) {
-  const imei = (value: string) => /^\d{15,16}$/.test(value.trim()) ? value.trim() : null;
-  const document = (value: string) => {
-    const normalized = value.trim().replace(/[.\s]/g, "");
-    return /^\d+$/.test(normalized) ? normalized : null;
-  };
+const imei = (value: string) => /^\d{15,16}$/.test(value.trim()) ? value.trim() : null;
+const document = (value: string) => {
+  const normalized = value.trim().replace(/[.\s]/g, "");
+  return /^\d+$/.test(normalized) ? normalized : null;
+};
+function identityComparison(credit: CierreProviderCredit, local: CierreCredito): "MATCH" | "MISSING" | "CONFLICT" {
   let matched = false;
   for (const [incoming, stored, normalize] of [
     [credit.imei, local.imei, imei],
@@ -18,15 +21,19 @@ function identityMatches(credit: CierreProviderCredit, local: CierreCredito) {
     if (!incoming || !stored) continue;
     const normalized = normalize(incoming);
     // A matching document cannot override a contradictory/invalid IMEI, or vice versa.
-    if (!normalized || normalized !== normalize(stored)) return false;
+    if (!normalized || normalized !== normalize(stored)) return "CONFLICT";
     matched = true;
   }
-  return matched;
+  return matched ? "MATCH" : "MISSING";
 }
 function matches(credit: CierreProviderCredit, local: CierreCredito) {
   return credit.financiera === local.financial && (local.providerCreditId ? credit.providerId === local.providerCreditId :
     credit.fechaEfectiva && local.effectiveAt && getDateKeyInColombia(credit.fechaEfectiva) === getDateKeyInColombia(local.effectiveAt) &&
-    credit.valor !== null && local.amount !== null && Math.abs(credit.valor - Number(local.amount)) < 0.005 && identityMatches(credit, local));
+    credit.valor !== null && local.amount !== null && Math.abs(credit.valor - Number(local.amount)) < 0.005 && identityComparison(credit, local) === "MATCH");
+}
+
+function object(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function hasLocalTombstone(local: CierreCredito) {
@@ -47,11 +54,17 @@ function linkedEvidence(local: CierreCredito, raw: CierreProviderCredit["raw"]):
 export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credits: CierreProviderCredit[]) {
   let linked = 0;
   let pending = 0;
+  const reasons: CierreReasonCounts = {};
   for (const observation of credits) {
+    const issues = new Set<CierreReconciliationReason>();
+    const countReasons = () => { for (const reason of issues) reasons[reason] = (reasons[reason] || 0) + 1; };
+    const evidence = (raw: CierreProviderCredit["raw"]): Prisma.InputJsonValue => ({
+      ...(object(raw) ? raw : { providerEvidence: raw }), cierreDiagnostics: { reasons: [...issues] },
+    } as Prisma.InputJsonValue);
     const existing = await tx.cierreCredito.findUnique({ where: { financial_providerCreditId: { financial: observation.financiera, providerCreditId: observation.providerId } } });
     const stale = existing?.providerUpdatedAt && observation.sourceUpdatedAt && observation.sourceUpdatedAt < existing.providerUpdatedAt;
     const reconcileStoredNegative = stale && !existing?.localKey && existing && terminal.has(existing.status);
-    if (stale && !reconcileStoredNegative) continue;
+    if (stale && !reconcileStoredNegative) { issues.add("STALE_OBSERVATION"); countReasons(); continue; }
     // Re-reading the origination day can discover a newly entered local sale.
     // If a newer negative is already known, link that retained fact rather than
     // reviving the older finance event or waiting to read the reversal day again.
@@ -70,7 +83,19 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
       imei: incoming.imei || existing?.imei || undefined,
       cliente: incoming.cliente || existing?.customerName || null,
     };
+    const diagnostics = object(incoming.raw) && object(incoming.raw.diagnostics) ? incoming.raw.diagnostics : {};
+    const providerReasons = Array.isArray(diagnostics.reasons) ? diagnostics.reasons : [];
+    for (const reason of CIERRE_RECONCILIATION_REASONS) {
+      if (!providerReasons.includes(reason)) continue;
+      if (reason === "MISSING_PRINCIPAL" && credit.valor !== null) continue;
+      if (reason === "MISSING_EFFECTIVE_DATE" && credit.fechaEfectiva) continue;
+      issues.add(reason);
+    }
+    if (credit.valor === null) issues.add("MISSING_PRINCIPAL");
+    if (!credit.fechaEfectiva) issues.add("MISSING_EFFECTIVE_DATE");
+    if (credit.estado === "PENDIENTE" && !Array.isArray(diagnostics.reasons)) issues.add("UNCONFIRMED_STATUS");
     let local = existing?.localKey ? existing : null;
+    if (!local && !((credit.imei && imei(credit.imei)) || (credit.documento && document(credit.documento)))) issues.add("MISSING_IDENTITY");
     if (!local && credit.fechaEfectiva && credit.valor !== null) {
       const date = getDateKeyInColombia(credit.fechaEfectiva);
       const start = new Date(`${date}T00:00:00-05:00`);
@@ -79,6 +104,12 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
         effectiveAt: { gte: start, lt: new Date(start.getTime() + 86_400_000) },
       } });
       const candidates = locals.filter((row) => matches(credit, row));
+      if (candidates.length > 1) issues.add("AMBIGUOUS_LOCAL_MATCH");
+      if (candidates.length === 0) {
+        if (locals.some((row) => identityComparison(credit, row) === "CONFLICT")) issues.add("IDENTITY_CONFLICT");
+        else if (locals.some((row) => identityComparison(credit, row) === "MISSING")) issues.add("MISSING_IDENTITY");
+        else issues.add("NO_LOCAL_MATCH");
+      }
       if (candidates.length === 1) {
         // Other unlinked IDs may have arrived in an earlier batch. They are as
         // ambiguous as two matching loans within the current provider response.
@@ -92,25 +123,29 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
           valor: other.amount == null ? null : Number(other.amount), documento: other.documentNumber || "", imei: other.imei || undefined,
         }, candidates[0]));
         if (!competingBatch && !competingStored) local = candidates[0];
+        else issues.add("AMBIGUOUS_PROVIDER_MATCH");
       }
     }
     if (local) {
       linked++;
       if (credit.estado === "PENDIENTE") {
         pending++;
-        if (terminal.has(local.status)) continue;
+        if (terminal.has(local.status)) { issues.add("LOCAL_TERMINAL_PRESERVED"); countReasons(); continue; }
         await saveCierreCredit(tx, {
           financial: local.financial, providerCreditId: credit.providerId, localKey: local.localKey,
           ventaId: local.ventaId, registroId: local.registroId, localReference: local.localReference,
           sedeId: local.sedeId, effectiveAt: local.effectiveAt, amount: local.amount,
           customerName: local.customerName, documentNumber: local.documentNumber, imei: local.imei,
           creditNumber: credit.providerId, status: local.status, source: local.source,
-          evidence: credit.raw as Prisma.InputJsonValue,
+          evidence: evidence(credit.raw),
         });
+        countReasons();
         continue;
       }
       if (terminal.has(local.status) && credit.estado === "EFECTIVO" &&
-          (hasLocalTombstone(local) || !local.source.includes("API") || !credit.sourceUpdatedAt || !local.providerUpdatedAt || credit.sourceUpdatedAt <= local.providerUpdatedAt)) continue;
+          (hasLocalTombstone(local) || !local.source.includes("API") || !credit.sourceUpdatedAt || !local.providerUpdatedAt || credit.sourceUpdatedAt <= local.providerUpdatedAt)) {
+        issues.add("LOCAL_TERMINAL_PRESERVED"); countReasons(); continue;
+      }
       await saveCierreCredit(tx, {
         financial: credit.financiera, providerCreditId: credit.providerId, localKey: local.localKey,
         ventaId: local.ventaId, registroId: local.registroId, localReference: local.localReference,
@@ -118,7 +153,7 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
         amount: credit.valor ?? local.amount, customerName: credit.cliente || local.customerName,
         documentNumber: credit.documento || local.documentNumber, creditNumber: credit.providerId,
         imei: credit.imei || local.imei, status: credit.estado, source: `CONECTAMOS + API ${credit.financiera}`,
-        evidence: linkedEvidence(local, credit.raw), providerUpdatedAt: credit.sourceUpdatedAt || local.providerUpdatedAt,
+        evidence: linkedEvidence(local, evidence(credit.raw) as CierreProviderCredit["raw"]), providerUpdatedAt: credit.sourceUpdatedAt || local.providerUpdatedAt,
       });
     } else {
       pending++;
@@ -132,10 +167,11 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
         effectiveAt: credit.fechaEfectiva || existing?.effectiveAt, amount: credit.valor ?? existing?.amount,
         customerName: credit.cliente, documentNumber: credit.documento, creditNumber: credit.providerId,
         imei: credit.imei || null, status, source: `API ${credit.financiera} · pendiente de vinculación`,
-        evidence: retainNegative ? existing.evidence as Prisma.InputJsonValue : credit.raw as Prisma.InputJsonValue,
+        evidence: evidence(retainNegative ? existing.evidence as CierreProviderCredit["raw"] : credit.raw),
         providerUpdatedAt: retainNegative ? existing.providerUpdatedAt : credit.sourceUpdatedAt || existing?.providerUpdatedAt,
       });
     }
+    countReasons();
   }
-  return { observed: credits.length, linked, pending };
+  return { observed: credits.length, linked, pending, reasons };
 }

@@ -147,9 +147,9 @@ test("progreso de proveedores une referencias del periodo y sede sin exponer tra
   const { readCierreReport } = modules(db.prisma).load("lib/cierre-report.ts");
   let report = await readCierreReport(params(), supervisor);
   let source = report.financiers.find((row) => row.name === "SUMASPAY");
-  assert.deepEqual({ ...source.providerSync, limitation: undefined }, {
+  assert.deepEqual(Object.fromEntries(["enabled", "status", "total", "queued", "reviewed", "errors", "withoutReference", "lastSuccessAt"].map((key) => [key, source.providerSync[key]])), {
     enabled: true, status: "ERROR", total: 4, queued: 1, reviewed: 1, errors: 1, withoutReference: 1,
-    lastSuccessAt: "2026-10-13T13:00:00.000Z", limitation: undefined,
+    lastSuccessAt: "2026-10-13T13:00:00.000Z",
   });
   assert.equal(report.providerSync.total, 4);
   assert.equal(source.coverageLabel, "Conciliación con errores");
@@ -172,6 +172,68 @@ test("progreso de proveedores une referencias del periodo y sede sin exponer tra
   assert.equal(source.providerSync.status, "EN_COLA", "Una edición requiere otra consulta aunque exista éxito anterior");
   assert.equal(source.providerSync.queued, 1);
   assert.equal(source.providerSync.reviewed, 3);
+  assert.equal(source.providerSync.consulted, 3, "Una consulta histórica anterior a la edición no completa la referencia vigente");
+}));
+
+test("consultar una referencia no la vincula: aprobaciones observadas no son créditos conciliados", async () => withProviderEnabled(async () => {
+  const db = database({ cierreCredito: [credit(1, { providerCreditId: "p-1", source: "CONECTAMOS + API PAYJOY" }),
+    credit(2, { providerCreditId: "approval-2", source: "CONECTAMOS" })],
+    cierreSyncTrabajo: [1, 2].map((id) => ({ key: `j-${id}`, localKey: `VENTA:${id}:PAYJOY`, financial: "PAYJOY", state: "REVISADO", lastSuccess: new Date() })) });
+  const report = await modules(db.prisma).load("lib/cierre-report.ts").readCierreReport(params(), supervisor);
+  const progress = report.financiers.find((row) => row.name === "PAYJOY").providerSync;
+  assert.equal(progress.consulted, 2);
+  assert.equal(progress.linked, 1);
+  assert.equal(progress.unconfirmed, 1);
+  assert.equal(progress.status, "REVISADA_LIMITADA");
+  assert.equal(report.complete, false);
+}));
+
+test("actividad, pausas y motivos se restringen al periodo y sede del reporte", async (t) => withProviderEnabled(async () => {
+  const now = new Date("2026-10-13T12:00:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now });
+  const scopeDate = new Date("2026-09-15T18:00:00Z");
+  const previousFrom = process.env.CIERRE_PRIORITY_FROM;
+  const previousTo = process.env.CIERRE_PRIORITY_TO;
+  process.env.CIERRE_PRIORITY_FROM = "2026-09-01";
+  process.env.CIERRE_PRIORITY_TO = "2026-09-30";
+  t.after(() => {
+    if (previousFrom === undefined) delete process.env.CIERRE_PRIORITY_FROM; else process.env.CIERRE_PRIORITY_FROM = previousFrom;
+    if (previousTo === undefined) delete process.env.CIERRE_PRIORITY_TO; else process.env.CIERRE_PRIORITY_TO = previousTo;
+  });
+  const db = database({ cierreCredito: [credit(1, { financial: "ADDI", effectiveAt: scopeDate }), credit(2, { financial: "ADDI", sedeId: 2, effectiveAt: scopeDate }),
+    credit(3, { financial: "ADDI" })], cierreSyncTrabajo: [1, 2, 3].map((id) => ({ key: `j-${id}`, localKey: `VENTA:${id}:PAYJOY`, financial: "ADDI", state: "PENDIENTE", nextAttempt: new Date(0) })),
+    cierreSyncEstado: [
+      { key: "LOCAL", initialized: true }, { key: "WORKER", updatedAt: now, lockedUntil: null },
+      { key: "PROVIDER_RATE", lockedUntil: new Date(now.getTime() + 60000) },
+      { key: "PROVIDER_ACTIVITY", lockToken: JSON.stringify({ financial: "ADDI", localKey: "VENTA:2:PAYJOY", day: "2026-09-15", startedAt: now.toISOString() }), lockedUntil: new Date(now.getTime() + 600000) },
+      { key: "RESULT:j-1", lockToken: JSON.stringify({ reasons: { MISSING_PRINCIPAL: 1, UNKNOWN_PRIVATE_CODE: 5 } }), updatedAt: now },
+      { key: "RESULT:j-2", lockToken: JSON.stringify({ reasons: { IDENTITY_CONFLICT: 1 } }), updatedAt: new Date(now.getTime() + 1000) },
+    ] });
+  const { readCierreReport } = modules(db.prisma).load("lib/cierre-report.ts");
+  const september = new URLSearchParams("mode=month&month=2026-09");
+  let report = await readCierreReport(september, supervisor);
+  let progress = report.financiers.find((row) => row.name === "ADDI").providerSync;
+  assert.equal(progress.total, 1);
+  assert.equal(progress.active, null, "No mostrar consulta de otra sede");
+  assert.equal(progress.status, "PAUSADA");
+  assert.equal(progress.resumeAt, "2026-10-13T12:01:00.000Z");
+  assert.equal(progress.lastActivityAt, now.toISOString());
+  assert.deepEqual(progress.reasons, ["MISSING_PRINCIPAL"]);
+  assert.deepEqual(progress.priority, { from: "2026-09-01", to: "2026-09-30", applies: true });
+  const activity = db.tables.cierreSyncEstado.find((row) => row.key === "PROVIDER_ACTIVITY");
+  activity.lockToken = JSON.stringify({ financial: "ADDI", localKey: "VENTA:1:PAYJOY", day: "2026-09-15", startedAt: now.toISOString() });
+  report = await readCierreReport(september, supervisor);
+  assert.equal(report.providerSync.status, "CONSULTANDO");
+  assert.deepEqual(report.providerSync.active, { financial: "ADDI", day: "2026-09-15" });
+  const october = await readCierreReport(params(), supervisor);
+  assert.equal(october.providerSync.active, null, "No mostrar consulta de otro periodo");
+  assert.equal(october.providerSync.priority.applies, false);
+  activity.lockedUntil = new Date(0);
+  db.tables.cierreSyncEstado.find((row) => row.key === "WORKER").updatedAt = new Date(now.getTime() - 300000);
+  progress = (await readCierreReport(september, supervisor)).providerSync;
+  assert.equal(progress.status, "DETENIDA");
+  assert.equal(progress.workerActive, false);
+  assert.equal(progress.active, null);
 }));
 
 test("número de préstamo no sustituye un documento válido en progreso SUMASPAY", async () => withProviderEnabled(async () => {

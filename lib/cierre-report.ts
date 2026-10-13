@@ -66,7 +66,10 @@ export async function readCierreReport(params: URLSearchParams, session: Session
         const consulted = sources.some((s) => s.financial === name && s.source.includes("API"));
         const providerSync = providerProgress.get(name) || null;
         const coverageLabel = !localComplete ? "Carga local pendiente" : complete ? "Completo"
-          : providerSync?.status === "EN_COLA" ? "En conciliación"
+          : providerSync?.status === "EN_COLA" ? "En cola"
+          : providerSync?.status === "CONSULTANDO" ? "Consultando proveedor"
+          : providerSync?.status === "PAUSADA" ? "Conciliación en pausa"
+          : providerSync?.status === "DETENIDA" ? "Sin actividad reciente"
           : providerSync?.status === "ERROR" ? "Conciliación con errores"
           : providerSync?.status === "DESACTIVADA" ? "Conciliación desactivada"
           : providerSync?.status === "SIN_REFERENCIA" ? "Sin referencia para consultar" : "Cobertura parcial";

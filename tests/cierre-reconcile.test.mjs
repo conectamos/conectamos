@@ -139,3 +139,42 @@ test("anular venta local no reemplaza estado terminal API y un efectivo remoto n
   await reconcile(db, [observation({ sourceUpdatedAt: later })]);
   assert.equal(db.tables.cierreCredito[0].status, "RECHAZADO");
 });
+
+test("razones de conciliación separan capital, fecha y aprobación sin ampliar matching", async () => {
+  const db = database({ cierreCredito: [credit(1, { financial: "ADDI", localKey: "VENTA:1:ADDI" })] });
+  const input = observation({ financiera: "ADDI", valor: null, fechaEfectiva: null, estado: "PENDIENTE",
+    raw: { diagnostics: { reasons: ["MISSING_PRINCIPAL", "MISSING_EFFECTIVE_DATE", "UNCONFIRMED_STATUS"] } } });
+  const result = await reconcile(db, [input]);
+  assert.equal(result.linked, 0);
+  assert.deepEqual(result.reasons, { MISSING_PRINCIPAL: 1, MISSING_EFFECTIVE_DATE: 1, UNCONFIRMED_STATUS: 1 });
+  assert.equal(db.calls.some((call) => call.table === "cierreCredito" && call.method === "findMany"), false);
+  const stored = db.tables.cierreCredito.find((row) => row.providerCreditId === "p-1");
+  assert.deepEqual(stored.evidence.cierreDiagnostics.reasons, Object.keys(result.reasons));
+  assert.equal(db.tables.cierreCredito[0].status, "EFECTIVO");
+});
+
+test("razones distinguen identidad ausente, contradictoria, sin coincidencia y ambigüedad", async () => {
+  const cases = [
+    { rows: [credit(1)], input: { imei: undefined, documento: "" }, reason: "MISSING_IDENTITY" },
+    { rows: [credit(1)], input: { imei: "999999999999999" }, reason: "IDENTITY_CONFLICT" },
+    { rows: [credit(1, { amount: 900000 })], input: {}, reason: "NO_LOCAL_MATCH" },
+    { rows: [credit(1), credit(3)], input: {}, reason: "AMBIGUOUS_LOCAL_MATCH" },
+    { rows: [credit(1), apiRow({ providerCreditId: "other-id" })], input: {}, reason: "AMBIGUOUS_PROVIDER_MATCH" },
+  ];
+  for (const { rows, input, reason } of cases) {
+    const db = database({ cierreCredito: rows });
+    const result = await reconcile(db, [observation(input)]);
+    assert.equal(result.linked, 0);
+    assert.equal(result.reasons[reason], 1);
+  }
+});
+
+test("diagnóstico no informa campos faltantes ya recuperados del mismo ID ni añade PII", async () => {
+  const db = database({ cierreCredito: [credit(1), apiRow()] });
+  const result = await reconcile(db, [observation({ fechaEfectiva: null, valor: null, estado: "REVERSADO", sourceUpdatedAt: later,
+    raw: { diagnostics: { reasons: ["MISSING_PRINCIPAL", "MISSING_EFFECTIVE_DATE", "private-client"] } } })]);
+  assert.equal(result.linked, 1);
+  assert.deepEqual(result.reasons, {});
+  assert.equal(JSON.stringify(result).includes("1234567"), false);
+  assert.equal(JSON.stringify(result).includes("p-1"), false);
+});

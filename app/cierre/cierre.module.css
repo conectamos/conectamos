@@ -36,6 +36,29 @@
 .queryResult { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 2px; color: #64748b; font-size: 12px; }
 .queryResult > svg { flex-shrink: 0; }
 .coverageBar { display: flex; align-items: center; gap: 14px; margin: 0 0 18px; padding: 10px 0; }
+.syncActivity { min-width: 0; margin: -4px 0 20px; padding: 16px 20px; border: 1px solid #dce3eb; border-radius: 12px; background: #fff; }
+.syncHeading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 20px; margin-bottom: 14px; font-size: 13px; }
+.syncHeading > strong { color: #334155; font-weight: 700; }
+.syncHeading > span { color: #64748b; font-size: 12px; }
+.syncProgressLabel { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; color: #64748b; font-size: 12px; }
+.syncProgressLabel > strong { color: #334155; font-weight: 600; font-variant-numeric: tabular-nums; }
+.syncProgress { display: block; width: 100%; height: 5px; margin: 8px 0 14px; border: 0; border-radius: 8px; overflow: hidden; appearance: none; background: #e2e8f0; color: #526174; }
+.syncProgress::-webkit-progress-bar { background: #e2e8f0; }
+.syncProgress::-webkit-progress-value { background: #526174; border-radius: 8px; }
+.syncProgress::-moz-progress-bar { background: #526174; border-radius: 8px; }
+.syncCounts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 20px; margin-top: 12px; }
+.syncCounts > div { display: flex; flex-direction: column; justify-content: space-between; gap: 5px; }
+.syncCounts dt { color: #64748b; font-size: 12px; line-height: 1.4; }
+.syncCounts dd { color: #334155; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.syncFacts { display: flex; flex-wrap: wrap; gap: 5px 20px; margin-top: 14px; color: #64748b; font-size: 12px; line-height: 1.5; }
+.syncFacts > span { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px; }
+.syncFacts svg { align-self: center; flex-shrink: 0; }
+.syncNote { margin-top: 8px; color: #64748b; font-size: 12px; line-height: 1.5; }
+.syncReasons { margin-top: 10px; color: #64748b; font-size: 12px; line-height: 1.55; }
+.syncReasons > strong { font-weight: 600; color: #475569; }
+.syncReasons ul { margin: 4px 0 0; padding-left: 17px; list-style: disc; }
+.syncCompact { margin-top: 0; background: #f8fafc; box-shadow: none; }
+@media (max-width: 760px) { .syncActivity { padding: 16px; } .syncHeading { flex-direction: column; gap: 5px; } .syncCounts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .syncFacts { flex-direction: column; gap: 6px; } }
 .sources { position: relative; flex-shrink: 0; }
 .sources > summary { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 7px 0 7px 12px; color: #475569; font-size: 12px; font-weight: 600; cursor: pointer; list-style: none; }
 .sources > summary::-webkit-details-marker { display: none; }

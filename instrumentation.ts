@@ -5,7 +5,7 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.CIERRE_SYNC_ENABLED !== "1") return;
   const state = globalThis as typeof globalThis & { cierreTimer?: ReturnType<typeof setTimeout>; cierreRunning?: boolean };
   if (state.cierreTimer || state.cierreRunning) return;
-  const { runCierreSyncBatch } = await import("@/lib/cierre-sync");
+  const { runCierreSyncBatch, readCierrePriorityProgress } = await import("@/lib/cierre-sync");
   let firstRun = true;
   let nextProviderAttempt = 0;
   const run = async () => {
@@ -22,6 +22,12 @@ export async function register() {
       if (!result.busy && (firstRun || (result.local?.processed ?? 0) > 0 || (result.provider?.processed ?? 0) > 0)) {
         console.info("CIERRE_SYNC", JSON.stringify(result));
         firstRun = false;
+      }
+      if (!result.busy && (result.provider?.processed ?? 0) > 0 && typeof readCierrePriorityProgress === "function") {
+        try {
+          const progress = await readCierrePriorityProgress();
+          if (progress) console.info("CIERRE_PRIORITY_PROGRESS", JSON.stringify(progress));
+        } catch { console.error("CIERRE_PRIORITY_PROGRESS: resumen temporalmente no disponible."); }
       }
     }
     catch { console.error("CIERRE: sincronización pendiente; verificar migración y conexión."); }

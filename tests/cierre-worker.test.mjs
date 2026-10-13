@@ -200,3 +200,55 @@ test("autenticación fallida pausa de forma persistida sin registrar credenciale
   assert.ok(db.tables.cierreSyncEstado.find((row) => row.key === "PROVIDER_RATE").lockedUntil.getTime() >= now.getTime() + 1800000);
   assert.ok(!JSON.stringify(result).includes("secret"));
 });
+
+test("prioridad histórica busca todas las financieras antes de otros periodos y antes de reconsultas", async (t) => {
+  setup(t);
+  const previous = [process.env.CIERRE_PRIORITY_FROM, process.env.CIERRE_PRIORITY_TO];
+  process.env.CIERRE_PRIORITY_FROM = "2026-09-01";
+  process.env.CIERRE_PRIORITY_TO = "2026-09-30";
+  t.after(() => {
+    for (const [index, key] of ["CIERRE_PRIORITY_FROM", "CIERRE_PRIORITY_TO"].entries()) {
+      if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index];
+    }
+  });
+  const september = new Date("2026-09-15T18:00:00Z");
+  const db = database({ venta: [sale(1), sale(2), sale(3)], cierreCredito: [
+    credit(1, { financial: "SUMASPAY", localKey: "VENTA:1:SUMASPAY" }),
+    credit(2, { financial: "ADDI", localKey: "VENTA:2:ADDI", effectiveAt: september }),
+    credit(3, { financial: "SUMASPAY", localKey: "VENTA:3:SUMASPAY", effectiveAt: september }),
+  ], cierreSyncTrabajo: [localJob(1, "SUMASPAY"), localJob(2, "ADDI"), localJob(3, "SUMASPAY", { state: "REVISADO", lastSuccess: new Date("2026-09-20T18:00:00Z") })] });
+  const requests = [];
+  const provider = async (request) => { requests.push(request); return batch(); };
+  const result = await modules(db.prisma, { provider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].financiera, "ADDI", "SUMASPAY fuera del periodo o ya consultada no roba el turno prioritario");
+  assert.equal(result.provider.day, "2026-09-15");
+  assert.deepEqual(result.provider.priority, { from: "2026-09-01", to: "2026-09-30" });
+  const summary = await modules(db.prisma).load("lib/cierre-sync.ts").readCierrePriorityProgress();
+  assert.equal(summary.totals.total, 2);
+  assert.equal(summary.sources.ADDI.consulted, 1);
+  assert.equal(summary.sources.ADDI.linked, 0, "EMPTY exitoso no inventa vínculos");
+  assert.ok(!JSON.stringify(summary).includes("1234567"));
+  assert.equal(db.tables.cierreSyncEstado.find((row) => row.key === "PROVIDER_ACTIVITY").lockToken, null);
+});
+
+test("prioridad válida encola los días PAYJOY del rango antes del histórico normal", async (t) => {
+  setup(t);
+  const previous = [process.env.CIERRE_PRIORITY_FROM, process.env.CIERRE_PRIORITY_TO];
+  process.env.CIERRE_PRIORITY_FROM = "2026-09-01";
+  process.env.CIERRE_PRIORITY_TO = "2026-09-30";
+  t.after(() => {
+    for (const [index, key] of ["CIERRE_PRIORITY_FROM", "CIERRE_PRIORITY_TO"].entries()) {
+      if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index];
+    }
+  });
+  const db = database({ cierreCredito: [credit(1, { effectiveAt: new Date("2026-06-01T18:00:00Z") })] });
+  const requests = [];
+  const result = await modules(db.prisma, { periodProvider: async (request) => { requests.push(request); return batch(); } }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.seeded, 50);
+  assert.equal(db.tables.cierreSyncTrabajo.filter((job) => job.key.startsWith("PERIODO:PAYJOY:2026-09-")).length, 30);
+  assert.ok(requests[0].fechaDesde.startsWith("2026-09-"));
+  assert.equal(requests[0].fechaDesde, requests[0].fechaHasta);
+  process.env.CIERRE_PRIORITY_FROM = "2026-09-31";
+  assert.equal(modules(db.prisma).load("lib/cierre-priority.ts").getCierrePriority(), null, "No aceptar prioridades con fechas inexistentes");
+});

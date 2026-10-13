@@ -68,7 +68,7 @@ function database(seed = {}) {
   const calls = [];
   const tables = {
     cierreCredito: [], cierreEvento: [], cierreVentaPendiente: [], cierreSyncTrabajo: [],
-    cierreSyncEstado: [{ key: "LOCAL", initialized: true, lastSuccess: new Date("2026-10-13T12:00:00Z") }],
+    cierreSyncEstado: [{ key: "LOCAL", initialized: true, lastSuccess: new Date("2026-10-13T12:00:00Z") }, { key: "WORKER", updatedAt: new Date(), lockedUntil: null }],
     venta: [], registroVendedorVenta: [], sede: [{ id: 1, nombre: "Centro" }, { id: 2, nombre: "Norte" }], ...seed,
   };
   const prisma = {};

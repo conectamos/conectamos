@@ -3,9 +3,30 @@
  * Importing this module never performs I/O. Report and export handlers must only
  * read the local ledger; they must not call consultarLoteProveedorCierre.
  */
+import { CIERRE_RECONCILIATION_REASONS, type CierreReconciliationReason, type CierreReasonCounts } from "@/lib/cierre-reconciliation-reasons";
+export { CIERRE_RECONCILIATION_REASONS } from "@/lib/cierre-reconciliation-reasons";
+export type { CierreReconciliationReason, CierreReasonCounts } from "@/lib/cierre-reconciliation-reasons";
 export type CierreProvider = "SUMASPAY" | "PAYJOY" | "ADDI" | "SISTECREDITO" | "ALO CREDIT" | "FINSERPAY";
 export type CierreProviderState = "EFECTIVO" | "ANULADO" | "REVERSADO" | "RECHAZADO" | "PENDIENTE";
 export type CierreJson = null | string | number | boolean | CierreJson[] | { [key: string]: CierreJson };
+export const CIERRE_ADDI_DIAGNOSTIC_FIELDS = [
+  "creditAmount", "loanAmount", "capital", "price", "amount", "approvedAmount",
+  "transactionDate", "createdAt", "created_at", "updatedAt", "status", "state", "transactionStatus", "paymentStatus", "estado",
+] as const;
+const DIAGNOSTIC_TYPES = ["absent", "null", "string", "number", "boolean", "object", "array"] as const;
+const DIAGNOSTIC_STATUSES = ["APPROVED", "SUCCESS", "SUCCESSFUL", "COMPLETED", "DISBURSED", "ACTIVE", "PAID IN FULL",
+  "REJECTED", "DECLINED", "DENIED", "CANCELLED", "CANCELED", "CANCELADO", "CANCELADA", "ANULADO", "ANULADA",
+  "REVERSED", "REVERSAL", "REVERSO", "REVERSADO", "REVERSADA", "REFUNDED", "PENDING", "PROCESSING", "UNKNOWN"] as const;
+type DiagnosticField = typeof CIERRE_ADDI_DIAGNOSTIC_FIELDS[number];
+type DiagnosticType = typeof DIAGNOSTIC_TYPES[number];
+type DiagnosticStatus = typeof DIAGNOSTIC_STATUSES[number];
+export type CierreProviderDiagnostics = {
+  provider: "ADDI";
+  observations: number;
+  fieldTypes: Partial<Record<DiagnosticField, Partial<Record<DiagnosticType, number>>>>;
+  statuses: Partial<Record<DiagnosticStatus, number>>;
+  reasons: CierreReasonCounts;
+};
 
 export type CierreProviderCredit = {
   financiera: CierreProvider;
@@ -47,6 +68,7 @@ export type CierreProviderBatch = {
   limitation?: string;
   outcome: "OBSERVED" | "EMPTY" | "UNSUPPORTED_RESPONSE" | "NOT_CONFIGURED" | "MISSING_REFERENCE" | "LOCAL_ONLY";
   pendingCredits?: number;
+  diagnostics?: CierreProviderDiagnostics;
 };
 
 /** Safe machine-readable errors; never returns a provider message or request URL. */
@@ -253,7 +275,10 @@ function snapshot(
     // Only fields needed to audit the classification. Do not persist auth,
     // contact details, unrelated clients, account limits or the full payload.
     raw: { source, providerId, providerStatus: status, principal: valor,
-      effectiveDate: fechaEfectiva?.toISOString() ?? null, storeName: storeName(row) },
+      effectiveDate: fechaEfectiva?.toISOString() ?? null, storeName: storeName(row), diagnostics: { reasons: [
+        ...(valor === null ? ["MISSING_PRINCIPAL"] : []), ...(!fechaEfectiva ? ["MISSING_EFFECTIVE_DATE"] : []),
+        ...(estado === "PENDIENTE" ? ["UNCONFIRMED_STATUS"] : []),
+      ] } },
   };
 }
 
@@ -273,6 +298,50 @@ function dedupe(credits: CierreProviderCredit[]) {
     }
   }
   return [...found.values()];
+}
+
+function diagnosticFieldType(row: Record<string, unknown>, key: DiagnosticField, depth = 0): DiagnosticType {
+  if (Object.hasOwn(row, key) && row[key] !== undefined) {
+    const value = row[key];
+    if (value === null) return "null";
+    if (Array.isArray(value)) return "array";
+    const type = typeof value;
+    return type === "string" || type === "number" || type === "boolean" || type === "object" ? type : "absent";
+  }
+  // Only principal candidates use the same bounded nested lookup as normalization.
+  if (depth < 3 && ["creditAmount", "loanAmount", "capital", "price", "amount", "approvedAmount"].includes(key)) {
+    for (const value of Object.values(row)) {
+      if (!record(value)) continue;
+      const type = diagnosticFieldType(value, key, depth + 1);
+      if (type !== "absent") return type;
+    }
+  }
+  return "absent";
+}
+
+/** Aggregated allowlisted metadata; never returns identifiers, values or free text. */
+export function summarizeCierreProviderDiagnostics(credits: CierreProviderCredit[]): CierreProviderDiagnostics {
+  const result: CierreProviderDiagnostics = { provider: "ADDI", observations: 0, fieldTypes: {}, statuses: {}, reasons: {} };
+  for (const credit of credits) {
+    if (credit.financiera !== "ADDI") continue;
+    result.observations++;
+    const diagnostics = record(credit.raw) && record(credit.raw.diagnostics) ? credit.raw.diagnostics : {};
+    const fields = record(diagnostics.fieldTypes) ? diagnostics.fieldTypes : {};
+    for (const field of CIERRE_ADDI_DIAGNOSTIC_FIELDS) {
+      const type = fields[field];
+      if (!DIAGNOSTIC_TYPES.includes(type as DiagnosticType)) continue;
+      const counts = result.fieldTypes[field] ??= {};
+      const key = type as DiagnosticType;
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    const status = DIAGNOSTIC_STATUSES.includes(diagnostics.status as DiagnosticStatus) ? diagnostics.status as DiagnosticStatus : "UNKNOWN";
+    result.statuses[status] = (result.statuses[status] || 0) + 1;
+    const reasons = Array.isArray(diagnostics.reasons) ? diagnostics.reasons : [];
+    for (const reason of CIERRE_RECONCILIATION_REASONS) {
+      if (reasons.includes(reason)) result.reasons[reason] = (result.reasons[reason] || 0) + 1;
+    }
+  }
+  return result;
 }
 
 export function normalizeSumasCierre(payloads: SourcePayload[], reference: CierreProviderReference): CierreProviderCredit[] {
@@ -312,7 +381,17 @@ export function normalizeAddiCierre(payloads: SourcePayload[], reference: Cierre
       // fallback when that field is absent. updatedAt is never a generation date.
       const fecha = parseCierreProviderDate(direct(row, ["transactionDate"]));
       const estado = negativeState(state) ?? (explicitEffectiveState(state) ? "EFECTIVO" : "PENDIENTE");
-      credits.push(snapshot("ADDI", providerId, row, payload.source, valor, fecha, estado, reference, state));
+      const reasons: CierreReconciliationReason[] = [];
+      if (valor === null) reasons.push("MISSING_PRINCIPAL");
+      if (!fecha) reasons.push("MISSING_EFFECTIVE_DATE");
+      if (estado === "PENDIENTE") reasons.push("UNCONFIRMED_STATUS");
+      const credit = snapshot("ADDI", providerId, row, payload.source, valor, fecha, estado, reference, state);
+      const status = DIAGNOSTIC_STATUSES.includes(normal(state) as DiagnosticStatus) ? normal(state) as DiagnosticStatus : "UNKNOWN";
+      if (record(credit.raw)) credit.raw = { ...credit.raw, diagnostics: {
+        fieldTypes: Object.fromEntries(CIERRE_ADDI_DIAGNOSTIC_FIELDS.map((key) => [key, diagnosticFieldType(row, key)])),
+        status, reasons,
+      } };
+      credits.push(credit);
     }
   }
   return dedupe(credits);
@@ -455,5 +534,6 @@ export async function consultarLoteProveedorCierre(
     !credit.fechaEfectiva || (credit.fechaEfectiva >= desde && credit.fechaEfectiva.getTime() < end));
   // Request success only proves that this reference was read. Do not turn an
   // empty/incomplete response, capped list or missing branch mapping into zero.
-  return observedBatch(credits, emptyResponse, capability.limitation);
+  const result = observedBatch(credits, emptyResponse, capability.limitation);
+  return request.financiera === "ADDI" ? { ...result, diagnostics: summarizeCierreProviderDiagnostics(credits) } : result;
 }

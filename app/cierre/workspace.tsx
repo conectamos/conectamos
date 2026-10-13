@@ -40,14 +40,72 @@ async function readJson<T>(response: Response): Promise<T> {
 function providerProgress(sync?: CierreProviderSync | null) {
   if (!sync) return "Cobertura sujeta a las fuentes disponibles.";
   if (!sync.enabled || sync.status === "DESACTIVADA") return "Conciliación externa desactivada.";
-  if (sync.queued > 0) return `${count(sync.reviewed)} de ${count(sync.total)} referencias revisadas · ${count(sync.queued)} por consultar${sync.errors ? ` · ${count(sync.errors)} con errores` : ""}.`;
+  if (sync.status === "CONSULTANDO") return `Consulta en curso${sync.active ? ` · ${sync.active.financial}${sync.active.day ? ` · ${dateLabel(sync.active.day)}` : ""}` : ""}.`;
+  if (sync.workerEnabled === false && !sync.workerActive) return "Sincronización en segundo plano desactivada.";
+  if (sync.status === "PAUSADA") return "Consultas en pausa.";
+  if (sync.status === "DETENIDA") return "Sin actividad reciente de consultas.";
+  if (sync.status === "EN_COLA") return `En cola: ${count(sync.queued)} referencias pendientes.`;
   if (sync.status === "ERROR") return `Conciliación con errores: ${count(sync.errors)} referencias requieren revisión.`;
   if (sync.status === "SIN_REFERENCIA") return "Sin referencias de crédito para consultar en las financieras.";
-  return `${count(sync.reviewed)} referencias revisadas. La cobertura externa es parcial.`;
+  return "Consulta de referencias finalizada. La cobertura externa es parcial.";
 }
 
 function shouldRefresh(report: CierreReport) {
-  return Boolean((report.localSync && !report.localSync.complete) || (report.providerSync?.enabled && report.providerSync.queued > 0));
+  const sync = report.providerSync;
+  return Boolean((report.localSync && !report.localSync.complete) || (sync?.enabled &&
+    (sync.status === "CONSULTANDO" || ((sync.workerEnabled !== false || sync.workerActive) && (sync.queued > 0 || (sync.status === "PAUSADA" && sync.resumeAt))))));
+}
+
+const providerReasons: Record<string, string> = {
+  MISSING_PRINCIPAL: "Falta el importe real del crédito.",
+  MISSING_EFFECTIVE_DATE: "Falta la fecha efectiva del crédito.",
+  UNCONFIRMED_STATUS: "El estado recibido no confirma un crédito efectivo.",
+  MISSING_IDENTITY: "Faltan datos para identificar el crédito.",
+  IDENTITY_CONFLICT: "Los datos de identificación no coinciden.",
+  NO_LOCAL_MATCH: "No se encontró una venta local coincidente.",
+  AMBIGUOUS_LOCAL_MATCH: "Hay varias ventas locales posibles; falta confirmar la correspondencia.",
+  AMBIGUOUS_PROVIDER_MATCH: "Hay varios créditos posibles; falta confirmar la correspondencia.",
+  STALE_OBSERVATION: "La respuesta recibida es anterior a la información guardada.",
+  LOCAL_TERMINAL_PRESERVED: "Se conserva la anulación, reverso o rechazo registrado.",
+};
+
+function sourceReasons(sync?: CierreProviderSync | null) {
+  return [...new Set(sync?.reasons || [])].filter((reason) => reason in providerReasons).map((reason) => providerReasons[reason]);
+}
+
+function ProviderReasons({ sync }: { sync?: CierreProviderSync | null }) {
+  const reasons = sourceReasons(sync);
+  return reasons.length ? <div className={styles.syncReasons}><strong>Observaciones de la respuesta</strong><ul>{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null;
+}
+
+function sourceCoverage(financier: CierreFinancier) {
+  if (financier.coverageLabel === "En conciliación") {
+    const status = financier.providerSync?.status;
+    return status === "CONSULTANDO" ? "Consulta en curso" : status === "PAUSADA" ? "En pausa" : status === "DETENIDA" ? "Sin actividad reciente" : "En cola";
+  }
+  return financier.coverageLabel || (financier.complete ? "Confirmado" : "Cobertura parcial");
+}
+
+function ProviderActivity({ sync, compact = false }: { sync: CierreProviderSync; compact?: boolean }) {
+  const consulted = sync.consulted ?? sync.reviewed;
+  return <section className={`${styles.syncActivity} ${compact ? styles.syncCompact : ""}`} aria-label="Avance de consultas de financieras">
+    <div className={styles.syncHeading}><strong>Consulta de financieras</strong><span>{providerProgress(sync)}</span></div>
+    <div className={styles.syncProgressLabel}><span>Referencias conocidas del periodo</span><strong>{count(consulted)} de {count(sync.total)} consultadas</strong></div>
+    {sync.total > 0 && <progress className={styles.syncProgress} max={sync.total} value={Math.min(consulted, sync.total)} aria-label="Referencias consultadas" aria-valuetext={`${count(consulted)} de ${count(sync.total)} referencias conocidas consultadas`} />}
+    <dl className={styles.syncCounts}>
+      <div><dt>Referencias vinculadas</dt><dd>{count(sync.linked ?? null)}</dd></div>
+      <div><dt>Sin confirmación de la financiera</dt><dd>{count(sync.unconfirmed ?? null)}</dd></div>
+      <div><dt>En cola</dt><dd>{count(sync.queued)}</dd></div>
+      <div><dt>Con errores</dt><dd>{count(sync.errors)}</dd></div>
+    </dl>
+    <div className={styles.syncFacts}>
+      {sync.priority && <span><DashboardIcon name="clock" className="h-3 w-3" />Prioridad: {dateLabel(sync.priority.from)} – {dateLabel(sync.priority.to)}{sync.priority.applies ? " · incluye este periodo" : ""}</span>}
+      {sync.resumeAt && sync.status === "PAUSADA" && <span>Próxima reanudación: <time dateTime={sync.resumeAt}>{dateTime(sync.resumeAt)}</time></span>}
+      {sync.lastActivityAt && <span>Última actividad: <time dateTime={sync.lastActivityAt}>{dateTime(sync.lastActivityAt)}</time></span>}
+    </div>
+    <p className={styles.syncNote}>Consultar una referencia no confirma un crédito. Este avance no garantiza cobertura completa.</p>
+    {compact && <ProviderReasons sync={sync} />}
+  </section>;
 }
 
 function Completeness({ complete, label }: { complete: boolean; label?: string }) {
@@ -107,8 +165,8 @@ export default function CierreWorkspace({ today, user }: {
         setCheckedAt(new Date().toISOString());
         setError("");
         setRefreshError("");
-        // Refresh the local report only while work is actually queued.
-        // Limited or disabled provider coverage is not a loading state.
+        // Read local progress while work is active, queued or scheduled to resume.
+        // A queue is not evidence that a provider request is running.
         continuePolling = shouldRefresh(result);
         if (background) setDetailReload((value) => value + 1);
       } catch (reason) {
@@ -239,7 +297,7 @@ export default function CierreWorkspace({ today, user }: {
   const currentPage = detail?.page ?? page;
   const currentFinancier = report?.financiers.find((financier) => financier.key === selected?.key) || selected;
   const loadingSales = Boolean(report?.localSync && !report.localSync.complete);
-  const syncingProviders = Boolean(report?.providerSync?.enabled && report.providerSync.queued > 0);
+  const syncingProviders = Boolean(report?.providerSync?.enabled && report && shouldRefresh(report));
   const syncMessage = report?.localSync?.pending
     ? `Cargando ventas del periodo: ${count(report.localSync.pending)} pendientes.`
     : "Preparando las ventas del periodo…";
@@ -284,13 +342,20 @@ export default function CierreWorkspace({ today, user }: {
         {report && <div className={styles.coverageBar}><Completeness complete={report.complete} label={report.coverageLabel} /><div className={styles.queryFeedback} role="status" aria-live="polite" aria-atomic="true">
           {loadingSales ? <span>{syncMessage} El cierre se actualiza automáticamente.</span> : <span>{pending ? providerProgress(report.providerSync) : "Créditos confirmados en las fuentes disponibles."}{syncingProviders && " Se actualiza automáticamente."}</span>}
           {noLoadedCredits && pending && <span>{loadingSales ? "Todavía no hay créditos cargados; los totales aparecerán a medida que avance la carga." : "No hay créditos confirmados en las fuentes disponibles para este periodo."}</span>}
-        </div><details className={styles.sources}><summary><DashboardIcon name="database" className="h-4 w-4" />Fuentes y cobertura<DashboardIcon name="chevron" className="h-4 w-4" /></summary><div className={styles.sourceDetails}>{report.financiers.map((financier) => <div key={financier.key}><div className={styles.sourceHeading}><strong>{financier.name}</strong><span>{financier.coverageLabel || (financier.complete ? "Completo" : "Cobertura parcial")}</span></div><p>{financier.source}</p>{financier.providerSync && <p>{providerProgress(financier.providerSync)}</p>}{financier.limitation && <p className={styles.sourceLimitation}>{financier.limitation}</p>}</div>)}</div></details></div>}
+        </div><details className={styles.sources}><summary><DashboardIcon name="database" className="h-4 w-4" />Fuentes y cobertura<DashboardIcon name="chevron" className="h-4 w-4" /></summary><div className={styles.sourceDetails}>{report.financiers.map((financier) => <div key={financier.key}>
+          <div className={styles.sourceHeading}><strong>{financier.name}</strong><span>{sourceCoverage(financier)}</span></div><p>{financier.source}</p>
+          {financier.providerSync && <><p>{providerProgress(financier.providerSync)}</p><p>{count(financier.providerSync.consulted ?? financier.providerSync.reviewed)} de {count(financier.providerSync.total)} referencias consultadas · {count(financier.providerSync.linked ?? null)} vinculadas</p><ProviderReasons sync={financier.providerSync} /></>}
+          {financier.limitation && <p className={styles.sourceLimitation}>{financier.limitation}</p>}
+        </div>)}</div></details></div>}
+        {report?.providerSync?.enabled && <ProviderActivity sync={report.providerSync} />}
         <section className={styles.panel} aria-labelledby="financiers-title">
           <div className={styles.panelHeader}><div className={styles.panelTitle}><h2 id="financiers-title">Créditos por financiera</h2>{report && <span className={styles.countBadge}>{count(report.financiers.length)}</span>}</div><p>Selecciona una financiera para ver el detalle.</p></div>
           <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Consolidado por financiera">
             <table className={styles.table}><thead><tr><th scope="col">Financiera</th><th scope="col">Unidades de créditos</th><th scope="col">Valor de los créditos</th></tr></thead><tbody>
               {loading ? <tr><td colSpan={3} className={styles.empty} role="status">Cargando créditos registrados…</td></tr> : report?.financiers.length ? report.financiers.map((financier) => <tr key={financier.key}>
-                <th scope="row"><button type="button" className={styles.financierButton} onClick={(event) => openDetail(financier, event.currentTarget)} aria-haspopup="dialog"><span className={styles.financierAvatar} aria-hidden="true">{financier.name.replace(/[^A-Z]/gi, "").slice(0, 2)}</span><span className={styles.financierCopy}><span className={styles.financierName}><strong>{financier.name}</strong><span className={`${styles.rowStatus} ${financier.complete ? styles.rowComplete : styles.rowPending}`}>{financier.coverageLabel || (financier.complete ? "Confirmado" : "Cobertura parcial")}</span></span><span className={styles.source}>{financier.source}</span></span><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button></th>
+                <th scope="row"><button type="button" className={styles.financierButton} onClick={(event) => openDetail(financier, event.currentTarget)} aria-haspopup="dialog"><span className={styles.financierAvatar} aria-hidden="true">{financier.name.replace(/[^A-Z]/gi, "").slice(0, 2)}</span><span className={styles.financierCopy}><span className={styles.financierName}><strong>{financier.name}</strong><span className={`${styles.rowStatus} ${financier.complete ? styles.rowComplete : styles.rowPending}`}>{sourceCoverage(financier)}</span></span><span className={styles.source}>{financier.source}</span>
+                  {financier.providerSync?.enabled && <span className={styles.source}>{count(financier.providerSync.consulted ?? financier.providerSync.reviewed)} consultadas · {count(financier.providerSync.linked ?? null)} vinculadas</span>}
+                </span><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button></th>
                 <td><strong className={financier.units === null ? styles.unknownValue : styles.unitsValue}>{count(financier.units)}</strong></td>
                 <td><strong className={financier.amount === null ? styles.unknownValue : styles.amountValue}>{pesos(financier.amount)}</strong></td>
               </tr>) : <tr><td colSpan={3} className={styles.empty}>No hay créditos efectivos registrados para este periodo.{pending && " La cobertura de las fuentes es parcial."}</td></tr>}
@@ -303,7 +368,8 @@ export default function CierreWorkspace({ today, user }: {
 
     {selected && report && <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="detail-title" aria-describedby="detail-context" onCancel={(event) => { event.preventDefault(); closeDetail(); }} onClose={() => { setSelected(null); triggerRef.current?.focus({ preventScroll: true }); }}>
       <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Detalle de créditos</p><h2 id="detail-title">{selected.name}</h2><p id="detail-context">{report.period.label} · {report.scope.label}</p></div><button type="button" className={styles.closeButton} aria-label="Cerrar detalle" onClick={closeDetail} autoFocus><DashboardIcon name="close" /></button></div>
-      <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detail?.amount ?? currentFinancier?.amount ?? null)}</strong></span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} label={currentFinancier?.coverageLabel} /></div>
+      <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detail?.amount ?? currentFinancier?.amount ?? null)}</strong></span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} label={currentFinancier ? sourceCoverage(currentFinancier) : undefined} /></div>
+      {currentFinancier?.providerSync?.enabled && <ProviderActivity sync={currentFinancier.providerSync} compact />}
       {(loadingSales || syncingProviders || detailRefreshing) && <p className={styles.detailProgress} role="status">{detailRefreshing ? "Actualizando el listado de créditos…" : `${loadingSales ? syncMessage : providerProgress(currentFinancier?.providerSync)} El listado se actualiza automáticamente.`}</p>}
       {detailError && <div className={styles.error} role="alert"><p>{detail && "No se pudo actualizar el detalle. Se conserva el último listado. "}{detailError}</p><button type="button" className={styles.secondaryButton} onClick={() => { setDetailError(""); if (!detail) setDetailLoading(true); setDetailReload((value) => value + 1); }}>Reintentar</button></div>}
       {(!detailError || detail) && <>

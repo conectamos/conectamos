@@ -11,13 +11,23 @@ export type CierreFilters = {
 
 export type CierreProviderSync = {
   enabled: boolean;
-  status: "DESACTIVADA" | "EN_COLA" | "REVISADA_LIMITADA" | "ERROR" | "SIN_REFERENCIA";
+  workerEnabled?: boolean;
+  workerActive?: boolean;
+  status: "DESACTIVADA" | "EN_COLA" | "CONSULTANDO" | "PAUSADA" | "DETENIDA" | "REVISADA_LIMITADA" | "ERROR" | "SIN_REFERENCIA";
   total: number;
   queued: number;
   reviewed: number;
+  consulted?: number;
+  linked?: number;
+  unconfirmed?: number;
   errors: number;
   withoutReference: number;
   lastSuccessAt: string | null;
+  lastActivityAt?: string | null;
+  resumeAt?: string | null;
+  active?: { financial: string; day: string | null } | null;
+  priority?: { from: string; to: string; applies: boolean } | null;
+  reasons?: string[];
   limitation: string;
 };
 

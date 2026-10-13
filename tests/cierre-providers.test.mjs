@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import ts from "typescript";
-import {
+import { modules, database } from "./cierre-test-helpers.mjs";
+const {
   CIERRE_PROVIDER_CAPABILITIES,
   classifyCierreProviderError,
   consultarLoteProveedorCierre,
@@ -12,7 +13,8 @@ import {
   normalizePayJoyCierre,
   normalizeSumasCierre,
   parseCierreProviderDate,
-} from "../lib/cierre-providers.ts";
+  summarizeCierreProviderDiagnostics,
+} = modules(database().prisma).load("lib/cierre-providers.ts");
 
 const reference = { documento: "1.234.567", imei: "359999999999991" };
 const day = "2026-07-25";
@@ -399,4 +401,44 @@ test("PAYJOY no transforma un IMEI parcialmente numérico en una identidad váli
   const [pending] = normalizePayJoyCierre({ valid: true, transactions: [row] }, {}, true);
   assert.equal(pending.estado, "PENDIENTE");
   assert.equal(pending.imei, `abc${reference.imei}`);
+});
+
+test("ADDI diagnostica aprobación sin capital ni fecha efectiva sin usar price o createdAt", async () => {
+  const result = await consultarLoteProveedorCierre({ financiera: "ADDI", fechaDesde: day, fechaHasta: day, referencias: [reference] }, readers({
+    addi: async () => source([addi({ status: "APPROVED", creditAmount: undefined, transactionDate: undefined,
+      price: 700000, approvedAmount: 700000, createdAt: `${day}T12:00:00-05:00` })]),
+  }));
+  assert.equal(result.outcome, "OBSERVED");
+  assert.equal(result.credits[0].estado, "PENDIENTE");
+  assert.equal(result.credits[0].valor, null);
+  assert.equal(result.credits[0].fechaEfectiva, null);
+  assert.deepEqual(result.diagnostics.reasons, { MISSING_PRINCIPAL: 1, MISSING_EFFECTIVE_DATE: 1, UNCONFIRMED_STATUS: 1 });
+  assert.deepEqual(result.diagnostics.statuses, { APPROVED: 1 });
+  assert.deepEqual(result.diagnostics.fieldTypes.price, { number: 1 });
+  assert.deepEqual(result.diagnostics.fieldTypes.createdAt, { string: 1 });
+  assert.deepEqual(result.diagnostics.fieldTypes.creditAmount, { absent: 1 });
+});
+
+test("diagnóstico ADDI diferencia campos nulos/inválidos sin imprimir sus valores", () => {
+  const credits = normalizeAddiCierre(source([addi({ creditAmount: null, loanAmount: { nested: "not principal" }, capital: "not-money",
+    transactionDate: [2026, 7, 25], status: "SUCCESS" })]), reference);
+  const diagnostics = summarizeCierreProviderDiagnostics(credits);
+  assert.deepEqual(diagnostics.fieldTypes.creditAmount, { null: 1 });
+  assert.deepEqual(diagnostics.fieldTypes.loanAmount, { object: 1 });
+  assert.deepEqual(diagnostics.fieldTypes.capital, { string: 1 });
+  assert.deepEqual(diagnostics.fieldTypes.transactionDate, { array: 1 });
+  assert.equal(diagnostics.reasons.MISSING_PRINCIPAL, 1);
+  assert.equal(diagnostics.reasons.UNCONFIRMED_STATUS, undefined);
+});
+
+test("diagnóstico seguro usa allowlists aunque estado/claves contengan información sensible", () => {
+  const [item] = normalizeAddiCierre(source([addi({ status: "private-client@example.test", orderId: "private-order",
+    customerName: "Private Customer", token: "private-token" })]), reference);
+  item.raw.diagnostics.fieldTypes["private-client@example.test"] = "private-token";
+  item.raw.diagnostics.fieldTypes.price = "private-token";
+  item.raw.diagnostics.reasons.push("private-order");
+  const diagnostic = summarizeCierreProviderDiagnostics([item]);
+  assert.deepEqual(diagnostic.statuses, { UNKNOWN: 1 });
+  const serialized = JSON.stringify(diagnostic);
+  for (const forbidden of ["private", "Private", "1234567", "700000", "2026-07-25"]) assert.equal(serialized.includes(forbidden), false);
 });

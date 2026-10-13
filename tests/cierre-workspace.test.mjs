@@ -19,6 +19,7 @@ const report = {
 function descendants(node) {
   if (node == null || typeof node !== "object") return [];
   if (Array.isArray(node)) return node.flatMap(descendants);
+  if (typeof node.type === "function") return [node, ...descendants(node.type(node.props))];
   return [node, ...descendants(node.props?.children)];
 }
 function textOf(node) {
@@ -359,15 +360,110 @@ test("enabled queued references refresh only the local report and stop at review
   const reviewed = { ...queued, status: "REVISADA_LIMITADA", reviewed: 5, queued: 0 };
   const ui = harness({ reports: [{ ...report, providerSync: queued }, { ...report, providerSync: reviewed }] });
   await ui.settle();
-  assert.match(ui.text(), /2 de 5 referencias revisadas · 3 por consultar/);
+  assert.match(ui.text(), /En cola: 3 referencias pendientes/);
+  assert.match(ui.text(), /2 de 5 consultadas/);
   assert.match(ui.text(), /Se actualiza automáticamente/);
   await ui.advance(10_000);
-  assert.match(ui.text(), /5 referencias revisadas. La cobertura externa es parcial/);
+  assert.match(ui.text(), /Consulta de referencias finalizada. La cobertura externa es parcial/);
+  assert.match(ui.text(), /5 de 5 consultadas/);
   assert.equal(ui.timers.size, 0);
   assert.doesNotMatch(ui.text(), /Periodo completo/);
   await ui.advance(60_000);
   assert.equal(ui.calls.length, 2);
   assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre?")));
+});
+
+const activeProvider = {
+  ...providerSync, enabled: true, workerEnabled: true, status: "EN_COLA", total: 89,
+  consulted: 3, reviewed: 3, linked: 0, unconfirmed: 89, queued: 86,
+  lastActivityAt: "2026-10-13T13:15:00Z", resumeAt: null, active: null,
+  priority: { from: "2026-09-01", to: "2026-09-30", applies: true }, reasons: [],
+};
+
+test("progress separates successful consultations from linked references without claiming complete coverage", async () => {
+  const source = { ...report, providerSync: activeProvider };
+  const ui = harness({ reports: [source] });
+  await ui.settle();
+  assert.match(ui.text(), /3 de 89 consultadas/);
+  const progress = ui.find("progress");
+  assert.equal(progress.props.value, 3);
+  assert.equal(progress.props.max, 89);
+  assert.match(progress.props["aria-valuetext"], /3 de 89 referencias conocidas consultadas/);
+  assert.match(textOf(ui.find("dl")), /Referencias vinculadas0Sin confirmación de la financiera89En cola86/);
+  assert.match(ui.text(), /En cola: 86 referencias pendientes/);
+  assert.doesNotMatch(ui.text(), /Consulta en curso|En conciliación|Periodo completo/);
+  assert.match(ui.text(), /Prioridad: 01 de sept de 2026 – 30 de sept de 2026 · incluye este periodo/);
+  assert.match(ui.text(), /Última actividad/);
+  assert.match(ui.text(), /Este avance no garantiza cobertura completa/);
+  ui.unmount();
+});
+
+test("actual running and paused work updates locally and exposes its scheduled resumption", async () => {
+  const running = { ...activeProvider, status: "CONSULTANDO", active: { financial: "ADDI", day: "2026-09-15" }, queued: 0 };
+  const paused = { ...activeProvider, status: "PAUSADA", queued: 0, resumeAt: "2026-10-13T13:20:00Z" };
+  const finished = { ...activeProvider, status: "REVISADA_LIMITADA", queued: 0, consulted: 89, linked: 0 };
+  const ui = harness({ reports: [running, paused, finished].map((sync) => ({ ...report, providerSync: sync })) });
+  await ui.settle();
+  const appliedUrl = ui.calls[0].url;
+  assert.match(ui.text(), /Consulta en curso · ADDI · 15 de sept de 2026/);
+  await ui.setControl("Mes", "2025-02");
+  await ui.advance(10_000);
+  assert.match(ui.text(), /Consultas en pausa/);
+  assert.match(ui.text(), /Próxima reanudación/);
+  assert.doesNotMatch(ui.text(), /Consulta en curso/);
+  await ui.advance(10_000);
+  assert.match(ui.text(), /89 de 89 consultadas/);
+  assert.match(textOf(ui.find("dl")), /Referencias vinculadas0/);
+  assert.doesNotMatch(ui.text(), /Periodo completo|Próxima reanudación/);
+  assert.equal(ui.find("progress").props.value, 89);
+  assert.equal(ui.timers.size, 0);
+  assert.ok(ui.calls.every((call) => call.url === appliedUrl));
+});
+
+test("stale activity is explicit and a disabled background worker does not promise automatic progress", async () => {
+  const source = { ...report, providerSync: { ...activeProvider, status: "DETENIDA" } };
+  const ui = harness({ reports: [source, { ...source, providerSync: { ...source.providerSync, workerEnabled: false } }] });
+  await ui.settle();
+  assert.match(ui.text(), /Sin actividad reciente de consultas/);
+  assert.doesNotMatch(ui.text(), /Consulta en curso/);
+  await ui.advance(10_000);
+  assert.match(ui.text(), /Sincronización en segundo plano desactivada/);
+  assert.doesNotMatch(ui.text(), /Se actualiza automáticamente/);
+  assert.equal(ui.timers.size, 0);
+  await ui.advance(60_000);
+  assert.equal(ui.calls.length, 2);
+});
+
+test("an active external scheduler keeps local progress refreshing even when the local scheduler is off", async () => {
+  const sync = { ...activeProvider, workerEnabled: false, workerActive: true };
+  const ui = harness({ reports: [{ ...report, providerSync: sync }] });
+  await ui.settle();
+  assert.match(ui.text(), /En cola: 86 referencias pendientes/);
+  assert.doesNotMatch(ui.text(), /Sincronización en segundo plano desactivada/);
+  await ui.advance(10_000);
+  assert.equal(ui.calls.length, 2);
+  assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre?")));
+  ui.unmount();
+});
+
+test("ADDI explains only server-evidenced response gaps and shows consulted versus linked in its detail", async () => {
+  const addiSync = { ...activeProvider, reasons: ["MISSING_PRINCIPAL", "MISSING_EFFECTIVE_DATE", "MISSING_PRINCIPAL", "PRIVATE_RAW_RESPONSE"] };
+  const source = { ...report, providerSync: activeProvider, financiers: report.financiers.map((row) => row.key === "ADDI" ? { ...row, providerSync: addiSync, coverageLabel: "En conciliación" } : row) };
+  const ui = harness({ reports: [source] });
+  await ui.settle();
+  assert.match(textOf(ui.find("button", "ADDI")), /En cola.*3 consultadas · 0 vinculadas/);
+  assert.doesNotMatch(ui.text(), /En conciliación|PRIVATE_RAW_RESPONSE/);
+  assert.match(textOf(ui.find("details")), /Observaciones de la respuesta.*Falta el importe real del crédito.*Falta la fecha efectiva del crédito/);
+  ui.find("button", "ADDI").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  const dialog = textOf(ui.find("dialog"));
+  assert.match(dialog, /3 de 89 consultadas/);
+  assert.match(dialog, /Referencias vinculadas0/);
+  assert.match(dialog, /Falta el importe real del crédito/);
+  assert.match(dialog, /Falta la fecha efectiva del crédito/);
+  assert.equal((dialog.match(/Falta el importe real del crédito/g) || []).length, 1);
+  assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre")));
+  ui.unmount();
 });
 
 test("provider errors and missing credit references do not become indefinite loading states", async () => {

@@ -55,6 +55,16 @@ Los tres adaptadores externos devuelven `complete: false`: las referencias local
 
 La vista y la hoja «Fuentes» del Excel distinguen conciliación desactivada, en cola, con errores, sin referencia y revisada con cobertura parcial. Los contadores se calculan únicamente con créditos del periodo y de la sede autorizada. La consulta de la pantalla termina cuando lee la base local; «Consulta finalizada» no significa sincronización externa completa. Si la conciliación está desactivada, esperar o pulsar Consultar no la habilita.
 
+## Prioridad y avance de la conciliación
+
+`CIERRE_PRIORITY_FROM` y `CIERRE_PRIORITY_TO` permiten dar prioridad a un rango inclusivo, con fechas válidas `YYYY-MM-DD` en Colombia. Para septiembre de 2026 son `2026-09-01` y `2026-09-30`. El trabajador busca primero trabajos pendientes de ese rango entre las tres financieras, alternando sus turnos, antes de continuar con otros periodos. Las referencias aún sin una consulta exitosa se atienden antes de las revisiones periódicas. La prioridad no adelanta reintentos diferidos ni aumenta la frecuencia de las consultas. Los registros de otros periodos se conservan.
+
+El progreso distingue consultas exitosas de créditos conciliados con la API. Una respuesta vacía o con una aprobación sin datos suficientes puede contar como consulta realizada, pero no como crédito conciliado. El indicador de consultas se refiere a las referencias locales conocidas; alcanzar su totalidad no certifica que el proveedor haya entregado todos sus créditos. Los totales del cierre siguen usando exclusivamente los créditos efectivos del libro local.
+
+La actividad del trabajador y su pausa se conservan en la base de datos. La pantalla muestra «Consultando» sólo cuando una consulta activa corresponde al periodo y a la sede autorizada; tener referencias pendientes muestra «En cola». También distingue pausas, ausencia de actividad reciente y conciliación desactivada. La última consulta, la próxima reanudación y los motivos disponibles ayudan a identificar cuándo esperar y cuándo falta información de la fuente.
+
+Los diagnósticos de ADDI registran únicamente códigos de motivo, presencia/tipo de campos previamente permitidos y contadores. No registran respuestas completas, documentos, nombres, números de crédito, importes individuales ni credenciales. El diagnóstico se obtiene de las consultas normales del trabajador; abrir el informe no genera consultas adicionales. `CIERRE_PRIORITY_PROGRESS` permite verificar el avance agregado del rango priorizado en los registros del servicio.
+
 ## Verificación realizada
 
 Las pruebas de `tests/cierre-providers.test.mjs` utilizan respuestas sintéticas e inyección de lectores; no consumen APIs reales. Cubren capital sin inicial/precio/cuotas, aprobaciones sin crédito, IDs duplicados, varios créditos por cliente, anulaciones/reversos/rechazos, créditos pagados, fechas Bogotá, límites de periodo, histórico parcial, configuración ausente y ausencia de llamadas en financieras de fuente local. Las pruebas del dominio/servidor complementan filtros, asociación local, paginación y permisos.

@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 import { getDateKeyInColombia, shiftDateKey } from "@/lib/credit-date-utils";
 import { drainCierreLocalQueue } from "@/lib/cierre-store";
 import { reconcileCierreCredits } from "@/lib/cierre-reconcile";
+import { getCierrePriority } from "@/lib/cierre-priority";
+import { aggregateCierreProviderSync, readCierreProviderProgress } from "@/lib/cierre-progress";
 import { classifyCierreProviderError, consultarLoteProveedorCierre, consultarPeriodoPayJoyCierre,
   type CierreProvider, type CierreProviderBatch } from "@/lib/cierre-providers";
 import type { CierreSyncTrabajo, Prisma } from "@/app/generated/prisma/client";
@@ -41,8 +43,12 @@ async function seedPayJoyDays() {
     cursor = jobs[jobs.length - 1].key;
   }
   const days: string[] = [];
-  for (let day = today; day >= first && days.length < 50; day = shiftDateKey(day, -1)) {
+  const priority = getCierrePriority();
+  if (priority) for (let day = priority.to < today ? priority.to : today; day >= priority.from && day >= first && days.length < 50; day = shiftDateKey(day, -1)) {
     if (!existing.has(`${DAY_PREFIX}${day}`)) days.push(day);
+  }
+  for (let day = today; day >= first && days.length < 50; day = shiftDateKey(day, -1)) {
+    if (!existing.has(`${DAY_PREFIX}${day}`) && !days.includes(day)) days.push(day);
   }
   if (days.length) await prisma.$transaction(async (tx) => {
     for (const day of days) {
@@ -105,12 +111,15 @@ async function persistResult(job: CierreSyncTrabajo, attempt: CierreSyncTrabajo,
   const counts = await prisma.$transaction(async (tx) => {
     const saved = await tx.cierreSyncTrabajo.updateMany({ where: { key: job.key, updatedAt: attempt.updatedAt }, data });
     if (saved.count !== 1) return { observed: 0, linked: 0, pending: 0, stale: true };
-    const reconciled = successful ? await reconcileCierreCredits(tx, result.credits) : { observed: 0, linked: 0, pending: 0 };
+    const reconciled = successful ? await reconcileCierreCredits(tx, result.credits) : { observed: 0, linked: 0, pending: 0, reasons: {} };
+    const summary = JSON.stringify({ reasons: reconciled.reasons || {}, outcome: result.outcome });
+    await tx.cierreSyncEstado.upsert({ where: { key: `RESULT:${job.key}` }, create: { key: `RESULT:${job.key}`, lockToken: summary }, update: { lockToken: summary } });
     if (day) await updatePayJoyLocalJobs(tx, day, data);
     return { ...reconciled, stale: false };
   }, { timeout: 60_000 });
   return { processed: 1, financial: job.financial, mode: day ? "PERIODO" : "REFERENCIA", state: counts.stale ? "PENDIENTE" : state,
-    outcome: result.outcome, ...counts, ...(code ? { code } : {}), ...(state === "ERROR" ? { failed: true } : {}) };
+    outcome: result.outcome, ...counts, ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
+    ...(code ? { code } : {}), ...(state === "ERROR" ? { failed: true } : {}) };
 }
 
 async function persistError(job: CierreSyncTrabajo, attempt: CierreSyncTrabajo, day: string | null, error: unknown) {
@@ -122,6 +131,8 @@ async function persistError(job: CierreSyncTrabajo, attempt: CierreSyncTrabajo, 
   const stale = await prisma.$transaction(async (tx) => {
     const saved = await tx.cierreSyncTrabajo.updateMany({ where: { key: job.key, updatedAt: attempt.updatedAt }, data });
     if (saved.count !== 1) return true;
+    const summary = JSON.stringify({ code: classified.code });
+    await tx.cierreSyncEstado.upsert({ where: { key: `RESULT:${job.key}` }, create: { key: `RESULT:${job.key}`, lockToken: summary }, update: { lockToken: summary } });
     if (day) await updatePayJoyLocalJobs(tx, day, data);
     return false;
   }, { timeout: 60_000 });
@@ -135,17 +146,53 @@ async function syncOneProviderReference() {
   const financials = ["SUMASPAY", "ADDI", "PAYJOY"];
   const start = (financials.indexOf(rate?.lockToken || "") + 1) % financials.length;
   const order = [...financials.slice(start), ...financials.slice(0, start)];
+  const priority = getCierrePriority();
+  const priorityKeys = new Map<string, string[]>();
+  if (priority) {
+    let cursor: string | null = null;
+    for (;;) {
+      const credits: Array<{ id: string; localKey: string | null; financial: string }> = await prisma.cierreCredito.findMany({
+        where: { financial: { in: ["SUMASPAY", "ADDI"] }, localKey: { not: null }, effectiveAt: { gte: priority.start, lt: priority.end },
+          ...(cursor === null ? {} : { id: { gt: cursor } }) },
+        orderBy: { id: "asc" }, take: 500, select: { id: true, localKey: true, financial: true },
+      });
+      for (const credit of credits) {
+        const keys = priorityKeys.get(credit.financial) || [];
+        keys.push(credit.localKey!);
+        priorityKeys.set(credit.financial, keys);
+      }
+      if (credits.length < 500) break;
+      cursor = credits[credits.length - 1].id;
+    }
+  }
   let skipped = 0;
   while (skipped < 100) {
     let job: CierreSyncTrabajo | null = null;
     // Persisted rotation prevents a large reference backlog from starving the
     // account-level daily list or the other provider's confirmed local sales.
-    for (const financial of order) {
-      job = await prisma.cierreSyncTrabajo.findFirst({
-        where: { financial, nextAttempt: { lte: new Date() }, state: { in: providerStates },
-          ...(financial === "PAYJOY" ? { key: { startsWith: DAY_PREFIX } } : {}) },
-        orderBy: [{ nextAttempt: "asc" }, { key: "asc" }],
-      });
+    // Search every provider inside the priority range before considering any
+    // other period. Fresh references precede routine rechecks in each range.
+    for (const prioritized of priority ? [true, false] : [false]) {
+      for (const unconsulted of [true, false]) {
+        for (const financial of order) {
+          const keys = priorityKeys.get(financial) || [];
+          const chunks = prioritized && financial !== "PAYJOY"
+            ? Array.from({ length: Math.ceil(keys.length / 500) }, (_, index) => keys.slice(index * 500, index * 500 + 500)) : [null];
+          for (const localKeys of chunks) {
+            const candidate = await prisma.cierreSyncTrabajo.findFirst({
+              where: { financial, nextAttempt: { lte: new Date() }, state: { in: providerStates },
+                ...(unconsulted ? { lastSuccess: null } : {}), ...(localKeys ? { localKey: { in: localKeys } } : {}),
+                ...(financial === "PAYJOY" ? { key: { startsWith: DAY_PREFIX,
+                  ...(prioritized ? { gte: `${DAY_PREFIX}${priority!.from}`, lte: `${DAY_PREFIX}${priority!.to}` } : {}) } } : {}) },
+              orderBy: [{ nextAttempt: "asc" }, { key: "asc" }],
+            });
+            if (candidate && (!job || candidate.nextAttempt < job.nextAttempt ||
+                (candidate.nextAttempt.getTime() === job.nextAttempt.getTime() && candidate.key < job.key))) job = candidate;
+          }
+          if (job) break;
+        }
+        if (job) break;
+      }
       if (job) break;
     }
     if (!job) return { processed: 0, seeded, skipped };
@@ -168,20 +215,37 @@ async function syncOneProviderReference() {
     const attempt = await prisma.cierreSyncTrabajo.update({ where: { key: job.key }, data: {
       state: "PENDIENTE", attempts: { increment: 1 }, nextAttempt: new Date(Date.now() + backoff(job.attempts)),
     } });
+    const date = day || getDateKeyInColombia(local!.effectiveAt!);
+    const activity = JSON.stringify({ financial: job.financial, localKey: day ? null : job.localKey, day: date, startedAt: new Date().toISOString() });
+    await prisma.cierreSyncEstado.upsert({ where: { key: "PROVIDER_ACTIVITY" },
+      create: { key: "PROVIDER_ACTIVITY", lockToken: activity, lockedUntil: new Date(Date.now() + 10 * MINUTE) },
+      update: { lockToken: activity, lockedUntil: new Date(Date.now() + 10 * MINUTE) } });
+    const context = { day: date, priority: priority ? { from: priority.from, to: priority.to } : null };
     try {
-      const date = day || getDateKeyInColombia(local!.effectiveAt!);
       const result = day ? await consultarPeriodoPayJoyCierre({ fechaDesde: day, fechaHasta: day })
         : await consultarLoteProveedorCierre({
           financiera: job.financial as CierreProvider, fechaDesde: shiftDateKey(date, -1), fechaHasta: shiftDateKey(date, 1),
           referencias: [{ documento: document, imei: local!.imei || undefined, providerId: local!.providerCreditId || undefined,
             localKey: job.localKey, sedeId: local!.sedeId || undefined, effectiveDate: date, amount: Number(local!.amount) }],
         });
-      return { ...await persistResult(job, attempt, day, result), seeded, skipped };
+      return { ...await persistResult(job, attempt, day, result), seeded, skipped, ...context };
     } catch (error) {
-      return { ...await persistError(job, attempt, day, error), seeded, skipped };
+      return { ...await persistError(job, attempt, day, error), seeded, skipped, ...context };
+    } finally {
+      await prisma.cierreSyncEstado.updateMany({ where: { key: "PROVIDER_ACTIVITY", lockToken: activity }, data: { lockToken: null, lockedUntil: null } });
     }
   }
   return { processed: 0, seeded, skipped };
+}
+
+export async function readCierrePriorityProgress() {
+  const priority = getCierrePriority();
+  if (!priority) return null;
+  return prisma.$transaction(async (tx) => {
+    const sources = await readCierreProviderProgress(tx, { sedeId: null, start: priority.start, end: priority.end, financial: null });
+    return { priority: { from: priority.from, to: priority.to },
+      totals: aggregateCierreProviderSync([...sources.values()]), sources: Object.fromEntries(sources) };
+  }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
 }
 
 export async function runCierreSyncBatch(options: { localOnly?: boolean } = {}) {
