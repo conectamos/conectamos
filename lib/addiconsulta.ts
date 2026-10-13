@@ -292,18 +292,12 @@ async function fetchWithTimeout(
   init: RequestInit,
   timeoutMs: number
 ) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...init,
-      cache: "no-store",
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  // Keep the deadline active after headers arrive, while text/JSON is consumed.
+  return fetch(url, {
+    ...init,
+    cache: "no-store",
+    signal: init.signal ?? AbortSignal.timeout(timeoutMs),
+  });
 }
 
 async function requestJson(
@@ -337,10 +331,10 @@ async function requestJson(
     getMessage(payload) || `ADDI respondio con estado ${response.status}.`;
 
   if ([401, 403].includes(response.status)) {
-    throw new AddiConsultaConfigError(message);
+    throw Object.assign(new AddiConsultaConfigError(message), { status: response.status });
   }
 
-  throw new AddiConsultaLookupError(message);
+  throw Object.assign(new AddiConsultaLookupError(message), { status: response.status, retryAfter: response.headers.get("retry-after") });
 }
 
 type CookieJar = Map<string, string>;
@@ -652,10 +646,10 @@ async function exchangeAuth0TokenForAddiSession(
   const payload = await readJsonResponse(response);
 
   if (!response.ok) {
-    throw new AddiConsultaConfigError(
+    throw Object.assign(new AddiConsultaConfigError(
       getMessage(payload) ||
         "ADDI no permitio intercambiar la sesion por token del portal."
-    );
+    ), { status: response.status, retryAfter: response.headers.get("retry-after") });
   }
 
   const accessToken = response.headers.get("x-addi-token");
@@ -690,9 +684,9 @@ async function loginAddi(): Promise<AddiSession> {
   );
 
   if (!authPage.response.ok) {
-    throw new AddiConsultaConfigError(
+    throw Object.assign(new AddiConsultaConfigError(
       `ADDI no abrio el login. Estado ${authPage.response.status}.`
-    );
+    ), { status: authPage.response.status, retryAfter: authPage.response.headers.get("retry-after") });
   }
 
   const lockConfig = parseAuth0LockConfig(authPage.text);
@@ -726,10 +720,10 @@ async function loginAddi(): Promise<AddiSession> {
   const authenticatePayload = await readJsonResponse(authenticateResponse);
 
   if (!authenticateResponse.ok) {
-    throw new AddiConsultaConfigError(
+    throw Object.assign(new AddiConsultaConfigError(
       getMessage(authenticatePayload) ||
         "ADDI no permitio iniciar sesion con las credenciales configuradas."
-    );
+    ), { status: authenticateResponse.status, retryAfter: authenticateResponse.headers.get("retry-after") });
   }
 
   if (
@@ -753,6 +747,11 @@ async function loginAddi(): Promise<AddiSession> {
     },
     jar
   );
+  if (!ticketPage.response.ok) {
+    throw Object.assign(new AddiConsultaConfigError("ADDI no completo el inicio de sesion."), {
+      status: ticketPage.response.status, retryAfter: ticketPage.response.headers.get("retry-after"),
+    });
+  }
   const fields = getFormFields(ticketPage.text);
   const error = fields.get("error");
   const accessToken =
@@ -1309,7 +1308,7 @@ export async function readAddiCierreTransactions(
   ]) {
     const data = await getProtectedJsonStrict(request.base, session, `${request.path}?${query}`);
     if (data === null || data === undefined || typeof data !== "object") {
-      throw new AddiConsultaLookupError("ADDI no devolvio un listado valido para CIERRE.");
+      throw Object.assign(new AddiConsultaLookupError("ADDI no devolvio un listado valido para CIERRE."), { code: "INVALID_RESPONSE" });
     }
     payloads.push({ source: request.source, data });
   }

@@ -15,11 +15,11 @@ export async function GET(request: Request) {
     const summary = book.addWorksheet("Cierre");
     summary.addRows([
       ["CIERRE", report.period.label, report.scope.label],
-      ["Estado", report.complete ? "Completo" : "Información pendiente; totales parciales"],
+      ["Estado", report.coverageLabel],
       ["Última actualización", report.lastUpdatedAt || "Pendiente"],
       [], ["Financiera", "Unidades de créditos", "Valor de los créditos", "Estado", "Fuente"],
-      ...report.financiers.map((r) => [r.name, r.units ?? "Pendiente", r.amount ?? "Pendiente", r.complete ? "Completo" : "Pendiente", r.source]),
-      ["TOTAL", report.totals.units ?? "Pendiente", report.totals.amount ?? "Pendiente"],
+      ...report.financiers.map((r) => [r.name, r.units ?? "Sin confirmar", r.amount ?? "Sin confirmar", r.coverageLabel, r.source]),
+      ["TOTAL", report.totals.units ?? "Sin confirmar", report.totals.amount ?? "Sin confirmar"],
     ]);
     summary.columns = [{ width: 28 }, { width: 30 }, { width: 30 }, { width: 24 }, { width: 52 }];
     summary.getColumn(3).numFmt = '"$" #,##0.00';
@@ -34,7 +34,28 @@ export async function GET(request: Request) {
     ];
     const formatter = new Intl.DateTimeFormat("es-CO", { timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit" });
     for (const row of report.items) sheet.addRow({ ...row, date: formatter.format(new Date(row.date)), creditNumber: row.creditNumber || "No informado", customerName: row.customerName || "No informado" });
-    for (const [ws, index] of [[summary, 5], [sheet, 1]] as const) {
+    const sources = book.addWorksheet("Fuentes", { views: [{ state: "frozen", ySplit: 1 }] });
+    sources.columns = [
+      { header: "Financiera", key: "name", width: 22 }, { header: "Fuente utilizada", key: "source", width: 44 },
+      { header: "Estado del cierre", key: "coverage", width: 28 }, { header: "Conciliación API", key: "sync", width: 28 },
+      { header: "Periodo", key: "period", width: 26 }, { header: "Sede", key: "scope", width: 28 },
+      { header: "Referencias", key: "total", width: 16 }, { header: "Revisadas", key: "reviewed", width: 16 },
+      { header: "En cola", key: "queued", width: 16 }, { header: "Errores", key: "errors", width: 16 },
+      { header: "Sin referencia", key: "withoutReference", width: 20 }, { header: "Última consulta exitosa", key: "lastSuccess", width: 30 },
+      { header: "Limitación de la fuente", key: "limitation", width: 90 },
+    ];
+    const syncLabels = { DESACTIVADA: "Desactivada", EN_COLA: "En cola", REVISADA_LIMITADA: "Revisada · cobertura parcial", ERROR: "Error de sincronización", SIN_REFERENCIA: "Sin referencia para consultar" };
+    for (const row of report.financiers) sources.addRow({
+      name: row.name, source: row.source, coverage: row.coverageLabel,
+      sync: row.providerSync ? syncLabels[row.providerSync.status] : "Fuente local",
+      period: report.period.label, scope: report.scope.label,
+      total: row.providerSync?.total ?? "No aplica", reviewed: row.providerSync?.reviewed ?? "No aplica",
+      queued: row.providerSync?.queued ?? "No aplica", errors: row.providerSync?.errors ?? "No aplica",
+      withoutReference: row.providerSync?.withoutReference ?? "No aplica",
+      lastSuccess: row.providerSync?.lastSuccessAt || "Sin consulta registrada", limitation: row.limitation,
+    });
+    sources.getColumn("limitation").alignment = { wrapText: true, vertical: "top" };
+    for (const [ws, index] of [[summary, 5], [sheet, 1], [sources, 1]] as const) {
       ws.getRow(index).eachCell((cell) => { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF11161D" } }; });
     }
     const buffer = await book.xlsx.writeBuffer();

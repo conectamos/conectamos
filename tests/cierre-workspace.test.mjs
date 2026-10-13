@@ -143,7 +143,7 @@ test("cierre distinguishes pending from confirmed zero, keeps full COP totals an
   await ui.settle();
   const rows = ui.nodes().filter((node) => node.type === "tr");
   const addi = textOf(rows.find((row) => textOf(row).includes("ADDI")));
-  assert.match(addi, /Pendiente/);
+  assert.match(addi, /Sin confirmar/);
   assert.doesNotMatch(addi, /\$\s*0/);
   assert.match(textOf(rows.find((row) => textOf(row).includes("Otra financiera"))), /\$\s*0/);
   assert.match(ui.text(), /12\.345\.678/);
@@ -240,7 +240,7 @@ test("pending local sales show progress and poll only the applied period every t
   await ui.advance(10_000);
   assert.equal(ui.calls.length, 3);
   assert.doesNotMatch(ui.text(), /Cargando ventas del periodo/);
-  assert.match(ui.text(), /Información pendiente/); // Provider coverage remains partial.
+  assert.match(ui.text(), /Cobertura parcial/); // Provider coverage remains partial.
   await ui.advance(60_000);
   assert.equal(ui.calls.length, 3);
   assert.equal(ui.timers.size, 0);
@@ -261,7 +261,7 @@ test("Consultar acknowledges a fresh request even when its filter and result do 
   ui.pending[1].resolve();
   await ui.settle();
   assert.match(ui.text(), /Consulta finalizada/);
-  assert.match(ui.text(), /Ventas locales cargadas; conciliación de financieras pendiente/);
+  assert.match(ui.text(), /Cobertura sujeta a las fuentes disponibles/);
 });
 
 test("automatic updates refresh the open detail with its applied scope and page without reopening the dialog", async () => {
@@ -330,4 +330,57 @@ test("unmount cancels the next automatic update", async () => {
   await ui.advance(30_000);
   assert.equal(ui.calls.length, 1);
   assert.equal(ui.timers.size, 0);
+});
+
+const providerSync = {
+  enabled: false, status: "DESACTIVADA", total: 5, queued: 5, reviewed: 0,
+  errors: 0, withoutReference: 0, lastSuccessAt: null,
+  limitation: "La integración revisa referencias conocidas; no ofrece cobertura exhaustiva del periodo.",
+};
+
+test("disabled external reconciliation is explicit and does not promise or poll for progress", async () => {
+  const source = { ...report, providerSync, coverageLabel: "Cobertura parcial", financiers: report.financiers.map((row) => row.key === "ADDI" ? { ...row, providerSync, coverageLabel: "Conciliación desactivada", limitation: providerSync.limitation } : row) };
+  const ui = harness({ reports: [source] });
+  await ui.settle();
+  assert.match(ui.text(), /Conciliación externa desactivada/);
+  assert.match(ui.text(), /Conciliación desactivada/);
+  assert.match(ui.text(), /no ofrece cobertura exhaustiva/);
+  assert.doesNotMatch(ui.text(), /se actualiza automáticamente|Se actualiza automáticamente/);
+  assert.equal(ui.timers.size, 0);
+  await ui.advance(60_000);
+  assert.equal(ui.calls.length, 1);
+  const unknown = ui.nodes().find((node) => node.type === "tr" && textOf(node).includes("ADDI"));
+  assert.match(textOf(unknown), /Sin confirmar/);
+  assert.doesNotMatch(textOf(unknown), /\$\s*0/);
+});
+
+test("enabled queued references refresh only the local report and stop at reviewed limited coverage", async () => {
+  const queued = { ...providerSync, enabled: true, status: "EN_COLA", reviewed: 2, queued: 3 };
+  const reviewed = { ...queued, status: "REVISADA_LIMITADA", reviewed: 5, queued: 0 };
+  const ui = harness({ reports: [{ ...report, providerSync: queued }, { ...report, providerSync: reviewed }] });
+  await ui.settle();
+  assert.match(ui.text(), /2 de 5 referencias revisadas · 3 por consultar/);
+  assert.match(ui.text(), /Se actualiza automáticamente/);
+  await ui.advance(10_000);
+  assert.match(ui.text(), /5 referencias revisadas. La cobertura externa es parcial/);
+  assert.equal(ui.timers.size, 0);
+  assert.doesNotMatch(ui.text(), /Periodo completo/);
+  await ui.advance(60_000);
+  assert.equal(ui.calls.length, 2);
+  assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre?")));
+});
+
+test("provider errors and missing credit references do not become indefinite loading states", async () => {
+  for (const [status, patch, message] of [
+    ["ERROR", { errors: 2 }, /2 referencias requieren revisión/],
+    ["SIN_REFERENCIA", { withoutReference: 5 }, /Sin referencias de crédito para consultar/],
+  ]) {
+    const ui = harness({ reports: [{ ...report, providerSync: { ...providerSync, enabled: true, queued: 0, status, ...patch } }] });
+    await ui.settle();
+    assert.match(ui.text(), message);
+    assert.doesNotMatch(ui.text(), /Se actualiza automáticamente/);
+    await ui.advance(60_000);
+    assert.equal(ui.calls.length, 1);
+    assert.equal(ui.timers.size, 0);
+  }
 });

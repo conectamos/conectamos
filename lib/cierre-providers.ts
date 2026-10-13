@@ -19,6 +19,8 @@ export type CierreProviderCredit = {
   sedeId?: number;
   fuente: string;
   sourceUpdatedAt?: Date;
+  providerMerchantId?: string;
+  providerMerchantName?: string;
   raw: CierreJson;
 };
 
@@ -43,7 +45,32 @@ export type CierreProviderBatch = {
   credits: CierreProviderCredit[];
   complete: boolean;
   limitation?: string;
+  outcome: "OBSERVED" | "EMPTY" | "UNSUPPORTED_RESPONSE" | "NOT_CONFIGURED" | "MISSING_REFERENCE" | "LOCAL_ONLY";
+  pendingCredits?: number;
 };
+
+/** Safe machine-readable errors; never returns a provider message or request URL. */
+export function classifyCierreProviderError(error: unknown, now = Date.now()): {
+  code: "RATE_LIMIT" | "AUTH" | "UNAVAILABLE" | "INVALID_RESPONSE" | "CONFIG" | "UNKNOWN";
+  retryAfterMs?: number;
+} {
+  const value = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const status = Number(value.status);
+  const header = typeof value.retryAfter === "string" ? value.retryAfter.trim() : "";
+  let retryAfterMs: number | undefined;
+  if (header) {
+    const duration = /^\d+(\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - now;
+    if (Number.isFinite(duration) && duration >= 0) retryAfterMs = Math.ceil(duration);
+  }
+  if (status === 429) return { code: "RATE_LIMIT", retryAfterMs: Math.max(60_000, retryAfterMs ?? 0) };
+  if (status === 401 || status === 403) return { code: "AUTH" };
+  if (status >= 500 || status === 408 || ["TimeoutError", "AbortError", "TypeError"].includes(String(value.name))) {
+    return { code: "UNAVAILABLE", ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) };
+  }
+  if (value.code === "INVALID_RESPONSE") return { code: "INVALID_RESPONSE" };
+  if (String(value.name).endsWith("ConfigError")) return { code: "CONFIG" };
+  return { code: "UNKNOWN" };
+}
 
 type SourcePayload = { source: string; data: unknown; loanId?: string };
 export type CierreProviderReaders = {
@@ -51,6 +78,7 @@ export type CierreProviderReaders = {
   sumas: (documento: string, providerId?: string) => Promise<SourcePayload[]>;
   payjoy: (imei: string, desde: Date, hasta: Date) => Promise<unknown>;
   addi: (documento: string, desde: string, hasta: string) => Promise<SourcePayload[]>;
+  payjoyPeriod?: (desde: Date, hasta: Date) => Promise<unknown>;
 };
 
 export const CIERRE_PROVIDER_CAPABILITIES: Record<CierreProvider, {
@@ -65,8 +93,8 @@ export const CIERRE_PROVIDER_CAPABILITIES: Record<CierreProvider, {
   },
   PAYJOY: {
     source: "API_Y_LOCAL",
-    history: "Transacciones por IMEI y rango que conserve el proveedor; sin fecha mínima garantizada.",
-    limitation: "Sólo transacciones finance con financeOrder.id y financeAmount. El listado por IMEI no garantiza cobertura global ni todos los reversos históricos.",
+    history: "Listado de transacciones por día de la cuenta, además de consulta por IMEI; sin fecha mínima de retención garantizada.",
+    limitation: "Listado diario de cuenta documentado; sólo finance con ID y financeAmount. Sin garantía publicada de paginación, retención o representación completa de reversos; los comercios requieren vinculación de sede.",
   },
   ADDI: {
     source: "API_Y_LOCAL",
@@ -177,9 +205,9 @@ function statusText(row: Record<string, unknown>) {
 
 function negativeState(value: unknown): CierreProviderState | null {
   const state = normal(value);
-  if (/\b(REVERSED|REVERSAL|REVERSADO|REVERSADA|REFUNDED|REFUND|REEMBOLSADO|REEMBOLSADA)\b/.test(state)) return "REVERSADO";
-  if (/\b(VOID|VOIDED|CANCELLED|CANCELED|ANULADO|ANULADA)\b/.test(state)) return "ANULADO";
-  if (/\b(REJECTED|DECLINED|RECHAZADO|RECHAZADA|DENEGADO|DENEGADA)\b/.test(state)) return "RECHAZADO";
+  if (/\b(REVERSED|REVERSAL|REVERSO|REVERSADO|REVERSADA|REFUNDED|REFUND|REEMBOLSADO|REEMBOLSADA|DEVUELTO|DEVUELTA)\b/.test(state)) return "REVERSADO";
+  if (/\b(VOID|VOIDED|CANCELLED|CANCELED|CANCELADO|CANCELADA|ANULADO|ANULADA)\b/.test(state)) return "ANULADO";
+  if (/\b(REJECTED|DECLINED|DENIED|RECHAZADO|RECHAZADA|DENEGADO|DENEGADA)\b/.test(state)) return "RECHAZADO";
   return null;
 }
 
@@ -192,7 +220,7 @@ function client(row: Record<string, unknown>) {
 }
 
 function document(row: Record<string, unknown>) {
-  return digits(field(row, ["documentNumber", "documento", "cedula", "identificationNumber", "clientDocumentNumber", "customerDocumentNumber"]));
+  return digits(field(row, ["documentNumber", "documento", "cedula", "identification", "identificationNumber", "idNumber", "clientDocumentNumber", "customerDocumentNumber"]));
 }
 
 function storeName(row: Record<string, unknown>) {
@@ -290,7 +318,7 @@ export function normalizeAddiCierre(payloads: SourcePayload[], reference: Cierre
   return dedupe(credits);
 }
 
-export function normalizePayJoyCierre(payload: unknown, reference: CierreProviderReference): CierreProviderCredit[] {
+export function normalizePayJoyCierre(payload: unknown, reference: CierreProviderReference, accountScope = false): CierreProviderCredit[] {
   if (!record(payload) || payload.valid !== true || !Array.isArray(payload.transactions)) return [];
   const credits: CierreProviderCredit[] = [];
   for (const row of payload.transactions) {
@@ -298,12 +326,16 @@ export function normalizePayJoyCierre(payload: unknown, reference: CierreProvide
     const order = row.financeOrder;
     const providerId = text(order.id);
     const type = normal(row.type);
-    const negative = negativeState(statusText(order)) ?? negativeState(statusText(row)) ?? negativeState(type);
+    // A payment refund/adjustment does not prove cancellation of the loan.
+    // Require an explicit finance-order state (or the finance entry's state).
+    const negative = negativeState(statusText(order)) ?? (type === "FINANCE" ? negativeState(statusText(row)) : null);
     if (!providerId || (type !== "FINANCE" && !negative)) continue;
-    const imei = record(row.device) ? digits(row.device.imei) : "";
-    if (reference.imei && imei && imei !== digits(reference.imei)) continue;
-    if (!imei && providerId !== reference.providerId) continue;
-    const valor = amount(order.financeAmount);
+    const imei = record(row.device) ? text(row.device.imei) || "" : "";
+    if (reference.imei && imei && imei !== reference.imei.trim()) continue;
+    if (!accountScope && !imei && providerId !== reference.providerId) continue;
+    const currency = normal(order.currency || row.currency);
+    // A multi-country partner account must never label foreign money as COP.
+    const valor = (accountScope && currency !== "COP") || (currency && currency !== "COP") ? null : amount(order.financeAmount);
     const state = statusText(order) || statusText(row);
     const pending = /^(PENDING|PROCESSING|PENDIENTE|EN PROCESO)$/.test(normal(state));
     // A finance ledger entry is proof of generation. A reversal's own event
@@ -312,7 +344,20 @@ export function normalizePayJoyCierre(payload: unknown, reference: CierreProvide
       typeof row.time === "string" && /^\d+(\.\d+)?$/.test(row.time) ? Number(row.time) : row.time
     ) : null;
     const credit = snapshot("PAYJOY", providerId, order, "list-transactions", valor, fecha,
-      negative ?? (pending ? "PENDIENTE" : "EFECTIVO"), reference, state || type);
+      negative ?? (pending || (imei && !/^\d{15,16}$/.test(imei)) ? "PENDIENTE" : "EFECTIVO"), reference, state || type);
+    if (record(row.customer)) {
+      credit.cliente = text(row.customer.name) || credit.cliente;
+      credit.documento = document(row.customer) || credit.documento;
+    }
+    if (record(row.merchant)) {
+      const merchantId = text(row.merchant.id);
+      const merchantName = text(row.merchant.name);
+      if (merchantId) credit.providerMerchantId = merchantId;
+      if (merchantName) credit.providerMerchantName = merchantName;
+    }
+    if (record(credit.raw)) credit.raw = { ...credit.raw,
+      currency: currency || null, providerMerchantId: credit.providerMerchantId || null,
+      providerMerchantName: credit.providerMerchantName || null } as CierreJson;
     if (imei) credit.imei = imei;
     const eventDate = parseCierreProviderDate(typeof row.time === "string" && /^\d+$/.test(row.time) ? Number(row.time) : row.time);
     if (!credit.sourceUpdatedAt && eventDate) credit.sourceUpdatedAt = eventDate;
@@ -331,7 +376,42 @@ const defaultReaders: CierreProviderReaders = {
   async sumas(documento, providerId) { return (await import("@/lib/sumasconsulta")).readSumasCierreHistory(documento, providerId); },
   async payjoy(imei, desde, hasta) { return (await import("@/lib/payjoy-retail")).readPayJoyCierreTransactions(imei, desde, hasta); },
   async addi(documento, desde, hasta) { return (await import("@/lib/addiconsulta")).readAddiCierreTransactions(documento, desde, hasta); },
+  async payjoyPeriod(desde, hasta) { return (await import("@/lib/payjoy-retail")).readPayJoyCierrePeriod(desde, hasta); },
 };
+
+function observedBatch(credits: CierreProviderCredit[], emptyResponse: boolean, limitation: string): CierreProviderBatch {
+  return {
+    credits, complete: false, limitation,
+    outcome: credits.length ? "OBSERVED" : emptyResponse ? "EMPTY" : "UNSUPPORTED_RESPONSE",
+    pendingCredits: credits.filter((credit) => credit.estado === "PENDIENTE").length,
+  };
+}
+
+function payjoyHasNoCreditEvents(payload: unknown) {
+  // These non-origination event types are documented. An unknown type or an
+  // adjustment must not silently become an asserted empty credit list.
+  return record(payload) && payload.valid === true && Array.isArray(payload.transactions) &&
+    payload.transactions.every((item) => record(item) && ["CASH", "COMMISSION", "OUT", "IN"].includes(normal(item.type)));
+}
+
+/** Account-level daily list documented at https://www.payjoy.com/apidocs/basic%20example.html . */
+export async function consultarPeriodoPayJoyCierre(
+  request: { fechaDesde: string; fechaHasta: string },
+  readers: Pick<CierreProviderReaders, "configured" | "payjoyPeriod"> = defaultReaders,
+): Promise<CierreProviderBatch> {
+  const desde = parseCierreProviderDate(request.fechaDesde);
+  const hasta = parseCierreProviderDate(request.fechaHasta);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(request.fechaDesde) || request.fechaDesde !== request.fechaHasta || !desde || !hasta) {
+    throw new Error("El listado PAYJOY de CIERRE procesa un día por trabajo reanudable.");
+  }
+  if (!await readers.configured("PAYJOY")) return { credits: [], complete: false, outcome: "NOT_CONFIGURED", limitation: "Integración PAYJOY sin configurar." };
+  if (!readers.payjoyPeriod) return { credits: [], complete: false, outcome: "UNSUPPORTED_RESPONSE", limitation: "Lector diario PAYJOY no disponible." };
+  const payload = await readers.payjoyPeriod(desde, new Date(hasta.getTime() + 86_400_000));
+  const credits = normalizePayJoyCierre(payload, {}, true);
+  // Keep reversals with no origination date: the worker applies them by ID to an
+  // existing credit without substituting the reversal event's date.
+  return observedBatch(credits, payjoyHasNoCreditEvents(payload), CIERRE_PROVIDER_CAPABILITIES.PAYJOY.limitation);
+}
 
 /** One durable job reference at a time; no hidden fanout, retries or eligibility. */
 export async function consultarLoteProveedorCierre(
@@ -346,30 +426,34 @@ export async function consultarLoteProveedorCierre(
     throw new Error("Periodo de CIERRE invalido.");
   }
   if (request.referencias.length > 1) throw new Error("CIERRE procesa una referencia por trabajo para limitar consultas y reanudar el histórico.");
-  if (capability.source === "LOCAL") return { credits: [], complete: false, limitation: capability.limitation };
+  if (capability.source === "LOCAL") return { credits: [], complete: false, outcome: "LOCAL_ONLY", limitation: capability.limitation };
   if (!await readers.configured(request.financiera)) {
-    return { credits: [], complete: false, limitation: "Integración sin configurar. Fuente disponible: ventas confirmadas en CONECTAMOS." };
+    return { credits: [], complete: false, outcome: "NOT_CONFIGURED", limitation: "Integración sin configurar. Fuente disponible: ventas confirmadas en CONECTAMOS." };
   }
   const reference = request.referencias[0];
-  if (!reference) return { credits: [], complete: false, limitation: "Sin referencias locales consultables; no demuestra ausencia de créditos en el proveedor." };
+  if (!reference) return { credits: [], complete: false, outcome: "MISSING_REFERENCE", limitation: "Sin referencias locales consultables; no demuestra ausencia de créditos en el proveedor." };
   let credits: CierreProviderCredit[];
+  let emptyResponse = false;
   if (request.financiera === "PAYJOY") {
     const imei = digits(reference.imei);
-    if (!/^\d{15,16}$/.test(imei)) return { credits: [], complete: false, limitation: "IMEI pendiente para consultar transacciones PAYJOY." };
+    if (!/^\d{15,16}$/.test(imei)) return { credits: [], complete: false, outcome: "MISSING_REFERENCE", limitation: "IMEI pendiente para consultar transacciones PAYJOY." };
     // Also read subsequent events to capture reversals of this original credit.
     const endExclusive = new Date(Math.max(hasta.getTime() + 86_400_000, Date.now()));
-    credits = normalizePayJoyCierre(await readers.payjoy(imei, desde, endExclusive), reference);
+    const payload = await readers.payjoy(imei, desde, endExclusive);
+    credits = normalizePayJoyCierre(payload, reference);
+    emptyResponse = payjoyHasNoCreditEvents(payload);
   } else {
     const doc = digits(reference.documento);
-    if (!/^\d{5,15}$/.test(doc)) return { credits: [], complete: false, limitation: "Documento pendiente para consultar el historial del crédito." };
-    credits = request.financiera === "SUMASPAY"
-      ? normalizeSumasCierre(await readers.sumas(doc, reference.providerId), reference)
-      : normalizeAddiCierre(await readers.addi(doc, request.fechaDesde, request.fechaHasta), reference);
+    if (!/^\d{5,15}$/.test(doc)) return { credits: [], complete: false, outcome: "MISSING_REFERENCE", limitation: "Documento pendiente para consultar el historial del crédito." };
+    const payloads = request.financiera === "SUMASPAY" ? await readers.sumas(doc, reference.providerId)
+      : await readers.addi(doc, request.fechaDesde, request.fechaHasta);
+    credits = request.financiera === "SUMASPAY" ? normalizeSumasCierre(payloads, reference) : normalizeAddiCierre(payloads, reference);
+    emptyResponse = payloads.length > 0 && payloads.every((payload) => Array.isArray(payload.data) && payload.data.length === 0);
   }
   const end = hasta.getTime() + 86_400_000;
   credits = credits.filter((credit) => credit.providerId === reference.providerId ||
     !credit.fechaEfectiva || (credit.fechaEfectiva >= desde && credit.fechaEfectiva.getTime() < end));
   // Request success only proves that this reference was read. Do not turn an
   // empty/incomplete response, capped list or missing branch mapping into zero.
-  return { credits, complete: false, limitation: capability.limitation };
+  return observedBatch(credits, emptyResponse, capability.limitation);
 }

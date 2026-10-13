@@ -2,9 +2,19 @@ import { createHash } from "node:crypto";
 import prisma from "@/lib/prisma";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { projectLocalSaleCredits } from "@/lib/cierre-domain";
+import { getDateKeyInColombia } from "@/lib/credit-date-utils";
 
 type Tx = Prisma.TransactionClient;
 type CreditData = Omit<Prisma.CierreCreditoUncheckedCreateInput, "id">;
+const terminal = new Set(["ANULADO", "REVERSADO", "RECHAZADO"]);
+
+function localStateEvidence(evidence: unknown, reason: string | null, status: string): Prisma.InputJsonValue {
+  const value = evidence && typeof evidence === "object" && !Array.isArray(evidence) ? { ...evidence } as Record<string, unknown> : {};
+  delete value.reason;
+  delete value.localStatus;
+  delete value.localTombstone;
+  return json({ ...value, ...(reason ? { reason, localStatus: status, localTombstone: true } : {}) });
+}
 
 function json(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value));
@@ -74,30 +84,44 @@ export async function drainCierreLocalQueue(limit = 100) {
         // An explicit provider reversal remains authoritative on subsequent local
         // edits; a new local snapshot cannot resurrect that provider operation.
         const providerAuthoritative = Boolean(prior?.providerCreditId && prior.source.includes("API"));
+        const providerTerminal = providerAuthoritative && terminal.has(prior!.status);
         await saveCierreCredit(tx, {
           ...credit, imei: sale?.serial || null,
           ...(prior?.providerCreditId ? { providerCreditId: prior.providerCreditId, creditNumber: prior.creditNumber } : {}),
           ...(providerAuthoritative ? {
             providerCreditId: prior!.providerCreditId, creditNumber: prior!.creditNumber,
-            status: credit.status === "EFECTIVO" ? prior!.status : credit.status, amount: prior!.amount, effectiveAt: prior!.effectiveAt,
-            source: credit.status === "EFECTIVO" ? prior!.source : credit.source,
-            evidence: credit.status === "EFECTIVO" ? prior!.evidence as Prisma.InputJsonValue : { reason: "ESTADO_LOCAL", status: credit.status },
+            status: providerTerminal || credit.status === "EFECTIVO" ? prior!.status : credit.status, amount: prior!.amount, effectiveAt: prior!.effectiveAt,
+            source: providerTerminal || credit.status === "EFECTIVO" ? prior!.source : credit.source,
+            evidence: providerTerminal || credit.status === "EFECTIVO"
+              ? localStateEvidence(prior!.evidence, credit.status === "EFECTIVO" ? null : "ESTADO_LOCAL", credit.status)
+              : { reason: "ESTADO_LOCAL", status: credit.status, localTombstone: true },
             providerUpdatedAt: prior!.providerUpdatedAt,
           } : {}),
         });
         if (["SUMASPAY", "PAYJOY", "ADDI"].includes(credit.financial)) {
-          await tx.cierreSyncTrabajo.upsert({ where: { key: credit.localKey }, update: {}, create: { key: credit.localKey, financial: credit.financial, localKey: credit.localKey } });
+          const changedReference = !prior || prior.documentNumber !== credit.documentNumber || prior.imei !== (sale?.serial || null) ||
+            Number(prior.amount) !== Number(credit.amount) || prior.effectiveAt?.getTime() !== credit.effectiveAt.getTime();
+          // A corrected reference wakes missing-data work; unrelated edits do not
+          // repeatedly spend provider requests on an already reviewed credit.
+          const update = changedReference ? { state: "PENDIENTE", attempts: 0, nextAttempt: new Date(), limitation: null } : {};
+          await tx.cierreSyncTrabajo.upsert({ where: { key: credit.localKey }, update, create: { key: credit.localKey, financial: credit.financial, localKey: credit.localKey } });
+          if (credit.financial === "PAYJOY" && changedReference) {
+            const key = `PERIODO:PAYJOY:${getDateKeyInColombia(credit.effectiveAt)}`;
+            await tx.cierreSyncTrabajo.upsert({ where: { key }, update, create: { key, localKey: key, financial: "PAYJOY" } });
+          }
         }
       }
       for (const old of previous) {
         if (projected.some((c) => c.localKey === old.localKey)) continue;
+        const providerTerminal = Boolean(old.providerCreditId && old.source.includes("API") && terminal.has(old.status));
         await saveCierreCredit(tx, {
           financial: old.financial, localKey: old.localKey, providerCreditId: old.providerCreditId,
           ventaId: old.ventaId, registroId: old.registroId, localReference: old.localReference,
           sedeId: old.sedeId, effectiveAt: old.effectiveAt, amount: old.amount,
           customerName: old.customerName, documentNumber: old.documentNumber,
-          creditNumber: old.creditNumber, imei: old.imei, status: "ANULADO",
-          source: "CONECTAMOS · venta retirada", evidence: { reason: sale ? "FINANCIERA_RETIRADA" : "VENTA_ELIMINADA" },
+          creditNumber: old.creditNumber, imei: old.imei, status: providerTerminal ? old.status : "ANULADO",
+          source: providerTerminal ? old.source : "CONECTAMOS · venta retirada",
+          evidence: localStateEvidence(providerTerminal ? old.evidence : null, sale ? "FINANCIERA_RETIRADA" : "VENTA_ELIMINADA", "ANULADO"),
         });
       }
       // Do not lose an update arriving after this batch's read.

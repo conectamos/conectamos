@@ -468,10 +468,10 @@ async function requestJson(
     `${provider.logLabel} respondio con estado ${response.status}.`;
 
   if ([401, 403].includes(response.status)) {
-    throw new SumasConsultaConfigError(message);
+    throw Object.assign(new SumasConsultaConfigError(message), { status: response.status });
   }
 
-  throw new SumasConsultaLookupError(message);
+  throw Object.assign(new SumasConsultaLookupError(message), { status: response.status, retryAfter: response.headers.get("retry-after") });
 }
 
 async function loginSumas(
@@ -579,6 +579,7 @@ async function requestProtectedJsonWithStatus(
   return {
     ok: response.ok,
     status: response.status,
+    retryAfter: response.headers.get("retry-after"),
     payload: unwrapData(payload),
   };
 }
@@ -2325,7 +2326,9 @@ export async function readSumasCierreHistory(
     { method: "GET", signal: AbortSignal.timeout(20_000) }, SUMASPAY_PROVIDER
   );
   if (!result.ok || result.payload === null || result.payload === undefined) {
-    throw new SumasConsultaLookupError("SUMASPAY no devolvio un historial valido para CIERRE.");
+    throw Object.assign(new SumasConsultaLookupError("SUMASPAY no devolvio un historial valido para CIERRE."), {
+      status: result.status, retryAfter: result.retryAfter, ...(result.ok ? { code: "INVALID_RESPONSE" } : {}),
+    });
   }
   return [{
     source: providerId ? "loan-detail" : "credits-by-client",

@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { canonicalFinancialName, resolveCierrePeriod, resolveCierreSede, canViewGlobalCierre, CierreInputError } from "@/lib/cierre-domain";
 import { readCierreLocalCoverage } from "@/lib/cierre-coverage";
+import { aggregateCierreProviderSync, CIERRE_API_READERS, CIERRE_SOURCE_LIMITATIONS, readCierreProviderProgress } from "@/lib/cierre-progress";
 
 export class CierreRequestError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -8,7 +9,7 @@ export class CierreRequestError extends Error {
 
 type Session = { rolNombre: string; perfilTipo: string | null; sedeId: number; sedeNombre: string };
 const PROVIDERS = ["SUMASPAY", "PAYJOY", "ADDI", "SISTECREDITO", "ALO CREDIT", "FINSERPAY"];
-const API_READERS = new Set(["SUMASPAY", "PAYJOY", "ADDI"]);
+const API_READERS = new Set<string>(CIERRE_API_READERS);
 
 export function cierreScope(session: Session, requested: string | null) {
   try { return resolveCierreSede(session, requested === "TODAS" ? null : requested); }
@@ -43,18 +44,19 @@ export async function readCierreReport(params: URLSearchParams, session: Session
     if (sedeId !== null && !sedes.some((s) => s.id === sedeId)) throw new CierreRequestError("Sede no encontrada", 404);
     const scopeWhere = sedeId === null ? {} : { sedeId };
     const where = { ...scopeWhere, effectiveAt: { gte: period.start, lt: period.end }, status: "EFECTIVO", amount: { gt: 0 }, ...(financier ? { financial: financier } : {}) };
-    const [groups, state, coverage, knownFinancials, sources] = await Promise.all([
+    const [groups, state, coverage, knownFinancials, sources, providerProgress] = await Promise.all([
       tx.cierreCredito.groupBy({ by: ["financial"], where, _count: { _all: true }, _sum: { amount: true }, _max: { syncedAt: true } }),
       tx.cierreSyncEstado.findUnique({ where: { key: "LOCAL" } }),
       readCierreLocalCoverage(tx, { sedeId, start: period.start, end: period.end }),
       tx.cierreCredito.findMany({ where: scopeWhere, distinct: ["financial"], select: { financial: true } }),
       tx.cierreCredito.findMany({ where, distinct: ["financial", "source"], select: { financial: true, source: true } }),
+      readCierreProviderProgress(tx, { sedeId, start: period.start, end: period.end, financial: financier }),
     ]);
     // LOCAL is inserted atomically with the historical outbox seed. Its presence
     // proves the queue was prepared; other periods need not finish before this one.
     const localComplete = Boolean(state && coverage.pending === 0 && !coverage.unresolved);
-    // API readers discover credits only for known local references. Their existing
-    // contracts do not establish exhaustive coverage, even when every job succeeds.
+    // Reference readers and PAYJOY's daily list still lack a verified exhaustive
+    // pagination contract; successful jobs do not establish complete coverage.
     const rows = Array.from(new Set([...PROVIDERS, ...knownFinancials.map((r) => r.financial)]))
       .filter((name) => !financier || name === financier).map((name) => {
         const group = groups.find((g) => g.financial === name);
@@ -62,7 +64,14 @@ export async function readCierreReport(params: URLSearchParams, session: Session
         const units = group?._count._all || 0;
         const amount = Number(group?._sum.amount || 0);
         const consulted = sources.some((s) => s.financial === name && s.source.includes("API"));
+        const providerSync = providerProgress.get(name) || null;
+        const coverageLabel = !localComplete ? "Carga local pendiente" : complete ? "Completo"
+          : providerSync?.status === "EN_COLA" ? "En conciliación"
+          : providerSync?.status === "ERROR" ? "Conciliación con errores"
+          : providerSync?.status === "DESACTIVADA" ? "Conciliación desactivada"
+          : providerSync?.status === "SIN_REFERENCIA" ? "Sin referencia para consultar" : "Cobertura parcial";
         return { key: name, name, units: units || (complete ? 0 : null), amount: amount || (complete ? 0 : null), complete,
+          providerSync, coverageLabel, limitation: CIERRE_SOURCE_LIMITATIONS[name] || "El cierre corresponde al histórico confirmado de CONECTAMOS.",
           source: API_READERS.has(name) && consulted ? "CONECTAMOS + API (cobertura parcial)" : "CONECTAMOS · ventas confirmadas",
           lastUpdatedAt: group?._max.syncedAt?.toISOString() || state?.lastSuccess?.toISOString() || null };
       }).sort((a, b) => a.name.localeCompare(b.name, "es"));
@@ -75,6 +84,8 @@ export async function readCierreReport(params: URLSearchParams, session: Session
       options: { sedes, canSelectSede: canViewGlobalCierre(session) },
       totals: { units: units || (complete ? 0 : null), amount: amount || (complete ? 0 : null) },
       localSync: { pending: coverage.pending, complete: localComplete, lastUpdatedAt: state?.lastSuccess?.toISOString() || null },
+      providerSync: aggregateCierreProviderSync(rows.map((row) => row.providerSync)),
+      coverageLabel: !localComplete ? "Carga local pendiente" : complete ? "Completo" : "Cobertura parcial",
       financiers: rows, complete, lastUpdatedAt: state?.lastSuccess?.toISOString() || null,
     };
     if (!detail && !exporting) return { ...base, items: [], total: units, page: 1, pageSize: 10 as const, units: base.totals.units, amount: base.totals.amount };

@@ -144,8 +144,26 @@ export async function readPayJoyCierreTransactions(
     },
     { timeoutMs: 20_000 }
   );
-  if (!data.valid || !Array.isArray(data.transactions)) {
-    throw new PayJoyRetailLookupError("PAYJOY no devolvio un listado valido para CIERRE.");
+  if (!data || data.valid !== true || !Array.isArray(data.transactions)) {
+    throw Object.assign(new PayJoyRetailLookupError("PAYJOY no devolvio un listado valido para CIERRE."), { code: "INVALID_RESPONSE" });
+  }
+  return data;
+}
+
+/** Same documented read endpoint without the optional IMEI filter. */
+export async function readPayJoyCierrePeriod(fechaInicio: Date, fechaFin: Date): Promise<unknown> {
+  const duration = fechaFin.getTime() - fechaInicio.getTime();
+  if (!Number.isFinite(fechaInicio.getTime()) || !Number.isFinite(duration) || duration <= 0 || duration > 86_400_000) {
+    throw new PayJoyRetailLookupError("El listado de CIERRE debe consultar como máximo un día.");
+  }
+  const starttime = Math.floor(fechaInicio.getTime() / 1000);
+  const endtime = Math.min(Math.ceil(fechaFin.getTime() / 1000) - 1, getUnixNow());
+  if (endtime < starttime) throw new PayJoyRetailLookupError("No se puede sincronizar un día futuro.");
+  // Documented by PayJoy; no guessed endpoint, filters or pagination arguments.
+  // https://www.payjoy.com/apidocs/endpoints.html#list-transactions
+  const data = await fetchPayJoy<PayJoyTransactionResponse>("list-transactions.php", { starttime, endtime }, { timeoutMs: 20_000 });
+  if (!data || data.valid !== true || !Array.isArray(data.transactions)) {
+    throw Object.assign(new PayJoyRetailLookupError("PAYJOY no devolvio un listado valido para CIERRE."), { code: "INVALID_RESPONSE" });
   }
   return data;
 }
@@ -467,32 +485,24 @@ async function fetchPayJoy<T>(
     url.searchParams.set(key, String(value));
   }
 
-  const controller =
-    options.timeoutMs && options.timeoutMs > 0
-      ? new AbortController()
-      : null;
-  const timeout = controller
-    ? setTimeout(() => controller.abort(), options.timeoutMs)
-    : null;
+  // AbortSignal.timeout remains active while the response body is read too.
+  const signal = options.timeoutMs && options.timeoutMs > 0 ? AbortSignal.timeout(options.timeoutMs) : undefined;
   let response: Response;
 
   try {
     response = await fetch(url, {
       cache: "no-store",
-      ...(controller ? { signal: controller.signal } : {}),
+      ...(signal ? { signal } : {}),
     });
   } catch (error) {
-    if (controller?.signal.aborted) {
-      throw new PayJoyRetailLookupError(
-        "PayJoy supero el tiempo maximo de respuesta."
-      );
-    }
-
+    if (signal?.aborted) throw Object.assign(new PayJoyRetailLookupError("PayJoy supero el tiempo maximo de respuesta."), { status: 408 });
     throw error;
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
+  }
+
+  if (!response.ok) {
+    throw Object.assign(new PayJoyRetailLookupError(`PayJoy respondio con estado ${response.status}.`), {
+      status: response.status, retryAfter: response.headers.get("retry-after"),
+    });
   }
 
   const text = await response.text();
@@ -503,13 +513,7 @@ async function fetchPayJoy<T>(
       ? (JSON.parse(text) as T & { message?: string; valid?: boolean })
       : ({} as T & { message?: string; valid?: boolean });
   } catch {
-    throw new PayJoyRetailLookupError("PayJoy devolvio una respuesta no valida.");
-  }
-
-  if (!response.ok) {
-    throw new PayJoyRetailLookupError(
-      data.message || `PayJoy respondio con estado ${response.status}.`
-    );
+    throw Object.assign(new PayJoyRetailLookupError("PayJoy devolvio una respuesta no valida."), { code: "INVALID_RESPONSE" });
   }
 
   return data;

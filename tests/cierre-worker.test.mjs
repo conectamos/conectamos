@@ -1,0 +1,202 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { database, modules, credit, sale } from "./cierre-test-helpers.mjs";
+
+const now = new Date("2026-10-13T12:00:00Z");
+const dayKey = (date) => `PERIODO:PAYJOY:${date}`;
+const periodJob = (date, changes = {}) => ({ key: dayKey(date), localKey: dayKey(date), financial: "PAYJOY", state: "PENDIENTE", attempts: 0, nextAttempt: new Date(0), ...changes });
+const localJob = (id, financial = "PAYJOY", changes = {}) => ({ key: `VENTA:${id}:${financial}`, localKey: `VENTA:${id}:${financial}`, financial, state: "PENDIENTE", attempts: 0, nextAttempt: new Date(0), ...changes });
+const batch = (outcome = "EMPTY", credits = []) => ({ outcome, credits, complete: false, limitation: "Cobertura parcial comprobada." });
+function setup(t, enabled = "1") {
+  const previous = process.env.CIERRE_PROVIDER_SYNC_ENABLED;
+  process.env.CIERRE_PROVIDER_SYNC_ENABLED = enabled;
+  t.mock.timers.enable({ apis: ["Date"], now });
+  t.after(() => { if (previous === undefined) delete process.env.CIERRE_PROVIDER_SYNC_ENABLED; else process.env.CIERRE_PROVIDER_SYNC_ENABLED = previous; });
+}
+
+test("seed PAYJOY rellena huecos de hasta 50 días por lote y conserva progreso entre reinicios", async (t) => {
+  setup(t);
+  const oldest = new Date(now.getTime() - 120 * 86400000);
+  const db = database({ cierreCredito: [credit(1, { effectiveAt: oldest })], cierreSyncTrabajo: [periodJob("2026-07-25", {
+    state: "REVISADO", lastSuccess: new Date("2026-10-12T12:00:00Z"), nextAttempt: new Date("2026-12-01T00:00:00Z"),
+  })] });
+  let calls = 0;
+  const periodProvider = async () => { calls++; return batch(); };
+  for (const expected of [50, 50, 20]) {
+    const result = await modules(db.prisma, { periodProvider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+    assert.equal(result.provider.seeded, expected);
+  }
+  assert.equal(db.tables.cierreSyncTrabajo.length, 121);
+  assert.equal(new Set(db.tables.cierreSyncTrabajo.map((row) => row.key)).size, 121);
+  assert.equal(db.tables.cierreSyncTrabajo.find((row) => row.key === dayKey("2026-07-25")).lastSuccess.toISOString(), "2026-10-12T12:00:00.000Z");
+  assert.equal(calls, 1, "El gate de tráfico sobrevive a reconstruir el módulo");
+});
+
+test("un listado PAYJOY diario actualiza todos los trabajos locales del día en bloques", async (t) => {
+  setup(t);
+  const credits = Array.from({ length: 501 }, (_, index) => credit(index + 1));
+  const db = database({ cierreCredito: [...credits, credit(999, { effectiveAt: new Date("2026-10-11T18:00:00Z") })],
+    cierreSyncTrabajo: [periodJob("2026-10-12"), ...credits.map((row) => localJob(row.id)), localJob(999)] });
+  const requests = [];
+  const periodProvider = async (request) => { requests.push(request); return batch(); };
+  const result = await modules(db.prisma, { periodProvider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.deepEqual(requests, [{ fechaDesde: "2026-10-12", fechaHasta: "2026-10-12" }]);
+  assert.equal(result.provider.mode, "PERIODO");
+  assert.equal(result.provider.state, "REVISADO");
+  assert.ok(credits.every((row) => db.tables.cierreSyncTrabajo.find((job) => job.localKey === row.localKey).state === "REVISADO"));
+  assert.equal(db.tables.cierreSyncTrabajo.find((row) => row.key === localJob(999).key).state, "PENDIENTE");
+  const updates = db.calls.filter((call) => call.table === "cierreSyncTrabajo" && call.method === "updateMany" && call.args.where.localKey);
+  assert.deepEqual(updates.map((call) => call.args.where.localKey.in.length), [500, 1]);
+  assert.ok(!JSON.stringify(result.provider).includes("1234567"));
+});
+
+test("edición durante el listado no consume el trabajo diario ni confirma referencias nuevas", async (t) => {
+  setup(t);
+  const db = database({ cierreCredito: [credit(1)], cierreSyncTrabajo: [periodJob("2026-10-12"), localJob(1)] });
+  const periodProvider = async () => {
+    const job = db.tables.cierreSyncTrabajo.find((row) => row.key === dayKey("2026-10-12"));
+    job.updatedAt = new Date(now.getTime() + 1);
+    job.nextAttempt = new Date();
+    return batch();
+  };
+  const result = await modules(db.prisma, { periodProvider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.stale, true);
+  assert.equal(result.provider.state, "PENDIENTE");
+  assert.equal(db.tables.cierreSyncTrabajo.find((row) => row.key === localJob(1).key).state, "PENDIENTE");
+  assert.equal(db.tables.cierreSyncTrabajo.find((row) => row.key === dayKey("2026-10-12")).lastSuccess, undefined);
+});
+
+test("conciliación diaria enlaza un crédito una vez y aplica reverso por ID conservando su fecha", async (t) => {
+  setup(t);
+  const db = database({ cierreCredito: [credit(1)], cierreSyncTrabajo: [periodJob("2026-10-12"), localJob(1)] });
+  let status = "EFECTIVO";
+  let requests = 0;
+  const periodProvider = async () => { requests++; return batch("OBSERVED", [{
+    financiera: "PAYJOY", providerId: "p-1", fechaEfectiva: status === "EFECTIVO" ? new Date("2026-10-12T18:00:00Z") : null,
+    valor: status === "EFECTIVO" ? 1000000 : null, documento: "1234567", imei: "123456789012345", cliente: "Cliente",
+    estado: status, sourceUpdatedAt: new Date(), raw: { estado: status },
+  }]); };
+  let result = await modules(db.prisma, { periodProvider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.linked, 1);
+  assert.equal(db.tables.cierreCredito.length, 1);
+  assert.equal(db.tables.cierreCredito[0].providerCreditId, "p-1");
+  status = "REVERSADO";
+  t.mock.timers.tick(60001);
+  db.tables.cierreSyncTrabajo.find((row) => row.key === dayKey("2026-10-12")).nextAttempt = new Date(0);
+  result = await modules(db.prisma, { periodProvider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(requests, 2);
+  assert.equal(result.provider.linked, 1);
+  assert.equal(db.tables.cierreCredito.length, 1);
+  assert.equal(db.tables.cierreCredito[0].status, "REVERSADO");
+  assert.equal(db.tables.cierreCredito[0].effectiveAt.toISOString(), "2026-10-12T18:00:00.000Z");
+});
+
+test("dos préstamos indistinguibles quedan pendientes y un reintento no duplica observaciones", async (t) => {
+  setup(t);
+  const db = database({ cierreCredito: [credit(1), credit(2)], cierreSyncTrabajo: [periodJob("2026-10-12"), localJob(1), localJob(2)] });
+  const periodProvider = async () => batch("OBSERVED", [1, 2].map((id) => ({ financiera: "PAYJOY", providerId: `p-${id}`,
+    fechaEfectiva: new Date("2026-10-12T18:00:00Z"), valor: 1000000, documento: "1234567", imei: "123456789012345", cliente: "Cliente", estado: "EFECTIVO", raw: {} })));
+  let result = await modules(db.prisma, { periodProvider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.pending, 2);
+  assert.equal(result.provider.linked, 0);
+  assert.equal(db.tables.cierreCredito.filter((row) => row.status === "EFECTIVO").length, 2);
+  t.mock.timers.tick(60001);
+  db.tables.cierreSyncTrabajo.find((row) => row.key === dayKey("2026-10-12")).nextAttempt = new Date(0);
+  result = await modules(db.prisma, { periodProvider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.pending, 2);
+  assert.equal(db.tables.cierreCredito.length, 4);
+  assert.equal(db.tables.cierreEvento.length, 2);
+});
+
+test("429 persiste Retry-After y bloquea consultas de otro worker sin filtrar errores privados", async (t) => {
+  setup(t);
+  const ref = credit(1, { financial: "SUMASPAY", localKey: "VENTA:1:SUMASPAY" });
+  const db = database({ venta: [sale(1)], cierreCredito: [ref], cierreSyncTrabajo: [localJob(1, "SUMASPAY")] });
+  let calls = 0;
+  const provider = async () => { calls++; throw Object.assign(new Error("https://private.example?secret=1234567"), { status: 429, retryAfter: "3600" }); };
+  const result = await modules(db.prisma, { provider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.code, "RATE_LIMIT");
+  assert.equal(calls, 1);
+  const rate = db.tables.cierreSyncEstado.find((row) => row.key === "PROVIDER_RATE");
+  assert.equal(rate.lockedUntil.getTime(), now.getTime() + 3600000);
+  assert.equal(db.tables.cierreSyncTrabajo[0].nextAttempt.getTime(), rate.lockedUntil.getTime());
+  db.tables.cierreSyncTrabajo[0].nextAttempt = new Date(0);
+  const second = await modules(db.prisma, { provider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(second.provider.rateLimited, true);
+  assert.equal(calls, 1);
+  assert.ok(!JSON.stringify(result).includes("private"));
+  assert.ok(!JSON.stringify(db.tables.cierreSyncTrabajo).includes("secret"));
+});
+
+test("resultados no consultables conservan lastSuccess vacío y configuración pausa el tráfico", async (t) => {
+  setup(t);
+  for (const [outcome, expected] of [["MISSING_REFERENCE", "SIN_REFERENCIA"], ["NOT_CONFIGURED", "ERROR"], ["UNSUPPORTED_RESPONSE", "ERROR"], ["LOCAL_ONLY", "ERROR"], ["EMPTY", "REVISADO"]]) {
+    const db = database({ venta: [sale(1)], cierreCredito: [credit(1, { financial: "ADDI", localKey: "VENTA:1:ADDI" })], cierreSyncTrabajo: [localJob(1, "ADDI")] });
+    const result = await modules(db.prisma, { provider: async () => batch(outcome) }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+    const job = db.tables.cierreSyncTrabajo[0];
+    assert.equal(job.state, expected, outcome);
+    assert.equal(Boolean(job.lastSuccess), outcome === "EMPTY", outcome);
+    assert.equal(result.provider.outcome, outcome);
+    if (["NOT_CONFIGURED", "LOCAL_ONLY"].includes(outcome)) assert.ok(db.tables.cierreSyncEstado.find((row) => row.key === "PROVIDER_RATE").lockedUntil.getTime() >= now.getTime() + 1800000);
+  }
+});
+
+test("hasta cien referencias inválidas se retiran sin red y una válida espera el siguiente lote", async (t) => {
+  setup(t);
+  const ids = Array.from({ length: 101 }, (_, index) => index + 1);
+  const db = database({ venta: ids.map((id) => sale(id)), cierreCredito: ids.map((id) => credit(id, {
+    financial: "SUMASPAY", localKey: `VENTA:${id}:SUMASPAY`, documentNumber: id === 101 ? "1234567" : "12",
+  })), cierreSyncTrabajo: ids.map((id) => localJob(id, "SUMASPAY", { key: `0-${String(id).padStart(3, "0")}` })) });
+  let calls = 0;
+  const provider = async () => { calls++; return batch(); };
+  let result = await modules(db.prisma, { provider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.skipped, 100);
+  assert.equal(calls, 0);
+  assert.equal(db.tables.cierreSyncTrabajo.filter((row) => row.state === "SIN_REFERENCIA").length, 100);
+  result = await modules(db.prisma, { provider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(calls, 1);
+  assert.equal(result.provider.financial, "SUMASPAY");
+});
+
+test("flag cero y localOnly no crean cola remota ni consumen el gate persistido", async (t) => {
+  setup(t, "0");
+  const db = database({ cierreCredito: [credit(1)] });
+  let result = await modules(db.prisma).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.disabled, true);
+  process.env.CIERRE_PROVIDER_SYNC_ENABLED = "1";
+  result = await modules(db.prisma).load("lib/cierre-sync.ts").runCierreSyncBatch({ localOnly: true });
+  assert.equal(result.provider.deferred, true);
+  assert.equal(db.tables.cierreSyncTrabajo.length, 0);
+  assert.equal(db.tables.cierreSyncEstado.some((row) => row.key === "PROVIDER_RATE"), false);
+});
+
+test("rotación persistida atiende cada financiera aunque otra tenga un trabajo anterior", async (t) => {
+  setup(t);
+  const db = database({ venta: [sale(1), sale(2)], cierreCredito: [
+    credit(1, { financial: "SUMASPAY", localKey: "VENTA:1:SUMASPAY" }),
+    credit(2, { financial: "ADDI", localKey: "VENTA:2:ADDI" }), credit(3),
+  ], cierreSyncTrabajo: [localJob(1, "SUMASPAY"), localJob(2, "ADDI"), periodJob("2026-10-12")] });
+  const financials = [];
+  const provider = async (request) => { financials.push(request.financiera); return batch(); };
+  const periodProvider = async () => { financials.push("PAYJOY"); return batch(); };
+  for (let index = 0; index < 3; index++) {
+    await modules(db.prisma, { provider, periodProvider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+    db.tables.cierreSyncTrabajo.find((row) => row.key === localJob(1, "SUMASPAY").key).nextAttempt = new Date(0);
+    t.mock.timers.tick(60001);
+  }
+  assert.deepEqual(financials, ["SUMASPAY", "ADDI", "PAYJOY"]);
+  assert.equal(db.tables.cierreSyncEstado.find((row) => row.key === "PROVIDER_RATE").lockToken, "PAYJOY");
+});
+
+test("autenticación fallida pausa de forma persistida sin registrar credenciales", async (t) => {
+  setup(t);
+  const db = database({ venta: [sale(1)], cierreCredito: [credit(1, { financial: "ADDI", localKey: "VENTA:1:ADDI" })],
+    cierreSyncTrabajo: [localJob(1, "ADDI")] });
+  const provider = async () => { throw Object.assign(new Error("secret password"), { status: 401 }); };
+  const result = await modules(db.prisma, { provider }).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.code, "AUTH");
+  assert.equal(db.tables.cierreSyncTrabajo[0].state, "ERROR");
+  assert.equal(db.tables.cierreSyncTrabajo[0].lastSuccess, undefined);
+  assert.ok(db.tables.cierreSyncEstado.find((row) => row.key === "PROVIDER_RATE").lockedUntil.getTime() >= now.getTime() + 1800000);
+  assert.ok(!JSON.stringify(result).includes("secret"));
+});

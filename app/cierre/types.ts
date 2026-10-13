@@ -9,6 +9,18 @@ export type CierreFilters = {
   sedeId: string;
 };
 
+export type CierreProviderSync = {
+  enabled: boolean;
+  status: "DESACTIVADA" | "EN_COLA" | "REVISADA_LIMITADA" | "ERROR" | "SIN_REFERENCIA";
+  total: number;
+  queued: number;
+  reviewed: number;
+  errors: number;
+  withoutReference: number;
+  lastSuccessAt: string | null;
+  limitation: string;
+};
+
 export type CierreFinancier = {
   key: string;
   name: string;
@@ -17,6 +29,9 @@ export type CierreFinancier = {
   complete: boolean;
   source: string;
   lastUpdatedAt: string | null;
+  providerSync?: CierreProviderSync | null;
+  coverageLabel?: string;
+  limitation?: string;
 };
 
 export type CierreReport = {
@@ -27,6 +42,8 @@ export type CierreReport = {
   complete: boolean;
   lastUpdatedAt: string | null;
   localSync: { pending: number; complete: boolean; lastUpdatedAt: string | null };
+  providerSync?: CierreProviderSync | null;
+  coverageLabel?: string;
   options: { sedes: { id: number; nombre: string }[]; canSelectSede: boolean };
 };
 

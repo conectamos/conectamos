@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
 import { DashboardSidebar, type NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
-import type { CierreDetail, CierreFilters, CierreFinancier, CierreReport, PeriodMode } from "./types";
+import type { CierreDetail, CierreFilters, CierreFinancier, CierreProviderSync, CierreReport, PeriodMode } from "./types";
 import styles from "./cierre.module.css";
 
-const count = (value: number | null) => value === null ? "Pendiente" : value.toLocaleString("es-CO");
-const pesos = (value: number | null) => value === null ? "Pendiente" : new Intl.NumberFormat("es-CO", {
+const count = (value: number | null) => value === null ? "Sin confirmar" : value.toLocaleString("es-CO");
+const pesos = (value: number | null) => value === null ? "Sin confirmar" : new Intl.NumberFormat("es-CO", {
   style: "currency", currency: "COP", maximumFractionDigits: 2,
 }).format(value);
 const dateTime = (value: string) => new Intl.DateTimeFormat("es-CO", {
@@ -37,10 +37,24 @@ async function readJson<T>(response: Response): Promise<T> {
   return body as T;
 }
 
-function Completeness({ complete }: { complete: boolean }) {
+function providerProgress(sync?: CierreProviderSync | null) {
+  if (!sync) return "Cobertura sujeta a las fuentes disponibles.";
+  if (!sync.enabled || sync.status === "DESACTIVADA") return "Conciliación externa desactivada.";
+  if (sync.queued > 0) return `${count(sync.reviewed)} de ${count(sync.total)} referencias revisadas · ${count(sync.queued)} por consultar${sync.errors ? ` · ${count(sync.errors)} con errores` : ""}.`;
+  if (sync.status === "ERROR") return `Conciliación con errores: ${count(sync.errors)} referencias requieren revisión.`;
+  if (sync.status === "SIN_REFERENCIA") return "Sin referencias de crédito para consultar en las financieras.";
+  return `${count(sync.reviewed)} referencias revisadas. La cobertura externa es parcial.`;
+}
+
+function shouldRefresh(report: CierreReport) {
+  return Boolean((report.localSync && !report.localSync.complete) || (report.providerSync?.enabled && report.providerSync.queued > 0));
+}
+
+function Completeness({ complete, label }: { complete: boolean; label?: string }) {
+  const active = label === "Carga local pendiente" || label === "En conciliación";
   return <span className={`${styles.status} ${complete ? styles.complete : styles.pending}`}>
-    <DashboardIcon name={complete ? "shield" : "clock"} className="h-4 w-4" />
-    {complete ? "Periodo completo" : "Información pendiente"}
+    <DashboardIcon name={complete ? "shield" : active ? "clock" : "document"} className="h-4 w-4" />
+    {label || (complete ? "Periodo completo" : "Cobertura parcial")}
   </span>;
 }
 
@@ -93,9 +107,9 @@ export default function CierreWorkspace({ today, user }: {
         setCheckedAt(new Date().toISOString());
         setError("");
         setRefreshError("");
-        // Poll the applied report only while its local sales are being loaded.
-        // Provider coverage may remain partial after this work has finished.
-        continuePolling = Boolean(result.localSync && !result.localSync.complete);
+        // Refresh the local report only while work is actually queued.
+        // Limited or disabled provider coverage is not a loading state.
+        continuePolling = shouldRefresh(result);
         if (background) setDetailReload((value) => value + 1);
       } catch (reason) {
         if (controller.signal.aborted) return;
@@ -225,18 +239,21 @@ export default function CierreWorkspace({ today, user }: {
   const currentPage = detail?.page ?? page;
   const currentFinancier = report?.financiers.find((financier) => financier.key === selected?.key) || selected;
   const loadingSales = Boolean(report?.localSync && !report.localSync.complete);
+  const syncingProviders = Boolean(report?.providerSync?.enabled && report.providerSync.queued > 0);
   const syncMessage = report?.localSync?.pending
     ? `Cargando ventas del periodo: ${count(report.localSync.pending)} pendientes.`
     : "Preparando las ventas del periodo…";
   const noLoadedCredits = report && !report.financiers.some((financier) => (financier.units ?? 0) > 0);
+  const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 
   return <div className={styles.shell}>
     <DashboardSidebar activeHref="/cierre" coverageLabel={report?.scope.label || (user.isAdmin ? "Todas las sedes" : user.sedeName)} items={navigation} />
     <div className={styles.workspace}><main className={styles.main}>
       <header className={styles.header}>
-        <div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><span aria-hidden="true">/</span><span>CIERRE</span></nav><h1>CIERRE</h1><p>Créditos efectivos por financiera</p></div>
-        <div className={styles.identity}><DashboardIcon name="user" /><span>{user.name}</span></div>
+        <div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><DashboardIcon name="chevron" className="h-3 w-3 -rotate-90" /><span>CIERRE</span></nav><div className={styles.titleBlock}><span className={styles.titleIcon}><DashboardIcon name="reports" className="h-6 w-6" /></span><div><h1>CIERRE</h1><p>Créditos efectivos por financiera</p></div></div></div>
+        <div className={styles.headerActions}><div className={styles.identity}><span className={styles.userAvatar} aria-hidden="true">{initials}</span><span>{user.name}</span></div><button type="button" className={styles.exportButton} onClick={exportExcel} disabled={loading || exporting || !report}><DashboardIcon name="download" className="h-4 w-4" />{exporting ? "Exportando…" : "Exportar Excel"}</button></div>
       </header>
+      {exportError && <p className={styles.exportError} role="alert">{exportError}</p>}
 
       <form className={styles.filters} onSubmit={loadReport}>
         <label>Periodo<select value={filters.mode} onChange={(event) => setFilters({ ...filters, mode: event.target.value as PeriodMode })}>
@@ -250,52 +267,49 @@ export default function CierreWorkspace({ today, user }: {
           <option value="TODAS">Todas las sedes</option>{options.sedes.map((sede) => <option key={sede.id} value={sede.id}>{sede.nombre}</option>)}
         </select> : <span className={styles.lockedScope}><DashboardIcon name="store" className="h-4 w-4" />{user.sedeName}</span>}</label>
         <button type="submit" className={styles.primaryButton} disabled={loading || invalidRange}><DashboardIcon name="search" className="h-4 w-4" />{loading ? "Consultando…" : "Consultar"}</button>
-        <div className={styles.filterNote}><span>Hora de Colombia{filters.mode === "week" ? " · Lunes a domingo" : ""}</span>{unapplied && <span>Aplica los filtros con Consultar.</span>}</div>
+        <div className={styles.filterNote}><span><DashboardIcon name="clock" className="h-3 w-3" />Hora de Colombia{filters.mode === "week" ? " · Lunes a domingo" : ""}</span>{unapplied && <span className={styles.unappliedNote}>Filtros sin aplicar · pulsa Consultar</span>}</div>
         {invalidRange && <p id="range-error" className={styles.formError} role="alert">La fecha inicial debe ser anterior o igual a la fecha final.</p>}
       </form>
 
       {error ? <div className={styles.error} role="alert"><div><strong>No fue posible cargar el cierre</strong><p>{error}</p></div><button type="button" className={styles.secondaryButton} onClick={() => loadReport()}>Reintentar</button></div> : <div aria-busy={loading}>
         <div className={styles.reportContext}>
-          <div><h2>{report?.period.label || "Consultando periodo…"}</h2>{report && <p>{report.scope.label}</p>}</div>
-          {report && <Completeness complete={report.complete} />}
-        </div>
-        <div className={styles.queryFeedback} role="status" aria-live="polite" aria-atomic="true">
-          <span className={styles.queryResult}><DashboardIcon name={loading || refreshing ? "refresh" : "search"} className="h-4 w-4" />{loading ? "Consultando el periodo seleccionado…" : refreshing ? "Actualizando los datos del periodo…" : checkedAt ? <>Consulta finalizada · <time dateTime={checkedAt}>{timeLabel(checkedAt)}</time></> : null}</span>
-          {loadingSales && <span>{syncMessage} El cierre se actualiza automáticamente.</span>}
-          {report?.localSync?.complete && pending && <span>Ventas locales cargadas; conciliación de financieras pendiente.</span>}
-          {noLoadedCredits && pending && <span>{loadingSales ? "Todavía no hay créditos cargados; los totales aparecerán a medida que avance la carga." : "Aún no hay créditos confirmados para este periodo; queda información pendiente."}</span>}
+          <div><p className={styles.eyebrow}>Resumen del periodo</p><div className={styles.periodHeading}><h2>{report?.period.label || "Consultando periodo…"}</h2>{report && <span className={styles.scopeLabel}><DashboardIcon name="store" className="h-4 w-4" />{report.scope.label}</span>}</div></div>
+          <span className={styles.queryResult} role="status"><DashboardIcon name={loading || refreshing ? "refresh" : "search"} className="h-4 w-4" />{loading ? "Consultando el periodo seleccionado…" : refreshing ? "Actualizando los datos del periodo…" : checkedAt ? <>Consulta finalizada · <time dateTime={checkedAt}>{timeLabel(checkedAt)}</time></> : null}</span>
         </div>
         {refreshError && <p className={styles.refreshError} role="alert">No se pudo actualizar el cierre. Se conservan los últimos datos y se reintentará automáticamente. <span>{refreshError}</span></p>}
         <section className={styles.metrics} aria-label="Totales del periodo">
-          <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="document" className="h-6 w-6" /></span><div><h3>Total de créditos</h3><p className={styles.metricValue}>{loading ? "—" : count(report?.totals.units ?? null)}</p><span>{pending ? "Unidades confirmadas · total parcial" : "Unidades de créditos efectivos"}</span></div></div>
-          <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="wallet" className="h-6 w-6" /></span><div><h3>Valor total de los créditos</h3><p className={styles.metricValue}>{loading ? "—" : pesos(report?.totals.amount ?? null)}</p><span>{pending ? "Valor confirmado · total parcial" : "Pesos colombianos"}</span></div></div>
+          <div className={styles.metric}><div className={styles.metricHeading}><span className={styles.metricIcon}><DashboardIcon name="document" className="h-5 w-5" /></span><h3>Total de créditos</h3></div><p className={styles.metricValue}>{loading ? "—" : count(report?.totals.units ?? null)}</p><span className={styles.metricDetail}>{pending ? "Total parcial" : "Créditos efectivos"}</span></div>
+          <div className={styles.metric}><div className={styles.metricHeading}><span className={styles.metricIcon}><DashboardIcon name="wallet" className="h-5 w-5" /></span><h3>Valor total de los créditos</h3><span className={styles.currency}>COP</span></div><p className={styles.metricValue}>{loading ? "—" : pesos(report?.totals.amount ?? null)}</p><span className={styles.metricDetail}>{pending ? "Total parcial" : "Importe real financiado"}</span></div>
         </section>
+        {report && <div className={styles.coverageBar}><Completeness complete={report.complete} label={report.coverageLabel} /><div className={styles.queryFeedback} role="status" aria-live="polite" aria-atomic="true">
+          {loadingSales ? <span>{syncMessage} El cierre se actualiza automáticamente.</span> : <span>{pending ? providerProgress(report.providerSync) : "Créditos confirmados en las fuentes disponibles."}{syncingProviders && " Se actualiza automáticamente."}</span>}
+          {noLoadedCredits && pending && <span>{loadingSales ? "Todavía no hay créditos cargados; los totales aparecerán a medida que avance la carga." : "No hay créditos confirmados en las fuentes disponibles para este periodo."}</span>}
+        </div><details className={styles.sources}><summary><DashboardIcon name="database" className="h-4 w-4" />Fuentes y cobertura<DashboardIcon name="chevron" className="h-4 w-4" /></summary><div className={styles.sourceDetails}>{report.financiers.map((financier) => <div key={financier.key}><div className={styles.sourceHeading}><strong>{financier.name}</strong><span>{financier.coverageLabel || (financier.complete ? "Completo" : "Cobertura parcial")}</span></div><p>{financier.source}</p>{financier.providerSync && <p>{providerProgress(financier.providerSync)}</p>}{financier.limitation && <p className={styles.sourceLimitation}>{financier.limitation}</p>}</div>)}</div></details></div>}
         <section className={styles.panel} aria-labelledby="financiers-title">
-          <div className={styles.panelHeader}><div><h2 id="financiers-title">Financieras</h2><p>Selecciona una financiera para ver sus créditos.</p></div><button type="button" className={styles.secondaryButton} onClick={exportExcel} disabled={loading || exporting || !report}><DashboardIcon name="download" className="h-4 w-4" />{exporting ? "Exportando…" : "Exportar Excel"}</button></div>
-          {exportError && <p className={styles.exportError} role="alert">{exportError}</p>}
+          <div className={styles.panelHeader}><div className={styles.panelTitle}><h2 id="financiers-title">Créditos por financiera</h2>{report && <span className={styles.countBadge}>{count(report.financiers.length)}</span>}</div><p>Selecciona una financiera para ver el detalle.</p></div>
           <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Consolidado por financiera">
             <table className={styles.table}><thead><tr><th scope="col">Financiera</th><th scope="col">Unidades de créditos</th><th scope="col">Valor de los créditos</th></tr></thead><tbody>
               {loading ? <tr><td colSpan={3} className={styles.empty} role="status">Cargando créditos registrados…</td></tr> : report?.financiers.length ? report.financiers.map((financier) => <tr key={financier.key}>
-                <th scope="row"><button type="button" className={styles.financierButton} onClick={(event) => openDetail(financier, event.currentTarget)} aria-haspopup="dialog"><span><strong>{financier.name}</strong><span className={styles.source}>{financier.source}</span></span><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button>{!financier.complete && <span className={styles.rowPending}>Información pendiente</span>}</th>
-                <td>{count(financier.units)}{!financier.complete && financier.units !== null && <span className={styles.partial}>Parcial</span>}</td>
-                <td>{pesos(financier.amount)}{!financier.complete && financier.amount !== null && <span className={styles.partial}>Parcial</span>}</td>
-              </tr>) : <tr><td colSpan={3} className={styles.empty}>No hay créditos efectivos registrados para este periodo.{pending && " Hay información pendiente de sincronizar."}</td></tr>}
-            </tbody>{report && <tfoot><tr><th scope="row">Total{pending && <span className={styles.partial}>Información pendiente · totales parciales</span>}</th><td>{count(report.totals.units)}</td><td>{pesos(report.totals.amount)}</td></tr></tfoot>}</table>
+                <th scope="row"><button type="button" className={styles.financierButton} onClick={(event) => openDetail(financier, event.currentTarget)} aria-haspopup="dialog"><span className={styles.financierAvatar} aria-hidden="true">{financier.name.replace(/[^A-Z]/gi, "").slice(0, 2)}</span><span className={styles.financierCopy}><span className={styles.financierName}><strong>{financier.name}</strong><span className={`${styles.rowStatus} ${financier.complete ? styles.rowComplete : styles.rowPending}`}>{financier.coverageLabel || (financier.complete ? "Confirmado" : "Cobertura parcial")}</span></span><span className={styles.source}>{financier.source}</span></span><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button></th>
+                <td><strong className={financier.units === null ? styles.unknownValue : styles.unitsValue}>{count(financier.units)}</strong></td>
+                <td><strong className={financier.amount === null ? styles.unknownValue : styles.amountValue}>{pesos(financier.amount)}</strong></td>
+              </tr>) : <tr><td colSpan={3} className={styles.empty}>No hay créditos efectivos registrados para este periodo.{pending && " La cobertura de las fuentes es parcial."}</td></tr>}
+            </tbody>{report && <tfoot><tr><th scope="row">Total{pending && <span className={styles.partial}>Cobertura parcial · totales confirmados</span>}</th><td>{count(report.totals.units)}</td><td>{pesos(report.totals.amount)}</td></tr></tfoot>}</table>
           </div>
-          <footer className={styles.panelFooter}><span><DashboardIcon name="clock" className="h-4 w-4" />Última actualización: {report?.lastUpdatedAt ? dateTime(report.lastUpdatedAt) : "pendiente"}</span>{report && !report.complete && <span>El periodo aún tiene información pendiente de sincronizar.</span>}</footer>
+          <footer className={styles.panelFooter}><span><DashboardIcon name="clock" className="h-4 w-4" />Última actualización: {report?.lastUpdatedAt ? dateTime(report.lastUpdatedAt) : "pendiente"}</span><span><DashboardIcon name="document" className="h-4 w-4" />Créditos efectivos · valores en COP</span></footer>
         </section>
       </div>}
     </main></div>
 
     {selected && report && <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="detail-title" aria-describedby="detail-context" onCancel={(event) => { event.preventDefault(); closeDetail(); }} onClose={() => { setSelected(null); triggerRef.current?.focus({ preventScroll: true }); }}>
       <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Detalle de créditos</p><h2 id="detail-title">{selected.name}</h2><p id="detail-context">{report.period.label} · {report.scope.label}</p></div><button type="button" className={styles.closeButton} aria-label="Cerrar detalle" onClick={closeDetail} autoFocus><DashboardIcon name="close" /></button></div>
-      <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detail?.amount ?? currentFinancier?.amount ?? null)}</strong></span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} /></div>
-      {(loadingSales || detailRefreshing) && <p className={styles.detailProgress} role="status">{detailRefreshing ? "Actualizando el listado de créditos…" : `${syncMessage} El listado se actualiza automáticamente.`}</p>}
+      <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detail?.amount ?? currentFinancier?.amount ?? null)}</strong></span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} label={currentFinancier?.coverageLabel} /></div>
+      {(loadingSales || syncingProviders || detailRefreshing) && <p className={styles.detailProgress} role="status">{detailRefreshing ? "Actualizando el listado de créditos…" : `${loadingSales ? syncMessage : providerProgress(currentFinancier?.providerSync)} El listado se actualiza automáticamente.`}</p>}
       {detailError && <div className={styles.error} role="alert"><p>{detail && "No se pudo actualizar el detalle. Se conserva el último listado. "}{detailError}</p><button type="button" className={styles.secondaryButton} onClick={() => { setDetailError(""); if (!detail) setDetailLoading(true); setDetailReload((value) => value + 1); }}>Reintentar</button></div>}
       {(!detailError || detail) && <>
         <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`Créditos de ${selected.name}`} aria-busy={detailLoading || detailRefreshing}>
           <table className={`${styles.table} ${styles.detailTable}`}><thead><tr><th scope="col">Fecha</th><th scope="col">Número del crédito</th><th scope="col">Cliente</th><th scope="col">Cédula</th><th scope="col">Sede</th><th scope="col">Valor del crédito</th><th scope="col">Estado</th><th scope="col">Fuente de la información</th></tr></thead><tbody>
-            {detailLoading ? <tr><td colSpan={8} className={styles.empty} role="status">Cargando detalle…</td></tr> : detail?.items.length ? detail.items.slice(0, 10).map((credit) => <tr key={credit.id}><td>{dateLabel(credit.date)}</td><td>{credit.creditNumber || "Sin número registrado"}</td><td>{credit.customerName || "Sin registrar"}</td><td>{credit.customerDocument?.replace(/\./g, "") || "Sin registrar"}</td><td>{credit.sedeName}</td><td>{pesos(credit.amount)}</td><td><span className={styles.creditStatus}>{credit.status}</span></td><td>{credit.source}</td></tr>) : <tr><td colSpan={8} className={styles.empty}>No hay créditos efectivos registrados.{!(detail?.complete ?? currentFinancier?.complete) && " Información pendiente de sincronizar."}</td></tr>}
+            {detailLoading ? <tr><td colSpan={8} className={styles.empty} role="status">Cargando detalle…</td></tr> : detail?.items.length ? detail.items.slice(0, 10).map((credit) => <tr key={credit.id}><td>{dateLabel(credit.date)}</td><td>{credit.creditNumber || "Sin número registrado"}</td><td>{credit.customerName || "Sin registrar"}</td><td>{credit.customerDocument?.replace(/\./g, "") || "Sin registrar"}</td><td>{credit.sedeName}</td><td>{pesos(credit.amount)}</td><td><span className={styles.creditStatus}>{credit.status}</span></td><td>{credit.source}</td></tr>) : <tr><td colSpan={8} className={styles.empty}>No hay créditos efectivos registrados.{!(detail?.complete ?? currentFinancier?.complete) && " La cobertura de las fuentes es parcial."}</td></tr>}
           </tbody></table>
         </div>
         <div className={styles.pagination}><span>{detail ? `${count(detail.total)} registros · máximo 10 por página` : "Máximo 10 registros por página"}</span><div><button type="button" className={styles.secondaryButton} disabled={detailLoading || currentPage <= 1} onClick={() => changePage(currentPage - 1)}>Anterior</button><span aria-live="polite">Página {currentPage}{detail ? ` de ${Math.max(1, Math.ceil(detail.total / 10))}` : ""}</span><button type="button" className={styles.secondaryButton} disabled={detailLoading || !detail || currentPage * 10 >= detail.total} onClick={() => changePage(currentPage + 1)}>Siguiente</button></div></div>

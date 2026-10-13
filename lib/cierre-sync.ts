@@ -1,105 +1,187 @@
 import { randomUUID } from "node:crypto";
 import prisma from "@/lib/prisma";
 import { getDateKeyInColombia, shiftDateKey } from "@/lib/credit-date-utils";
-import { drainCierreLocalQueue, saveCierreCredit } from "@/lib/cierre-store";
-import { consultarLoteProveedorCierre, type CierreProvider, type CierreProviderCredit } from "@/lib/cierre-providers";
-import type { Prisma } from "@/app/generated/prisma/client";
+import { drainCierreLocalQueue } from "@/lib/cierre-store";
+import { reconcileCierreCredits } from "@/lib/cierre-reconcile";
+import { classifyCierreProviderError, consultarLoteProveedorCierre, consultarPeriodoPayJoyCierre,
+  type CierreProvider, type CierreProviderBatch } from "@/lib/cierre-providers";
+import type { CierreSyncTrabajo, Prisma } from "@/app/generated/prisma/client";
 
-function identityMatches(credit: CierreProviderCredit, local: { documentNumber: string | null; imei: string | null }) {
-  const digits = (value: string | null | undefined) => String(value || "").replace(/\D/g, "");
-  return Boolean((credit.imei && local.imei && digits(credit.imei) === digits(local.imei)) ||
-    (credit.documento && local.documentNumber && digits(credit.documento) === digits(local.documentNumber)));
+const DAY_PREFIX = "PERIODO:PAYJOY:";
+const MINUTE = 60_000;
+const DAY = 86_400_000;
+const providerStates = ["PENDIENTE", "ERROR", "REVISADO"];
+const backoff = (attempts: number) => Math.min(24 * 60, 5 * 2 ** Math.min(attempts, 8)) * MINUTE;
+
+function dayOfJob(job: CierreSyncTrabajo) {
+  if (job.financial !== "PAYJOY" || !job.key.startsWith(DAY_PREFIX)) return null;
+  const day = job.key.slice(DAY_PREFIX.length);
+  const date = new Date(`${day}T12:00:00-05:00`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(date.getTime()) && getDateKeyInColombia(date) === day ? day : null;
+}
+
+async function seedPayJoyDays() {
+  const oldest = await prisma.cierreCredito.findFirst({
+    where: { localKey: { not: null }, effectiveAt: { not: null } }, orderBy: { effectiveAt: "asc" }, select: { effectiveAt: true },
+  });
+  if (!oldest?.effectiveAt) return 0;
+  const first = getDateKeyInColombia(oldest.effectiveAt);
+  const today = getDateKeyInColombia();
+  const existing = new Set<string>();
+  let cursor: string | null = null;
+  // Sales can insert isolated days. Enumerate keys in pages to fill gaps rather
+  // than mistaking the oldest existing day for a fully seeded historical range.
+  for (;;) {
+    const jobs: Array<{ key: string }> = await prisma.cierreSyncTrabajo.findMany({
+      where: { financial: "PAYJOY", key: { startsWith: DAY_PREFIX, ...(cursor === null ? {} : { gt: cursor }) } },
+      orderBy: { key: "asc" }, select: { key: true }, take: 500,
+    });
+    for (const job of jobs) existing.add(job.key);
+    if (jobs.length < 500) break;
+    cursor = jobs[jobs.length - 1].key;
+  }
+  const days: string[] = [];
+  for (let day = today; day >= first && days.length < 50; day = shiftDateKey(day, -1)) {
+    if (!existing.has(`${DAY_PREFIX}${day}`)) days.push(day);
+  }
+  if (days.length) await prisma.$transaction(async (tx) => {
+    for (const day of days) {
+      const key = `${DAY_PREFIX}${day}`;
+      await tx.cierreSyncTrabajo.upsert({ where: { key }, update: {}, create: { key, localKey: key, financial: "PAYJOY" } });
+    }
+  }, { timeout: 60_000 });
+  return days.length;
+}
+
+async function acquireProviderRate(financial: string) {
+  const now = new Date();
+  await prisma.cierreSyncEstado.upsert({ where: { key: "PROVIDER_RATE" }, create: { key: "PROVIDER_RATE" }, update: {} });
+  const acquired = await prisma.cierreSyncEstado.updateMany({
+    where: { key: "PROVIDER_RATE", OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }] },
+    data: { lockedUntil: new Date(now.getTime() + MINUTE), lockToken: financial },
+  });
+  // Never release: all replicas, restarts and cron invocations share this rate.
+  return acquired.count === 1;
+}
+
+async function extendProviderPause(until: Date) {
+  await prisma.cierreSyncEstado.updateMany({
+    where: { key: "PROVIDER_RATE", OR: [{ lockedUntil: null }, { lockedUntil: { lt: until } }] },
+    data: { lockedUntil: until },
+  });
+}
+
+async function updatePayJoyLocalJobs(tx: Prisma.TransactionClient, day: string, data: Prisma.CierreSyncTrabajoUpdateManyMutationInput) {
+  const start = new Date(`${day}T00:00:00-05:00`);
+  let cursor: string | null = null;
+  for (;;) {
+    const credits: Array<{ id: string; localKey: string | null }> = await tx.cierreCredito.findMany({
+      where: { financial: "PAYJOY", localKey: { not: null }, effectiveAt: { gte: start, lt: new Date(start.getTime() + DAY) },
+        ...(cursor === null ? {} : { id: { gt: cursor } }) },
+      orderBy: { id: "asc" }, select: { id: true, localKey: true }, take: 500,
+    });
+    if (!credits.length) break;
+    await tx.cierreSyncTrabajo.updateMany({
+      where: { financial: "PAYJOY", localKey: { in: credits.map((credit) => credit.localKey!) }, state: { not: "RETIRADO" } }, data,
+    });
+    cursor = credits[credits.length - 1].id;
+    if (credits.length < 500) break;
+  }
+}
+
+async function persistResult(job: CierreSyncTrabajo, attempt: CierreSyncTrabajo, day: string | null, result: CierreProviderBatch) {
+  const successful = result.outcome === "OBSERVED" || result.outcome === "EMPTY";
+  const state = successful ? "REVISADO" : result.outcome === "MISSING_REFERENCE" ? "SIN_REFERENCIA" : "ERROR";
+  const isConfiguration = result.outcome === "NOT_CONFIGURED" || result.outcome === "LOCAL_ONLY";
+  const code = isConfiguration ? "CONFIG" : result.outcome === "UNSUPPORTED_RESPONSE" ? "INVALID_RESPONSE" : undefined;
+  const delay = successful ? (day && day < shiftDateKey(getDateKeyInColombia(), -1) ? 7 * DAY : DAY)
+    : Math.max(backoff(job.attempts), isConfiguration ? 30 * MINUTE : 0);
+  const nextAttempt = new Date(Date.now() + delay);
+  if (isConfiguration) await extendProviderPause(nextAttempt);
+  const data: Prisma.CierreSyncTrabajoUpdateManyMutationInput = {
+    state, nextAttempt, limitation: result.limitation || (successful ? "Cobertura parcial; se conservan las referencias revisadas." : "Respuesta pendiente de revisión."),
+    ...(successful ? { attempts: 0, lastSuccess: new Date() } : {}),
+  };
+  const counts = await prisma.$transaction(async (tx) => {
+    const saved = await tx.cierreSyncTrabajo.updateMany({ where: { key: job.key, updatedAt: attempt.updatedAt }, data });
+    if (saved.count !== 1) return { observed: 0, linked: 0, pending: 0, stale: true };
+    const reconciled = successful ? await reconcileCierreCredits(tx, result.credits) : { observed: 0, linked: 0, pending: 0 };
+    if (day) await updatePayJoyLocalJobs(tx, day, data);
+    return { ...reconciled, stale: false };
+  }, { timeout: 60_000 });
+  return { processed: 1, financial: job.financial, mode: day ? "PERIODO" : "REFERENCIA", state: counts.stale ? "PENDIENTE" : state,
+    outcome: result.outcome, ...counts, ...(code ? { code } : {}), ...(state === "ERROR" ? { failed: true } : {}) };
+}
+
+async function persistError(job: CierreSyncTrabajo, attempt: CierreSyncTrabajo, day: string | null, error: unknown) {
+  const classified = classifyCierreProviderError(error);
+  const nextAttempt = new Date(Date.now() + Math.max(backoff(job.attempts), classified.retryAfterMs || 0,
+    ["AUTH", "CONFIG"].includes(classified.code) ? 30 * MINUTE : 0));
+  if (["RATE_LIMIT", "AUTH", "CONFIG"].includes(classified.code)) await extendProviderPause(nextAttempt);
+  const data = { state: "ERROR", nextAttempt, limitation: `Consulta no completada (${classified.code}); se conservan los créditos confirmados.` };
+  const stale = await prisma.$transaction(async (tx) => {
+    const saved = await tx.cierreSyncTrabajo.updateMany({ where: { key: job.key, updatedAt: attempt.updatedAt }, data });
+    if (saved.count !== 1) return true;
+    if (day) await updatePayJoyLocalJobs(tx, day, data);
+    return false;
+  }, { timeout: 60_000 });
+  return { processed: 1, financial: job.financial, mode: day ? "PERIODO" : "REFERENCIA", state: stale ? "PENDIENTE" : "ERROR",
+    failed: true, code: classified.code, stale };
 }
 
 async function syncOneProviderReference() {
-  const job = await prisma.cierreSyncTrabajo.findFirst({ where: { nextAttempt: { lte: new Date() }, state: { not: "RETIRADO" } }, orderBy: [{ nextAttempt: "asc" }, { key: "asc" }] });
-  if (!job) return { processed: 0 };
-  const local = await prisma.cierreCredito.findUnique({ where: { localKey: job.localKey } });
-  if (!local?.effectiveAt || !local.ventaId || !(await prisma.venta.findUnique({ where: { id: local.ventaId }, select: { id: true } }))) {
-    await prisma.cierreSyncTrabajo.update({ where: { key: job.key }, data: { state: "RETIRADO" } });
-    return { processed: 1 };
+  const seeded = await seedPayJoyDays();
+  const rate = await prisma.cierreSyncEstado.findUnique({ where: { key: "PROVIDER_RATE" }, select: { lockToken: true } });
+  const financials = ["SUMASPAY", "ADDI", "PAYJOY"];
+  const start = (financials.indexOf(rate?.lockToken || "") + 1) % financials.length;
+  const order = [...financials.slice(start), ...financials.slice(0, start)];
+  let skipped = 0;
+  while (skipped < 100) {
+    let job: CierreSyncTrabajo | null = null;
+    // Persisted rotation prevents a large reference backlog from starving the
+    // account-level daily list or the other provider's confirmed local sales.
+    for (const financial of order) {
+      job = await prisma.cierreSyncTrabajo.findFirst({
+        where: { financial, nextAttempt: { lte: new Date() }, state: { in: providerStates },
+          ...(financial === "PAYJOY" ? { key: { startsWith: DAY_PREFIX } } : {}) },
+        orderBy: [{ nextAttempt: "asc" }, { key: "asc" }],
+      });
+      if (job) break;
+    }
+    if (!job) return { processed: 0, seeded, skipped };
+    const day = dayOfJob(job);
+    const local = day ? null : await prisma.cierreCredito.findUnique({ where: { localKey: job.localKey } });
+    if (!day && (job.financial === "PAYJOY" || !local?.effectiveAt || !local.ventaId ||
+        !(await prisma.venta.findUnique({ where: { id: local.ventaId }, select: { id: true } })))) {
+      await prisma.cierreSyncTrabajo.update({ where: { key: job.key }, data: { state: "RETIRADO" } });
+      skipped++;
+      continue;
+    }
+    const document = local?.documentNumber?.replace(/\D/g, "") || "";
+    if (!day && !/^\d{5,15}$/.test(document)) {
+      await prisma.cierreSyncTrabajo.update({ where: { key: job.key }, data: { state: "SIN_REFERENCIA", limitation: "Documento pendiente para consultar el crédito confirmado." } });
+      skipped++;
+      continue;
+    }
+    if (!await acquireProviderRate(job.financial)) return { processed: 0, seeded, skipped, rateLimited: true };
+    // Persist before I/O; completion cannot consume a concurrently edited job.
+    const attempt = await prisma.cierreSyncTrabajo.update({ where: { key: job.key }, data: {
+      state: "PENDIENTE", attempts: { increment: 1 }, nextAttempt: new Date(Date.now() + backoff(job.attempts)),
+    } });
+    try {
+      const date = day || getDateKeyInColombia(local!.effectiveAt!);
+      const result = day ? await consultarPeriodoPayJoyCierre({ fechaDesde: day, fechaHasta: day })
+        : await consultarLoteProveedorCierre({
+          financiera: job.financial as CierreProvider, fechaDesde: shiftDateKey(date, -1), fechaHasta: shiftDateKey(date, 1),
+          referencias: [{ documento: document, imei: local!.imei || undefined, providerId: local!.providerCreditId || undefined,
+            localKey: job.localKey, sedeId: local!.sedeId || undefined, effectiveDate: date, amount: Number(local!.amount) }],
+        });
+      return { ...await persistResult(job, attempt, day, result), seeded, skipped };
+    } catch (error) {
+      return { ...await persistError(job, attempt, day, error), seeded, skipped };
+    }
   }
-  const date = getDateKeyInColombia(local.effectiveAt);
-  // Persist the attempt before I/O. A crash retries after backoff, never in a tight loop.
-  const nextAttempt = new Date(Date.now() + Math.min(24 * 60, 5 * 2 ** Math.min(job.attempts, 8)) * 60_000);
-  await prisma.cierreSyncTrabajo.update({ where: { key: job.key }, data: { state: "PENDIENTE", attempts: { increment: 1 }, nextAttempt } });
-  try {
-    const result = await consultarLoteProveedorCierre({
-      financiera: job.financial as CierreProvider, fechaDesde: shiftDateKey(date, -1), fechaHasta: shiftDateKey(date, 1),
-      referencias: [{ documento: local.documentNumber || undefined, imei: local.imei || undefined,
-        providerId: local.providerCreditId || undefined, localKey: job.localKey, sedeId: local.sedeId || undefined,
-        effectiveDate: date, amount: Number(local.amount) }],
-    });
-    await prisma.$transaction(async (tx) => {
-      // Link only an immutable provider identity. For the first association the
-      // reference, date AND principal must match uniquely; customer ID alone is insufficient.
-      const candidates = result.credits.filter((c) => c.financiera === local.financial &&
-        (local.providerCreditId ? c.providerId === local.providerCreditId :
-          c.fechaEfectiva && getDateKeyInColombia(c.fechaEfectiva) === date &&
-          c.valor !== null && Math.abs(c.valor - Number(local.amount)) < 0.005 && identityMatches(c, local)));
-      let match = candidates.length === 1 ? candidates[0] : null;
-      if (match && !local.providerCreditId) {
-        const dayStart = new Date(`${date}T00:00:00-05:00`);
-        const possibleLocals = await tx.cierreCredito.findMany({ where: {
-          financial: local.financial, localKey: { not: null }, status: "EFECTIVO", amount: local.amount,
-          effectiveAt: { gte: dayStart, lt: new Date(dayStart.getTime() + 86_400_000) },
-        } });
-        if (possibleLocals.filter((row) => identityMatches(match!, row)).length !== 1) match = null;
-      }
-      for (const credit of result.credits) {
-        const existing = await tx.cierreCredito.findUnique({ where: { financial_providerCreditId: { financial: credit.financiera, providerCreditId: credit.providerId } } });
-        if (existing?.providerUpdatedAt && credit.sourceUpdatedAt && credit.sourceUpdatedAt < existing.providerUpdatedAt) continue;
-        const linksLocal = match?.providerId === credit.providerId && (!existing?.localKey || existing.localKey === local.localKey);
-        if (linksLocal && credit.estado === "PENDIENTE") {
-          // An approval/unknown response cannot disprove a confirmed local sale.
-          // Retain evidence without adopting its proposed amount or generation date.
-          await saveCierreCredit(tx, {
-            financial: local.financial, providerCreditId: credit.providerId, localKey: local.localKey,
-            ventaId: local.ventaId, registroId: local.registroId, localReference: local.localReference,
-            sedeId: local.sedeId, effectiveAt: local.effectiveAt, amount: local.amount,
-            customerName: local.customerName, documentNumber: local.documentNumber, imei: local.imei,
-            creditNumber: credit.providerId, status: local.status, source: local.source,
-            evidence: credit.raw as Prisma.InputJsonValue,
-          });
-        } else if (linksLocal || existing?.localKey) {
-          const linked = linksLocal ? local : existing!;
-          // Unknown older observations never overwrite a known terminal state.
-          if (credit.estado === "PENDIENTE") continue;
-          if (["ANULADO", "REVERSADO", "RECHAZADO"].includes(linked.status) && credit.estado === "EFECTIVO" &&
-              (!linked.source.includes("API") || !credit.sourceUpdatedAt || !linked.providerUpdatedAt || credit.sourceUpdatedAt <= linked.providerUpdatedAt)) continue;
-          await saveCierreCredit(tx, {
-            financial: credit.financiera, providerCreditId: credit.providerId, localKey: linked.localKey,
-            ventaId: linked.ventaId, registroId: linked.registroId, localReference: linked.localReference,
-            sedeId: linked.sedeId, effectiveAt: credit.fechaEfectiva || linked.effectiveAt,
-            amount: credit.valor ?? linked.amount, customerName: credit.cliente || linked.customerName,
-            documentNumber: credit.documento || linked.documentNumber, creditNumber: credit.providerId,
-            imei: credit.imei || linked.imei, status: credit.estado,
-            source: `CONECTAMOS + API ${credit.financiera}`, evidence: credit.raw as Prisma.InputJsonValue,
-            providerUpdatedAt: credit.sourceUpdatedAt || linked.providerUpdatedAt,
-          });
-        } else {
-          // Unmatched provider observations have no trustworthy branch attribution.
-          // Retain them for reconciliation, excluded from effective totals.
-          await saveCierreCredit(tx, {
-            financial: credit.financiera, providerCreditId: credit.providerId,
-            effectiveAt: credit.fechaEfectiva, amount: credit.valor,
-            customerName: credit.cliente, documentNumber: credit.documento, creditNumber: credit.providerId,
-            imei: credit.imei || null, status: "PENDIENTE", source: `API ${credit.financiera} · pendiente de vinculación`,
-            evidence: credit.raw as Prisma.InputJsonValue, providerUpdatedAt: credit.sourceUpdatedAt,
-          });
-        }
-      }
-      await tx.cierreSyncTrabajo.update({ where: { key: job.key }, data: {
-        state: "REVISADO", attempts: 0, lastSuccess: new Date(),
-        nextAttempt: new Date(Date.now() + 24 * 60 * 60_000), limitation: result.limitation || null,
-      } });
-    }, { timeout: 20_000 });
-    return { processed: 1 };
-  } catch {
-    // Do not persist provider response errors: some include URLs or credentials.
-    await prisma.cierreSyncTrabajo.update({ where: { key: job.key }, data: { state: "ERROR", limitation: "Consulta pendiente de reintento; se conservan los datos confirmados." } });
-    return { processed: 1, failed: true };
-  }
+  return { processed: 0, seeded, skipped };
 }
 
 export async function runCierreSyncBatch(options: { localOnly?: boolean } = {}) {
@@ -107,12 +189,10 @@ export async function runCierreSyncBatch(options: { localOnly?: boolean } = {}) 
   const now = new Date();
   await prisma.cierreSyncEstado.upsert({ where: { key: "WORKER" }, create: { key: "WORKER" }, update: {} });
   const lease = await prisma.cierreSyncEstado.updateMany({ where: { key: "WORKER", OR: [{ lockedUntil: null }, { lockedUntil: { lt: now } }] },
-    data: { lockToken: token, lockedUntil: new Date(now.getTime() + 10 * 60_000) } });
+    data: { lockToken: token, lockedUntil: new Date(now.getTime() + 10 * MINUTE) } });
   if (lease.count !== 1) return { busy: true };
   try {
     const local = await drainCierreLocalQueue(500);
-    // Explicit deployment switch allows operators to verify limits/costs before
-    // enabling existing read APIs. Local history does not depend on this switch.
     const provider = process.env.CIERRE_PROVIDER_SYNC_ENABLED !== "1" ? { processed: 0, disabled: true }
       : options.localOnly ? { processed: 0, deferred: true } : await syncOneProviderReference();
     return { busy: false, local, provider };

@@ -19,7 +19,7 @@ export async function register() {
       // Drain history in bounded transactions with a pause between batches.
       // Provider reads retain the minute interval even during the local backfill.
       if (!result.busy && result.local && result.local.processed > 0 && result.local.remaining > 0) delay = 1_500;
-      if (!result.busy && (firstRun || (result.local?.processed ?? 0) > 0)) {
+      if (!result.busy && (firstRun || (result.local?.processed ?? 0) > 0 || (result.provider?.processed ?? 0) > 0)) {
         console.info("CIERRE_SYNC", JSON.stringify(result));
         firstRun = false;
       }
