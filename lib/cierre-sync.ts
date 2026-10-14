@@ -5,6 +5,7 @@ import { drainCierreLocalQueue } from "@/lib/cierre-store";
 import { reconcileCierreCredits } from "@/lib/cierre-reconcile";
 import { getCierrePriority } from "@/lib/cierre-priority";
 import { readCierrePayJoyAudit } from "@/lib/cierre-payjoy-audit";
+import { readCierreSumasAudit } from "@/lib/cierre-sumas-audit";
 import { aggregateCierreProviderSync, readCierreProviderProgress } from "@/lib/cierre-progress";
 import { classifyCierreProviderError, consultarLoteProveedorCierre, consultarPeriodoPayJoyCierre,
   type CierreProvider, type CierreProviderBatch } from "@/lib/cierre-providers";
@@ -267,8 +268,9 @@ export async function readCierrePriorityProgress() {
     // available to administrative callers of the read-only audit helper.
     const payjoyAudit = { complete: payjoy.complete, totals: payjoy.totals, duplicateProviderRows: payjoy.duplicateProviderRows,
       unlinkedMerchants: payjoy.unlinkedMerchants, byStateSource: payjoy.byStateSource, unlinkedReasons: payjoy.unlinkedReasons };
+    const sumasAudit = await readCierreSumasAudit(tx, { start: priority.start, end: priority.end });
     return { priority: { from: priority.from, to: priority.to }, runtime,
-      totals: aggregateCierreProviderSync([...sources.values()]), sources: Object.fromEntries(sources), payjoyAudit };
+      totals: aggregateCierreProviderSync([...sources.values()]), sources: Object.fromEntries(sources), payjoyAudit, sumasAudit };
   }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
 }
 
