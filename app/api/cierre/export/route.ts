@@ -34,6 +34,43 @@ export async function GET(request: Request) {
     ];
     const formatter = new Intl.DateTimeFormat("es-CO", { timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit" });
     for (const row of report.items) sheet.addRow({ ...row, date: formatter.format(new Date(row.date)), creditNumber: row.creditNumber || "No informado", customerName: row.customerName || "No informado" });
+    const payjoy = report.financiers.find((row) => row.name === "PAYJOY")?.reconciliation;
+    if (payjoy) {
+      const apiKnown = payjoy.api.units > 0;
+      const unlinkedKnown = apiKnown && (payjoy.unlinkedApi.units > 0 || payjoy.daysReviewed === payjoy.totalDays);
+      const comparison = book.addWorksheet("Conciliación PAYJOY");
+      comparison.addRows([
+        ["PAYJOY", report.period.label, report.scope.label],
+        ["Fuente del total", payjoy.basis === "PAYJOY_API" ? "API PAYJOY" : "CONECTAMOS · consulta PAYJOY pendiente"],
+        ["Días consultados", payjoy.daysReviewed, "de", payjoy.totalDays],
+        ["Cobertura", "Parcial; consultar todos los días no certifica cobertura completa."],
+        [], ["Comparación de fuentes (no sumar entre sí)", "Créditos", "Valor del crédito"],
+        ["Créditos efectivos de API PAYJOY", apiKnown ? payjoy.api.units : "Sin confirmar", apiKnown ? payjoy.api.amount : "Sin confirmar"],
+        ["Créditos efectivos en CONECTAMOS", payjoy.local.units, payjoy.local.amount],
+        ["Diferencia API menos CONECTAMOS", apiKnown ? payjoy.delta.units : "Sin confirmar", apiKnown ? payjoy.delta.amount : "Sin confirmar"],
+        [], ["Pendientes de vinculación (no son créditos adicionales)", "Créditos", "Valor del crédito"],
+        ["Créditos API sin venta local vinculada", unlinkedKnown ? payjoy.unlinkedApi.units : "Sin confirmar", unlinkedKnown ? payjoy.unlinkedApi.amount : "Sin confirmar"],
+        ["Ventas locales sin confirmación API", payjoy.unmatchedLocal.units, payjoy.unmatchedLocal.amount],
+        [], ["Criterio", payjoy.basis === "PAYJOY_API"
+          ? "El total cuenta cada crédito efectivo recibido de PAYJOY una sola vez. Si faltan días por consultar, el importe es parcial. Las ventas locales sin vínculo se conservan para conciliación y no se suman de nuevo."
+          : "La consulta del periodo está pendiente. La comparación corresponde a los datos recibidos hasta ahora."],
+      ]);
+      comparison.columns = [{ width: 58 }, { width: 40 }, { width: 28 }, { width: 16 }];
+      comparison.getColumn(3).numFmt = '"$" #,##0.00';
+      comparison.getColumn(2).alignment = { wrapText: true, vertical: "top" };
+      for (const index of [6, 11]) comparison.getRow(index).eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF11161D" } };
+      });
+      const pending = book.addWorksheet("Pendientes PAYJOY", { views: [{ state: "frozen", ySplit: 1 }] });
+      pending.columns = sheet.columns.map((column) => ({ header: column.header, key: column.key, width: column.width, style: column.style }));
+      for (const row of report.unmatchedLocalItems) pending.addRow({ ...row,
+        date: formatter.format(new Date(row.date)), creditNumber: row.creditNumber || "No informado",
+        customerName: row.customerName || "No informado", source: payjoy.basis === "PAYJOY_API"
+          ? "CONECTAMOS · pendiente de conciliar; no sumar al total API" : "CONECTAMOS · pendiente de conciliar",
+      });
+      pending.getRow(1).eachCell((cell) => { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF11161D" } }; });
+    }
     const sources = book.addWorksheet("Fuentes", { views: [{ state: "frozen", ySplit: 1 }] });
     sources.columns = [
       { header: "Financiera", key: "name", width: 22 }, { header: "Fuente utilizada", key: "source", width: 44 },

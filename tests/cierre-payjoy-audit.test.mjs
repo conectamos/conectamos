@@ -40,7 +40,7 @@ test("737 observaciones API pueden coexistir con 733 ventas y 63 referencias loc
   assert.equal(reads.length, 2);
   assert.ok(reads.every((read) => read.args.take === 500));
   const report = await loader.load("lib/cierre-report.ts").readCierreReport(new URLSearchParams("mode=month&month=2026-09&financier=PAYJOY"), admin, true);
-  assert.equal(report.units, 733);
+  assert.equal(report.units, 737, "El reporte corregido usa API; la auditoría conserva el subtotal local de 733");
   assert.equal(report.providerSync.unconfirmed, 63);
   assert.equal(report.providerSync.total, 733);
   assert.ok(!JSON.stringify(result).includes("private-"));

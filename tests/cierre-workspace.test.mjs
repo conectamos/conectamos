@@ -30,7 +30,7 @@ function textOf(node) {
   return textOf(node.props?.children);
 }
 
-function harness({ admin = true, delayed = false, reports = [report] } = {}) {
+function harness({ admin = true, delayed = false, reports = [report], detailOverrides = {} } = {}) {
   const slots = [];
   const effects = [];
   const calls = [];
@@ -77,7 +77,7 @@ function harness({ admin = true, delayed = false, reports = [report] } = {}) {
     if (String(url).startsWith("/api/cierre/export?")) return { ok: true, blob: async () => new Blob(["Excel"]) };
     if (String(url).startsWith("/api/cierre/detalle?")) {
       const page = Number(new URL(url, "http://localhost").searchParams.get("page"));
-      return { ok: true, json: async () => ({ page, pageSize: 10, total: 12, units: 12, amount: 12_345_678, complete: true, items: Array.from({ length: page === 1 ? 10 : 2 }, (_, i) => ({ id: `${page}-${i}`, date: "2026-09-01T04:59:00Z", creditNumber: `C-${page}-${i}`, customerName: "Cliente", customerDocument: "1.234.567", sedeName: "SEDE 2", amount: 1_000_000, status: "Efectivo", source: "API PayJoy" })) }) };
+      return { ok: true, json: async () => ({ page, pageSize: 10, total: 12, units: 12, amount: 12_345_678, complete: true, items: Array.from({ length: page === 1 ? 10 : 2 }, (_, i) => ({ id: `${page}-${i}`, date: "2026-09-01T04:59:00Z", creditNumber: `C-${page}-${i}`, customerName: "Cliente", customerDocument: "1.234.567", sedeName: "SEDE 2", amount: 1_000_000, status: "Efectivo", source: "API PayJoy" })), ...detailOverrides }) };
     }
     const next = reports[Math.min(reportIndex++, reports.length - 1)];
     if (next instanceof Error) return { ok: false, json: async () => ({ error: next.message }) };
@@ -479,4 +479,100 @@ test("provider errors and missing credit references do not become indefinite loa
     assert.equal(ui.calls.length, 1);
     assert.equal(ui.timers.size, 0);
   }
+});
+
+const payjoyReconciliation = {
+  basis: "PAYJOY_API", api: { units: 12, amount: 12_345_678 }, local: { units: 10, amount: 9_000_000 },
+  unlinkedApi: { units: 4, amount: 5_345_678 }, unmatchedLocal: { units: 2, amount: 2_000_000 },
+  daysReviewed: 30, totalDays: 30, delta: { units: 2, amount: 3_345_678 },
+};
+
+function withPayjoyReconciliation(reconciliation, extra = {}) {
+  return { ...report, ...extra, financiers: report.financiers.map((row) => row.key === "PAYJOY" ? {
+    ...row, complete: false, coverageLabel: "Cobertura parcial", reconciliation,
+    ...(reconciliation.basis === "PAYJOY_API" ? { units: reconciliation.api.units || null, amount: reconciliation.api.units ? reconciliation.api.amount : null } : {}),
+  } : row) };
+}
+
+function reconciliationText(ui) {
+  const section = ui.nodes().find((node) => node.type === "section" && node.props["aria-label"] === "Conciliación PAYJOY y CONECTAMOS");
+  assert.ok(section, "PAYJOY comparison must be visible in the open detail");
+  return textOf(section);
+}
+
+test("PAYJOY identifies its total source and compares API versus local without adding unmatched records", async () => {
+  const ui = harness({ reports: [withPayjoyReconciliation(payjoyReconciliation)] });
+  await ui.settle();
+  assert.match(textOf(ui.find("button", "PAYJOY")), /Fuente del total: PAYJOY/);
+  assert.equal(ui.nodes().filter((node) => node.props?.className === "metricValue").map(textOf)[0], "12");
+  assert.equal(ui.nodes().filter((node) => node.props?.["aria-label"] === "Conciliación PAYJOY y CONECTAMOS").length, 0);
+  ui.find("button", "PAYJOY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  const comparison = reconciliationText(ui);
+  assert.match(comparison, /PAYJOY12\$\s*12\.345\.678/);
+  assert.match(comparison, /CONECTAMOS10\$\s*9\.000\.000/);
+  assert.match(comparison, /DiferenciaPAYJOY − CONECTAMOS\+2\+\$\s*3\.345\.678/);
+  assert.match(comparison, /PAYJOY sin vínculo local4 · \$\s*5\.345\.678Los recibidos ya están incluidos/);
+  assert.match(comparison, /Locales sin confirmación PAYJOY2 · \$\s*2\.000\.000No se agregan/);
+  assert.match(comparison, /30 de 30 días consultados · cobertura parcial/);
+  assert.match(comparison, /sus valores no se suman/);
+  assert.doesNotMatch(comparison, /Periodo completo|sin sede/);
+  assert.match(textOf(ui.find("dialog")), /12 registros · máximo 10 por página/);
+  await ui.find("button", "Exportar Excel").props.onClick();
+  assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre")));
+  assert.equal(ui.calls.at(-1).url, `/api/cierre/export?${ui.calls[0].url.split("?")[1]}`);
+});
+
+test("PAYJOY pending consultation remains API-only and never uses local totals or confirms unknown API zero", async () => {
+  const value = { ...payjoyReconciliation, api: { units: 0, amount: 0 }, local: { units: 12, amount: 12_345_678 },
+    unlinkedApi: { units: 0, amount: 0 }, unmatchedLocal: { units: 12, amount: 12_345_678 }, daysReviewed: 0,
+    delta: { units: -12, amount: -12_345_678 } };
+  const ui = harness({ admin: false, reports: [withPayjoyReconciliation(value, { totals: { units: null, amount: null } })], detailOverrides: { units: null, amount: null, total: 0, items: [], complete: false } });
+  await ui.settle();
+  assert.match(textOf(ui.find("button", "PAYJOY")), /Fuente del total: PAYJOY · consulta pendiente/);
+  assert.deepEqual(ui.nodes().filter((node) => node.props?.className === "metricValue").map(textOf), ["Sin confirmar", "Sin confirmar"]);
+  ui.find("button", "PAYJOY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  const comparison = reconciliationText(ui);
+  assert.match(comparison, /PAYJOYRecibido hasta ahoraSin confirmarSin confirmar/);
+  assert.match(comparison, /DiferenciaPAYJOY − CONECTAMOS · provisionalSin confirmarSin confirmar/);
+  assert.doesNotMatch(comparison, /\$\s*0|sin sede/);
+  assert.match(comparison, /0 de 30 días consultados · cobertura parcial/);
+  assert.match(comparison, /No se agregan al total PAYJOY/);
+  assert.doesNotMatch(textOf(ui.find("dialog")), /12 créditos|Fuente del total: CONECTAMOS/);
+  assert.ok(ui.calls.every((call) => call.url.includes("sedeId=2")));
+});
+
+test("open PAYJOY reconciliation follows its applied report while API days remain pending", async () => {
+  const pendingValue = { ...payjoyReconciliation, daysReviewed: 29, delta: { units: -2, amount: -1_000_000 } };
+  const queued = { ...activeProvider, queued: 1 };
+  const ui = harness({ reports: [withPayjoyReconciliation(pendingValue, { providerSync: queued }), withPayjoyReconciliation(payjoyReconciliation)] });
+  await ui.settle();
+  ui.find("button", "PAYJOY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  assert.match(reconciliationText(ui), /Fuente del total: PAYJOY/);
+  assert.match(reconciliationText(ui), /consulta pendiente/);
+  assert.match(reconciliationText(ui), /provisional-2-\$\s*1\.000\.000/);
+  await ui.setControl("Mes", "2025-08");
+  const applied = ui.calls[0].url.split("?")[1];
+  await ui.advance(10_000);
+  assert.match(reconciliationText(ui), /Fuente del total: PAYJOY/);
+  assert.match(reconciliationText(ui), /30 de 30 días consultados · cobertura parcial/);
+  assert.equal(ui.dialogCalls.opened, 1);
+  assert.equal(ui.dialogCalls.closed, 0);
+  assert.ok(ui.calls.every((call) => call.url.includes(applied)));
+  assert.equal(ui.timers.size, 0);
+});
+
+test("reviewing every PAYJOY day does not turn an unconfirmed empty API result into a confirmed zero", async () => {
+  const value = { ...payjoyReconciliation, api: { units: 0, amount: 0 }, unlinkedApi: { units: 0, amount: 0 }, delta: { units: -10, amount: -9_000_000 } };
+  const ui = harness({ reports: [withPayjoyReconciliation(value)], detailOverrides: { units: null, amount: null, total: 0, items: [], complete: false } });
+  await ui.settle();
+  ui.find("button", "PAYJOY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  const comparison = reconciliationText(ui);
+  assert.match(comparison, /30 de 30 días consultados · cobertura parcial/);
+  assert.match(comparison, /PAYJOYSin confirmarSin confirmar/);
+  assert.match(comparison, /PAYJOY sin vínculo localSin confirmar · Sin confirmar/);
+  assert.doesNotMatch(comparison, /\$\s*0|Periodo completo/);
 });

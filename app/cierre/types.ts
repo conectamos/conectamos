@@ -31,6 +31,17 @@ export type CierreProviderSync = {
   limitation: string;
 };
 
+export type CierreReconciliation = {
+  basis: "PAYJOY_API" | "LOCAL";
+  api: { units: number; amount: number };
+  local: { units: number; amount: number };
+  unlinkedApi: { units: number; amount: number };
+  unmatchedLocal: { units: number; amount: number };
+  daysReviewed: number;
+  totalDays: number;
+  delta: { units: number; amount: number };
+};
+
 export type CierreFinancier = {
   key: string;
   name: string;
@@ -42,6 +53,7 @@ export type CierreFinancier = {
   providerSync?: CierreProviderSync | null;
   coverageLabel?: string;
   limitation?: string;
+  reconciliation?: CierreReconciliation;
 };
 
 export type CierreReport = {

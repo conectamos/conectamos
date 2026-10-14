@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import ExcelJS from "exceljs";
 import { modules, database, credit, sale, admin, supervisor, params } from "./cierre-test-helpers.mjs";
+
+function apiCredit(id, changes = {}) {
+  const row = credit(id, changes);
+  return { ...row, providerCreditId: `PAYJOY-${id}`, source: "CONECTAMOS + API PAYJOY",
+    evidence: { source: "list-transactions", providerId: `PAYJOY-${id}`, providerStatus: "FINANCE", currency: "COP",
+      principal: row.amount, effectiveDate: row.effectiveAt?.toISOString() || null, diagnostics: { reasons: [] } } };
+}
 test("servidor filtra sede, estado y fecha efectiva antes de totalizar y pagina máximo diez", async () => {
   const db = database({ cierreCredito: [
-    ...Array.from({ length: 23 }, (_, index) => credit(index + 1)), credit(90, { sedeId: 2 }),
-    credit(91, { status: "REVERSADO" }), credit(92, { status: "ANULADO" }), credit(93, { status: "RECHAZADO" }),
-    credit(94, { effectiveAt: new Date("2026-11-01T05:00:00Z") }), credit(95, { amount: null }),
+    ...Array.from({ length: 23 }, (_, index) => apiCredit(index + 1)), apiCredit(90, { sedeId: 2 }),
+    apiCredit(91, { status: "REVERSADO" }), apiCredit(92, { status: "ANULADO" }), apiCredit(93, { status: "RECHAZADO" }),
+    apiCredit(94, { effectiveAt: new Date("2026-11-01T05:00:00Z") }), apiCredit(95, { amount: null }),
   ] });
   const report = await modules(db.prisma).load("lib/cierre-report.ts").readCierreReport(params("&financier=PAYJOY&page=2"), supervisor, true);
   assert.equal(report.total, 23);
@@ -19,7 +26,7 @@ test("servidor filtra sede, estado y fecha efectiva antes de totalizar y pagina 
 });
 
 test("administrador consolida global; supervisor y auditor no consultan otra sede", async () => {
-  const db = database({ cierreCredito: [credit(1), credit(2, { sedeId: 2 })] });
+  const db = database({ cierreCredito: [apiCredit(1), apiCredit(2, { sedeId: 2 })] });
   const { readCierreReport } = modules(db.prisma).load("lib/cierre-report.ts");
   assert.equal((await readCierreReport(params(), admin)).totals.units, 2);
   for (const session of [supervisor, { ...supervisor, rolNombre: "AUDITOR", perfilTipo: "AUDITOR" }]) {
@@ -276,7 +283,8 @@ test("flag desactivado informa el estado real y conserva revisiones previas sin 
     assert.equal(source.providerSync.enabled, false);
     assert.equal(source.providerSync.status, "DESACTIVADA");
     assert.equal(source.providerSync.reviewed, 1);
-    assert.equal(source.coverageLabel, "Conciliación desactivada");
+    assert.equal(source.coverageLabel, "Consulta PAYJOY pendiente");
+    assert.equal(source.units, null, "Una revisión local no inventa un crédito API");
     assert.equal(report.providerSync.status, "DESACTIVADA");
   } finally {
     globalThis.fetch = original;
@@ -286,7 +294,7 @@ test("flag desactivado informa el estado real y conserva revisiones previas sin 
 });
 
 test("progreso pagina referencias y el detalle conserva su financiera autorizada", async () => withProviderEnabled(async () => {
-  const db = database({ cierreCredito: [...Array.from({ length: 501 }, (_, index) => credit(index + 1)),
+  const db = database({ cierreCredito: [...Array.from({ length: 501 }, (_, index) => apiCredit(index + 1)),
     credit(900, { financial: "ADDI", localKey: "VENTA:900:ADDI" })] });
   const report = await modules(db.prisma).load("lib/cierre-report.ts").readCierreReport(params("&financier=PAYJOY"), supervisor, true);
   assert.equal(report.providerSync.total, 501);
@@ -294,12 +302,12 @@ test("progreso pagina referencias y el detalle conserva su financiera autorizada
   assert.equal(report.providerSync.status, "EN_COLA");
   assert.equal(report.items.length, 10);
   assert.ok(report.financiers.every((row) => row.name === "PAYJOY"));
-  const reads = db.calls.filter((call) => call.table === "cierreCredito" && call.args?.take === 500);
+  const reads = db.calls.filter((call) => call.table === "cierreCredito" && call.args?.take === 500 && call.args?.select);
   assert.equal(reads.length, 2);
 }));
 
 test("día, semana, mes y rango históricos del servidor no importan ni llaman proveedores", async () => {
-  const db = database({ cierreCredito: [credit(1, { effectiveAt: new Date("2024-02-29T23:00:00Z") })] });
+  const db = database({ cierreCredito: [apiCredit(1, { effectiveAt: new Date("2024-02-29T23:00:00Z") })] });
   const fixture = modules(db.prisma);
   const { readCierreReport } = fixture.load("lib/cierre-report.ts");
   const original = globalThis.fetch;
@@ -323,7 +331,7 @@ test("rutas resumen, detalle y Excel deniegan sin sesión o sede ajena", async (
 });
 
 test("Excel real incluye todos los resultados autorizados, pesos completos y totales parciales", async () => {
-  const db = database({ cierreCredito: [...Array.from({ length: 23 }, (_, index) => credit(index + 1)), credit(99, { sedeId: 2, customerName: "Privado" })] });
+  const db = database({ cierreCredito: [...Array.from({ length: 23 }, (_, index) => apiCredit(index + 1)), apiCredit(99, { sedeId: 2, customerName: "Privado" })] });
   const response = await modules(db.prisma).load("app/api/cierre/export/route.ts").GET(new Request("https://conectamos.test/api/cierre/export?mode=month&month=2026-10&page=2"));
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /spreadsheetml/);

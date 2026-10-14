@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
 import { DashboardSidebar, type NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
-import type { CierreDetail, CierreFilters, CierreFinancier, CierreProviderSync, CierreReport, PeriodMode } from "./types";
+import type { CierreDetail, CierreFilters, CierreFinancier, CierreProviderSync, CierreReconciliation, CierreReport, PeriodMode } from "./types";
 import styles from "./cierre.module.css";
 
 const count = (value: number | null) => value === null ? "Sin confirmar" : value.toLocaleString("es-CO");
@@ -84,6 +84,36 @@ function sourceCoverage(financier: CierreFinancier) {
     return status === "CONSULTANDO" ? "Consulta en curso" : status === "PAUSADA" ? "En pausa" : status === "DETENIDA" ? "Sin actividad reciente" : "En cola";
   }
   return financier.coverageLabel || (financier.complete ? "Confirmado" : "Cobertura parcial");
+}
+
+function totalSource(financier: CierreFinancier) {
+  if (!financier.reconciliation) return financier.source;
+  const value = financier.reconciliation;
+  return `Fuente del total: ${value.basis === "PAYJOY_API" ? `PAYJOY${value.daysReviewed < value.totalDays ? " · consulta pendiente" : ""}` : "CONECTAMOS · consulta PAYJOY pendiente"}`;
+}
+
+function Reconciliation({ value }: { value: CierreReconciliation }) {
+  const usesPayjoy = value.basis === "PAYJOY_API";
+  const pendingDays = value.daysReviewed < value.totalDays;
+  const partialApi = pendingDays || !usesPayjoy;
+  const knownApiUnits = value.api.units === 0 ? null : value.api.units;
+  const knownApiAmount = value.api.units === 0 ? null : value.api.amount;
+  const unknownUnlinked = value.unlinkedApi.units === 0 && (partialApi || knownApiUnits === null);
+  return <section className={styles.reconciliation} aria-label="Conciliación PAYJOY y CONECTAMOS">
+    <div className={styles.reconciliationHeading}><h3>Fuente del total: {usesPayjoy ? "PAYJOY" : "CONECTAMOS"}</h3><span>{usesPayjoy ? `Créditos recibidos de PAYJOY, sin duplicar${pendingDays ? " · consulta pendiente" : ""}` : "Consulta PAYJOY pendiente"}</span></div>
+    <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Comparación del periodo">
+      <table className={styles.reconciliationTable}><thead><tr><th scope="col">Fuente</th><th scope="col">Unidades</th><th scope="col">Valor de los créditos</th></tr></thead><tbody>
+        <tr><th scope="row">PAYJOY{partialApi && <small>Recibido hasta ahora</small>}</th><td>{count(knownApiUnits)}</td><td>{pesos(knownApiAmount)}</td></tr>
+        <tr><th scope="row">CONECTAMOS</th><td>{count(value.local.units)}</td><td>{pesos(value.local.amount)}</td></tr>
+        <tr className={styles.reconciliationDelta}><th scope="row">Diferencia<small>PAYJOY − CONECTAMOS{partialApi && " · provisional"}</small></th><td>{knownApiUnits === null ? "Sin confirmar" : `${value.delta.units > 0 ? "+" : ""}${count(value.delta.units)}`}</td><td>{knownApiUnits === null ? "Sin confirmar" : `${value.delta.amount > 0 ? "+" : ""}${pesos(value.delta.amount)}`}</td></tr>
+      </tbody></table>
+    </div>
+    <dl className={styles.reconciliationPending}>
+      <div><dt>PAYJOY sin vínculo local</dt><dd>{count(unknownUnlinked ? null : value.unlinkedApi.units)} · {pesos(unknownUnlinked ? null : value.unlinkedApi.amount)}</dd><span>{usesPayjoy ? "Los recibidos ya están incluidos en el total PAYJOY." : "Se muestran como información recibida de PAYJOY."}</span></div>
+      <div><dt>Locales sin confirmación PAYJOY</dt><dd>{count(value.unmatchedLocal.units)} · {pesos(value.unmatchedLocal.amount)}</dd><span>{usesPayjoy ? "No se agregan al total PAYJOY." : "Incluidos en el total confirmado de CONECTAMOS."}</span></div>
+    </dl>
+    <p className={styles.reconciliationNote}>{count(value.daysReviewed)} de {count(value.totalDays)} días consultados · cobertura parcial. Las fuentes se comparan; sus valores no se suman.</p>
+  </section>;
 }
 
 function ProviderActivity({ sync, compact = false }: { sync: CierreProviderSync; compact?: boolean }) {
@@ -343,7 +373,7 @@ export default function CierreWorkspace({ today, user }: {
           {loadingSales ? <span>{syncMessage} El cierre se actualiza automáticamente.</span> : <span>{pending ? providerProgress(report.providerSync) : "Créditos confirmados en las fuentes disponibles."}{syncingProviders && " Se actualiza automáticamente."}</span>}
           {noLoadedCredits && pending && <span>{loadingSales ? "Todavía no hay créditos cargados; los totales aparecerán a medida que avance la carga." : "No hay créditos confirmados en las fuentes disponibles para este periodo."}</span>}
         </div><details className={styles.sources}><summary><DashboardIcon name="database" className="h-4 w-4" />Fuentes y cobertura<DashboardIcon name="chevron" className="h-4 w-4" /></summary><div className={styles.sourceDetails}>{report.financiers.map((financier) => <div key={financier.key}>
-          <div className={styles.sourceHeading}><strong>{financier.name}</strong><span>{sourceCoverage(financier)}</span></div><p>{financier.source}</p>
+          <div className={styles.sourceHeading}><strong>{financier.name}</strong><span>{sourceCoverage(financier)}</span></div><p>{totalSource(financier)}</p>
           {financier.providerSync && <><p>{providerProgress(financier.providerSync)}</p><p>{count(financier.providerSync.consulted ?? financier.providerSync.reviewed)} de {count(financier.providerSync.total)} referencias consultadas · {count(financier.providerSync.linked ?? null)} vinculadas</p><ProviderReasons sync={financier.providerSync} /></>}
           {financier.limitation && <p className={styles.sourceLimitation}>{financier.limitation}</p>}
         </div>)}</div></details></div>}
@@ -353,7 +383,7 @@ export default function CierreWorkspace({ today, user }: {
           <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Consolidado por financiera">
             <table className={styles.table}><thead><tr><th scope="col">Financiera</th><th scope="col">Unidades de créditos</th><th scope="col">Valor de los créditos</th></tr></thead><tbody>
               {loading ? <tr><td colSpan={3} className={styles.empty} role="status">Cargando créditos registrados…</td></tr> : report?.financiers.length ? report.financiers.map((financier) => <tr key={financier.key}>
-                <th scope="row"><button type="button" className={styles.financierButton} onClick={(event) => openDetail(financier, event.currentTarget)} aria-haspopup="dialog"><span className={styles.financierAvatar} aria-hidden="true">{financier.name.replace(/[^A-Z]/gi, "").slice(0, 2)}</span><span className={styles.financierCopy}><span className={styles.financierName}><strong>{financier.name}</strong><span className={`${styles.rowStatus} ${financier.complete ? styles.rowComplete : styles.rowPending}`}>{sourceCoverage(financier)}</span></span><span className={styles.source}>{financier.source}</span>
+                <th scope="row"><button type="button" className={styles.financierButton} onClick={(event) => openDetail(financier, event.currentTarget)} aria-haspopup="dialog"><span className={styles.financierAvatar} aria-hidden="true">{financier.name.replace(/[^A-Z]/gi, "").slice(0, 2)}</span><span className={styles.financierCopy}><span className={styles.financierName}><strong>{financier.name}</strong><span className={`${styles.rowStatus} ${financier.complete ? styles.rowComplete : styles.rowPending}`}>{sourceCoverage(financier)}</span></span><span className={styles.source}>{totalSource(financier)}</span>
                   {financier.providerSync?.enabled && <span className={styles.source}>{count(financier.providerSync.consulted ?? financier.providerSync.reviewed)} consultadas · {count(financier.providerSync.linked ?? null)} vinculadas</span>}
                 </span><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button></th>
                 <td><strong className={financier.units === null ? styles.unknownValue : styles.unitsValue}>{count(financier.units)}</strong></td>
@@ -369,6 +399,7 @@ export default function CierreWorkspace({ today, user }: {
     {selected && report && <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="detail-title" aria-describedby="detail-context" onCancel={(event) => { event.preventDefault(); closeDetail(); }} onClose={() => { setSelected(null); triggerRef.current?.focus({ preventScroll: true }); }}>
       <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Detalle de créditos</p><h2 id="detail-title">{selected.name}</h2><p id="detail-context">{report.period.label} · {report.scope.label}</p></div><button type="button" className={styles.closeButton} aria-label="Cerrar detalle" onClick={closeDetail} autoFocus><DashboardIcon name="close" /></button></div>
       <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detail?.amount ?? currentFinancier?.amount ?? null)}</strong></span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} label={currentFinancier ? sourceCoverage(currentFinancier) : undefined} /></div>
+      {currentFinancier?.reconciliation && <Reconciliation value={currentFinancier.reconciliation} />}
       {currentFinancier?.providerSync?.enabled && <ProviderActivity sync={currentFinancier.providerSync} compact />}
       {(loadingSales || syncingProviders || detailRefreshing) && <p className={styles.detailProgress} role="status">{detailRefreshing ? "Actualizando el listado de créditos…" : `${loadingSales ? syncMessage : providerProgress(currentFinancier?.providerSync)} El listado se actualiza automáticamente.`}</p>}
       {detailError && <div className={styles.error} role="alert"><p>{detail && "No se pudo actualizar el detalle. Se conserva el último listado. "}{detailError}</p><button type="button" className={styles.secondaryButton} onClick={() => { setDetailError(""); if (!detail) setDetailLoading(true); setDetailReload((value) => value + 1); }}>Reintentar</button></div>}

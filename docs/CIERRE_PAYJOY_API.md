@@ -22,6 +22,18 @@ Los identificadores y fechas permiten reprocesar días sin duplicar créditos. L
 
 ## Límites y cobertura
 
+### Fuente del total y conciliación local
+
+El cierre distingue la existencia de un crédito efectivo en PAYJOY de su vínculo con una venta de CONECTAMOS. Una observación de `finance` con ID estable, moneda COP, capital y fecha efectivos no deja de ser un crédito porque falte la venta local. Tampoco se suma como otro crédito cuando ya está vinculada.
+
+El total de PAYJOY, su detalle y la exportación utilizan una única selección de observaciones efectivas guardadas de la API, deduplicadas por financiera y número del crédito. Se excluyen anulaciones, reversos, rechazos, estados sin confirmar y anulaciones locales conservadas. Los registros locales sin confirmar se muestran por separado para conciliación y no se suman otra vez. Mientras haya días pendientes, el reporte indica que la lectura de PAYJOY es parcial; nunca sustituye el total de la financiera por las ventas locales. Sin créditos API confirmados, el importe queda sin confirmar en lugar de declarar cero.
+
+El detalle compara créditos e importes de ambas fuentes y distingue los créditos API sin venta vinculada de las ventas locales sin confirmación API. Una diferencia neta de cuatro créditos no demuestra que existan sólo cuatro registros por revisar: puede haber discrepancias en ambos sentidos. El Excel incluye la misma comparación y una hoja de ventas locales pendientes, sin agregarlas al total API.
+
+Las observaciones sin sede comprobada sólo se incluyen en el consolidado global del administrador, con sede sin vincular. Los filtros y usuarios de sede no reciben esos registros ni los datos de otras sedes. No se asigna una sede por semejanza del nombre del comercio ni se vinculan préstamos por cédula o IMEI únicamente.
+
+Esta selección se realiza sobre la base local y no añade consultas a proveedores al abrir, filtrar o exportar. Los datos originales y la trazabilidad se conservan; el reporte no reescribe ni fuerza sus importes para igualar una cifra externa.
+
 La documentación pública revisada no ofrece un máximo numérico de rango, filas, solicitudes por minuto, retención histórica ni un contrato de paginación verificable. Tampoco demuestra cómo se representan todas las anulaciones. Dividir el trabajo por día y espaciar las lecturas es una política conservadora de CONECTAMOS, no una cuota contractual declarada por PAYJOY.
 
 Por ello, todos los resultados conservan `complete: false`, incluso una lista vacía válida. Un día leído no certifica cobertura íntegra del periodo ni presencia de todos los reversos. El histórico disponible es el que la cuenta efectivamente devuelva y que se haya guardado; no se promete una fecha inicial. La sincronización del día actual requiere revisiones posteriores porque aún pueden aparecer eventos.

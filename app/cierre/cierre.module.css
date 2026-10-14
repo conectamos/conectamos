@@ -133,6 +133,23 @@
 .detailSummary { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 28px; margin: 24px 0 20px; padding: 16px 0; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
 .detailSummary strong { font-size: 19px; font-weight: 800; }
 .detailSummary > span:last-child { margin-left: auto; }
+.reconciliation { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; }
+.reconciliationHeading { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; margin-bottom: 12px; }
+.reconciliationHeading h3 { color: #334155; font-size: 14px; font-weight: 700; }
+.reconciliationHeading > span { color: #64748b; font-size: 12px; }
+.reconciliationTable { width: 100%; min-width: 320px; border-collapse: collapse; font-size: 13px; }
+.reconciliationTable th, .reconciliationTable td { padding: 9px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reconciliationTable th:first-child { width: 45%; text-align: left; white-space: normal; }
+.reconciliationTable thead th { color: #64748b; background: #f8fafc; font-size: 12px; font-weight: 600; }
+.reconciliationTable tbody th { font-weight: 600; }
+.reconciliationTable small { display: block; margin-top: 3px; color: #64748b; font-size: 12px; font-weight: 400; line-height: 1.4; }
+.reconciliationDelta { color: #334155; background: #fafbfc; font-weight: 600; }
+.reconciliationPending { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin-top: 14px; }
+.reconciliationPending dt { color: #475569; font-size: 12px; font-weight: 600; }
+.reconciliationPending dd { margin-top: 4px; color: #334155; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.reconciliationPending span { display: block; margin-top: 3px; color: #64748b; font-size: 12px; line-height: 1.5; }
+.reconciliationNote { margin-top: 12px; color: #64748b; font-size: 12px; line-height: 1.5; }
+@media (max-width: 480px) { .reconciliationTable th, .reconciliationTable td { padding: 9px 7px; } .reconciliationTable th:first-child { width: 35%; } .reconciliationPending { grid-template-columns: 1fr; } }
 .detailTable { min-width: 1080px; }
 .detailTable th, .detailTable td { padding: 14px 12px; }
 .detailTable th:not(:first-child), .detailTable td:not(:first-child) { text-align: left; }
