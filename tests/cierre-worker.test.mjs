@@ -282,3 +282,44 @@ test("diagnóstico administrativo muestra lease y gate sin tokens ni mutaciones 
   assert.equal(db.tables.cierreSyncEstado.find((row) => row.key === "WORKER").lockToken, "secret-lease");
   assert.deepEqual(await sync.runCierreSyncBatch(), { busy: true });
 });
+
+// Full history replaces the former sale-date crop without increasing traffic.
+test("SUMAS recarga el rango prioritario una sola vez, reanuda cursor y conserva errores y gate", async (t) => {
+  setup(t);
+  const from = process.env.CIERRE_PRIORITY_FROM, to = process.env.CIERRE_PRIORITY_TO;
+  process.env.CIERRE_PRIORITY_FROM = "2026-09-01";
+  process.env.CIERRE_PRIORITY_TO = "2026-09-30";
+  t.after(() => {
+    if (from === undefined) delete process.env.CIERRE_PRIORITY_FROM; else process.env.CIERRE_PRIORITY_FROM = from;
+    if (to === undefined) delete process.env.CIERRE_PRIORITY_TO; else process.env.CIERRE_PRIORITY_TO = to;
+  });
+  const date = new Date("2026-09-15T18:00:00Z"), future = new Date("2026-10-30T12:00:00Z");
+  const rows = Array.from({ length: 501 }, (_, index) => credit(`s-${String(index).padStart(4, "0")}`, {
+    financial: "SUMASPAY", localKey: `VENTA:${index}:SUMASPAY`, effectiveAt: date,
+  }));
+  const jobs = rows.map((row, index) => localJob(index, "SUMASPAY", {
+    state: index === 0 ? "ERROR" : "REVISADO", lastSuccess: now, nextAttempt: future,
+  }));
+  const db = database({ cierreCredito: [...rows, credit("outside", { financial: "SUMASPAY", localKey: "VENTA:outside:SUMASPAY" })],
+    cierreSyncTrabajo: [...jobs, localJob("outside", "SUMASPAY", { state: "REVISADO", nextAttempt: future })],
+    venta: rows.map((row) => ({ id: row.ventaId })),
+    cierreSyncEstado: [{ key: "LOCAL", initialized: true }, { key: "PROVIDER_RATE", lockedUntil: future, lockToken: "SUMASPAY" }],
+  });
+  let calls = 0;
+  const options = { provider: async () => { calls++; return batch(); }, periodProvider: async () => { calls++; return batch(); } };
+  await modules(db.prisma, options).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  const marker = db.tables.cierreSyncEstado.find((row) => row.key === "SUMAS_HISTORY_V2:2026-09-01:2026-09-30");
+  assert.equal(marker.initialized, false);
+  assert.equal(db.tables.cierreSyncTrabajo.filter((job) => job.financial === "SUMASPAY" && job.state === "PENDIENTE").length, 499);
+  await modules(db.prisma, options).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(marker.initialized, true);
+  assert.equal(db.tables.cierreSyncTrabajo.filter((job) => job.financial === "SUMASPAY" && job.state === "PENDIENTE").length, 500);
+  assert.equal(jobs[0].state, "ERROR");
+  assert.equal(jobs[0].nextAttempt, future);
+  assert.equal(jobs[1].lastSuccess, now, "histórico de consulta previa permanece");
+  assert.equal(db.tables.cierreSyncTrabajo.find((job) => job.key === "VENTA:outside:SUMASPAY").state, "REVISADO");
+  jobs[1].state = "REVISADO"; jobs[1].nextAttempt = future;
+  await modules(db.prisma, options).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(jobs[1].state, "REVISADO", "reiniciar no invalida referencias ya releídas");
+  assert.equal(calls, 0, "el backfill sólo encola; nunca salta el límite compartido");
+});

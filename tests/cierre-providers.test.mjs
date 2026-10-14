@@ -182,18 +182,40 @@ test("el trabajador recibe un solo trabajo y un error no se transforma en period
   await assert.rejects(consultarLoteProveedorCierre(request, readers({ sumas: async () => { throw new Error("HTTP 429"); } })), /HTTP 429/);
 });
 
-test("un histórico leído con éxito sigue parcial y filtra por fecha efectiva Bogotá", async () => {
-  let count = 0;
-  const result = await consultarLoteProveedorCierre({ financiera: "SUMASPAY", fechaDesde: day, fechaHasta: day, referencias: [reference] }, readers({
-    sumas: async () => { count++; return source([
+test("SUMASPAY conserva el historial completo aun con un ID vinculado y otras fechas", async () => {
+  const calls = [];
+  const result = await consultarLoteProveedorCierre({ financiera: "SUMASPAY", fechaDesde: day, fechaHasta: day,
+    referencias: [{ ...reference, providerId: "IN" }] }, readers({
+    sumas: async (...args) => { calls.push(args); return source([
       sumas({ accountNo: "PREV", loanDate: "2026-07-25T04:59:59Z" }),
       sumas({ accountNo: "IN", loanDate: "2026-07-26T04:59:59Z" }),
-      sumas({ accountNo: "NEXT", loanDate: "2026-07-26T05:00:00Z" }),
+      sumas({ accountNo: "NEXT", loanDate: "2026-09-26T05:00:00Z" }),
+      sumas({ accountNo: "REVERSE", loanDate: "2026-06-01", status: "REVERSED" }),
+      sumas({ accountNo: "CANCELLED", loanDate: "2026-06-02", status: "CANCELLED" }),
+      sumas({ accountNo: "OTHER-DOCUMENT", documento: "7654321" }),
+      sumas({ accountNo: "OTHER-STORE", point_credit_name: "OTRO COMERCIO" }),
+      sumas({ accountNo: undefined }),
     ]); },
   }));
-  assert.equal(count, 1);
+  assert.deepEqual(calls, [["1234567"]]);
   assert.equal(result.complete, false);
-  assert.deepEqual(result.credits.map((item) => item.providerId), ["IN"]);
+  assert.equal(result.outcome, "OBSERVED");
+  assert.deepEqual(result.credits.map((item) => item.providerId), ["PREV", "IN", "NEXT", "REVERSE", "CANCELLED"]);
+  assert.equal(result.credits[2].fechaEfectiva.toISOString(), "2026-09-26T05:00:00.000Z");
+  assert.deepEqual(result.credits.slice(3).map((item) => item.estado), ["REVERSADO", "ANULADO"]);
+});
+
+test("ADDI y PAYJOY conservan el filtro de fechas Bogotá del trabajo por referencia", async () => {
+  const times = ["2026-07-25T04:59:59Z", "2026-07-26T04:59:59Z", "2026-07-26T05:00:00Z"];
+  const ids = ["PREV", "IN", "NEXT"];
+  for (const financiera of ["ADDI", "PAYJOY"]) {
+    const result = await consultarLoteProveedorCierre({ financiera, fechaDesde: day, fechaHasta: day, referencias: [reference] }, readers({
+      addi: async () => source(times.map((transactionDate, index) => addi({ orderId: ids[index], transactionDate }))),
+      payjoy: async () => ({ valid: true, transactions: times.map((time, index) => finance(ids[index], { time: Date.parse(time) / 1000 })) }),
+    }));
+    assert.deepEqual(result.credits.map((item) => item.providerId), ["IN"], financiera);
+    assert.equal(result.complete, false);
+  }
 });
 
 test("no se infiere la sede del cliente ni se persiste el payload completo", () => {

@@ -524,14 +524,21 @@ export async function consultarLoteProveedorCierre(
   } else {
     const doc = digits(reference.documento);
     if (!/^\d{5,15}$/.test(doc)) return { credits: [], complete: false, outcome: "MISSING_REFERENCE", limitation: "Documento pendiente para consultar el historial del crédito." };
-    const payloads = request.financiera === "SUMASPAY" ? await readers.sumas(doc, reference.providerId)
+    // The history already contains this customer's other loans and reversals.
+    // A linked credit must not narrow the same read to one loan-detail request.
+    const payloads = request.financiera === "SUMASPAY" ? await readers.sumas(doc)
       : await readers.addi(doc, request.fechaDesde, request.fechaHasta);
     credits = request.financiera === "SUMASPAY" ? normalizeSumasCierre(payloads, reference) : normalizeAddiCierre(payloads, reference);
     emptyResponse = payloads.length > 0 && payloads.every((payload) => Array.isArray(payload.data) && payload.data.length === 0);
   }
-  const end = hasta.getTime() + 86_400_000;
-  credits = credits.filter((credit) => credit.providerId === reference.providerId ||
-    !credit.fechaEfectiva || (credit.fechaEfectiva >= desde && credit.fechaEfectiva.getTime() < end));
+  // Persist every verified SUMAS observation returned by the history, including
+  // credits outside the local sale's dates. Report filters operate on stored
+  // provider dates; retaining these facts does not issue additional requests.
+  if (request.financiera !== "SUMASPAY") {
+    const end = hasta.getTime() + 86_400_000;
+    credits = credits.filter((credit) => credit.providerId === reference.providerId ||
+      !credit.fechaEfectiva || (credit.fechaEfectiva >= desde && credit.fechaEfectiva.getTime() < end));
+  }
   // Request success only proves that this reference was read. Do not turn an
   // empty/incomplete response, capped list or missing branch mapping into zero.
   const result = observedBatch(credits, emptyResponse, capability.limitation);

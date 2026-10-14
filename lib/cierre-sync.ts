@@ -61,6 +61,33 @@ async function seedPayJoyDays() {
   return days.length;
 }
 
+// The first SUMAS reader discarded loans outside the local sale's date window.
+// Revisit the configured priority range once with the full-history reader. The
+// durable cursor survives restarts; failed jobs retain their backoff and the
+// shared provider gate still applies to every actual request.
+async function seedSumasHistoryRescan() {
+  const priority = getCierrePriority();
+  if (!priority) return 0;
+  const key = `SUMAS_HISTORY_V2:${priority.from}:${priority.to}`;
+  return prisma.$transaction(async (tx) => {
+    const state = await tx.cierreSyncEstado.findUnique({ where: { key } });
+    if (state?.initialized) return 0;
+    const rows = await tx.cierreCredito.findMany({
+      where: { financial: "SUMASPAY", localKey: { not: null },
+        effectiveAt: { gte: priority.start, lt: priority.end },
+        ...(state?.lockToken ? { id: { gt: state.lockToken } } : {}) },
+      orderBy: { id: "asc" }, take: 500, select: { id: true, localKey: true },
+    });
+    const changed = rows.length ? await tx.cierreSyncTrabajo.updateMany({
+      where: { financial: "SUMASPAY", localKey: { in: rows.map((row) => row.localKey!) }, state: "REVISADO" },
+      data: { state: "PENDIENTE", nextAttempt: new Date(), limitation: "Recarga del historial completo de créditos de la financiera pendiente." },
+    }) : { count: 0 };
+    const progress = { initialized: rows.length < 500, lockToken: rows.at(-1)?.id || state?.lockToken || null };
+    await tx.cierreSyncEstado.upsert({ where: { key }, create: { key, ...progress }, update: progress });
+    return changed.count;
+  }, { timeout: 20_000 });
+}
+
 async function acquireProviderRate(financial: string) {
   const now = new Date();
   await prisma.cierreSyncEstado.upsert({ where: { key: "PROVIDER_RATE" }, create: { key: "PROVIDER_RATE" }, update: {} });
@@ -144,6 +171,7 @@ async function persistError(job: CierreSyncTrabajo, attempt: CierreSyncTrabajo, 
 
 async function syncOneProviderReference() {
   const seeded = await seedPayJoyDays();
+  await seedSumasHistoryRescan();
   const rate = await prisma.cierreSyncEstado.findUnique({ where: { key: "PROVIDER_RATE" }, select: { lockToken: true } });
   const financials = ["SUMASPAY", "ADDI", "PAYJOY"];
   const start = (financials.indexOf(rate?.lockToken || "") + 1) % financials.length;
