@@ -4,6 +4,7 @@ import { getDateKeyInColombia, shiftDateKey } from "@/lib/credit-date-utils";
 import { drainCierreLocalQueue } from "@/lib/cierre-store";
 import { reconcileCierreCredits } from "@/lib/cierre-reconcile";
 import { getCierrePriority } from "@/lib/cierre-priority";
+import { readCierrePayJoyAudit } from "@/lib/cierre-payjoy-audit";
 import { aggregateCierreProviderSync, readCierreProviderProgress } from "@/lib/cierre-progress";
 import { classifyCierreProviderError, consultarLoteProveedorCierre, consultarPeriodoPayJoyCierre,
   type CierreProvider, type CierreProviderBatch } from "@/lib/cierre-providers";
@@ -261,8 +262,13 @@ export async function readCierrePriorityProgress() {
       rateUntil: rate?.lockedUntil?.toISOString() ?? null,
     };
     const sources = await readCierreProviderProgress(tx, { sedeId: null, start: priority.start, end: priority.end, financial: null });
+    const payjoy = await readCierrePayJoyAudit(tx, { start: priority.start, end: priority.end });
+    // Keep the heartbeat below log truncation limits. Per-day details remain
+    // available to administrative callers of the read-only audit helper.
+    const payjoyAudit = { complete: payjoy.complete, totals: payjoy.totals, duplicateProviderRows: payjoy.duplicateProviderRows,
+      unlinkedMerchants: payjoy.unlinkedMerchants, byStateSource: payjoy.byStateSource, unlinkedReasons: payjoy.unlinkedReasons };
     return { priority: { from: priority.from, to: priority.to }, runtime,
-      totals: aggregateCierreProviderSync([...sources.values()]), sources: Object.fromEntries(sources) };
+      totals: aggregateCierreProviderSync([...sources.values()]), sources: Object.fromEntries(sources), payjoyAudit };
   }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
 }
 
