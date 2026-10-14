@@ -159,7 +159,7 @@ test("progreso de proveedores une referencias del periodo y sede sin exponer tra
     lastSuccessAt: "2026-10-13T13:00:00.000Z",
   });
   assert.equal(report.providerSync.total, 4);
-  assert.equal(source.coverageLabel, "Conciliación con errores");
+  assert.equal(source.coverageLabel, "Consultas con errores");
   assert.equal(report.financiers.find((row) => row.name === "SISTECREDITO").providerSync, null);
   for (const job of db.tables.cierreSyncTrabajo.slice(0, 4)) {
     job.state = "REVISADO";
@@ -316,7 +316,7 @@ test("día, semana, mes y rango históricos del servidor no importan ni llaman p
     for (const query of ["mode=day&date=2024-02-29", "mode=week&date=2024-03-03", "mode=month&month=2024-02", "mode=range&from=2024-02-28&to=2024-02-29"]) {
       assert.equal((await readCierreReport(new URLSearchParams(query), supervisor)).total, 1);
     }
-    assert.ok(!fixture.imports.some((id) => /provider|consulta|cierre-sync|cierre-store/.test(id)));
+    assert.ok(!fixture.imports.some((id) => /cierre-providers|payjoy-retail|consulta|cierre-sync|cierre-store/.test(id)));
   } finally { globalThis.fetch = original; }
 });
 
@@ -467,4 +467,12 @@ test("lease impide dos workers y secreto protege endpoint de sincronización", a
     assert.equal((await route.POST(new Request("https://conectamos.test/api/cierre/sync", { method: "POST" }))).status, 401);
     assert.equal((await route.POST(new Request("https://conectamos.test/api/cierre/sync", { method: "POST", headers: { authorization: "Bearer wrong" } }))).status, 401);
   } finally { if (previous === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = previous; }
+});
+
+test("última actualización global corresponde a datos recibidos, no al latido de carga local", async () => {
+  const actual = new Date("2026-10-10T14:00:00Z");
+  const db = database({ cierreCredito: [credit(1, { financial: "SISTECREDITO", syncedAt: actual })],
+    cierreSyncEstado: [{ key: "LOCAL", initialized: true, lastSuccess: new Date("2026-10-14T15:00:00Z") }] });
+  const report = await modules(db.prisma).load("lib/cierre-report.ts").readCierreReport(params(), admin);
+  assert.equal(report.lastUpdatedAt, actual.toISOString());
 });

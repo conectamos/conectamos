@@ -3,10 +3,35 @@ import prisma from "@/lib/prisma";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { projectLocalSaleCredits } from "@/lib/cierre-domain";
 import { getDateKeyInColombia } from "@/lib/credit-date-utils";
+import { getEffectivePayJoyObservation } from "@/lib/cierre-payjoy-audit";
+import { getEffectiveSumasObservation } from "@/lib/cierre-sumas-audit";
+import { hasCierreProviderObservation, readCierreProviderObservation, makeCierreProviderObservation,
+  mergeCierreProviderObservations, withCierreProviderObservation, negativeCierreProviderState,
+  type CierreProviderObservation } from "@/lib/cierre-provider-evidence";
 
 type Tx = Prisma.TransactionClient;
 type CreditData = Omit<Prisma.CierreCreditoUncheckedCreateInput, "id">;
 const terminal = new Set(["ANULADO", "REVERSADO", "RECHAZADO"]);
+
+export function getCierreProviderObservationForRow(row: {
+  financial: string; providerCreditId: string | null; status: string; source: string;
+  evidence: unknown; providerUpdatedAt?: Date | null;
+}): CierreProviderObservation | null {
+  if (!row.providerCreditId) return null;
+  if (hasCierreProviderObservation(row.evidence)) return readCierreProviderObservation(row.evidence, row.financial, row.providerCreditId);
+  const raw = row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence) ? row.evidence as Record<string, unknown> : {};
+  // Never promote a reversal belonging to a different provider identity.
+  if ((raw.providerId != null && raw.providerId !== row.providerCreditId) ||
+      (row.financial === "SUMASPAY" && raw.providerId !== row.providerCreditId)) return null;
+  const fact = row.financial === "PAYJOY" ? getEffectivePayJoyObservation(row)
+    : row.financial === "SUMASPAY" ? getEffectiveSumasObservation(row) : null;
+  const negative = negativeCierreProviderState(raw.providerStatus) ||
+    (row.source.includes("API") && raw.localTombstone !== true && terminal.has(row.status) ? row.status as CierreProviderObservation["state"] : null);
+  if (!fact && !negative) return null;
+  return makeCierreProviderObservation({ financial: row.financial, providerId: row.providerCreditId,
+    state: negative || "EFECTIVO", amount: fact?.amount ?? null, effectiveAt: fact?.effectiveAt ?? null,
+    sourceUpdatedAt: row.providerUpdatedAt, raw });
+}
 
 function localStateEvidence(evidence: unknown, reason: string | null, status: string): Prisma.InputJsonValue {
   const value = evidence && typeof evidence === "object" && !Array.isArray(evidence) ? { ...evidence } as Record<string, unknown> : {};
@@ -27,7 +52,7 @@ function businessSnapshot(value: Record<string, unknown>) {
 
 // Both observations and updates are retained, while retries with the exact same
 // business data produce no additional events. No identity uses the customer's ID.
-export async function saveCierreCredit(tx: Tx, data: CreditData) {
+export async function saveCierreCredit(tx: Tx, data: CreditData, observation: CierreProviderObservation | null = null) {
   const providerMatch = data.providerCreditId ? await tx.cierreCredito.findUnique({
     where: { financial_providerCreditId: { financial: data.financial, providerCreditId: data.providerCreditId } },
   }) : null;
@@ -41,6 +66,16 @@ export async function saveCierreCredit(tx: Tx, data: CreditData) {
     } });
   }
   const existing = providerMatch || localMatch;
+  const retained = existing ? getCierreProviderObservationForRow(existing) : null;
+  const providerObservation = mergeCierreProviderObservations(retained, observation);
+  if (providerObservation) data = { ...data, evidence: json(withCierreProviderObservation(data.evidence ?? existing?.evidence, providerObservation)) };
+  else if (existing && hasCierreProviderObservation(existing.evidence)) {
+    // A malformed/unsupported envelope stays fail-closed during a local edit.
+    // Only a fresh normalized provider observation may replace it.
+    const old = existing.evidence as Record<string, unknown>;
+    const incoming = data.evidence && typeof data.evidence === "object" && !Array.isArray(data.evidence) ? data.evidence : {};
+    data = { ...data, evidence: json({ ...incoming, providerObservation: old.providerObservation }) };
+  }
   const business = businessSnapshot({ ...existing, ...data });
   const changed = !existing || JSON.stringify(businessSnapshot(existing)) !== JSON.stringify(business);
   const hash = createHash("sha256").update(`${existing?.updatedAt.toISOString() || "new"}:${JSON.stringify(business)}`).digest("hex");

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Decimal } from "@prisma/client/runtime/client";
 import { modules, database, credit } from "./cierre-test-helpers.mjs";
 
 const effectiveAt = new Date("2026-09-15T18:00:00.000Z");
@@ -122,4 +123,16 @@ test("auditoría pagina sólo base local, deduplica identidad y no certifica cob
   assert.equal(pure.result().duplicateProviderRows, 1);
   assert.equal(result.complete, false);
   assert.equal((await api.readCierreSumasAudit(database().prisma, scope)).complete, false);
+});
+
+test("diagnóstico conserva Decimal local y muestra estados crudos sólo mediante lista cerrada", () => {
+  const audit = load().createCierreSumasAudit(scope);
+  audit.add(observed(1, { amount: new Decimal("912345.16"), status: "EFECTIVO", localKey: "local-1" }));
+  audit.add(observed(2, {}, { providerStatus: "CANCELLED", principal: 123456 }));
+  audit.add(observed(3, {}, { providerStatus: "private-free-status", principal: 654321 }));
+  const result = audit.result();
+  assert.equal(result.totals.localEffective.amount, 912345.16);
+  assert.deepEqual(result.rawStatuses.find((row) => row.status === "CANCELLED"), { status: "CANCELLED", units: 1, amount: 123456, missingAmount: 0 });
+  assert.ok(result.rawStatuses.some((row) => row.status === "OTHER"));
+  assert.ok(!JSON.stringify(result).includes("private-free-status"));
 });

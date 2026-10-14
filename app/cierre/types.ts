@@ -18,8 +18,6 @@ export type CierreProviderSync = {
   queued: number;
   reviewed: number;
   consulted?: number;
-  linked?: number;
-  unconfirmed?: number;
   errors: number;
   withoutReference: number;
   lastSuccessAt: string | null;
@@ -32,14 +30,13 @@ export type CierreProviderSync = {
 };
 
 export type CierreReconciliation = {
-  basis: "PAYJOY_API" | "LOCAL";
+  basis: "PAYJOY_API" | "SUMASPAY_API";
+  financial?: "PAYJOY" | "SUMASPAY";
   api: { units: number; amount: number };
-  local: { units: number; amount: number };
-  unlinkedApi: { units: number; amount: number };
-  unmatchedLocal: { units: number; amount: number };
-  daysReviewed: number;
-  totalDays: number;
-  delta: { units: number; amount: number };
+  daysReviewed: number | null;
+  totalDays: number | null;
+  referencesReviewed?: number | null;
+  totalReferences?: number | null;
 };
 
 export type CierreFinancier = {

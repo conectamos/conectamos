@@ -1,5 +1,6 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 import { CIERRE_RECONCILIATION_REASONS } from "@/lib/cierre-reconciliation-reasons";
+import { hasCierreProviderObservation, readCierreProviderObservation } from "@/lib/cierre-provider-evidence";
 
 type Observation = { providerCreditId: string | null; status: string; evidence: unknown };
 type AuditCredit = Observation & {
@@ -8,6 +9,7 @@ type AuditCredit = Observation & {
 type Scope = { start: Date; end: Date };
 type Metric = { units: number; amount: number; missingAmount: number };
 const SOURCES = ["credits-by-client", "loan-detail"] as const;
+const RAW_STATUSES = ["ACTIVE", "ACTIVO", "PAID IN FULL", "PAGADO", "CANCELLED", "CANCELED", "CANCELADO", "CANCELADA", "ANULADO", "ANULADA", "CLOSED", "UNKNOWN"] as const;
 const ledgerStates = ["EFECTIVO", "PENDIENTE", "ANULADO", "REVERSADO", "RECHAZADO", "VINCULADO"];
 const empty = (): Metric => ({ units: 0, amount: 0, missingAmount: 0 });
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -63,6 +65,12 @@ function classify(raw: Record<string, unknown>) {
  * substitutes for the provider's retained principal and effective date.
  */
 export function getEffectiveSumasObservation(row: Observation): { amount: number; effectiveAt: Date } | null {
+  if (row.status === "VINCULADO") return null;
+  if (hasCierreProviderObservation(row.evidence)) {
+    const observation = readCierreProviderObservation(row.evidence, "SUMASPAY", row.providerCreditId);
+    if (!observation || observation.state !== "EFECTIVO") return null;
+    return getEffectiveSumasObservation({ providerCreditId: observation.providerId, status: "EFECTIVO", evidence: observation.raw });
+  }
   if (!row.providerCreditId?.trim() || !["EFECTIVO", "PENDIENTE"].includes(row.status)) return null;
   const raw = object(row.evidence);
   if (raw.providerId !== row.providerCreditId || raw.localTombstone === true || classify(raw).state !== "EFECTIVO") return null;
@@ -82,13 +90,15 @@ export function createCierreSumasAudit(scope?: Scope) {
   const states = new Map<string, { ledgerState: string; source: string; apiState: string; units: number; amount: number; missingAmount: number }>();
   const reasons = new Map<string, Metric>();
   const exclusions = new Map<string, Metric>();
+  const rawStatuses = new Map<string, Metric>();
   const evidenceProof = { EXPLICIT_EFFECTIVE_STATE: empty(), DERIVED_DISBURSEMENT: empty() };
   const seen = new Set<string>();
   let duplicateProviderRows = 0;
   const inScope = (value: Date | null) => !scope || Boolean(value && value >= scope.start && value < scope.end);
   return {
     add(row: AuditCredit) {
-      const raw = object(row.evidence);
+      const retained = readCierreProviderObservation(row.evidence, "SUMASPAY", row.providerCreditId);
+      const raw = retained ? retained.raw : object(row.evidence);
       const api = Boolean(row.providerCreditId && (row.source.includes("API") || SOURCES.some((source) => source === raw.source)));
       const apiDate = date(raw.effectiveDate);
       const localInScope = inScope(row.effectiveAt);
@@ -96,7 +106,7 @@ export function createCierreSumasAudit(scope?: Scope) {
       if (!localInScope && !apiInScope) return;
       if (api && seen.has(row.providerCreditId!)) { duplicateProviderRows++; return; }
       if (api) seen.add(row.providerCreditId!);
-      const localAmount = money(row.amount);
+      const localAmount = row.amount == null ? null : money(Number(row.amount));
       const apiAmount = money(raw.principal);
       const classification = classify(raw);
       const ledgerState = ledgerStates.includes(row.status) ? row.status : "OTRO";
@@ -115,6 +125,10 @@ export function createCierreSumasAudit(scope?: Scope) {
       }
       if (!apiInScope) return;
       add(totals.apiObserved, apiAmount);
+      const rawStatus = normal(raw.providerStatus);
+      const safeStatus = RAW_STATUSES.find((status) => status === rawStatus) || "OTHER";
+      const rawStatusMetric = rawStatuses.get(safeStatus) || empty();
+      add(rawStatusMetric, apiAmount); rawStatuses.set(safeStatus, rawStatusMetric);
       if (reportable) add(totals.apiReportable, reportable.amount);
       if (classification.state === "EFECTIVO") {
         add(totals.apiEffectiveEvidence, apiAmount);
@@ -122,7 +136,8 @@ export function createCierreSumasAudit(scope?: Scope) {
         if (!reportable) add(totals.excludedApiEffectiveEvidence, apiAmount);
       }
       if (!reportable) {
-        const reason = raw.localTombstone === true || !["EFECTIVO", "PENDIENTE"].includes(row.status) ? "LOCAL_TERMINAL_PRESERVED"
+        const reason = retained && ["ANULADO", "REVERSADO", "RECHAZADO"].includes(retained.state) ? "TERMINAL_PROVIDER_STATE"
+          : raw.localTombstone === true || !["EFECTIVO", "PENDIENTE"].includes(row.status) ? "LOCAL_TERMINAL_PRESERVED"
           : raw.providerId !== row.providerCreditId ? "PROVIDER_ID_CONFLICT" : classification.reason || "UNCONFIRMED_STATUS";
         const metric = exclusions.get(reason) || empty(); add(metric, apiAmount); exclusions.set(reason, metric);
       }
@@ -130,7 +145,7 @@ export function createCierreSumasAudit(scope?: Scope) {
         add(totals.apiUnlinked, apiAmount);
         if (classification.state === "EFECTIVO") add(totals.apiUnlinkedEffectiveEvidence, apiAmount);
         if (reportable) add(totals.apiUnlinkedReportable, reportable.amount);
-        const rawReasons = object(raw.cierreDiagnostics).reasons;
+        const rawReasons = object(object(row.evidence).cierreDiagnostics).reasons;
         const classified = Array.isArray(rawReasons) ? CIERRE_RECONCILIATION_REASONS.filter((reason) => rawReasons.includes(reason)) : [];
         for (const reason of classified.length ? classified : ["SIN_MOTIVO_REGISTRADO"]) {
           const metric = reasons.get(reason) || empty(); add(metric, apiAmount); reasons.set(reason, metric);
@@ -140,6 +155,7 @@ export function createCierreSumasAudit(scope?: Scope) {
     result() {
       const asRows = (map: Map<string, Metric>) => [...map].sort(([a], [b]) => a.localeCompare(b)).map(([reason, metric]) => ({ reason, ...metric }));
       return { complete: false, totals, duplicateProviderRows, evidenceProof,
+        rawStatuses: [...rawStatuses].sort(([a], [b]) => a.localeCompare(b)).map(([status, metric]) => ({ status, ...metric })),
         byStateSource: [...states.values()].sort((a, b) => `${a.source}:${a.ledgerState}:${a.apiState}`.localeCompare(`${b.source}:${b.ledgerState}:${b.apiState}`)),
         unlinkedReasons: asRows(reasons), excludedReasons: asRows(exclusions),
       };

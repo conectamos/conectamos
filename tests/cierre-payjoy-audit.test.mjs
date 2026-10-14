@@ -86,8 +86,10 @@ test("reversos, datos faltantes y tombstone local no se mezclan con API efectiva
 });
 
 test("el auditor respeta septiembre Bogotá, ignora otras financieras y deduplica ID API", async () => {
-  const db = database({ cierreCredito: [observed(1), observed(2, 100, { effectiveAt: new Date("2026-09-01T04:59:59Z") }),
-    observed(3, 100, { effectiveAt: scope.end }), observed(4, 100, { financial: "ADDI" })] });
+  const db = database({ cierreCredito: [observed(1), observed(2, 100, { effectiveAt: new Date("2026-09-01T04:59:59Z"),
+    evidence: evidence(100, { effectiveDate: "2026-09-01T04:59:59Z" }) }),
+    observed(3, 100, { effectiveAt: scope.end, evidence: evidence(100, { effectiveDate: scope.end.toISOString() }) }),
+    observed(4, 100, { financial: "ADDI" })] });
   const audit = modules(db.prisma).load("lib/cierre-payjoy-audit.ts");
   const result = await audit.readCierrePayJoyAudit(db.prisma, scope);
   assert.equal(result.totals.apiObserved.units, 1);
@@ -98,6 +100,33 @@ test("el auditor respeta septiembre Bogotá, ignora otras financieras y deduplic
   const empty = await audit.readCierrePayJoyAudit(database().prisma, scope);
   assert.equal(empty.complete, false);
   assert.equal(empty.totals.apiObserved.units, 0);
+});
+
+test("auditoría conserva septiembre API tras edición de fecha local y separa cada periodo", async () => {
+  const db = database({ cierreCredito: [
+    observed(1, 100, { localKey: "VENTA:1:PAYJOY", status: "EFECTIVO", source: "CONECTAMOS + API PAYJOY" }),
+    observed(2, 200, { localKey: "VENTA:2:PAYJOY", status: "EFECTIVO", source: "CONECTAMOS + API PAYJOY",
+      effectiveAt: new Date("2026-09-20T18:00:00Z"), evidence: evidence(200, { effectiveDate: "2026-10-02T18:00:00Z" }) }),
+    credit(3, { effectiveAt, amount: 300 }),
+  ] });
+  const loader = modules(db.prisma);
+  await loader.load("lib/cierre-store.ts").saveCierreCredit(db.prisma, { financial: "PAYJOY", localKey: "VENTA:1:PAYJOY",
+    providerCreditId: "private-credit-1", status: "EFECTIVO", source: "CONECTAMOS",
+    effectiveAt: new Date("2026-10-15T18:00:00Z"), amount: 999, evidence: { reason: "LOCAL_EDIT" } });
+  const audit = loader.load("lib/cierre-payjoy-audit.ts");
+  const result = await audit.readCierrePayJoyAudit(db.prisma, scope);
+  const report = await loader.load("lib/cierre-report.ts").readCierreReport(new URLSearchParams("mode=month&month=2026-09&financier=PAYJOY"), admin, true);
+  assert.deepEqual(result.totals.apiReportable, { units: 1, amount: 100, missingAmount: 0 });
+  assert.deepEqual(report.totals, { units: 1, amount: 100 });
+  assert.deepEqual(result.totals.ledgerEffective, { units: 2, amount: 500, missingAmount: 0 });
+  assert.equal(result.byDay.find((day) => day.date === "2026-09-15").apiEffectiveEvidence.amount, 100);
+  assert.equal(result.byDay.find((day) => day.date === "2026-09-20").apiEffectiveEvidence.units, 0);
+  assert.ok(result.byDay.every((day) => day.date.startsWith("2026-09-")));
+  const october = await audit.readCierrePayJoyAudit(db.prisma, { start: scope.end, end: new Date("2026-11-01T05:00:00Z") });
+  assert.deepEqual(october.totals.apiReportable, { units: 1, amount: 200, missingAmount: 0 });
+  assert.deepEqual(october.totals.ledgerEffective, { units: 1, amount: 999, missingAmount: 0 });
+  assert.equal(october.byDay.find((day) => day.date === "2026-10-02").apiEffectiveEvidence.amount, 200);
+  assert.equal(october.byDay.find((day) => day.date === "2026-10-15").apiEffectiveEvidence.units, 0);
 });
 
 test("hechos API reportables provienen del principal/fecha acreditados y respetan negativos y tombstone", () => {

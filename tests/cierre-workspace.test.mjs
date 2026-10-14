@@ -343,8 +343,8 @@ test("disabled external reconciliation is explicit and does not promise or poll 
   const source = { ...report, providerSync, coverageLabel: "Cobertura parcial", financiers: report.financiers.map((row) => row.key === "ADDI" ? { ...row, providerSync, coverageLabel: "Conciliación desactivada", limitation: providerSync.limitation } : row) };
   const ui = harness({ reports: [source] });
   await ui.settle();
-  assert.match(ui.text(), /Conciliación externa desactivada/);
-  assert.match(ui.text(), /Conciliación desactivada/);
+  assert.match(ui.text(), /Consulta a financieras desactivada/);
+  assert.match(ui.text(), /Consulta desactivada/);
   assert.match(ui.text(), /no ofrece cobertura exhaustiva/);
   assert.doesNotMatch(ui.text(), /se actualiza automáticamente|Se actualiza automáticamente/);
   assert.equal(ui.timers.size, 0);
@@ -380,7 +380,7 @@ const activeProvider = {
   priority: { from: "2026-09-01", to: "2026-09-30", applies: true }, reasons: [],
 };
 
-test("progress separates successful consultations from linked references without claiming complete coverage", async () => {
+test("progress shows actual consultations and errors without local linking counters or complete coverage", async () => {
   const source = { ...report, providerSync: activeProvider };
   const ui = harness({ reports: [source] });
   await ui.settle();
@@ -389,31 +389,38 @@ test("progress separates successful consultations from linked references without
   assert.equal(progress.props.value, 3);
   assert.equal(progress.props.max, 89);
   assert.match(progress.props["aria-valuetext"], /3 de 89 referencias conocidas consultadas/);
-  assert.match(textOf(ui.find("dl")), /Referencias vinculadas0Sin confirmación de la financiera89En cola86/);
+  assert.match(textOf(ui.find("dl")), /Consultas en cola86Consultas con errores0/);
+  assert.doesNotMatch(ui.text(), /vinculad|Sin confirmación de la financiera/);
   assert.match(ui.text(), /En cola: 86 referencias pendientes/);
   assert.doesNotMatch(ui.text(), /Consulta en curso|En conciliación|Periodo completo/);
   assert.match(ui.text(), /Prioridad: 01 de sept de 2026 – 30 de sept de 2026 · incluye este periodo/);
   assert.match(ui.text(), /Última actividad/);
-  assert.match(ui.text(), /Este avance no garantiza cobertura completa/);
+  assert.match(ui.text(), /El avance de consultas no garantiza una cobertura completa/);
   ui.unmount();
 });
 
-test("actual running and paused work updates locally and exposes its scheduled resumption", async () => {
+test("scheduled waiting keeps its next query, real errors and local refresh without implying stopped work", async () => {
   const running = { ...activeProvider, status: "CONSULTANDO", active: { financial: "ADDI", day: "2026-09-15" }, queued: 0 };
-  const paused = { ...activeProvider, status: "PAUSADA", queued: 0, resumeAt: "2026-10-13T13:20:00Z" };
+  const paused = { ...activeProvider, status: "PAUSADA", queued: 0, errors: 2, resumeAt: "2026-10-13T13:20:00Z" };
   const finished = { ...activeProvider, status: "REVISADA_LIMITADA", queued: 0, consulted: 89, linked: 0 };
-  const ui = harness({ reports: [running, paused, finished].map((sync) => ({ ...report, providerSync: sync })) });
+  const ui = harness({ reports: [running, paused, finished].map((sync) => ({
+    ...report, providerSync: sync, financiers: report.financiers.map((row) => row.key === "ADDI" && sync.status === "PAUSADA"
+      ? { ...row, providerSync: sync, coverageLabel: "Consultas en pausa" } : row),
+  })) });
   await ui.settle();
   const appliedUrl = ui.calls[0].url;
   assert.match(ui.text(), /Consulta en curso · ADDI · 15 de sept de 2026/);
   await ui.setControl("Mes", "2025-02");
   await ui.advance(10_000);
-  assert.match(ui.text(), /Consultas en pausa/);
+  assert.match(ui.text(), /Esperando la próxima consulta programada/);
+  assert.match(textOf(ui.find("button", "ADDI")), /En espera/);
+  assert.match(textOf(ui.find("dl")), /Consultas en cola0Consultas con errores2/);
   assert.match(ui.text(), /Próxima reanudación/);
-  assert.doesNotMatch(ui.text(), /Consulta en curso/);
+  assert.ok(ui.nodes().some((node) => node.type === "time" && node.props.dateTime === paused.resumeAt));
+  assert.doesNotMatch(ui.text(), /Consulta en curso|Consultas en pausa|En pausa|Sin actividad reciente/);
   await ui.advance(10_000);
   assert.match(ui.text(), /89 de 89 consultadas/);
-  assert.match(textOf(ui.find("dl")), /Referencias vinculadas0/);
+  assert.match(textOf(ui.find("dl")), /Consultas en cola0Consultas con errores0/);
   assert.doesNotMatch(ui.text(), /Periodo completo|Próxima reanudación/);
   assert.equal(ui.find("progress").props.value, 89);
   assert.equal(ui.timers.size, 0);
@@ -446,19 +453,19 @@ test("an active external scheduler keeps local progress refreshing even when the
   ui.unmount();
 });
 
-test("ADDI explains only server-evidenced response gaps and shows consulted versus linked in its detail", async () => {
-  const addiSync = { ...activeProvider, reasons: ["MISSING_PRINCIPAL", "MISSING_EFFECTIVE_DATE", "MISSING_PRINCIPAL", "PRIVATE_RAW_RESPONSE"] };
+test("ADDI explains only provider response gaps and suppresses local linking observations", async () => {
+  const addiSync = { ...activeProvider, reasons: ["MISSING_PRINCIPAL", "MISSING_EFFECTIVE_DATE", "MISSING_PRINCIPAL", "PRIVATE_RAW_RESPONSE", "NO_LOCAL_MATCH", "AMBIGUOUS_LOCAL_MATCH", "IDENTITY_CONFLICT"] };
   const source = { ...report, providerSync: activeProvider, financiers: report.financiers.map((row) => row.key === "ADDI" ? { ...row, providerSync: addiSync, coverageLabel: "En conciliación" } : row) };
   const ui = harness({ reports: [source] });
   await ui.settle();
-  assert.match(textOf(ui.find("button", "ADDI")), /En cola.*3 consultadas · 0 vinculadas/);
+  assert.match(textOf(ui.find("button", "ADDI")), /En cola.*3 de 89 referencias consultadas/);
   assert.doesNotMatch(ui.text(), /En conciliación|PRIVATE_RAW_RESPONSE/);
   assert.match(textOf(ui.find("details")), /Observaciones de la respuesta.*Falta el importe real del crédito.*Falta la fecha efectiva del crédito/);
   ui.find("button", "ADDI").props.onClick({ currentTarget: { focus() {} } });
   await ui.settle();
   const dialog = textOf(ui.find("dialog"));
   assert.match(dialog, /3 de 89 consultadas/);
-  assert.match(dialog, /Referencias vinculadas0/);
+  assert.doesNotMatch(dialog, /vinculad|venta local|ventas locales|Sin confirmación de la financiera/);
   assert.match(dialog, /Falta el importe real del crédito/);
   assert.match(dialog, /Falta la fecha efectiva del crédito/);
   assert.equal((dialog.match(/Falta el importe real del crédito/g) || []).length, 1);
@@ -494,29 +501,26 @@ function withPayjoyReconciliation(reconciliation, extra = {}) {
   } : row) };
 }
 
-function reconciliationText(ui) {
-  const section = ui.nodes().find((node) => node.type === "section" && node.props["aria-label"] === "Conciliación PAYJOY y CONECTAMOS");
-  assert.ok(section, "PAYJOY comparison must be visible in the open detail");
+function reconciliationText(ui, financial = "PAYJOY") {
+  const section = ui.nodes().find((node) => node.type === "section" && node.props["aria-label"] === `Fuente y cobertura de ${financial}`);
+  assert.ok(section, `${financial} source and coverage must be visible in the open detail`);
   return textOf(section);
 }
 
-test("PAYJOY identifies its total source and compares API versus local without adding unmatched records", async () => {
+test("PAYJOY shows the financial report and source without local comparisons or link counts", async () => {
   const ui = harness({ reports: [withPayjoyReconciliation(payjoyReconciliation)] });
   await ui.settle();
   assert.match(textOf(ui.find("button", "PAYJOY")), /Fuente del total: PAYJOY/);
   assert.equal(ui.nodes().filter((node) => node.props?.className === "metricValue").map(textOf)[0], "12");
-  assert.equal(ui.nodes().filter((node) => node.props?.["aria-label"] === "Conciliación PAYJOY y CONECTAMOS").length, 0);
+  assert.equal(ui.nodes().filter((node) => node.props?.["aria-label"] === "Fuente y cobertura de PAYJOY").length, 0);
   ui.find("button", "PAYJOY").props.onClick({ currentTarget: { focus() {} } });
   await ui.settle();
   const comparison = reconciliationText(ui);
-  assert.match(comparison, /PAYJOY12\$\s*12\.345\.678/);
-  assert.match(comparison, /CONECTAMOS10\$\s*9\.000\.000/);
-  assert.match(comparison, /DiferenciaPAYJOY − CONECTAMOS\+2\+\$\s*3\.345\.678/);
-  assert.match(comparison, /PAYJOY sin vínculo local4 · \$\s*5\.345\.678Los recibidos ya están incluidos/);
-  assert.match(comparison, /Locales sin confirmación PAYJOY2 · \$\s*2\.000\.000No se agregan/);
+  assert.match(comparison, /Fuente del total: PAYJOY/);
+  assert.match(textOf(ui.find("dialog")), /12 créditos\$\s*12\.345\.678/);
   assert.match(comparison, /30 de 30 días consultados · cobertura parcial/);
-  assert.match(comparison, /sus valores no se suman/);
-  assert.doesNotMatch(comparison, /Periodo completo|sin sede/);
+  assert.doesNotMatch(textOf(ui.find("dialog")), /CONECTAMOS|Diferencia|vínculo|vinculad|Locales sin confirmación|9\.000\.000|5\.345\.678|Periodo completo/);
+  assert.doesNotMatch(ui.text(), /vínculo|vinculad|Diferencia|Locales sin confirmación/);
   assert.match(textOf(ui.find("dialog")), /12 registros · máximo 10 por página/);
   await ui.find("button", "Exportar Excel").props.onClick();
   assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre")));
@@ -534,12 +538,11 @@ test("PAYJOY pending consultation remains API-only and never uses local totals o
   ui.find("button", "PAYJOY").props.onClick({ currentTarget: { focus() {} } });
   await ui.settle();
   const comparison = reconciliationText(ui);
-  assert.match(comparison, /PAYJOYRecibido hasta ahoraSin confirmarSin confirmar/);
-  assert.match(comparison, /DiferenciaPAYJOY − CONECTAMOS · provisionalSin confirmarSin confirmar/);
+  assert.match(comparison, /Fuente del total: PAYJOY/);
+  assert.match(textOf(ui.find("dialog")), /Sin confirmar créditosSin confirmar/);
   assert.doesNotMatch(comparison, /\$\s*0|sin sede/);
   assert.match(comparison, /0 de 30 días consultados · cobertura parcial/);
-  assert.match(comparison, /No se agregan al total PAYJOY/);
-  assert.doesNotMatch(textOf(ui.find("dialog")), /12 créditos|Fuente del total: CONECTAMOS/);
+  assert.doesNotMatch(textOf(ui.find("dialog")), /12 créditos|CONECTAMOS|Diferencia|vínculo|vinculad/);
   assert.ok(ui.calls.every((call) => call.url.includes("sedeId=2")));
 });
 
@@ -552,7 +555,7 @@ test("open PAYJOY reconciliation follows its applied report while API days remai
   await ui.settle();
   assert.match(reconciliationText(ui), /Fuente del total: PAYJOY/);
   assert.match(reconciliationText(ui), /consulta pendiente/);
-  assert.match(reconciliationText(ui), /provisional-2-\$\s*1\.000\.000/);
+  assert.doesNotMatch(reconciliationText(ui), /Diferencia|provisional|-1\.000\.000/);
   await ui.setControl("Mes", "2025-08");
   const applied = ui.calls[0].url.split("?")[1];
   await ui.advance(10_000);
@@ -572,7 +575,98 @@ test("reviewing every PAYJOY day does not turn an unconfirmed empty API result i
   await ui.settle();
   const comparison = reconciliationText(ui);
   assert.match(comparison, /30 de 30 días consultados · cobertura parcial/);
-  assert.match(comparison, /PAYJOYSin confirmarSin confirmar/);
-  assert.match(comparison, /PAYJOY sin vínculo localSin confirmar · Sin confirmar/);
+  assert.match(textOf(ui.find("dialog")), /Sin confirmar créditosSin confirmar/);
   assert.doesNotMatch(comparison, /\$\s*0|Periodo completo/);
+});
+
+const sumaspayReconciliation = {
+  basis: "SUMASPAY_API", financial: "SUMASPAY", api: { units: 180, amount: 164_441_714 }, local: { units: 176, amount: 160_000_000 },
+  unlinkedApi: { units: 8, amount: 8_000_000 }, unmatchedLocal: { units: 4, amount: 3_558_286 },
+  daysReviewed: null, totalDays: null, referencesReviewed: 172, totalReferences: 176,
+  delta: { units: 4, amount: 4_441_714 },
+};
+
+function withSumaspayReconciliation(reconciliation, extra = {}) {
+  const totals = { units: reconciliation.api.units || null, amount: reconciliation.api.units ? reconciliation.api.amount : null };
+  return { ...report, ...extra, totals, financiers: [{ ...financier, key: "SUMASPAY", name: "SUMASPAY", ...totals,
+    complete: false, coverageLabel: "Cobertura parcial", source: "API SUMASPAY · cobertura parcial", reconciliation }] };
+}
+
+test("SUMASPAY shows only API totals and reference progress, without local figures or PAYJOY days", async () => {
+  const source = withSumaspayReconciliation(sumaspayReconciliation);
+  const ui = harness({ reports: [source], detailOverrides: { ...source.totals, total: 180, complete: false } });
+  await ui.settle();
+  assert.match(textOf(ui.find("button", "SUMASPAY")), /Fuente del total: SUMASPAY · consulta pendiente/);
+  assert.deepEqual(ui.nodes().filter((node) => node.props?.className === "metricValue").map(textOf), ["180", "$ 164.441.714"]);
+  ui.find("button", "SUMASPAY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  const comparison = reconciliationText(ui, "SUMASPAY");
+  assert.match(comparison, /Fuente del total: SUMASPAY/);
+  assert.match(textOf(ui.find("dialog")), /180 créditos\$\s*164\.441\.714/);
+  assert.match(comparison, /172 de 176 referencias consultadas · cobertura parcial/);
+  assert.doesNotMatch(comparison, /PAYJOY|días consultados|Periodo completo|CONECTAMOS|Diferencia|vínculo|vinculad/);
+  assert.doesNotMatch(textOf(ui.find("dialog")), /\$\s*(?:160\.000\.000|4\.441\.714|3\.558\.286)|Locales sin confirmación/);
+  assert.match(textOf(ui.find("dialog")), /180 registros · máximo 10 por página/);
+  assert.equal(ui.nodes().filter((node) => node.type === "tr" && textOf(node).includes("Cliente")).length, 11);
+  await ui.find("button", "Exportar Excel").props.onClick();
+  assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre")));
+  assert.equal(ui.calls.at(-1).url, `/api/cierre/export?${ui.calls[0].url.split("?")[1]}`);
+});
+
+test("SUMASPAY pending or failed references never replace unknown API figures with local sales", async () => {
+  const value = { ...sumaspayReconciliation, api: { units: 0, amount: 0 }, unlinkedApi: { units: 0, amount: 0 }, referencesReviewed: 0,
+    unmatchedLocal: sumaspayReconciliation.local, delta: { units: -176, amount: -160_000_000 } };
+  const provider = { ...activeProvider, status: "ERROR", errors: 4, queued: 0 };
+  const source = withSumaspayReconciliation(value, { providerSync: provider });
+  source.financiers[0].providerSync = provider;
+  source.financiers[0].coverageLabel = "Conciliación con errores";
+  const ui = harness({ admin: false, reports: [source], detailOverrides: { units: null, amount: null, total: 0, items: [], complete: false } });
+  await ui.settle();
+  assert.deepEqual(ui.nodes().filter((node) => node.props?.className === "metricValue").map(textOf), ["Sin confirmar", "Sin confirmar"]);
+  ui.find("button", "SUMASPAY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  const comparison = reconciliationText(ui, "SUMASPAY");
+  assert.match(textOf(ui.find("dialog")), /Sin confirmar créditosSin confirmar/);
+  assert.match(comparison, /0 de 176 referencias consultadas · cobertura parcial/);
+  assert.doesNotMatch(comparison, /\$\s*0|CONECTAMOS|días consultados|Diferencia|vínculo|vinculad/);
+  assert.match(textOf(ui.find("dialog")), /Consulta con errores/);
+  assert.equal(ui.timers.size, 0);
+  assert.ok(ui.calls.every((call) => call.url.includes("sedeId=2")));
+});
+
+test("SUMASPAY reconciliation refreshes within the applied scope and remains partial after every known reference is reviewed", async () => {
+  const queued = { ...activeProvider, total: 176, consulted: 172, queued: 4 };
+  const initial = withSumaspayReconciliation(sumaspayReconciliation, { providerSync: queued });
+  const reviewed = withSumaspayReconciliation({ ...sumaspayReconciliation, referencesReviewed: 176 });
+  const ui = harness({ reports: [initial, reviewed] });
+  await ui.settle();
+  ui.find("button", "SUMASPAY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  await ui.setControl("Mes", "2025-08");
+  await ui.advance(10_000);
+  const comparison = reconciliationText(ui, "SUMASPAY");
+  assert.match(comparison, /176 de 176 referencias consultadas · cobertura parcial/);
+  assert.doesNotMatch(comparison, /Periodo completo|días consultados|consulta pendiente/);
+  assert.equal(ui.dialogCalls.opened, 1);
+  assert.equal(ui.dialogCalls.closed, 0);
+  assert.ok(ui.calls.every((call) => call.url.includes(ui.calls[0].url.split("?")[1])));
+  assert.equal(ui.timers.size, 0);
+});
+
+test("pending local ingestion and linking metadata do not turn SUMASPAY API credits into missing financial information", async () => {
+  const source = withSumaspayReconciliation(sumaspayReconciliation, { localSync: { pending: 9999, complete: false, lastUpdatedAt: null } });
+  source.financiers[0].providerSync = { ...activeProvider, total: 176, consulted: 172, queued: 4, linked: 0, unconfirmed: 176,
+    reasons: ["NO_LOCAL_MATCH", "AMBIGUOUS_LOCAL_MATCH", "LOCAL_TERMINAL_PRESERVED"] };
+  source.financiers[0].limitation = "La cuenta no acredita un listado exhaustivo del periodo.";
+  const ui = harness({ reports: [source], detailOverrides: { units: 180, amount: 164_441_714, total: 180, complete: false } });
+  await ui.settle();
+  ui.find("button", "SUMASPAY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  const dialog = textOf(ui.find("dialog"));
+  assert.match(dialog, /180 créditos\$\s*164\.441\.714/);
+  assert.match(dialog, /172 de 176 referencias consultadas/);
+  assert.match(dialog, /La cuenta no acredita un listado exhaustivo del periodo/);
+  assert.doesNotMatch(dialog, /vinculad|vínculo|venta local|ventas locales|Cargando ventas|9\.999|sin confirmación|Diferencia|160\.000\.000/i);
+  assert.doesNotMatch(textOf(ui.find("button", "SUMASPAY")), /vinculad|sin confirmación/i);
+  ui.unmount();
 });

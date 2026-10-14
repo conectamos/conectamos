@@ -1,7 +1,8 @@
 import type { CierreCredito, Prisma } from "@/app/generated/prisma/client";
 import type { CierreProviderCredit } from "@/lib/cierre-providers";
 import { getDateKeyInColombia } from "@/lib/credit-date-utils";
-import { saveCierreCredit } from "@/lib/cierre-store";
+import { saveCierreCredit, getCierreProviderObservationForRow } from "@/lib/cierre-store";
+import { makeCierreProviderObservation, mergeCierreProviderObservations } from "@/lib/cierre-provider-evidence";
 import { CIERRE_RECONCILIATION_REASONS, type CierreReconciliationReason, type CierreReasonCounts } from "@/lib/cierre-reconciliation-reasons";
 export { CIERRE_RECONCILIATION_REASONS } from "@/lib/cierre-reconciliation-reasons";
 export type { CierreReconciliationReason, CierreReasonCounts } from "@/lib/cierre-reconciliation-reasons";
@@ -62,7 +63,19 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
       ...(object(raw) ? raw : { providerEvidence: raw }), cierreDiagnostics: { reasons: [...issues] },
     } as Prisma.InputJsonValue);
     const existing = await tx.cierreCredito.findUnique({ where: { financial_providerCreditId: { financial: observation.financiera, providerCreditId: observation.providerId } } });
-    const stale = existing?.providerUpdatedAt && observation.sourceUpdatedAt && observation.sourceUpdatedAt < existing.providerUpdatedAt;
+    const priorObservation = existing ? getCierreProviderObservationForRow(existing) : null;
+    const providerObservation = mergeCierreProviderObservations(priorObservation, makeCierreProviderObservation({
+      financial: observation.financiera, providerId: observation.providerId, state: observation.estado,
+      amount: observation.valor, effectiveAt: observation.fechaEfectiva, sourceUpdatedAt: observation.sourceUpdatedAt, raw: observation.raw,
+    }));
+    // Preserve the financial fact before any local lifecycle/staleness guard.
+    // Only the independent envelope changes; local cancellation/status survives.
+    if (existing) await saveCierreCredit(tx, {
+      financial: existing.financial, providerCreditId: existing.providerCreditId,
+      status: existing.status, source: existing.source, evidence: existing.evidence as Prisma.InputJsonValue,
+    }, providerObservation);
+    const previousDate = priorObservation?.sourceUpdatedAt ? new Date(priorObservation.sourceUpdatedAt) : existing?.providerUpdatedAt;
+    const stale = previousDate && observation.sourceUpdatedAt && observation.sourceUpdatedAt < previousDate;
     const reconcileStoredNegative = stale && !existing?.localKey && existing && terminal.has(existing.status);
     if (stale && !reconcileStoredNegative) { issues.add("STALE_OBSERVATION"); countReasons(); continue; }
     // Re-reading the origination day can discover a newly entered local sale.
@@ -73,6 +86,11 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
       valor: existing.amount == null ? null : Number(existing.amount), documento: existing.documentNumber || "",
       imei: existing.imei || undefined, cliente: existing.customerName,
       sourceUpdatedAt: existing.providerUpdatedAt || undefined, raw: existing.evidence as CierreProviderCredit["raw"],
+    } : providerObservation && terminal.has(providerObservation.state) ? { ...observation,
+      estado: providerObservation.state, valor: providerObservation.amount,
+      fechaEfectiva: providerObservation.effectiveAt ? new Date(providerObservation.effectiveAt) : null,
+      sourceUpdatedAt: providerObservation.sourceUpdatedAt ? new Date(providerObservation.sourceUpdatedAt) : undefined,
+      raw: providerObservation.raw as CierreProviderCredit["raw"],
     } : observation;
     // A later reversal has an event date, not another origination date. Reuse
     // only facts retained under the exact same provider identity for matching.
@@ -128,9 +146,18 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
     }
     if (local) {
       linked++;
+      const retainedLocal = local;
+      const preserveLocal = async () => saveCierreCredit(tx, {
+        financial: retainedLocal.financial, providerCreditId: credit.providerId, localKey: retainedLocal.localKey,
+        ventaId: retainedLocal.ventaId, registroId: retainedLocal.registroId, localReference: retainedLocal.localReference,
+        sedeId: retainedLocal.sedeId, effectiveAt: retainedLocal.effectiveAt, amount: retainedLocal.amount,
+        customerName: retainedLocal.customerName, documentNumber: retainedLocal.documentNumber, imei: retainedLocal.imei,
+        creditNumber: credit.providerId, status: retainedLocal.status, source: retainedLocal.source,
+        evidence: linkedEvidence(retainedLocal, retainedLocal.evidence as CierreProviderCredit["raw"]),
+      }, providerObservation);
       if (credit.estado === "PENDIENTE") {
         pending++;
-        if (terminal.has(local.status)) { issues.add("LOCAL_TERMINAL_PRESERVED"); countReasons(); continue; }
+        if (terminal.has(local.status)) { await preserveLocal(); issues.add("LOCAL_TERMINAL_PRESERVED"); countReasons(); continue; }
         await saveCierreCredit(tx, {
           financial: local.financial, providerCreditId: credit.providerId, localKey: local.localKey,
           ventaId: local.ventaId, registroId: local.registroId, localReference: local.localReference,
@@ -138,13 +165,13 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
           customerName: local.customerName, documentNumber: local.documentNumber, imei: local.imei,
           creditNumber: credit.providerId, status: local.status, source: local.source,
           evidence: evidence(credit.raw),
-        });
+        }, providerObservation);
         countReasons();
         continue;
       }
       if (terminal.has(local.status) && credit.estado === "EFECTIVO" &&
           (hasLocalTombstone(local) || !local.source.includes("API") || !credit.sourceUpdatedAt || !local.providerUpdatedAt || credit.sourceUpdatedAt <= local.providerUpdatedAt)) {
-        issues.add("LOCAL_TERMINAL_PRESERVED"); countReasons(); continue;
+        await preserveLocal(); issues.add("LOCAL_TERMINAL_PRESERVED"); countReasons(); continue;
       }
       await saveCierreCredit(tx, {
         financial: credit.financiera, providerCreditId: credit.providerId, localKey: local.localKey,
@@ -154,7 +181,7 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
         documentNumber: credit.documento || local.documentNumber, creditNumber: credit.providerId,
         imei: credit.imei || local.imei, status: credit.estado, source: `CONECTAMOS + API ${credit.financiera}`,
         evidence: linkedEvidence(local, evidence(credit.raw) as CierreProviderCredit["raw"]), providerUpdatedAt: credit.sourceUpdatedAt || local.providerUpdatedAt,
-      });
+      }, providerObservation);
     } else {
       pending++;
       // A merchant name alone cannot prove the branch or absence of a duplicate.
@@ -169,7 +196,7 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
         imei: credit.imei || null, status, source: `API ${credit.financiera} · pendiente de vinculación`,
         evidence: evidence(retainNegative ? existing.evidence as CierreProviderCredit["raw"] : credit.raw),
         providerUpdatedAt: retainNegative ? existing.providerUpdatedAt : credit.sourceUpdatedAt || existing?.providerUpdatedAt,
-      });
+      }, providerObservation);
     }
     countReasons();
   }

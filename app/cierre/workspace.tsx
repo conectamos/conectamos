@@ -39,13 +39,13 @@ async function readJson<T>(response: Response): Promise<T> {
 
 function providerProgress(sync?: CierreProviderSync | null) {
   if (!sync) return "Cobertura sujeta a las fuentes disponibles.";
-  if (!sync.enabled || sync.status === "DESACTIVADA") return "Conciliación externa desactivada.";
+  if (!sync.enabled || sync.status === "DESACTIVADA") return "Consulta a financieras desactivada.";
   if (sync.status === "CONSULTANDO") return `Consulta en curso${sync.active ? ` · ${sync.active.financial}${sync.active.day ? ` · ${dateLabel(sync.active.day)}` : ""}` : ""}.`;
   if (sync.workerEnabled === false && !sync.workerActive) return "Sincronización en segundo plano desactivada.";
-  if (sync.status === "PAUSADA") return "Consultas en pausa.";
+  if (sync.status === "PAUSADA") return "Esperando la próxima consulta programada.";
   if (sync.status === "DETENIDA") return "Sin actividad reciente de consultas.";
   if (sync.status === "EN_COLA") return `En cola: ${count(sync.queued)} referencias pendientes.`;
-  if (sync.status === "ERROR") return `Conciliación con errores: ${count(sync.errors)} referencias requieren revisión.`;
+  if (sync.status === "ERROR") return `Consulta con errores: ${count(sync.errors)} referencias requieren revisión.`;
   if (sync.status === "SIN_REFERENCIA") return "Sin referencias de crédito para consultar en las financieras.";
   return "Consulta de referencias finalizada. La cobertura externa es parcial.";
 }
@@ -61,16 +61,11 @@ const providerReasons: Record<string, string> = {
   MISSING_EFFECTIVE_DATE: "Falta la fecha efectiva del crédito.",
   UNCONFIRMED_STATUS: "El estado recibido no confirma un crédito efectivo.",
   MISSING_IDENTITY: "Faltan datos para identificar el crédito.",
-  IDENTITY_CONFLICT: "Los datos de identificación no coinciden.",
-  NO_LOCAL_MATCH: "No se encontró una venta local coincidente.",
-  AMBIGUOUS_LOCAL_MATCH: "Hay varias ventas locales posibles; falta confirmar la correspondencia.",
-  AMBIGUOUS_PROVIDER_MATCH: "Hay varios créditos posibles; falta confirmar la correspondencia.",
   STALE_OBSERVATION: "La respuesta recibida es anterior a la información guardada.",
-  LOCAL_TERMINAL_PRESERVED: "Se conserva la anulación, reverso o rechazo registrado.",
 };
 
 function sourceReasons(sync?: CierreProviderSync | null) {
-  return [...new Set(sync?.reasons || [])].filter((reason) => reason in providerReasons).map((reason) => providerReasons[reason]);
+  return [...new Set(sync?.reasons || [])].filter((reason) => Object.hasOwn(providerReasons, reason)).map((reason) => providerReasons[reason]);
 }
 
 function ProviderReasons({ sync }: { sync?: CierreProviderSync | null }) {
@@ -79,40 +74,59 @@ function ProviderReasons({ sync }: { sync?: CierreProviderSync | null }) {
 }
 
 function sourceCoverage(financier: CierreFinancier) {
+  if (financier.coverageLabel === "Consultas en pausa") return "En espera";
   if (financier.coverageLabel === "En conciliación") {
     const status = financier.providerSync?.status;
-    return status === "CONSULTANDO" ? "Consulta en curso" : status === "PAUSADA" ? "En pausa" : status === "DETENIDA" ? "Sin actividad reciente" : "En cola";
+    return status === "CONSULTANDO" ? "Consulta en curso" : status === "PAUSADA" ? "En espera" : status === "DETENIDA" ? "Sin actividad reciente" : "En cola";
   }
-  return financier.coverageLabel || (financier.complete ? "Confirmado" : "Cobertura parcial");
+  return financier.coverageLabel?.replace(/Conciliación/g, "Consulta") || (financier.complete ? "Confirmado" : "Cobertura parcial");
+}
+
+function reconciliationProgress(value: CierreReconciliation) {
+  const financial = value.financial || (value.basis === "SUMASPAY_API" ? "SUMASPAY" : "PAYJOY");
+  const references = financial === "SUMASPAY";
+  const reviewed = references ? value.referencesReviewed ?? null : value.daysReviewed;
+  const total = references ? value.totalReferences ?? null : value.totalDays;
+  return { financial, reviewed, total, label: references ? "referencias consultadas" : "días consultados",
+    pending: reviewed === null || total === null || total === 0 || reviewed < total };
 }
 
 function totalSource(financier: CierreFinancier) {
   if (!financier.reconciliation) return financier.source;
-  const value = financier.reconciliation;
-  return `Fuente del total: ${value.basis === "PAYJOY_API" ? `PAYJOY${value.daysReviewed < value.totalDays ? " · consulta pendiente" : ""}` : "CONECTAMOS · consulta PAYJOY pendiente"}`;
+  const progress = reconciliationProgress(financier.reconciliation);
+  return `Fuente del total: ${progress.financial}${progress.pending ? " · consulta pendiente" : ""}`;
 }
 
-function Reconciliation({ value }: { value: CierreReconciliation }) {
-  const usesPayjoy = value.basis === "PAYJOY_API";
-  const pendingDays = value.daysReviewed < value.totalDays;
-  const partialApi = pendingDays || !usesPayjoy;
-  const knownApiUnits = value.api.units === 0 ? null : value.api.units;
-  const knownApiAmount = value.api.units === 0 ? null : value.api.amount;
-  const unknownUnlinked = value.unlinkedApi.units === 0 && (partialApi || knownApiUnits === null);
-  return <section className={styles.reconciliation} aria-label="Conciliación PAYJOY y CONECTAMOS">
-    <div className={styles.reconciliationHeading}><h3>Fuente del total: {usesPayjoy ? "PAYJOY" : "CONECTAMOS"}</h3><span>{usesPayjoy ? `Créditos recibidos de PAYJOY, sin duplicar${pendingDays ? " · consulta pendiente" : ""}` : "Consulta PAYJOY pendiente"}</span></div>
-    <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Comparación del periodo">
-      <table className={styles.reconciliationTable}><thead><tr><th scope="col">Fuente</th><th scope="col">Unidades</th><th scope="col">Valor de los créditos</th></tr></thead><tbody>
-        <tr><th scope="row">PAYJOY{partialApi && <small>Recibido hasta ahora</small>}</th><td>{count(knownApiUnits)}</td><td>{pesos(knownApiAmount)}</td></tr>
-        <tr><th scope="row">CONECTAMOS</th><td>{count(value.local.units)}</td><td>{pesos(value.local.amount)}</td></tr>
-        <tr className={styles.reconciliationDelta}><th scope="row">Diferencia<small>PAYJOY − CONECTAMOS{partialApi && " · provisional"}</small></th><td>{knownApiUnits === null ? "Sin confirmar" : `${value.delta.units > 0 ? "+" : ""}${count(value.delta.units)}`}</td><td>{knownApiUnits === null ? "Sin confirmar" : `${value.delta.amount > 0 ? "+" : ""}${pesos(value.delta.amount)}`}</td></tr>
-      </tbody></table>
-    </div>
-    <dl className={styles.reconciliationPending}>
-      <div><dt>PAYJOY sin vínculo local</dt><dd>{count(unknownUnlinked ? null : value.unlinkedApi.units)} · {pesos(unknownUnlinked ? null : value.unlinkedApi.amount)}</dd><span>{usesPayjoy ? "Los recibidos ya están incluidos en el total PAYJOY." : "Se muestran como información recibida de PAYJOY."}</span></div>
-      <div><dt>Locales sin confirmación PAYJOY</dt><dd>{count(value.unmatchedLocal.units)} · {pesos(value.unmatchedLocal.amount)}</dd><span>{usesPayjoy ? "No se agregan al total PAYJOY." : "Incluidos en el total confirmado de CONECTAMOS."}</span></div>
-    </dl>
-    <p className={styles.reconciliationNote}>{count(value.daysReviewed)} de {count(value.totalDays)} días consultados · cobertura parcial. Las fuentes se comparan; sus valores no se suman.</p>
+function sourceReadProgress(financier: CierreFinancier) {
+  if (financier.reconciliation) {
+    const progress = reconciliationProgress(financier.reconciliation);
+    return `${count(progress.reviewed)} de ${count(progress.total)} ${progress.label}`;
+  }
+  const sync = financier.providerSync;
+  return sync ? `${count(sync.consulted ?? sync.reviewed)} de ${count(sync.total)} referencias consultadas` : null;
+}
+
+function ActivityFacts({ sync }: { sync: CierreProviderSync }) {
+  if (!sync.priority && !sync.resumeAt && !sync.lastActivityAt) return null;
+  return <div className={styles.syncFacts}>
+    {sync.priority && <span><DashboardIcon name="clock" className="h-3 w-3" />Prioridad: {dateLabel(sync.priority.from)} – {dateLabel(sync.priority.to)}{sync.priority.applies ? " · incluye este periodo" : ""}</span>}
+    {sync.resumeAt && sync.status === "PAUSADA" && <span>Próxima reanudación: <time dateTime={sync.resumeAt}>{dateTime(sync.resumeAt)}</time></span>}
+    {sync.lastActivityAt && <span>Última actividad: <time dateTime={sync.lastActivityAt}>{dateTime(sync.lastActivityAt)}</time></span>}
+  </div>;
+}
+
+function FinancialSource({ financier }: { financier: CierreFinancier }) {
+  if (!financier.reconciliation) return null;
+  const progress = reconciliationProgress(financier.reconciliation);
+  const sync = financier.providerSync;
+  const limitation = financier.limitation || sync?.limitation;
+  return <section className={styles.financialSource} aria-label={`Fuente y cobertura de ${progress.financial}`}>
+    <div className={styles.syncHeading}><strong>Fuente del total: {progress.financial}</strong><span>{sourceCoverage(financier)}</span></div>
+    <p className={styles.sourceReading}>{sourceReadProgress(financier)} · cobertura parcial{progress.pending && " · consulta pendiente"}</p>
+    {progress.reviewed !== null && progress.total !== null && progress.total > 0 && <progress className={styles.syncProgress} max={progress.total} value={Math.min(progress.reviewed, progress.total)} aria-label={`${progress.financial}: ${progress.label}`} />}
+    {sync && <><p className={styles.sourceReading}>{providerProgress(sync)}</p><p className={styles.sourceReading}>Consultas en cola: {count(sync.queued)} · Con errores: {count(sync.errors)}</p><ActivityFacts sync={sync} /></>}
+    {limitation && <p className={styles.syncNote}>{limitation}</p>}
+    <ProviderReasons sync={sync} />
   </section>;
 }
 
@@ -123,17 +137,11 @@ function ProviderActivity({ sync, compact = false }: { sync: CierreProviderSync;
     <div className={styles.syncProgressLabel}><span>Referencias conocidas del periodo</span><strong>{count(consulted)} de {count(sync.total)} consultadas</strong></div>
     {sync.total > 0 && <progress className={styles.syncProgress} max={sync.total} value={Math.min(consulted, sync.total)} aria-label="Referencias consultadas" aria-valuetext={`${count(consulted)} de ${count(sync.total)} referencias conocidas consultadas`} />}
     <dl className={styles.syncCounts}>
-      <div><dt>Referencias vinculadas</dt><dd>{count(sync.linked ?? null)}</dd></div>
-      <div><dt>Sin confirmación de la financiera</dt><dd>{count(sync.unconfirmed ?? null)}</dd></div>
-      <div><dt>En cola</dt><dd>{count(sync.queued)}</dd></div>
-      <div><dt>Con errores</dt><dd>{count(sync.errors)}</dd></div>
+      <div><dt>Consultas en cola</dt><dd>{count(sync.queued)}</dd></div>
+      <div><dt>Consultas con errores</dt><dd>{count(sync.errors)}</dd></div>
     </dl>
-    <div className={styles.syncFacts}>
-      {sync.priority && <span><DashboardIcon name="clock" className="h-3 w-3" />Prioridad: {dateLabel(sync.priority.from)} – {dateLabel(sync.priority.to)}{sync.priority.applies ? " · incluye este periodo" : ""}</span>}
-      {sync.resumeAt && sync.status === "PAUSADA" && <span>Próxima reanudación: <time dateTime={sync.resumeAt}>{dateTime(sync.resumeAt)}</time></span>}
-      {sync.lastActivityAt && <span>Última actividad: <time dateTime={sync.lastActivityAt}>{dateTime(sync.lastActivityAt)}</time></span>}
-    </div>
-    <p className={styles.syncNote}>Consultar una referencia no confirma un crédito. Este avance no garantiza cobertura completa.</p>
+    <ActivityFacts sync={sync} />
+    <p className={styles.syncNote}>El avance de consultas no garantiza una cobertura completa.</p>
     {compact && <ProviderReasons sync={sync} />}
   </section>;
 }
@@ -374,7 +382,8 @@ export default function CierreWorkspace({ today, user }: {
           {noLoadedCredits && pending && <span>{loadingSales ? "Todavía no hay créditos cargados; los totales aparecerán a medida que avance la carga." : "No hay créditos confirmados en las fuentes disponibles para este periodo."}</span>}
         </div><details className={styles.sources}><summary><DashboardIcon name="database" className="h-4 w-4" />Fuentes y cobertura<DashboardIcon name="chevron" className="h-4 w-4" /></summary><div className={styles.sourceDetails}>{report.financiers.map((financier) => <div key={financier.key}>
           <div className={styles.sourceHeading}><strong>{financier.name}</strong><span>{sourceCoverage(financier)}</span></div><p>{totalSource(financier)}</p>
-          {financier.providerSync && <><p>{providerProgress(financier.providerSync)}</p><p>{count(financier.providerSync.consulted ?? financier.providerSync.reviewed)} de {count(financier.providerSync.total)} referencias consultadas · {count(financier.providerSync.linked ?? null)} vinculadas</p><ProviderReasons sync={financier.providerSync} /></>}
+          {sourceReadProgress(financier) && <p>{sourceReadProgress(financier)}</p>}
+          {financier.providerSync && <><p>{providerProgress(financier.providerSync)}</p><ProviderReasons sync={financier.providerSync} /></>}
           {financier.limitation && <p className={styles.sourceLimitation}>{financier.limitation}</p>}
         </div>)}</div></details></div>}
         {report?.providerSync?.enabled && <ProviderActivity sync={report.providerSync} />}
@@ -384,7 +393,7 @@ export default function CierreWorkspace({ today, user }: {
             <table className={styles.table}><thead><tr><th scope="col">Financiera</th><th scope="col">Unidades de créditos</th><th scope="col">Valor de los créditos</th></tr></thead><tbody>
               {loading ? <tr><td colSpan={3} className={styles.empty} role="status">Cargando créditos registrados…</td></tr> : report?.financiers.length ? report.financiers.map((financier) => <tr key={financier.key}>
                 <th scope="row"><button type="button" className={styles.financierButton} onClick={(event) => openDetail(financier, event.currentTarget)} aria-haspopup="dialog"><span className={styles.financierAvatar} aria-hidden="true">{financier.name.replace(/[^A-Z]/gi, "").slice(0, 2)}</span><span className={styles.financierCopy}><span className={styles.financierName}><strong>{financier.name}</strong><span className={`${styles.rowStatus} ${financier.complete ? styles.rowComplete : styles.rowPending}`}>{sourceCoverage(financier)}</span></span><span className={styles.source}>{totalSource(financier)}</span>
-                  {financier.providerSync?.enabled && <span className={styles.source}>{count(financier.providerSync.consulted ?? financier.providerSync.reviewed)} consultadas · {count(financier.providerSync.linked ?? null)} vinculadas</span>}
+                  {(financier.reconciliation || financier.providerSync?.enabled) && <span className={styles.source}>{sourceReadProgress(financier)}</span>}
                 </span><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button></th>
                 <td><strong className={financier.units === null ? styles.unknownValue : styles.unitsValue}>{count(financier.units)}</strong></td>
                 <td><strong className={financier.amount === null ? styles.unknownValue : styles.amountValue}>{pesos(financier.amount)}</strong></td>
@@ -399,9 +408,8 @@ export default function CierreWorkspace({ today, user }: {
     {selected && report && <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="detail-title" aria-describedby="detail-context" onCancel={(event) => { event.preventDefault(); closeDetail(); }} onClose={() => { setSelected(null); triggerRef.current?.focus({ preventScroll: true }); }}>
       <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Detalle de créditos</p><h2 id="detail-title">{selected.name}</h2><p id="detail-context">{report.period.label} · {report.scope.label}</p></div><button type="button" className={styles.closeButton} aria-label="Cerrar detalle" onClick={closeDetail} autoFocus><DashboardIcon name="close" /></button></div>
       <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detail?.amount ?? currentFinancier?.amount ?? null)}</strong></span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} label={currentFinancier ? sourceCoverage(currentFinancier) : undefined} /></div>
-      {currentFinancier?.reconciliation && <Reconciliation value={currentFinancier.reconciliation} />}
-      {currentFinancier?.providerSync?.enabled && <ProviderActivity sync={currentFinancier.providerSync} compact />}
-      {(loadingSales || syncingProviders || detailRefreshing) && <p className={styles.detailProgress} role="status">{detailRefreshing ? "Actualizando el listado de créditos…" : `${loadingSales ? syncMessage : providerProgress(currentFinancier?.providerSync)} El listado se actualiza automáticamente.`}</p>}
+      {currentFinancier?.reconciliation ? <FinancialSource financier={currentFinancier} /> : currentFinancier?.providerSync?.enabled && <ProviderActivity sync={currentFinancier.providerSync} compact />}
+      {((loadingSales && !currentFinancier?.reconciliation) || syncingProviders || detailRefreshing) && <p className={styles.detailProgress} role="status">{detailRefreshing ? "Actualizando el listado de créditos…" : `${loadingSales && !currentFinancier?.reconciliation ? syncMessage : providerProgress(currentFinancier?.providerSync)} El listado se actualiza automáticamente.`}</p>}
       {detailError && <div className={styles.error} role="alert"><p>{detail && "No se pudo actualizar el detalle. Se conserva el último listado. "}{detailError}</p><button type="button" className={styles.secondaryButton} onClick={() => { setDetailError(""); if (!detail) setDetailLoading(true); setDetailReload((value) => value + 1); }}>Reintentar</button></div>}
       {(!detailError || detail) && <>
         <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`Créditos de ${selected.name}`} aria-busy={detailLoading || detailRefreshing}>

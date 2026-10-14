@@ -35,7 +35,7 @@ async function exportBook(session, extra = "") {
   return book;
 }
 
-test("Excel PAYJOY incluye todos los créditos API y separa locales pendientes sin sumarlos", async () => {
+test("Excel PAYJOY incluye todos los créditos API sin agregar ventas locales ni comparaciones", async () => {
   const book = await exportBook(admin);
   const credits = book.getWorksheet("Créditos");
   assert.equal(credits.rowCount, 14, "13 créditos API; el filtro page no limita exportación");
@@ -49,28 +49,24 @@ test("Excel PAYJOY incluye todos los créditos API y separa locales pendientes s
   });
   assert.equal(ids.size, 13);
   assert.equal(amount, 11050000);
-  const comparison = book.getWorksheet("Conciliación PAYJOY");
-  assert.equal(comparison.getCell("B2").value, "API PAYJOY");
-  assert.equal(comparison.getCell("B7").value, 13);
-  assert.equal(comparison.getCell("C7").value, amount);
-  assert.equal(comparison.getCell("B8").value, 5);
-  assert.equal(comparison.getCell("B12").value, 10);
-  assert.equal(comparison.getCell("B13").value, 2);
-  const pending = book.getWorksheet("Pendientes PAYJOY");
-  assert.equal(pending.rowCount, 3);
-  assert.match(pending.getCell("I2").value, /no sumar al total API/);
+  const summary = book.getWorksheet("Cierre").getSheetValues().find((row) => row?.[1] === "PAYJOY");
+  assert.equal(summary[2], 13);
+  assert.equal(summary[3], amount);
+  assert.match(summary[5], /API PAYJOY/);
+  assert.equal(book.getWorksheet("Conciliación PAYJOY"), undefined);
+  assert.equal(book.getWorksheet("Pendientes PAYJOY"), undefined);
+  assert.equal(credits.columnCount, 9);
+  assert.ok(!JSON.stringify(book.getWorksheet("Fuentes").getSheetValues()).includes("Vinculadas"));
 });
 
 test("Excel PAYJOY de sede no expone datos globales sin sede ni pendientes de otras sedes", async () => {
   const book = await exportBook(supervisor);
   const credits = book.getWorksheet("Créditos");
   assert.equal(credits.rowCount, 3);
-  assert.equal(book.getWorksheet("Pendientes PAYJOY").rowCount, 2);
-  const comparison = book.getWorksheet("Conciliación PAYJOY");
-  assert.equal(comparison.getCell("B7").value, 2);
-  assert.equal(comparison.getCell("B8").value, 3);
-  assert.equal(comparison.getCell("B12").value, 0);
-  assert.equal(comparison.getCell("B13").value, 1);
+  assert.equal(book.getWorksheet("Pendientes PAYJOY"), undefined);
+  const summary = book.getWorksheet("Cierre").getSheetValues().find((row) => row?.[1] === "PAYJOY");
+  assert.equal(summary[2], 2);
+  assert.equal(summary[3], 1700000);
   const global = await exportBook(admin, "&sedeId=1");
   assert.equal(global.getWorksheet("Créditos").rowCount, credits.rowCount);
 });
@@ -83,12 +79,9 @@ test("sin datos API el Excel no sustituye el total PAYJOY con ventas locales ni 
   const book = new ExcelJS.Workbook();
   await book.xlsx.load(Buffer.from(await response.arrayBuffer()));
   assert.equal(book.getWorksheet("Créditos").rowCount, 1);
-  assert.equal(book.getWorksheet("Pendientes PAYJOY").rowCount, 2);
-  const comparison = book.getWorksheet("Conciliación PAYJOY");
-  assert.equal(comparison.getCell("B2").value, "API PAYJOY");
-  assert.equal(comparison.getCell("B7").value, "Sin confirmar");
-  assert.equal(comparison.getCell("C7").value, "Sin confirmar");
-  assert.equal(comparison.getCell("B9").value, "Sin confirmar");
-  assert.equal(comparison.getCell("B8").value, 1);
-  assert.equal(comparison.getCell("C8").value, 1000000);
+  assert.equal(book.getWorksheet("Pendientes PAYJOY"), undefined);
+  const summary = book.getWorksheet("Cierre").getSheetValues().find((row) => row?.[1] === "PAYJOY");
+  assert.equal(summary[2], "Sin confirmar");
+  assert.equal(summary[3], "Sin confirmar");
+  assert.match(summary[5], /API PAYJOY/);
 });

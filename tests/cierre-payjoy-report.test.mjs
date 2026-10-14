@@ -31,7 +31,7 @@ test("PAYJOY usa órdenes API independientes y no suma locales sin conciliar", a
   assert.equal(report.total, 3);
   assert.deepEqual(report.totals, { units: 3, amount: 3250000 });
   assert.equal(report.items.reduce((sum, item) => sum + item.amount, 0), 3250000);
-  assert.ok(report.items.every((item) => item.status === "EFECTIVO" && item.source.includes("API")));
+  assert.ok(report.items.every((item) => item.status === "EFECTIVO" && item.source === "API PAYJOY"));
   assert.equal(row.coverageLabel, "Cobertura parcial");
   assert.deepEqual(row.reconciliation, { basis: "PAYJOY_API", api: { units: 3, amount: 3250000 },
     local: { units: 3, amount: 2500000 }, unlinkedApi: { units: 2, amount: 2250000 },

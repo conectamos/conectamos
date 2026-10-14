@@ -4,7 +4,7 @@ import { getEffectivePayJoyObservation } from "@/lib/cierre-payjoy-audit";
 
 type Metric = { units: number; amount: number };
 export type CierrePayJoyReconciliation = {
-  basis: "PAYJOY_API" | "LOCAL";
+  basis: "PAYJOY_API";
   api: Metric;
   local: Metric;
   unlinkedApi: Metric;
@@ -66,7 +66,7 @@ export async function readCierrePayJoyReport(tx: Prisma.TransactionClient, scope
       if (reportable && !providerIds.has(row.providerCreditId!)) {
         providerIds.add(row.providerCreditId!);
         const record = { ...row, amount: observation.amount, effectiveAt: observation.effectiveAt,
-          status: "EFECTIVO", creditNumber: row.providerCreditId, source: row.source.includes("API") ? row.source : "API PAYJOY" };
+          status: "EFECTIVO", creditNumber: row.providerCreditId, source: "API PAYJOY" };
         apiRecords.push(record);
         add(reconciliation.api, observation.amount);
         if (!row.localKey) add(reconciliation.unlinkedApi, observation.amount);

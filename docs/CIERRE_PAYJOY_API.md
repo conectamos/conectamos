@@ -1,6 +1,6 @@
 # CIERRE: listado de cuenta PAYJOY y resultados de sincronización
 
-Revisión de documentación primaria y código realizada el 13 de octubre de 2026. Esta ampliación incorpora el listado de cuenta PAYJOY, además de la consulta por IMEI descrita en `CIERRE_INTEGRACIONES.md`. No se hicieron llamadas a proveedores reales durante el desarrollo ni se verificó la retención de una cuenta de producción.
+Revisión de documentación primaria iniciada el 13 de octubre de 2026 y del código actualizada el 14 de octubre. Esta ampliación incorpora el listado de cuenta PAYJOY descrito en `CIERRE_INTEGRACIONES.md`. Las pruebas usan respuestas simuladas; el trabajador autorizado realiza las lecturas de producción. No se ha acreditado la retención completa de la cuenta.
 
 ## Evidencia primaria
 
@@ -26,9 +26,9 @@ Los identificadores y fechas permiten reprocesar días sin duplicar créditos. L
 
 El cierre distingue la existencia de un crédito efectivo en PAYJOY de su vínculo con una venta de CONECTAMOS. Una observación de `finance` con ID estable, moneda COP, capital y fecha efectivos no deja de ser un crédito porque falte la venta local. Tampoco se suma como otro crédito cuando ya está vinculada.
 
-El total de PAYJOY, su detalle y la exportación utilizan una única selección de observaciones efectivas guardadas de la API, deduplicadas por financiera y número del crédito. Se excluyen anulaciones, reversos, rechazos, estados sin confirmar y anulaciones locales conservadas. Los registros locales sin confirmar se muestran por separado para conciliación y no se suman otra vez. Mientras haya días pendientes, el reporte indica que la lectura de PAYJOY es parcial; nunca sustituye el total de la financiera por las ventas locales. Sin créditos API confirmados, el importe queda sin confirmar en lugar de declarar cero.
+El total de PAYJOY, su detalle y la exportación utilizan una única selección de observaciones efectivas guardadas de la API, deduplicadas por financiera y número del crédito. Se excluyen anulaciones, reversos, rechazos y estados sin confirmar de la financiera. Una edición o anulación local no elimina el hecho API conservado en `providerObservation`. Mientras haya días pendientes, el reporte indica que la lectura de PAYJOY es parcial; nunca sustituye el total de la financiera por las ventas locales. Sin créditos API confirmados, el importe queda sin confirmar en lugar de declarar cero.
 
-El detalle compara créditos e importes de ambas fuentes y distingue los créditos API sin venta vinculada de las ventas locales sin confirmación API. Una diferencia neta de cuatro créditos no demuestra que existan sólo cuatro registros por revisar: puede haber discrepancias en ambos sentidos. El Excel incluye la misma comparación y una hoja de ventas locales pendientes, sin agregarlas al total API.
+El detalle muestra los créditos de la financiera y el avance real de las consultas por día. La vista y el Excel omiten comparaciones y pendientes de asociación con ventas locales. El Excel conserva las hojas Cierre, Créditos y Fuentes con el mismo periodo y permisos del reporte.
 
 Las observaciones sin sede comprobada sólo se incluyen en el consolidado global del administrador, con sede sin vincular. Los filtros y usuarios de sede no reciben esos registros ni los datos de otras sedes. No se asigna una sede por semejanza del nombre del comercio ni se vinculan préstamos por cédula o IMEI únicamente.
 
@@ -53,7 +53,7 @@ Por ello, todos los resultados conservan `complete: false`, incluso una lista va
 
 ## Otras integraciones
 
-SUMASPAY conserva exclusivamente el historial por documento y el detalle por ID previamente implementados; no se encontró un listado global documentado que autorice eliminar el documento. ADDI conserva sus dos lectores de transacciones por documento/rango y no supone paginación ni consulta global sin documento.
+CIERRE consulta el historial SUMASPAY por documento incluso cuando ya tiene un ID vinculado, y conserva todos los créditos devueltos para aplicar después la fecha efectiva del proveedor. No se encontró un listado global documentado que permita descubrir clientes desconocidos. ADDI conserva sus dos lectores de transacciones por documento/rango y no supone paginación ni consulta global sin documento.
 
 La documentación pública ADDI describe un callback final del flujo de comercio electrónico, con estado `approved`. Ese contrato no documenta la semántica de `APPROVED` ni `createdAt` en los endpoints del portal que usa este repositorio. No se traslada esa interpretación a una respuesta distinta ni se crean transacciones para obtenerla. [Integración Custom de ADDI](https://support.addi.com/custom-integrations).
 
