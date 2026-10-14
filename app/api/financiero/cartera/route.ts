@@ -28,6 +28,30 @@ function normalizarNumero(valor: unknown) {
   return Number(valor || 0);
 }
 
+function numeroValido(valor: unknown) {
+  return typeof valor === "number" || typeof valor === "string"
+    ? Number(valor)
+    : NaN;
+}
+
+function idValido(valor: unknown) {
+  const numero = numeroValido(valor);
+  return Number.isSafeInteger(numero) && numero > 0;
+}
+
+async function leerObjeto(req: Request) {
+  try {
+    const parsed: unknown = await req.json();
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+class MovimientoCarteraAmbiguoError extends Error {}
+
 async function buscarMovimientoCajaRelacionado(
   tx: MovimientoLookupTx,
   gasto: GastoBase
@@ -37,9 +61,12 @@ async function buscarMovimientoCajaRelacionado(
   const movimientoMarcado = await tx.cajaMovimiento.findFirst({
     where: {
       concepto: CONCEPTO_GASTO_CARTERA,
-      descripcion: {
-        startsWith: marcador,
-      },
+      OR: [
+        { descripcion: marcador },
+        ...[" ", ":", "|", "·", "\n", "\r", "\t"].map(separador => ({
+          descripcion: { startsWith: `${marcador}${separador}` },
+        })),
+      ],
     },
     select: {
       id: true,
@@ -60,20 +87,19 @@ async function buscarMovimientoCajaRelacionado(
 
   const descripcionEsperada = String(gasto.observacion || "").trim();
 
-  const ordenarPorAfinidad = (
-    a: { createdAt: Date; descripcion: string | null },
-    b: { createdAt: Date; descripcion: string | null }
-  ) => {
-    const diffTiempoA = Math.abs(a.createdAt.getTime() - gasto.createdAt.getTime());
-    const diffTiempoB = Math.abs(b.createdAt.getTime() - gasto.createdAt.getTime());
-
-    const descripcionA = String(a.descripcion || "").trim();
-    const descripcionB = String(b.descripcion || "").trim();
-
-    const scoreA = diffTiempoA + (descripcionA === descripcionEsperada ? -1000000 : 0);
-    const scoreB = diffTiempoB + (descripcionB === descripcionEsperada ? -1000000 : 0);
-
-    return scoreA - scoreB;
+  const afinidad = (item: { createdAt: Date; descripcion: string | null }) => {
+    const diffTiempo = Math.abs(item.createdAt.getTime() - gasto.createdAt.getTime());
+    return diffTiempo + (String(item.descripcion || "").trim() === descripcionEsperada ? -1000000 : 0);
+  };
+  const elegirCandidato = <T extends { createdAt: Date; descripcion: string | null }>(items: T[]) => {
+    const candidatos = items.filter(item => {
+      const idMarcado = /^GASTO CARTERA #(\d+)/.exec(String(item.descripcion || "").trimStart());
+      return !idMarcado || Number(idMarcado[1]) === gasto.id;
+    }).sort((a, b) => afinidad(a) - afinidad(b));
+    if (candidatos.length > 1 && afinidad(candidatos[0]) === afinidad(candidatos[1])) {
+      throw new MovimientoCarteraAmbiguoError("El movimiento de caja asociado requiere revisión antes de modificar este gasto");
+    }
+    return candidatos[0] ?? null;
   };
 
   const candidatos = await tx.cajaMovimiento.findMany({
@@ -98,8 +124,9 @@ async function buscarMovimientoCajaRelacionado(
     take: 25,
   });
 
-  if (candidatos.length > 0) {
-    return candidatos.sort(ordenarPorAfinidad)[0];
+  const candidato = elegirCandidato(candidatos);
+  if (candidato) {
+    return candidato;
   }
 
   const candidatosAmplios = await tx.cajaMovimiento.findMany({
@@ -120,11 +147,7 @@ async function buscarMovimientoCajaRelacionado(
     take: 50,
   });
 
-  if (candidatosAmplios.length === 0) {
-    return null;
-  }
-
-  return candidatosAmplios.sort(ordenarPorAfinidad)[0];
+  return elegirCandidato(candidatosAmplios);
 }
 
 export async function GET(req: Request) {
@@ -132,6 +155,7 @@ export async function GET(req: Request) {
     const access = await requireFinancialAccess();
 
     if (!access.ok) {
+      access.response.headers.set("Cache-Control", "no-store");
       return access.response;
     }
 
@@ -143,10 +167,16 @@ export async function GET(req: Request) {
     let where: { sedeId?: number } = {};
 
     if (esAdmin) {
-      if (sedeIdParam && Number(sedeIdParam) > 0) {
+      if (sedeIdParam && !idValido(sedeIdParam)) {
+        return NextResponse.json({ error: "Sede invalida" }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
+      if (sedeIdParam) {
         where = { sedeId: Number(sedeIdParam) };
       }
     } else {
+      if (!idValido(user.sedeId)) {
+        return NextResponse.json({ error: "No tienes una sede autorizada" }, { status: 403, headers: { "Cache-Control": "no-store" } });
+      }
       where = { sedeId: user.sedeId };
     }
 
@@ -178,12 +208,12 @@ export async function GET(req: Request) {
       ok: true,
       total: totalGastosCartera,
       items: gastos,
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("ERROR LISTANDO GASTOS DE CARTERA:", error);
     return NextResponse.json(
       { error: "Error cargando gastos de cartera" },
-      { status: 500 }
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }
@@ -314,27 +344,33 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const body = (await req.json()) as Record<string, unknown>;
-    const id = normalizarNumero(body.id);
-    const valor = normalizarNumero(body.valor);
+    const body = await leerObjeto(req);
+    if (!body) {
+      return NextResponse.json({ error: "Los datos del gasto no son validos" }, { status: 400 });
+    }
+    if (body.observacion != null && typeof body.observacion !== "string") {
+      return NextResponse.json({ error: "La observacion no es valida" }, { status: 400 });
+    }
+    const id = numeroValido(body.id);
+    const valor = numeroValido(body.valor);
     const observacion = String(body.observacion || "").trim();
-    const sedeId = normalizarNumero(body.sedeId);
+    const sedeId = numeroValido(body.sedeId);
 
-    if (!id || id <= 0) {
+    if (!idValido(body.id)) {
       return NextResponse.json(
         { error: "ID invalido" },
         { status: 400 }
       );
     }
 
-    if (!sedeId || sedeId <= 0) {
+    if (!idValido(body.sedeId)) {
       return NextResponse.json(
         { error: "Sede invalida" },
         { status: 400 }
       );
     }
 
-    if (!valor) {
+    if (!Number.isFinite(valor) || valor === 0) {
       return NextResponse.json(
         { error: "El valor debe ser diferente de 0" },
         { status: 400 }
@@ -354,6 +390,7 @@ export async function PATCH(req: Request) {
     }
 
     const resultado = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "GastoCartera" WHERE id = ${id} FOR UPDATE`;
       const gastoExistente = await tx.gastoCartera.findUnique({
         where: { id },
         select: {
@@ -412,6 +449,9 @@ export async function PATCH(req: Request) {
       item: resultado,
     });
   } catch (error) {
+    if (error instanceof MovimientoCarteraAmbiguoError) {
+      return NextResponse.json({ error: error.message, codigo: "MOVIMIENTO_AMBIGUO" }, { status: 409 });
+    }
     console.error("ERROR ACTUALIZANDO GASTO DE CARTERA:", error);
     return NextResponse.json(
       { error: "Error actualizando gasto de cartera" },
@@ -435,10 +475,13 @@ export async function DELETE(req: Request) {
       );
     }
 
-    const body = (await req.json()) as Record<string, unknown>;
-    const id = normalizarNumero(body.id);
+    const body = await leerObjeto(req);
+    if (!body) {
+      return NextResponse.json({ error: "Los datos del gasto no son validos" }, { status: 400 });
+    }
+    const id = numeroValido(body.id);
 
-    if (!id || id <= 0) {
+    if (!idValido(body.id)) {
       return NextResponse.json(
         { error: "ID invalido" },
         { status: 400 }
@@ -446,6 +489,7 @@ export async function DELETE(req: Request) {
     }
 
     const eliminado = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "GastoCartera" WHERE id = ${id} FOR UPDATE`;
       const gastoExistente = await tx.gastoCartera.findUnique({
         where: { id },
         select: {
@@ -491,6 +535,9 @@ export async function DELETE(req: Request) {
       mensaje: "Gasto de cartera eliminado correctamente",
     });
   } catch (error) {
+    if (error instanceof MovimientoCarteraAmbiguoError) {
+      return NextResponse.json({ error: error.message, codigo: "MOVIMIENTO_AMBIGUO" }, { status: 409 });
+    }
     console.error("ERROR ELIMINANDO GASTO DE CARTERA:", error);
     return NextResponse.json(
       { error: "Error eliminando gasto de cartera" },
