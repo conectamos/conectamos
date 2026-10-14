@@ -323,3 +323,153 @@ test("SUMAS recarga el rango prioritario una sola vez, reanuda cursor y conserva
   assert.equal(jobs[1].state, "REVISADO", "reiniciar no invalida referencias ya releídas");
   assert.equal(calls, 0, "el backfill sólo encola; nunca salta el límite compartido");
 });
+
+function recoveryScope(t) {
+  setup(t);
+  const from = process.env.CIERRE_PRIORITY_FROM, to = process.env.CIERRE_PRIORITY_TO;
+  process.env.CIERRE_PRIORITY_FROM = "2026-09-01";
+  process.env.CIERRE_PRIORITY_TO = "2026-09-30";
+  t.after(() => {
+    if (from === undefined) delete process.env.CIERRE_PRIORITY_FROM; else process.env.CIERRE_PRIORITY_FROM = from;
+    if (to === undefined) delete process.env.CIERRE_PRIORITY_TO; else process.env.CIERRE_PRIORITY_TO = to;
+  });
+  return { date: new Date("2026-09-15T18:00:00Z"), old: new Date(now.getTime() - 2 * 86400000),
+    activated: new Date(now.getTime() - 86400000), future: new Date(now.getTime() + 3600000),
+    activationKey: "SUMAS_HISTORY_V2:2026-09-01:2026-09-30", markerKey: "SUMAS_UNSUPPORTED_V2:2026-09-01:2026-09-30" };
+}
+
+test("SUMAS recupera una vez sólo UNSUPPORTED_RESPONSE viejo del periodo y conserva pausas e intentos", async (t) => {
+  const scope = recoveryScope(t);
+  const definitions = [
+    { id: "eligible", result: { outcome: "UNSUPPORTED_RESPONSE" } },
+    { id: "new-result", result: { outcome: "UNSUPPORTED_RESPONSE" }, resultDate: now },
+    { id: "new-job", result: { outcome: "UNSUPPORTED_RESPONSE" }, jobDate: now },
+    { id: "at-cutoff", result: { outcome: "UNSUPPORTED_RESPONSE" }, resultDate: scope.activated },
+    ...["INVALID_RESPONSE", "RATE_LIMIT", "AUTH", "CONFIG", "UNAVAILABLE", "UNKNOWN"].map((code) => ({ id: code, result: { code } })),
+    { id: "mixed", result: { outcome: "UNSUPPORTED_RESPONSE", code: "RATE_LIMIT" } },
+    { id: "bad-json", result: "not JSON" },
+    { id: "no-result" },
+    { id: "outside", result: { outcome: "UNSUPPORTED_RESPONSE" }, date: new Date("2026-08-31T18:00:00Z") },
+    { id: "addi", result: { outcome: "UNSUPPORTED_RESPONSE" }, financial: "ADDI" },
+  ];
+  const rows = definitions.map((item) => credit(item.id, { financial: item.financial || "SUMASPAY",
+    localKey: localJob(item.id, item.financial || "SUMASPAY").key, effectiveAt: item.date || scope.date }));
+  const jobs = definitions.map((item) => localJob(item.id, item.financial || "SUMASPAY", {
+    state: "ERROR", attempts: 7, nextAttempt: scope.future, updatedAt: item.jobDate || scope.old,
+  }));
+  const db = database({ cierreCredito: rows, venta: rows.map((row) => ({ id: row.ventaId })), cierreSyncTrabajo: [...jobs],
+    cierreSyncEstado: [
+      { key: "LOCAL", initialized: true },
+      { key: scope.activationKey, initialized: true, updatedAt: scope.activated },
+      { key: "PROVIDER_RATE", lockedUntil: scope.future, lockToken: "ADDI", updatedAt: scope.old },
+      ...definitions.filter((item) => item.result).map((item) => ({ key: `RESULT:${localJob(item.id, item.financial || "SUMASPAY").key}`,
+        lockToken: typeof item.result === "string" ? item.result : JSON.stringify(item.result), updatedAt: item.resultDate || scope.old })),
+    ] });
+  const untouched = structuredClone(jobs.slice(1));
+  let calls = 0;
+  const options = { provider: async () => { calls++; return batch(); }, periodProvider: async () => { calls++; return batch(); } };
+  const result = await modules(db.prisma, options).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.recoveredSumas, 1);
+  assert.equal(jobs[0].state, "PENDIENTE");
+  assert.equal(jobs[0].nextAttempt.getTime(), now.getTime());
+  assert.equal(jobs[0].attempts, 7);
+  assert.deepEqual(jobs.slice(1), untouched);
+  const marker = db.tables.cierreSyncEstado.find((row) => row.key === scope.markerKey);
+  assert.equal(marker.initialized, true);
+  assert.equal(marker.lastSuccess.getTime(), scope.activated.getTime());
+  assert.equal(db.tables.cierreSyncEstado.find((row) => row.key === "PROVIDER_RATE").lockedUntil, scope.future);
+  jobs[0].state = "ERROR"; jobs[0].nextAttempt = scope.future; jobs[0].updatedAt = new Date(now.getTime() + 1);
+  const again = await modules(db.prisma, options).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(again.provider.recoveredSumas, 0);
+  assert.equal(jobs[0].state, "ERROR", "El reinicio no repite la recuperación");
+  const anchor = db.tables.cierreSyncEstado.find((row) => row.key === "SUMAS_UNSUPPORTED_V2_SCOPE");
+  assert.equal(anchor.lockToken, "2026-09-01:2026-09-30");
+  assert.equal(anchor.lastSuccess.getTime(), scope.activated.getTime());
+  process.env.CIERRE_PRIORITY_FROM = "2026-08-01";
+  process.env.CIERRE_PRIORITY_TO = "2026-08-31";
+  db.tables.cierreSyncEstado.push({ key: "SUMAS_HISTORY_V2:2026-08-01:2026-08-31", initialized: true, updatedAt: now });
+  const otherPeriod = await modules(db.prisma, options).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(otherPeriod.provider.recoveredSumas, 0);
+  assert.equal(jobs.find((job) => job.key === localJob("outside", "SUMASPAY").key).state, "ERROR");
+  assert.equal(db.tables.cierreSyncEstado.some((row) => row.key === "SUMAS_UNSUPPORTED_V2:2026-08-01:2026-08-31"), false);
+  assert.equal(anchor.lockToken, "2026-09-01:2026-09-30", "Otra prioridad no rearma la recuperación");
+  assert.equal(anchor.lastSuccess.getTime(), scope.activated.getTime());
+  assert.equal(calls, 0, "La recuperación no elude la pausa compartida ni hace HTTP");
+});
+
+test("recuperación SUMAS reanuda lotes de 500 y congela el límite temporal del marcador", async (t) => {
+  const scope = recoveryScope(t);
+  const rows = Array.from({ length: 501 }, (_, index) => credit(`r-${String(index).padStart(4, "0")}`, {
+    financial: "SUMASPAY", localKey: localJob(index, "SUMASPAY").key, effectiveAt: scope.date,
+  }));
+  const jobs = rows.map((_, index) => localJob(index, "SUMASPAY", {
+    state: "ERROR", attempts: 5, nextAttempt: scope.future, updatedAt: scope.old,
+  }));
+  const db = database({ cierreCredito: rows, venta: rows.map((row) => ({ id: row.ventaId })), cierreSyncTrabajo: [...jobs],
+    cierreSyncEstado: [{ key: "LOCAL", initialized: true }, { key: scope.activationKey, initialized: true, updatedAt: scope.activated },
+      { key: "PROVIDER_RATE", lockedUntil: scope.future },
+      ...jobs.map((job) => ({ key: `RESULT:${job.key}`, lockToken: JSON.stringify({ outcome: "UNSUPPORTED_RESPONSE" }), updatedAt: scope.old }))],
+  });
+  let result = await modules(db.prisma).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.recoveredSumas, 500);
+  const marker = db.tables.cierreSyncEstado.find((row) => row.key === scope.markerKey);
+  assert.equal(marker.initialized, false);
+  assert.equal(marker.lockToken, rows[499].id);
+  db.tables.cierreSyncEstado.find((row) => row.key === scope.activationKey).updatedAt = now;
+  result = await modules(db.prisma).load("lib/cierre-sync.ts").runCierreSyncBatch();
+  assert.equal(result.provider.recoveredSumas, 1);
+  assert.equal(marker.initialized, true);
+  assert.equal(marker.lastSuccess.getTime(), scope.activated.getTime());
+  assert.equal(db.tables.cierreSyncEstado.find((row) => row.key === "SUMAS_UNSUPPORTED_V2_SCOPE").lastSuccess.getTime(), scope.activated.getTime());
+  assert.ok(jobs.every((job) => job.state === "PENDIENTE" && job.attempts === 5));
+  assert.equal((await modules(db.prisma).load("lib/cierre-sync.ts").runCierreSyncBatch()).provider.recoveredSumas, 0);
+});
+
+test("recuperación SUMAS respeta ediciones concurrentes del trabajo y del marcador", async (t) => {
+  const scope = recoveryScope(t);
+  for (const race of ["job", "marker"]) {
+    const job = localJob(race, "SUMASPAY", { state: "ERROR", attempts: 6, nextAttempt: scope.future, updatedAt: scope.old });
+    const row = credit(race, { financial: "SUMASPAY", localKey: job.key, effectiveAt: scope.date });
+    const db = database({ cierreCredito: [row], venta: [{ id: row.ventaId }], cierreSyncTrabajo: [job],
+      cierreSyncEstado: [{ key: "LOCAL", initialized: true }, { key: scope.activationKey, initialized: true, updatedAt: scope.activated },
+        { key: "PROVIDER_RATE", lockedUntil: scope.future },
+        { key: `RESULT:${job.key}`, lockToken: JSON.stringify({ outcome: "UNSUPPORTED_RESPONSE" }), updatedAt: scope.old }],
+    });
+    if (race === "job") {
+      const update = db.prisma.cierreSyncTrabajo.updateMany;
+      db.prisma.cierreSyncTrabajo.updateMany = async (args) => {
+        if (args.where.key === job.key && args.data.state === "PENDIENTE") {
+          job.updatedAt = new Date(now.getTime() + 1); job.limitation = "Consulta concurrente";
+        }
+        return update(args);
+      };
+    } else {
+      const update = db.prisma.cierreSyncEstado.updateMany;
+      db.prisma.cierreSyncEstado.updateMany = async (args) => {
+        if (args.where.key === scope.markerKey) {
+          const marker = db.tables.cierreSyncEstado.find((item) => item.key === scope.markerKey);
+          marker.updatedAt = new Date(now.getTime() + 1); marker.initialized = true;
+        }
+        return update(args);
+      };
+    }
+    const result = await modules(db.prisma).load("lib/cierre-sync.ts").runCierreSyncBatch();
+    assert.equal(result.provider.recoveredSumas, 0, race);
+    assert.equal(job.state, "ERROR", race);
+    assert.equal(job.nextAttempt, scope.future, race);
+    assert.equal(job.attempts, 6, race);
+  }
+});
+
+test("recuperación SUMAS espera el marcador de activación completo", async (t) => {
+  const scope = recoveryScope(t);
+  for (const initialized of [undefined, false]) {
+    const db = database({ cierreSyncEstado: [{ key: "LOCAL", initialized: true }, ...(initialized === undefined ? [] : [{
+      key: scope.activationKey, initialized, updatedAt: scope.activated,
+    }])] });
+    const result = await modules(db.prisma).load("lib/cierre-sync.ts").runCierreSyncBatch();
+    assert.equal(result.provider.recoveredSumas, 0);
+    assert.equal(db.tables.cierreSyncEstado.some((row) => row.key === scope.markerKey), false);
+    assert.equal(db.tables.cierreSyncEstado.some((row) => row.key === "SUMAS_UNSUPPORTED_V2_SCOPE"), false);
+  }
+});

@@ -88,6 +88,74 @@ async function seedSumasHistoryRescan() {
   }, { timeout: 20_000 });
 }
 
+// The former date crop could turn a valid, nonempty history into an unsupported
+// response. Recover only that recorded outcome once, before the full-history
+// activation marker. Direct errors (including INVALID_RESPONSE) are untouched.
+async function recoverOldSumasUnsupportedResponses() {
+  const priority = getCierrePriority();
+  if (!priority) return 0;
+  const key = `SUMAS_UNSUPPORTED_V2:${priority.from}:${priority.to}`;
+  return prisma.$transaction(async (tx) => {
+    const activation = await tx.cierreSyncEstado.findUnique({ where: {
+      key: `SUMAS_HISTORY_V2:${priority.from}:${priority.to}`,
+    } });
+    if (!activation?.initialized || !Number.isFinite(activation.updatedAt.getTime())) return 0;
+    // Pin this one-off repair to the first verified activation and range. A
+    // later priority/rescan must never qualify failures from the new reader.
+    const scopeKey = "SUMAS_UNSUPPORTED_V2_SCOPE";
+    const scope = await tx.cierreSyncEstado.upsert({ where: { key: scopeKey }, update: {}, create: {
+      key: scopeKey, lockToken: `${priority.from}:${priority.to}`, lastSuccess: activation.updatedAt,
+    } });
+    if (scope.lockToken !== `${priority.from}:${priority.to}` || !scope.lastSuccess) return 0;
+    const state = await tx.cierreSyncEstado.upsert({ where: { key }, update: {}, create: {
+      key, lastSuccess: scope.lastSuccess,
+    } });
+    if (state.initialized || !state.lastSuccess) return 0;
+    // lastSuccess is this migration marker's fixed cutoff, not an API success.
+    // Claim its row in the same transaction as the jobs and cursor advancement.
+    const claimed = await tx.cierreSyncEstado.updateMany({ where: {
+      key, initialized: false, updatedAt: state.updatedAt, lockToken: state.lockToken ?? null,
+    }, data: { updatedAt: new Date() } });
+    if (claimed.count !== 1) return 0;
+    const cutoff = state.lastSuccess;
+    const rows = await tx.cierreCredito.findMany({
+      where: { financial: "SUMASPAY", localKey: { not: null },
+        effectiveAt: { gte: priority.start, lt: priority.end },
+        ...(state.lockToken ? { id: { gt: state.lockToken } } : {}) },
+      orderBy: { id: "asc" }, take: 500, select: { id: true, localKey: true },
+    });
+    const jobs = rows.length ? await tx.cierreSyncTrabajo.findMany({
+      where: { financial: "SUMASPAY", state: "ERROR", updatedAt: { lt: cutoff },
+        localKey: { in: rows.map((row) => row.localKey!) } },
+      select: { key: true, localKey: true, updatedAt: true },
+    }) : [];
+    const results = jobs.length ? await tx.cierreSyncEstado.findMany({
+      where: { key: { in: jobs.map((job) => `RESULT:${job.key}`) }, updatedAt: { lt: cutoff } },
+      select: { key: true, lockToken: true },
+    }) : [];
+    const recoverable = new Set(results.filter((result) => {
+      try {
+        const value: unknown = JSON.parse(result.lockToken || "null");
+        return value !== null && typeof value === "object" && !Array.isArray(value) &&
+          "outcome" in value && value.outcome === "UNSUPPORTED_RESPONSE" && !("code" in value);
+      } catch { return false; }
+    }).map((result) => result.key));
+    let changed = 0;
+    for (const job of jobs) {
+      if (!recoverable.has(`RESULT:${job.key}`)) continue;
+      const updated = await tx.cierreSyncTrabajo.updateMany({ where: {
+        key: job.key, financial: "SUMASPAY", localKey: job.localKey, state: "ERROR", updatedAt: job.updatedAt,
+      }, data: { state: "PENDIENTE", nextAttempt: new Date(),
+        limitation: "Revisión única de respuesta del lector anterior con el historial completo pendiente." } });
+      changed += updated.count;
+    }
+    await tx.cierreSyncEstado.update({ where: { key }, data: {
+      initialized: rows.length < 500, lockToken: rows.at(-1)?.id || state.lockToken || null,
+    } });
+    return changed;
+  }, { timeout: 20_000 });
+}
+
 async function acquireProviderRate(financial: string) {
   const now = new Date();
   await prisma.cierreSyncEstado.upsert({ where: { key: "PROVIDER_RATE" }, create: { key: "PROVIDER_RATE" }, update: {} });
@@ -171,6 +239,7 @@ async function persistError(job: CierreSyncTrabajo, attempt: CierreSyncTrabajo, 
 
 async function syncOneProviderReference() {
   const seeded = await seedPayJoyDays();
+  const recoveredSumas = await recoverOldSumasUnsupportedResponses();
   await seedSumasHistoryRescan();
   const rate = await prisma.cierreSyncEstado.findUnique({ where: { key: "PROVIDER_RATE" }, select: { lockToken: true } });
   const financials = ["SUMASPAY", "ADDI", "PAYJOY"];
@@ -225,7 +294,7 @@ async function syncOneProviderReference() {
       }
       if (job) break;
     }
-    if (!job) return { processed: 0, seeded, skipped };
+    if (!job) return { processed: 0, seeded, skipped, recoveredSumas };
     const day = dayOfJob(job);
     const local = day ? null : await prisma.cierreCredito.findUnique({ where: { localKey: job.localKey } });
     if (!day && (job.financial === "PAYJOY" || !local?.effectiveAt || !local.ventaId ||
@@ -240,7 +309,7 @@ async function syncOneProviderReference() {
       skipped++;
       continue;
     }
-    if (!await acquireProviderRate(job.financial)) return { processed: 0, seeded, skipped, rateLimited: true };
+    if (!await acquireProviderRate(job.financial)) return { processed: 0, seeded, skipped, recoveredSumas, rateLimited: true };
     // Persist before I/O; completion cannot consume a concurrently edited job.
     const attempt = await prisma.cierreSyncTrabajo.update({ where: { key: job.key }, data: {
       state: "PENDIENTE", attempts: { increment: 1 }, nextAttempt: new Date(Date.now() + backoff(job.attempts)),
@@ -258,14 +327,14 @@ async function syncOneProviderReference() {
           referencias: [{ documento: document, imei: local!.imei || undefined, providerId: local!.providerCreditId || undefined,
             localKey: job.localKey, sedeId: local!.sedeId || undefined, effectiveDate: date, amount: Number(local!.amount) }],
         });
-      return { ...await persistResult(job, attempt, day, result), seeded, skipped, ...context };
+      return { ...await persistResult(job, attempt, day, result), seeded, skipped, recoveredSumas, ...context };
     } catch (error) {
-      return { ...await persistError(job, attempt, day, error), seeded, skipped, ...context };
+      return { ...await persistError(job, attempt, day, error), seeded, skipped, recoveredSumas, ...context };
     } finally {
       await prisma.cierreSyncEstado.updateMany({ where: { key: "PROVIDER_ACTIVITY", lockToken: activity }, data: { lockToken: null, lockedUntil: null } });
     }
   }
-  return { processed: 0, seeded, skipped };
+  return { processed: 0, seeded, skipped, recoveredSumas };
 }
 
 export async function readCierrePriorityProgress() {

@@ -114,6 +114,44 @@ test("anulación y rechazo se distinguen de un crédito pagado", () => {
   assert.deepEqual(credits.map((item) => item.estado), ["ANULADO", "RECHAZADO", "EFECTIVO", "PENDIENTE"]);
 });
 
+test("SUMASPAY CANCELADO significa pagado por completo con principal y fecha efectiva válidos", () => {
+  const paid = sumas({ status: "CANCELADO", principal: 664000, loanDate: undefined, loan_date: day });
+  const [credit] = normalizeSumasCierre(source([paid]), reference);
+  assert.equal(credit.estado, "EFECTIVO");
+  assert.equal(credit.valor, 664000);
+  assert.equal(credit.fechaEfectiva.toISOString(), "2026-07-25T05:00:00.000Z");
+  assert.equal(credit.raw.providerStatus, "CANCELADO");
+  assert.deepEqual(credit.raw.diagnostics.reasons, []);
+  for (const changes of [{ principal: undefined, approvedPrincipal: 664000 }, { principal: 0 },
+    { loan_date: undefined }, { loan_date: "2026-02-30" }]) {
+    const [incomplete] = normalizeSumasCierre(source([{ ...paid, ...changes }]), reference);
+    assert.equal(incomplete.estado, "PENDIENTE", JSON.stringify(changes));
+  }
+});
+
+test("un reverso real posterior de SUMASPAY prevalece sobre el crédito pagado CANCELADO", () => {
+  const paid = sumas({ status: "CANCELADO", updatedAt: "2026-07-25T18:00:00Z" });
+  const reversed = { ...paid, status: "REVERSED", updatedAt: "2026-07-26T18:00:00Z" };
+  for (const history of [[paid, reversed], [reversed, paid]]) {
+    const credits = normalizeSumasCierre(source(history), reference);
+    assert.equal(credits.length, 1);
+    assert.equal(credits[0].estado, "REVERSADO");
+    assert.equal(credits[0].raw.providerStatus, "REVERSED");
+    assert.equal(credits[0].valor, 800000);
+  }
+});
+
+test("CANCELADO conserva su criterio negativo en ADDI y PAYJOY; otras cancelaciones SUMAS no cambian", () => {
+  assert.equal(normalizeAddiCierre(source([addi({ status: "CANCELADO" })]), reference)[0].estado, "ANULADO");
+  const [payjoy] = normalizePayJoyCierre({ valid: true, transactions: [finance("P-CANCELADO", {
+    financeOrder: { id: "P-CANCELADO", financeAmount: 900000, status: "CANCELADO" },
+  })] }, reference);
+  assert.equal(payjoy.estado, "ANULADO");
+  for (const status of ["CANCELLED", "CANCELED", "CANCELADA", "ANULADO", "ANULADA"]) {
+    assert.equal(normalizeSumasCierre(source([sumas({ status })]), reference)[0].estado, "ANULADO", status);
+  }
+});
+
 test("ADDI APPROVED permanece pendiente, incluso con ID, monto y tienda", () => {
   const [credit] = normalizeAddiCierre(source([addi({ status: "APPROVED" })]), reference);
   assert.equal(credit.estado, "PENDIENTE");
@@ -410,8 +448,8 @@ test("SUMASPAY y ADDI respetan identification/idNumber y excluyen documentos dis
   }
 });
 
-test("cancelaciones y reversos españoles prevalecen incluso con desembolso anterior", () => {
-  for (const [status, expected] of [["CANCELADO", "ANULADO"], ["CANCELADA", "ANULADO"], ["REVERSO", "REVERSADO"], ["DEVUELTO", "REVERSADO"], ["DENIED", "RECHAZADO"]]) {
+test("anulaciones y reversos reales prevalecen incluso con desembolso anterior", () => {
+  for (const [status, expected] of [["ANULADO", "ANULADO"], ["CANCELADA", "ANULADO"], ["REVERSO", "REVERSADO"], ["DEVUELTO", "REVERSADO"], ["DENIED", "RECHAZADO"]]) {
     assert.equal(normalizeSumasCierre(source([sumas({ status, disbursedOnDate: day })]), reference)[0].estado, expected);
     assert.equal(normalizeAddiCierre(source([addi({ status })]), reference)[0].estado, expected);
   }

@@ -169,3 +169,46 @@ test("una observación remota más antigua no anula un hecho más reciente", asy
   assert.deepEqual(run.fact(run.row()), { amount: 1000000, effectiveAt });
   assert.equal(run.row().status, "EFECTIVO");
 });
+
+test("SUMAS pagado recupera clasificación histórica sin alterar venta y un reverso posterior prevalece", async () => {
+  const paid = observed("SUMASPAY", { estado: "ANULADO" });
+  paid.raw.providerStatus = "CANCELADO";
+  for (const withSnapshot of [false, true]) {
+    const historicEvidence = withSnapshot ? { providerObservation: {
+      version: 1, financial: "SUMASPAY", providerId: paid.providerId, state: "ANULADO", amount: null, effectiveAt: null,
+      sourceUpdatedAt: effectiveAt.toISOString(), raw: paid.raw,
+    } } : paid.raw;
+    const run = setup("SUMASPAY", { cierreCredito: [local("SUMASPAY", { providerCreditId: paid.providerId,
+      status: "ANULADO", source: "CONECTAMOS + API SUMASPAY", evidence: historicEvidence, providerUpdatedAt: effectiveAt })] });
+    assert.deepEqual(run.fact(run.row()), { amount: 1000000, effectiveAt });
+    await run.store.saveCierreCredit(run.db.prisma, { financial: "SUMASPAY", providerCreditId: paid.providerId,
+      localKey: "VENTA:1:SUMASPAY", status: "ANULADO", source: "CONECTAMOS", evidence: { localTombstone: true } });
+    assert.equal(run.row().status, "ANULADO");
+    assert.equal(run.row().evidence.providerObservation.state, "EFECTIVO");
+    assert.equal(run.row().evidence.providerObservation.raw.providerStatus, "CANCELADO");
+    assert.deepEqual(run.fact(run.row()), { amount: 1000000, effectiveAt });
+    await run.reconcile([paid]);
+    assert.equal(run.row().status, "ANULADO", "La corrección financiera no fuerza el estado local");
+    await run.reconcile([observed("SUMASPAY", { estado: "REVERSADO", sourceUpdatedAt: later,
+      raw: { ...paid.raw, providerStatus: "REVERSED" } })]);
+    assert.equal(run.fact(run.row()), null);
+    await run.reconcile([paid]);
+    assert.equal(run.fact(run.row()), null);
+    assert.equal(run.row().evidence.providerObservation.state, "REVERSADO");
+    assert.equal(run.row().evidence.providerObservation.raw.providerStatus, "REVERSED");
+  }
+});
+
+test("corrección CANCELADO es exclusiva SUMAS y no reinterpreta snapshot REVERSADO", () => {
+  const loader = modules(database().prisma);
+  const api = loader.load("lib/cierre-provider-evidence.ts");
+  for (const financial of ["PAYJOY", "ADDI", "SUMASPAY"]) {
+    const source = observed(financial);
+    const raw = { ...source.raw, source: "credits-by-client", providerStatus: "CANCELADO" };
+    const base = { version: 1, financial, providerId: source.providerId, state: "ANULADO", amount: null, effectiveAt: null, sourceUpdatedAt: null, raw };
+    assert.equal(api.readCierreProviderObservation({ providerObservation: base }, financial, source.providerId).state,
+      financial === "SUMASPAY" ? "EFECTIVO" : "ANULADO");
+    assert.equal(api.readCierreProviderObservation({ providerObservation: { ...base, state: "REVERSADO" } }, financial, source.providerId).state, "REVERSADO");
+    assert.equal(api.negativeCierreProviderState("CANCELADO", financial), financial === "SUMASPAY" ? null : "ANULADO");
+  }
+});

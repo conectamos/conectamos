@@ -2,7 +2,7 @@ import type { CierreCredito, Prisma } from "@/app/generated/prisma/client";
 import type { CierreProviderCredit } from "@/lib/cierre-providers";
 import { getDateKeyInColombia } from "@/lib/credit-date-utils";
 import { saveCierreCredit, getCierreProviderObservationForRow } from "@/lib/cierre-store";
-import { makeCierreProviderObservation, mergeCierreProviderObservations } from "@/lib/cierre-provider-evidence";
+import { getSumasPaidCancellationFact, makeCierreProviderObservation, mergeCierreProviderObservations } from "@/lib/cierre-provider-evidence";
 import { CIERRE_RECONCILIATION_REASONS, type CierreReconciliationReason, type CierreReasonCounts } from "@/lib/cierre-reconciliation-reasons";
 export { CIERRE_RECONCILIATION_REASONS } from "@/lib/cierre-reconciliation-reasons";
 export type { CierreReconciliationReason, CierreReasonCounts } from "@/lib/cierre-reconciliation-reasons";
@@ -56,7 +56,9 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
   let linked = 0;
   let pending = 0;
   const reasons: CierreReasonCounts = {};
-  for (const observation of credits) {
+  for (const supplied of credits) {
+    const observation = supplied.financiera === "SUMASPAY" && supplied.estado === "ANULADO" &&
+      getSumasPaidCancellationFact(supplied.raw, supplied.providerId) ? { ...supplied, estado: "EFECTIVO" as const } : supplied;
     const issues = new Set<CierreReconciliationReason>();
     const countReasons = () => { for (const reason of issues) reasons[reason] = (reasons[reason] || 0) + 1; };
     const evidence = (raw: CierreProviderCredit["raw"]): Prisma.InputJsonValue => ({
@@ -76,7 +78,8 @@ export async function reconcileCierreCredits(tx: Prisma.TransactionClient, credi
     }, providerObservation);
     const previousDate = priorObservation?.sourceUpdatedAt ? new Date(priorObservation.sourceUpdatedAt) : existing?.providerUpdatedAt;
     const stale = previousDate && observation.sourceUpdatedAt && observation.sourceUpdatedAt < previousDate;
-    const reconcileStoredNegative = stale && !existing?.localKey && existing && terminal.has(existing.status);
+    const reconcileStoredNegative = stale && !existing?.localKey && existing &&
+      terminal.has(priorObservation?.state || existing.status);
     if (stale && !reconcileStoredNegative) { issues.add("STALE_OBSERVATION"); countReasons(); continue; }
     // Re-reading the origination day can discover a newly entered local sale.
     // If a newer negative is already known, link that retained fact rather than

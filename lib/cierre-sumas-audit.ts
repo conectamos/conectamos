@@ -1,6 +1,6 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 import { CIERRE_RECONCILIATION_REASONS } from "@/lib/cierre-reconciliation-reasons";
-import { hasCierreProviderObservation, readCierreProviderObservation } from "@/lib/cierre-provider-evidence";
+import { getSumasPaidCancellationFact, hasCierreProviderObservation, readCierreProviderObservation } from "@/lib/cierre-provider-evidence";
 
 type Observation = { providerCreditId: string | null; status: string; evidence: unknown };
 type AuditCredit = Observation & {
@@ -33,13 +33,14 @@ function add(metric: Metric, amount: number | null) {
   else metric.amount = Math.round((metric.amount + amount) * 100) / 100;
 }
 function negative(state: string) {
+  if (state === "CANCELADO") return null;
   if (/\b(REVERSED|REVERSAL|REVERSO|REVERSADO|REVERSADA|REFUNDED|REFUND|REEMBOLSADO|REEMBOLSADA|DEVUELTO|DEVUELTA)\b/.test(state)) return "REVERSADO";
   if (/\b(VOID|VOIDED|CANCELLED|CANCELED|CANCELADO|CANCELADA|ANULADO|ANULADA)\b/.test(state)) return "ANULADO";
   if (/\b(REJECTED|DECLINED|DENIED|RECHAZADO|RECHAZADA|DENEGADO|DENEGADA)\b/.test(state)) return "RECHAZADO";
   return null;
 }
 function explicitEffective(state: string) {
-  return /^(ACTIVE|ACTIVO|ACTIVA|AL DIA|MORA|EN MORA|DISBURSED|DESEMBOLSADO|DESEMBOLSADA|PAID IN FULL|PAGADO|PAGADA|SUCCESS|SUCCESSFUL|EXITOSA|EXITO|COMPLETED|COMPLETADO|COMPLETADA|FINALIZADO|FINALIZADA)$/.test(state);
+  return /^(ACTIVE|ACTIVO|ACTIVA|AL DIA|MORA|EN MORA|DISBURSED|DESEMBOLSADO|DESEMBOLSADA|PAID IN FULL|PAGADO|PAGADA|CANCELADO|SUCCESS|SUCCESSFUL|EXITOSA|EXITO|COMPLETED|COMPLETADO|COMPLETADA|FINALIZADO|FINALIZADA)$/.test(state);
 }
 
 function classify(raw: Record<string, unknown>) {
@@ -70,6 +71,10 @@ export function getEffectiveSumasObservation(row: Observation): { amount: number
     const observation = readCierreProviderObservation(row.evidence, "SUMASPAY", row.providerCreditId);
     if (!observation || observation.state !== "EFECTIVO") return null;
     return getEffectiveSumasObservation({ providerCreditId: observation.providerId, status: "EFECTIVO", evidence: observation.raw });
+  }
+  if (["EFECTIVO", "PENDIENTE", "ANULADO"].includes(row.status)) {
+    const paid = getSumasPaidCancellationFact(row.evidence, row.providerCreditId);
+    if (paid) return paid;
   }
   if (!row.providerCreditId?.trim() || !["EFECTIVO", "PENDIENTE"].includes(row.status)) return null;
   const raw = object(row.evidence);

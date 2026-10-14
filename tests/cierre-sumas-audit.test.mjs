@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Decimal } from "@prisma/client/runtime/client";
-import { modules, database, credit } from "./cierre-test-helpers.mjs";
+import { modules, database, credit, admin } from "./cierre-test-helpers.mjs";
 
 const effectiveAt = new Date("2026-09-15T18:00:00.000Z");
 const scope = { start: new Date("2026-09-01T05:00:00Z"), end: new Date("2026-10-01T05:00:00Z") };
@@ -135,4 +135,47 @@ test("diagnóstico conserva Decimal local y muestra estados crudos sólo mediant
   assert.deepEqual(result.rawStatuses.find((row) => row.status === "CANCELLED"), { status: "CANCELLED", units: 1, amount: 123456, missingAmount: 0 });
   assert.ok(result.rawStatuses.some((row) => row.status === "OTHER"));
   assert.ok(!JSON.stringify(result).includes("private-free-status"));
+});
+
+test("SUMAS CANCELADO exacto recupera crédito pagado legacy y snapshot sin consultar el proveedor", async () => {
+  const paid = (id) => raw(id, { providerStatus: "CANCELADO" });
+  const snapshot = (id, state, providerStatus) => ({ version: 1, financial: "SUMASPAY", providerId: `loan-${id}`,
+    state, amount: null, effectiveAt: null, sourceUpdatedAt: null, raw: raw(id, { providerStatus }) });
+  const db = database({ cierreCredito: [
+    observed(1, { status: "ANULADO", effectiveAt: new Date("2026-10-12T18:00:00Z") }, paid(1)),
+    observed(2, { status: "ANULADO", effectiveAt: new Date("2026-10-12T18:00:00Z") },
+      { providerObservation: snapshot(2, "ANULADO", "CANCELADO") }),
+    observed(3, { status: "ANULADO" }, { providerObservation: snapshot(3, "ANULADO", "ANULADO") }),
+    observed(4, { status: "REVERSADO" }, { providerObservation: snapshot(4, "REVERSADO", "CANCELADO") }),
+  ] });
+  const loader = modules(db.prisma);
+  const audit = loader.load("lib/cierre-sumas-audit.ts");
+  assert.deepEqual(audit.getEffectiveSumasObservation(db.tables.cierreCredito[0]), { amount: 900000, effectiveAt });
+  assert.deepEqual(audit.getEffectiveSumasObservation(db.tables.cierreCredito[1]), { amount: 900000, effectiveAt });
+  assert.equal(db.tables.cierreCredito[1].evidence.providerObservation.state, "ANULADO", "Lectura no modifica la evidencia histórica");
+  assert.equal(audit.getEffectiveSumasObservation(db.tables.cierreCredito[2]), null);
+  assert.equal(audit.getEffectiveSumasObservation(db.tables.cierreCredito[3]), null);
+  const result = await audit.readCierreSumasAudit(db.prisma, scope);
+  assert.deepEqual(result.totals.apiReportable, { units: 2, amount: 1800000, missingAmount: 0 });
+  const report = await loader.load("lib/cierre-report.ts").readCierreReport(new URLSearchParams("mode=month&month=2026-09&financier=SUMASPAY"), admin, true, true);
+  assert.deepEqual(report.totals, { units: 2, amount: 1800000 });
+  assert.equal(report.items.length, 2);
+  assert.ok(report.items.every((item) => item.status === "EFECTIVO"));
+  assert.ok(db.calls.every((call) => !["create", "update", "upsert", "updateMany", "deleteMany"].includes(call.method)));
+  const october = await loader.load("lib/cierre-report.ts").readCierreReport(new URLSearchParams("mode=month&month=2026-10&financier=SUMASPAY"), admin, true);
+  assert.equal(october.items.length, 0, "Se atribuye al mes original del crédito, no al cambio local o pago");
+});
+
+test("CANCELADO pagado exige identidad, principal y fecha; no amplía inglés, anulaciones ni aprobación", () => {
+  const { getEffectiveSumasObservation } = load();
+  for (const changes of [
+    { providerStatus: "CANCELADA" }, { providerStatus: "CANCELLED" }, { providerStatus: "CANCELED" },
+    { providerStatus: "CANCELADO POR FRAUDE" }, { providerStatus: "ANULADO" }, { providerStatus: "REVERSED" },
+    { providerStatus: "APPROVED" }, { source: "eligibility" }, { providerId: "other-id" },
+    { principal: null }, { principal: 0 }, { effectiveDate: null }, { diagnostics: null },
+    { diagnostics: { reasons: ["UNCONFIRMED_STATUS"] } },
+  ]) assert.equal(getEffectiveSumasObservation(observed(1, { status: "ANULADO" }, { providerStatus: "CANCELADO", ...changes })), null);
+  for (const status of ["REVERSADO", "RECHAZADO", "VINCULADO"]) {
+    assert.equal(getEffectiveSumasObservation(observed(1, { status }, { providerStatus: "CANCELADO" })), null);
+  }
 });

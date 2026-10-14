@@ -357,7 +357,11 @@ export function normalizeSumasCierre(payloads: SourcePayload[], reference: Cierr
       const disbursed = parseCierreProviderDate(field(row, ["disbursedOnDate", "disbursed_on_date", "disbursementDate", "disbursement_date"]));
       const fecha = disbursed ?? parseCierreProviderDate(field(row, ["loan_date", "loanDate", "fechaCredito", "fecha_credito"]));
       const valor = amount(field(row, ["principalDisbursed", "totalPrincipalDisbursed", "principal", "capital", "loan_amount_initial", "loanAmountInitial", "soldCapital", "sold_capital", "creditAmount", "valorCredito"]));
-      const estado = negativeState(state) ?? (disbursed || explicitEffectiveState(state) ? "EFECTIVO" : "PENDIENTE");
+      // The accounting owner confirmed SUMASPAY's exact CANCELADO means paid in full.
+      // This provider-specific meaning does not apply to other cancellation
+      // labels or providers; snapshot still requires principal and origin date.
+      const estado = normal(state) === "CANCELADO" ? "EFECTIVO"
+        : negativeState(state) ?? (disbursed || explicitEffectiveState(state) ? "EFECTIVO" : "PENDIENTE");
       credits.push(snapshot("SUMASPAY", providerId, row, payload.source, valor, fecha, estado, reference, state));
     }
   }

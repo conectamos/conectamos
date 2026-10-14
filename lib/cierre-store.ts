@@ -25,8 +25,8 @@ export function getCierreProviderObservationForRow(row: {
       (row.financial === "SUMASPAY" && raw.providerId !== row.providerCreditId)) return null;
   const fact = row.financial === "PAYJOY" ? getEffectivePayJoyObservation(row)
     : row.financial === "SUMASPAY" ? getEffectiveSumasObservation(row) : null;
-  const negative = negativeCierreProviderState(raw.providerStatus) ||
-    (row.source.includes("API") && raw.localTombstone !== true && terminal.has(row.status) ? row.status as CierreProviderObservation["state"] : null);
+  const negative = negativeCierreProviderState(raw.providerStatus, row.financial) ||
+    (!fact && row.source.includes("API") && raw.localTombstone !== true && terminal.has(row.status) ? row.status as CierreProviderObservation["state"] : null);
   if (!fact && !negative) return null;
   return makeCierreProviderObservation({ financial: row.financial, providerId: row.providerCreditId,
     state: negative || "EFECTIVO", amount: fact?.amount ?? null, effectiveAt: fact?.effectiveAt ?? null,
