@@ -64,7 +64,7 @@ export async function GET(req: Request) {
 
     if (!credito) {
       return NextResponse.json(
-        { error: "No se encontro un credito FINSERPAY creado hoy o ayer para este IMEI" },
+        { error: "No se encontró un crédito FINSERPAY con fecha de generación de hoy o ayer en Colombia para este IMEI." },
         { status: 404 }
       );
     }

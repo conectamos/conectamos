@@ -1,4 +1,4 @@
-import { isTodayOrYesterdayDateKey } from "@/lib/credit-date-utils";
+import { getDateKeyInColombia, isTodayOrYesterdayDateKey } from "@/lib/credit-date-utils";
 
 const FINSERPAY_DEFAULT_URL =
   "https://finserpay.com/api/public/creditos/imei";
@@ -807,8 +807,44 @@ function normalizeFrequency(value: unknown) {
   return null;
 }
 
-function getCreditCreationDate(value: unknown) {
-  return deepDate(value, [
+function normalizeCreditDateInput(value: unknown): string | null {
+  // Credit timestamps are instants; DOB/document dates remain civil dates in
+  // normalizeDateInput and must not shift when displayed in Colombia.
+  const numeric = typeof value === "number" ? value
+    : typeof value === "string" && /^\d{10,13}$/.test(value.trim()) ? Number(value) : null;
+  if (numeric !== null && Number.isFinite(numeric) && numeric > 1_000_000_000) {
+    const date = new Date(numeric > 9_999_999_999 ? numeric : numeric * 1000);
+    return Number.isFinite(date.getTime()) ? getDateKeyInColombia(date) : null;
+  }
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}[Tt ]/.test(value.trim()) &&
+      /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value.trim())) {
+    if (!normalizeDateInput(value)) return null;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? getDateKeyInColombia(date) : null;
+  }
+  return normalizeDateInput(value);
+}
+
+function directValue(record: Record<string, unknown>, keys: string[]): unknown {
+  // Key priority, rather than JSON property order, decides the source.
+  for (const wanted of keys.map(normalizeKey)) {
+    const entry = Object.entries(record).find(([key]) => normalizeKey(key) === wanted);
+    if (entry && entry[1] !== undefined && entry[1] !== null && entry[1] !== "") return entry[1];
+  }
+  return undefined;
+}
+
+function getCreditCreationDate(value: unknown, officialContract: boolean) {
+  if (!isRecord(value)) return null;
+  const financing = isRecord(value.financiacion) ? value.financiacion : null;
+  if (officialContract) {
+    // The provider's credit endpoint exposes the same persisted fechaCredito
+    // twice. It never exposes the earlier prequalification/query date here.
+    const date = directValue(value, ["fechaCredito"])
+      ?? (financing ? directValue(financing, ["fechaApertura"]) : undefined);
+    return normalizeCreditDateInput(date);
+  }
+  const date = directValue(value, [
     "fechaCreacionCredito",
     "fecha_creacion_credito",
     "fechaCredito",
@@ -839,16 +875,20 @@ function getCreditCreationDate(value: unknown) {
     "date_created",
     "disbursementDate",
     "disbursement_date",
-    "approvedAt",
-    "approved_at",
   ]);
+  return normalizeCreditDateInput(date ?? (financing ? directValue(financing, ["fechaApertura"]) : undefined));
 }
 
 function parseCreditoFromValue(
   value: unknown,
-  imei: string
+  imei: string,
+  officialContract = false
 ): FinserpayCreditoImei | null {
-  const creditoAutorizado = deepNumber(value, [
+  const officialCredit = isRecord(value) ? value : {};
+  const financing = isRecord(officialCredit.financiacion) ? officialCredit.financiacion : {};
+  const creditoAutorizado = officialContract
+    ? toNumber(directValue(officialCredit, ["valorCredito"]) ?? directValue(financing, ["valorCredito"]))
+    : deepNumber(value, [
     "creditoAutorizado",
     "valorCredito",
     "valor_credito",
@@ -872,7 +912,7 @@ function parseCreditoFromValue(
     return null;
   }
 
-  const fechaCreacionCredito = getCreditCreationDate(value);
+  const fechaCreacionCredito = getCreditCreationDate(value, officialContract);
 
   if (!isTodayOrYesterdayDateKey(fechaCreacionCredito)) {
     return null;
@@ -1025,9 +1065,9 @@ function parseCreditoFromValue(
   };
 }
 
-function valueContainsImei(value: unknown, imei: string) {
-  const explicitImei = normalizeImei(
-    deepText(value, [
+function imeiIdentity(value: unknown, imei: string): { matches: boolean; conflict: boolean } {
+  if (!isRecord(value)) return { matches: false, conflict: false };
+  const keys = new Set([
       "imei",
       "serialImei",
       "serial_imei",
@@ -1035,15 +1075,36 @@ function valueContainsImei(value: unknown, imei: string) {
       "imei_equipo",
       "deviceImei",
       "device_imei",
-      "serial",
-    ])
-  );
-
-  if (explicitImei) {
-    return explicitImei === imei;
+  ].map(normalizeKey));
+  let matches = false;
+  for (const [key, raw] of Object.entries(value)) {
+    const normalizedKey = normalizeKey(key);
+    const text = String(raw ?? "").trim();
+    if (!text) continue;
+    // deviceUid/serial can also be non-IMEI device identifiers.
+    const secondary = ["DEVICEUID", "SERIAL"].includes(normalizedKey) && /^\d{15}$/.test(text);
+    if (!keys.has(normalizedKey) && !secondary) continue;
+    if (!/^\d{15}$/.test(text) || text !== imei) return { matches: false, conflict: true };
+    matches = true;
   }
+  return { matches, conflict: false };
+}
 
-  return JSON.stringify(value).replace(/\D/g, "").includes(imei);
+function creditSources(payload: unknown, imei: string) {
+  if (isRecord(payload) && isRecord(payload.credit)) {
+    const credit = payload.credit;
+    const identities = [payload, credit, credit.equipo].map((value) => imeiIdentity(value, imei));
+    if (identities.some((identity) => identity.conflict) || !identities.some((identity) => identity.matches)) return [];
+    return [{ value: credit, officialContract: payload.ok === true && payload.active === true }];
+  }
+  // Older flat/list envelopes remain supported only when the record itself
+  // identifies this device. Never fall back to another device or client record.
+  return collectRecords(payload).flatMap((record) => {
+    const credit = isRecord(record.credito) ? record.credito : record;
+    const identities = [record, credit, credit.equipo].map((value) => imeiIdentity(value, imei));
+    return identities.some((identity) => identity.conflict) || !identities.some((identity) => identity.matches)
+      ? [] : [{ value: credit, officialContract: false }];
+  });
 }
 
 function candidateScore(credito: FinserpayCreditoImei) {
@@ -1074,13 +1135,8 @@ export async function obtenerCreditoFinserpayPorImei(imeiValue: unknown) {
   const config = getConfig();
   const url = buildLookupUrl(config.urlTemplate, imei);
   const payload = await requestFinserpay(url, config.token);
-  const records = collectRecords(payload);
-  const sources = [
-    ...(isRecord(payload) ? [payload] : []),
-    ...records.filter((record) => valueContainsImei(record, imei)),
-  ];
-  const candidates = (sources.length > 0 ? sources : records)
-    .map((source) => parseCreditoFromValue(source, imei))
+  const candidates = creditSources(payload, imei)
+    .map((source) => parseCreditoFromValue(source.value, imei, source.officialContract))
     .filter((credito): credito is FinserpayCreditoImei => Boolean(credito))
     .sort((a, b) => candidateScore(b) - candidateScore(a));
 

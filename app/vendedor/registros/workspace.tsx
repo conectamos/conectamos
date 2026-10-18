@@ -2010,7 +2010,7 @@ export default function VendedorRegistroWorkspace({
           ...current,
           [index]:
             data.error ||
-            "No se encontro un credito FINSERPAY creado hoy o ayer para este IMEI",
+            "No se encontró un crédito FINSERPAY con fecha de generación de hoy o ayer en Colombia para este IMEI.",
         }));
         return;
       }
@@ -4839,9 +4839,9 @@ export default function VendedorRegistroWorkspace({
                                   <div className="flex items-center justify-between gap-2">
                                     <span>
                                       {consultandoFinserpayIndex === index
-                                        ? "Consultando credito FINSERPAY..."
+                                        ? "Consultando crédito FINSERPAY..."
                                         : finserpayCreditos[index]
-                                          ? `Credito FINSERPAY: ${formatMoney(
+                                          ? `Crédito FINSERPAY: ${formatMoney(
                                               finserpayCreditos[index]
                                                 ?.creditoAutorizado ?? null
                                             )}`
@@ -4862,6 +4862,12 @@ export default function VendedorRegistroWorkspace({
                                       Consultar
                                     </button>
                                   </div>
+                                  {consultandoFinserpayIndex !== index &&
+                                    creditoFinserpay?.fechaCreacionCredito && (
+                                      <span>
+                                        Fecha del crédito: {creditoFinserpay.fechaCreacionCredito.split("-").reverse().join("/")} (Colombia)
+                                      </span>
+                                    )}
                                 </div>
                               )}
                               {!modoManual &&
