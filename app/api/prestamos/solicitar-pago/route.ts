@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import { esRolBodega, puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   etiquetaSedeAcreedora,
   esDeudaEntreSedes,
@@ -14,6 +14,13 @@ export async function POST(req: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    if (esRolBodega(user.rolNombre)) {
+      return NextResponse.json(
+        { error: "El rol BODEGA no tiene permisos para gestionar pagos" },
+        { status: 403 }
+      );
     }
 
     if (!puedeAccederModulosOperativos(user.perfilTipo)) {

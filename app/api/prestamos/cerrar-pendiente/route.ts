@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import { esRolBodega, puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
+  NOMBRE_SEDE_BODEGA,
   esEstadoInventarioBloqueadoPorPrestamo,
   etiquetaSedeAcreedora,
 } from "@/lib/prestamos";
@@ -54,14 +55,17 @@ export async function POST(req: Request) {
       );
     }
 
-    if (String(prestamo.estado || "").toUpperCase() !== "PENDIENTE") {
-      return NextResponse.json(
-        { error: "Solo se pueden cerrar prestamos pendientes" },
-        { status: 400 }
-      );
+    const esBodega = esRolBodega(user.rolNombre);
+    if (esBodega) {
+      const principal = await prisma.sede.findFirst({
+        where: { nombre: { equals: NOMBRE_SEDE_BODEGA, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (!principal || (prestamo.sedeOrigenId !== principal.id && prestamo.sedeDestinoId !== principal.id)) {
+        return NextResponse.json({ error: "BODEGA solo puede gestionar préstamos de bodega principal" }, { status: 403 });
+      }
     }
-
-    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
+    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase()) || esBodega;
     const esOrigen = Number(user.sedeId) === Number(prestamo.sedeOrigenId);
     const esDestino = Number(user.sedeId) === Number(prestamo.sedeDestinoId);
 
@@ -76,6 +80,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Solo la sede origen o el admin pueden cancelar la solicitud" },
         { status: 403 }
+      );
+    }
+
+    if (String(prestamo.estado || "").toUpperCase() !== "PENDIENTE") {
+      return NextResponse.json(
+        { error: "Solo se pueden cerrar prestamos pendientes" },
+        { status: 400 }
       );
     }
     const sedes = await prisma.sede.findMany({

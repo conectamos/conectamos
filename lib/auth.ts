@@ -4,13 +4,17 @@ import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
 import {
   esPerfilAdministrador,
   esPerfilAuditor,
+  esPerfilBodega,
+  esRolBodega,
+  esSedeBodegaPrincipal,
 } from "@/lib/access-control";
 import { etiquetaTipoPerfilVendedor } from "@/lib/vendor-profiles";
 import { isSessionIdle } from "@/lib/session-state";
 
-export async function getSessionUser() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+export async function getSessionUser(sessionTokenOverride?: string) {
+  const sessionToken = typeof sessionTokenOverride === "string"
+    ? sessionTokenOverride
+    : (await cookies()).get(SESSION_COOKIE_NAME)?.value;
 
   const session = verifySessionToken(sessionToken);
 
@@ -104,7 +108,18 @@ export async function getSessionUser() {
     }
   }
 
-  const rolNombre = esPerfilAdministrador(perfil?.tipo)
+  const usuarioBodega = esRolBodega(user.rol?.nombre);
+  const perfilBodega = esPerfilBodega(perfil?.tipo);
+
+  // A warehouse identity never inherits the administrative role of its base login.
+  if (usuarioBodega || perfilBodega) {
+    if (!esSedeBodegaPrincipal(user.sede?.nombre)) return null;
+    if (usuarioBodega && perfil && !perfilBodega) return null;
+  }
+
+  const rolNombre = perfilBodega || usuarioBodega
+    ? "BODEGA"
+    : esPerfilAdministrador(perfil?.tipo)
     ? "ADMIN"
     : esPerfilAuditor(perfil?.tipo)
       ? "AUDITOR"

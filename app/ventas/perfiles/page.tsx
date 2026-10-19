@@ -8,6 +8,7 @@ import {
 } from "@/app/dashboard/_components/operations-dashboard";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
 import LogoutButton from "@/app/dashboard/_components/logout-button";
+import { esRolAdmin, esSedeBodegaPrincipal } from "@/lib/access-control";
 import {
   type AvatarPerfilKey,
   obtenerAvatarDefaultPorTipo,
@@ -40,6 +41,7 @@ type PerfilItem = {
   tipo:
     | "ADMINISTRADOR"
     | "AUDITOR"
+    | "BODEGA"
     | "FACTURADOR"
     | "SUPERVISOR_TIENDA"
     | "VENDEDOR"
@@ -83,6 +85,11 @@ const TIPOS_PERFIL: Array<{
     detail: "Perfil reservado para el modulo futuro de facturacion.",
   },
   {
+    value: "BODEGA",
+    label: "Bodega",
+    detail: "Gestiona exclusivamente la bodega principal: ingresos, despachos, devoluciones y trazabilidad, sin eliminar equipos.",
+  },
+  {
     value: "SUPERVISOR_TIENDA",
     label: "Supervisor de tienda",
     detail: "Ve solo las sedes que tenga asignadas.",
@@ -105,6 +112,7 @@ const COLUMNAS_PERFIL: Array<{
 }> = [
   { tipo: "ADMINISTRADOR", titulo: "Admin" },
   { tipo: "AUDITOR", titulo: "Auditor" },
+  { tipo: "BODEGA", titulo: "Bodega" },
   { tipo: "SUPERVISOR_TIENDA", titulo: "Supervisor" },
   { tipo: "VENDEDOR", titulo: "Vendedor" },
   { tipo: "APOYO_OPERATIVO", titulo: "Apoyo operativo" },
@@ -144,6 +152,8 @@ export default function PerfilesVendedorPage() {
   const [ediciones, setEdiciones] = useState<Record<number, PerfilEdicion>>({});
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user?.rolNombre || "").toUpperCase());
+  const puedeAsignarBodega = esRolAdmin(user?.rolNombre);
+  const sedesBodega = sedes.filter((sede) => esSedeBodegaPrincipal(sede.nombre));
 
   const aplicarCarga = (data: {
     perfiles?: PerfilItem[];
@@ -234,6 +244,7 @@ export default function PerfilesVendedorPage() {
           ...previo,
           tipo,
           avatarKey: obtenerAvatarDefaultPorTipo(tipo),
+          sedeIds: tipo === "BODEGA" ? sedesBodega.map((sede) => sede.id) : previo.sedeIds,
         },
       };
     });
@@ -469,7 +480,7 @@ export default function PerfilesVendedorPage() {
             }
             className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
           >
-            {TIPOS_PERFIL.map((item) => (
+            {TIPOS_PERFIL.filter((item) => item.value !== "BODEGA" || puedeAsignarBodega || edicion.tipo === "BODEGA").map((item) => (
               <option key={item.value} value={item.value}>
                 {item.label}
               </option>
@@ -538,18 +549,19 @@ export default function PerfilesVendedorPage() {
             Sedes asignadas
           </h4>
           <p className="text-sm text-slate-500">
-            Selecciona las sedes que este perfil podrá consultar.
+            {edicion.tipo === "BODEGA" ? "Bodega se asigna únicamente a BODEGA PRINCIPAL." : "Selecciona las sedes que este perfil podrá consultar."}
           </p>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {sedes.map((sede) => {
+          {(edicion.tipo === "BODEGA" ? sedesBodega : sedes).map((sede) => {
             const selected = edicion.sedeIds.includes(sede.id);
 
             return (
               <button
                 key={`${perfil.id}-${sede.id}`}
                 type="button"
+                disabled={edicion.tipo === "BODEGA"}
                 onClick={() =>
                   alternarSede(sede.id, edicion.sedeIds, (next) =>
                     actualizarEdicion(perfil.id, "sedeIds", next)
@@ -573,7 +585,7 @@ export default function PerfilesVendedorPage() {
         <button
           type="button"
           onClick={() => void guardarPerfil(perfil.id)}
-          disabled={procesandoId === perfil.id}
+          disabled={procesandoId === perfil.id || (perfil.tipo === "BODEGA" && !puedeAsignarBodega)}
           className="min-h-11 rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {procesandoId === perfil.id ? "Guardando..." : "Guardar cambios"}
@@ -766,11 +778,12 @@ export default function PerfilesVendedorPage() {
                     const tipo = event.target.value as PerfilItem["tipo"];
                     setNuevoTipo(tipo);
                     setNuevoAvatarKey(obtenerAvatarDefaultPorTipo(tipo));
+                    if (tipo === "BODEGA") setNuevaSedeIds(sedesBodega.map((sede) => sede.id));
                   })()
                 }
                 className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-2 focus:ring-red-100"
               >
-                {TIPOS_PERFIL.map((item) => (
+                {TIPOS_PERFIL.filter((item) => item.value !== "BODEGA" || puedeAsignarBodega).map((item) => (
                   <option key={item.value} value={item.value}>
                     {item.label}
                   </option>
@@ -829,18 +842,19 @@ export default function PerfilesVendedorPage() {
                 Asignación de sedes
               </h3>
               <p className="text-sm text-slate-500">
-                Para administradores y auditores puedes dejarlo sin sedes. Supervisores, facturadores y vendedores deben tener al menos una.
+                {nuevoTipo === "BODEGA" ? "El perfil Bodega se asigna únicamente a BODEGA PRINCIPAL." : "Para administradores y auditores puedes dejarlo sin sedes. Los demás perfiles deben tener al menos una."}
               </p>
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {sedes.map((sede) => {
+              {(nuevoTipo === "BODEGA" ? sedesBodega : sedes).map((sede) => {
                 const selected = nuevaSedeIds.includes(sede.id);
 
                 return (
                   <button
                     key={sede.id}
                     type="button"
+                    disabled={nuevoTipo === "BODEGA"}
                     onClick={() =>
                       alternarSede(sede.id, nuevaSedeIds, setNuevaSedeIds)
                     }

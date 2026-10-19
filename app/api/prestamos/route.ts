@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import { esRolBodega, puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   ESTADO_INVENTARIO_PRESTAMO,
   ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
@@ -72,7 +72,18 @@ export async function GET(req: Request) {
     });
     const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
 
-    const where = esAdmin
+    const esBodega = esRolBodega(user.rolNombre);
+    if (esBodega && sedeBodegaId <= 0) {
+      return NextResponse.json({ error: "Bodega principal no configurada" }, { status: 403 });
+    }
+    const where = esBodega
+      ? {
+          AND: [
+            { OR: [{ sedeOrigenId: sedeBodegaId }, { sedeDestinoId: sedeBodegaId }] },
+            ...(sedeIdFiltro ? [{ OR: [{ sedeOrigenId: sedeIdFiltro }, { sedeDestinoId: sedeIdFiltro }] }] : []),
+          ],
+        }
+      : esAdmin
       ? sedeIdFiltro
         ? {
             OR: [{ sedeOrigenId: sedeIdFiltro }, { sedeDestinoId: sedeIdFiltro }],
@@ -326,6 +337,16 @@ export async function POST(req: Request) {
     }
 
     const esAdminPost = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
+
+    if (esRolBodega(user.rolNombre)) {
+      const principal = await prisma.sede.findFirst({
+        where: { nombre: { equals: NOMBRE_SEDE_BODEGA, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (!principal || sedeOrigenId !== principal.id) {
+        return NextResponse.json({ error: "BODEGA solo puede enviar desde bodega principal" }, { status: 403 });
+      }
+    }
 
     if (!esAdminPost && user.sedeId !== sedeOrigenId) {
       return NextResponse.json(

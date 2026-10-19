@@ -9,6 +9,7 @@ async function runEnsureVendorProfilesSchema() {
       CREATE TYPE "TipoPerfilVendedor" AS ENUM (
         'ADMINISTRADOR',
         'AUDITOR',
+        'BODEGA',
         'FACTURADOR',
         'SUPERVISOR_TIENDA',
         'VENDEDOR',
@@ -22,6 +23,16 @@ async function runEnsureVendorProfilesSchema() {
 
   await prisma.$executeRawUnsafe(`
     ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'AUDITOR';
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'BODEGA';
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "Rol" ("nombre", "descripcion", "createdAt", "updatedAt")
+    VALUES ('BODEGA', 'Gestion exclusiva de la bodega principal', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT ("nombre") DO NOTHING;
   `);
 
   await prisma.$executeRawUnsafe(`

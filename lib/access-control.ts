@@ -14,8 +14,20 @@ export function esRolAuditor(rolNombre: unknown) {
   return normalizarRolNombre(rolNombre) === "AUDITOR";
 }
 
+export function esRolBodega(rolNombre: unknown) {
+  return normalizarRolNombre(rolNombre) === "BODEGA";
+}
+
+export function esSedeBodegaPrincipal(nombre: unknown) {
+  return String(nombre || "").trim().replace(/\s+/g, " ").toUpperCase() === "BODEGA PRINCIPAL";
+}
+
 export function esRolAdministrativo(rolNombre: unknown) {
   return esRolAdmin(rolNombre) || esRolAuditor(rolNombre);
+}
+
+export function puedeGestionarBodegaPrincipal(rolNombre: unknown) {
+  return esRolAdministrativo(rolNombre) || esRolBodega(rolNombre);
 }
 
 export function puedeEliminarRegistros(rolNombre: unknown) {
@@ -28,6 +40,10 @@ export function esPerfilAdministrador(perfilTipo: unknown) {
 
 export function esPerfilAuditor(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "AUDITOR";
+}
+
+export function esPerfilBodega(perfilTipo: unknown) {
+  return normalizarPerfilTipo(perfilTipo) === "BODEGA";
 }
 
 export function esPerfilAdministrativo(perfilTipo: unknown) {

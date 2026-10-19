@@ -9,7 +9,7 @@ import {
   SESSION_COOKIE_NAME,
 } from "@/lib/session";
 import { createUserSession } from "@/lib/session-state";
-import { esRolAdministrativo } from "@/lib/access-control";
+import { esRolAdministrativo, esRolBodega, esSedeBodegaPrincipal } from "@/lib/access-control";
 import { obtenerPerfilesAccesoPorSede } from "@/lib/vendor-profiles";
 
 function esAdmin(rolNombre: string | null | undefined) {
@@ -68,6 +68,10 @@ export async function POST(req: Request) {
       );
     }
 
+    if (esRolBodega(user.rol?.nombre) && !esSedeBodegaPrincipal(user.sede?.nombre)) {
+      return NextResponse.json({ error: "El acceso Bodega requiere la sede BODEGA PRINCIPAL" }, { status: 403 });
+    }
+
     if (!isPasswordHash(user.claveHash)) {
       await prisma.usuario.update({
         where: { id: user.id },
@@ -78,7 +82,7 @@ export async function POST(req: Request) {
     }
 
     if (!esAdmin(user.rol?.nombre)) {
-      const perfiles = await obtenerPerfilesAccesoPorSede(user.sedeId);
+      const perfiles = await obtenerPerfilesAccesoPorSede(user.sedeId, { soloBodega: esRolBodega(user.rol?.nombre) });
 
       if (perfiles.length > 0) {
         const response = NextResponse.json({

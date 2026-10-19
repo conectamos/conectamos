@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { verifyPassword } from "@/lib/password";
+import { esPerfilBodega, esSedeBodegaPrincipal } from "@/lib/access-control";
 import {
   type AvatarPerfilKey,
   normalizarAvatarPerfil,
@@ -9,6 +10,7 @@ import {
 export const TIPOS_PERFIL_VENDEDOR = [
   "ADMINISTRADOR",
   "AUDITOR",
+  "BODEGA",
   "FACTURADOR",
   "SUPERVISOR_TIENDA",
   "VENDEDOR",
@@ -80,6 +82,7 @@ export function normalizarAvatarPerfilVendedor(
 export function etiquetaTipoPerfilVendedor(tipo: TipoPerfilVendedor) {
   if (tipo === "ADMINISTRADOR") return "Administrador";
   if (tipo === "AUDITOR") return "Auditor";
+  if (tipo === "BODEGA") return "Bodega";
   if (tipo === "FACTURADOR") return "Facturador";
   if (tipo === "VENDEDOR") return "Vendedor";
   if (tipo === "APOYO_OPERATIVO") return "Apoyo operativo";
@@ -101,6 +104,21 @@ async function validarSedesExistentes(sedeIds: number[]) {
 
   if (total !== sedeIds.length) {
     throw new Error("Hay sedes invalidas en la asignacion");
+  }
+}
+
+export class PerfilBodegaValidationError extends Error {}
+
+async function validarSedePerfilBodega(payload: PerfilVendedorPayload) {
+  if (!esPerfilBodega(payload.tipo)) return;
+
+  const sedes = await prisma.sede.findMany({
+    where: { id: { in: payload.sedeIds } },
+    select: { id: true, nombre: true },
+  });
+
+  if (payload.sedeIds.length !== 1 || sedes.length !== 1 || !esSedeBodegaPrincipal(sedes[0]?.nombre)) {
+    throw new PerfilBodegaValidationError("El perfil Bodega debe estar asignado únicamente a BODEGA PRINCIPAL");
   }
 }
 
@@ -219,10 +237,12 @@ export async function obtenerPerfilesVendedor(options?: {
   }));
 }
 
-export async function obtenerPerfilesAccesoPorSede(sedeId: number) {
+export async function obtenerPerfilesAccesoPorSede(sedeId: number, options?: { soloBodega?: boolean }) {
+  const sede = await prisma.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } });
   const perfiles = await prisma.perfilVendedor.findMany({
     where: {
       activo: true,
+      ...(options?.soloBodega ? { tipo: "BODEGA" as const } : {}),
       OR: [
         { tipo: { in: ["ADMINISTRADOR", "AUDITOR"] } },
         {
@@ -244,7 +264,7 @@ export async function obtenerPerfilesAccesoPorSede(sedeId: number) {
     orderBy: [{ tipo: "asc" }, { nombre: "asc" }],
   });
 
-  return perfiles.map((perfil) => ({
+  return perfiles.filter((perfil) => !esPerfilBodega(perfil.tipo) || esSedeBodegaPrincipal(sede?.nombre)).map((perfil) => ({
     id: perfil.id,
     nombre: perfil.nombre,
     tipo: perfil.tipo,
@@ -261,11 +281,13 @@ export async function validarPerfilAccesoPorSede(params: {
   pin: string;
   perfilId: number;
   sedeId: number;
+  soloBodega?: boolean;
 }) {
   const perfil = await prisma.perfilVendedor.findFirst({
     where: {
       id: params.perfilId,
       activo: true,
+      ...(params.soloBodega ? { tipo: "BODEGA" as const } : {}),
       OR: [
         { tipo: { in: ["ADMINISTRADOR", "AUDITOR"] } },
         {
@@ -291,6 +313,11 @@ export async function validarPerfilAccesoPorSede(params: {
     return null;
   }
 
+  if (esPerfilBodega(perfil.tipo)) {
+    const sede = await prisma.sede.findUnique({ where: { id: params.sedeId }, select: { nombre: true } });
+    if (!esSedeBodegaPrincipal(sede?.nombre)) return null;
+  }
+
   if (!verifyPassword(params.pin, perfil.pinHash)) {
     return null;
   }
@@ -311,6 +338,7 @@ export async function validarPerfilAccesoPorSede(params: {
 export async function crearPerfilVendedor(payload: PerfilVendedorPayload) {
   await ensureVendorProfilesSchema();
   await validarSedesExistentes(payload.sedeIds);
+  await validarSedePerfilBodega(payload);
   await validarDuplicadosPerfil(payload);
 
   const perfil = await prisma.perfilVendedor.create({
@@ -341,6 +369,7 @@ export async function actualizarPerfilVendedor(
 ) {
   await ensureVendorProfilesSchema();
   await validarSedesExistentes(payload.sedeIds);
+  await validarSedePerfilBodega(payload);
   await validarDuplicadosPerfil(payload, perfilId);
 
   await prisma.perfilVendedor.update({

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { esRolAdministrativo } from "@/lib/access-control";
+import { esRolBodega, puedeGestionarBodegaPrincipal } from "@/lib/access-control";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
 
 const ESTADOS_PRESTAMO_ACTIVOS = [
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    if (!esRolAdministrativo(user.rolNombre)) {
+    if (!puedeGestionarBodegaPrincipal(user.rolNombre)) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
@@ -207,7 +207,9 @@ export async function POST(req: Request) {
           .join(" | ");
 
         bloqueados.push(
-          `${item.imei}: tiene registro comercial pendiente (${detalleRegistros})`
+          esRolBodega(user.rolNombre)
+            ? `${item.imei}: tiene un registro comercial pendiente; debe resolverse antes de devolver el equipo`
+            : `${item.imei}: tiene registro comercial pendiente (${detalleRegistros})`
         );
         continue;
       }

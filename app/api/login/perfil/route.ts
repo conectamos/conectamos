@@ -12,6 +12,7 @@ import {
   verifyPendingProfileToken,
 } from "@/lib/session";
 import { createProfileSession } from "@/lib/session-state";
+import { esRolBodega, esSedeBodegaPrincipal } from "@/lib/access-control";
 import {
   obtenerPerfilesAccesoPorSede,
   validarPerfilAccesoPorSede,
@@ -34,6 +35,7 @@ async function getPendingUser() {
       usuario: true,
       activo: true,
       sedeId: true,
+      rol: { select: { nombre: true } },
       sede: {
         select: {
           nombre: true,
@@ -45,6 +47,8 @@ async function getPendingUser() {
   if (!user || !user.activo) {
     return null;
   }
+
+  if (esRolBodega(user.rol?.nombre) && !esSedeBodegaPrincipal(user.sede?.nombre)) return null;
 
   return user;
 }
@@ -60,7 +64,7 @@ export async function GET() {
       );
     }
 
-    const perfiles = await obtenerPerfilesAccesoPorSede(user.sedeId);
+    const perfiles = await obtenerPerfilesAccesoPorSede(user.sedeId, { soloBodega: esRolBodega(user.rol?.nombre) });
 
     return NextResponse.json({
       ok: true,
@@ -119,6 +123,7 @@ export async function POST(req: Request) {
       perfilId,
       pin,
       sedeId: user.sedeId,
+      soloBodega: esRolBodega(user.rol?.nombre),
     });
 
     if (!perfil) {

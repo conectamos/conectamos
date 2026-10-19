@@ -2,6 +2,8 @@ DO $$
 BEGIN
   CREATE TYPE "TipoPerfilVendedor" AS ENUM (
     'ADMINISTRADOR',
+    'AUDITOR',
+    'BODEGA',
     'FACTURADOR',
     'SUPERVISOR_TIENDA',
     'VENDEDOR',
@@ -13,7 +15,13 @@ END
 $$;
 
 ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'VENDEDOR';
+ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'AUDITOR';
+ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'BODEGA';
 ALTER TYPE "TipoPerfilVendedor" ADD VALUE IF NOT EXISTS 'APOYO_OPERATIVO';
+
+INSERT INTO "Rol" ("nombre", "descripcion", "createdAt", "updatedAt")
+VALUES ('BODEGA', 'Gestion exclusiva de la bodega principal', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT ("nombre") DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS "PerfilVendedor" (
   "id" SERIAL NOT NULL,

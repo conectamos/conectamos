@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { esRolAdmin, esRolAdministrativo } from "@/lib/access-control";
+import { esRolAdmin, esRolBodega, esRolAdministrativo, puedeGestionarBodegaPrincipal } from "@/lib/access-control";
 import { getSessionUser } from "@/lib/auth";
 import {
   asegurarTablaCatalogoReferenciasInventario,
@@ -56,6 +56,7 @@ export async function GET() {
     return NextResponse.json({
       referencias,
       puedeGestionar: esRolAdministrativo(session.user.rolNombre),
+      puedeCrear: puedeGestionarBodegaPrincipal(session.user.rolNombre),
       puedeEliminar: esRolAdmin(session.user.rolNombre),
     });
   } catch (error) {
@@ -75,9 +76,9 @@ export async function POST(req: Request) {
       return session.response;
     }
 
-    if (!esRolAdministrativo(session.user.rolNombre)) {
+    if (!puedeGestionarBodegaPrincipal(session.user.rolNombre)) {
       return NextResponse.json(
-        { error: "Solo el administrador puede gestionar referencias" },
+        { error: "El rol actual no puede gestionar referencias" },
         { status: 403 }
       );
     }
@@ -103,6 +104,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Esa referencia ya existe en el catalogo" },
         { status: 400 }
+      );
+    }
+
+    if (existente && esRolBodega(session.user.rolNombre)) {
+      return NextResponse.json(
+        { error: "Esta referencia está oculta. Solicita su activación a un administrador o auditor." },
+        { status: 403 }
       );
     }
 
@@ -150,7 +158,7 @@ export async function PATCH(req: Request) {
 
     if (!esRolAdministrativo(session.user.rolNombre)) {
       return NextResponse.json(
-        { error: "Solo el administrador puede gestionar referencias" },
+        { error: "El rol actual no puede gestionar referencias" },
         { status: 403 }
       );
     }
@@ -281,7 +289,7 @@ export async function DELETE(req: Request) {
 
     if (!esRolAdmin(session.user.rolNombre)) {
       return NextResponse.json(
-        { error: "Solo el administrador puede gestionar referencias" },
+        { error: "El rol actual no puede gestionar referencias" },
         { status: 403 }
       );
     }

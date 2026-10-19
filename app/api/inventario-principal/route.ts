@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { puedeGestionarBodegaPrincipal } from "@/lib/access-control";
 import { normalizarTipoProducto } from "@/lib/product-types";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { enriquecerRegistrosConCatalogo } from "@/lib/record-catalog-media";
@@ -21,7 +22,7 @@ export async function GET() {
       );
     }
 
-    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre?.toUpperCase() || "");
+    const esAdmin = puedeGestionarBodegaPrincipal(user.rolNombre);
 
     if (!esAdmin) {
       return NextResponse.json(
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre?.toUpperCase() || "");
+    const esAdmin = puedeGestionarBodegaPrincipal(user.rolNombre);
     if (!esAdmin) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
 
     let body: Record<string, unknown>;

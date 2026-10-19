@@ -116,6 +116,7 @@ export default function PrestamosPage() {
   const solicitudListado = useRef(0);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
+  const esBodega = user?.rolNombre?.trim().toUpperCase() === "BODEGA";
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
 
   const cargarUsuario = useCallback(async () => {
@@ -147,7 +148,7 @@ export default function PrestamosPage() {
     try {
       const params = new URLSearchParams();
 
-      if (esAdmin && sedeFiltroId !== "TODAS") {
+      if ((esAdmin || esBodega) && sedeFiltroId !== "TODAS") {
         params.set("sedeId", sedeFiltroId);
       }
 
@@ -176,7 +177,7 @@ export default function PrestamosPage() {
     } finally {
       if (solicitud === solicitudListado.current) setCargandoListado(false);
     }
-  }, [esAdmin, sedeFiltroId, user?.sedeId]);
+  }, [esAdmin, esBodega, sedeFiltroId, user?.sedeId]);
 
   useEffect(() => {
     const init = async () => {
@@ -204,19 +205,19 @@ export default function PrestamosPage() {
   }, { enabled: Boolean(user), intervalMs: 30000 });
 
   const sedeFiltroNombre = useMemo(() => {
-    if (!esAdmin) {
+    if (!esAdmin && !esBodega) {
       return user?.sedeNombre || "tu sede";
     }
 
     if (sedeFiltroId === "TODAS") {
-      return "todas las sedes";
+      return esBodega ? "bodega principal y sus sedes destino" : "todas las sedes";
     }
 
     return (
       sedes.find((sede) => String(sede.id) === sedeFiltroId)?.nombre ||
       "la sede seleccionada"
     );
-  }, [esAdmin, sedeFiltroId, sedes, user?.sedeNombre]);
+  }, [esAdmin, esBodega, sedeFiltroId, sedes, user?.sedeNombre]);
 
   const solicitarDevolucionPrestamo = async (id: number) => {
     try {
@@ -502,6 +503,9 @@ export default function PrestamosPage() {
     }
   };
 
+  const puedeGestionarLogistica = (prestamo: Prestamo) => Boolean(esBodega && user &&
+    (prestamo.sedeOrigenId === user.sedeId || prestamo.sedeDestinoId === user.sedeId));
+
   const puedeSolicitarDevolucion = (prestamo: Prestamo) => {
     if (!user) return false;
 
@@ -514,7 +518,7 @@ export default function PrestamosPage() {
       !prestamo.prestamoDesdePrincipal &&
       prestamo.estado === "APROBADO" &&
       estadoActual === "BODEGA" &&
-      (esAdmin || destino)
+      (esAdmin || puedeGestionarLogistica(prestamo) || destino)
     );
   };
 
@@ -522,18 +526,18 @@ export default function PrestamosPage() {
     if (!user) return false;
 
     const origen = user.sedeId === prestamo.sedeOrigenId;
-    return prestamo.estado === "DEVOLUCION_PENDIENTE" && (esAdmin || origen);
+    return prestamo.estado === "DEVOLUCION_PENDIENTE" && (esAdmin || puedeGestionarLogistica(prestamo) || origen);
   };
 
   const puedeRechazarDevolucion = (prestamo: Prestamo) => {
     if (!user) return false;
 
     const origen = user.sedeId === prestamo.sedeOrigenId;
-    return prestamo.estado === "DEVOLUCION_PENDIENTE" && (esAdmin || origen);
+    return prestamo.estado === "DEVOLUCION_PENDIENTE" && (esAdmin || puedeGestionarLogistica(prestamo) || origen);
   };
 
   const puedeSolicitarPago = (prestamo: Prestamo) => {
-    if (!user) return false;
+    if (!user || esBodega) return false;
 
     const destino = user.sedeId === prestamo.sedeDestinoId;
 
@@ -548,25 +552,25 @@ export default function PrestamosPage() {
     if (!user) return false;
 
     const destino = user.sedeId === prestamo.sedeDestinoId;
-    return prestamo.estado === "PENDIENTE" && (esAdmin || destino);
+    return prestamo.estado === "PENDIENTE" && (esAdmin || puedeGestionarLogistica(prestamo) || destino);
   };
 
   const puedeRechazarPrestamo = (prestamo: Prestamo) => {
     if (!user) return false;
 
     const destino = user.sedeId === prestamo.sedeDestinoId;
-    return prestamo.estado === "PENDIENTE" && (esAdmin || destino);
+    return prestamo.estado === "PENDIENTE" && (esAdmin || puedeGestionarLogistica(prestamo) || destino);
   };
 
   const puedeCancelarPrestamo = (prestamo: Prestamo) => {
     if (!user) return false;
 
     const origen = user.sedeId === prestamo.sedeOrigenId;
-    return prestamo.estado === "PENDIENTE" && (esAdmin || origen);
+    return prestamo.estado === "PENDIENTE" && (esAdmin || puedeGestionarLogistica(prestamo) || origen);
   };
 
   const puedeAprobarPago = (prestamo: Prestamo) => {
-    if (!user) return false;
+    if (!user || esBodega) return false;
 
     const origen = user.sedeId === prestamo.sedeOrigenId;
     return prestamo.estado === "PAGO_PENDIENTE_APROBACION" && (esAdmin || origen);
@@ -713,7 +717,7 @@ export default function PrestamosPage() {
   };
 
   const lotesPagoPendiente = useMemo(() => {
-    if (!user) {
+    if (!user || esBodega) {
       return [];
     }
 
@@ -773,7 +777,7 @@ export default function PrestamosPage() {
       });
 
     return lotes.sort((a, b) => b.total - a.total);
-  }, [esAdmin, prestamos, user]);
+  }, [esAdmin, esBodega, prestamos, user]);
 
   const idsEnLotesMultiples = useMemo(
     () =>
@@ -899,7 +903,12 @@ export default function PrestamosPage() {
     };
   };
 
-  const navigationItems: NavigationItem[] = [
+  const navigationItems: NavigationItem[] = esBodega ? [
+    { href: "/inventario-principal", icon: "inventory", label: "Bodega principal" },
+    { href: "/inventario/nuevo", icon: "inventory", label: "Ingresar equipos" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+
+  ] : [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" },
@@ -976,7 +985,7 @@ export default function PrestamosPage() {
 
   return <div className={styles.page}>
     <header className={styles.topbar}>
-      <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS · Inicio"><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link>
+      <Link href={esBodega ? "/inventario-principal" : "/dashboard"} className={styles.brand} aria-label="CONECTAMOS · Inicio"><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link>
       <nav className={styles.navigation} aria-label="Navegación principal">
         {navigationItems.map((item) => <Link key={item.href} href={item.href} aria-current={item.href === "/prestamos" ? "page" : undefined}
           aria-label={item.label} title={item.label} className={`${styles.navItem} ${item.href === "/prestamos" ? styles.navActive : ""} ${item.icon === "settings" ? styles.settingsLink : ""}`}>
@@ -987,8 +996,8 @@ export default function PrestamosPage() {
     </header>
     <main className={styles.main}>
       <header className={styles.heading}>
-        <div className={styles.headingCopy}><h1>Préstamos</h1><p>Control entre sedes y bodega principal</p></div>
-        <div className={styles.headingActions}><Link href="/prestamos/nuevo" className={`${styles.button} ${styles.primary}`}><span aria-hidden="true">＋</span>Nuevo préstamo</Link><Link href="/inventario" className={`${styles.button} ${styles.outline}`}>Ver inventario</Link></div>
+        <div className={styles.headingCopy}><h1>Préstamos</h1><p>{esBodega ? "Envíos y devoluciones de bodega principal" : "Control entre sedes y bodega principal"}</p></div>
+        <div className={styles.headingActions}><Link href="/prestamos/nuevo" className={`${styles.button} ${styles.primary}`}><span aria-hidden="true">＋</span>Nuevo préstamo</Link><Link href={esBodega ? "/inventario-principal" : "/inventario"} className={`${styles.button} ${styles.outline}`}>Ver inventario</Link></div>
       </header>
       {mensaje && <div role={mensajeEsError ? "alert" : "status"} className={`${styles.message} ${mensajeEsError ? styles.error : ""}`}>{mensaje}</div>}
       <section className={styles.summary} aria-label={`Resumen de préstamos · ${sedeFiltroNombre}`} aria-busy={cargandoListado}>
@@ -1003,7 +1012,7 @@ export default function PrestamosPage() {
           <div className={styles.tabs} role="tablist" aria-label="Estado de los préstamos">{LOAN_TABS.map((tab) => <button key={tab} type="button" role="tab" aria-selected={pestana === tab} aria-controls="prestamos-listado"
             className={`${styles.tab} ${pestana === tab ? styles.tabActive : ""}`} onClick={() => { cambiarConsulta(); setSoloPagables(false); setPestana(tab); setFiltroEstado("TODOS"); }}>{tab}</button>)}</div>
           <div className={styles.filters}>
-            {esAdmin ? <select aria-label="Filtrar por sede" value={sedeFiltroId} disabled={cargando} onChange={(event) => { cambiarConsulta(); setPrestamos([]); setMensaje(""); setCargandoListado(true); setSedeFiltroId(event.target.value); }}><option value="TODAS">Todas las sedes</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</select>
+            {esAdmin || esBodega ? <select aria-label="Filtrar por sede" value={sedeFiltroId} disabled={cargando} onChange={(event) => { cambiarConsulta(); setPrestamos([]); setMensaje(""); setCargandoListado(true); setSedeFiltroId(event.target.value); }}><option value="TODAS">{esBodega ? "Todos los destinos de bodega" : "Todas las sedes"}</option>{sedes.map((sede) => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</select>
               : <span aria-label="Cobertura">{user?.sedeNombre || "Tu sede"}</span>}
             <select aria-label="Filtrar por estado" value={filtroEstado} onChange={(event) => { cambiarConsulta(); setSoloPagables(false); setPestana("Todos"); setFiltroEstado(event.target.value); }}>
               {estadosFiltro.map((estado) => <option key={estado} value={estado}>{estado === "TODOS" ? "Todos los estados" : textoEstadoPrestamo(estado)}</option>)}
@@ -1014,7 +1023,7 @@ export default function PrestamosPage() {
         {soloPagables && <div className={styles.availableFilter} role="status"><span>Mostrando solo disponibles para pago</span><button type="button" onClick={quitarFiltroDisponibles} aria-label="Quitar filtro de disponibles">Mostrar todos <DashboardIcon name="close" /></button></div>}
         <div id="prestamos-listado" role="tabpanel" aria-label={pestana} className={styles.tableWrap}>
           <table className={styles.table}>
-            <thead><tr><th className={styles.selectionCell}><input type="checkbox" aria-label="Seleccionar préstamos pagables visibles" checked={todosPagablesPaginaSeleccionados} disabled={cargando || cargandoListado || pagablesPagina.length === 0} onChange={seleccionarPagina} /></th><th>Equipo e IMEI</th><th>Origen</th><th>Destino</th><th>Estado</th><th>Financiero</th><th>Acciones</th></tr></thead>
+            <thead><tr><th className={styles.selectionCell}>{!esBodega && <input type="checkbox" aria-label="Seleccionar préstamos pagables visibles" checked={todosPagablesPaginaSeleccionados} disabled={cargando || cargandoListado || pagablesPagina.length === 0} onChange={seleccionarPagina} />}</th><th>Equipo e IMEI</th><th>Origen</th><th>Destino</th><th>Estado</th><th>Financiero</th><th>Acciones</th></tr></thead>
             <tbody>{cargandoListado ? <tr><td colSpan={7} className={styles.empty} role="status">Cargando préstamos…</td></tr>
               : prestamosPagina.length === 0 ? <tr><td colSpan={7} className={styles.empty}>No hay préstamos registrados en esta vista.</td></tr>
               : prestamosPagina.map((item) => {
@@ -1023,7 +1032,7 @@ export default function PrestamosPage() {
                 const paso = resolverSiguientePaso(item);
                 return <Fragment key={item.id}>
                   <tr className={styles.loanRow}>
-                    <td data-label="Seleccionar" className={styles.selectionCell}><span title={motivoNoSeleccionPago(item)}><input type="checkbox" aria-label={`Seleccionar préstamo ${item.id}`} title={motivoNoSeleccionPago(item)} checked={idsSolicitudPago.includes(item.id) && idsSolicitudPagoValidos.has(item.id)} disabled={cargando || !puedeSolicitarPago(item)} onChange={() => alternarSeleccionSolicitudPago(item.id)} /></span></td>
+                    <td data-label="Seleccionar" className={styles.selectionCell}>{!esBodega && <span title={motivoNoSeleccionPago(item)}><input type="checkbox" aria-label={`Seleccionar préstamo ${item.id}`} title={motivoNoSeleccionPago(item)} checked={idsSolicitudPago.includes(item.id) && idsSolicitudPagoValidos.has(item.id)} disabled={cargando || !puedeSolicitarPago(item)} onChange={() => alternarSeleccionSolicitudPago(item.id)} /></span>}</td>
                     <td data-label="Equipo e IMEI"><div className={styles.equipment}><span className={styles.phoneIcon} aria-hidden="true"><svg viewBox="0 0 28 42" fill="none"><rect x="4" y="2" width="20" height="38" rx="4" stroke="currentColor" strokeWidth="1.7" /><path d="M10 2v3h8V2" stroke="currentColor" strokeWidth="1.7" /></svg></span><div className={styles.equipmentCopy}><strong>{item.referencia}</strong><p>IMEI <span>{item.imei}</span></p><p>{item.color || "Sin color"} · ID {item.id}</p></div></div></td>
                     <td data-label="Origen">{item.sedeOrigenNombre ?? "Sede sin configurar"}</td><td data-label="Destino">{item.sedeDestinoNombre ?? "Sede sin configurar"}</td>
                     <td data-label="Estado"><span className={styles.status}><i className={`${styles.dot} ${tonoEstado(item.estado)}`} />{textoEstadoPrestamo(item.estado)}</span></td>
@@ -1042,7 +1051,7 @@ export default function PrestamosPage() {
                         <div><dt>Monto de pago</dt><dd>{item.montoPago == null ? "Sin solicitud" : formatoPesos(Number(item.montoPago))}</dd></div><div><dt>Solicitud de pago</dt><dd>{item.fechaSolicitudPago ? new Date(item.fechaSolicitudPago).toLocaleString("es-CO") : "Sin solicitud"}</dd></div>
                       </dl>
                       <p><strong>{paso.titulo}.</strong> {paso.detalle}</p>
-                      {!puedeSolicitarPago(item) && <p className={styles.muted}>{motivoNoSeleccionPago(item)}</p>}
+                      {!esBodega && !puedeSolicitarPago(item) && <p className={styles.muted}>{motivoNoSeleccionPago(item)}</p>}
                       <div className={styles.detailActions}>{actions.map((action) => <button key={action.label} type="button" className={styles.button} disabled={cargando || cargandoListado} onClick={() => void action.run()}>{action.label}</button>)}
                         {puedeAprobarPago(item) && idsEnLotesMultiples.has(item.id) && <button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado} onClick={() => {
                           const lote = lotesPagoPendiente.find((group) => group.items.some((loan) => loan.id === item.id));
@@ -1057,12 +1066,12 @@ export default function PrestamosPage() {
           </table>
         </div>
       </section>
-      <section className={styles.batchBar} aria-label="Pago por lote">
+      {!esBodega && <section className={styles.batchBar} aria-label="Pago por lote">
         <div className={styles.batchAvailable}><input type="checkbox" aria-label={`Seleccionar todos los disponibles para pago (${prestamosSeleccionablesPago.length})`} aria-describedby="alcance-seleccion-disponibles" checked={todosDisponiblesSeleccionados} disabled={cargando || cargandoListado || prestamosSeleccionablesPago.length === 0} onChange={seleccionarDisponibles} /><button type="button" className={styles.availableButton} aria-label="Ver disponibles para pago" aria-pressed={soloPagables} disabled={cargando || cargandoListado || prestamosSeleccionablesPago.length === 0} onClick={mostrarDisponiblesPago}><span><strong>{prestamosSeleccionablesPago.length.toLocaleString("es-CO")}</strong> disponibles para pago</span><small id="alcance-seleccion-disponibles">Ver disponibles · selección en todas las páginas</small></button></div>
         <div className={styles.batchSelected}><strong>{prestamosSolicitudPagoSeleccionados.length}</strong> seleccionados</div>
         <div className={styles.batchTotal}><span>Total</span><strong>{formatoPesos(totalSolicitudPagoSeleccionada)}</strong></div>
         <div className={styles.batchActions}><button type="button" className={styles.textButton} title="Selecciona únicamente los préstamos elegibles de la página actual" onClick={seleccionarPagina} disabled={cargando || cargandoListado || pagablesPagina.length === 0}>{todosPagablesPaginaSeleccionados ? "Quitar visibles" : "Seleccionar visibles"}</button><button type="button" className={styles.button} onClick={limpiarSeleccionSolicitudPago} disabled={cargando || prestamosSolicitudPagoSeleccionados.length === 0}>Limpiar</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado || prestamosSolicitudPagoSeleccionados.length === 0} onClick={() => setConfirmacionPago({ tipo: "solicitar", ids: prestamosSolicitudPagoSeleccionados.map((item) => item.id) })}>{cargando ? "Procesando…" : "Enviar a pagar"}</button></div>
-      </section>
+      </section>}
       <footer className={styles.pagination}>
         <span>{cargandoListado ? "Cargando registros…" : `Mostrando ${prestamosFiltrados.length ? (paginaActual - 1) * filasPorPagina + 1 : 0}–${Math.min(paginaActual * filasPorPagina, prestamosFiltrados.length)} de ${prestamosFiltrados.length.toLocaleString("es-CO")}`}</span>
         <label>Filas por página <select aria-label="Filas por página" value={filasPorPagina} onChange={(event) => { setFilasPorPagina(Number(event.target.value)); setPagina(1); }}>{[5, 10, 25, 50].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
@@ -1093,7 +1102,7 @@ export default function PrestamosPage() {
         </section>)}
       </details>}
     </main>
-    {confirmacionPago && <LoanDialog title={confirmacionPago.tipo === "solicitar" ? "Confirmar envío a pagar" : "Confirmar aprobación de pago"} open busy={cargando} onClose={() => setConfirmacionPago(null)} footer={<><button type="button" className={styles.button} disabled={cargando} onClick={() => setConfirmacionPago(null)}>Cancelar</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado || !confirmacionValida} onClick={() => void confirmarPago()}>{cargando ? "Procesando…" : confirmacionPago.tipo === "solicitar" ? "Confirmar envío" : "Confirmar aprobación"}</button></>}>
+    {!esBodega && confirmacionPago && <LoanDialog title={confirmacionPago.tipo === "solicitar" ? "Confirmar envío a pagar" : "Confirmar aprobación de pago"} open busy={cargando} onClose={() => setConfirmacionPago(null)} footer={<><button type="button" className={styles.button} disabled={cargando} onClick={() => setConfirmacionPago(null)}>Cancelar</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado || !confirmacionValida} onClick={() => void confirmarPago()}>{cargando ? "Procesando…" : confirmacionPago.tipo === "solicitar" ? "Confirmar envío" : "Confirmar aprobación"}</button></>}>
       <div className={styles.confirmationOverview}>
         <div><span>{confirmacionPago.tipo === "solicitar" ? "Total a enviar" : "Total a aprobar"}</span><strong>{formatoPesos(totalConfirmacion)}</strong></div>
         <p>{itemsConfirmacion.length} {itemsConfirmacion.length === 1 ? "equipo" : "equipos"}<span aria-hidden="true"> · </span>{gruposConfirmacion.length} {gruposConfirmacion.length === 1 ? "grupo de pago" : "grupos de pago"}</p>

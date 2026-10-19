@@ -45,6 +45,7 @@ function SidebarContent({
   appearance,
   coverageLabel,
   footerMode,
+  includeCierre,
   items,
   panelLabel,
 }: {
@@ -52,11 +53,12 @@ function SidebarContent({
   appearance: "default" | "financial" | "white";
   coverageLabel: string;
   footerMode: "coverage" | "logout";
+  includeCierre: boolean;
   items: NavigationItem[];
   panelLabel: string;
 }) {
   const financial = appearance === "financial";
-  const navigationItems = withCierreNavigation(items);
+  const navigationItems = includeCierre ? withCierreNavigation(items) : items;
 
   if (appearance === "white") {
     return (
@@ -206,6 +208,7 @@ export function DashboardSidebar({
   appearance = "default",
   coverageLabel,
   footerMode = "coverage",
+  includeCierre = true,
   items,
   panelLabel = "Panel operativo",
 }: {
@@ -213,6 +216,7 @@ export function DashboardSidebar({
   appearance?: "default" | "financial" | "white";
   coverageLabel: string;
   footerMode?: "coverage" | "logout";
+  includeCierre?: boolean;
   items: NavigationItem[];
   panelLabel?: string;
 }) {
@@ -227,6 +231,7 @@ export function DashboardSidebar({
             footerMode={footerMode}
             items={items}
             panelLabel={panelLabel}
+            includeCierre={includeCierre}
           />
         </aside>
 
@@ -260,6 +265,7 @@ export function DashboardSidebar({
                 footerMode={footerMode}
                 items={items}
                 panelLabel={panelLabel}
+                includeCierre={includeCierre}
               />
             </div>
           </details>
@@ -280,6 +286,7 @@ export function DashboardSidebar({
           footerMode={footerMode}
           items={items}
           panelLabel={panelLabel}
+          includeCierre={includeCierre}
         />
       </aside>
 
@@ -313,6 +320,7 @@ export function DashboardSidebar({
               footerMode={footerMode}
               items={items}
               panelLabel={panelLabel}
+              includeCierre={includeCierre}
             />
           </div>
         </details>

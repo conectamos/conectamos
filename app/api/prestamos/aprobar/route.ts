@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import { esRolBodega, puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   ESTADO_INVENTARIO_PRESTAMO,
   NOMBRE_SEDE_BODEGA,
@@ -45,14 +45,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (String(prestamo.estado).toUpperCase() !== "PENDIENTE") {
-      return NextResponse.json(
-        { error: "El prestamo no esta pendiente" },
-        { status: 400 }
-      );
-    }
-
-    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
+    const esAdministrativo = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const esDestino = Number(user.sedeId) === Number(prestamo.sedeDestinoId);
     const sedeBodegaPrincipal = await prisma.sede.findFirst({
       where: {
@@ -68,10 +61,25 @@ export async function POST(req: Request) {
     });
     const sedeBodegaId = sedeBodegaPrincipal?.id ?? -1;
 
+    const esBodega = esRolBodega(user.rolNombre);
+    const relacionadoConPrincipal = sedeBodegaId > 0 &&
+      (prestamo.sedeOrigenId === sedeBodegaId || prestamo.sedeDestinoId === sedeBodegaId);
+    if (esBodega && !relacionadoConPrincipal) {
+      return NextResponse.json({ error: "BODEGA solo puede gestionar préstamos de bodega principal" }, { status: 403 });
+    }
+    const esAdmin = esAdministrativo || (esBodega && relacionadoConPrincipal);
+
     if (!esAdmin && !esDestino) {
       return NextResponse.json(
         { error: "No autorizado para aprobar este prestamo" },
         { status: 403 }
+      );
+    }
+
+    if (String(prestamo.estado).toUpperCase() !== "PENDIENTE") {
+      return NextResponse.json(
+        { error: "El prestamo no esta pendiente" },
+        { status: 400 }
       );
     }
 

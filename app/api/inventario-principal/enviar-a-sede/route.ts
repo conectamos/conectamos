@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { puedeGestionarBodegaPrincipal } from "@/lib/access-control";
 import { NOMBRE_SEDE_BODEGA, PROVEEDOR_FINSER } from "@/lib/prestamos";
 import { esSedeVentas } from "@/lib/sedes";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
+    const esAdmin = puedeGestionarBodegaPrincipal(user.rolNombre);
 
     if (!esAdmin) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { esRolAdministrativo } from "@/lib/access-control";
+import { puedeGestionarBodegaPrincipal } from "@/lib/access-control";
 import {
   buscarReferenciaInventarioActiva,
   normalizarReferenciaInventario,
@@ -44,7 +44,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    if (!esRolAdministrativo(user.rolNombre)) {
+    if (!puedeGestionarBodegaPrincipal(user.rolNombre)) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 

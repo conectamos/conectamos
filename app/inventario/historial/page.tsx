@@ -12,6 +12,8 @@ import {
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { etiquetaEstadoInventario } from "@/lib/prestamos";
+import { esRolBodega } from "@/lib/access-control";
+import BodegaHistory from "./bodega-history";
 
 type SearchParams = Promise<{ imei?: string }>;
 type TimelineTone =
@@ -328,6 +330,9 @@ export default async function HistorialInventarioPage(props: {
 
   const searchParams = await props.searchParams;
   const imei = normalizarImei(searchParams?.imei);
+  if (esRolBodega(user.rolNombre)) {
+    return <BodegaHistory imei={imei} nombre={user.perfilNombre || user.nombre} />;
+  }
   const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
 
   const movimientos = imei

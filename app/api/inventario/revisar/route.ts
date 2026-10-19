@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import { esRolBodega, esRolAdministrativo, puedeAccederModulosOperativos, puedeGestionarBodegaPrincipal } from "@/lib/access-control";
 import prisma from "@/lib/prisma";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { esSedeVentas } from "@/lib/sedes";
@@ -11,7 +11,8 @@ export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
+    const esAdmin = esRolAdministrativo(user.rolNombre);
+    const puedePrincipal = puedeGestionarBodegaPrincipal(user.rolNombre);
     let body: Record<string, unknown>;
     try {
       const parsed: unknown = await req.json();
@@ -21,8 +22,8 @@ export async function POST(req: Request) {
     if (body.destino !== "PRINCIPAL" && body.destino !== "SEDE") {
       return NextResponse.json({ error: "Selecciona un destino válido." }, { status: 400 });
     }
-    if ((body.destino === "PRINCIPAL" && !esAdmin) ||
-        (body.destino === "SEDE" && !puedeAccederModulosOperativos(user.perfilTipo))) {
+    if ((body.destino === "PRINCIPAL" && !puedePrincipal) ||
+        (body.destino === "SEDE" && (esRolBodega(user.rolNombre) || !puedeAccederModulosOperativos(user.perfilTipo)))) {
       return NextResponse.json({ error: "No tienes permiso para esta carga." }, { status: 403 });
     }
     if (!Array.isArray(body.imeis) || !body.imeis.length) {

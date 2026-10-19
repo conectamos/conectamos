@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
+import { esRolAdministrativo, esRolBodega } from "@/lib/access-control";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import { esSedeOperativaInventario } from "@/lib/sedes";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
@@ -295,6 +296,7 @@ export default function InventarioPrincipalPage() {
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
   const mostrarDeudor = filtroEstado === "COBRO_PENDIENTE";
   const mostrarResumenDeuda = mostrarDeudor && !sedeDeudaAbierta;
+  const puedeEditarReferencias = esRolAdministrativo(user?.rolNombre);
 
   const cargarInventarioPrincipal = useCallback(async () => {
     setInventoryLoading(true);
@@ -754,6 +756,7 @@ export default function InventarioPrincipalPage() {
   };
 
   const iniciarEdicionReferencia = (item: ReferenciaCatalogo) => {
+    if (!puedeEditarReferencias) return;
     setEditandoReferenciaId(item.id);
     setReferenciaEditada(item.nombre);
   };
@@ -764,6 +767,10 @@ export default function InventarioPrincipalPage() {
   };
 
   const actualizarReferencia = async (item: ReferenciaCatalogo, activo?: boolean) => {
+    if (!puedeEditarReferencias) {
+      setMensaje("Error: El rol actual no puede editar ni activar referencias del catálogo compartido");
+      return;
+    }
     const nombre = referenciaEditada.trim();
     const editandoNombre = editandoReferenciaId === item.id;
 
@@ -1203,7 +1210,12 @@ export default function InventarioPrincipalPage() {
     }
   };
 
-  const navigationItems: NavigationItem[] = [
+  const esBodega = esRolBodega(user?.rolNombre);
+  const navigationItems: NavigationItem[] = !user ? [] : esBodega ? [
+    { href: "/inventario-principal", icon: "inventory", label: "Bodega principal" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos de bodega" },
+    { href: "/inventario/nuevo", icon: "catalog", label: "Ingresar equipos" },
+  ] : [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" },
@@ -1220,12 +1232,12 @@ export default function InventarioPrincipalPage() {
   return (
     <div className={styles.page}>
       <header className={styles.topbar}>
-        <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS, ir al inicio">
+        <Link href={esBodega ? "/inventario-principal" : "/dashboard"} className={styles.brand} aria-label="CONECTAMOS, ir al inicio">
           <Image src="/branding/conectamos-logo.png" alt="" width={42} height={42} priority />
           <span>CONECTAMOS</span>
         </Link>
         <nav className={styles.navigation} aria-label="Navegación principal">
-          {navigationItems.map((item) => <Link key={item.href} href={item.href} className={item.href === "/inventario" ? styles.navActive : undefined} aria-current={item.href === "/inventario" ? "page" : undefined}>
+          {navigationItems.map((item) => <Link key={item.href} href={item.href} className={item.href === (esBodega ? "/inventario-principal" : "/inventario") ? styles.navActive : undefined} aria-current={item.href === (esBodega ? "/inventario-principal" : "/inventario") ? "page" : undefined}>
             <DashboardIcon name={item.icon} /><span>{item.label}</span>
           </Link>)}
         </nav>
@@ -1277,7 +1289,7 @@ export default function InventarioPrincipalPage() {
                   </div>
                 ) : (
                   referenciasCatalogo.map((item) => {
-                    const editando = editandoReferenciaId === item.id;
+                    const editando = puedeEditarReferencias && editandoReferenciaId === item.id;
 
                     return (
                       <div
@@ -1314,7 +1326,7 @@ export default function InventarioPrincipalPage() {
                             </div>
                           )}
 
-                          <div className="flex flex-wrap gap-2 md:justify-end">
+                          {puedeEditarReferencias && <div className="flex flex-wrap gap-2 md:justify-end">
                             {editando ? (
                               <>
                                 <button
@@ -1369,7 +1381,7 @@ export default function InventarioPrincipalPage() {
                                 )}
                               </>
                             )}
-                          </div>
+                          </div>}
                         </div>
                       </div>
                     );

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import { esRolBodega, puedeAccederModulosOperativos } from "@/lib/access-control";
 import prisma from "@/lib/prisma";
-import { etiquetaSedeAcreedora } from "@/lib/prestamos";
+import { NOMBRE_SEDE_BODEGA, etiquetaSedeAcreedora } from "@/lib/prestamos";
 
 export async function GET() {
   try {
@@ -19,7 +19,17 @@ export async function GET() {
       );
     }
 
-    const sedeDestinoId = Number(session.sedeId || 0);
+    let sedeDestinoId = Number(session.sedeId || 0);
+    if (esRolBodega(session.rolNombre)) {
+      const principal = await prisma.sede.findFirst({
+        where: { nombre: { equals: NOMBRE_SEDE_BODEGA, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (!principal) {
+        return NextResponse.json({ error: "Bodega principal no configurada" }, { status: 403 });
+      }
+      sedeDestinoId = principal.id;
+    }
 
     if (!Number.isInteger(sedeDestinoId) || sedeDestinoId <= 0) {
       return NextResponse.json({ total: 0, items: [] });

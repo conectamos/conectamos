@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import { esRolBodega, puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   NOMBRE_SEDE_BODEGA,
   esDeudaProveedor,
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
+    const esAdministrativo = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
     const sedeBodegaPrincipal = await prisma.sede.findFirst({
       where: {
         nombre: {
@@ -64,6 +64,14 @@ export async function POST(req: Request) {
         { status: 404 }
       );
     }
+
+    const esBodega = esRolBodega(user.rolNombre);
+    const relacionadoConPrincipal = sedeBodegaId > 0 &&
+      (prestamo.sedeOrigenId === sedeBodegaId || prestamo.sedeDestinoId === sedeBodegaId);
+    if (esBodega && !relacionadoConPrincipal) {
+      return NextResponse.json({ error: "BODEGA solo puede gestionar préstamos de bodega principal" }, { status: 403 });
+    }
+    const esAdmin = esAdministrativo || (esBodega && relacionadoConPrincipal);
 
     if (!esAdmin && user.sedeId !== prestamo.sedeDestinoId) {
       return NextResponse.json(

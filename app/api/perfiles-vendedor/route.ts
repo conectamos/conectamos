@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { esPerfilBodega, esRolAdmin } from "@/lib/access-control";
 import {
   actualizarPerfilVendedor,
   crearPerfilVendedor,
@@ -14,6 +15,7 @@ import {
   normalizarTelefonoPerfilVendedor,
   normalizarTipoPerfilVendedor,
   obtenerPerfilesVendedor,
+  PerfilBodegaValidationError,
 } from "@/lib/vendor-profiles";
 
 function esAdmin(rolNombre: string) {
@@ -150,6 +152,10 @@ export async function POST(req: Request) {
       );
     }
 
+    if (esPerfilBodega(tipo) && !esRolAdmin(session.user.rolNombre)) {
+      return NextResponse.json({ error: "Solo el administrador puede asignar el perfil Bodega" }, { status: 403 });
+    }
+
     await crearPerfilVendedor({
       nombre,
       documento,
@@ -174,7 +180,7 @@ export async function POST(req: Request) {
 
     console.error("ERROR POST PERFILES VENDEDOR:", error);
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: error instanceof PerfilBodegaValidationError ? 400 : 500 });
   }
 }
 
@@ -228,6 +234,11 @@ export async function PATCH(req: Request) {
       );
     }
 
+    const perfilActual = await prisma.perfilVendedor.findUnique({ where: { id: perfilId }, select: { tipo: true } });
+    if ((esPerfilBodega(tipo) || esPerfilBodega(perfilActual?.tipo)) && !esRolAdmin(session.user.rolNombre)) {
+      return NextResponse.json({ error: "Solo el administrador puede gestionar el perfil Bodega" }, { status: 403 });
+    }
+
     await actualizarPerfilVendedor(perfilId, {
       nombre,
       documento,
@@ -251,6 +262,6 @@ export async function PATCH(req: Request) {
 
     console.error("ERROR PATCH PERFILES VENDEDOR:", error);
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: error instanceof PerfilBodegaValidationError ? 400 : 500 });
   }
 }

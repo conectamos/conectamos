@@ -123,6 +123,7 @@ export default function NuevoPrestamoPage() {
   const esAdmin = ["ADMIN", "AUDITOR"].includes(
     user?.rolNombre?.toUpperCase() || ""
   );
+  const esBodega = user?.rolNombre?.trim().toUpperCase() === "BODEGA";
   const mensajeEsOk = mensaje.startsWith("OK:");
 
   const inputClass =
@@ -296,7 +297,12 @@ export default function NuevoPrestamoPage() {
     .map((parte) => parte[0]?.toUpperCase())
     .join("");
 
-  const navigationItems: NavigationItem[] = [
+  const navigationItems: NavigationItem[] = esBodega ? [
+    { href: "/inventario-principal", icon: "inventory", label: "Bodega principal" },
+    { href: "/inventario/nuevo", icon: "inventory", label: "Ingresar equipos" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+
+  ] : [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" },
@@ -327,6 +333,7 @@ export default function NuevoPrestamoPage() {
     <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
       <DashboardSidebar
         activeHref="/prestamos"
+        includeCierre={!esBodega}
         coverageLabel={cobertura}
         items={navigationItems}
       />
@@ -343,7 +350,7 @@ export default function NuevoPrestamoPage() {
                 <span className="text-slate-600">Nuevo préstamo</span>
               </nav>
               <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
-                Solicitud entre sedes
+                {esBodega ? "Enviar desde bodega principal" : "Solicitud entre sedes"}
               </h1>
               <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
                 Selecciona la ruta, valida el equipo y envía la solicitud para

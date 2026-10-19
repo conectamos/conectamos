@@ -1,6 +1,7 @@
 export const TIPOS_PERFIL_VISUAL = [
   "ADMINISTRADOR",
   "AUDITOR",
+  "BODEGA",
   "FACTURADOR",
   "SUPERVISOR_TIENDA",
   "VENDEDOR",
@@ -36,6 +37,10 @@ const AVATAR_OPTIONS_BY_TIPO: Record<TipoPerfilVisual, AvatarOption[]> = {
   AUDITOR: [
     { value: "AUDITOR_HOMBRE", label: "Auditor hombre" },
     { value: "AUDITOR_MUJER", label: "Auditor mujer" },
+  ],
+  BODEGA: [
+    { value: "SUPERVISOR", label: "Encargado de bodega" },
+    { value: "SUPERVISORA_MUJER", label: "Encargada de bodega" },
   ],
   FACTURADOR: [{ value: "FACTURADOR", label: "Facturador" }],
   SUPERVISOR_TIENDA: [

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
+import { esRolBodega, puedeAccederModulosOperativos } from "@/lib/access-control";
 
 export async function POST(req: Request) {
   try {
@@ -25,7 +26,17 @@ export async function POST(req: Request) {
     }
 
     const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
-    const sedeId = esAdmin ? Number(sedeOrigenId || 0) : user.sedeId;
+    let sedeId = esAdmin ? Number(sedeOrigenId || 0) : user.sedeId;
+    if (esRolBodega(user.rolNombre)) {
+      const principal = await prisma.sede.findFirst({
+        where: { nombre: { equals: NOMBRE_SEDE_BODEGA, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (!principal || (sedeOrigenId != null && Number(sedeOrigenId) !== principal.id)) {
+        return NextResponse.json({ error: "BODEGA solo puede consultar el origen bodega principal" }, { status: 403 });
+      }
+      sedeId = principal.id;
+    }
 
     if (!sedeId || sedeId <= 0) {
       return NextResponse.json(

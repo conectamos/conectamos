@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { puedeAccederModulosOperativos } from "@/lib/access-control";
+import { esRolBodega, puedeAccederModulosOperativos } from "@/lib/access-control";
 import {
   ESTADO_INVENTARIO_PRESTAMO,
+  NOMBRE_SEDE_BODEGA,
   ESTADO_INVENTARIO_PRESTAMO_POR_ACEPTAR,
   etiquetaSedeAcreedora,
   esEstadoDeuda,
@@ -66,6 +67,15 @@ export async function POST(req: Request) {
     }
 
     const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user.rolNombre || "").toUpperCase());
+    if (esRolBodega(user.rolNombre)) {
+      const principal = await prisma.sede.findFirst({
+        where: { nombre: { equals: NOMBRE_SEDE_BODEGA, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (!principal || inventario.sedeId !== principal.id) {
+        return NextResponse.json({ error: "BODEGA solo puede enviar equipos de bodega principal" }, { status: 403 });
+      }
+    }
 
     if (!esAdmin && inventario.sedeId !== user.sedeId) {
       return NextResponse.json(

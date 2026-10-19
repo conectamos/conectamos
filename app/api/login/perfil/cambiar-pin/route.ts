@@ -12,6 +12,7 @@ import {
   verifyPendingProfileToken,
 } from "@/lib/session";
 import { createProfileSession } from "@/lib/session-state";
+import { esPerfilBodega, esRolBodega, esSedeBodegaPrincipal } from "@/lib/access-control";
 import {
   etiquetaTipoPerfilVendedor,
   obtenerPerfilesAccesoPorSede,
@@ -42,6 +43,7 @@ async function getPendingPinChangeContext() {
       usuario: true,
       activo: true,
       sedeId: true,
+      rol: { select: { nombre: true } },
       sede: {
         select: {
           nombre: true,
@@ -53,6 +55,8 @@ async function getPendingPinChangeContext() {
   if (!user || !user.activo) {
     return null;
   }
+
+  if (esRolBodega(user.rol?.nombre) && !esSedeBodegaPrincipal(user.sede?.nombre)) return null;
 
   const perfil = await prisma.perfilVendedor.findFirst({
     where: {
@@ -82,6 +86,9 @@ async function getPendingPinChangeContext() {
     return null;
   }
 
+  if (esPerfilBodega(perfil.tipo) && !esSedeBodegaPrincipal(user.sede?.nombre)) return null;
+  if (esRolBodega(user.rol?.nombre) && !esPerfilBodega(perfil.tipo)) return null;
+
   return {
     user,
     perfil,
@@ -99,7 +106,7 @@ export async function GET() {
       );
     }
 
-    const perfiles = await obtenerPerfilesAccesoPorSede(context.user.sedeId);
+    const perfiles = await obtenerPerfilesAccesoPorSede(context.user.sedeId, { soloBodega: esRolBodega(context.user.rol?.nombre) });
 
     return NextResponse.json({
       ok: true,

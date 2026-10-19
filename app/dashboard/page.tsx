@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
@@ -10,6 +11,7 @@ import {
   puedeAccederPanelFacturador,
   puedeAccederModulosOperativos,
   esRolAdministrativo,
+  esRolBodega,
 } from "@/lib/access-control";
 import DashboardUtilityGate from "./_components/dashboard-utility-gate";
 import LogoutButton from "./_components/logout-button";
@@ -700,6 +702,10 @@ export default async function DashboardPage({
 
   if (!session) {
     return <div className="p-10">No autenticado</div>;
+  }
+
+  if (esRolBodega(session.rolNombre)) {
+    redirect("/inventario-principal");
   }
 
   const esAdmin = esRolAdministrativo(session.rolNombre);
