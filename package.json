@@ -17,7 +17,7 @@
     "test:proveedores:build": "node tests/proveedores-recibo-build.cjs",
     "test:inventario-imeis": "node --experimental-strip-types --test tests/inventory-imei-input.test.mjs",
     "test:login": "node --experimental-strip-types --test tests/login-resilience-contract.test.mjs",
-    "test:bodega": "node --test tests/bodega-boundary.test.mjs tests/bodega-identity.test.mjs tests/bodega-inventory.test.mjs tests/bodega-loans-api.test.mjs tests/bodega-loans-ui.test.mjs",
+    "test:bodega": "node --test tests/bodega-*.test.mjs",
     "test:radar": "node --experimental-strip-types --test tests/radar-inventory-export.test.mjs tests/radar-workspace.test.mjs",
     "test:vendor-email": "node --experimental-strip-types --test tests/vendor-sale-email.test.mjs",
     "test:financiero": "node --experimental-strip-types --test tests/financial-dashboard-view.test.mjs",

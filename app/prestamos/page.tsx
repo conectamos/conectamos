@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { getBodegaNavigation } from "@/lib/bodega-navigation";
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
@@ -903,12 +904,7 @@ export default function PrestamosPage() {
     };
   };
 
-  const navigationItems: NavigationItem[] = esBodega ? [
-    { href: "/inventario-principal", icon: "inventory", label: "Bodega principal" },
-    { href: "/inventario/nuevo", icon: "inventory", label: "Ingresar equipos" },
-    { href: "/prestamos", icon: "loans", label: "Préstamos" },
-
-  ] : [
+  const navigationItems: NavigationItem[] = esBodega ? getBodegaNavigation() : [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" },
@@ -985,7 +981,7 @@ export default function PrestamosPage() {
 
   return <div className={styles.page}>
     <header className={styles.topbar}>
-      <Link href={esBodega ? "/inventario-principal" : "/dashboard"} className={styles.brand} aria-label="CONECTAMOS · Inicio"><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link>
+      <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS · Inicio"><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link>
       <nav className={styles.navigation} aria-label="Navegación principal">
         {navigationItems.map((item) => <Link key={item.href} href={item.href} aria-current={item.href === "/prestamos" ? "page" : undefined}
           aria-label={item.label} title={item.label} className={`${styles.navItem} ${item.href === "/prestamos" ? styles.navActive : ""} ${item.icon === "settings" ? styles.settingsLink : ""}`}>

@@ -76,6 +76,8 @@ function probe({ initial = {}, fetchImpl, confirmation = true } = {}) {
     'next/image': { __esModule: true, default: props => jsx.jsx('img', props) },
     '@/lib/prestamos': { NOMBRE_SEDE_BODEGA: 'BODEGA PRINCIPAL' }, '@/lib/product-types': products, '@/lib/sedes': sedesModule,
     '@/lib/warehouse-debt-groups': debtGroups,
+    '@/lib/bodega-navigation': load('lib/bodega-navigation.ts'),
+    '@/lib/access-control': load('lib/access-control.ts'),
     '@/lib/use-live-refresh': { useLiveRefresh() {} },
     '@/app/dashboard/_components/dashboard-icon': { __esModule: true, default: () => null },
     '@/app/ventas/_components/sales-dashboard-parts': { SalesProfile: props => jsx.jsx('div', { 'data-profile': true, children: `${props.name} ${props.role}` }) },

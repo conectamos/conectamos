@@ -234,6 +234,7 @@ function uiProbe(path, { user = bodega, state: initial = {}, refs = {}, fetchImp
   const imports = {
     react: hooks, "react/jsx-runtime": jsx, "next/link": noop, "next/image": noop,
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
+    "@/lib/bodega-navigation": load("lib/bodega-navigation.ts"),
     "@/lib/access-control": access, "@/lib/prestamos": { NOMBRE_SEDE_BODEGA: "BODEGA PRINCIPAL" },
     "@/lib/product-types": productTypes, "@/lib/inventory-imeis": imeis,
     "@/lib/sedes": { esSedeOperativaInventario: () => true },
@@ -259,7 +260,7 @@ function uiProbe(path, { user = bodega, state: initial = {}, refs = {}, fetchImp
 test("las dos pantallas BODEGA exponen solo navegación y destino de bodega principal", () => {
   for (const path of ["app/inventario-principal/page.tsx", "app/inventario/nuevo/page.tsx"]) {
     const ui = uiProbe(path); const navigation = ui.captured.navigation || ui.captured.navigationItems;
-    assert.deepEqual(navigation.map(item => item.href), ["/inventario-principal", "/prestamos", "/inventario/nuevo"]);
+    assert.deepEqual(navigation.map(item => item.href), ["/dashboard", "/inventario-principal", "/inventario/nuevo", "/prestamos", "/dashboard/radar", "/dashboard#quien-me-debe"]);
     if (ui.captured.rutaCancelar) { assert.equal(ui.captured.rutaCancelar, "/inventario-principal"); assert.equal(ui.captured.destino, "Bodega principal"); }
     const pending = uiProbe(path, { user: null });
     assert.deepEqual(pending.captured.navigation || pending.captured.navigationItems, []);

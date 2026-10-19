@@ -4,6 +4,7 @@ import {
   esPerfilApoyoOperativo,
   esPerfilSupervisor,
   esRolAdministrativo,
+  esRolBodega,
   normalizarRolNombre,
 } from "@/lib/access-control";
 import { getSessionUser } from "@/lib/auth";
@@ -21,6 +22,7 @@ function canAccessRadar(session: {
 }) {
   return (
     esRolAdministrativo(session.rolNombre) ||
+    esRolBodega(session.rolNombre) ||
     esPerfilSupervisor(session.perfilTipo) ||
     esPerfilApoyoOperativo(session.perfilTipo) ||
     normalizarRolNombre(session.rolNombre) === "SUPERVISOR"

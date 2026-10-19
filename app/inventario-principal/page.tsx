@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { getBodegaNavigation } from "@/lib/bodega-navigation";
 import Image from "next/image";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
@@ -1211,11 +1212,7 @@ export default function InventarioPrincipalPage() {
   };
 
   const esBodega = esRolBodega(user?.rolNombre);
-  const navigationItems: NavigationItem[] = !user ? [] : esBodega ? [
-    { href: "/inventario-principal", icon: "inventory", label: "Bodega principal" },
-    { href: "/prestamos", icon: "loans", label: "Préstamos de bodega" },
-    { href: "/inventario/nuevo", icon: "catalog", label: "Ingresar equipos" },
-  ] : [
+  const navigationItems: NavigationItem[] = !user ? [] : esBodega ? getBodegaNavigation() : [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" },
@@ -1232,7 +1229,7 @@ export default function InventarioPrincipalPage() {
   return (
     <div className={styles.page}>
       <header className={styles.topbar}>
-        <Link href={esBodega ? "/inventario-principal" : "/dashboard"} className={styles.brand} aria-label="CONECTAMOS, ir al inicio">
+        <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS, ir al inicio">
           <Image src="/branding/conectamos-logo.png" alt="" width={42} height={42} priority />
           <span>CONECTAMOS</span>
         </Link>

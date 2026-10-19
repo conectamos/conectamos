@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import BodegaDashboard from "./_components/bodega-dashboard";
+import { getBodegaDashboard, type BodegaDashboardData } from "@/lib/bodega-dashboard";
 import { getSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
@@ -705,7 +706,15 @@ export default async function DashboardPage({
   }
 
   if (esRolBodega(session.rolNombre)) {
-    redirect("/inventario-principal");
+    let initialData: BodegaDashboardData | null = null;
+    let initialError = "";
+    try {
+      initialData = await getBodegaDashboard();
+    } catch (error) {
+      console.error("ERROR DASHBOARD BODEGA:", error);
+      initialError = "No se pudo cargar el dashboard de bodega. Intenta actualizar.";
+    }
+    return <BodegaDashboard initialData={initialData} initialError={initialError} nombre={session.perfilNombre || session.nombre || session.usuario} />;
   }
 
   const esAdmin = esRolAdministrativo(session.rolNombre);

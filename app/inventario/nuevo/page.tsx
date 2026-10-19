@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { getBodegaNavigation } from "@/lib/bodega-navigation";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
@@ -67,11 +68,7 @@ export default function NuevoInventarioPage() {
   const cantidadValida = pending ? requestRef.current?.payload.imeis.length || 0 : listReady ? review.validos : 0;
   const excluidos = listReady ? review.incorrectos + review.repetidos + review.existentes : 0;
   const ocupado = loading || reviewing || guardando || pending || Boolean(initError);
-  const navigation: { href: string; icon: DashboardIconName; label: string }[] = !user ? [] : esBodega ? [
-    { href: "/inventario-principal", icon: "inventory", label: "Bodega principal" },
-    { href: "/prestamos", icon: "loans", label: "Préstamos de bodega" },
-    { href: "/inventario/nuevo", icon: "catalog", label: "Ingresar equipos" },
-  ] : [
+  const navigation: { href: string; icon: DashboardIconName; label: string }[] = !user ? [] : esBodega ? getBodegaNavigation() : [
     { href: "/dashboard", icon: "home", label: "Inicio" }, { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" }, { href: "/prestamos", icon: "loans", label: "Préstamos" },
     { href: "/caja", icon: "cash", label: "Caja" }, { href: "/dashboard/aprobaciones", icon: "approvals", label: "Aprobaciones" },
@@ -171,7 +168,7 @@ export default function NuevoInventarioPage() {
 
   return <div className={styles.page}>
     <header className={styles.topbar}>
-      <Link className={styles.brand} href={esBodega ? "/inventario-principal" : "/dashboard"} aria-label="CONECTAMOS, inicio"><Image src="/branding/conectamos-logo.png" alt="" width={42} height={42} priority /><strong>CONECTAMOS</strong></Link>
+      <Link className={styles.brand} href="/dashboard" aria-label="CONECTAMOS, inicio"><Image src="/branding/conectamos-logo.png" alt="" width={42} height={42} priority /><strong>CONECTAMOS</strong></Link>
       <nav className={styles.navigation} aria-label="Navegación principal">{navigation.map((item) => <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === (esBodega ? "/inventario/nuevo" : "/inventario") ? styles.navActive : ""}`} aria-current={item.href === (esBodega ? "/inventario/nuevo" : "/inventario") ? "page" : undefined}><DashboardIcon name={item.icon} /><span>{item.label}</span></Link>)}</nav>
       <SalesProfile name={user?.nombre || user?.usuario || "Usuario"} role={user?.rolNombre || ""} />
     </header>

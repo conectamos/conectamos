@@ -5,7 +5,9 @@ import {
   esPerfilApoyoOperativo,
   esPerfilSupervisor,
   esRolAdministrativo,
+  esRolBodega,
 } from "@/lib/access-control";
+import { getBodegaNavigation } from "@/lib/bodega-navigation";
 import { requireSessionPage } from "@/lib/page-access";
 import { getAdminInventorySummary } from "@/lib/dashboard-inventory-summary";
 import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
@@ -17,19 +19,22 @@ import DashboardRadarWorkspace from "./workspace";
 export default async function DashboardRadarPage() {
   const session = await requireSessionPage();
   const esAdmin = esRolAdministrativo(session.rolNombre);
+  const esBodega = esRolBodega(session.rolNombre);
   const esSupervisor =
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
   const esApoyoOperativo = esPerfilApoyoOperativo(session.perfilTipo);
 
-  if (!esAdmin && !esSupervisor && !esApoyoOperativo) {
+  if (!esAdmin && !esBodega && !esSupervisor && !esApoyoOperativo) {
     redirect("/dashboard");
   }
 
   const summary = await getAdminInventorySummary({
     ocultarPuntosRetiradosSupervisor: !esAdmin && esSupervisor,
   });
-  const navigationItems: NavigationItem[] = esApoyoOperativo
+  const navigationItems: NavigationItem[] = esBodega
+    ? getBodegaNavigation()
+    : esApoyoOperativo
     ? [
         { href: "/dashboard", icon: "home", label: "Inicio" },
         {
@@ -78,8 +83,8 @@ export default async function DashboardRadarPage() {
   const usuario = session.perfilNombre || session.nombre || session.usuario || "Usuario";
   const rolUsuario =
     session.perfilTipoLabel ||
-    (esAdmin ? "Administrador" : esSupervisor ? "Supervisor de tienda" : "Apoyo operativo");
-  const activeHref = esApoyoOperativo ? "/dashboard/radar" : "/inventario";
+    (esBodega ? "Bodega" : esAdmin ? "Administrador" : esSupervisor ? "Supervisor de tienda" : "Apoyo operativo");
+  const activeHref = esBodega || esApoyoOperativo ? "/dashboard/radar" : "/inventario";
 
   return (
     <div className={styles.page}>
@@ -97,11 +102,11 @@ export default async function DashboardRadarPage() {
         <div className={styles.heading}>
           <div><h1>Radar de inventario</h1><p>Disponibilidad por referencia y sede.</p></div>
           <div className={styles.headingActions}>
-            {esAdmin && <Link href="/inventario-principal" className={styles.button}><DashboardIcon name="store" />Bodega principal</Link>}
-            {(esAdmin || esSupervisor) && <Link href="/inventario" className={`${styles.button} ${styles.primary}`}><DashboardIcon name="inventory" />Ver inventario</Link>}
+            {(esAdmin || esBodega) && <Link href="/inventario-principal" className={styles.button}><DashboardIcon name="store" />Bodega principal</Link>}
+            {(esAdmin || esBodega || esSupervisor) && <Link href={esBodega ? "/inventario-principal" : "/inventario"} className={`${styles.button} ${styles.primary}`}><DashboardIcon name="inventory" />Ver inventario</Link>}
           </div>
         </div>
-        <DashboardRadarWorkspace summary={summary} puedeVerBodegaPrincipal={esAdmin} puedeVerInventario={esAdmin || esSupervisor} />
+        <DashboardRadarWorkspace summary={summary} puedeVerBodegaPrincipal={esAdmin || esBodega} puedeVerInventario={esAdmin || esBodega || esSupervisor} />
       </main>
     </div>
   );

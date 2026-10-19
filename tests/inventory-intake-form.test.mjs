@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import ts from "typescript";
 import * as imeis from "../lib/inventory-imeis.ts";
+import * as bodegaNavigation from "../lib/bodega-navigation.ts";
+import * as accessControl from "../lib/access-control.ts";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const jsx = createRequire(import.meta.url)("react/jsx-runtime");
@@ -55,6 +57,8 @@ function probe({ state: stateInput = {}, fetchImpl, session = admin, storage = n
     "@/app/ventas/_components/sales-dashboard-parts": { SalesProfile: () => null },
     "@/lib/product-types": { TIPOS_PRODUCTO: ["TELEFONIA", "ELECTRODOMESTICO"] },
     "@/lib/inventory-imeis": imeis,
+    "@/lib/bodega-navigation": bodegaNavigation,
+    "@/lib/access-control": accessControl,
     "@/lib/use-live-refresh": { triggerLiveRefresh: source => refreshes.push(source) },
     "./nuevo.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
   };

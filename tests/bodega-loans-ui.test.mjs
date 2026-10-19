@@ -38,6 +38,7 @@ function probe(initial = {}) {
     "@/app/ventas/_components/sales-dashboard-parts": { SalesProfile: () => null },
     "./_components/loan-dialog": Null,
     "@/lib/loans-dashboard-view": viewHelpers,
+    "@/lib/bodega-navigation": transpile(readFileSync(new URL("../lib/bodega-navigation.ts", import.meta.url), "utf8"), {}),
     "@/lib/use-live-refresh": { useLiveRefresh() {} },
     "./loans.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
   }, {
@@ -74,7 +75,7 @@ test("BODEGA dispone de logística de principal, sin elegibilidad ni controles d
 
 test("BODEGA conserva todos los estados consultables y únicamente navegación autorizada", async () => {
   const p = probe({ sedeFiltroId: "2" });
-  assert.deepEqual(p.view.navigationItems.map((item) => item.href), ["/inventario-principal", "/inventario/nuevo", "/prestamos"]);
+  assert.deepEqual(p.view.navigationItems.map((item) => item.href), ["/dashboard", "/inventario-principal", "/inventario/nuevo", "/prestamos", "/dashboard/radar", "/dashboard#quien-me-debe"]);
   assert.ok(p.view.estadosFiltro.includes("PAGO_PENDIENTE_APROBACION"));
   assert.ok(p.view.estadosFiltro.includes("DEVOLUCION_PENDIENTE"));
   await p.view.cargarPrestamos();

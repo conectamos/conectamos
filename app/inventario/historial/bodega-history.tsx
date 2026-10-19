@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getBodegaNavigation } from "@/lib/bodega-navigation";
 import Image from "next/image";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
 import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
@@ -13,11 +14,9 @@ export default async function BodegaHistory({ imei, nombre }: { imei: string; no
   const sede = (id?: number | null) => history?.sedes.find(item => item.id === id)?.nombre || "—";
   return <div className="min-h-screen bg-[#f5f6f8] text-slate-950">
     <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 md:px-8">
-      <Link href="/inventario-principal" className="flex items-center gap-3 font-black"><Image src="/branding/conectamos-logo.png" alt="CONECTAMOS" width={44} height={44} className="h-11 w-11 object-contain" /><span>CONECTAMOS</span></Link>
+      <Link href="/dashboard" className="flex items-center gap-3 font-black"><Image src="/branding/conectamos-logo.png" alt="CONECTAMOS" width={44} height={44} className="h-11 w-11 object-contain" /><span>CONECTAMOS</span></Link>
       <nav aria-label="Navegación de bodega" className="flex flex-wrap gap-5 text-sm font-bold">
-        <Link href="/inventario-principal" className="text-[#e30613]">Bodega principal</Link>
-        <Link href="/inventario/nuevo">Ingresar equipos</Link>
-        <Link href="/prestamos">Préstamos de bodega</Link>
+        {getBodegaNavigation().map(item => <Link key={item.href} href={item.href} className={`flex items-center gap-2 ${item.href === "/inventario-principal" ? "text-[#e30613]" : ""}`}><DashboardIcon name={item.icon} /><span>{item.label}</span></Link>)}
       </nav>
       <SalesProfile name={nombre} role="BODEGA" />
     </header>

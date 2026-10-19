@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { getBodegaNavigation } from "@/lib/bodega-navigation";
 import { useEffect, useMemo, useState } from "react";
 import DashboardIcon, {
   type DashboardIconName,
@@ -297,12 +298,7 @@ export default function NuevoPrestamoPage() {
     .map((parte) => parte[0]?.toUpperCase())
     .join("");
 
-  const navigationItems: NavigationItem[] = esBodega ? [
-    { href: "/inventario-principal", icon: "inventory", label: "Bodega principal" },
-    { href: "/inventario/nuevo", icon: "inventory", label: "Ingresar equipos" },
-    { href: "/prestamos", icon: "loans", label: "Préstamos" },
-
-  ] : [
+  const navigationItems: NavigationItem[] = esBodega ? getBodegaNavigation() : [
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" },

@@ -129,6 +129,7 @@ function pageProbe(user = administrator) {
     'next/navigation': { redirect(url) { throw Error(`REDIRECT:${url}`); } },
     'next/link': nullComponent, 'next/image': nullComponent,
     '@/lib/access-control': access,
+    '@/lib/bodega-navigation': { getBodegaNavigation: () => [] },
     '@/lib/page-access': { requireSessionPage: async () => { if (!user) throw Error('UNAUTHENTICATED'); return user; } },
     '@/lib/dashboard-inventory-summary': { getAdminInventorySummary: async options => { calls.push(options); return data; } },
     '@/app/dashboard/_components/operations-dashboard': { DashboardSidebar: () => null },

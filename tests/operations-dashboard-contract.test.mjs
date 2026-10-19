@@ -80,10 +80,8 @@ function probePage(session, failures = []) {
   };
   const imports = {
     "next/link": defaultComponent,
-    "next/navigation": { redirect(destination) {
-      calls.push({ name: "redirect", args: destination });
-      throw Object.assign(new Error("NEXT_REDIRECT"), { destination });
-    } },
+    "./_components/bodega-dashboard": defaultComponent,
+    "@/lib/bodega-dashboard": { getBodegaDashboard: record("bodega", { metrics: { equiposEnBodega: 4 }, deudores: [], equiposConDeuda: [] }) },
     "@/lib/auth": { getSessionUser: record("session", session) },
     "@/lib/prisma": { __esModule: true, default: { sede: { findMany: record("sedes", sedes) } } },
     "@/lib/access-control": access,
@@ -122,17 +120,29 @@ async function runPage(session, params = { period: "2026-09" }, failures = []) {
 }
 function getCall(result, name) { return result.calls.find((call) => call.name === name)?.args; }
 
-test("BODEGA se redirige a principal antes de consultar resúmenes, caja, ventas o sedes", { skip: Boolean(process.env.OPERATIONS_DASHBOARD_TEST_SOURCE) }, async () => {
+test("BODEGA recibe su dashboard antes de consultar resúmenes comerciales, caja, ventas o sedes ajenas", { skip: Boolean(process.env.OPERATIONS_DASHBOARD_TEST_SOURCE) }, async () => {
   for (const rolNombre of ["BODEGA", " bodega "]) {
     for (const perfilTipo of ["BODEGA", "VENDEDOR", "ADMINISTRADOR"]) {
       const probe = probePage({ ...baseSession, rolNombre, perfilTipo }, ["sedes", "commercial", "financial", "operational", "welcome", "earnings", "activity"]);
-      await assert.rejects(probe.page({ searchParams: Promise.resolve({ sedeId: "999", period: "2026-09" }) }), (error) => error.destination === "/inventario-principal");
+      const tree = await probe.page({ searchParams: Promise.resolve({ sedeId: "999", period: "2026-09" }) });
+      const props = findProps(tree, props => "initialData" in props);
+      assert.equal(props.initialData.metrics.equiposEnBodega, 4);
+      assert.equal(props.initialError, "");
       assert.deepEqual(probe.calls, [
         { name: "session", args: undefined },
-        { name: "redirect", args: "/inventario-principal" },
+        { name: "bodega", args: undefined },
       ]);
     }
   }
+});
+
+test("un fallo del dashboard BODEGA permite reintentar sin consultar fuentes financieras", { skip: Boolean(process.env.OPERATIONS_DASHBOARD_TEST_SOURCE) }, async () => {
+  const probe = probePage({ ...baseSession, rolNombre: "BODEGA" }, ["bodega"]);
+  const tree = await probe.page({});
+  const props = findProps(tree, props => "initialData" in props);
+  assert.equal(props.initialData, null);
+  assert.match(props.initialError, /No se pudo cargar/);
+  assert.deepEqual(probe.calls.map(call => call.name), ["session", "bodega"]);
 });
 
 test("ADMIN y AUDITOR conservan alcance total, sedes activas y las tres fuentes con el mismo corte", async () => {

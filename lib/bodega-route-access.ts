@@ -1,10 +1,12 @@
 // BODEGA is a logistics role, never an administrative or financial role.
 // Keep this allowlist explicit: new modules must not inherit warehouse access.
-export const BODEGA_HOME_PATH = "/inventario-principal";
+export const BODEGA_HOME_PATH = "/dashboard";
 
 const warehousePages = new Set([
   "/",
   BODEGA_HOME_PATH,
+  "/inventario-principal",
+  "/dashboard/radar",
   "/inventario/nuevo",
   "/inventario/historial",
   "/prestamos",
@@ -20,6 +22,8 @@ const warehouseApiMethods: Record<string, readonly string[]> = {
   "/api/session/heartbeat": ["POST"],
   "/api/financiero/acceso": ["DELETE"], // Shared logout of the financial cookie only.
   "/api/sedes": ["GET"],
+  "/api/dashboard/bodega": ["GET"],
+  "/api/dashboard/radar/export": ["GET"],
   "/api/inventario-principal": ["GET", "POST"],
   "/api/inventario-principal/buscar": ["POST"],
   "/api/inventario-principal/actualizar": ["PATCH"],

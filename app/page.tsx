@@ -435,7 +435,7 @@ export default function Home() {
       setMensaje(`Bienvenido ${data.usuario?.nombre || usuario}`);
 
       setTimeout(() => {
-        router.push(data.usuario?.rol?.nombre?.trim().toUpperCase() === "BODEGA" ? "/inventario-principal" : "/dashboard");
+        router.push("/dashboard");
       }, 700);
     } catch (error) {
       setMensaje(
@@ -498,7 +498,7 @@ export default function Home() {
       setMensaje(data.mensaje || "Acceso correcto");
 
       setTimeout(() => {
-        router.push(data.perfil?.tipo === "BODEGA" ? "/inventario-principal" : "/dashboard");
+        router.push("/dashboard");
       }, 700);
     } catch (error) {
       setMensaje(loginRequestErrorMessage(error, "Error validando el perfil"));
@@ -554,7 +554,7 @@ export default function Home() {
       setMensaje(data.mensaje || "PIN actualizado correctamente");
 
       setTimeout(() => {
-        router.push(perfilSeleccionado.tipo === "BODEGA" ? "/inventario-principal" : "/dashboard");
+        router.push("/dashboard");
       }, 700);
     } catch (error) {
       setMensaje(loginRequestErrorMessage(error, "Error actualizando el PIN"));

@@ -81,6 +81,7 @@ function pageProbe(initial = {}, responses = {}) {
     react: hooks, "next/link": { __esModule: true, default: ({ children, ...props }) => jsxRuntime.jsx("a", { ...props, children }) },
     "next/image": nullComponent, "./_components/loan-dialog": nullComponent,
     "@/lib/use-live-refresh": { useLiveRefresh() {} }, "@/lib/loans-dashboard-view": loanView,
+    "@/lib/bodega-navigation": load("lib/bodega-navigation.ts"),
     "@/app/dashboard/_components/operations-dashboard": { DashboardSidebar: () => null },
     "@/app/dashboard/_components/dashboard-icon": nullComponent,
     "@/app/dashboard/_components/logout-button": nullComponent,
