@@ -42,6 +42,11 @@ function probe({ initialData = fixture, initialError = "", initial = {}, fetchIm
   const refs = [];
   let cursor = 0, refIndex = 0, captured, tree;
   const calls = [];
+  const sidebarProps = [];
+  const Sidebar = props => {
+    sidebarProps.push(props);
+    return jsx.jsx("aside", { "aria-label": "Navegación de bodega", children: props.items.map(item => jsx.jsx("a", { href: item.href, children: item.label }, item.href)) });
+  };
   const Null = { __esModule: true, default: () => null };
   const styles = new Proxy({}, { get: (_object, key) => String(key) });
   const Page = compile(`${source.slice(0, returnAt)}__capture({${values.join(",")}});${source.slice(returnAt)}`, {
@@ -53,13 +58,14 @@ function probe({ initialData = fixture, initialError = "", initial = {}, fetchIm
     "@/app/ventas/_components/sales-dashboard-parts": { SalesProfile: () => null },
     "@/app/prestamos/_components/loan-dialog": { __esModule: true, default: ({ title, children }) => jsx.jsx("div", { role: "dialog", "aria-label": title, children }) },
     "./dashboard-icon": Null,
+    "./operations-dashboard": { DashboardSidebar: Sidebar },
     "@/lib/bodega-navigation": navigation,
     "@/lib/use-live-refresh": { useLiveRefresh() {} },
     "./bodega-dashboard.module.css": { __esModule: true, default: styles },
   }, { __capture: value => { captured = value; }, fetch: async (...args) => { calls.push(args); return fetchImpl(...args); } }).default;
   const render = () => { cursor = 0; refIndex = 0; tree = Page({ initialData, initialError, nombre: "Operador de bodega QA" }); return tree; };
   render();
-  return { state, calls, render, get view() { return captured; }, html() { return renderToStaticMarkup(tree); } };
+  return { state, calls, sidebarProps, render, get view() { return captured; }, html() { return renderToStaticMarkup(tree); } };
 }
 function nodes(node) { return !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)]; }
 
@@ -69,11 +75,56 @@ test("dashboard BODEGA muestra cifras reales completas, Radar, perfil y ninguna 
   assert.match(html, /Dashboard de bodega/);
   assert.match(html, /45\.123\.456,75/);
   assert.match(html, /Quién le debe a bodega/);
-  const links = nodes(p.render()).filter(node => node.type === "a").map(node => node.props.href);
+  const links = Array.from(html.matchAll(/href="([^"]+)"/g), match => match[1]);
   assert.ok(links.includes("/dashboard/radar"));
   assert.ok(links.includes("/dashboard#quien-me-debe"));
   assert.ok(links.every(path => !/^\/(?:caja|ventas|cierre)|financiero|proveedores/.test(path)));
   assert.equal(p.state.data.metrics.totalPorCobrar, fixture.metrics.totalPorCobrar);
+});
+
+test("navegación blanca de Bodega reutiliza el marco del administrador sin añadir CIERRE", () => {
+  const p = probe(); p.html();
+  assert.equal(p.sidebarProps.length, 1);
+  const sidebar = p.sidebarProps[0];
+  assert.equal(sidebar.appearance, "white");
+  assert.equal(sidebar.includeCierre, false);
+  assert.equal(sidebar.activeHref, "/dashboard");
+  assert.deepEqual(sidebar.items.map(item => item.href), navigation.getBodegaNavigation().map(item => item.href));
+  assert.ok(sidebar.items.every(item => item.href !== "/cierre"));
+});
+
+test("ranking conserva las cinco mayores deudas globales y abre el mismo detalle sin perder filtros", () => {
+  const p = probe({ initial: { search: "SEDE 13", page: 2 } });
+  const ranking = nodes(p.render()).find(node => node.type === "section" && node.props["aria-label"] === "Sedes con mayor deuda");
+  assert.ok(ranking);
+  const buttons = nodes(ranking).filter(node => node.type === "button");
+  assert.equal(buttons.length, 5);
+  assert.deepEqual(p.view.topDebtors.map(group => group.key), fixture.deudores.slice(0, 5).map(group => group.key));
+  assert.equal(p.view.visibleGroups.length, 1);
+  assert.equal(p.view.visibleGroups[0].sedeId, 13);
+  let focused = false;
+  buttons[0].props.onClick({ currentTarget: { focus() { focused = true; } } });
+  p.render();
+  assert.equal(p.state.selected, fixture.deudores[0].key);
+  assert.equal(p.view.currentGroup.totalPendiente, fixture.deudores[0].totalPendiente);
+  assert.equal(p.view.detailItems.length, 14);
+  assert.match(p.html(), /000000000000100/);
+  p.view.close(); p.render();
+  assert.equal(focused, true);
+  assert.equal(p.state.search, "SEDE 13");
+  assert.equal(p.state.page, 2);
+});
+
+test("resumen de inventario usa cobertura completa y conserva cero válido sin proporciones inválidas", () => {
+  const p = probe({ initial: { page: 2, search: "SEDE 13" } });
+  assert.equal(p.view.stockAndSent, fixture.metrics.equiposEnBodega + fixture.metrics.enviadosASede);
+  assert.ok(p.view.warehouseShare > 0 && p.view.warehouseShare < 100);
+  const stock = nodes(p.render()).find(node => node.type === "section" && node.props["aria-label"] === "Estado del inventario de bodega");
+  assert.ok(stock);
+  const empty = probe({ initialData: { ...fixture, metrics: { ...fixture.metrics, equiposEnBodega: 0, enviadosASede: 0 } } });
+  assert.equal(empty.view.stockAndSent, 0);
+  assert.equal(empty.view.warehouseShare, 0);
+  assert.doesNotMatch(empty.html(), /NaN|Infinity/);
 });
 
 test("sedes se buscan sobre todas las páginas y el total general no cambia con la búsqueda", () => {
