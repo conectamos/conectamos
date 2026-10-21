@@ -278,6 +278,7 @@ test("GET incorpora IDs reales y saldo sin cambiar cobertura, IMEI, origen, fact
       "@/lib/auth": { getSessionUser: async () => ({ ...admin, rolNombre }) },
       "@/lib/access-control": access, "@/lib/sedes": load("lib/sedes.ts"), "@/lib/product-types": load("lib/product-types.ts"),
       "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: async () => {} }, "@/lib/inventory-creditors": identity.helpers,
+      "@/lib/inventory-intake-registration": {},
     });
     const result = await route.GET(new Request("https://qa.test/api/inventario?sedeId=1"));
     assert.equal(result.status, 200);
@@ -310,6 +311,7 @@ test("GET y pago rechazan sesión/perfiles antes de consultar o crear metadatos"
       "@/lib/sedes": load("lib/sedes.ts"), "@/lib/product-types": load("lib/product-types.ts"),
       "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: async () => { metadataCalls++; } },
       "@/lib/inventory-creditors": { resolverIdentidadesAcreedores: async () => { metadataCalls++; } },
+      "@/lib/inventory-intake-registration": {},
     });
     assert.equal((await route.GET(new Request("https://qa.test/api/inventario"))).status, user ? 403 : 401);
     assert.equal(metadataCalls, 0);

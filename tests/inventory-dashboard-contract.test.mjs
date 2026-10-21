@@ -43,6 +43,8 @@ const childHooks = {
 const linkComponent = { __esModule: true, default: ({ children, ...props }) => jsxRuntime.jsx("a", { ...props, children }) };
 const monthlyView = loadTypeScript("lib/monthly-reports-view.ts");
 const inventoryDebtView = loadTypeScript("lib/inventory-debt-view.ts");
+const inventorySelectionExport = loadTypeScript("lib/inventory-selection-export.ts", { "./inventory-debt-view": inventoryDebtView });
+const spreadsheet = require("xlsx");
 const inventoryDebtParts = loadTypeScript("app/inventario/_components/inventory-debt-parts.tsx", {
   react: childHooks, "@/app/dashboard/_components/dashboard-icon": nullComponent,
   "@/lib/monthly-reports-view": monthlyView,
@@ -73,7 +75,7 @@ const items = states.map((estadoActual, index) => ({
   ventas: [], facturaStand: null,
 }));
 
-function pageProbe(initialState = {}, responses = {}) {
+function pageProbe(initialState = {}, responses = {}, exportOptions = {}) {
   const path = process.env.INVENTORY_DASHBOARD_TEST_SOURCE || "app/inventario/page.tsx";
   const sourceText = readFileSync(join(ROOT, path), "utf8");
   const ast = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -100,6 +102,7 @@ function pageProbe(initialState = {}, responses = {}) {
     "paginas", "accionesEquipo",
     "itemsDeudaBase", "itemsDeudaFiltrados", "itemsVista", "totalSeleccionDeuda", "acreedoresPago", "paginaSeleccionada",
     "alternarSeleccionPagina", "cambiarPagina", "cambiarFilasPorPagina", "limpiarFiltros", "limpiarGrupo",
+    "exportarSeleccionExcel", "exportacionDeshabilitada", "seleccionExportable",
   ].filter((name) => declaredNames.includes(name));
   const returnStatement = page.body.statements.find((node) => ts.isReturnStatement(node));
   assert.ok(returnStatement);
@@ -132,6 +135,11 @@ function pageProbe(initialState = {}, responses = {}) {
     "./_components/inventory-dashboard-parts": inventoryParts,
     "./_components/inventory-debt-parts": inventoryDebtParts,
     "@/lib/inventory-debt-view": inventoryDebtView,
+    "@/lib/inventory-selection-export": inventorySelectionExport,
+    xlsx: { ...spreadsheet, writeFile: (workbook, filename) => {
+      calls.push({ name: "export", workbook, filename });
+      if (exportOptions.error) throw exportOptions.error;
+    } },
     "@/app/ventas/_components/sales-dashboard-parts": salesParts,
     "@/lib/monthly-reports-view": monthlyView,
   }, {
@@ -272,6 +280,139 @@ test("barra de deuda separa selección de página y resultados completos con imp
   const empty = inventoryDebtParts.DebtSelectionBar({ selectedCount: 0, total: 0, resultsCount: 0, pageCount: 0,
     allSelected: false, pageSelected: false, onSelectAll() {}, onSelectPage() {}, onClear() {}, onPay() {}, payDisabled: true });
   assert.ok(elements(empty).filter((node) => node?.type === "button").every((node) => node.props.disabled));
+});
+
+test("barra de deuda permite exportar sin pagar y deshabilita la descarga vacía, ocupada o inválida", { skip: baselineMode }, () => {
+  const invoked = [];
+  const props = { selectedCount: 23, total: 2_300, resultsCount: 50, pageCount: 10, allSelected: false, pageSelected: true,
+    onSelectAll() {}, onSelectPage() {}, onClear() {}, onPay: () => invoked.push("pay"),
+    onExport: () => invoked.push("export"), payDisabled: true, busy: false };
+  const exportButton = (overrides = {}) => elements(inventoryDebtParts.DebtSelectionBar({ ...props, ...overrides }))
+    .find((node) => node?.type === "button" && /Exportar seleccionados a Excel|Exportando/.test(textOf(node)));
+  assert.equal(exportButton().props.disabled, false, "Exportar no depende de la elegibilidad para pago");
+  exportButton().props.onClick();
+  assert.deepEqual(invoked, ["export"]);
+  for (const overrides of [{ selectedCount: 0 }, { busy: true }, { exporting: true }, { exportDisabled: true }]) {
+    assert.equal(exportButton(overrides).props.disabled, true);
+  }
+  assert.equal(exportButton({ exporting: true }).props["aria-busy"], true);
+});
+
+test("exportar inventario descarga sólo los 355 IDs elegidos entre todas las páginas y conserva selección y filtros", { skip: baselineMode }, async () => {
+  const stock = Array.from({ length: 356 }, (_, index) => ({ ...items[0], id: index + 1,
+    imei: String(index + 1).padStart(15, "0"), referencia: `Equipo QA ${index + 1}`,
+    costo: 1_000, deudaPendiente: 750, acreedorId: 101, acreedorNombre: "Proveedor QA" }));
+  const selected = stock.slice(0, 355).map((item) => item.id);
+  const probe = pageProbe({ items: stock, idsSeleccionados: selected, filasPorPagina: 10, pagina: 36,
+    busqueda: "Equipo QA", filtrosEstado: ["DEUDA"], sedeFiltroId: "1" });
+  const { tree } = probe.render();
+  assert.equal(probe.view.itemsPagina.length, 6);
+  const button = elements(tree).find((node) => node?.type === "button" && textOf(node) === "Exportar seleccionados a Excel");
+  assert.ok(button);
+  assert.equal(button.props.disabled, false);
+  await probe.view.exportarSeleccionExcel();
+  const downloads = probe.calls.filter((call) => call.name === "export");
+  assert.equal(downloads.length, 1);
+  assert.match(downloads[0].filename, /\.xlsx$/);
+  const rows = spreadsheet.utils.sheet_to_json(downloads[0].workbook.Sheets["Equipos seleccionados"]);
+  assert.equal(rows.length, 355);
+  assert.deepEqual(rows.map((row) => row.ID), selected);
+  assert.ok(!rows.some((row) => row.ID === 356));
+  assert.equal(rows[0].IMEI, "000000000000001");
+  assert.equal(downloads[0].workbook.Sheets.Resumen.B3.v, 355);
+  assert.equal(downloads[0].workbook.Sheets.Resumen.B4.v, 355_000);
+  assert.equal(downloads[0].workbook.Sheets.Resumen.B5.v, 266_250);
+  assert.deepEqual(probe.state.idsSeleccionados, selected);
+  assert.equal(probe.state.pagina, 36);
+  assert.equal(probe.state.busqueda, "Equipo QA");
+  assert.deepEqual(probe.state.filtrosEstado, ["DEUDA"]);
+  assert.equal(probe.state.sedeFiltroId, "1");
+  assert.equal(probe.calls.filter((call) => call.name === "fetch").length, 0, "La exportación no registra pagos ni modifica inventario");
+  assert.match(probe.state.mensaje, /355 equipos/);
+  assert.equal(probe.state.exportandoExcel, false);
+});
+
+test("exportación de Deudas usa la selección filtrada aunque incluya equipos no elegibles para pago", { skip: baselineMode }, async () => {
+  const stock = [
+    { ...items[0], id: 101, origen: "COMPRA", deboA: "SEDE 2", acreedorId: 50, acreedorNombre: "SEDE 2", deudaPendiente: 90 },
+    { ...items[2], id: 102, deudaPendiente: 30, acreedorId: 50, acreedorNombre: "SEDE 2" },
+    { ...items[1], id: 103, estadoFinanciero: "PAGO" },
+    { ...items[0], id: 104, acreedorId: 51, acreedorNombre: "Otro acreedor" },
+  ];
+  const probe = pageProbe({ pestana: "deudas", items: stock, idsSeleccionados: [101, 102, 103, 104, 999], acreedorDeudaClave: "id:50" });
+  const props = componentProps(probe.render().tree, inventoryDebtParts.DebtSelectionBar);
+  assert.equal(typeof props.onExport, "function");
+  assert.equal(props.exportDisabled, false);
+  assert.deepEqual(probe.view.seleccionExportable.map((item) => item.id), [101, 102]);
+  assert.equal(probe.view.itemsSeleccionadosParaPago.length, 1);
+  props.onExport();
+  await Promise.resolve();
+  await Promise.resolve();
+  const downloads = probe.calls.filter((call) => call.name === "export");
+  assert.equal(downloads.length, 1);
+  const rows = spreadsheet.utils.sheet_to_json(downloads[0].workbook.Sheets["Equipos seleccionados"]);
+  assert.deepEqual(rows.map((row) => row.ID), [101, 102]);
+  assert.equal(downloads[0].workbook.Sheets.Resumen.B5.v, 120);
+  assert.deepEqual(probe.state.idsSeleccionados, [101, 102, 103, 104, 999]);
+  assert.equal(probe.state.mostrarModalPagoMasivo, false);
+  assert.equal(probe.calls.filter((call) => call.name === "fetch").length, 0);
+});
+
+test("exportación bloquea selección vacía, carga y consulta de sede desactualizada", { skip: baselineMode }, async () => {
+  for (const initial of [{ idsSeleccionados: [] }, { cargando: true }, { cargandoInventario: true }, { consultaCargada: "OTRA-SEDE" }, { idsSeleccionados: [999] }]) {
+    const probe = pageProbe({ idsSeleccionados: [10], ...initial });
+    assert.equal(probe.view.exportacionDeshabilitada, true);
+    await probe.view.exportarSeleccionExcel();
+    assert.equal(probe.calls.filter((call) => call.name === "export").length, 0);
+    assert.equal(probe.state.exportandoExcel, false);
+  }
+});
+
+test("exportación bloquea doble clic y conserva los campos y selección si falla, permitiendo reintentar", { skip: baselineMode }, async () => {
+  const options = { error: new Error("Descarga de prueba no disponible") };
+  const probe = pageProbe({ idsSeleccionados: [10, 9], pagina: 2, busqueda: "Equipo" }, {}, options);
+  const first = probe.view.exportarSeleccionExcel();
+  const second = probe.view.exportarSeleccionExcel();
+  assert.equal(probe.state.exportandoExcel, true);
+  const busy = elements(probe.render().tree).find((node) => node?.type === "button" && textOf(node) === "Exportando…");
+  assert.ok(busy);
+  assert.equal(busy.props.disabled, true);
+  assert.equal(busy.props["aria-busy"], true);
+  await Promise.all([first, second]);
+  assert.equal(probe.calls.filter((call) => call.name === "export").length, 1);
+  assert.match(probe.state.mensaje, /Descarga de prueba no disponible/);
+  assert.deepEqual(probe.state.idsSeleccionados, [10, 9]);
+  assert.equal(probe.state.busqueda, "Equipo");
+  assert.equal(probe.state.pagina, 2);
+  assert.equal(probe.state.exportandoExcel, false);
+  assert.equal(probe.calls.filter((call) => call.name === "fetch").length, 0);
+  options.error = null;
+  probe.render();
+  await probe.view.exportarSeleccionExcel();
+  assert.equal(probe.calls.filter((call) => call.name === "export").length, 2);
+  assert.match(probe.state.mensaje, /2 equipos seleccionados/);
+});
+
+test("una descarga en preparación se cancela al cambiar filtros, acreedor, cobertura, pestaña o selección", { skip: baselineMode }, async () => {
+  const changes = [
+    { busqueda: "otra búsqueda" }, { filtrosEstado: ["BODEGA"] }, { sedeFiltroId: "3" },
+    { pestana: "deudas" }, { idsSeleccionados: [9] }, { acreedorDeudaClave: "id:999" },
+  ];
+  for (const change of changes) {
+    const probe = pageProbe({ idsSeleccionados: [10, 9] });
+    const pending = probe.view.exportarSeleccionExcel();
+    Object.assign(probe.state, change);
+    probe.render();
+    await pending;
+    assert.equal(probe.calls.filter((call) => call.name === "export").length, 0, JSON.stringify(change));
+    assert.equal(probe.state.exportandoExcel, false);
+    assert.ok(!String(probe.state.mensaje).includes("Descarga de Excel iniciada"));
+  }
+  const refreshed = pageProbe({ idsSeleccionados: [10] });
+  const pending = refreshed.view.exportarSeleccionExcel();
+  const loading = refreshed.view.cargarInventario();
+  await Promise.all([pending, loading]);
+  assert.equal(refreshed.calls.filter((call) => call.name === "export").length, 0, "Una respuesta nueva invalida la selección capturada para descargar");
 });
 
 test("cambiar acreedor, búsquedas, estados, sede o pestaña limpia selección antes de usar otro corte", { skip: baselineMode }, () => {
@@ -642,6 +783,7 @@ function apiProbe(user, options = {}) {
     "@/lib/prisma": { __esModule: true, default: prisma }, "@/lib/auth": { getSessionUser: async () => user },
     "@/lib/access-control": access, "@/lib/prestamos": prestamos, "@/lib/sedes": sedes, "@/lib/product-types": productTypes,
     "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: record("ensure-schema", undefined) }, "@/lib/siigo": {},
+    "@/lib/inventory-intake-registration": {},
     "@/lib/inventory-creditors": {
       ...creditorHelpers,
       resolverIdentidadesAcreedores: async (rows) => new Map([...new Set(rows.map((item) => creditorHelpers.nombreHistoricoAcreedor(item.deboA)).filter((name) => name !== null))]

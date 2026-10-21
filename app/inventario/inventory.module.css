@@ -95,6 +95,8 @@
 .bulkSection button[class*="bg-red"] { border-color: #ffccd4; color: #e30613; }
 .bulkSection button:hover { background: #fff0f2; border-color: #e30613; }
 .bulkSection button:disabled { opacity: .45; cursor: not-allowed; }
+.exportButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.exportButton svg { width: 17px; height: 17px; flex: 0 0 auto; }
 .bulkSection span[class*="text-blue"] { color: #65748b; }
 .bulkScope { margin: 10px 0 0; color: #65748b; font-size: 12px; }
 .tableScroller { max-height: max(356px, calc(100dvh - 585px)); overflow: auto; overscroll-behavior: contain; }

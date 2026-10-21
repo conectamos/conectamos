@@ -16,6 +16,7 @@ import { formatoPesos as formatoMoneda } from "@/lib/monthly-reports-view";
 import { InventoryMetric, InventoryRow, type InventoryAction } from "./_components/inventory-dashboard-parts";
 import { CreditorsPanel, DebtSummary, DebtSelectionBar, DebtEquipmentFilters } from "./_components/inventory-debt-parts";
 import { agruparDeudasPorAcreedor, deudaPendienteInventario, identidadAcreedor } from "@/lib/inventory-debt-view";
+import { crearLibroSeleccionInventario } from "@/lib/inventory-selection-export";
 import styles from "./inventory.module.css";
 
 type InventarioItem = {
@@ -207,6 +208,9 @@ export default function InventarioPage() {
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
+  const [exportandoExcel, setExportandoExcel] = useState(false);
+  const exportacionEnCurso = useRef(false);
+  const exportacionContexto = useRef("");
   const [cargandoInventario, setCargandoInventario] = useState(false);
   const [inventarioCargado, setInventarioCargado] = useState(false);
   const [consultaCargada, setConsultaCargada] = useState("");
@@ -1377,6 +1381,32 @@ export default function InventarioPage() {
     ? sedeFiltroId === "TODAS" ? "Todas las sedes" : sedeFiltroNombre
     : user?.sedeNombre || "Tu sede";
   const vistaDisponible = inventarioCargado && consultaCargada === consultaScope;
+  // Invalida una descarga en preparación si cambian la cobertura, los filtros o la selección.
+  const contextoExportacion = JSON.stringify([user?.id, consultaScope, consultaCargada, cargandoInventario, cargando, pestana, busqueda, filtrosEstado, busquedaDeudas, filtrosEstadoDeudas, acreedorDeudaClave, busquedaAcreedores, idsSeleccionados, itemsVista.map(item => item.id)]);
+  exportacionContexto.current = contextoExportacion;
+  useEffect(() => () => { exportacionContexto.current = ""; }, []);
+  const seleccionExportable = itemsVista.filter(item => idsSeleccionados.includes(item.id));
+  const exportacionDeshabilitada = !user || !vistaDisponible || cargandoInventario || cargando || !seleccionExportable.length;
+  const exportarSeleccionExcel = async () => {
+    if (exportacionEnCurso.current || exportacionDeshabilitada) return;
+    exportacionEnCurso.current = true;
+    setExportandoExcel(true);
+    const contexto = contextoExportacion;
+    const consulta = inventarioRequestId.current;
+    const seleccion = [...seleccionExportable];
+    try {
+      const XLSX = await import("xlsx");
+      if (exportacionContexto.current !== contexto || inventarioRequestId.current !== consulta) return;
+      const libro = crearLibroSeleccionInventario(XLSX, seleccion, coberturaActual);
+      XLSX.writeFile(libro, "inventario-seleccionado.xlsx");
+      setMensaje(`Descarga de Excel iniciada: ${seleccion.length} equipo${seleccion.length === 1 ? "" : "s"} seleccionado${seleccion.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      if (exportacionContexto.current === contexto) setMensaje(error instanceof Error ? error.message : "No se pudo generar el Excel. Intenta nuevamente.");
+    } finally {
+      exportacionEnCurso.current = false;
+      setExportandoExcel(false);
+    }
+  };
   const valorMetrica = (valor: string | number) => vistaDisponible ? valor : "—";
   const resultados = vistaDisponible ? itemsVista.length : 0;
   const filasPorPaginaVista = pestana === "deudas" ? filasPorPaginaDeudas : filasPorPagina;
@@ -1451,6 +1481,9 @@ vistaDisponible && (pestana === "deudas" || filtrosEstado.includes("DEUDA") || i
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                  <button type="button" className={styles.exportButton} onClick={() => void exportarSeleccionExcel()} disabled={exportacionDeshabilitada || exportandoExcel} aria-busy={exportandoExcel}>
+                    <DashboardIcon name="download" />{exportandoExcel ? "Exportando…" : "Exportar seleccionados a Excel"}
+                  </button>
                   <button
                     type="button"
                     onClick={alternarSeleccionVisibles}
@@ -1682,7 +1715,7 @@ vistaDisponible && (pestana === "deudas" || filtrosEstado.includes("DEUDA") || i
               <CreditorsPanel creditors={vistaDisponible ? resumenDeudaPorAcreedor : []} selectedKey={acreedorDeudaClave} onSelect={(key) => { setAcreedorDeudaClave(key); setIdsSeleccionados([]); setPaginaDeudas(1); }} search={busquedaAcreedores} onSearch={(value) => { setBusquedaAcreedores(value); setIdsSeleccionados([]); }} loading={!vistaDisponible} error={!vistaDisponible && !cargandoInventario && Boolean(mensaje)} />
               <section className={`${styles.list} ${styles.debtEquipment}`} aria-label="Equipos con deuda">
                 <DebtEquipmentFilters search={busquedaDeudas} onSearch={(value) => { setBusquedaDeudas(value); setIdsSeleccionados([]); setPaginaDeudas(1); }} states={filtrosEstadoDeudas} onToggleState={(estado) => { setFiltrosEstadoDeudas((actuales) => actuales.includes(estado) ? actuales.filter((item) => item !== estado) : [...actuales, estado]); setIdsSeleccionados([]); setPaginaDeudas(1); }} onClear={limpiarFiltros} resultsCount={resultados} creditorLabel={acreedorDeudaClave === "TODOS" ? "Todos los acreedores" : resumenDeudaPorAcreedor.find((creditor) => creditor.key === acreedorDeudaClave)?.name || "Sin acreedor"} />
-                <DebtSelectionBar selectedCount={idsSeleccionados.length} total={totalSeleccionDeuda} resultsCount={resultados} pageCount={itemsPagina.length} allSelected={todosVisiblesSeleccionados} pageSelected={paginaSeleccionada} onSelectAll={alternarSeleccionVisibles} onSelectPage={alternarSeleccionPagina} onClear={limpiarSeleccionMasiva} onPay={() => setMostrarModalPagoMasivo(true)} payDisabled={!vistaDisponible || !itemsSeleccionadosParaPago.length} busy={cargando || !vistaDisponible} />
+                <DebtSelectionBar selectedCount={idsSeleccionados.length} total={totalSeleccionDeuda} resultsCount={resultados} pageCount={itemsPagina.length} allSelected={todosVisiblesSeleccionados} pageSelected={paginaSeleccionada} onSelectAll={alternarSeleccionVisibles} onSelectPage={alternarSeleccionPagina} onClear={limpiarSeleccionMasiva} onPay={() => setMostrarModalPagoMasivo(true)} onExport={() => void exportarSeleccionExcel()} exporting={exportandoExcel} exportDisabled={exportacionDeshabilitada} payDisabled={!vistaDisponible || !itemsSeleccionadosParaPago.length} busy={cargando || !vistaDisponible} />
                 {idsSeleccionados.length > itemsSeleccionadosParaPago.length && <p className={styles.paymentEligibility}>{itemsSeleccionadosParaPago.length} equipos aptos para pago · {formatoPesos(totalPagoMasivo)}. Los demás no aplican por estado, tipo de deuda o reglas actuales.</p>}
                 {idsSeleccionados.length > 0 && <details className={styles.moreBulkOperations}><summary>Más operaciones para la selección</summary>{operacionesMasivas}</details>}
                 {tablaEquipos}

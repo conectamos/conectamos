@@ -27,7 +27,7 @@
     "test:monthly-reports": "node --test tests/monthly-reports-view.test.mjs tests/reports-jalador-commissions.test.mjs",
     "test:operations-dashboard": "node --test tests/operations-dashboard-contract.test.mjs tests/operations-tool-favorites.test.cjs",
     "test:sales-dashboard": "node --test tests/sales-dashboard-contract.test.mjs",
-    "test:inventory-dashboard": "node --test tests/inventory-dashboard-contract.test.mjs tests/inventory-debt-payment.test.mjs",
+    "test:inventory-dashboard": "node --test tests/inventory-dashboard-contract.test.mjs tests/inventory-debt-payment.test.mjs tests/inventory-selection-export.test.mjs",
     "test:loans-dashboard": "node --test tests/loans-dashboard-contract.test.mjs",
     "test:approvals": "node --test tests/approvals-workspace-contract.test.mjs",
     "test:sales-approvals": "node --test tests/sales-approvals-workspace.test.mjs",

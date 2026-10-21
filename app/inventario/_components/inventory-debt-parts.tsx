@@ -95,14 +95,18 @@ export type DebtSelectionBarProps = {
   onSelectPage: () => void;
   onClear: () => void;
   onPay: () => void;
+  onExport?: () => void;
+  exporting?: boolean;
+  exportDisabled?: boolean;
   payDisabled: boolean;
   busy: boolean;
 };
 
-export function DebtSelectionBar({ selectedCount, total, resultsCount, pageCount, allSelected, pageSelected, onSelectAll, onSelectPage, onClear, onPay, payDisabled, busy }: DebtSelectionBarProps) {
+export function DebtSelectionBar({ selectedCount, total, resultsCount, pageCount, allSelected, pageSelected, onSelectAll, onSelectPage, onClear, onPay, onExport, exporting = false, exportDisabled = false, payDisabled, busy }: DebtSelectionBarProps) {
   return <section className={styles.selectionBar} aria-label="Selección de equipos con deuda" aria-busy={busy}>
     <p className={styles.selectionSummary} aria-live="polite">{formatoNumero(selectedCount)} seleccionado{selectedCount === 1 ? "" : "s"}<span>·</span><strong className={total < 0 ? styles.negative : undefined}>{formatoPesos(total)}</strong></p>
     <div className={styles.selectionActions}>
+      {onExport && <button type="button" className={styles.secondaryButton} disabled={busy || exportDisabled || exporting || selectedCount === 0} aria-busy={exporting} onClick={onExport}><DashboardIcon name="download" />{exporting ? "Exportando…" : "Exportar seleccionados a Excel"}</button>}
       <button type="button" className={styles.secondaryButton} aria-label={`${allSelected ? "Quitar selección de" : "Seleccionar"} todos los resultados filtrados de todas las páginas (${formatoNumero(resultsCount)})`} aria-pressed={allSelected} disabled={busy || resultsCount === 0} onClick={onSelectAll}>{allSelected ? "Quitar selección de resultados" : "Seleccionar resultados"} ({formatoNumero(resultsCount)})</button>
       <button type="button" className={styles.secondaryButton} aria-pressed={pageSelected} disabled={busy || pageCount === 0} onClick={onSelectPage}>{pageSelected ? "Quitar selección de página actual" : "Seleccionar página actual"} ({formatoNumero(pageCount)})</button>
       {selectedCount > 0 && <button type="button" className={styles.clearSelection} disabled={busy} onClick={onClear}>Limpiar selección</button>}
