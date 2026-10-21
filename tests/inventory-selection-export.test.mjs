@@ -14,12 +14,12 @@ function load(path, imports = {}) {
   const javascript = ts.transpileModule(readFileSync(join(ROOT, path), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
-  const module = { exports: {} };
+  const loaded = { exports: {} };
   new Function("require", "module", "exports", javascript)((name) => {
     assert.ok(name in imports, `Dependencia inesperada: ${name}`);
     return imports[name];
-  }, module, module.exports);
-  return module.exports;
+  }, loaded, loaded.exports);
+  return loaded.exports;
 }
 
 const debt = load("lib/inventory-debt-view.ts");
