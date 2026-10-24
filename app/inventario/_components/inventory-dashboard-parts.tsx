@@ -5,6 +5,7 @@ import { Fragment, useEffect, useId, useRef, useState, type CSSProperties } from
 import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
 import { formatoNumero, formatoPesos } from "@/lib/monthly-reports-view";
 import { etiquetaEstadoInventario } from "@/lib/prestamos";
+import { vistaFacturaInventario } from "@/lib/inventory-invoice-view";
 import styles from "./inventory-row.module.css";
 
 export type InventoryItem = {
@@ -99,6 +100,7 @@ export function InventoryRow({ item, selected, onSelect, expanded, onToggle, des
   const debt = variant === "debt";
   const creditorName = item.acreedorNombre ?? item.deboA;
   const creditorLabel = creditorName?.trim() ? creditorName : "Sin acreedor";
+  const factura = vistaFacturaInventario(item.facturaStand);
 
   function closeMenu() {
     if (menuRef.current) menuRef.current.open = false;
@@ -184,6 +186,10 @@ export function InventoryRow({ item, selected, onSelect, expanded, onToggle, des
       {!debt && <td className={styles.creditorCell} data-label="Acreedor">{item.deboA ?? "-"}</td>}
       <td className={styles.stateCell} data-label={debt ? "Estado / Financiero" : "Estado"}><span className={`${styles.badge} ${stateAlert ? styles.alertBadge : ""}`}>{etiquetaEstadoInventario(item.estadoActual)}</span>{debt && <span className={`${styles.badge} ${normalizedFinancialState === "DEUDA" ? styles.alertBadge : ""}`}>{item.estadoFinanciero ?? "-"}</span>}</td>
       {!debt && <td className={styles.financialCell} data-label="Financiero"><span className={`${styles.badge} ${normalizedFinancialState === "DEUDA" ? styles.alertBadge : ""}`}>{item.estadoFinanciero ?? "-"}</span></td>}
+      <td className={styles.invoiceCell} data-label="Factura">
+        <span className={`${styles.invoiceBadge} ${styles[`invoice_${factura.tono}`]}`}><DashboardIcon name="document" className={styles.invoiceIcon} />{factura.etiqueta}</span>
+        {item.facturaStand?.url ? <a href={item.facturaStand.url} target="_blank" rel="noreferrer" className={styles.invoiceNumber} aria-label={`Abrir factura ${item.facturaStand.nombre || `ID ${item.facturaStand.id}`} del equipo ${item.imei}`}>{item.facturaStand.nombre || "Abrir factura"}<DashboardIcon name="arrow" className={styles.invoiceIcon} /></a> : item.facturaStand?.nombre && <span className={styles.invoiceNumber}>{item.facturaStand.nombre}</span>}
+      </td>
       <td className={styles.actionsCell} data-label="Acciones">
         {actions.length > 0 ? <details ref={menuRef} className={styles.menu} onToggle={event => handleMenuToggle(event.currentTarget.open)}>
           <summary ref={menuToggleRef} className={styles.menuToggle} aria-label={`Acciones del equipo ${item.imei}`}>
@@ -196,7 +202,7 @@ export function InventoryRow({ item, selected, onSelect, expanded, onToggle, des
       </td>
     </tr>
     {expanded && <tr className={styles.detailRow}>
-      <td colSpan={debt ? 6 : 8} className={styles.detailCell}>
+      <td colSpan={debt ? 7 : 9} className={styles.detailCell}>
         <section id={detailId} className={styles.detail} aria-label={`Detalle del equipo ${item.referencia}`} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); closeDetail(); } }}>
           <div className={styles.detailHeading}><h3>Detalle del equipo</h3><button type="button" className={styles.closeDetail} aria-label={`Cerrar detalle del equipo ${item.imei}`} onClick={closeDetail}><DashboardIcon name="close" className={styles.closeIcon} /></button></div>
           <div className={styles.detailLayout}>

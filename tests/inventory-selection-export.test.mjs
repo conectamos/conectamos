@@ -23,7 +23,10 @@ function load(path, imports = {}) {
 }
 
 const debt = load("lib/inventory-debt-view.ts");
-const { crearLibroSeleccionInventario } = load("lib/inventory-selection-export.ts", { "./inventory-debt-view": debt });
+const invoice = load("lib/inventory-invoice-view.ts");
+const { crearLibroSeleccionInventario } = load("lib/inventory-selection-export.ts", {
+  "./inventory-debt-view": debt, "./inventory-invoice-view": invoice,
+});
 const equipment = {
   id: 10, imei: "001234567890123", referencia: "IPHONE 15", tipoProducto: "TELEFONIA", color: "AZUL",
   costo: 1_715_000, sedeId: 8, sede: { nombre: "SEDE 8" }, acreedorId: 101,
@@ -103,4 +106,53 @@ test("Excel rechaza una selección vacía o importes no finitos sin producir cif
   for (const costo of [NaN, Infinity, -Infinity]) {
     assert.throws(() => crearLibroSeleccionInventario(XLSX, [{ ...equipment, costo }], "SEDE 8"), /ID 10/);
   }
+});
+
+test("el estado de factura distingue emisión de ausencia, error, proceso y anulación sin falsos positivos", () => {
+  assert.deepEqual(invoice.vistaFacturaInventario(null), { estado: "SIN_FACTURA", etiqueta: "Sin factura vinculada", tono: "neutral" });
+  assert.deepEqual(invoice.vistaFacturaInventario(undefined), { estado: "SIN_FACTURA", etiqueta: "Sin factura vinculada", tono: "neutral" });
+  const expected = [
+    ["EMITIDA", "Con factura", "success"],
+    ["PROCESANDO", "En proceso", "warning"],
+    ["ERROR", "Error de factura", "danger"],
+    ["ANULADA", "Anulada", "danger"],
+  ];
+  for (const [estado, etiqueta, tono] of expected) {
+    const factura = { id: 10, estado, nombre: "FV-000010", url: "https://qa.test/fv10", error: null };
+    const before = structuredClone(factura);
+    assert.deepEqual(invoice.vistaFacturaInventario(factura), { estado, etiqueta, tono });
+    assert.deepEqual(factura, before, "La vista no modifica el estado contable");
+  }
+  for (const estado of [undefined, "", "PENDIENTE_REVISION", "DESCONOCIDO"]) {
+    const view = invoice.vistaFacturaInventario({ estado, nombre: "FV-000011", url: "https://qa.test/fv11" });
+    assert.notEqual(view.tono, "success");
+    assert.notEqual(view.etiqueta, "Con factura");
+    assert.notEqual(view.etiqueta, "Sin factura", "Un vínculo de estado desconocido no se oculta como inexistente");
+  }
+});
+
+test("Excel conserva número, ID, estado y enlace de factura para cada equipo, incluidos vínculos sin número", () => {
+  const documents = [
+    { id: 50, estado: "EMITIDA", nombre: "0000123", url: "https://qa.test/0000123", error: null },
+    null,
+    { id: 51, estado: "ERROR", nombre: null, url: null, error: "Siigo rechazó la emisión" },
+    { id: 52, estado: "PROCESANDO", nombre: null, url: null, error: null },
+    { id: 53, estado: "ANULADA", nombre: "FV-0000124", url: "https://qa.test/fv124", error: null },
+  ];
+  const selection = documents.map((facturaStand, index) => ({ ...equipment, id: 100 + index, facturaStand }));
+  const before = structuredClone(selection);
+  const workbook = crearLibroSeleccionInventario(XLSX, selection, "SEDE 8");
+  const serialized = XLSX.read(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }), { type: "buffer" });
+  const rows = XLSX.utils.sheet_to_json(serialized.Sheets["Equipos seleccionados"], { defval: "" });
+  assert.equal(rows.length, documents.length);
+  for (const [index, document] of documents.entries()) {
+    assert.equal(rows[index]["Factura del stand"], document?.nombre ?? "");
+    assert.equal(rows[index]["Estado de factura"], document?.estado ?? "SIN_FACTURA");
+    assert.equal(rows[index]["ID factura"], document?.id ?? "");
+    assert.equal(rows[index]["Enlace de factura"], document?.url ?? "");
+  }
+  assert.equal(rows[0]["Factura del stand"], "0000123");
+  assert.equal(typeof rows[0]["Factura del stand"], "string");
+  assert.equal(serialized.Sheets["Equipos seleccionados"].R2.f, undefined);
+  assert.deepEqual(selection, before, "Exportar sólo consulta los documentos existentes");
 });

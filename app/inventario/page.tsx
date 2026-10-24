@@ -1550,7 +1550,7 @@ vistaDisponible && (pestana === "deudas" || filtrosEstado.includes("DEUDA") || i
                     seleccionIncluyeStand &&
                     cantidadExcluidaFacturaStand > 0 && (
                       <span className="self-center text-xs font-semibold text-blue-700">
-                        {cantidadExcluidaFacturaStand} con factura se excluyen
+                        {cantidadExcluidaFacturaStand} vinculados a factura se excluyen
                       </span>
                     )}
 
@@ -1626,9 +1626,9 @@ vistaDisponible && (pestana === "deudas" || filtrosEstado.includes("DEUDA") || i
   const tablaEquipos = (<>
 <div className={`${styles.tableScroller} ${pestana === "deudas" ? styles.debtTableScroller : ""}`} aria-busy={cargandoInventario}>
               <table className={`${styles.table} ${pestana === "deudas" ? styles.debtTable : ""}`}>
-                <colgroup>{Array.from({ length: pestana === "deudas" ? 6 : 8 }, (_, index) => <col key={index} />)}</colgroup>
-                <thead><tr><th><input type="checkbox" aria-label={pestana === "deudas" ? `Seleccionar página actual (${itemsPagina.length})` : `Seleccionar todos los resultados filtrados (${resultados})`} checked={vistaDisponible && (pestana === "deudas" ? paginaSeleccionada : todosVisiblesSeleccionados)} disabled={!vistaDisponible || cargando || !resultados} onChange={pestana === "deudas" ? alternarSeleccionPagina : alternarSeleccionVisibles} /></th><th>Equipo / IMEI</th><th>Costo</th><th>Sede</th>{pestana === "equipos" && <th>Acreedor</th>}<th>Estado</th>{pestana === "equipos" && <th>Financiero</th>}<th>Acciones</th></tr></thead>
-                <tbody>{!itemsPagina.length ? <tr><td colSpan={pestana === "deudas" ? 6 : 8} className={styles.empty}><DashboardIcon name="inventory" /><strong>{!vistaDisponible ? cargandoInventario || !user && !mensaje ? "Cargando inventario…" : "No se pudo cargar el inventario" : "No hay equipos para estos filtros"}</strong>{vistaDisponible && filtrosActivos && <button type="button" onClick={limpiarFiltros}>Limpiar filtros</button>}</td></tr> : itemsPagina.map((item) => <InventoryRow key={item.id} variant={pestana === "deudas" ? "debt" : "default"} item={item} selected={idsSeleccionados.includes(item.id)} onSelect={() => alternarSeleccion(item.id)} expanded={idsExpandidos.includes(item.id)} onToggle={() => setIdsExpandidos((actuales) => actuales.includes(item.id) ? actuales.filter((id) => id !== item.id) : [...actuales, item.id])} destino={etiquetaDestinoPrestamo(item)} actions={accionesEquipo(item)} />)}</tbody>
+                <colgroup>{Array.from({ length: pestana === "deudas" ? 7 : 9 }, (_, index) => <col key={index} />)}</colgroup>
+                <thead><tr><th><input type="checkbox" aria-label={pestana === "deudas" ? `Seleccionar página actual (${itemsPagina.length})` : `Seleccionar todos los resultados filtrados (${resultados})`} checked={vistaDisponible && (pestana === "deudas" ? paginaSeleccionada : todosVisiblesSeleccionados)} disabled={!vistaDisponible || cargando || !resultados} onChange={pestana === "deudas" ? alternarSeleccionPagina : alternarSeleccionVisibles} /></th><th>Equipo / IMEI</th><th>Costo</th><th>Sede</th>{pestana === "equipos" && <th>Acreedor</th>}<th>Estado</th>{pestana === "equipos" && <th>Financiero</th>}<th>Factura</th><th>Acciones</th></tr></thead>
+                <tbody>{!itemsPagina.length ? <tr><td colSpan={pestana === "deudas" ? 7 : 9} className={styles.empty}><DashboardIcon name="inventory" /><strong>{!vistaDisponible ? cargandoInventario || !user && !mensaje ? "Cargando inventario…" : "No se pudo cargar el inventario" : "No hay equipos para estos filtros"}</strong>{vistaDisponible && filtrosActivos && <button type="button" onClick={limpiarFiltros}>Limpiar filtros</button>}</td></tr> : itemsPagina.map((item) => <InventoryRow key={item.id} variant={pestana === "deudas" ? "debt" : "default"} item={item} selected={idsSeleccionados.includes(item.id)} onSelect={() => alternarSeleccion(item.id)} expanded={idsExpandidos.includes(item.id)} onToggle={() => setIdsExpandidos((actuales) => actuales.includes(item.id) ? actuales.filter((id) => id !== item.id) : [...actuales, item.id])} destino={etiquetaDestinoPrestamo(item)} actions={accionesEquipo(item)} />)}</tbody>
               </table>
             </div>
             <footer className={styles.pagination}>

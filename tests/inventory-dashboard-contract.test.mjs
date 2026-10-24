@@ -43,7 +43,10 @@ const childHooks = {
 const linkComponent = { __esModule: true, default: ({ children, ...props }) => jsxRuntime.jsx("a", { ...props, children }) };
 const monthlyView = loadTypeScript("lib/monthly-reports-view.ts");
 const inventoryDebtView = loadTypeScript("lib/inventory-debt-view.ts");
-const inventorySelectionExport = loadTypeScript("lib/inventory-selection-export.ts", { "./inventory-debt-view": inventoryDebtView });
+const inventoryInvoiceView = loadTypeScript("lib/inventory-invoice-view.ts");
+const inventorySelectionExport = loadTypeScript("lib/inventory-selection-export.ts", {
+  "./inventory-debt-view": inventoryDebtView, "./inventory-invoice-view": inventoryInvoiceView,
+});
 const spreadsheet = require("xlsx");
 const inventoryDebtParts = loadTypeScript("app/inventario/_components/inventory-debt-parts.tsx", {
   react: childHooks, "@/app/dashboard/_components/dashboard-icon": nullComponent,
@@ -53,6 +56,7 @@ const inventoryParts = loadTypeScript("app/inventario/_components/inventory-dash
   react: childHooks, "next/link": linkComponent,
   "@/app/dashboard/_components/dashboard-icon": nullComponent,
   "@/lib/monthly-reports-view": monthlyView, "@/lib/prestamos": prestamos, "@/lib/inventory-debt-view": inventoryDebtView,
+  "@/lib/inventory-invoice-view": inventoryInvoiceView,
 });
 const financieras = loadTypeScript("lib/ventas-financieras.ts");
 const salesParts = loadTypeScript("app/ventas/_components/sales-dashboard-parts.tsx", {
@@ -540,7 +544,56 @@ test("fila real conserva IMEI textual, datos adicionales, factura, destino y cal
   const missingCreditor = inventoryParts.InventoryRow({ item: { ...fixture, deboA: "   ", acreedorNombre: null, acreedorId: null },
     selected: false, expanded: true, destino: "—", actions: [], variant: "debt", onSelect() {}, onToggle() {} });
   assert.ok(textOf(missingCreditor).includes("Acreedor: Sin acreedor"));
-  assert.ok(elements(missingCreditor).some((node) => node?.type === "td" && node.props.colSpan === 6));
+  assert.ok(elements(missingCreditor).some((node) => node?.type === "td" && node.props.colSpan === 7));
+});
+
+test("Factura permanece visible sin desplegar el equipo, con estados reales y acceso al documento en ambas pestañas", { skip: baselineMode }, () => {
+  const invoices = [
+    [null, "Sin factura"],
+    [{ id: 40, estado: "EMITIDA", nombre: "FV-0000123", url: "https://qa.test/fv-0000123", error: null }, "Con factura"],
+    [{ id: 41, estado: "EMITIDA", nombre: null, url: null, error: null }, "Con factura"],
+    [{ id: 42, estado: "PROCESANDO", nombre: null, url: null, error: null }, "En proceso"],
+    [{ id: 43, estado: "ERROR", nombre: null, url: null, error: "Validación pendiente en Siigo" }, "Error de factura"],
+    [{ id: 44, estado: "ANULADA", nombre: "FV-0000124", url: "https://qa.test/fv-0000124", error: null }, "Anulada"],
+  ];
+  for (const variant of ["default", "debt"]) {
+    for (const [facturaStand, expected] of invoices) {
+      const fixture = { ...items[0], facturaStand };
+      const row = inventoryParts.InventoryRow({ item: fixture, selected: false, expanded: false, destino: "—", actions: [], variant,
+        onSelect() { assert.fail("Mostrar factura no selecciona equipos"); }, onToggle() { assert.fail("La factura se ve sin desplegar"); } });
+      const nodes = elements(row);
+      const invoiceCell = nodes.find((node) => node?.type === "td" && node.props["data-label"] === "Factura");
+      assert.ok(invoiceCell, `Falta la columna Factura en ${variant}`);
+      assert.ok(textOf(invoiceCell).includes(expected), `Falta ${expected} para ${variant}`);
+      assert.equal(nodes.filter((node) => node?.type === "td").length, variant === "debt" ? 7 : 9);
+      assert.equal(nodes.filter((node) => node?.type === "tr").length, 1, "No necesita detalle desplegado");
+      assert.equal(nodes.some((node) => node?.type === "details"), false);
+      if (facturaStand?.nombre) assert.ok(textOf(invoiceCell).includes(facturaStand.nombre), "El consecutivo conserva sus ceros");
+      const links = elements(invoiceCell).filter((node) => node?.type === "a");
+      if (facturaStand?.url) {
+        assert.equal(links.length, 1);
+        assert.equal(links[0].props.href, facturaStand.url);
+        assert.equal(links[0].props.target, "_blank");
+        assert.match(links[0].props.rel, /noreferrer|noopener/);
+        assert.equal(links[0].props["aria-label"], `Abrir factura ${facturaStand.nombre} del equipo ${fixture.imei}`);
+      } else assert.equal(links.length, 0, "No se inventan documentos sin enlace");
+      if (facturaStand?.estado !== "EMITIDA") assert.ok(!textOf(invoiceCell).includes("Con factura"), "Vínculo pendiente/error/anulado no equivale a emisión");
+    }
+  }
+});
+
+test("tabla incluye Factura y conserva selección, detalle y número correcto de columnas en Equipos y Deudas", { skip: baselineMode }, () => {
+  for (const pestana of ["equipos", "deudas"]) {
+    const fixture = { ...items[0], facturaStand: { id: 45, estado: "EMITIDA", nombre: "FV-000045", url: "https://qa.test/fv45", error: null } };
+    const probe = pageProbe({ pestana, items: [fixture], idsSeleccionados: [fixture.id], idsExpandidos: [fixture.id] });
+    const { tree } = probe.render();
+    const nodes = elements(tree);
+    assert.ok(nodes.some((node) => node?.type === "th" && textOf(node) === "Factura"));
+    assert.ok(nodes.some((node) => node?.type === "td" && node.props["data-label"] === "Factura" && textOf(node).includes("FV-000045")));
+    assert.ok(nodes.some((node) => node?.type === "td" && node.props.colSpan === (pestana === "deudas" ? 7 : 9)));
+    assert.deepEqual(probe.state.idsSeleccionados, [fixture.id]);
+    assert.equal(probe.calls.filter((call) => call.name === "fetch").length, 0, "Consultar factura no emite facturas ni modifica pagos");
+  }
 });
 
 test("cambiar cobertura oculta cifras y acciones anteriores; respuestas o errores tardíos no reemplazan el corte vigente", { skip: baselineMode }, async () => {

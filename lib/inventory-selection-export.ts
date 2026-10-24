@@ -1,5 +1,6 @@
 import type * as XLSX from "xlsx";
 import { deudaPendienteInventario, identidadAcreedor } from "./inventory-debt-view";
+import { vistaFacturaInventario, type InventoryInvoice } from "./inventory-invoice-view";
 
 export type InventorySelectionExportItem = {
   id: number;
@@ -19,7 +20,7 @@ export type InventorySelectionExportItem = {
   distribuidor: string | null;
   origen: string | null;
   prestamoDestino?: { nombre: string; prestamoId: number; estado: string } | null;
-  facturaStand?: { nombre: string | null } | null;
+  facturaStand?: InventoryInvoice | null;
 };
 
 const formatoMoneda = (valor: number) => Number.isInteger(valor) ? '"$"#,##0' : '"$"#,##0.00';
@@ -50,10 +51,11 @@ export function crearLibroSeleccionInventario(
       item.estadoFinanciero ?? "", deuda, item.distribuidor ?? "", item.origen ?? "",
       item.prestamoDestino?.nombre ?? "", item.prestamoDestino?.prestamoId ?? "",
       item.prestamoDestino?.estado ?? "", item.facturaStand?.nombre ?? "",
+      vistaFacturaInventario(item.facturaStand).estado, item.facturaStand?.id ?? "", item.facturaStand?.url ?? "",
     ];
   });
   const hoja = xlsx.utils.aoa_to_sheet([
-    ["ID", "IMEI", "Referencia", "Tipo de producto", "Color", "Costo", "Sede", "Acreedor", "ID acreedor", "Estado del equipo", "Estado financiero", "Deuda pendiente", "Distribuidor", "Origen", "Sede destino", "ID préstamo", "Estado préstamo", "Factura del stand"],
+    ["ID", "IMEI", "Referencia", "Tipo de producto", "Color", "Costo", "Sede", "Acreedor", "ID acreedor", "Estado del equipo", "Estado financiero", "Deuda pendiente", "Distribuidor", "Origen", "Sede destino", "ID préstamo", "Estado préstamo", "Factura del stand", "Estado de factura", "ID factura", "Enlace de factura"],
     ...filas,
   ]);
   for (let fila = 1; fila <= filas.length; fila++) {
@@ -64,7 +66,7 @@ export function crearLibroSeleccionInventario(
       celda.z = formatoMoneda(Number(celda.v));
     }
   }
-  hoja["!cols"] = [10, 21, 38, 22, 18, 20, 26, 32, 14, 24, 22, 22, 28, 20, 28, 16, 24, 28].map(wch => ({ wch }));
+  hoja["!cols"] = [10, 21, 38, 22, 18, 20, 26, 32, 14, 24, 22, 22, 28, 20, 28, 16, 24, 28, 22, 14, 60].map(wch => ({ wch }));
   hoja["!autofilter"] = { ref: hoja["!ref"]! };
 
   const resumen = xlsx.utils.aoa_to_sheet([

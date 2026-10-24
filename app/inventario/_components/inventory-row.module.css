@@ -515,6 +515,17 @@
   text-underline-offset: 3px;
 }
 
+.invoiceBadge { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; border-radius: 6px; padding: 4px 7px; font-size: 12px; font-weight: 600; line-height: 1.4; }
+.invoiceIcon { width: 15px; height: 15px; flex-shrink: 0; }
+.invoice_neutral { background: #edf1f5; color: #475569; }
+.invoice_success { background: #ecfdf5; color: #047857; }
+.invoice_warning { background: #fffbeb; color: #92400e; }
+.invoice_danger { background: #fef2f2; color: #b91c1c; }
+.invoiceNumber { display: flex; align-items: center; gap: 5px; width: fit-content; max-width: 100%; margin-top: 5px; color: #334155; font-size: 12px; overflow-wrap: anywhere; }
+a.invoiceNumber { min-height: 32px; color: #e30613; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+a.invoiceNumber:hover { color: #a9000a; }
+a.invoiceNumber:focus-visible { outline: 2px solid #e30613; outline-offset: 2px; border-radius: 3px; }
+
 .detail dd.invoiceState {
   color: #64748b;
   font-size: 12px;
@@ -568,7 +579,7 @@
     display: grid;
     width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas: "controls actions" "equipment equipment" "cost sede" "creditor creditor" "state financial";
+    grid-template-areas: "controls actions" "equipment equipment" "cost sede" "creditor creditor" "state financial" "invoice invoice";
     gap: 12px 16px;
     padding: 16px;
   }
@@ -581,7 +592,7 @@
   }
 
   .debtRow {
-    grid-template-areas: "controls actions" "equipment equipment" "cost sede" "state state";
+    grid-template-areas: "controls actions" "equipment equipment" "cost sede" "state state" "invoice invoice";
   }
 
   .debtRow > td {
@@ -613,6 +624,7 @@
   .creditorCell { grid-area: creditor; }
   .stateCell { grid-area: state; }
   .financialCell { grid-area: financial; }
+  .invoiceCell { grid-area: invoice; }
   .actionsCell { grid-area: actions; }
 
   .row > .actionsCell {
