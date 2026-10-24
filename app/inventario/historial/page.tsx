@@ -4,11 +4,9 @@ import { redirect } from "next/navigation";
 import DashboardIcon, {
   type DashboardIconName,
 } from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
+import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
+import { TraceabilityNavigation, TraceabilitySearch } from "./traceability-parts";
+import styles from "./history.module.css";
 import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { etiquetaEstadoInventario } from "@/lib/prestamos";
@@ -133,19 +131,6 @@ function badgeFinanciero(estado: string | null | undefined) {
   return "border-slate-200 bg-slate-100 text-slate-500";
 }
 
-function toneBadge(tone: TimelineTone) {
-  const classes: Record<TimelineTone, string> = {
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    rose: "border-rose-200 bg-rose-50 text-rose-700",
-    sky: "border-sky-200 bg-sky-50 text-sky-700",
-    slate: "border-slate-200 bg-slate-100 text-slate-700",
-    violet: "border-violet-200 bg-violet-50 text-violet-700",
-  };
-
-  return classes[tone];
-}
-
 function movementTone(tipo: string): TimelineTone {
   const valor = String(tipo || "").toUpperCase();
 
@@ -179,144 +164,29 @@ function eventoTieneTexto(evento: TimelineEvent, texto: string) {
 
 function MetaGrid({ items }: { items: TimelineMeta[] }) {
   const visibles = items.filter((item) => item.value !== null && item.value !== undefined);
-
-  if (visibles.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-      {visibles.map((item) => (
-        <div
-          key={`${item.label}-${String(item.value)}`}
-          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
-        >
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-            {item.label}
-          </p>
-          <p className="mt-1 text-sm font-bold text-slate-950">
-            {valorSeguro(item.value)}
-          </p>
-        </div>
-      ))}
-    </div>
-  );
+  if (visibles.length === 0) return null;
+  return <dl className={styles.metaGrid}>{visibles.map(item => <div key={`${item.label}-${String(item.value)}`}><dt>{item.label}</dt><dd>{valorSeguro(item.value)}</dd></div>)}</dl>;
 }
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  detail,
-  valueClass = "text-slate-950",
-}: {
-  icon: DashboardIconName;
-  label: string;
-  value: ReactNode;
-  detail: string;
-  valueClass?: string;
+function MetricCard({ icon, label, value, detail, tone = "slate" }: {
+  icon: DashboardIconName; label: string; value: ReactNode; detail: string; tone?: TimelineTone;
 }) {
-  return (
-    <div className="flex min-h-[142px] items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
-        <DashboardIcon name={icon} className="h-5 w-5" />
-      </span>
-      <div className="min-w-0">
-        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
-          {label}
-        </p>
-        <p className={["mt-2 break-words text-[26px] font-black leading-tight tracking-tight", valueClass].join(" ")}>
-          {value}
-        </p>
-        <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
-      </div>
-    </div>
-  );
+  return <div className={styles.metric} data-tone={tone}><span className={styles.metricIcon}><DashboardIcon name={icon} /></span><div><p>{label}</p><strong>{value}</strong><small>{detail}</small></div></div>;
 }
 
 function ControlAlertCard({ alerta }: { alerta: ControlAlert }) {
-  return (
-    <article className={["rounded-2xl border px-4 py-4", toneBadge(alerta.tone)].join(" ")}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em]">
-            {alerta.nivel}
-          </p>
-          <h3 className="mt-2 text-base font-black text-slate-950">
-            {alerta.titulo}
-          </h3>
-        </div>
-      </div>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{alerta.detalle}</p>
-    </article>
-  );
+  return <article className={styles.alert} data-tone={alerta.tone}><div className={styles.alertHead}><DashboardIcon name={alerta.nivel === "OK" ? "shield" : alerta.nivel === "INFO" ? "document-search" : "warning"} /><div><h3>{alerta.titulo}</h3><span className={styles.level}>{alerta.nivel === "OK" ? "Sin alertas" : alerta.nivel}</span></div></div><p>{alerta.detalle}</p></article>;
 }
 
 function QuickActionCard({ action }: { action: QuickAction }) {
-  return (
-    <Link
-      href={action.href}
-      className={[
-        "group block rounded-2xl border px-4 py-4 transition hover:-translate-y-0.5 hover:shadow-sm",
-        toneBadge(action.tone),
-      ].join(" ")}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em]">ABRIR</p>
-        <DashboardIcon name="arrow" className="h-4 w-4 transition group-hover:translate-x-0.5" />
-      </div>
-      <h3 className="mt-2 text-base font-black text-slate-950">{action.label}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{action.detalle}</p>
-    </Link>
-  );
+  return <Link href={action.href} className={styles.relatedLink}><div><strong>{action.label}</strong><p>{action.detalle}</p></div><DashboardIcon name="arrow" /></Link>;
 }
 
 function TimelineCard({ event, index }: { event: TimelineEvent; index: number }) {
-  return (
-    <article className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_20px_rgba(15,23,42,0.035)]">
-      <span className="absolute inset-y-0 left-0 w-1 bg-[#e30613]" />
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap gap-2">
-            <span
-              className={[
-                "inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em]",
-                toneBadge(event.tone),
-              ].join(" ")}
-            >
-              {event.categoria}
-            </span>
-            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-              Paso {index + 1}
-            </span>
-          </div>
-
-          <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-            {event.titulo}
-          </h3>
-          {event.subtitulo ? (
-            <p className="mt-1 text-sm font-semibold text-slate-500">
-              {event.subtitulo}
-            </p>
-          ) : null}
-          <p className="mt-3 text-sm leading-6 text-slate-600">
-            {valorSeguro(event.detalle)}
-          </p>
-        </div>
-
-        <div className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-            Fecha
-          </p>
-          <p className="mt-1 text-sm font-bold text-slate-950">
-            {formatoFecha(event.fecha)}
-          </p>
-        </div>
-      </div>
-
-      <MetaGrid items={event.meta} />
-    </article>
-  );
+  return <li><span className={styles.eventNumber} aria-label={`Paso ${index + 1}`}>{index + 1}</span><article className={styles.event} data-tone={event.tone}>
+    <header className={styles.eventHeading}><div><span className={styles.eventCategory}>{event.categoria}</span><h3>{event.titulo}</h3>{event.subtitulo && <p>{event.subtitulo}</p>}</div><time dateTime={event.fecha.toISOString()}><DashboardIcon name="clock" />{formatoFecha(event.fecha)}</time></header>
+    <p className={styles.eventDetail}>{valorSeguro(event.detalle)}</p><MetaGrid items={event.meta} />
+  </article></li>;
 }
 
 export default async function HistorialInventarioPage(props: {
@@ -1003,6 +873,7 @@ export default async function HistorialInventarioPage(props: {
     { href: "/inventario", icon: "inventory", label: "Inventario" },
     { href: "/prestamos", icon: "loans", label: "Préstamos" },
     { href: "/caja", icon: "cash", label: "Caja" },
+    { href: "/cierre", icon: "reports", label: "CIERRE" },
     {
       href: "/dashboard/aprobaciones",
       icon: "approvals",
@@ -1023,315 +894,60 @@ export default async function HistorialInventarioPage(props: {
         ] satisfies NavigationItem[])
       : []),
   ];
-  const inicialesUsuario = String(user.nombre || "Usuario")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
-
   return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/inventario"
-        coverageLabel={cobertura}
-        items={navigationItems}
-      />
+    <div className={styles.page}>
+      <TraceabilityNavigation items={navigationItems} name={user.nombre} role={user.rolNombre} />
+      <main className={styles.main}>
+        <div className={styles.heading}>
+          <div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/inventario">Inventario</Link><DashboardIcon name="arrow" /><span>Historial IMEI</span></nav><h1>Centro de trazabilidad</h1><p className={styles.subtitle}>Ubicación, movimientos y estado comercial de cada equipo.</p></div>
+          <div className={styles.headingActions}><span className={styles.coverage}><DashboardIcon name="store" />{cobertura}</span><Link href="/inventario" className={styles.button}><DashboardIcon name="inventory" />Ver inventario</Link></div>
+        </div>
 
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-                <Link href="/inventario" className="transition hover:text-[#e30613]">
-                  Inventario
-                </Link>
-                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
-                <span className="text-slate-600">Historial IMEI</span>
-              </nav>
-              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
-                Centro de trazabilidad
-              </h1>
-              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
-                Consulta el ciclo completo de un equipo entre inventario, préstamos,
-                caja, registros comerciales y ventas.
-              </p>
-              {imei && (
-                <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-bold text-[#e30613]">
-                  <DashboardIcon name="search" className="h-4 w-4" />
-                  IMEI {imei}
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || "US"}
-                </span>
-                <div className="min-w-0 pr-2">
-                  <p className="max-w-[170px] truncate text-sm font-bold">{user.nombre}</p>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    {user.rolNombre}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
-            </div>
-          </header>
-
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="flex items-start gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-[#e30613]">
-                <DashboardIcon name="search" className="h-6 w-6" />
-              </span>
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                  Consulta directa
-                </p>
-                <h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">
-                  Buscar equipo por IMEI
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-slate-500">
-                  Ingresa el serial para reconstruir su ubicación, movimientos,
-                  pagos, caja y estado comercial.
-                </p>
-              </div>
-            </div>
-
-            <form className="mt-5 flex flex-col gap-3 lg:flex-row">
-              <div className="relative flex-1">
-                <DashboardIcon
-                  name="search"
-                  className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  name="imei"
-                  defaultValue={imei}
-                  placeholder="Escribe el IMEI de 15 dígitos"
-                  className="min-h-[54px] w-full rounded-xl border border-slate-300 bg-white pl-12 pr-4 text-base font-semibold text-slate-950 outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-[#e30613] focus:ring-4 focus:ring-red-50"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="inline-flex min-h-[54px] min-w-[190px] items-center justify-center gap-2 rounded-xl bg-[#e30613] px-6 text-xs font-black tracking-[0.08em] text-white transition hover:bg-[#c9000b]"
-              >
-                <DashboardIcon name="search" className="h-5 w-5" />
-                BUSCAR IMEI
-              </button>
-            </form>
-          </section>
-
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            icon="reports"
-            label="Eventos"
-            value={totalEventos}
-            detail={imei ? "Puntos de trazabilidad encontrados." : "Busca un IMEI para iniciar."}
-          />
-          <MetricCard
-            icon="store"
-            label="Ubicacion actual"
-            value={ubicacionActual}
-            detail={`Estado: ${etiquetaEstadoInventario(estadoActual)}`}
-            valueClass="text-slate-950 text-2xl"
-          />
-          <MetricCard
-            icon="cash"
-            label="Financiero"
-            value={estadoFinancieroActual}
-            detail={`Valor base: ${formatoPesos(valorEquipo)}`}
-            valueClass={
-              String(estadoFinancieroActual).toUpperCase() === "PAGO"
-                ? "text-emerald-700"
-                : String(estadoFinancieroActual).toUpperCase() === "DEUDA"
-                  ? "text-amber-700"
-                  : "text-slate-950"
-            }
-          />
-          <MetricCard
-            icon="trend"
-            label="Caja real"
-            value={`${formatoPesos(totalIngresoCaja)} / ${formatoPesos(totalEgresoCaja)}`}
-            detail="Ingresos / egresos localizados por IMEI."
-            valueClass="text-2xl text-slate-950"
-          />
+        <section className={`${styles.panel} ${styles.searchPanel}`} aria-labelledby="search-title">
+          <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="document-search" /></span><div><h2 id="search-title">Buscar equipo por IMEI</h2><p>Consulta su historial en inventario, préstamos, caja y ventas.</p></div></div>
+          <TraceabilitySearch imei={imei} />
         </section>
 
-        {imei && (
-          <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-              <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                    Alertas operativas
-                  </p>
-                  <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
-                    Lectura del equipo
-                  </h2>
-                </div>
-                <span className="text-sm font-medium text-slate-500">
-                  {alertasControl.length} hallazgo(s)
-                </span>
-              </div>
-
-              <div className="mt-5 grid gap-3 md:grid-cols-2">
-                {alertasControl.map((alerta) => (
-                  <ControlAlertCard
-                    key={`${alerta.nivel}-${alerta.titulo}`}
-                    alerta={alerta}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Accesos relacionados
-              </p>
-              <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
-                Modulos relacionados
-              </h2>
-
-              <div className="mt-5 grid gap-3">
-                {quickActions.map((action) => (
-                  <QuickActionCard key={action.label} action={action} />
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {imei && (
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                  Ciclo detectado
-                </p>
-                <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
-                  Resumen operativo del equipo
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                  Esta lectura combina tablas distintas para que el ciclo se vea
-                  en una sola pantalla.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2 lg:max-w-xl lg:justify-end">
-                {cicloDetectado.map((paso) => (
-                  <span
-                    key={paso.label}
-                    className={[
-                      "rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em]",
-                      paso.active
-                        ? "border-[#e30613] bg-[#e30613] text-white"
-                        : "border-slate-200 bg-slate-50 text-slate-400",
-                    ].join(" ")}
-                  >
-                    {paso.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 lg:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                  Ultimo evento
-                </p>
-                <p className="mt-2 text-lg font-black text-slate-950">
-                  {ultimoEvento?.titulo || "Sin eventos"}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {ultimoEvento ? formatoFecha(ultimoEvento.fecha) : "-"}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                  Prestamos
-                </p>
-                <p className="mt-2 text-lg font-black text-slate-950">
-                  {prestamos.length}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  Ciclos de traslado o cobro relacionados.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                  Ventas
-                </p>
-                <p className="mt-2 text-lg font-black text-slate-950">
-                  {ventas.length}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  Ventas finales enlazadas al serial.
-                </p>
-              </div>
-            </div>
-          </section>
-        )}
-
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)] sm:p-6">
-          <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Línea de tiempo
-              </p>
-              <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
-                {imei ? `Ciclo del IMEI ${imei}` : "Ciclo del equipo"}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Ordenado desde el primer evento hasta el movimiento mas reciente.
-              </p>
-            </div>
-
-            <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
-              {timelineOrdenado.length} EVENTO{timelineOrdenado.length === 1 ? "" : "S"}
-            </span>
-          </div>
-
-          <div className="mt-5 space-y-4">
-            {!imei ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-14 text-center text-slate-500">
-                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm">
-                  <DashboardIcon name="search" className="h-6 w-6" />
-                </span>
-                <p className="mt-3 font-bold text-slate-700">Consulta un equipo</p>
-                <p className="mt-1 text-sm">Escribe un IMEI para abrir su centro de trazabilidad.</p>
-              </div>
-            ) : timelineOrdenado.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-14 text-center text-slate-500">
-                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm">
-                  <DashboardIcon name="inventory" className="h-6 w-6" />
-                </span>
-                <p className="mt-3 font-bold text-slate-700">Sin eventos relacionados</p>
-                <p className="mt-1 text-sm">No encontramos movimientos para este IMEI.</p>
-              </div>
-            ) : (
-              timelineOrdenado.map((event, index) => (
-                <TimelineCard key={event.id} event={event} index={index} />
-              ))
-            )}
-          </div>
+        <section className={styles.summary} aria-label="Resumen del equipo">
+          <MetricCard icon="reports" label="Eventos registrados" value={imei ? totalEventos.toLocaleString("es-CO") : "—"} detail={imei ? "En el ciclo completo del equipo" : "Consulta un IMEI para comenzar"} />
+          <MetricCard icon="pin" label="Ubicación actual" value={imei ? ubicacionActual : "—"} detail={imei ? `Estado: ${etiquetaEstadoInventario(estadoActual)}` : "Inventario principal y sedes"} />
+          <MetricCard icon="cash" label="Estado financiero" value={imei ? estadoFinancieroActual : "—"} detail={imei ? `Valor base: ${formatoPesos(valorEquipo)}` : "Deuda o pago del equipo"} tone={String(estadoFinancieroActual).toUpperCase() === "PAGO" ? "emerald" : String(estadoFinancieroActual).toUpperCase() === "DEUDA" ? "amber" : "slate"} />
+          <MetricCard icon="wallet" label="Caja real" value={imei ? <span className={styles.cashValues}><span><em>Ingresos</em>{formatoPesos(totalIngresoCaja)}</span><span><em>Egresos</em>{formatoPesos(totalEgresoCaja)}</span></span> : "—"} detail="Movimientos de caja localizados por IMEI" />
         </section>
+
+        {imei && <section className={`${styles.panel} ${styles.cycle}`} aria-labelledby="cycle-title">
+          <div className={styles.panelHeader}><h2 id="cycle-title">Resumen operativo del equipo</h2><span className={styles.count}>IMEI {imei}</span></div>
+          <div className={styles.cycleStages}>{cicloDetectado.map(paso => <span key={paso.label} className={`${styles.stage} ${paso.active ? styles.stageActive : ""}`} aria-label={`${paso.label}: ${paso.active ? "con registros" : "sin registros"}`}>{paso.label}</span>)}</div>
+          <dl className={styles.cycleFacts}>
+            <div><dt>Último evento</dt><dd>{ultimoEvento?.titulo || "Sin eventos"}</dd><small>{ultimoEvento ? formatoFecha(ultimoEvento.fecha) : "—"}</small></div>
+            <div><dt>Préstamos relacionados</dt><dd>{prestamos.length.toLocaleString("es-CO")}</dd></div>
+            <div><dt>Ventas relacionadas</dt><dd>{ventas.length.toLocaleString("es-CO")}</dd></div>
+          </dl>
+        </section>}
+
+        <div className={`${styles.workspace} ${!imei ? styles.workspaceEmpty : ""}`}>
+          <section className={styles.panel} aria-labelledby="timeline-title">
+            <div className={styles.panelHeader}><div><h2 id="timeline-title">Ciclo del equipo</h2><p>{imei ? `IMEI ${imei} · Desde el primer evento hasta el más reciente.` : "Línea de tiempo del inventario y sus operaciones"}</p></div><span className={styles.count}>{timelineOrdenado.length.toLocaleString("es-CO")} evento{timelineOrdenado.length === 1 ? "" : "s"}</span></div>
+            {!imei || timelineOrdenado.length === 0 ? <div className={styles.empty}>
+              <span className={styles.emptyIllustration}><DashboardIcon name={!imei ? "document-search" : "inventory"} /></span><h3>{!imei ? "Consulta la historia de tu equipo" : "Sin eventos relacionados"}</h3><p>{!imei ? "Ingresa el IMEI para conocer su ubicación, seguir sus movimientos y consultar su estado financiero." : `No encontramos movimientos para el IMEI ${imei}. Puedes consultar otro equipo.`}</p>
+              {!imei && <div className={styles.emptySteps}><span><DashboardIcon name="inventory" />Inventario</span><span><DashboardIcon name="transfer" />Préstamos</span><span><DashboardIcon name="cash" />Caja</span><span><DashboardIcon name="sales" />Ventas</span></div>}
+            </div> : <ol className={styles.timeline} aria-label="Línea de tiempo del equipo">{timelineOrdenado.map((event,index) => <TimelineCard key={event.id} event={event} index={index} />)}</ol>}
+          </section>
+          {imei && <aside className={styles.sidebar} aria-label="Control y accesos relacionados">
+            <section className={styles.panel} aria-labelledby="alerts-title"><div className={styles.panelHeader}><h2 id="alerts-title">Lectura del equipo</h2><span className={styles.count}>{alertasControl.length} hallazgo(s)</span></div><div className={styles.alertList}>{alertasControl.map(alerta => <ControlAlertCard key={`${alerta.nivel}-${alerta.titulo}`} alerta={alerta} />)}</div></section>
+            <section className={styles.panel} aria-labelledby="related-title"><div className={styles.panelHeader}><h2 id="related-title">Módulos relacionados</h2></div>{quickActions.map(action => <QuickActionCard key={action.label} action={action} />)}</section>
+          </aside>}
+        </div>
 
         {movimientos.length > 0 && (
-          <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
+          <section className={`${styles.panel} ${styles.sourceTable}`}>
+            <div className={styles.panelHeader}>
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                  Movimientos base
-                </p>
-                <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
-                  Registro de MovimientoInventario
+                <h2 >
+                  Detalle de movimientos
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Tabla original de movimientos para validar el detalle fuente.
+                  Registro original de inventario · {movimientos.length} movimiento(s).
                 </p>
               </div>
             </div>
@@ -1402,8 +1018,7 @@ export default async function HistorialInventarioPage(props: {
             </div>
           </section>
         )}
-        </main>
-      </div>
+      </main>
     </div>
   );
 }
