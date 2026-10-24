@@ -2,14 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
+import Image from "next/image";
+import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
 import DashboardIcon, {
   type DashboardIconName,
 } from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import styles from "./workspace.module.css";
 import {
   esPerfilAdministrativo,
   esPerfilFacturador,
@@ -166,7 +165,7 @@ const FILTROS_REGISTROS: Array<{
   { value: "TODOS", label: "Todos" },
   { value: "PENDIENTES", label: "Pendientes" },
   { value: "FACTURADOS", label: "Facturados" },
-  { value: "NC", label: "NC" },
+  { value: "NC", label: "Notas crédito" },
   { value: "ERRORES_SIIGO", label: "Errores Siigo" },
   { value: "SUPERA_TOPE", label: "Supera tope" },
 ];
@@ -425,36 +424,20 @@ function resolveEstadoBadge(estadoFacturacion: string | null, numeroFactura: str
 function SummaryCard({
   detail,
   icon,
-  iconClassName,
   label,
   value,
-  valueClassName = "text-slate-950",
+  tone = "neutral",
 }: {
   detail: string;
   icon: DashboardIconName;
-  iconClassName: string;
   label: string;
   value: string | number;
-  valueClassName?: string;
+  tone?: "neutral" | "success" | "warning" | "danger";
 }) {
   return (
-    <article className="min-h-[132px] rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start gap-4">
-        <span
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}
-        >
-          <DashboardIcon name={icon} className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-600">{label}</p>
-          <p
-            className={`mt-1.5 break-words text-[27px] font-black leading-none tracking-tight ${valueClassName}`}
-          >
-            {value}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
-        </div>
-      </div>
+    <article className={`${styles.metric} ${styles[`metric_${tone}`]}`} title={detail}>
+      <span className={styles.metricIcon}><DashboardIcon name={icon} /></span>
+      <div><p>{label}</p><strong>{value}</strong><small>{detail}</small></div>
     </article>
   );
 }
@@ -1244,6 +1227,7 @@ export default function FacturadorRegistrosWorkspace({
   };
 
   const editandoConvertido = Boolean(editando?.convertidoEnVenta);
+  const resumenDisponible = !cargando && !(mensaje && mensajeTipo === "error" && registros.length === 0);
   const coverageLabel = esAdministrativo
     ? "Todas las sedes"
     : session.sedeNombre;
@@ -1254,6 +1238,7 @@ export default function FacturadorRegistrosWorkspace({
         { href: "/inventario", icon: "inventory", label: "Inventario" },
         { href: "/prestamos", icon: "loans", label: "Préstamos" },
         { href: "/caja", icon: "cash", label: "Caja" },
+        { href: "/cierre", icon: "reports", label: "CIERRE" },
         {
           href: "/dashboard/aprobaciones",
           icon: "approvals",
@@ -1268,6 +1253,7 @@ export default function FacturadorRegistrosWorkspace({
       ]
     : [
         { href: "/dashboard", icon: "home", label: "Inicio" },
+        { href: "/cierre", icon: "reports", label: "CIERRE" },
         {
           href: "/facturador/registros",
           icon: "document",
@@ -1277,82 +1263,57 @@ export default function FacturadorRegistrosWorkspace({
   const sidebarActiveHref = esAdministrativo
     ? "/dashboard/aprobaciones"
     : "/facturador/registros";
-  const inicialesUsuario = String(session.nombre || "Usuario")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
+  const secondaryNavigation = navigationItems.filter(item => ["/cierre", "/dashboard/reportes", "/dashboard/sedes"].includes(item.href));
+  const primaryNavigation = navigationItems.filter(item => !secondaryNavigation.includes(item));
+  const navigationLink = (item: NavigationItem) => <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === sidebarActiveHref ? styles.navActive : ""}`} aria-current={item.href === sidebarActiveHref ? "page" : undefined}><DashboardIcon name={item.icon} /><span>{item.label}</span></Link>;
 
   return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref={sidebarActiveHref}
-        coverageLabel={coverageLabel}
-        items={navigationItems}
-        panelLabel={esFacturador ? "Panel de facturación" : "Panel operativo"}
-      />
+    <div className={styles.page}>
+      <header className={styles.topbar}>
+        <Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS · Inicio"><Image src="/branding/conectamos-logo.png" alt="" width={44} height={44} priority /><strong>CONECTAMOS</strong></Link>
+        <nav className={styles.navigation} aria-label="Navegación principal">
+          {primaryNavigation.map(navigationLink)}
+          <div className={styles.extraNavigation}>{secondaryNavigation.map(navigationLink)}</div>
+          {secondaryNavigation.length > 0 && <details className={styles.moreNavigation} onKeyDown={event => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}><summary>Más<DashboardIcon name="chevron" /></summary><div>{secondaryNavigation.map(navigationLink)}</div></details>}
+        </nav>
+        <SalesProfile name={session.nombre} role={session.rolNombre || session.perfilTipoLabel} />
+      </header>
 
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+      <div className={styles.workspace}>
+        <main className={styles.main}>
+          <header className={styles.heading}>
             <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Gestión de registros
+              <p className={styles.eyebrow}>
+                {esFacturador ? "Facturación" : "Gestión de registros"}
               </p>
-              <h1 className="mt-2 text-[29px] font-black tracking-tight text-slate-950 sm:text-[32px]">
+              <h1>
                 {esAdmin ? "Consultar registros" : "Registros guardados"}
               </h1>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
+              <p className={styles.subtitle}>
                 {esAdmin
                   ? "Consulta, corrige y gestiona la facturación de los registros comerciales."
                   : "Revisa los registros capturados, completa la factura y gestiona su estado en Siigo."}
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  Cobertura: {coverageLabel}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">
-                  {cargando
-                    ? "Actualizando registros"
-                    : `${registros.length.toLocaleString("es-CO")} registros disponibles`}
-                </span>
-              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className={styles.headingActions}>
+              <span className={styles.coverage}><DashboardIcon name="store" />{coverageLabel}</span>
+              <button type="button" className={styles.button} onClick={() => void cargarRegistros()} disabled={cargando}><DashboardIcon name="refresh" />{cargando ? "Actualizando…" : "Actualizar"}</button>
               {esAdministrativo && (
                 <Link
                   href="/ventas/aprobaciones"
-                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
+                  className={`${styles.button} ${styles.primary}`}
                 >
+                  <DashboardIcon name="approvals" />
                   Registros por aprobar
                 </Link>
               )}
-              <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:min-w-[190px]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || (
-                    <DashboardIcon name="user" className="h-5 w-5" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">
-                    {session.nombre}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {session.rolNombre || session.perfilTipoLabel}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton
-                variant="light"
-                className="min-h-12 shrink-0 rounded-xl"
-              />
             </div>
           </header>
 
         {mensaje && (
           <div
+            role={mensajeTipo === "error" ? "alert" : "status"}
             className={`mt-6 rounded-2xl border px-4 py-4 text-sm font-medium shadow-sm ${
               mensajeTipo === "success"
                 ? "border-emerald-200 bg-emerald-50 text-emerald-900"
@@ -1364,55 +1325,50 @@ export default function FacturadorRegistrosWorkspace({
         )}
 
         <section
-          className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6"
+          className={styles.summary}
           aria-label="Resumen de registros"
+          aria-busy={cargando}
         >
           <SummaryCard
             label="Total de registros"
-            value={conteosFiltro.TODOS.toLocaleString("es-CO")}
+            value={resumenDisponible ? conteosFiltro.TODOS.toLocaleString("es-CO") : "—"}
             detail="Registros comerciales disponibles"
             icon="document"
-            iconClassName="bg-slate-100 text-slate-700"
           />
           <SummaryCard
             label="Pendientes"
-            value={conteosFiltro.PENDIENTES.toLocaleString("es-CO")}
+            value={resumenDisponible ? conteosFiltro.PENDIENTES.toLocaleString("es-CO") : "—"}
             detail="Sin factura y dentro del tope"
             icon="calendar"
-            iconClassName="bg-amber-50 text-amber-600"
-            valueClassName="text-amber-600"
+            tone="warning"
           />
           <SummaryCard
             label="Facturados"
-            value={conteosFiltro.FACTURADOS.toLocaleString("es-CO")}
+            value={resumenDisponible ? conteosFiltro.FACTURADOS.toLocaleString("es-CO") : "—"}
             detail="Con número de factura registrado"
             icon="approvals"
-            iconClassName="bg-emerald-50 text-emerald-600"
-            valueClassName="text-emerald-600"
+            tone="success"
           />
           <SummaryCard
             label="Notas crédito"
-            value={conteosFiltro.NC.toLocaleString("es-CO")}
+            value={resumenDisponible ? conteosFiltro.NC.toLocaleString("es-CO") : "—"}
             detail="Facturas anuladas mediante NC"
             icon="document"
-            iconClassName="bg-amber-50 text-amber-700"
-            valueClassName="text-amber-700"
+            tone="warning"
           />
           <SummaryCard
             label="Errores Siigo"
-            value={conteosFiltro.ERRORES_SIIGO.toLocaleString("es-CO")}
+            value={resumenDisponible ? conteosFiltro.ERRORES_SIIGO.toLocaleString("es-CO") : "—"}
             detail="Requieren corrección operativa"
             icon="warning"
-            iconClassName="bg-red-50 text-[#e30613]"
-            valueClassName="text-[#e30613]"
+            tone="danger"
           />
           <SummaryCard
             label="Superan el tope"
-            value={conteosFiltro.SUPERA_TOPE.toLocaleString("es-CO")}
+            value={resumenDisponible ? conteosFiltro.SUPERA_TOPE.toLocaleString("es-CO") : "—"}
             detail="No se pueden emitir por Siigo"
             icon="warning"
-            iconClassName="bg-orange-50 text-orange-600"
-            valueClassName="text-orange-600"
+            tone="warning"
           />
 
         </section>
@@ -1420,50 +1376,45 @@ export default function FacturadorRegistrosWorkspace({
         {puedeVerReporteSiigo && (
             <section
               id="reporte-siigo"
-              className="mt-5 scroll-mt-8 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
+              className={styles.report}
             >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Resumen Siigo
-                  </p>
-                  <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">
-                    {reporteSiigo ? formatMoney(reporteSiigo.neto) : "Consultar"}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Total general por producto consultado en Siigo.
-                  </p>
+              <div className={styles.reportHeader}>
+                <div className={styles.reportTitle}>
+                  <span className={styles.reportIcon}><DashboardIcon name="document-search" /></span>
+                  <div><h2>Resumen Siigo</h2><p>{reporteSiigo ? formatMoney(reporteSiigo.neto) : "Consulta el reporte mensual"}</p></div>
                 </div>
 
-                <div className="flex min-w-[230px] flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <div className={styles.reportControls}>
+                  <label className={styles.monthField}><span>Mes del reporte</span>
                   <input
                     type="month"
                     value={reporteSiigoMes}
                     onChange={(event) => setReporteSiigoMes(event.target.value)}
                     aria-label="Mes del reporte Siigo"
-                    className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                    className={styles.monthInput}
                   />
+                  </label>
                   <button
                     type="button"
                     onClick={() => void consultarReporteSiigo()}
                     disabled={consultandoReporteSiigo}
-                    className="min-h-11 rounded-xl bg-[#11161d] px-4 py-2 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:bg-slate-300"
+                    className={`${styles.button} ${styles.graphite}`}
                   >
                     {consultandoReporteSiigo ? "Consultando..." : "Reporte Siigo"}
                   </button>
                   <a
                     href="/api/facturador/siigo/reporte/electrodomesticos"
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.06em] text-slate-900 transition hover:border-[#e30613] hover:text-[#e30613]"
+                    className={styles.button}
                   >
                     <DashboardIcon name="download" className="h-4 w-4" />
-                    Electrodomesticos 002
+                    Electrodomésticos 002
                   </a>
                 </div>
               </div>
 
               {reporteSiigo && (
                 <>
-                  <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                  <div className={styles.reportTotals}>
                     <div>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Facturas
@@ -1541,56 +1492,44 @@ export default function FacturadorRegistrosWorkspace({
             </section>
           )}
 
-        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-5 border-b border-slate-100 px-5 py-5 xl:flex-row xl:items-end xl:justify-between">
+        <section className={styles.panel} aria-label="Registros comerciales" aria-busy={cargando}>
+          <div className={styles.panelHeader}>
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-                Operación comercial
-              </p>
-              <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+              <h2>
                 {esAdmin ? "Registros para consultar" : "Registros para facturar"}
               </h2>
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                {esAdmin
-                  ? "Busca, consulta y corrige registros sin perder la trazabilidad del trámite."
-                  : "Completa la facturación y revisa el estado de cada registro comercial."}
-              </p>
+              <p className={styles.panelCount}>{cargando ? "Cargando registros…" : resumenDisponible ? `${registros.length.toLocaleString("es-CO")} registros disponibles` : "Consulta no disponible"}</p>
             </div>
 
-            <div className="flex w-full flex-col gap-3 xl:max-w-xl">
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Buscar registro
-                <span className="relative block">
+            <div className={styles.listControls}>
+              <label className={styles.search}>
+                <span className={styles.srOnly}>Buscar registro</span>
                   <DashboardIcon
                     name="search"
-                    className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
                   />
                   <input
                     value={busqueda}
                     onChange={(event) => setBusqueda(event.target.value)}
-                    className="min-h-12 w-full rounded-xl border border-slate-300 bg-white py-3 pl-12 pr-4 text-sm text-slate-900 outline-none transition focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
+                    type="search"
                     placeholder="Cédula, IMEI, cliente, sede o factura"
                   />
-                </span>
               </label>
               {esAdmin && (
                 <button
                   type="button"
                   onClick={() => setModoSoporteSiigo((current) => !current)}
-                  className={`self-start rounded-xl border px-4 py-2 text-xs font-black uppercase tracking-[0.06em] transition ${
-                    modoSoporteSiigo
-                      ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-950"
-                  }`}
+                  className={`${styles.button} ${modoSoporteSiigo ? styles.supportActive : ""}`}
+                  aria-pressed={modoSoporteSiigo}
                 >
+                  <DashboardIcon name="settings" />
                   {modoSoporteSiigo ? "Ocultar soporte Siigo" : "Soporte Siigo"}
                 </button>
               )}
             </div>
           </div>
 
-          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-wrap gap-2">
+          <div className={styles.filtersBar}>
+            <div className={styles.tabs} role="group" aria-label="Filtrar registros por estado">
             {FILTROS_REGISTROS.map((filtro) => {
               const activo = filtroActivo === filtro.value;
 
@@ -1600,13 +1539,9 @@ export default function FacturadorRegistrosWorkspace({
                   type="button"
                   onClick={() => setFiltroActivo(filtro.value)}
                   aria-pressed={activo}
-                  className={`rounded-xl border px-3.5 py-2 text-xs font-black uppercase tracking-[0.04em] transition ${
-                    activo
-                      ? "border-[#e30613] bg-[#e30613] text-white shadow-sm"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:text-[#e30613]"
-                  }`}
+                  className={`${styles.filterTab} ${activo ? styles.filterTabActive : ""}`}
                 >
-                  {filtro.label} · {conteosFiltro[filtro.value].toLocaleString("es-CO")}
+                  {filtro.label}<span>{resumenDisponible ? conteosFiltro[filtro.value].toLocaleString("es-CO") : "—"}</span>
                 </button>
               );
             })}
@@ -1616,7 +1551,7 @@ export default function FacturadorRegistrosWorkspace({
                 type="button"
                 onClick={() => void facturarPendientesSiigo()}
                 disabled={facturandoPendientes}
-                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#11161d] px-4 text-xs font-black uppercase tracking-[0.06em] text-white transition hover:bg-[#e30613] disabled:cursor-not-allowed disabled:bg-slate-300"
+                className={`${styles.button} ${styles.primary}`}
               >
                 <DashboardIcon name="send" className="h-4 w-4" />
                 {facturandoPendientes
@@ -1626,19 +1561,19 @@ export default function FacturadorRegistrosWorkspace({
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-4 border-b border-slate-100 bg-slate-50/70 px-5 py-3 text-xs text-slate-500">
+          <div className={styles.tableMeta}>
             <span>
               {cargando
                 ? "Preparando registros"
-                : `${registrosFiltrados.length.toLocaleString("es-CO")} resultado(s)`}
+                : resumenDisponible ? `${registrosFiltrados.length.toLocaleString("es-CO")} resultado(s)` : "Consulta no disponible"}
             </span>
             <span className="hidden sm:inline">
               Vista compacta de {REGISTROS_POR_PAGINA} por página
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1480px] table-fixed">
+          <div className={styles.tableScroller} role="region" aria-label="Tabla de registros comerciales" tabIndex={0}>
+            <table className={`${styles.recordsTable} w-full min-w-[1480px] table-fixed`}>
               <thead className="sticky top-0 z-10 bg-slate-50">
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   <th className="w-[155px] px-5 py-3">Registro</th>
@@ -1669,6 +1604,8 @@ export default function FacturadorRegistrosWorkspace({
                       Cargando registros...
                     </td>
                   </tr>
+                ) : !resumenDisponible ? (
+                  <tr><td colSpan={7} className="px-5 py-12 text-center"><DashboardIcon name="warning" className="mx-auto mb-3 h-8 w-8 text-red-600" /><p className="font-bold">No se pudieron cargar los registros</p><p className="mt-1 text-sm text-slate-500">Actualiza para volver a consultar.</p><button type="button" className={`${styles.button} mt-4`} onClick={() => void cargarRegistros()}><DashboardIcon name="refresh" />Reintentar</button></td></tr>
                 ) : registrosFiltrados.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-5 py-14 text-center text-sm text-slate-500">
@@ -1863,6 +1800,7 @@ export default function FacturadorRegistrosWorkspace({
                             {estado.label}
                           </span>
                           <input
+                            aria-label={`Número de factura del registro ${registro.id}`}
                             value={draft}
                             disabled={
                               facturaSiigoEmitida ||
@@ -2094,7 +2032,7 @@ export default function FacturadorRegistrosWorkspace({
             </table>
           </div>
           {!cargando && registrosFiltrados.length > 0 && (
-            <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className={styles.pagination}>
               <p className="text-xs text-slate-500">
                 Mostrando {primerRegistroVisible.toLocaleString("es-CO")}–
                 {ultimoRegistroVisible.toLocaleString("es-CO")} de{" "}
