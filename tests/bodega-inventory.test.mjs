@@ -235,7 +235,7 @@ function uiProbe(path, { user = bodega, state: initial = {}, refs = {}, fetchImp
     react: hooks, "react/jsx-runtime": jsx, "next/link": noop, "next/image": noop,
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/lib/bodega-navigation": load("lib/bodega-navigation.ts"),
-    "@/lib/access-control": access, "@/lib/prestamos": { NOMBRE_SEDE_BODEGA: "BODEGA PRINCIPAL" },
+    "@/lib/access-control": access, "@/lib/prestamos": { NOMBRE_SEDE_BODEGA: "BODEGA PRINCIPAL", PROVEEDOR_FINSER: "Proveedor Finser" },
     "@/lib/product-types": productTypes, "@/lib/inventory-imeis": imeis,
     "@/lib/sedes": { esSedeOperativaInventario: () => true },
     "@/lib/use-live-refresh": { useLiveRefresh() {}, triggerLiveRefresh() {} },
@@ -244,6 +244,7 @@ function uiProbe(path, { user = bodega, state: initial = {}, refs = {}, fetchImp
     "@/app/vendedor/registros/buscar/device-visual": { RecordDeviceVisual: () => null },
     "@/lib/warehouse-debt-groups": { agruparDeudasPorSede: () => [], claveSedeDeudora: () => "sede:2" },
     "./warehouse.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
+    "./_components/dispatch-confirmation-dialog": noop,
     "./nuevo.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
   };
   const compiled = ts.transpileModule(injected, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { getBodegaNavigation } from "@/lib/bodega-navigation";
 import Image from "next/image";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { NOMBRE_SEDE_BODEGA } from "@/lib/prestamos";
+import { NOMBRE_SEDE_BODEGA, PROVEEDOR_FINSER } from "@/lib/prestamos";
 import { esRolAdministrativo, esRolBodega } from "@/lib/access-control";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import { esSedeOperativaInventario } from "@/lib/sedes";
@@ -16,6 +16,7 @@ import DashboardIcon, {
 import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import { RecordDeviceVisual } from "@/app/vendedor/registros/buscar/device-visual";
 import { agruparDeudasPorSede, claveSedeDeudora } from "@/lib/warehouse-debt-groups";
+import DispatchConfirmationDialog from "./_components/dispatch-confirmation-dialog";
 import styles from "./warehouse.module.css";
 
 type ItemPrincipal = {
@@ -281,6 +282,8 @@ export default function InventarioPrincipalPage() {
   const [mostrarModalMasivo, setMostrarModalMasivo] = useState(false);
   const [itemSeleccionado, setItemSeleccionado] = useState<ItemPrincipal | null>(null);
   const [sedeDestinoId, setSedeDestinoId] = useState("");
+  const [errorEnvio, setErrorEnvio] = useState("");
+  const envioEnCurso = useRef(false);
   const [idsSeleccionados, setIdsSeleccionados] = useState<number[]>([]);
   const [mostrarModalEdicion, setMostrarModalEdicion] = useState(false);
   const [idsEdicion, setIdsEdicion] = useState<number[]>([]);
@@ -1097,30 +1100,37 @@ export default function InventarioPrincipalPage() {
   };
 
   const cerrarModal = () => {
+    if (envioEnCurso.current) return;
     setMostrarModal(false);
     setItemSeleccionado(null);
     setSedeDestinoId("");
+    setErrorEnvio("");
   };
 
   const abrirModalEnvio = (item: ItemPrincipal) => {
+    if (envioEnCurso.current) return;
     setItemSeleccionado(item);
     setSedeDestinoId("");
+    setErrorEnvio("");
     setMostrarModal(true);
   };
 
   const enviarASede = async () => {
-    if (!itemSeleccionado) {
+    if (!itemSeleccionado || cargando || envioEnCurso.current) {
       return;
     }
 
-    if (!sedeDestinoId) {
+    if (!sedesDestinoOperativas.some(sede => String(sede.id) === sedeDestinoId)) {
+      setErrorEnvio("Debes seleccionar una sede destino disponible.");
       setMensaje("Debes seleccionar una sede destino");
       return;
     }
 
+    envioEnCurso.current = true;
     try {
       setCargando(true);
       setMensaje("");
+      setErrorEnvio("");
 
       const res = await fetch("/api/inventario-principal/enviar-a-sede", {
         method: "POST",
@@ -1136,16 +1146,22 @@ export default function InventarioPrincipalPage() {
       const data = await res.json();
 
       if (!res.ok) {
+        setErrorEnvio(data.error || "No se pudo enviar el equipo a la sede.");
         setMensaje(`Error: ${data.error || "Error enviando a sede"}`);
         return;
       }
 
       setMensaje(data.mensaje || "Equipo enviado correctamente a la sede");
-      cerrarModal();
+      setMostrarModal(false);
+      setItemSeleccionado(null);
+      setSedeDestinoId("");
+      setErrorEnvio("");
       await cargarInventarioPrincipal();
     } catch {
+      setErrorEnvio("No se pudo confirmar el envío. Verifica el estado del equipo antes de volver a intentarlo.");
       setMensaje("Error enviando equipo a sede");
     } finally {
+      envioEnCurso.current = false;
       setCargando(false);
     }
   };
@@ -1744,69 +1760,17 @@ export default function InventarioPrincipalPage() {
         </div>
       )}
 
-      {mostrarModal && itemSeleccionado && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
-          <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
-            <div className="text-xs font-black uppercase tracking-[0.16em] text-[#e30613]">
-              Envio a sede
-            </div>
-            <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-              Confirmar despacho
-            </h3>
-
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-              <p>
-                <span className="font-semibold text-slate-950">IMEI:</span> {itemSeleccionado.imei}
-              </p>
-              <p>
-                <span className="font-semibold text-slate-950">Referencia:</span>{" "}
-                {itemSeleccionado.referencia}
-              </p>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-              El equipo ingresara de inmediato en la sede destino con estado{" "}
-              <span className="font-semibold">BODEGA</span> y deuda activa a{" "}
-              <span className="font-semibold">Proveedor Finser</span>.
-            </div>
-
-            <div className="mt-5">
-              <label className="mb-2 block text-[12px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                Sede destino
-              </label>
-              <select
-                value={sedeDestinoId}
-                onChange={(event) => setSedeDestinoId(event.target.value)}
-                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              >
-                <option value="">Seleccionar sede</option>
-                {sedesDestinoOperativas.map((sede) => (
-                  <option key={sede.id} value={sede.id}>
-                    {sede.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <button
-                onClick={enviarASede}
-                disabled={cargando}
-                className="inline-flex h-[56px] w-full items-center justify-center rounded-2xl bg-[#111318] px-5 text-sm font-bold text-white transition hover:bg-[#1d2330] disabled:opacity-70"
-              >
-                Confirmar envio
-              </button>
-
-              <button
-                onClick={cerrarModal}
-                className="inline-flex h-[56px] w-full items-center justify-center rounded-2xl border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {mostrarModal && itemSeleccionado && <DispatchConfirmationDialog
+        equipo={itemSeleccionado}
+        sedes={sedesDestinoOperativas}
+        sedeDestinoId={sedeDestinoId}
+        acreedorNombre={PROVEEDOR_FINSER}
+        busy={cargando}
+        error={errorEnvio}
+        onDestinoChange={id => { setSedeDestinoId(id); setErrorEnvio(""); }}
+        onConfirm={() => void enviarASede()}
+        onClose={cerrarModal}
+      />}
     </div>
   );
 }

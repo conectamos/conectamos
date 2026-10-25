@@ -74,7 +74,7 @@ function probe({ initial = {}, fetchImpl, confirmation = true } = {}) {
     react, 'react/jsx-runtime': jsx,
     'next/link': { __esModule: true, default: ({ children, ...props }) => jsx.jsx('a', { ...props, children }) },
     'next/image': { __esModule: true, default: props => jsx.jsx('img', props) },
-    '@/lib/prestamos': { NOMBRE_SEDE_BODEGA: 'BODEGA PRINCIPAL' }, '@/lib/product-types': products, '@/lib/sedes': sedesModule,
+    '@/lib/prestamos': { NOMBRE_SEDE_BODEGA: 'BODEGA PRINCIPAL', PROVEEDOR_FINSER: 'Proveedor Finser' }, '@/lib/product-types': products, '@/lib/sedes': sedesModule,
     '@/lib/warehouse-debt-groups': debtGroups,
     '@/lib/bodega-navigation': load('lib/bodega-navigation.ts'),
     '@/lib/access-control': load('lib/access-control.ts'),
@@ -84,6 +84,7 @@ function probe({ initial = {}, fetchImpl, confirmation = true } = {}) {
     '@/app/vendedor/registros/buscar/device-visual': { RecordDeviceVisual: props => jsx.jsx('div', { 'data-device': media.resolveRecordDeviceVisual(props).kind, 'data-media-props': props }) },
     xlsx: { ...XLSX, writeFile(book, filename) { captures.push({ book, filename }); } },
     './warehouse.module.css': css,
+    './_components/dispatch-confirmation-dialog': { __esModule: true, default: () => null },
   };
   const workspace = load(file, imports, {
     __capture: value => { captured = value; },
