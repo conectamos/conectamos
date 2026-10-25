@@ -1,121 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import DashboardIcon, {
-  type DashboardIconName,
-} from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
+import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
+import styles from "./debt-payments.module.css";
 
 type DeudaItem = {
-  id: number;
-  prestamoId: number;
-  imei: string;
-  referencia: string;
-  valor: number;
-  sedeOrigenId: number;
-  sedeOrigenNombre: string;
-  sedeDestinoId: number;
-  sedeDestinoNombre: string;
-  fechaSolicitudPago: string;
-  estado: string;
-  puedeAprobar: boolean;
+  id: number; prestamoId: number; imei: string; referencia: string; valor: number;
+  sedeOrigenId: number; sedeOrigenNombre: string; sedeDestinoId: number; sedeDestinoNombre: string;
+  fechaSolicitudPago: string; estado: string; puedeAprobar: boolean;
 };
-
-type SessionUser = {
-  id: number;
-  nombre: string;
-  usuario: string;
-  sedeId: number;
-  sedeNombre: string;
-  rolId: number;
-  rolNombre: string;
-};
-
-type Sede = {
-  id: number;
-  nombre: string;
-};
-
-type PagoPendienteLote = {
-  key: string;
-  origen: string;
-  destino: string;
-  fecha: string;
-  total: number;
-  items: DeudaItem[];
-  ultimoTiempo: number | null;
-};
-
-function formatoPesos(valor: number) {
-  return `$ ${Number(valor || 0).toLocaleString("es-CO")}`;
-}
-
+type SessionUser = { id: number; nombre: string; usuario: string; sedeId: number; sedeNombre: string; rolId: number; rolNombre: string };
+type Sede = { id: number; nombre: string };
+type PagoPendienteLote = { key: string; origen: string; destino: string; fecha: string; total: number; items: DeudaItem[]; ultimoTiempo: number | null };
+const PAGE_SIZE = 10;
+function formatoPesos(valor: number) { return `$ ${Number(valor || 0).toLocaleString("es-CO", { maximumFractionDigits: 2 })}`; }
 function formatoFecha(valor: string) {
-  if (!valor) {
-    return "-";
-  }
-
-  return new Date(valor).toLocaleString("es-CO");
+  if (!valor || Number.isNaN(new Date(valor).getTime())) return "—";
+  return new Date(valor).toLocaleString("es-CO", { timeZone: "America/Bogota" });
 }
-
 function tiempoSolicitudPago(fecha: string | null | undefined) {
-  if (!fecha) {
-    return null;
-  }
-
+  if (!fecha) return null;
   const fechaPago = new Date(fecha);
-
-  if (Number.isNaN(fechaPago.getTime())) {
-    return null;
-  }
-
-  return fechaPago.getTime();
+  return Number.isNaN(fechaPago.getTime()) ? null : fechaPago.getTime();
 }
-
 function imeisResumenLote(items: DeudaItem[]) {
-  const visibles = items.slice(0, 10).map((item) => item.imei);
-  const restantes = Math.max(items.length - visibles.length, 0);
-
-  return { visibles, restantes };
+  const visibles = items.slice(0, 10).map(item => item.imei);
+  return { visibles, restantes: Math.max(items.length - visibles.length, 0) };
 }
-
-function MetricCard({
-  icon,
-  iconClass,
-  label,
-  value,
-  detail,
-  valueClass = "text-slate-950",
-}: {
-  icon: DashboardIconName;
-  iconClass: string;
-  label: string;
-  value: string | number;
-  detail: string;
-  valueClass?: string;
+function paginasVisibles(pagina: number, total: number) {
+  return [...new Set([1, pagina - 1, pagina, pagina + 1, total])].filter(value => value >= 1 && value <= total).sort((a, b) => a - b);
+}
+function MetricCard({ icon, label, value, detail }: { icon: DashboardIconName; label: string; value: string; detail: string }) {
+  return <article className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name={icon} /></span><div style={{ "--value-length": value.length } as CSSProperties}><p>{label}</p><strong>{value}</strong><small>{detail}</small></div></article>;
+}
+function Pagination({ pagina, total, registros, noun, disabled, onChange }: {
+  pagina: number; total: number; registros: number; noun: string; disabled: boolean; onChange: (value: number) => void;
 }) {
-  return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start gap-4">
-        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
-          <DashboardIcon name={icon} className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-600">{label}</p>
-          <p className={["mt-1.5 break-words text-3xl font-black leading-tight tracking-tight", valueClass].join(" ")}>
-            {value}
-          </p>
-          <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
-        </div>
-      </div>
-    </article>
-  );
+  const paginas = paginasVisibles(pagina, total);
+  return <div className={styles.pagination}><div><span>10 por página</span><span aria-live="polite">{disabled ? "—" : registros ? `Mostrando ${(pagina - 1) * PAGE_SIZE + 1}–${Math.min(pagina * PAGE_SIZE, registros)} de ${registros.toLocaleString("es-CO")} ${noun}` : `0 ${noun}`}</span></div><nav aria-label={`Paginación de ${noun}`}><button type="button" aria-label="Anterior" disabled={disabled || pagina <= 1} onClick={() => onChange(pagina - 1)}><DashboardIcon name="chevron" className={styles.previousIcon} /><span>Anterior</span></button>{paginas.map((value, index) => <span key={value} className={styles.pageSlot}>{index > 0 && value - paginas[index - 1] > 1 && <span className={styles.ellipsis}>…</span>}<button type="button" aria-label={`Página ${value}`} aria-current={pagina === value ? "page" : undefined} disabled={disabled} onClick={() => onChange(value)}>{value}</button></span>)}<button type="button" aria-label="Siguiente" disabled={disabled || pagina >= total} onClick={() => onChange(pagina + 1)}><span>Siguiente</span><DashboardIcon name="chevron" className={styles.nextIcon} /></button></nav></div>;
 }
 
 export default function DeudaSedesPage() {
@@ -127,180 +54,111 @@ export default function DeudaSedesPage() {
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [sedeFiltroId, setSedeFiltroId] = useState("TODAS");
   const [lotesDetalleAbiertos, setLotesDetalleAbiertos] = useState<string[]>([]);
-
+  const [cargandoListado, setCargandoListado] = useState(false);
+  const [cargandoSesion, setCargandoSesion] = useState(true);
+  const [errorCarga, setErrorCarga] = useState("");
+  const [errorSesion, setErrorSesion] = useState("");
+  const [errorSedes, setErrorSedes] = useState("");
+  const [consultaCargada, setConsultaCargada] = useState("");
+  const [pagina, setPagina] = useState(1);
+  const [paginaLotes, setPaginaLotes] = useState(1);
+  const [vistaActiva, setVistaActiva] = useState<"solicitudes" | "lotes">("solicitudes");
+  const operacionEnCurso = useRef(false);
+  const sessionRequest = useRef(0);
+  const sedesRequest = useRef(0);
+  const cargaRequest = useRef(0);
+  const cargaAbort = useRef<AbortController | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.toUpperCase() || "");
   const mensajeEsError = mensaje.trim().toUpperCase().startsWith("ERROR");
+  const consultaScope = !user ? "" : `${user.id}:${esAdmin ? sedeFiltroId : user.sedeId}`;
+  const disponible = Boolean(user) && consultaCargada === consultaScope && !errorCarga && !errorSesion;
+  const cargandoVista = cargandoListado || cargandoSesion;
 
   const cargarUsuario = useCallback(async () => {
+    const requestId = ++sessionRequest.current;
+    setCargandoSesion(true); setErrorSesion("");
     try {
-      const res = await fetch("/api/session", { cache: "no-store" });
-      const data = await res.json();
-
-      if (res.ok) {
-        setUser(data);
-      }
-    } catch {}
+      const response = await fetch("/api/session", { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      if (requestId !== sessionRequest.current) return null;
+      if (!response.ok || !data || !Number.isInteger(data.id) || data.id <= 0) throw new Error(data?.error || "No se pudo cargar la sesión.");
+      setUser(data);
+      return data as SessionUser;
+    } catch (cause) {
+      if (requestId === sessionRequest.current) { setUser(null); setErrorSesion(cause instanceof Error && cause.name === "Error" ? cause.message : "No se pudo cargar la sesión."); }
+      return null;
+    } finally { if (requestId === sessionRequest.current) setCargandoSesion(false); }
   }, []);
-
   const cargarSedes = useCallback(async () => {
+    const requestId = ++sedesRequest.current; setErrorSedes("");
     try {
-      const res = await fetch("/api/sedes", { cache: "no-store" });
-      const data = await res.json();
-
-      if (res.ok) {
-        setSedes(Array.isArray(data) ? data : []);
-      }
-    } catch {}
+      const response = await fetch("/api/sedes", { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      if (requestId !== sedesRequest.current) return;
+      if (!response.ok || !Array.isArray(data)) throw new Error(data?.error || "No se pudo cargar el catálogo de sedes.");
+      setSedes(data);
+    } catch (cause) { if (requestId === sedesRequest.current) setErrorSedes(cause instanceof Error && cause.name === "Error" ? cause.message : "No se pudo cargar el catálogo de sedes."); }
   }, []);
-
+  const iniciar = useCallback(async () => {
+    const session = await cargarUsuario();
+    if (session && ["ADMIN", "AUDITOR"].includes(session.rolNombre.toUpperCase())) await cargarSedes();
+  }, [cargarSedes, cargarUsuario]);
   const cargar = useCallback(async () => {
+    if (!user) return;
+    const requestId = ++cargaRequest.current;
+    cargaAbort.current?.abort();
+    const controller = new AbortController(); cargaAbort.current = controller;
+    setCargandoListado(true); setErrorCarga("");
     try {
       const params = new URLSearchParams();
-
-      if (esAdmin && sedeFiltroId !== "TODAS") {
-        params.set("sedeId", sedeFiltroId);
-      }
-
-      const endpoint = params.size
-        ? `/api/dashboard/deuda-sedes?${params.toString()}`
-        : "/api/dashboard/deuda-sedes";
-
-      const res = await fetch(endpoint, {
-        cache: "no-store",
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMensaje(`Error: ${data.error || "Error cargando deuda"}`);
-        return;
-      }
-
-      setItems(Array.isArray(data.items) ? data.items : []);
-      setTotalPendiente(Number(data.totalPendiente || 0));
-    } catch {
-      setMensaje("Error cargando deuda entre sedes");
-    }
-  }, [esAdmin, sedeFiltroId]);
-
-  useEffect(() => {
-    const init = async () => {
-      await cargarUsuario();
-      await cargarSedes();
-    };
-
-    void init();
-  }, [cargarSedes, cargarUsuario]);
-
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    void cargar();
-  }, [cargar, user]);
-
-  useLiveRefresh(cargar, { intervalMs: 10000 });
-
-  const sedeFiltroNombre = useMemo(() => {
-    if (!esAdmin) {
-      return user?.sedeNombre || "tu sede";
-    }
-
-    if (sedeFiltroId === "TODAS") {
-      return "todas las sedes";
-    }
-
-    return (
-      sedes.find((sede) => String(sede.id) === sedeFiltroId)?.nombre ||
-      "la sede seleccionada"
-    );
-  }, [esAdmin, sedeFiltroId, sedes, user?.sedeNombre]);
+      if (esAdmin && sedeFiltroId !== "TODAS") params.set("sedeId", sedeFiltroId);
+      const endpoint = params.size ? `/api/dashboard/deuda-sedes?${params.toString()}` : "/api/dashboard/deuda-sedes";
+      const response = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
+      const data = await response.json().catch(() => null);
+      if (requestId !== cargaRequest.current || controller.signal.aborted) return;
+      if (!response.ok || !Array.isArray(data?.items) || typeof data.totalPendiente !== "number" || !Number.isFinite(data.totalPendiente)) throw new Error(data?.error || "No se pudieron consultar los pagos pendientes.");
+      setItems(data.items); setTotalPendiente(data.totalPendiente); setConsultaCargada(consultaScope);
+    } catch (cause) {
+      if (requestId === cargaRequest.current && !controller.signal.aborted) { setConsultaCargada(""); setErrorCarga(cause instanceof Error && cause.name === "Error" ? cause.message : "Error cargando los pagos pendientes."); }
+    } finally { if (requestId === cargaRequest.current) setCargandoListado(false); }
+  }, [consultaScope, esAdmin, sedeFiltroId, user]);
+  useEffect(() => { void iniciar(); return () => { sessionRequest.current += 1; sedesRequest.current += 1; }; }, [iniciar]);
+  useEffect(() => { if (!user) return; void cargar(); return () => { cargaRequest.current += 1; cargaAbort.current?.abort(); }; }, [cargar, user]);
+  useLiveRefresh(cargar, { enabled: Boolean(user) && !cargando, intervalMs: 10000 });
+  const sedeFiltroNombre = useMemo(() => !esAdmin ? user?.sedeNombre || "Tu sede" : sedeFiltroId === "TODAS" ? "Todas las sedes" : sedes.find(sede => String(sede.id) === sedeFiltroId)?.nombre || "Sede seleccionada", [esAdmin, sedeFiltroId, sedes, user?.sedeNombre]);
 
   const aprobarPago = async (item: DeudaItem) => {
-    const confirmado = window.confirm(
-      `Confirmas aprobar el pago del IMEI ${item.imei} por ${formatoPesos(item.valor)}?`
-    );
-
-    if (!confirmado) {
-      return;
-    }
-
+    const actual = items.find(candidate => candidate.id === item.id && candidate.prestamoId === item.prestamoId);
+    if (cargando || cargandoListado || operacionEnCurso.current || !disponible || !actual?.puedeAprobar) return;
+    operacionEnCurso.current = true;
     try {
-      setCargando(true);
-      setMensaje("");
-
-      const res = await fetch("/api/prestamos/aprobar-pago", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prestamoId: item.prestamoId,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMensaje(`Error: ${data.error || "Error aprobando pago"}`);
-        return;
-      }
-
-      setMensaje("Pago aprobado correctamente");
-      await cargar();
-    } catch {
-      setMensaje("Error aprobando pago");
-    } finally {
-      setCargando(false);
-    }
+      const confirmado = window.confirm(`Confirmas aprobar el pago del IMEI ${actual.imei} por ${formatoPesos(actual.valor)}?`);
+      if (!confirmado) return;
+      setCargando(true); setMensaje("");
+      const response = await fetch("/api/prestamos/aprobar-pago", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prestamoId: actual.prestamoId }) });
+      const data = await response.json();
+      if (!response.ok) { setMensaje(`Error: ${data.error || "Error aprobando pago"}`); return; }
+      setMensaje("Pago aprobado correctamente"); await cargar();
+    } catch { setMensaje("Error aprobando pago"); }
+    finally { operacionEnCurso.current = false; setCargando(false); }
   };
-
   const aprobarPagoLote = async (lote: PagoPendienteLote) => {
-    const confirmado = window.confirm(
-      `Confirmas aprobar ${lote.items.length} pago(s) de ${lote.destino} por ${formatoPesos(lote.total)}?`
-    );
-
-    if (!confirmado) {
-      return;
-    }
-
+    const actual = lotesPagoPendiente.find(candidate => candidate.key === lote.key);
+    if (cargando || cargandoListado || operacionEnCurso.current || !disponible || !actual || !actual.items.length || !actual.items.every(item => item.puedeAprobar)) return;
+    operacionEnCurso.current = true;
     try {
-      setCargando(true);
-      setMensaje("");
-
-      const res = await fetch("/api/prestamos/aprobar-pago-lote", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prestamoIds: lote.items.map((item) => item.prestamoId),
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMensaje(`Error: ${data.error || "Error aprobando lote"}`);
-        return;
-      }
-
-      setMensaje(data.mensaje || "Pago por lote aprobado correctamente");
-      await cargar();
-    } catch {
-      setMensaje("Error aprobando lote");
-    } finally {
-      setCargando(false);
-    }
+      const confirmado = window.confirm(`Confirmas aprobar ${actual.items.length} pago(s) de ${actual.destino} por ${formatoPesos(actual.total)}?`);
+      if (!confirmado) return;
+      setCargando(true); setMensaje("");
+      const response = await fetch("/api/prestamos/aprobar-pago-lote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prestamoIds: actual.items.map(item => item.prestamoId) }) });
+      const data = await response.json();
+      if (!response.ok) { setMensaje(`Error: ${data.error || "Error aprobando lote"}`); return; }
+      setMensaje(data.mensaje || "Pago por lote aprobado correctamente"); await cargar();
+    } catch { setMensaje("Error aprobando lote"); }
+    finally { operacionEnCurso.current = false; setCargando(false); }
   };
-
-  const alternarDetalleLote = (key: string) => {
-    setLotesDetalleAbiertos((actuales) =>
-      actuales.includes(key)
-        ? actuales.filter((item) => item !== key)
-        : [...actuales, key]
-    );
-  };
+  const alternarDetalleLote = (key: string) => { setLotesDetalleAbiertos(actuales => actuales.includes(key) ? actuales.filter(item => item !== key) : [...actuales, key]); };
 
   const totalSolicitudes = items.length;
   const promedioPendiente = useMemo(() => {
@@ -376,436 +234,69 @@ export default function DeudaSedesPage() {
       ),
     [lotesPagoPendiente]
   );
+
+
+  const totalPaginas = disponible ? Math.max(1, Math.ceil(items.length / PAGE_SIZE)) : 1;
+  const paginaActual = Math.min(pagina, totalPaginas);
+  const itemsPaginados = items.slice((paginaActual - 1) * PAGE_SIZE, paginaActual * PAGE_SIZE);
+  const totalPaginasLotes = disponible ? Math.max(1, Math.ceil(lotesPagoPendiente.length / PAGE_SIZE)) : 1;
+  const paginaLotesActual = Math.min(paginaLotes, totalPaginasLotes);
+  const lotesPaginados = lotesPagoPendiente.slice((paginaLotesActual - 1) * PAGE_SIZE, paginaLotesActual * PAGE_SIZE);
+  const verLote = (item: DeudaItem) => {
+    const index = lotesPagoPendiente.findIndex(lote => lote.items.some(candidate => candidate.id === item.id));
+    if (index < 0) return;
+    const key = lotesPagoPendiente[index].key;
+    setVistaActiva("lotes"); setPaginaLotes(Math.floor(index / PAGE_SIZE) + 1);
+    setLotesDetalleAbiertos(actuales => actuales.includes(key) ? actuales : [...actuales, key]);
+    panelRef.current?.scrollIntoView({ block: "start" });
+  };
   const navigationItems: NavigationItem[] = [
-    { href: "/dashboard", icon: "home", label: "Inicio" },
-    { href: "/ventas", icon: "sales", label: "Ventas" },
-    { href: "/inventario", icon: "inventory", label: "Inventario" },
-    { href: "/prestamos", icon: "loans", label: "Préstamos" },
-    {
-      href: "/dashboard/deuda-sedes",
-      icon: "cash",
-      label: "Deuda entre sedes",
-    },
-    { href: "/caja", icon: "cash", label: "Caja" },
-    {
-      href: "/dashboard/aprobaciones",
-      icon: "approvals",
-      label: "Aprobaciones",
-    },
+    { href: "/dashboard", icon: "home", label: "Inicio" }, { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" }, { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/dashboard/deuda-sedes", icon: "transfer", label: "Deuda entre sedes" }, { href: "/caja", icon: "cash", label: "Caja" },
+    { href: "/cierre", icon: "reports", label: "CIERRE" }, { href: "/dashboard/aprobaciones", icon: "approvals", label: "Aprobaciones" },
     { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
   ];
-  const inicialesUsuario = String(user?.nombre || user?.usuario || "Usuario")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("");
+  const secundarios = navigationItems.filter(item => ["/cierre", "/dashboard/aprobaciones", "/dashboard/reportes"].includes(item.href));
+  const principales = navigationItems.filter(item => !secundarios.includes(item));
+  const enlace = (item: NavigationItem) => <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === "/dashboard/deuda-sedes" ? styles.navActive : ""}`} aria-current={item.href === "/dashboard/deuda-sedes" ? "page" : undefined}><DashboardIcon name={item.icon} /><span>{item.label}</span></Link>;
 
-  return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950 [&_button]:uppercase">
-      <DashboardSidebar
-        activeHref="/dashboard/deuda-sedes"
-        coverageLabel={sedeFiltroNombre}
-        items={navigationItems}
-      />
-
-      <div className="lg:pl-[252px]">
-        <main className="w-full px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">
-          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <nav className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-                <Link href="/dashboard" className="transition hover:text-[#e30613]">
-                  Inicio
-                </Link>
-                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
-                <span className="text-slate-600">Deuda entre sedes</span>
-              </nav>
-              <h1 className="text-[30px] font-black tracking-tight sm:text-[34px]">
-                Pagos pendientes por aprobar
-              </h1>
-              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500 sm:text-base">
-                {esAdmin
-                  ? sedeFiltroId === "TODAS"
-                    ? "Monitorea solicitudes de pago entre sedes y aprueba los movimientos pendientes."
-                    : `Vista ejecutiva de pagos pendientes relacionados con ${sedeFiltroNombre}.`
-                  : "Revisa los pagos entre sedes que siguen esperando aprobación dentro de tu alcance."}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
-                  Cobertura: {sedeFiltroNombre}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">
-                  Actualización automática: 10 segundos
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-700">
-                  {inicialesUsuario || "US"}
-                </span>
-                <div className="min-w-0 pr-2">
-                  <p className="max-w-[170px] truncate text-sm font-bold">
-                    {user?.nombre || user?.usuario || "Usuario"}
-                  </p>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    {user?.rolNombre || "Operación"}
-                  </p>
-                </div>
-              </div>
-              <LogoutButton variant="light" className="min-h-[52px] uppercase" />
-            </div>
-          </header>
-
-        {mensaje && (
-          <div
-            className={[
-              "mt-5 rounded-xl border px-4 py-3 text-sm font-semibold shadow-sm",
-              mensajeEsError
-                ? "border-rose-200 bg-rose-50 text-rose-800"
-                : "border-emerald-200 bg-emerald-50 text-emerald-800",
-            ].join(" ")}
-          >
-            {mensaje}
-          </div>
-        )}
-
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <MetricCard
-            icon="cash"
-            iconClass="bg-amber-50 text-amber-600"
-            label="Total pendiente"
-            value={formatoPesos(totalPendiente)}
-            detail="Capital pendiente por aprobar entre sedes."
-            valueClass="text-amber-600"
-          />
-          <MetricCard
-            icon="approvals"
-            iconClass="bg-red-50 text-red-600"
-            label="Solicitudes activas"
-            value={totalSolicitudes}
-            detail="Movimientos listos para aprobacion."
-          />
-          <MetricCard
-            icon="trend"
-            iconClass="bg-blue-50 text-blue-600"
-            label="Promedio por solicitud"
-            value={formatoPesos(promedioPendiente)}
-            detail="Valor medio pendiente en esta vista."
-          />
-        </section>
-
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
-                <DashboardIcon name="store" className="h-5 w-5" />
-              </span>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
-                  Control de cobertura
-                </p>
-                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
-                  Foco de aprobación
-                </h2>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-                  Filtra los pagos pendientes por sede sin perder el contexto de la operación.
-                </p>
-              </div>
-            </div>
-
-            {esAdmin ? (
-              <div className="w-full xl:max-w-[320px]">
-                <select
-                  value={sedeFiltroId}
-                  onChange={(event) => setSedeFiltroId(event.target.value)}
-                  className="min-h-[50px] w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-50"
-                >
-                  <option value="TODAS">Todas las sedes</option>
-                  {sedes.map((sede) => (
-                    <option key={sede.id} value={String(sede.id)}>
-                      {sede.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-          </div>
-        </section>
-
-        {lotesPagoPendiente.length > 0 && (
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Lotes por recibir
-                </div>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                  Pagos agrupados para aprobar
-                </h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                  Cada bloque resume la sede que paga, la sede que recibe, los IMEIs incluidos y el valor total antes de confirmar.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-right">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Total en lotes
-                </p>
-                <p className="mt-1 text-2xl font-black text-emerald-700">
-                  {formatoPesos(
-                    lotesPagoPendiente.reduce(
-                      (acumulado, lote) => acumulado + lote.total,
-                      0
-                    )
-                  )}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 xl:grid-cols-2">
-              {lotesPagoPendiente.map((lote) => {
-                const detalleAbierto = lotesDetalleAbiertos.includes(lote.key);
-                const resumenImeis = imeisResumenLote(lote.items);
-
-                return (
-                  <article
-                    key={lote.key}
-                    className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5"
-                  >
-                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Lote de pago
-                        </p>
-                        <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">
-                          {lote.destino} paga a {lote.origen}
-                        </h3>
-                        <p className="mt-2 text-sm text-slate-500">
-                          {lote.items.length} equipo
-                          {lote.items.length === 1 ? "" : "s"} pendiente
-                          {lote.items.length === 1 ? "" : "s"} de aprobacion
-                          {" "}- Solicitado: {formatoFecha(lote.fecha)}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-right">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Valor a recibir
-                        </p>
-                        <p className="mt-1 text-2xl font-black text-emerald-700">
-                          {formatoPesos(lote.total)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-3 md:grid-cols-2">
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                          Recibe
-                        </p>
-                        <p className="mt-1 text-base font-black text-slate-950">
-                          {lote.origen}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                          Paga
-                        </p>
-                        <p className="mt-1 text-base font-black text-slate-950">
-                          {lote.destino}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-4">
-                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-                          Resumen de IMEIs
-                        </p>
-                        <p className="text-xs font-semibold text-slate-500">
-                          {lote.items.length} serial
-                          {lote.items.length === 1 ? "" : "es"} en el lote
-                        </p>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {resumenImeis.visibles.map((imei) => (
-                          <span
-                            key={imei}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-800"
-                          >
-                            {imei}
-                          </span>
-                        ))}
-                        {resumenImeis.restantes > 0 && (
-                          <span className="rounded-full border border-slate-200 bg-slate-900 px-3 py-1 text-xs font-bold text-white">
-                            +{resumenImeis.restantes} mas
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-5 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => alternarDetalleLote(lote.key)}
-                        className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
-                      >
-                        {detalleAbierto ? "Ocultar detalle" : "Ver detalle"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => void aprobarPagoLote(lote)}
-                        disabled={cargando}
-                        className="rounded-xl bg-[#e30613] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Aprobar lote
-                      </button>
-                    </div>
-
-                    {detalleAbierto && (
-                      <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
-                        <table className="w-full text-sm">
-                          <thead className="bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
-                            <tr>
-                              <th className="px-4 py-3">Prestamo</th>
-                              <th className="px-4 py-3">IMEI</th>
-                              <th className="px-4 py-3">Referencia</th>
-                              <th className="px-4 py-3 text-right">Valor</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {lote.items.map((item) => (
-                              <tr key={item.id} className="border-t border-slate-100">
-                                <td className="px-4 py-3 font-bold text-slate-950">
-                                  #{item.prestamoId}
-                                </td>
-                                <td className="px-4 py-3 font-semibold text-slate-950">
-                                  {item.imei}
-                                </td>
-                                <td className="px-4 py-3 text-slate-600">
-                                  {item.referencia}
-                                </td>
-                                <td className="px-4 py-3 text-right font-bold text-slate-950">
-                                  {formatoPesos(item.valor)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
-                <DashboardIcon name="approvals" className="h-5 w-5" />
-              </span>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">
-                  Solicitudes pendientes
-                </p>
-                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
-                  Movimientos listos para aprobar
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-slate-500">
-                  Pagos en espera de validación por la sede de origen o administración.
-                </p>
-              </div>
-            </div>
-
-            <div className="w-fit rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">
-              {totalSolicitudes} registro{totalSolicitudes === 1 ? "" : "s"}
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px] text-sm">
-              <thead className="sticky top-0 bg-[#f8fafc]">
-                <tr className="border-b border-slate-200 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                  <th className="px-6 py-4">Prestamo</th>
-                  <th className="px-6 py-4">IMEI</th>
-                  <th className="px-6 py-4">Referencia</th>
-                  <th className="px-6 py-4">Valor</th>
-                  <th className="px-6 py-4">Sede origen</th>
-                  <th className="px-6 py-4">Sede destino</th>
-                  <th className="px-6 py-4">Solicitado</th>
-                  <th className="px-6 py-4">Accion</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-6 py-16 text-center text-slate-500">
-                      No hay pagos pendientes por aprobar entre sedes.
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="border-b border-slate-100 align-top text-slate-700 transition hover:bg-slate-50/80"
-                    >
-                      <td className="px-6 py-4 font-bold text-slate-950">#{item.prestamoId}</td>
-                      <td className="px-6 py-4 font-semibold text-slate-950">{item.imei}</td>
-                      <td className="px-6 py-4">{item.referencia}</td>
-                      <td className="px-6 py-4 font-semibold text-amber-600">
-                        {formatoPesos(item.valor)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {item.sedeOrigenNombre}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {item.sedeDestinoNombre}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-slate-600">
-                        {formatoFecha(item.fechaSolicitudPago)}
-                      </td>
-                      <td className="px-6 py-4">
-                        {item.puedeAprobar && idsEnLotesMultiples.has(item.id) ? (
-                          <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                            Aprobar desde lote
-                          </span>
-                        ) : item.puedeAprobar ? (
-                          <button
-                            type="button"
-                            onClick={() => void aprobarPago(item)}
-                            disabled={cargando}
-                            className="rounded-lg bg-[#e30613] px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Aprobar pago
-                          </button>
-                        ) : (
-                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                            En espera
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-        </main>
-      </div>
-    </div>
-  );
+  return <div className={styles.page}>
+    <header className={styles.topbar}>
+      <Link href="/dashboard" className={styles.brand}><Image src="/branding/conectamos-logo.png" alt="" width={44} height={44} priority /><strong>CONECTAMOS</strong></Link>
+      <nav className={styles.navigation} aria-label="Navegación principal">{principales.map(enlace)}<div className={styles.extraNavigation}>{secundarios.map(enlace)}</div><details className={styles.moreNavigation} onKeyDown={event => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}><summary>Más<DashboardIcon name="chevron" /></summary><div>{secundarios.map(enlace)}</div></details></nav>
+      <SalesProfile name={user?.nombre || user?.usuario || (cargandoSesion ? "Cargando usuario" : "Usuario")} role={user?.rolNombre || "Sesión por verificar"} />
+    </header>
+    <main className={styles.main}>
+      <div className={styles.heading}><div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><DashboardIcon name="arrow" /><span>Deuda entre sedes</span></nav><h1>Pagos pendientes por aprobar</h1><p>Solicitudes de pago entre sedes, con su origen, destino e importe.</p></div><button type="button" className={styles.button} disabled={cargandoVista || cargando} onClick={() => void (user ? cargar() : iniciar())}><DashboardIcon name="refresh" />{cargandoVista ? "Actualizando…" : "Actualizar"}</button></div>
+      {(errorSesion || errorCarga) && <div className={styles.notice} role="alert"><DashboardIcon name="warning" /><span>{errorSesion || errorCarga}</span><button type="button" disabled={cargandoVista || cargando} onClick={() => void (user ? cargar() : iniciar())}>Reintentar</button></div>}
+      {mensaje && <div className={`${styles.notice} ${!mensajeEsError ? styles.success : ""}`} role={mensajeEsError ? "alert" : "status"}><DashboardIcon name={mensajeEsError ? "warning" : "approvals"} /><span>{mensaje}</span></div>}
+      <section className={styles.summary} aria-label="Resumen de pagos pendientes" aria-busy={cargandoVista}>
+        <MetricCard icon="cash" label="Total pendiente" value={disponible ? formatoPesos(totalPendiente) : "—"} detail="Capital pendiente por aprobar" />
+        <MetricCard icon="approvals" label="Solicitudes activas" value={disponible ? totalSolicitudes.toLocaleString("es-CO") : "—"} detail="Movimientos en la cobertura consultada" />
+        <MetricCard icon="trend" label="Promedio por solicitud" value={disponible ? formatoPesos(promedioPendiente) : "—"} detail="Total pendiente dividido entre solicitudes" />
+      </section>
+      <section ref={panelRef} className={styles.panel} aria-labelledby="pending-payments-title">
+        <div className={styles.panelHeader}><div className={styles.sectionTitle}><span className={styles.sectionIcon}><DashboardIcon name="approvals" /></span><div><h2 id="pending-payments-title">Movimientos listos para aprobar</h2><p>{user ? sedeFiltroNombre : "Cobertura por verificar"}</p></div></div><span className={styles.resultCount}>{disponible ? `${totalSolicitudes.toLocaleString("es-CO")} registro${totalSolicitudes === 1 ? "" : "s"}` : cargandoVista ? "Cargando…" : "Sin datos cargados"}</span></div>
+        <div className={styles.controls}><div className={styles.viewButtons} aria-label="Vista de solicitudes"><button type="button" aria-pressed={vistaActiva === "solicitudes"} onClick={() => setVistaActiva("solicitudes")}>Solicitudes <span>{disponible ? totalSolicitudes.toLocaleString("es-CO") : "—"}</span></button><button type="button" aria-pressed={vistaActiva === "lotes"} onClick={() => setVistaActiva("lotes")}>Lotes para aprobar <span>{disponible ? lotesPagoPendiente.length.toLocaleString("es-CO") : "—"}</span></button></div><label className={styles.coverage}>Cobertura por sede{esAdmin ? <select value={sedeFiltroId} disabled={cargando} onChange={event => { setSedeFiltroId(event.target.value); setPagina(1); setPaginaLotes(1); setLotesDetalleAbiertos([]); }}><option value="TODAS">Todas las sedes</option>{sedes.map(sede => <option key={sede.id} value={String(sede.id)}>{sede.nombre}</option>)}</select> : <span className={styles.scope}><DashboardIcon name="store" />{user?.sedeNombre || (cargandoSesion ? "Cargando sede…" : "Sin sede cargada")}</span>}</label></div>
+        {errorSedes && <div className={styles.catalogError} role="alert"><span>{errorSedes}</span><button type="button" onClick={() => void cargarSedes()}>Reintentar sedes</button></div>}
+        {!disponible ? <div className={styles.empty} role="status"><DashboardIcon name={cargandoVista ? "refresh" : "warning"} /><strong>{cargandoVista ? "Cargando pagos pendientes…" : "No se pudieron cargar los pagos"}</strong><p>{cargandoVista ? "Consultando solicitudes en tu cobertura." : "Reintenta la consulta para ver los movimientos."}</p></div> : items.length === 0 ? <div className={styles.empty}><span className={styles.emptyIcon}><DashboardIcon name="approvals" /></span><h3>No hay pagos pendientes por aprobar</h3><p>No se encontraron solicitudes pendientes para {sedeFiltroNombre}.</p><button type="button" className={styles.button} disabled={cargandoVista} onClick={() => void cargar()}><DashboardIcon name="refresh" />Actualizar solicitudes</button></div> : vistaActiva === "solicitudes" ? <>
+          <div className={styles.tableScroller} tabIndex={0} aria-label="Solicitudes de pago"><table className={styles.table}><thead><tr><th scope="col">Préstamo</th><th scope="col">IMEI</th><th scope="col">Referencia</th><th scope="col">Valor</th><th scope="col">Sede origen</th><th scope="col">Sede destino</th><th scope="col">Solicitado</th><th scope="col">Acción</th></tr></thead><tbody>{itemsPaginados.map(item => <tr key={item.id}><td className={styles.id}>#{item.prestamoId}</td><td className={styles.imei}>{item.imei}</td><td className={styles.reference}>{item.referencia}</td><td className={styles.money}>{formatoPesos(item.valor)}</td><td><span className={styles.sedeBadge}>{item.sedeOrigenNombre}</span></td><td><span className={styles.sedeBadge}>{item.sedeDestinoNombre}</span></td><td className={styles.date}>{formatoFecha(item.fechaSolicitudPago)}</td><td>{item.puedeAprobar && idsEnLotesMultiples.has(item.id) ? <button type="button" className={styles.rowSecondary} onClick={() => verLote(item)}>Aprobar desde lote<DashboardIcon name="arrow" /></button> : item.puedeAprobar ? <button type="button" className={styles.rowPrimary} disabled={cargando || cargandoListado} onClick={() => void aprobarPago(item)}>{cargando ? "Procesando…" : "Aprobar pago"}</button> : <span className={styles.waiting}>En espera</span>}</td></tr>)}</tbody></table></div>
+          <Pagination pagina={paginaActual} total={totalPaginas} registros={items.length} noun="solicitudes" disabled={!disponible || cargando} onChange={setPagina} />
+        </> : <>
+          <div className={styles.lotSummary}><span>{lotesPagoPendiente.length.toLocaleString("es-CO")} lotes disponibles según tus permisos</span><span>Total en lotes <strong>{formatoPesos(lotesPagoPendiente.reduce((acc, lote) => acc + lote.total, 0))}</strong></span></div>
+          {lotesPagoPendiente.length === 0 ? <div className={styles.empty}><DashboardIcon name="lock" /><h3>No tienes lotes disponibles para aprobar</h3><p>Las solicitudes de tu cobertura continúan disponibles en la vista Solicitudes.</p></div> : <div className={styles.lots}>{lotesPaginados.map(lote => { const detalleAbierto = lotesDetalleAbiertos.includes(lote.key); const resumenImeis = imeisResumenLote(lote.items); return <article key={lote.key} className={styles.lot}>
+            <div className={styles.lotHeader}><div className={styles.paymentRoute}><div><span>Paga</span><strong>{lote.destino}</strong></div><DashboardIcon name="arrow" /><div><span>Recibe</span><strong>{lote.origen}</strong></div></div><div className={styles.lotValue}><span>Valor a recibir</span><strong>{formatoPesos(lote.total)}</strong></div></div>
+            <div className={styles.lotMeta}><span>{lote.items.length} equipo{lote.items.length === 1 ? "" : "s"}</span><span>Solicitado: {formatoFecha(lote.fecha)}</span></div>
+            <div className={styles.imeiPreview} aria-label="Resumen de IMEI">{resumenImeis.visibles.map((imei, index) => <span key={`${imei}-${index}`}>{imei}</span>)}{resumenImeis.restantes > 0 && <span className={styles.moreImeis}>+{resumenImeis.restantes} más en el detalle</span>}</div>
+            <div className={styles.lotActions}><button type="button" className={styles.button} aria-expanded={detalleAbierto} aria-controls={`debt-lot-${lote.key}`} onClick={() => alternarDetalleLote(lote.key)}><DashboardIcon name="document-search" />{detalleAbierto ? "Ocultar detalle" : "Ver detalle"}</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={cargando || cargandoListado} onClick={() => void aprobarPagoLote(lote)}><DashboardIcon name="approvals" />{cargando ? "Procesando…" : "Aprobar lote"}</button></div>
+            {detalleAbierto && <div id={`debt-lot-${lote.key}`} className={styles.lotDetail} tabIndex={0} aria-label={`Detalle del lote ${lote.key}`}><table className={styles.detailTable}><thead><tr><th scope="col">Préstamo</th><th scope="col">IMEI</th><th scope="col">Referencia</th><th scope="col">Valor</th></tr></thead><tbody>{lote.items.map(item => <tr key={item.id}><td>#{item.prestamoId}</td><td className={styles.imei}>{item.imei}</td><td>{item.referencia}</td><td className={styles.money}>{formatoPesos(item.valor)}</td></tr>)}</tbody></table></div>}
+          </article>; })}</div>}
+          <Pagination pagina={paginaLotesActual} total={totalPaginasLotes} registros={lotesPagoPendiente.length} noun="lotes" disabled={!disponible || cargando} onChange={setPaginaLotes} />
+        </>}
+        {disponible && items.length === 0 && <div className={styles.zeroFooter}>0 resultados</div>}
+      </section>
+      <div className={styles.liveStatus} role="status"><DashboardIcon name="refresh" /><span>{cargando ? "Procesando aprobación…" : cargandoListado && disponible ? "Actualizando solicitudes…" : "Actualización automática cada 10 segundos"}</span><span><DashboardIcon name="store" />{user ? sedeFiltroNombre : "Cobertura por verificar"}</span></div>
+    </main>
+  </div>;
 }

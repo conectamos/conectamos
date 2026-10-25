@@ -214,6 +214,41 @@ export async function listarDocumentosListaNegra(limit = 80) {
   return rows.map(serializeRow);
 }
 
+export async function listarDocumentosListaNegraPaginado(options: {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+} = {}) {
+  await ensureListaNegraSchema();
+  const pageSize = Math.min(Math.max(Math.trunc(Number(options.pageSize) || 10), 1), 10);
+  const requestedPage = Math.max(Math.trunc(Number(options.page) || 1), 1);
+  const search = String(options.search || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const pattern = `%${search.replace(/[\\%_]/g, value => `\\${value}`)}%`;
+  // Match the existing accent-insensitive search, with literal user input.
+  const searchableText = String.raw`regexp_replace(normalize(lower(concat_ws(' ', "documentoNumero", 'PRESTA NOMBRE', COALESCE("motivo", ''), COALESCE("sedeNombre", ''), COALESCE("reportadoPorNombre", ''))), NFD), U&'[\0300-\036f]', '', 'g')`;
+  const match = `${searchableText} LIKE $1 ESCAPE '\\'`;
+  const counts = await prisma.$queryRawUnsafe<Array<{
+    totalRegistros: bigint | number | string;
+    sedesAfectadas: bigint | number | string;
+    resultados: bigint | number | string;
+  }>>(`SELECT COUNT(*) AS "totalRegistros", COUNT(DISTINCT NULLIF("sedeNombre", '')) AS "sedesAfectadas", COUNT(*) FILTER (WHERE ${match}) AS "resultados" FROM "ListaNegraDocumento" WHERE "activo" = true`, pattern);
+  const total = Number(counts[0]?.resultados || 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const rows = await prisma.$queryRawUnsafe<Array<Parameters<typeof serializeRow>[0]>>(`
+    SELECT "id", "documentoNumero", "tipoReporte", "tipoObservacion", "financieraDeuda", "motivo", "reportadoPorNombre", "sedeNombre", "activo", "createdAt", "updatedAt"
+    FROM "ListaNegraDocumento"
+    WHERE "activo" = true AND ${match}
+    ORDER BY "updatedAt" DESC, "id" DESC
+    LIMIT $2 OFFSET $3
+  `, pattern, pageSize, (page - 1) * pageSize);
+  return {
+    registros: rows.map(serializeRow),
+    pagination: { page, pageSize, total, totalPages },
+    summary: { totalRegistros: Number(counts[0]?.totalRegistros || 0), sedesAfectadas: Number(counts[0]?.sedesAfectadas || 0) },
+  };
+}
+
 export async function guardarDocumentoListaNegra({
   documento,
   financieraDeuda,

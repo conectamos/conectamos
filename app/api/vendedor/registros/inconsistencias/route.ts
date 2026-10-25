@@ -34,11 +34,6 @@ import {
   obtenerCreditosSumasPayPorCedulasEnRango,
 } from "@/lib/sumasconsulta";
 import {
-  isEsmioOpcionConsultaConfigured,
-  obtenerCreditoEsmioOpcionPorCedula,
-  obtenerCreditosEsmioOpcionPorCedulasEnRango,
-} from "@/lib/esmiopcionconsulta";
-import {
   isAddiConsultaConfigured,
   obtenerCreditoAddiPorCedula,
   obtenerCreditosAddiPorCedulasEnRango,
@@ -49,11 +44,10 @@ type Proveedor =
   | "FINSER"
   | "ALO CREDIT"
   | "SUMASPAY"
-  | "ESMIO"
   | "ADDI";
 type ProveedorMensual = Extract<
   Proveedor,
-  "PAYJOY" | "SUMASPAY" | "ESMIO" | "ADDI"
+  "PAYJOY" | "SUMASPAY" | "ADDI"
 >;
 
 type EstadoRevision =
@@ -112,13 +106,11 @@ type ResultadoConsultaMensual =
 const PROVEEDORES_POR_CEDULA = new Set<Proveedor>([
   "ALO CREDIT",
   "SUMASPAY",
-  "ESMIO",
   "ADDI",
 ]);
 const PROVEEDORES_MENSUALES = new Set<Proveedor>([
   "PAYJOY",
   "SUMASPAY",
-  "ESMIO",
   "ADDI",
 ]);
 const GRUPOS_POR_PAGINA_MENSUAL: Record<
@@ -127,7 +119,6 @@ const GRUPOS_POR_PAGINA_MENSUAL: Record<
 > = {
   PAYJOY: 8,
   SUMASPAY: 4,
-  ESMIO: 80,
   ADDI: 8,
 };
 const MAX_REGISTROS_REVISION = 60;
@@ -162,7 +153,6 @@ function identificarProveedor(value: unknown): Proveedor | null {
   if (key === "FINSER" || key === "FINSERPAY") return "FINSER";
   if (key === "ALOCREDIT" || key === "ALOCREDITO") return "ALO CREDIT";
   if (key === "SUMAS" || key === "SUMASPAY") return "SUMASPAY";
-  if (key === "ESMIO" || key === "ESMIOPCION") return "ESMIO";
   if (key === "ADDI") return "ADDI";
   return null;
 }
@@ -244,7 +234,6 @@ function proveedorConfigurado(proveedor: Proveedor) {
   if (proveedor === "FINSER") return isFinserpayConsultaConfigured();
   if (proveedor === "ALO CREDIT") return isAloConsultaConfigured();
   if (proveedor === "SUMASPAY") return isSumasConsultaConfigured();
-  if (proveedor === "ESMIO") return isEsmioOpcionConsultaConfigured();
   return isAddiConsultaConfigured();
 }
 
@@ -280,8 +269,6 @@ async function consultarCredito(item: ItemRevision): Promise<ResultadoConsulta> 
       credito = await obtenerCreditoAloParaRegistro(identificador);
     } else if (item.proveedor === "SUMASPAY") {
       credito = await obtenerCreditoSumasPayPorCedula(identificador);
-    } else if (item.proveedor === "ESMIO") {
-      credito = await obtenerCreditoEsmioOpcionPorCedula(identificador);
     } else {
       credito = await obtenerCreditoAddiPorCedula(identificador);
     }
@@ -568,29 +555,6 @@ async function consultarCreditosMensuales(
               }
         );
       }
-    } else if (proveedor === "ESMIO") {
-      const respuesta =
-        await obtenerCreditosEsmioOpcionPorCedulasEnRango(
-          identificadores,
-          fechaDesde,
-          fechaHasta
-        );
-
-      for (const item of respuesta) {
-        consultas.set(
-          soloDigitos(item.documento),
-          item.error
-            ? { ok: false, error: item.error }
-            : {
-                ok: true,
-                creditos: item.creditos.map((credito) => ({
-                  creditoAutorizado: credito.creditoAutorizado,
-                  fechaCreacionCredito: credito.fechaCreacionCredito,
-                  ordenId: credito.ordenId,
-                })),
-              }
-        );
-      }
     } else {
       const respuesta = await obtenerCreditosAddiPorCedulasEnRango(
         identificadores,
@@ -696,7 +660,7 @@ async function revisarInconsistenciasPorRango(
     return NextResponse.json(
       {
         error:
-          "La revision por rango esta disponible para PAYJOY, SUMASPAY, ESMIO y ADDI.",
+          "La revision por rango esta disponible para PAYJOY, SUMASPAY y ADDI.",
       },
       { status: 400 }
     );

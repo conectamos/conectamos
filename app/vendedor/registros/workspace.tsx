@@ -540,7 +540,6 @@ function esPlataformaConsultaCedula(value: unknown) {
   return (
     esPlataformaSumasPay(value) ||
     esPlataformaAddi(value) ||
-    esPlataformaEsmioOpcion(value) ||
     esPlataformaAloCredit(value)
   );
 }

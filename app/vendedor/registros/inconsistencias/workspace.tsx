@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import {
-  DashboardSidebar,
-  type NavigationItem,
-} from "@/app/dashboard/_components/operations-dashboard";
+import Image from "next/image";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
-import LogoutButton from "@/app/dashboard/_components/logout-button";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import styles from "./inconsistencies.module.css";
 
 type SessionProps = {
   nombre: string;
@@ -44,7 +43,7 @@ type ResultadoRevision = {
 };
 
 type TipoPeriodo = "DIA" | "RANGO" | "MES";
-type ProveedorMensual = "PAYJOY" | "SUMASPAY" | "ESMIO" | "ADDI";
+type ProveedorMensual = "PAYJOY" | "SUMASPAY" | "ADDI";
 
 type ReporteRevision = {
   modo: "RANGO";
@@ -83,11 +82,10 @@ type RespuestaRango = {
 };
 
 type FiltroEstado = "REVISION" | "TODOS" | EstadoRevision;
-const PROVEEDORES_MENSUALES = ["PAYJOY", "SUMASPAY", "ESMIO", "ADDI"] as const;
+const PROVEEDORES_MENSUALES = ["PAYJOY", "SUMASPAY", "ADDI"] as const;
 const ETIQUETAS_PROVEEDOR: Record<ProveedorMensual, string> = {
   PAYJOY: "PAYJOY",
   SUMASPAY: "SUMASPAY",
-  ESMIO: "ESMIOPCION",
   ADDI: "ADDI",
 };
 
@@ -119,12 +117,13 @@ function formatMoney(value: number | null) {
     return "Sin dato";
   }
 
-  return `$ ${value.toLocaleString("es-CO")}`;
+  return `$ ${value.toLocaleString("es-CO", { maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(value: string) {
   try {
     return new Date(value).toLocaleString("es-CO", {
+      timeZone: "America/Bogota",
       dateStyle: "short",
       timeStyle: "short",
     });
@@ -147,16 +146,10 @@ function etiquetaEstado(estado: EstadoRevision) {
 }
 
 function claseEstado(estado: EstadoRevision) {
-  if (estado === "INCONSISTENTE") {
-    return "border-red-200 bg-red-50 text-red-700";
-  }
-  if (estado === "REVISAR") {
-    return "border-amber-200 bg-amber-50 text-amber-800";
-  }
-  if (estado === "SIN_VERIFICAR") {
-    return "border-slate-200 bg-slate-100 text-slate-700";
-  }
-  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (estado === "INCONSISTENTE") return styles.stateDanger;
+  if (estado === "REVISAR") return styles.stateWarning;
+  if (estado === "SIN_VERIFICAR") return styles.stateNeutral;
+  return styles.stateSuccess;
 }
 
 function resumirResultados(resultados: ResultadoRevision[]) {
@@ -205,6 +198,11 @@ export default function InconsistenciasCreditosWorkspace({
   const [error, setError] = useState("");
   const [filtro, setFiltro] = useState<FiltroEstado>("REVISION");
   const [marcandoRevision, setMarcandoRevision] = useState("");
+  const [pagina, setPagina] = useState(1);
+  const analisisEnCurso = useRef(false);
+  const revisionEnCurso = useRef(false);
+  const analisisAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => { analisisAbort.current?.abort(); }, []);
 
   const esAdministrador = ["ADMIN", "AUDITOR"].includes(
     String(session.rolNombre || "").trim().toUpperCase()
@@ -213,8 +211,9 @@ export default function InconsistenciasCreditosWorkspace({
     { href: "/dashboard", icon: "home", label: "Inicio" },
     { href: "/ventas", icon: "sales", label: "Ventas" },
     { href: "/inventario", icon: "inventory", label: "Inventario" },
-    { href: "/prestamos", icon: "loans", label: "Prestamos" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
     { href: "/caja", icon: "cash", label: "Caja" },
+    { href: "/cierre", icon: "reports", label: "CIERRE" },
     {
       href: "/dashboard/aprobaciones",
       icon: "approvals",
@@ -231,7 +230,7 @@ export default function InconsistenciasCreditosWorkspace({
     navigationItems.push({
       href: "/dashboard/sedes",
       icon: "settings",
-      label: "Configuracion",
+      label: "Configuración",
     });
   }
 
@@ -254,6 +253,10 @@ export default function InconsistenciasCreditosWorkspace({
   }, [filtro, reporte]);
 
   const analizar = async () => {
+    if (analisisEnCurso.current || revisionEnCurso.current) return;
+    analisisEnCurso.current = true;
+    const controller = new AbortController();
+    analisisAbort.current = controller;
     try {
       setCargando(true);
       setError("");
@@ -320,7 +323,7 @@ export default function InconsistenciasCreditosWorkspace({
 
           const response = await fetch(
             `/api/vendedor/registros/inconsistencias?${params.toString()}`,
-            { cache: "no-store" }
+            { cache: "no-store", signal: controller.signal }
           );
           const data = await response.json();
 
@@ -328,6 +331,18 @@ export default function InconsistenciasCreditosWorkspace({
             throw new Error(
               data.error ||
                 `No se pudo completar la revision de ${ETIQUETAS_PROVEEDOR[proveedor]}.`
+            );
+          }
+
+          if (
+            !Array.isArray(data?.resultados) ||
+            typeof data?.paginacion?.snapshot !== "string" ||
+            (data.paginacion.cursorSiguiente !== null &&
+              (!Number.isInteger(data.paginacion.cursorSiguiente) ||
+                data.paginacion.cursorSiguiente < 0))
+          ) {
+            throw new Error(
+              "La financiera devolvió una respuesta incompleta. Intenta consultar nuevamente."
             );
           }
 
@@ -356,19 +371,24 @@ export default function InconsistenciasCreditosWorkspace({
         resultados: resultadosCompletos,
       });
       setFiltro("REVISION");
+      setPagina(1);
     } catch (cause) {
+      if (controller.signal.aborted) return;
       setError(
         cause instanceof Error
           ? cause.message
           : "Error consultando las plataformas de credito."
       );
     } finally {
+      analisisEnCurso.current = false;
       setCargando(false);
       setProgreso("");
     }
   };
 
   const marcarComoRevisado = async (item: ResultadoRevision) => {
+    if (revisionEnCurso.current || analisisEnCurso.current || item.estado === "COINCIDE" || item.estado === "REVISADO") return;
+    revisionEnCurso.current = true;
     const key = `${item.registroId}:${item.proveedor}`;
 
     try {
@@ -436,11 +456,13 @@ export default function InconsistenciasCreditosWorkspace({
     } catch {
       setError("No se pudo guardar la revision.");
     } finally {
+      revisionEnCurso.current = false;
       setMarcandoRevision("");
     }
   };
 
   const limpiarInforme = () => {
+    setPagina(1);
     setReporte(null);
     setError("");
   };
@@ -461,508 +483,48 @@ export default function InconsistenciasCreditosWorkspace({
     (tipoPeriodo === "RANGO" && (!fechaDesde || !fechaHasta)) ||
     (tipoPeriodo === "MES" && !mes);
 
-  return (
-    <div className="min-h-screen bg-[#f5f6f8] font-[Arial,Helvetica,sans-serif] text-slate-950">
-      <DashboardSidebar
-        activeHref="/ventas"
-        coverageLabel={esAdministrador ? "Todas las sedes" : session.sedeNombre}
-        items={navigationItems}
-      />
+  const paginasTotales = Math.max(1, Math.ceil(resultadosVisibles.length / 10));
+  const paginaActual = Math.min(pagina, paginasTotales);
+  const filas = resultadosVisibles.slice((paginaActual - 1) * 10, paginaActual * 10);
+  const paginas = [...new Set([1, paginaActual - 1, paginaActual, paginaActual + 1, paginasTotales])].filter(item => item > 0 && item <= paginasTotales).sort((a,b) => a-b);
+  const secundarios = navigationItems.filter(item => ["/cierre", "/dashboard/aprobaciones", "/dashboard/reportes", "/dashboard/analitico", "/dashboard/sedes"].includes(item.href));
+  const principales = navigationItems.filter(item => !secundarios.includes(item));
+  const enlace = (item: NavigationItem) => <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === "/ventas" ? styles.navActive : ""}`} aria-current={item.href === "/ventas" ? "page" : undefined}><DashboardIcon name={item.icon} /><span>{item.label}</span></Link>;
+  const indicadores = [
+    { label: "Créditos revisados", value: reporte?.resumen.creditosAnalizados, icon: "document" as const },
+    { label: "Coinciden", value: reporte?.resumen.coincidencias, icon: "shield" as const, tone: "positive" },
+    { label: "Inconsistentes", value: reporte?.resumen.inconsistencias, icon: "warning" as const, tone: "negative" },
+    { label: "Revisar duplicidad", value: reporte?.resumen.revisar, icon: "search" as const, tone: "warning" },
+    { label: "Sin verificar", value: reporte?.resumen.sinVerificar, icon: "clock" as const },
+    { label: "Revisados", value: reporte?.resumen.revisados, icon: "approvals" as const, tone: "positive" },
+  ];
 
-      <main className="min-w-0 lg:pl-[252px]">
-        <div className="mx-auto w-full max-w-[1700px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-          <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <nav
-                className="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-500"
-                aria-label="Ruta de navegacion"
-              >
-                <Link href="/vendedor/registros" className="hover:text-[#e30613]">
-                  Registrar venta
-                </Link>
-                <DashboardIcon name="arrow" className="h-3.5 w-3.5" />
-                <span className="text-[#e30613]">Inconsistencias</span>
-              </nav>
-              <h1 className="text-3xl font-black tracking-tight sm:text-[34px]">
-                Inconsistencias de creditos
-              </h1>
-              <p className="mt-2 max-w-3xl text-[15px] leading-6 text-slate-500">
-                Elige cualquier dia, rango o mes y las financieras que deseas
-                comparar.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Link
-                href="/vendedor/registros"
-                className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 text-sm font-bold text-slate-800 shadow-sm transition hover:border-red-200 hover:text-[#e30613]"
-              >
-                <DashboardIcon name="arrow" className="h-4 w-4 rotate-180" />
-                Volver al registro
-              </Link>
-              <div className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700">
-                  <DashboardIcon name="user" className="h-5 w-5" />
-                </span>
-                <span className="hidden sm:block">
-                  <span className="block max-w-52 truncate text-sm font-bold">
-                    {session.perfilNombre || session.nombre}
-                  </span>
-                  <span className="block text-xs text-slate-500">
-                    {session.perfilTipoLabel}
-                  </span>
-                </span>
-              </div>
-              <LogoutButton variant="light" className="min-h-12 rounded-xl" />
-            </div>
-          </header>
-
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(280px,1fr)_190px_minmax(320px,1fr)_auto] xl:items-end">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#e30613]">
-                  Revision en linea
-                </p>
-                <h2 className="mt-2 text-xl font-black">
-                  Selecciona el periodo y las financieras
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Solo se valida el valor del credito; no se comparan cuota, plazo, inicial ni frecuencia.
-                  Este informe no modifica las ventas.
-                </p>
-              </div>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Tipo de periodo
-                <select
-                  value={tipoPeriodo}
-                  disabled={cargando}
-                  onChange={(event) => {
-                    setTipoPeriodo(event.target.value as TipoPeriodo);
-                    limpiarInforme();
-                  }}
-                  className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                >
-                  <option value="DIA">Dia</option>
-                  <option value="RANGO">Rango</option>
-                  <option value="MES">Mes</option>
-                </select>
-              </label>
-
-              {tipoPeriodo === "MES" ? (
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Mes de registros
-                  <input
-                    type="month"
-                    value={mes}
-                    max={mesActual}
-                    disabled={cargando}
-                    onChange={(event) => {
-                      setMes(event.target.value);
-                      limpiarInforme();
-                    }}
-                    className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                  />
-                </label>
-              ) : tipoPeriodo === "DIA" ? (
-                <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                  Fecha de registros
-                  <input
-                    type="date"
-                    value={fechaDia}
-                    max={fechaHoy}
-                    disabled={cargando}
-                    onChange={(event) => {
-                      setFechaDia(event.target.value);
-                      limpiarInforme();
-                    }}
-                    className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                  />
-                </label>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                    Desde
-                    <input
-                      type="date"
-                      value={fechaDesde}
-                      max={fechaHoy}
-                      disabled={cargando}
-                      onChange={(event) => {
-                        setFechaDesde(event.target.value);
-                        limpiarInforme();
-                      }}
-                      className="min-h-12 min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                    Hasta
-                    <input
-                      type="date"
-                      value={fechaHasta}
-                      max={fechaHoy}
-                      disabled={cargando}
-                      onChange={(event) => {
-                        setFechaHasta(event.target.value);
-                        limpiarInforme();
-                      }}
-                      className="min-h-12 min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                    />
-                  </label>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => void analizar()}
-                disabled={
-                  cargando ||
-                  periodoIncompleto ||
-                  proveedoresSeleccionados.length === 0
-                }
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#e30613] px-6 text-sm font-black uppercase tracking-[0.06em] text-white shadow-sm transition hover:bg-[#c90511] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <DashboardIcon
-                  name={cargando ? "reports" : "search"}
-                  className={`h-5 w-5 ${cargando ? "animate-pulse" : ""}`}
-                />
-                {cargando ? "Consultando..." : "Analizar creditos"}
-              </button>
-            </div>
-
-            <div className="mt-6 border-t border-slate-200 pt-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-black text-slate-900">
-                    Financieras
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Puedes elegir una, varias o las cuatro.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 text-xs font-bold">
-                  <button
-                    type="button"
-                    disabled={cargando}
-                    onClick={() => {
-                      setProveedoresSeleccionados([
-                        ...PROVEEDORES_MENSUALES,
-                      ]);
-                      limpiarInforme();
-                    }}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-slate-700 transition hover:border-red-200 hover:text-[#e30613] disabled:opacity-50"
-                  >
-                    Seleccionar todas
-                  </button>
-                  <button
-                    type="button"
-                    disabled={cargando}
-                    onClick={() => {
-                      setProveedoresSeleccionados([]);
-                      limpiarInforme();
-                    }}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-slate-700 transition hover:border-red-200 hover:text-[#e30613] disabled:opacity-50"
-                  >
-                    Limpiar
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {PROVEEDORES_MENSUALES.map((proveedor) => {
-                  const seleccionado =
-                    proveedoresSeleccionados.includes(proveedor);
-
-                  return (
-                    <label
-                      key={proveedor}
-                      className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-black transition ${
-                        seleccionado
-                          ? "border-red-200 bg-red-50 text-[#c90511]"
-                          : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
-                      } ${cargando ? "cursor-not-allowed opacity-60" : ""}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={seleccionado}
-                        disabled={cargando}
-                        onChange={() => alternarProveedor(proveedor)}
-                        className="h-4 w-4 rounded border-slate-300 accent-[#e30613]"
-                      />
-                      {ETIQUETAS_PROVEEDOR[proveedor]}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-
-          {error && (
-            <div
-              role="alert"
-              className="mt-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
-            >
-              <DashboardIcon name="warning" className="mt-0.5 h-5 w-5 shrink-0" />
-              {error}
-            </div>
-          )}
-
-          {cargando && (
-            <div
-              role="status"
-              className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-sm"
-            >
-              <div className="flex items-center gap-3">
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-[#e30613]" />
-                <div>
-                  <p className="text-sm font-bold text-slate-900">
-                    {progreso || "Comparando registros con las plataformas"}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Se recorreran todos los bloques del periodo. El tiempo
-                    depende del rango y de la respuesta de cada financiera.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {reporte && !cargando && (
-            <>
-              <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-                {[
-                  {
-                    label: "Creditos revisados",
-                    value: reporte.resumen.creditosAnalizados,
-                    className: "text-slate-950",
-                  },
-                  {
-                    label: "Coinciden",
-                    value: reporte.resumen.coincidencias,
-                    className: "text-emerald-600",
-                  },
-                  {
-                    label: "Inconsistentes",
-                    value: reporte.resumen.inconsistencias,
-                    className: "text-[#e30613]",
-                  },
-                  {
-                    label: "Revisar duplicidad",
-                    value: reporte.resumen.revisar,
-                    className: "text-amber-700",
-                  },
-                  {
-                    label: "Sin verificar",
-                    value: reporte.resumen.sinVerificar,
-                    className: "text-slate-600",
-                  },
-                  {
-                    label: "Revisados",
-                    value: reporte.resumen.revisados,
-                    className: "text-emerald-600",
-                  },
-                ].map((item) => (
-                  <article
-                    key={item.label}
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]"
-                  >
-                    <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
-                      {item.label}
-                    </p>
-                    <p className={`mt-2 text-3xl font-black ${item.className}`}>
-                      {item.value}
-                    </p>
-                  </article>
-                ))}
-              </section>
-
-              <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
-                <span className="font-black text-slate-900">
-                  Consulta ejecutada:
-                </span>{" "}
-                {formatDateKey(reporte.desde)}
-                {reporte.desde !== reporte.hasta
-                  ? ` al ${formatDateKey(reporte.hasta)}`
-                  : ""}{" "}
-                ·{" "}
-                {reporte.proveedores
-                  .map((proveedor) => ETIQUETAS_PROVEEDOR[proveedor])
-                  .join(", ")}
-                <div className="mt-1 text-xs text-slate-500">
-                  Comparacion exclusiva del valor del credito autorizado.
-                </div>
-              </div>
-
-              <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-                <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="text-xl font-black">Listado de revision</h2>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {resultadosVisibles.length} resultados visibles
-                    </p>
-                  </div>
-                  <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                    Mostrar
-                    <select
-                      value={filtro}
-                      onChange={(event) =>
-                        setFiltro(event.target.value as FiltroEstado)
-                      }
-                      className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 outline-none focus:border-[#e30613] focus:ring-3 focus:ring-red-100"
-                    >
-                      <option value="REVISION">Necesitan revision</option>
-                      <option value="INCONSISTENTE">Inconsistentes</option>
-                      <option value="REVISAR">Duplicidad por revisar</option>
-                      <option value="SIN_VERIFICAR">Sin verificar</option>
-                      <option value="REVISADO">Revisados</option>
-                      <option value="COINCIDE">Coinciden</option>
-                      <option value="TODOS">Todos</option>
-                    </select>
-                  </label>
-                </div>
-
-                {resultadosVisibles.length === 0 ? (
-                  <div className="px-6 py-14 text-center">
-                    <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-                      <DashboardIcon name="approvals" className="h-6 w-6" />
-                    </span>
-                    <h3 className="mt-4 text-lg font-black">
-                      No hay resultados en este filtro
-                    </h3>
-                    <p className="mt-2 text-sm text-slate-500">
-                      Si revisaste las alertas, puedes cambiar el filtro para ver
-                      las coincidencias.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-[1240px] w-full text-left">
-                      <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
-                        <tr>
-                          <th className="px-5 py-3.5">Registro</th>
-                          <th className="px-5 py-3.5">Cliente e identificador</th>
-                          <th className="px-5 py-3.5">Financiera</th>
-                          <th className="px-5 py-3.5 text-right">Conectamos</th>
-                          <th className="px-5 py-3.5 text-right">Plataforma</th>
-                          <th className="px-5 py-3.5">Resultado</th>
-                          <th className="px-5 py-3.5 text-right">Accion</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {resultadosVisibles.map((item, index) => (
-                          <tr
-                            key={`${item.registroId}-${item.proveedor}-${index}`}
-                            className="align-top transition hover:bg-slate-50/70"
-                          >
-                            <td className="px-5 py-4">
-                              <p className="font-black text-slate-900">
-                                #{item.registroId}
-                              </p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                {formatDate(item.createdAt)}
-                              </p>
-                              <p className="mt-1 max-w-40 text-xs text-slate-500">
-                                {item.puntoVenta || "Sin punto"}
-                              </p>
-                            </td>
-                            <td className="px-5 py-4">
-                              <p className="max-w-56 font-bold text-slate-900">
-                                {item.clienteNombre}
-                              </p>
-                              <p className="mt-1 font-mono text-xs text-slate-600">
-                                CC {item.documentoNumero}
-                              </p>
-                              <p className="mt-1 font-mono text-xs text-slate-500">
-                                IMEI {item.serialImei || "Sin dato"}
-                              </p>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-800">
-                                {item.proveedor}
-                              </span>
-                              <p className="mt-2 text-xs text-slate-500">
-                                Consulta por {item.identificadorTipo.toLowerCase()}
-                              </p>
-                              {item.ordenId && (
-                                <p className="mt-1 max-w-44 truncate text-xs text-slate-500">
-                                  Orden {item.ordenId}
-                                </p>
-                              )}
-                            </td>
-                            <td className="px-5 py-4 text-right font-black text-slate-900">
-                              {formatMoney(item.creditoRegistrado)}
-                            </td>
-                            <td className="px-5 py-4 text-right">
-                              <p className="font-black text-slate-900">
-                                {formatMoney(item.creditoPlataforma)}
-                              </p>
-                              {item.fechaCreditoPlataforma && (
-                                <p className="mt-1 text-xs text-slate-500">
-                                  {item.fechaCreditoPlataforma}
-                                </p>
-                              )}
-                            </td>
-                            <td className="max-w-sm px-5 py-4">
-                              <span
-                                className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${claseEstado(item.estado)}`}
-                              >
-                                {etiquetaEstado(item.estado)}
-                              </span>
-                              {item.razones.length > 0 && (
-                                <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
-                                  {item.razones.map((razon) => (
-                                    <li key={razon}>• {razon}</li>
-                                  ))}
-                                </ul>
-                              )}
-                            </td>
-                            <td className="px-5 py-4 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                {item.estado !== "COINCIDE" &&
-                                  item.estado !== "REVISADO" && (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void marcarComoRevisado(item)
-                                      }
-                                      disabled={
-                                        marcandoRevision ===
-                                        `${item.registroId}:${item.proveedor}`
-                                      }
-                                      aria-label={`Marcar como revisada la alerta de ${item.proveedor} del registro ${item.registroId}`}
-                                      title="Marcar como revisado"
-                                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                      {marcandoRevision ===
-                                      `${item.registroId}:${item.proveedor}` ? (
-                                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-emerald-700" />
-                                      ) : (
-                                        <DashboardIcon
-                                          name="approvals"
-                                          className="h-5 w-5"
-                                        />
-                                      )}
-                                    </button>
-                                  )}
-                                <Link
-                                  href={`/vendedor/registros?editar=${item.registroId}`}
-                                  className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.06em] text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#e30613]"
-                                >
-                                  Ver registro
-                                </Link>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            </>
-          )}
+  return <div className={styles.page}>
+    <header className={styles.topbar}>
+      <Link href="/dashboard" className={styles.brand}><Image src="/branding/conectamos-logo.png" alt="" width={44} height={44} priority /><strong>CONECTAMOS</strong></Link>
+      <nav className={styles.navigation} aria-label="Navegación principal">{principales.map(enlace)}<div className={styles.extraNavigation}>{secundarios.map(enlace)}</div><details className={styles.moreNavigation} onKeyDown={event => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}><summary>Más<DashboardIcon name="chevron" /></summary><div>{secundarios.map(enlace)}</div></details></nav>
+      <SalesProfile name={session.perfilNombre || session.nombre} role={session.perfilTipoLabel || session.rolNombre} />
+    </header>
+    <main className={styles.main}>
+      <div className={styles.heading}><div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/vendedor/registros">Registrar venta</Link><DashboardIcon name="arrow" /><span>Inconsistencias</span></nav><h1>Inconsistencias de créditos</h1><p>Compara el crédito autorizado con las plataformas financieras.</p></div><Link href="/vendedor/registros" className={styles.button}><DashboardIcon name="arrow" className={styles.backIcon} />Volver al registro</Link></div>
+      <section className={styles.summary} aria-label="Resumen de revisión" aria-busy={cargando}>{indicadores.map(item => <article className={styles.metric} key={item.label} data-tone={item.tone}><span className={styles.metricIcon}><DashboardIcon name={item.icon} /></span><div><p>{item.label}</p><strong>{item.value === undefined ? "—" : item.value.toLocaleString("es-CO", { maximumFractionDigits: 2 })}</strong></div></article>)}</section>
+      <section className={styles.panel} aria-labelledby="review-filters-title">
+        <div className={styles.panelHeader}><div className={styles.sectionTitle}><span className={styles.sectionIcon}><DashboardIcon name="calendar" /></span><div><h2 id="review-filters-title">Periodo y financieras</h2><p>{esAdministrador ? "Todas las sedes" : session.sedeNombre}</p></div></div><details className={styles.help}><summary><DashboardIcon name="document" />Ver reglas<DashboardIcon name="chevron" /></summary><p>Solo se valida el valor del credito; no se comparan cuota, plazo, inicial ni frecuencia. Este informe no modifica las ventas. La consulta recorre todos los bloques del periodo autorizado.</p></details></div>
+        <div className={styles.filters}>
+          <label>Tipo de periodo<select value={tipoPeriodo} disabled={cargando || Boolean(marcandoRevision)} onChange={event => { setTipoPeriodo(event.target.value as TipoPeriodo); limpiarInforme(); }}><option value="DIA">Día</option><option value="RANGO">Rango</option><option value="MES">Mes</option></select></label>
+          {tipoPeriodo === "MES" ? <label>Mes de registros<input type="month" value={mes} max={mesActual} disabled={cargando || Boolean(marcandoRevision)} onChange={event => { setMes(event.target.value); limpiarInforme(); }} /></label> : tipoPeriodo === "DIA" ? <label>Fecha de registros<input type="date" value={fechaDia} max={fechaHoy} disabled={cargando || Boolean(marcandoRevision)} onChange={event => { setFechaDia(event.target.value); limpiarInforme(); }} /></label> : <div className={styles.dateRange}><label>Desde<input type="date" value={fechaDesde} max={fechaHoy} disabled={cargando || Boolean(marcandoRevision)} onChange={event => { setFechaDesde(event.target.value); limpiarInforme(); }} /></label><label>Hasta<input type="date" value={fechaHasta} max={fechaHoy} disabled={cargando || Boolean(marcandoRevision)} onChange={event => { setFechaHasta(event.target.value); limpiarInforme(); }} /></label></div>}
+          <button type="button" className={`${styles.button} ${styles.primary}`} onClick={() => void analizar()} disabled={cargando || Boolean(marcandoRevision) || periodoIncompleto || proveedoresSeleccionados.length === 0}><DashboardIcon name={cargando ? "refresh" : "search"} />{cargando ? "Consultando…" : "Analizar créditos"}</button>
         </div>
-      </main>
-    </div>
-  );
+        <div className={styles.providers}><div className={styles.providersHeading}><div><strong>Financieras</strong><span>{PROVEEDORES_MENSUALES.length} disponibles para consultar</span></div><div><button type="button" disabled={cargando || Boolean(marcandoRevision)} onClick={() => { setProveedoresSeleccionados([...PROVEEDORES_MENSUALES]); limpiarInforme(); }}>Seleccionar todas</button><button type="button" disabled={cargando || Boolean(marcandoRevision)} onClick={() => { setProveedoresSeleccionados([]); limpiarInforme(); }}>Limpiar</button></div></div><div className={styles.providerOptions}>{PROVEEDORES_MENSUALES.map(proveedor => <label key={proveedor} className={proveedoresSeleccionados.includes(proveedor) ? styles.providerSelected : undefined}><input type="checkbox" checked={proveedoresSeleccionados.includes(proveedor)} disabled={cargando || Boolean(marcandoRevision)} onChange={() => alternarProveedor(proveedor)} /><span>{ETIQUETAS_PROVEEDOR[proveedor]}</span></label>)}</div></div>
+      </section>
+      {error && <div className={styles.error} role="alert"><DashboardIcon name="warning" /><span>{error}</span></div>}
+      {cargando && <div className={styles.progress} role="status"><DashboardIcon name="refresh" /><div><strong>{progreso || "Comparando registros con las plataformas"}</strong><span>Procesando todos los bloques del periodo seleccionado.</span></div></div>}
+      <section className={styles.panel} aria-labelledby="review-list-title">
+        <div className={styles.panelHeader}><div className={styles.sectionTitle}><span className={styles.sectionIcon}><DashboardIcon name="approvals" /></span><div><h2 id="review-list-title">Listado de revisión</h2><p>{reporte ? `${resultadosVisibles.length.toLocaleString("es-CO")} resultados · ${formatDateKey(reporte.desde)}${reporte.desde !== reporte.hasta ? ` al ${formatDateKey(reporte.hasta)}` : ""}` : "Consulta un periodo para ver los resultados"}</p></div></div><label className={styles.stateFilter}>Mostrar<select value={filtro} disabled={!reporte || cargando} onChange={event => { setFiltro(event.target.value as FiltroEstado); setPagina(1); }}><option value="REVISION">Necesitan revisión</option><option value="INCONSISTENTE">Inconsistentes</option><option value="REVISAR">Duplicidad por revisar</option><option value="SIN_VERIFICAR">Sin verificar</option><option value="REVISADO">Revisados</option><option value="COINCIDE">Coinciden</option><option value="TODOS">Todos</option></select></label></div>
+        {reporte && !cargando ? <><div className={styles.reportScope}><DashboardIcon name="calendar" /><span>Consulta ejecutada: {formatDateKey(reporte.desde)}{reporte.desde !== reporte.hasta ? ` al ${formatDateKey(reporte.hasta)}` : ""} · {reporte.proveedores.map(proveedor => ETIQUETAS_PROVEEDOR[proveedor]).join(", ")}</span></div>{filas.length > 0 ? <div className={styles.tableScroll} tabIndex={0} aria-label="Resultados de revisión"><table className={styles.table}><thead><tr><th>Registro</th><th>Cliente e identificador</th><th>Financiera</th><th>Conectamos</th><th>Plataforma</th><th>Resultado</th><th>Acción</th></tr></thead><tbody>{filas.map((item,index) => <tr key={`${item.registroId}-${item.proveedor}-${index}`}>
+          <td><strong>#{item.registroId}</strong><p>{formatDate(item.createdAt)}</p><p>{item.puntoVenta || "Sin punto"}</p></td><td><strong>{item.clienteNombre}</strong><p className={styles.identifier}>CC {item.documentoNumero}</p><p className={styles.identifier}>IMEI {item.serialImei || "Sin dato"}</p></td><td><span className={styles.providerBadge}>{item.proveedor}</span><p>Consulta por {item.identificadorTipo.toLowerCase()}</p>{item.ordenId && <p>Orden {item.ordenId}</p>}</td><td className={styles.money}>{formatMoney(item.creditoRegistrado)}</td><td className={styles.money}>{formatMoney(item.creditoPlataforma)}{item.fechaCreditoPlataforma && <p>{item.fechaCreditoPlataforma}</p>}</td><td><span className={`${styles.state} ${claseEstado(item.estado)}`}>{etiquetaEstado(item.estado)}</span>{item.razones.length > 0 && <ul className={styles.reasons}>{item.razones.map((razon,i) => <li key={`${i}-${razon}`}>{razon}</li>)}</ul>}</td><td><div className={styles.rowActions}>{item.estado !== "COINCIDE" && item.estado !== "REVISADO" && <button type="button" disabled={Boolean(marcandoRevision)} aria-label={`Marcar como revisada la alerta de ${item.proveedor} del registro ${item.registroId}`} onClick={() => void marcarComoRevisado(item)}><DashboardIcon name="approvals" />{marcandoRevision === `${item.registroId}:${item.proveedor}` ? "Guardando…" : "Revisado"}</button>}<Link href={`/vendedor/registros?editar=${item.registroId}`}>Ver registro<DashboardIcon name="arrow" /></Link></div></td>
+        </tr>)}</tbody></table></div> : <div className={styles.empty}><DashboardIcon name="approvals" /><strong>No hay resultados en este filtro</strong><p>Cambia el filtro para consultar el resto de resultados del periodo.</p></div>}<div className={styles.pagination}><span>10 por página · {resultadosVisibles.length.toLocaleString("es-CO")} resultados</span><nav aria-label="Paginación de resultados"><button type="button" aria-label="Anterior" disabled={paginaActual <= 1} onClick={() => setPagina(paginaActual - 1)}><DashboardIcon name="chevron" className={styles.previousIcon} /><span>Anterior</span></button>{paginas.map((numero,index) => <span key={numero} className={styles.pageSlot}>{index > 0 && numero - paginas[index-1] > 1 && <span>…</span>}<button type="button" aria-label={`Página ${numero}`} aria-current={paginaActual === numero ? "page" : undefined} onClick={() => setPagina(numero)}>{numero}</button></span>)}<button type="button" aria-label="Siguiente" disabled={paginaActual >= paginasTotales} onClick={() => setPagina(paginaActual + 1)}><span>Siguiente</span><DashboardIcon name="chevron" className={styles.nextIcon} /></button></nav></div></> : <div className={styles.empty}><DashboardIcon name={cargando ? "refresh" : "search"} /><strong>{cargando ? "Revisión en curso" : "Prepara una revisión de créditos"}</strong><p>{cargando ? "Los resultados aparecerán cuando finalicen todos los bloques." : "Selecciona el periodo y las financieras; luego pulsa Analizar créditos."}</p></div>}
+      </section>
+    </main>
+  </div>;
 }

@@ -112,7 +112,7 @@ function callsNamed(node, name) {
   );
 }
 
-test("la revision por periodo incluye exactamente las cuatro financieras solicitadas", () => {
+test("la revision por periodo incluye únicamente las tres financieras activas", () => {
   const parsed = parseSource(
     "app/api/vendedor/registros/inconsistencias/route.ts"
   );
@@ -122,7 +122,7 @@ test("la revision por periodo incluye exactamente las cuatro financieras solicit
     (node) => ts.isStringLiteralLike(node)
   ).map((node) => node.text);
 
-  assert.deepEqual(values, ["PAYJOY", "SUMASPAY", "ESMIO", "ADDI"]);
+  assert.deepEqual(values, ["PAYJOY", "SUMASPAY", "ADDI"]);
 });
 
 test("la API acepta desde, hasta y una financiera por solicitud", () => {

@@ -11,6 +11,7 @@ import {
   desactivarDocumentoListaNegra,
   guardarDocumentoListaNegra,
   listarDocumentosListaNegra,
+  listarDocumentosListaNegraPaginado,
 } from "@/lib/vendor-blacklist";
 
 async function requireVendor() {
@@ -55,6 +56,14 @@ export async function GET(req: NextRequest) {
     }
 
     const url = new URL(req.url);
+    if (url.searchParams.get("paginated") === "1") {
+      const data = await listarDocumentosListaNegraPaginado({
+        search: url.searchParams.get("search") || "",
+        page: Number(url.searchParams.get("page") || 1),
+        pageSize: Number(url.searchParams.get("pageSize") || 10),
+      });
+      return NextResponse.json({ ok: true, ...data });
+    }
     const limit = Number(url.searchParams.get("limit") || 80);
     const registros = await listarDocumentosListaNegra(limit);
 
