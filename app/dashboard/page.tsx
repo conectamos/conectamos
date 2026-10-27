@@ -2,7 +2,6 @@ import Link from "next/link";
 import BodegaDashboard from "./_components/bodega-dashboard";
 import { getBodegaDashboard, type BodegaDashboardData } from "@/lib/bodega-dashboard";
 import { getSessionUser } from "@/lib/auth";
-import { puedeConsultarExtensionesPayJoy } from "@/lib/payjoy-extensions-access";
 import prisma from "@/lib/prisma";
 import {
   esPerfilApoyoOperativo,
@@ -720,7 +719,6 @@ export default async function DashboardPage({
   }
 
   const esAdmin = esRolAdministrativo(session.rolNombre);
-  const puedeVerExtensionesPayJoy = puedeConsultarExtensionesPayJoy(session);
   const esFacturador = esPerfilFacturador(session.perfilTipo);
   const esPerfilVentas = esPerfilRegistroVenta(session.perfilTipo);
   const esApoyoOperativo = esPerfilApoyoOperativo(session.perfilTipo);
@@ -956,7 +954,6 @@ export default async function DashboardPage({
           puedeVerEquality={puedeVerEquality}
           puedeVerFacturacion={puedeVerFacturacion}
           puedeVerReporteSiigo={puedeVerReporteSiigo}
-          puedeVerExtensionesPayJoy={puedeVerExtensionesPayJoy}
           rolUsuario={rolUsuario}
           sedeId={sedeSeleccionada?.id ?? null}
           sedes={sedes}
@@ -996,7 +993,6 @@ export default async function DashboardPage({
           coverageLabel={session.sedeNombre ?? "Sin sede"}
           earnings={resumenGananciasVendedor}
           perfilNombre={session.perfilNombre}
-          puedeVerExtensionesPayJoy={puedeVerExtensionesPayJoy}
           role={esApoyoOperativo ? "APOYO_OPERATIVO" : "VENDEDOR"}
           roleLabel={rolUsuario}
           usuario={nombreUsuario}
@@ -1195,7 +1191,6 @@ export default async function DashboardPage({
       actions: [
         { href: "/dashboard/payjoy", label: "Cartera PayJoy", tone: "primary" },
         { href: "/dashboard/payjoy/40-60", label: "40/60", tone: "secondary" },
-        ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/extensiones", label: "Extensiones PayJoy", tone: "secondary" } satisfies ModuleAction] : []),
       ],
       tone: "slate",
     },

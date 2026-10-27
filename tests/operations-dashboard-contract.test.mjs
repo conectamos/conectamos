@@ -38,7 +38,6 @@ const utilsOriginal = loadTypeScript("lib/ventas-utils.ts", {
 const periodoActual = utilsOriginal.getBogotaMonthRangeFromInput("2026-10");
 const utils = { ...utilsOriginal, getCurrentBogotaMonthRange: () => periodoActual };
 const access = loadTypeScript("lib/access-control.ts");
-const extensionsAccess = loadTypeScript("lib/payjoy-extensions-access.ts", { "@/lib/access-control": access });
 const sedesHelpers = loadTypeScript("lib/sedes.ts");
 const sedes = [
   { id: 4, nombre: "BODEGA PRINCIPAL" },
@@ -86,7 +85,6 @@ function probePage(session, failures = []) {
     "@/lib/auth": { getSessionUser: record("session", session) },
     "@/lib/prisma": { __esModule: true, default: { sede: { findMany: record("sedes", sedes) } } },
     "@/lib/access-control": access,
-    "@/lib/payjoy-extensions-access": extensionsAccess,
     "@/lib/ventas-utils": utils,
     "@/lib/dashboard-commercial-summary": { getMonthlyCommercialSummary: record("commercial", (args) => comercialFixture(args.period)) },
     "@/lib/dashboard-financial-summary": { getDashboardCashSummary: record("financial", financialFixture) },

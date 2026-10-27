@@ -842,7 +842,6 @@ export default function OperationsDashboard({
   puedeVerEquality,
   puedeVerFacturacion,
   puedeVerReporteSiigo,
-  puedeVerExtensionesPayJoy = false,
   rolUsuario,
   sedeId,
   sedes,
@@ -867,7 +866,6 @@ export default function OperationsDashboard({
   puedeVerEquality: boolean;
   puedeVerFacturacion: boolean;
   puedeVerReporteSiigo: boolean;
-  puedeVerExtensionesPayJoy?: boolean;
   rolUsuario: string;
   sedeId: number | null;
   sedes: SedeOption[];
@@ -917,7 +915,6 @@ export default function OperationsDashboard({
         { href: "/vendedor/registros", label: "Registrar venta" },
         { href: "/vendedor/lista-negra", label: "Lista negra" },
         { href: "/vendedor/registros/buscar", label: "Buscar registro" },
-        ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/extensiones", label: "Extensiones PayJoy", description: "Consulta opciones y gestiona extensiones de dispositivos." }] : []),
         { href: "/ventas/aprobaciones", label: "Aprobar ventas" },
         ...(!esAdmin ? [{ href: "/vendedor/lista-precios", label: "Lista de precios" }] : []),
         ...(esAdmin || esSupervisor
