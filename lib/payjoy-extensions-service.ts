@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import prisma from "@/lib/prisma";
 import type { PayJoyExtensionOperation, Prisma } from "@/app/generated/prisma/client";
 import type { getSessionUser } from "@/lib/auth";
@@ -27,7 +28,7 @@ const errors: Record<string, string> = {
   SERVICE_UNAVAILABLE: "PayJoy no tiene habilitadas las extensiones para este dispositivo.",
   REJECTED: "PayJoy rechazó la solicitud de extensión.",
   INTERRUPTED: "No se pudo confirmar el resultado. Revisa la gestión en PayJoy antes de realizar otra extensión.",
-  OPTIONS_CHANGED: "Las opciones de PayJoy cambiaron. Consulta nuevamente antes de confirmar.",
+  OPTIONS_CHANGED: "Las opciones de PayJoy cambiaron. No se envió la extensión. Consulta nuevamente antes de confirmar.",
   EXPIRED: "Esta consulta venció. Consulta las opciones nuevamente.",
   DEVICE_BUSY: "Este dispositivo tiene una gestión en curso o pendiente de verificación.",
   FORBIDDEN_DEVICE: "El dispositivo no está disponible dentro de tus registros autorizados.",
@@ -285,7 +286,9 @@ export async function confirmarExtensionPayJoy(session: Session, input: Record<s
   try {
     const fresh = await refreshPayJoyExtensionOptions(row.deviceTag, row.providerRequestId);
     const current = fresh.find((item) => item.id === option.id);
-    if (!current?.available || JSON.stringify(current) !== JSON.stringify(option)) throw new PayJoyExtensionsError("OPTIONS_CHANGED", 409);
+    // JSONB may reorder object properties. Compare every value without treating
+    // that storage detail as a change to the terms reviewed by the advisor.
+    if (!current?.available || !isDeepStrictEqual(current, option)) throw new PayJoyExtensionsError("OPTIONS_CHANGED", 409);
     dispatched = true;
     const result = await selectPayJoyExtension(row.deviceTag, row.providerRequestId, row.providerIdempotencyKey, {
       extensionType: option.extensionType, extensionTime: option.extensionTime, reason: input.reason,

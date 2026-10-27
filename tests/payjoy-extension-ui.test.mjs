@@ -202,3 +202,21 @@ test("una asociación contradictoria requiere revisión administrativa y no ofre
   assert.equal(elements(tree).some(node => node.type === "button" && ["Consultar nuevamente", "Revisar gestión", "Confirmar extensión"].includes(textOf(node).trim())), false);
   assert.equal(ui.calls.filter(item => item.method === "POST").length, 0);
 });
+
+test("una selección bloqueada antes del envío no se presenta como gestionada y los estados ambiguos conservan su bloqueo", async () => {
+  for (const status of ["ERROR", "INDETERMINADA"]) {
+    const operation = { ...ready, status, selectedOption: option, result: null,
+      errorCode: status === "ERROR" ? "OPTIONS_CHANGED" : "INTERRUPTED",
+      errorMessage: status === "ERROR" ? "Las opciones de PayJoy cambiaron. Consulta nuevamente antes de confirmar." : "No se pudo confirmar el resultado." };
+    const ui = probe({ initial: { operation }, fetchImpl: async () => response({ operations: [operation], canManage: true }) });
+    const tree = await ui.mount();
+    assert.match(textOf(tree), /Opción seleccionada/);
+    assert.doesNotMatch(textOf(tree), /Opción gestionada|PayJoy confirmó la extensión/);
+    assert.equal(elements(tree).some(node => node.type === "button" && ["Revisar gestión", "Confirmar extensión"].includes(textOf(node).trim())), false);
+    assert.equal(ui.calls.filter(item => item.method === "POST").length, 0);
+    if (status === "INDETERMINADA") {
+      assert.match(textOf(tree), /No repitas la extensión/);
+      assert.equal(elements(tree).some(node => node.type === "button" && textOf(node).trim() === "Consultar nuevamente"), false);
+    }
+  }
+});

@@ -389,14 +389,57 @@ test("confirmaciones concurrentes con opción o motivo distintos devuelven 409 a
   }
 });
 
-test("revalida las opciones actuales y no ejecuta una opción cuyo detalle cambió", async () => {
-  const f = setup({ provider: { refreshPayJoyExtensionOptions: async () => [{ ...option, details: { extensionsRemaining: 0 } }] } });
-  const operation = await f.prepararExtensionPayJoy(vendor, prepare());
-  const result = await f.confirmarExtensionPayJoy(vendor, confirm(operation));
-  assert.equal(result.status, "ERROR");
-  assert.equal(result.errorCode, "OPTIONS_CHANGED");
-  assert.equal(countProvider(f, "selectPayJoyExtension"), 0);
-  assert.equal(f.rows.payJoyExtensionOperation[0].activeDeviceKey, null);
+test("confirma una sola vez si JSONB reordena las claves de las opciones guardadas", async () => {
+  const reorder = (value) => Array.isArray(value) ? value.map(reorder)
+    : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).reverse().map(([key, entry]) => [key, reorder(entry)])) : value;
+  const original = { ...copy(option), details: { extensionsRemaining: 1, extensionsMax: 6 } };
+  for (const stored of [
+    Object.fromEntries(Object.entries(original).reverse()),
+    { ...original, reasons: reorder(original.reasons), details: reorder(original.details) },
+    reorder(original),
+  ]) {
+    const f = setup({ provider: {
+      beginPayJoyExtension: async () => ({ requestId: "request1", currentValidThrough: null, options: [copy(original)] }),
+      refreshPayJoyExtensionOptions: async () => [copy(original)],
+    } });
+    const operation = await f.prepararExtensionPayJoy(vendor, prepare());
+    // Reproduce the JSONB round-trip before the service reads the saved row.
+    f.rows.payJoyExtensionOperation[0].options = [copy(stored)];
+    assert.notEqual(JSON.stringify(stored), JSON.stringify(original));
+    assert.deepEqual(stored, original);
+    const result = await f.confirmarExtensionPayJoy(vendor, confirm(operation));
+    assert.equal(result.status, "EXITOSA");
+    assert.deepEqual(result.result, response);
+    assert.equal((await f.confirmarExtensionPayJoy(vendor, confirm(operation))).status, "EXITOSA");
+    assert.equal(countProvider(f, "refreshPayJoyExtensionOptions"), 1);
+    assert.equal(countProvider(f, "selectPayJoyExtension"), 1);
+  }
+});
+
+test("revalida las opciones actuales y bloquea cambios reales sin enviar ni reintentar la extensión", async () => {
+  const changes = [
+    null,
+    { id: "courtesy:48" }, { available: false }, { status: "denied" },
+    { extensionType: "other" }, { extensionTime: 48 }, { extensionTime: "24" },
+    { reason: "Not available in this country" }, { reasons: [] },
+    { reasons: [{ id: "other_reason", label: "Pago pendiente" }] },
+    { reasons: [{ id: "income_delay", label: "Condición distinta" }] },
+    { details: { extensionsRemaining: 0 } }, { details: {} },
+    { details: { extensionsRemaining: 1, extensionsMax: 6 } },
+    { details: { extensionsRemaining: "1" } },
+  ];
+  for (const change of changes) {
+    const f = setup({ provider: { refreshPayJoyExtensionOptions: async () => change === null ? [] : [{ ...copy(option), ...change }] } });
+    const operation = await f.prepararExtensionPayJoy(vendor, prepare());
+    const result = await f.confirmarExtensionPayJoy(vendor, confirm(operation));
+    assert.equal(result.status, "ERROR");
+    assert.equal(result.errorCode, "OPTIONS_CHANGED");
+    assert.match(result.errorMessage, /No se envió la extensión/);
+    assert.equal((await f.confirmarExtensionPayJoy(vendor, confirm(operation))).status, "ERROR");
+    assert.equal(countProvider(f, "refreshPayJoyExtensionOptions"), 1);
+    assert.equal(countProvider(f, "selectPayJoyExtension"), 0);
+    assert.equal(f.rows.payJoyExtensionOperation[0].activeDeviceKey, null);
+  }
 });
 
 test("revalida pertenencia del registro antes de confirmar y bloquea una venta eliminada o transferida", async () => {
