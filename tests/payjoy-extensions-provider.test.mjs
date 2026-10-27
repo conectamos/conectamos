@@ -88,15 +88,16 @@ test("unknown malformed options or unpaired reasons fail closed", async () => {
     { ...option, extensionType: "../../select" }, { ...option, uiReasons: "Solo una etiqueta" },
     { ...option, uiReasonKeys: ["payday", "payday"], uiReasons: "A#B" },
   ]) {
-    await withFetch([response({ token }), response({ options: [bad] })], async () => {
-      await assert.rejects(provider.refreshPayJoyExtensionOptions(tag, "request-003"), { code: "INVALID_RESPONSE", ambiguous: false });
+    await withFetch([response({ token }), ...Array.from({ length: 3 }, () => response({ options: [bad] }))], async (calls) => {
+      await assert.rejects(provider.refreshPayJoyExtensionOptions(tag, "request-003"), { code: "INVALID_RESPONSE", ambiguous: false, stage: "options" });
+      assert.equal(calls.length, 4);
     });
   }
 });
 
 test("duplicate option identities are rejected", async () => {
-  await withFetch([response({ token }), response({ options: [option, option] })], async () => {
-    await assert.rejects(provider.refreshPayJoyExtensionOptions(tag, "request-004"), { code: "INVALID_RESPONSE" });
+  await withFetch([response({ token }), ...Array.from({ length: 3 }, () => response({ options: [option, option] }))], async () => {
+    await assert.rejects(provider.refreshPayJoyExtensionOptions(tag, "request-004"), { code: "INVALID_RESPONSE", stage: "options" });
   });
 });
 
@@ -133,6 +134,7 @@ test("selection never retries on transport failure, 5xx, or uncertain response",
         extensionType: "customer_voluntary_long", extensionTime: 24, reason: "payday",
       }), (error) => {
         assert.equal(error.ambiguous, true);
+        assert.equal(error.stage, "select");
         assert.doesNotMatch(error.message, /secret|credential|URL/);
         return true;
       });
@@ -145,9 +147,86 @@ test("auth failures before selection are safe and never replay the write", async
   await withFetch([response({ message: "token secret" }, 403)], async (calls) => {
     await assert.rejects(provider.selectPayJoyExtension(tag, "request-007", key, {
       extensionType: "customer_voluntary_long", extensionTime: 24, reason: "payday",
-    }), { code: "AUTH", ambiguous: false });
+    }), { code: "AUTH", ambiguous: false, stage: "authenticate" });
     assert.equal(calls.length, 1);
   });
+});
+
+test("begin recovers from an invalid first options read without repeating authentication or creation", async () => {
+  await withFetch([
+    response({ token }), response({ id: "request-retry", currentValidThrough: "2026-10-28T16:00:00Z" }),
+    response({ options: null }), response({ options: [option] }),
+  ], async (calls) => {
+    const result = await provider.beginPayJoyExtension(tag, key);
+    assert.equal(result.requestId, "request-retry");
+    assert.equal(result.options.length, 1);
+    assert.deepEqual(calls.map(({ url, init }) => [url, init.method]), [
+      [base + "app-www-token/", "POST"], [base, "POST"],
+      [base + "request-retry/options/", "GET"], [base + "request-retry/options/", "GET"],
+    ]);
+    assert.equal(calls[2].init.headers.Authorization, calls[3].init.headers.Authorization);
+  });
+});
+
+test("options reads stop after exactly three transient failures", async () => {
+  await withFetch([
+    response({ token }), response({ id: "request-retry" }),
+    ...Array.from({ length: 3 }, () => response({ options: null })),
+  ], async (calls) => {
+    await assert.rejects(provider.beginPayJoyExtension(tag, key), { code: "INVALID_RESPONSE", stage: "options", ambiguous: false });
+    assert.equal(calls.length, 5);
+    assert.equal(calls.filter(({ init }) => init.method === "GET").length, 3);
+  });
+});
+
+test("refresh retries only the same options GET on invalid, unavailable and timeout responses", async () => {
+  for (const transient of [response({ options: null }), response({}, 503), response({}, 408), new Error("network secret")]) {
+    await withFetch([response({ token }), transient, response({ options: [option] })], async (calls) => {
+      const result = await provider.refreshPayJoyExtensionOptions(tag, "request-refresh");
+      assert.equal(result.length, 1);
+      assert.deepEqual(calls.map(({ url, init }) => [url, init.method]), [
+        [base + "app-www-token/", "POST"],
+        [base + "request-refresh/options/", "GET"], [base + "request-refresh/options/", "GET"],
+      ]);
+    });
+  }
+});
+
+test("options auth, missing, rejected and rate-limit responses are never retried", async () => {
+  for (const [status, code] of [[401, "AUTH"], [403, "AUTH"], [404, "NOT_FOUND"], [422, "REJECTED"], [429, "RATE_LIMIT"]]) {
+    await withFetch([response({ token }), response({ error: "sensitive" }, status)], async (calls) => {
+      await assert.rejects(provider.refreshPayJoyExtensionOptions(tag, "request-stop"), { code, stage: "options", ambiguous: false });
+      assert.equal(calls.length, 2);
+    });
+  }
+});
+
+test("authentication failures are diagnosed without retrying the token request", async () => {
+  for (const reply of [response({ token: "bad" }), response({}, 503), new Response("bad JSON")]) {
+    await withFetch([reply], async (calls) => {
+      await assert.rejects(provider.beginPayJoyExtension(tag, key), (error) => {
+        assert.equal(error.stage, "authenticate");
+        assert.equal(error.ambiguous, false);
+        assert.doesNotMatch(JSON.stringify(error), /bad JSON|deviceTag|DABC123|server-only-test-token/);
+        return true;
+      });
+      assert.equal(calls.length, 1);
+    });
+  }
+});
+
+test("creation failures and invalid creation fields are diagnosed without replaying POST", async () => {
+  for (const reply of [response({}, 503), response({ id: null }),
+    response({ id: "request-created", currentValidThrough: "invalid-date" }), new Response("broken")]) {
+    await withFetch([response({ token }), reply], async (calls) => {
+      await assert.rejects(provider.beginPayJoyExtension(tag, key), (error) => {
+        assert.equal(error.stage, "prepare");
+        assert.equal(error.ambiguous, false);
+        return true;
+      });
+      assert.deepEqual(calls.map(({ url }) => url), [base + "app-www-token/", base]);
+    });
+  }
 });
 
 test("explicit HTTP 4xx rejection is distinguished from an ambiguous write", async () => {

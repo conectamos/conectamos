@@ -4,7 +4,8 @@ import "server-only";
  * Contract observed in PayJoy Pay's public application on 2026-10-27:
  * https://pay.payjoy.com/extensions/device/{deviceTag}
  * /config.js and /js/main.cc406e9a.js. This is a separate service from Retail.
- * Tokens live only in the current server call. No request automatically retries.
+ * Tokens live only in the current server call. Only options GETs retry, up to
+ * three attempts as observed in the portal; authentication and writes never do.
  */
 const BASE_URL = "https://extensions.payjoy.io/api/v1/extensions/";
 const TIMEOUT_MS = 20_000;
@@ -36,6 +37,7 @@ export type PayJoyExtensionResult = {
 export type PayJoyExtensionsErrorCode =
   | "INVALID_INPUT" | "INVALID_RESPONSE" | "AUTH" | "NOT_FOUND"
   | "RATE_LIMIT" | "UNAVAILABLE" | "TIMEOUT" | "REJECTED";
+export type PayJoyExtensionsStage = "authenticate" | "prepare" | "options" | "select";
 
 const MESSAGES: Record<PayJoyExtensionsErrorCode, string> = {
   INVALID_INPUT: "Los datos para consultar las extensiones no son válidos.",
@@ -53,9 +55,21 @@ export class PayJoyExtensionsProviderError extends Error {
     public readonly code: PayJoyExtensionsErrorCode,
     public readonly status = 502,
     public readonly ambiguous = false,
+    public readonly stage?: PayJoyExtensionsStage,
   ) {
     super(MESSAGES[code]);
     this.name = "PayJoyExtensionsProviderError";
+  }
+}
+
+async function atStage<T>(stage: PayJoyExtensionsStage, action: () => Promise<T>): Promise<T> {
+  try { return await action(); }
+  catch (error) {
+    if (error instanceof PayJoyExtensionsProviderError) {
+      throw new PayJoyExtensionsProviderError(error.code, error.status, error.ambiguous, error.stage || stage);
+    }
+    // Only the phase is added; no payload, URL, token or underlying exception.
+    throw new PayJoyExtensionsProviderError("UNAVAILABLE", 502, stage === "select", stage);
   }
 }
 
@@ -148,16 +162,18 @@ async function call(
 }
 
 async function authenticate(tag: string) {
-  const response = await call("app-www-token/", "POST", {
-    deviceTag: tag,
-    sub: `${tag}@app.www`,
-    channel: "APP-WWW",
+  return atStage("authenticate", async () => {
+    const response = await call("app-www-token/", "POST", {
+      deviceTag: tag,
+      sub: `${tag}@app.www`,
+      channel: "APP-WWW",
+    });
+    const token = response.token;
+    if (typeof token !== "string" || token.length < 10 || token.length > 8192 || /\s/.test(token)) {
+      throw new PayJoyExtensionsProviderError("INVALID_RESPONSE");
+    }
+    return token;
   });
-  const token = response.token;
-  if (typeof token !== "string" || token.length < 10 || token.length > 8192 || /\s/.test(token)) {
-    throw new PayJoyExtensionsProviderError("INVALID_RESPONSE");
-  }
-  return token;
 }
 
 function parseOptions(response: Record<string, unknown>): PayJoyExtensionOption[] {
@@ -211,22 +227,39 @@ function parseOptions(response: Record<string, unknown>): PayJoyExtensionOption[
   });
 }
 
+async function readOptions(id: string, token: string): Promise<PayJoyExtensionOption[]> {
+  // The public portal retries only this read up to three times, without delay.
+  // Reuse its existing request and token, and stop on explicit access/rejection
+  // or rate-limit responses. Keep all option validation on every attempt.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await atStage("options", async () => parseOptions(await call(`${id}/options/`, "GET", undefined, token)));
+    } catch (error) {
+      if (attempt >= 2 || !(error instanceof PayJoyExtensionsProviderError)
+        || !["INVALID_RESPONSE", "UNAVAILABLE", "TIMEOUT"].includes(error.code)) throw error;
+    }
+  }
+}
+
 export async function beginPayJoyExtension(deviceTag: string, key: string) {
   const tag = device(deviceTag);
   const idemKey = idempotencyKey(key);
   const token = await authenticate(tag);
-  const created = await call("", "POST", {
-    deviceTag: tag,
-    channel: "APP-WWW",
-    idempotencyKey: idemKey,
-    requesterEmail: `${tag}@app.www`,
-  }, token);
-  const id = requestId(created.id);
-  const currentValidThrough = date(created.currentValidThrough);
-  if (created.currentValidThrough != null && !currentValidThrough) {
-    throw new PayJoyExtensionsProviderError("INVALID_RESPONSE");
-  }
-  const options = parseOptions(await call(`${id}/options/`, "GET", undefined, token));
+  const { id, currentValidThrough } = await atStage("prepare", async () => {
+    const created = await call("", "POST", {
+      deviceTag: tag,
+      channel: "APP-WWW",
+      idempotencyKey: idemKey,
+      requesterEmail: `${tag}@app.www`,
+    }, token);
+    const id = requestId(created.id);
+    const currentValidThrough = date(created.currentValidThrough);
+    if (created.currentValidThrough != null && !currentValidThrough) {
+      throw new PayJoyExtensionsProviderError("INVALID_RESPONSE");
+    }
+    return { id, currentValidThrough };
+  });
+  const options = await readOptions(id, token);
   return { requestId: id, currentValidThrough, options };
 }
 
@@ -234,7 +267,7 @@ export async function refreshPayJoyExtensionOptions(deviceTag: string, providerR
   const tag = device(deviceTag);
   const id = requestId(providerRequestId);
   const token = await authenticate(tag);
-  return parseOptions(await call(`${id}/options/`, "GET", undefined, token));
+  return readOptions(id, token);
 }
 
 export async function selectPayJoyExtension(
@@ -253,18 +286,20 @@ export async function selectPayJoyExtension(
     throw new PayJoyExtensionsProviderError("INVALID_INPUT", 400);
   }
   const token = await authenticate(tag);
-  const result = await call(`${id}/select/`, "POST", {
-    idempotencyKey: idemKey,
-    extension_reason: selection.reason,
-    extension_type: selection.extensionType,
-    extension_time: selection.extensionTime,
-  }, token, true);
-  const status = text(result.status, 80);
-  const newValidThrough = date(result.newValidThrough);
-  if (result.success === true && status === "GRANTED" && newValidThrough) {
-    return { success: true, status, newValidThrough };
-  }
-  // No undocumented response state is treated as a confirmed failure or success.
-  // A lost/ambiguous response must never trigger an automatic second selection.
-  throw new PayJoyExtensionsProviderError("INVALID_RESPONSE", 502, true);
+  return atStage("select", async () => {
+    const result = await call(`${id}/select/`, "POST", {
+      idempotencyKey: idemKey,
+      extension_reason: selection.reason,
+      extension_type: selection.extensionType,
+      extension_time: selection.extensionTime,
+    }, token, true);
+    const status = text(result.status, 80);
+    const newValidThrough = date(result.newValidThrough);
+    if (result.success === true && status === "GRANTED" && newValidThrough) {
+      return { success: true, status, newValidThrough };
+    }
+    // No undocumented response state is treated as a confirmed failure or success.
+    // A lost/ambiguous response must never trigger an automatic second selection.
+    throw new PayJoyExtensionsProviderError("INVALID_RESPONSE", 502, true);
+  });
 }

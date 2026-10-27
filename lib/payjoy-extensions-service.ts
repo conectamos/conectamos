@@ -47,6 +47,12 @@ function errorCode(error: unknown) {
   return typeof code === "string" && Object.hasOwn(errors, code) ? code : "INTERNAL";
 }
 function uniqueError(error: unknown) { return (error as { code?: unknown })?.code === "P2002"; }
+function logInvalidProviderResponse(error: unknown) {
+  if (error instanceof PayJoyExtensionsProviderError && error.code === "INVALID_RESPONSE") {
+    // Fixed classification only: never log remote payloads, tokens or customer identifiers.
+    console.warn("PAYJOY_EXTENSIONS_INVALID_RESPONSE", { stage: error.stage || "unknown" });
+  }
+}
 function ownScope(session: Session) { return { usuarioId: session.id, perfilId: session.perfilId, sedeId: session.sedeId }; }
 function requireAccess(session: Session, manage = false) {
   if (!puedeConsultarExtensionesPayJoy(session) || (manage && !puedeGestionarExtensionesPayJoy(session))) {
@@ -239,6 +245,7 @@ export async function prepararExtensionPayJoy(session: Session, input: Record<st
     if (saved.count !== 1) throw new PayJoyExtensionsError("INTERRUPTED", 409);
   } catch (error) {
     // Preparing only creates a provider request; it never grants an extension.
+    logInvalidProviderResponse(error);
     await prisma.payJoyExtensionOperation.updateMany({ where: { id, status: "PREPARANDO" }, data: {
       status: "ERROR", activeDeviceKey: null, errorCode: uniqueError(error) ? "DEVICE_BUSY" : errorCode(error), completedAt: new Date(),
     } });
@@ -301,6 +308,7 @@ export async function confirmarExtensionPayJoy(session: Session, input: Record<s
   } catch (error) {
     // Any error after dispatch may have happened after PayJoy applied the change.
     // Retain the device lock and never resend automatically, including DB failures.
+    logInvalidProviderResponse(error);
     const uncertain = dispatched && !(error instanceof PayJoyExtensionsProviderError && !error.ambiguous);
     row = await prisma.payJoyExtensionOperation.update({ where: { id: row.id }, data: {
       status: uncertain ? "INDETERMINADA" : errorCode(error) === "REJECTED" ? "RECHAZADA" : "ERROR",
