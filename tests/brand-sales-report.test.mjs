@@ -168,7 +168,7 @@ test("el detalle sale del mismo recorrido y cada venta aporta una vez, incluso c
   assert.equal(resumen.referenciasVendidas.length, 12);
   assert.equal(resumen.topReferenciasVendidas.length, 10);
   assert.equal(calls.filter((call) => call.operation === "venta.findMany").length, 1);
-  assert.deepEqual(new Set(Object.keys(detalles)), new Set(["INFINIX", "TECNO", "MOTOROLA", "SAMSUNG", "XIAOMI", "OPPO", "HONOR", "IPHONE", "VIVO", "ZTE", "ELECTRODOMÉSTICOS", "OTRAS MARCAS"]));
+  assert.deepEqual(new Set(Object.keys(detalles)), new Set(["INFINIX", "TECNO", "MOTOROLA", "SAMSUNG", "XIAOMI", "OPPO", "HONOR", "IPHONE", "VIVO", "ZTE", "ELECTRODOMÉSTICOS", "FLECHAS", "TABLETS", "OTRAS MARCAS"]));
   for (const marca of resumen.topMarcasVendidas) {
     const filas = detalles[marca.nombre];
     assert.equal(filas.length, coberturas.length);
@@ -305,7 +305,8 @@ test("electrodomésticos usa la categoría guardada o referencias claras de lega
   assert.equal(electro.porcentaje, 10 / 17 * 100);
   assert.equal(report.referenciasPorMarca["ELECTRODOMÉSTICOS"].length, 10);
   assert.equal(report.referenciasPorMarca["ELECTRODOMÉSTICOS"].every((item) => item.total === 1 && item.porcentaje === 10), true);
-  assert.equal(report.referenciasPorMarca["OTRAS MARCAS"].length, 4);
+  assert.equal(report.referenciasPorMarca["OTRAS MARCAS"].length, 3);
+  assert.deepEqual(report.referenciasPorMarca.TABLETS.map((item) => item.nombre), ["TABLET IPAD 10"]);
   assert.equal(report.resumen.topMarcasVendidas.find((item) => item.nombre === "SAMSUNG").total, 1);
   assert.equal(report.resumen.topMarcasVendidas.find((item) => item.nombre === "IPHONE").total, 1);
   assert.equal(report.resumen.topMarcasVendidas.find((item) => item.nombre === "VIVO").total, 1);
@@ -338,7 +339,8 @@ test("IPHONE agrupa modelos y variantes de escritura, conserva su distribución 
   assert.equal(resumen.ventas, 10);
   assert.equal(resumen.topMarcasVendidas.find((marca) => marca.nombre === "IPHONE").total, 7);
   assert.equal(resumen.topMarcasVendidas.find((marca) => marca.nombre === "IPHONE").porcentaje, 70);
-  assert.equal(resumen.topMarcasVendidas.find((marca) => marca.nombre === "OTRAS MARCAS").total, 2);
+  assert.equal(resumen.topMarcasVendidas.find((marca) => marca.nombre === "OTRAS MARCAS").total, 1);
+  assert.equal(resumen.topMarcasVendidas.find((marca) => marca.nombre === "TABLETS").total, 1);
   assert.equal(resumen.topMarcasVendidas.reduce((sum, marca) => sum + marca.total, 0), 10);
   assert.deepEqual(detalles.IPHONE.map((sede) => [sede.sedeId, sede.total]).sort((a, b) => a[0] - b[0]), [[1, 3], [2, 2], [3, 2], [4, 0], [5, 0]]);
   assert.equal(detalles.IPHONE.reduce((sum, sede) => sum + sede.total, 0), 7);
@@ -346,6 +348,110 @@ test("IPHONE agrupa modelos y variantes de escritura, conserva su distribución 
   assert.equal(scoped.resumen.ventas, 4);
   assert.equal(scoped.resumen.topMarcasVendidas.find((marca) => marca.nombre === "IPHONE").total, 2);
   assert.deepEqual(scoped.detalles.IPHONE, [{ sedeId: 2, nombre: "Bogotá", total: 2, porcentaje: 100 }]);
+});
+
+test("el alias de exhibición solicitado cuenta como IPHONE y conserva la referencia sin ampliar a modelos ambiguos", async () => {
+  const rows = [
+    sale(100, 1, "  16   pro max de exhibicion  "),
+    { ...sale(101, 2, "16 PRO MAX DE EXHIBICIÓN"), inventarioSede: { referencia: "16 PRO MAX DE EXHIBICIÓN", tipoProducto: "ELECTRODOMESTICO" } },
+    sale(102, 2, "16 PRO MAX"),
+    sale(103, 3, "16 PRO MAX OTRO PRODUCTO"),
+  ];
+  const original = structuredClone(rows);
+  const { getBrandSalesReport } = createReportModules(rows);
+  const report = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09" });
+  assert.equal(report.resumen.topMarcasVendidas.find((item) => item.nombre === "IPHONE").total, 2);
+  assert.deepEqual(new Set(report.referenciasPorMarca.IPHONE.map((item) => item.nombre)), new Set(["16 PRO MAX DE EXHIBICION", "16 PRO MAX DE EXHIBICIÓN"]));
+  assert.deepEqual(new Set(report.referenciasPorMarca["OTRAS MARCAS"].map((item) => item.nombre)), new Set(["16 PRO MAX", "16 PRO MAX OTRO PRODUCTO"]));
+  assert.deepEqual(rows, original);
+  const scoped = await getBrandSalesReport({ rolNombre: "AUDITOR" }, { period: "2026-09", sedeId: "2" });
+  assert.equal(scoped.resumen.ventas, 2);
+  assert.deepEqual(scoped.detalles.IPHONE, [{ sedeId: 2, nombre: "Bogotá", total: 1, porcentaje: 100 }]);
+  assert.deepEqual(scoped.referenciasPorMarca.IPHONE.map((item) => item.nombre), ["16 PRO MAX DE EXHIBICIÓN"]);
+});
+
+test("REDMI cuenta en XIAOMI con sus variantes de escritura y cada venta financiada cuenta una vez", async () => {
+  const rows = [
+    sale(110, 1, "REDMI NOTE 17 PRO 256GB"),
+    { ...sale(111, 2, "  redmi note 17 pro max  "), inventarioSede: { referencia: "  redmi note 17 pro max  ", tipoProducto: "ELECTRODOMESTICO" } },
+    sale(112, 3, null, "REDMI A7PRO DE 128"),
+    sale(113, 2, "REDMINOTE17 256GB"),
+    sale(114, 1, "REDMI_NOTE_15 PRO 5G"),
+    { ...sale(115, 2, "XIAOMI REDMI 15"), financierasDetalle: [
+      { nombre: "PAYJOY", valorBruto: 50_000, valorNeto: 50_000 },
+      { nombre: "ADDI", valorBruto: 50_000, valorNeto: 46_000 },
+    ] },
+    sale(116, 3, "REALME C67"),
+  ];
+  const { getBrandSalesReport, calls } = createReportModules(rows);
+  const report = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09" });
+  assert.equal(report.resumen.ventas, 7);
+  assert.equal(report.resumen.topMarcasVendidas.find((item) => item.nombre === "XIAOMI").total, 6);
+  assert.equal(report.referenciasPorMarca.XIAOMI.length, 6);
+  assert.equal(report.referenciasPorMarca.XIAOMI.every((item) => item.total === 1 && item.porcentaje === 1 / 6 * 100), true);
+  assert.deepEqual(report.referenciasPorMarca["OTRAS MARCAS"].map((item) => item.nombre), ["REALME C67"]);
+  assert.equal(calls.filter((call) => call.operation === "venta.findMany").length, 1);
+  assert.equal(report.resumen.ingresos, 700_000);
+  const scoped = await getBrandSalesReport({ rolNombre: "AUDITOR" }, { period: "2026-09", sedeId: "2" });
+  assert.equal(scoped.resumen.ventas, 3);
+  assert.equal(scoped.referenciasPorMarca.XIAOMI.reduce((sum, item) => sum + item.total, 0), 3);
+  assert.deepEqual(scoped.detalles.XIAOMI, [{ sedeId: 2, nombre: "Bogotá", total: 3, porcentaje: 100 }]);
+});
+
+test("FLECHAS y TABLETS tienen grupos exclusivos, referencias completas y prioridad frente a marca o tipo de legado", async () => {
+  function typed(id, sedeId, reference, tipoProducto) {
+    const row = sale(id, sedeId, reference);
+    row.inventarioSede.tipoProducto = tipoProducto;
+    return row;
+  }
+  const categories = [
+    [sale(120, 1, "FLECHA CORN"), "FLECHAS"],
+    [sale(121, 2, "FLECHAS NOKIA 110 4G"), "FLECHAS"],
+    [typed(122, 3, "NOKIA 105", "FLECHA"), "FLECHAS"],
+    [sale(123, 1, "TABLET REDMI PAD2"), "TABLETS"],
+    [sale(124, 2, "REDMI PAD 2"), "TABLETS"],
+    [sale(125, 3, "TABLETA LENOVO CON TECLADO"), "TABLETS"],
+    [sale(126, 1, "APPLE IPAD A16"), "TABLETS"],
+    [sale(127, 2, "IPADA16 128GB"), "TABLETS"],
+    [sale(128, 3, "SAMSUNG GALAXY TAB A9"), "TABLETS"],
+    [sale(129, 1, "SAMSUNG TAB S9 FE"), "TABLETS"],
+    [typed(130, 2, "XIAOMI PAD 7", "ELECTRODOMESTICO"), "TABLETS"],
+    [typed(131, 3, "REFERENCIA SIN MODELO", "TABLET"), "TABLETS"],
+    [typed(132, 1, "OTRA REFERENCIA", "TABLETA"), "TABLETS"],
+    [typed(133, 2, "PRODUCTO SIN MODELO", "IPAD"), "TABLETS"],
+    [sale(134, 3, "COMPUTADOR HP 14"), "ELECTRODOMÉSTICOS"],
+    [sale(135, 1, "computador   hp 14"), "ELECTRODOMÉSTICOS"],
+    [sale(136, 2, "COMPUTADOR LENOVO 256GB"), "OTRAS MARCAS"],
+    [sale(137, 3, "COMPUTADOR HP 140"), "OTRAS MARCAS"],
+    [sale(138, 1, "CABLE TABLETOP"), "OTRAS MARCAS"],
+    [sale(139, 2, "SAMSUNG A16"), "SAMSUNG"],
+    [sale(140, 3, "REDMI NOTE 17 PRO MAX"), "XIAOMI"],
+  ];
+  const rows = categories.map(([row]) => row);
+  const original = structuredClone(rows);
+  const { getBrandSalesReport, calls } = createReportModules(rows);
+  for (const sedeId of [null, 1, 2, 3, 4]) {
+    const report = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09", sedeId });
+    const selected = categories.filter(([row]) => sedeId === null || row.sede.id === sedeId);
+    assert.equal(report.resumen.ventas, selected.length);
+    assert.equal(report.resumen.ingresos, selected.length * 100_000);
+    assert.equal(report.resumen.topMarcasVendidas.reduce((sum, item) => sum + item.total, 0), selected.length);
+    assert.equal(Object.values(report.referenciasPorMarca).flat().reduce((sum, item) => sum + item.total, 0), selected.length);
+    for (const group of ["FLECHAS", "TABLETS", "ELECTRODOMÉSTICOS", "OTRAS MARCAS", "SAMSUNG", "XIAOMI"]) {
+      const expected = selected.filter(([, name]) => name === group);
+      const references = report.referenciasPorMarca[group];
+      assert.equal(references.reduce((sum, item) => sum + item.total, 0), expected.length, `${group}: sede ${sedeId}`);
+      assert.deepEqual(new Set(references.map((item) => item.nombre)), new Set(expected.map(([row]) => row.inventarioSede.referencia.trim().replace(/\s+/g, " ").toUpperCase())));
+      assert.equal(report.detalles[group].reduce((sum, item) => sum + item.total, 0), expected.length);
+      if (expected.length) {
+        const ranking = report.resumen.topMarcasVendidas.find((item) => item.nombre === group);
+        assert.equal(ranking.porcentaje, expected.length / selected.length * 100);
+        assert.ok(Math.abs(references.reduce((sum, item) => sum + item.porcentaje, 0) - 100) < 1e-10);
+      }
+    }
+  }
+  assert.equal(calls.filter((call) => call.operation === "venta.findMany").length, 5);
+  assert.deepEqual(rows, original);
 });
 
 test("una sede válida con nombre vacío conserva la venta en el detalle y no cambia rankings antiguos", async () => {

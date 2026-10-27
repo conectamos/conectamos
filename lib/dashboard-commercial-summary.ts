@@ -9,6 +9,8 @@ import { esElectrodomestico } from "@/lib/product-types";
 
 const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
 const CATEGORIA_ELECTRODOMESTICOS = "ELECTRODOMÉSTICOS";
+const CATEGORIA_FLECHAS = "FLECHAS";
+const CATEGORIA_TABLETS = "TABLETS";
 const MARCAS_VENDIDAS = [
   "INFINIX",
   "TECNO",
@@ -21,6 +23,8 @@ const MARCAS_VENDIDAS = [
   "VIVO",
   "ZTE",
   CATEGORIA_ELECTRODOMESTICOS,
+  CATEGORIA_FLECHAS,
+  CATEGORIA_TABLETS,
 ];
 const OTRAS_MARCAS = "OTRAS MARCAS";
 
@@ -98,12 +102,35 @@ function isApplianceReference(value: string | null | undefined) {
   return /\b(?:ESTUFAS?|NEVERAS?|REFRIGERADOR(?:ES)?|CONGELADOR(?:ES)?|LAVADORAS?|SECADORAS?|FREIDORAS?|AIR\s*FRYER|LICUADORAS?|TELEVISOR(?:ES)?|TELEVISION|HORNOS?|MICROONDAS|LAVAVAJILLAS|ASPIRADORAS?|VENTILADOR(?:ES)?|CAFETERAS?|SANDUCHERAS?|ARROCERAS?)\b|\bTV(?=\d|\b)|\bAIRE\s+ACONDICIONADO\b|\bOLLA\s+(?:ELECTRICA|ARROCERA|MULTIFUNCIONAL|DE\s+PRESION)\b/.test(text);
 }
 
+function isTabletReference(value: string | null | undefined) {
+  const text = normalizeReference(value);
+  return /\b(?:TABLETS?|TABLETAS?)\b|\bIPAD(?:\b|(?:A|AIR|MINI|PRO)?\d)|\b(?:XIAOMI|REDMI)\s*PAD(?=\b|\d)|\b(?:SAMSUNG\s+(?:GALAXY\s+)?|GALAXY\s+)TAB(?:\b|[AS]\d)/.test(text);
+}
+
 function resolveBrand(value: string | null | undefined, tipoProducto?: string | null) {
   const reference = normalizeReference(value);
+  const plainReference = reference.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  // The saved product category is authoritative. Clear legacy appliance labels
-  // also recover products whose historic type was the default TELEFONIA.
-  if (esElectrodomestico(tipoProducto) || isApplianceReference(tipoProducto) || isApplianceReference(reference)) {
+  // Product groups take precedence over phone brands so each sale counts once.
+  // Recover tablets/flechas that were historically saved under a broad category.
+  if (isTabletReference(reference) || isTabletReference(tipoProducto)) {
+    return CATEGORIA_TABLETS;
+  }
+  if (/\bFLECHAS?\b/.test(reference) || /\bFLECHAS?\b/.test(normalizeReference(tipoProducto))) {
+    return CATEGORIA_FLECHAS;
+  }
+  // Explicit report aliases also repair broad legacy product types without
+  // changing the original reference or inventory record.
+  if (plainReference === "16 PRO MAX DE EXHIBICION") {
+    return "IPHONE";
+  }
+  if (reference.includes("REDMI")) {
+    return "XIAOMI";
+  }
+
+  // For the remaining products, keep the saved appliance category. Clear legacy
+  // labels also recover products whose historic type was the default TELEFONIA.
+  if (esElectrodomestico(tipoProducto) || isApplianceReference(tipoProducto) || isApplianceReference(reference) || plainReference === "COMPUTADOR HP 14") {
     return CATEGORIA_ELECTRODOMESTICOS;
   }
 
