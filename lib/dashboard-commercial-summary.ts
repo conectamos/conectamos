@@ -5,8 +5,10 @@ import {
   getCurrentBogotaMonthRange,
 } from "@/lib/ventas-utils";
 import { extraerFinancierasDetalle } from "@/lib/ventas-financieras";
+import { esElectrodomestico } from "@/lib/product-types";
 
 const CONCEPTO_GASTO_CARTERA = "GASTO CARTERA";
+const CATEGORIA_ELECTRODOMESTICOS = "ELECTRODOMÉSTICOS";
 const MARCAS_VENDIDAS = [
   "INFINIX",
   "TECNO",
@@ -16,6 +18,9 @@ const MARCAS_VENDIDAS = [
   "OPPO",
   "HONOR",
   "IPHONE",
+  "VIVO",
+  "ZTE",
+  CATEGORIA_ELECTRODOMESTICOS,
 ];
 const OTRAS_MARCAS = "OTRAS MARCAS";
 
@@ -86,8 +91,21 @@ function normalizeReference(value: string | null | undefined) {
     .toUpperCase();
 }
 
-function resolveBrand(value: string | null | undefined) {
+function isApplianceReference(value: string | null | undefined) {
+  const text = normalizeReference(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return /\b(?:ESTUFAS?|NEVERAS?|REFRIGERADOR(?:ES)?|CONGELADOR(?:ES)?|LAVADORAS?|SECADORAS?|FREIDORAS?|AIR\s*FRYER|LICUADORAS?|TELEVISOR(?:ES)?|TELEVISION|HORNOS?|MICROONDAS|LAVAVAJILLAS|ASPIRADORAS?|VENTILADOR(?:ES)?|CAFETERAS?|SANDUCHERAS?|ARROCERAS?)\b|\bTV(?=\d|\b)|\bAIRE\s+ACONDICIONADO\b|\bOLLA\s+(?:ELECTRICA|ARROCERA|MULTIFUNCIONAL|DE\s+PRESION)\b/.test(text);
+}
+
+function resolveBrand(value: string | null | undefined, tipoProducto?: string | null) {
   const reference = normalizeReference(value);
+
+  // The saved product category is authoritative. Clear legacy appliance labels
+  // also recover products whose historic type was the default TELEFONIA.
+  if (esElectrodomestico(tipoProducto) || isApplianceReference(tipoProducto) || isApplianceReference(reference)) {
+    return CATEGORIA_ELECTRODOMESTICOS;
+  }
 
   if (!reference) {
     return OTRAS_MARCAS;
@@ -97,6 +115,12 @@ function resolveBrand(value: string | null | undefined) {
   // Keep iPhone sales together, including APPLE IPHONE and compact model labels.
   if (words.some((word) => /^IPHONE(?:\d[A-Z0-9]*|X(?:R|S(?:MAX)?)?|SE(?:\d+)?)?$/.test(word))) {
     return "IPHONE";
+  }
+  if (words.some((word) => /^VIVO(?:[YVXTZSU]\d[A-Z0-9]*|NEX\d[A-Z0-9]*)$/.test(word))) {
+    return "VIVO";
+  }
+  if (words.some((word) => /^ZTE(?:[AVL]\d[A-Z0-9]*|BLADE[A-Z]?\d[A-Z0-9]*)$/.test(word))) {
+    return "ZTE";
   }
   return MARCAS_VENDIDAS.find((marca) => words.includes(marca)) || OTRAS_MARCAS;
 }
@@ -256,6 +280,7 @@ export async function getMonthlyCommercialSummary(options?: {
         inventarioSede: {
           select: {
             referencia: true,
+            tipoProducto: true,
           },
         },
         sede: {
@@ -317,6 +342,7 @@ export async function getMonthlyCommercialSummary(options?: {
   const marcasVendidas = new Map<string, CommercialRankingItem>();
   const ventasMarcaPorSede = new Map<string, Map<number, number>>();
   const referenciasVendidas = new Map<string, CommercialRankingItem>();
+  const referenciasVendidasPorMarca = new Map<string, Map<string, CommercialRankingItem>>();
   const rendimientoDiario = new Map<string, DailyCommercialPoint>();
   const rendimientoSedes = new Map<number, SedePerformanceItem>();
 
@@ -338,9 +364,12 @@ export async function getMonthlyCommercialSummary(options?: {
     const referencia = normalizeReference(
       venta.inventarioSede?.referencia || venta.descripcion
     ) || "SIN REFERENCIA";
-    const marca = resolveBrand(referencia);
+    const marca = resolveBrand(referencia, venta.inventarioSede?.tipoProducto);
     pushRanking(marcasVendidas, marca);
     pushRanking(referenciasVendidas, referencia);
+    const referenciasMarca = referenciasVendidasPorMarca.get(marca) ?? new Map<string, CommercialRankingItem>();
+    pushRanking(referenciasMarca, referencia);
+    referenciasVendidasPorMarca.set(marca, referenciasMarca);
 
     const detalleMarca = ventasMarcaPorSede.get(marca) ?? new Map<number, number>();
     detalleMarca.set(venta.sede.id, (detalleMarca.get(venta.sede.id) ?? 0) + 1);
@@ -436,9 +465,14 @@ export async function getMonthlyCommercialSummary(options?: {
     (sede) => ({ id: sede.sedeId, nombre: sede.nombre })
   );
   const detalleMarcasPorSede: Record<string, BrandSalesSedeDetail[]> = {};
+  const referenciasPorMarca: Record<string, CommercialReferenceRankingItem[]> = {};
   for (const marca of [...MARCAS_VENDIDAS, OTRAS_MARCAS]) {
     const totalMarca = marcasVendidas.get(normalizeKey(marca))?.total ?? 0;
     const ventasPorSede = ventasMarcaPorSede.get(marca);
+    // The detail's participation uses this brand's sales, unlike the global ranking.
+    referenciasPorMarca[marca] = sortedReferenceRanking(
+      referenciasVendidasPorMarca.get(marca) ?? new Map<string, CommercialRankingItem>()
+    );
     detalleMarcasPorSede[marca] = sedesDetalleMarcas
       .map((sede) => {
         const total = ventasPorSede?.get(sede.id) ?? 0;
@@ -472,5 +506,6 @@ export async function getMonthlyCommercialSummary(options?: {
     tendenciaDiaria,
     rendimientoPorSede,
     detalleMarcasPorSede,
+    referenciasPorMarca,
   };
 }

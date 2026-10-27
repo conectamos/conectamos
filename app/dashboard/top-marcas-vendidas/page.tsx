@@ -20,5 +20,6 @@ export default async function TopMarcasVendidasPage({ searchParams }: {
     usuario={{ nombre: session.nombre || session.usuario || "Administrador", rolNombre: session.rolNombre }}
     consulta={{ period: resumen.periodo.key, periodLabel: resumen.periodo.label, sedeId, cobertura: coberturaAplicada.nombre }}
     sedes={coberturas} ventas={resumen.ventas} marcas={resumen.topMarcasVendidas}
-    referencias={resumen.referenciasVendidas} detalles={detalles} />;
+    referencias={resumen.referenciasVendidas} detalles={detalles}
+    referenciasPorMarca={resumen.referenciasPorMarca} />;
 }

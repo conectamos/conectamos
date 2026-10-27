@@ -55,5 +55,6 @@ export async function getBrandSalesReport(
     coberturas,
     coberturaAplicada: { sedeId, nombre: sedeSeleccionada?.nombre ?? "Todas las sedes" },
     detalles: resumen.detalleMarcasPorSede,
+    referenciasPorMarca: resumen.referenciasPorMarca,
   };
 }

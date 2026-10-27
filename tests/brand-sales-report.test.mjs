@@ -26,6 +26,7 @@ const financieras = loadTypeScript("lib/ventas-financieras.ts");
 const ventasUtils = loadTypeScript("lib/ventas-utils.ts", { "@/lib/ventas-financieras": financieras });
 const accessControl = loadTypeScript("lib/access-control.ts");
 const referenceRanking = loadTypeScript("lib/reference-sales-ranking.ts");
+const productTypes = loadTypeScript("lib/product-types.ts");
 const sedes = [
   { id: 1, nombre: "Stand Solutions" },
   { id: 2, nombre: "Bogotá" },
@@ -117,6 +118,7 @@ function createReportModules(rows = fixtureSales, coverageSedes = sedes) {
     "@/lib/prisma": { __esModule: true, default: prisma },
     "@/lib/ventas-utils": ventasUtils,
     "@/lib/ventas-financieras": financieras,
+    "@/lib/product-types": productTypes,
   });
   const report = loadTypeScript("lib/brand-sales-report.ts", {
     "@/lib/access-control": accessControl,
@@ -126,7 +128,7 @@ function createReportModules(rows = fixtureSales, coverageSedes = sedes) {
   return { ...report, ...commercial, calls };
 }
 
-test("separa IPHONE del ranking anterior sin alterar otras marcas, referencias ni denominadores por cobertura", async () => {
+test("separa IPHONE y VIVO del ranking anterior sin alterar otras marcas, referencias ni denominadores por cobertura", async () => {
   for (const sedeId of [null, 1, 2, 3, 4]) {
     const { getBrandSalesReport } = createReportModules();
     const { resumen } = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09", sedeId });
@@ -136,13 +138,15 @@ test("separa IPHONE del ranking anterior sin alterar otras marcas, referencias n
       ...(sedeId === null ? {} : { sedeId }),
     }));
     const before = brandRankingsBefore(selected);
-    // Sale 7 is the existing APPLE IPHONE 12 fixture; all other old categories stay intact.
+    // Existing fixtures 7 and 18 are the only categories reclassified from the old ranking.
     const iphoneCount = selected.filter((venta) => venta.id === 7).length;
+    const vivoCount = selected.filter((venta) => venta.id === 18).length;
     const expectedBrands = new Map(before.topMarcasVendidas.map((marca) => [marca.nombre, marca.total]));
     if (iphoneCount) {
       expectedBrands.set("IPHONE", iphoneCount);
-      expectedBrands.set("OTRAS MARCAS", expectedBrands.get("OTRAS MARCAS") - iphoneCount);
     }
+    if (vivoCount) expectedBrands.set("VIVO", vivoCount);
+    if (iphoneCount || vivoCount) expectedBrands.set("OTRAS MARCAS", expectedBrands.get("OTRAS MARCAS") - iphoneCount - vivoCount);
     const expectedNames = [...expectedBrands].filter(([, total]) => total > 0).map(([nombre]) => nombre);
     assert.deepEqual(new Set(resumen.topMarcasVendidas.map((marca) => marca.nombre)), new Set(expectedNames));
     for (const marca of resumen.topMarcasVendidas) {
@@ -164,7 +168,7 @@ test("el detalle sale del mismo recorrido y cada venta aporta una vez, incluso c
   assert.equal(resumen.referenciasVendidas.length, 12);
   assert.equal(resumen.topReferenciasVendidas.length, 10);
   assert.equal(calls.filter((call) => call.operation === "venta.findMany").length, 1);
-  assert.deepEqual(new Set(Object.keys(detalles)), new Set(["INFINIX", "TECNO", "MOTOROLA", "SAMSUNG", "XIAOMI", "OPPO", "HONOR", "IPHONE", "OTRAS MARCAS"]));
+  assert.deepEqual(new Set(Object.keys(detalles)), new Set(["INFINIX", "TECNO", "MOTOROLA", "SAMSUNG", "XIAOMI", "OPPO", "HONOR", "IPHONE", "VIVO", "ZTE", "ELECTRODOMÉSTICOS", "OTRAS MARCAS"]));
   for (const marca of resumen.topMarcasVendidas) {
     const filas = detalles[marca.nombre];
     assert.equal(filas.length, coberturas.length);
@@ -182,13 +186,137 @@ test("conserva prioridad inventario/descripción, SIN REFERENCIA, coincidencia p
   const { resumen, detalles } = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09" });
   assert.equal(resumen.referenciasVendidas.find((item) => item.nombre === "SIN REFERENCIA").total, 2);
   assert.equal(resumen.referenciasVendidas.some((item) => item.nombre === "SAMSUNG A25"), false);
-  assert.equal(resumen.topMarcasVendidas.find((item) => item.nombre === "OTRAS MARCAS").total, 5);
+  assert.equal(resumen.topMarcasVendidas.find((item) => item.nombre === "OTRAS MARCAS").total, 4);
   assert.equal(resumen.topMarcasVendidas.find((item) => item.nombre === "IPHONE").total, 1);
+  assert.equal(resumen.topMarcasVendidas.find((item) => item.nombre === "VIVO").total, 1);
   assert.equal(resumen.topMarcasVendidas.find((item) => item.nombre === "MOTOROLA").total, 1);
   assert.equal(detalles["OTRAS MARCAS"].find((fila) => fila.sedeId === 1).total, 4);
-  assert.equal(detalles["OTRAS MARCAS"].find((fila) => fila.sedeId === 2).total, 1);
+  assert.equal(detalles["OTRAS MARCAS"].find((fila) => fila.sedeId === 2).total, 0);
   const empatadas = resumen.topMarcasVendidas.filter((marca) => marca.total === 1).map((marca) => marca.nombre);
-  assert.deepEqual(empatadas, ["INFINIX", "MOTOROLA", "XIAOMI", "OPPO", "HONOR", "IPHONE"]);
+  assert.deepEqual(empatadas, ["INFINIX", "MOTOROLA", "XIAOMI", "OPPO", "HONOR", "IPHONE", "VIVO"]);
+});
+
+test("las referencias de cada marca conservan todas las ventas y su porcentaje dentro de la marca", async () => {
+  const { getBrandSalesReport, calls } = createReportModules();
+  const { resumen, referenciasPorMarca } = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09" });
+  assert.equal(referenciasPorMarca, resumen.referenciasPorMarca);
+  assert.equal(calls.filter((call) => call.operation === "venta.findMany").length, 1);
+  assert.equal(Object.values(referenciasPorMarca).flat().reduce((sum, item) => sum + item.total, 0), resumen.ventas);
+  for (const marca of resumen.topMarcasVendidas) {
+    const referencias = referenciasPorMarca[marca.nombre];
+    assert.equal(referencias.reduce((sum, item) => sum + item.total, 0), marca.total);
+    assert.ok(Math.abs(referencias.reduce((sum, item) => sum + item.porcentaje, 0) - 100) < 1e-10);
+    for (const ref of referencias) {
+      assert.equal(ref.porcentaje, ref.total / marca.total * 100);
+      assert.equal(ref.total, resumen.referenciasVendidas.find((item) => item.nombre === ref.nombre).total);
+    }
+  }
+  assert.deepEqual(referenciasPorMarca["OTRAS MARCAS"].map((item) => [item.nombre, item.total]), [["SIN REFERENCIA", 2], ["REALME C67", 1], ["SAMSUNGX", 1]]);
+  assert.deepEqual(referenciasPorMarca.VIVO.map((item) => [item.nombre, item.total]), [["VIVO Y36", 1]]);
+  assert.deepEqual(referenciasPorMarca.IPHONE.map((item) => [item.nombre, item.total]), [["APPLE IPHONE 12", 1]]);
+});
+
+test("VIVO reconoce nombres normalizados y compactos sin incluir prefijos ajenos ni duplicar financieras", async () => {
+  const rows = [
+    sale(40, 1, "  vivo   y05 128gb "),
+    { ...sale(41, 2, "VIVO Y05 128GB"), financierasDetalle: [
+      { nombre: "PAYJOY", valorBruto: 50_000, valorNeto: 50_000 },
+      { nombre: "ADDI", valorBruto: 50_000, valorNeto: 46_000 },
+    ] },
+    sale(42, 2, "vivoY36 256GB"),
+    sale(43, 3, null, "VIVO V50 256GB"),
+    sale(44, 1, "VIVOV50 256GB"),
+    sale(45, 1, "VIVOTEK IP CAMERA"),
+    sale(46, 2, "LGVIVOY05"),
+    sale(47, 3, "REALME C67"),
+    sale(48, 1, "IPHONE 13"),
+    sale(49, 2, "IPHONE13"),
+  ];
+  const { getBrandSalesReport } = createReportModules(rows);
+  const report = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09" });
+  assert.equal(report.resumen.ventas, 10);
+  assert.deepEqual(report.resumen.topMarcasVendidas.map((marca) => [marca.nombre, marca.total, marca.porcentaje]), [["VIVO", 5, 50], ["OTRAS MARCAS", 3, 30], ["IPHONE", 2, 20]]);
+  assert.equal(report.referenciasPorMarca.VIVO.length, 4);
+  assert.equal(report.referenciasPorMarca.VIVO[0].nombre, "VIVO Y05 128GB");
+  assert.equal(report.referenciasPorMarca.VIVO[0].total, 2);
+  assert.equal(report.referenciasPorMarca.VIVO[0].porcentaje, 40);
+  assert.deepEqual(new Set(report.referenciasPorMarca["OTRAS MARCAS"].map((item) => item.nombre)), new Set(["VIVOTEK IP CAMERA", "LGVIVOY05", "REALME C67"]));
+  const scoped = await getBrandSalesReport({ rolNombre: "AUDITOR" }, { period: "2026-09", sedeId: "2" });
+  assert.equal(scoped.resumen.ventas, 4);
+  assert.deepEqual(new Set(scoped.referenciasPorMarca.VIVO.map((item) => item.nombre)), new Set(["VIVO Y05 128GB", "VIVOY36 256GB"]));
+  assert.equal(scoped.referenciasPorMarca.VIVO.reduce((sum, item) => sum + item.total, 0), 2);
+  assert.equal(scoped.referenciasPorMarca.VIVO.every((item) => item.porcentaje === 50), true);
+  assert.deepEqual(scoped.referenciasPorMarca["OTRAS MARCAS"].map((item) => item.nombre), ["LGVIVOY05"]);
+  const empty = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09", sedeId: "4" });
+  assert.equal(Object.values(empty.referenciasPorMarca).every((refs) => refs.length === 0), true);
+});
+
+test("ZTE mantiene medición y referencias propias por sede, sin reconocer marcas con prefijos similares", async () => {
+  const rows = [
+    sale(60, 1, "  zte blade a35  "),
+    sale(61, 2, "ZTEA35E 64GB"),
+    sale(62, 2, null, "ZTE BLADE V70 DESIGN 256GB"),
+    sale(63, 1, "AZTECA EQUIPO"),
+    sale(64, 2, "BZTEA35E"),
+  ];
+  const { getBrandSalesReport } = createReportModules(rows);
+  const report = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09" });
+  assert.equal(report.resumen.ventas, 5);
+  assert.deepEqual(report.resumen.topMarcasVendidas.map((item) => [item.nombre, item.total, item.porcentaje]), [["ZTE", 3, 60], ["OTRAS MARCAS", 2, 40]]);
+  assert.equal(report.referenciasPorMarca.ZTE.length, 3);
+  assert.equal(report.referenciasPorMarca.ZTE.reduce((sum, item) => sum + item.total, 0), 3);
+  assert.deepEqual(new Set(report.referenciasPorMarca["OTRAS MARCAS"].map((item) => item.nombre)), new Set(["AZTECA EQUIPO", "BZTEA35E"]));
+  const scoped = await getBrandSalesReport({ rolNombre: "AUDITOR" }, { period: "2026-09", sedeId: "2" });
+  assert.equal(scoped.resumen.ventas, 3);
+  assert.equal(scoped.referenciasPorMarca.ZTE.length, 2);
+  assert.equal(scoped.referenciasPorMarca.ZTE.every((item) => item.porcentaje === 50), true);
+  assert.deepEqual(scoped.detalles.ZTE, [{ sedeId: 2, nombre: "Bogotá", total: 2, porcentaje: 100 }]);
+});
+
+test("electrodomésticos usa la categoría guardada o referencias claras de legado y conserva los demás productos", async () => {
+  function typedSale(id, sedeId, reference, tipoProducto) {
+    const row = sale(id, sedeId, reference);
+    row.inventarioSede.tipoProducto = tipoProducto;
+    return row;
+  }
+  const appliances = [
+    typedSale(70, 1, "PRODUCTO QA SIN MODELO", "ELECTRODOMESTICO"),
+    typedSale(71, 1, "PC GENERICO REGISTRADO", "ELECTRODOMÉSTICOS"),
+    typedSale(72, 2, "NEVERA SAMSUNG 254L", "TELEFONIA"),
+    sale(73, 2, "SAMSUNG TV55 CRYSTAL"),
+    typedSale(74, 3, "TELEVISOR KALLEY", "TELEVISORES"),
+    typedSale(75, 3, "REFERENCIA INCOMPLETA", "NEVERA"),
+    sale(76, 3, null, "LAVADORA HACEB"),
+    // An explicit saved category is authoritative, even when its label resembles a phone.
+    typedSale(77, 2, "IPHONE 13 REGISTRADO COMO ELECTRO", "ELECTRODOMESTICO"),
+    typedSale(78, 1, "FREIDORA DE AIRE OSTER", "TELEFONIA"),
+    sale(79, 1, "LICUADORA OSTER"),
+  ];
+  const otherProducts = [
+    sale(80, 1, "COMPUTADOR LENOVO 256GB"), sale(81, 2, "TABLET IPAD 10"),
+    sale(82, 3, "SMARTWATCH GENERICO"), sale(83, 3, "CONSOLA PS5"),
+  ];
+  const phones = [typedSale(84, 1, "SAMSUNG A16", "TELEFONIA"), typedSale(85, 2, "IPHONE 13", "TELEFONIA"), typedSale(86, 3, "VIVO Y05", "TELEFONIA")];
+  const { getBrandSalesReport, calls } = createReportModules([...appliances, ...otherProducts, ...phones]);
+  const report = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09" });
+  assert.equal(report.resumen.ventas, 17);
+  const electro = report.resumen.topMarcasVendidas.find((item) => item.nombre === "ELECTRODOMÉSTICOS");
+  assert.equal(electro.total, 10);
+  assert.equal(electro.porcentaje, 10 / 17 * 100);
+  assert.equal(report.referenciasPorMarca["ELECTRODOMÉSTICOS"].length, 10);
+  assert.equal(report.referenciasPorMarca["ELECTRODOMÉSTICOS"].every((item) => item.total === 1 && item.porcentaje === 10), true);
+  assert.equal(report.referenciasPorMarca["OTRAS MARCAS"].length, 4);
+  assert.equal(report.resumen.topMarcasVendidas.find((item) => item.nombre === "SAMSUNG").total, 1);
+  assert.equal(report.resumen.topMarcasVendidas.find((item) => item.nombre === "IPHONE").total, 1);
+  assert.equal(report.resumen.topMarcasVendidas.find((item) => item.nombre === "VIVO").total, 1);
+  assert.equal(report.resumen.topMarcasVendidas.reduce((sum, item) => sum + item.total, 0), 17);
+  assert.equal(report.resumen.ingresos, 1_700_000);
+  assert.equal(calls.filter((call) => call.operation === "venta.findMany").length, 1);
+  assert.equal(calls.find((call) => call.operation === "venta.findMany").args.select.inventarioSede.select.tipoProducto, true);
+  const scoped = await getBrandSalesReport({ rolNombre: "AUDITOR" }, { period: "2026-09", sedeId: "2" });
+  assert.equal(scoped.resumen.ventas, 5);
+  assert.deepEqual(new Set(scoped.referenciasPorMarca["ELECTRODOMÉSTICOS"].map((item) => item.nombre)), new Set(["NEVERA SAMSUNG 254L", "SAMSUNG TV55 CRYSTAL", "IPHONE 13 REGISTRADO COMO ELECTRO"]));
+  assert.equal(scoped.referenciasPorMarca["ELECTRODOMÉSTICOS"].reduce((sum, item) => sum + item.total, 0), 3);
 });
 
 test("IPHONE agrupa modelos y variantes de escritura, conserva su distribución y no duplica ventas", async () => {

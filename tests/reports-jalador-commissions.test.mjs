@@ -117,6 +117,7 @@ test("corte sin jaladores usa estado vacío y cero real; otro corte recibe sus p
 test("el helper real suma Venta.comision sólo en jaladores personales con el mismo mes/sede y mantiene orden previo", async () => {
   const financieras = loadTypeScript("lib/ventas-financieras.ts");
   const utils = loadTypeScript("lib/ventas-utils.ts", { "@/lib/ventas-financieras": financieras });
+  const productTypes = loadTypeScript("lib/product-types.ts");
   const decimal = (value) => ({ toNumber: () => value });
   const row = (sedeId, jalador, comision, fecha = "2026-09-15T17:00:00Z") => ({
     fecha: new Date(fecha), sede: { id: sedeId, nombre: `SEDE ${sedeId}` },
@@ -141,6 +142,7 @@ test("el helper real suma Venta.comision sólo en jaladores personales con el mi
   const helper = loadTypeScript("lib/dashboard-commercial-summary.ts", {
     "@/lib/prisma": { __esModule: true, default: prisma }, "@/lib/ventas-utils": utils,
     "@/lib/ventas-financieras": financieras,
+    "@/lib/product-types": productTypes,
   });
   const all = await helper.getMonthlyCommercialSummary({ period: "2026-09" });
   assert.deepEqual(all.topJaladores, [

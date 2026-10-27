@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useTransition, type FormEvent } from "reac
 import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
 import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import ReferenceSalesPanel from "./reference-sales-panel";
+import BrandReferenceList from "./brand-reference-list";
 import styles from "./brands.module.css";
 
 export type BrandRankingItem = { nombre: string; total: number; porcentaje: number };
@@ -19,6 +20,7 @@ export type BrandsReportProps = {
   marcas: BrandRankingItem[];
   referencias: BrandRankingItem[];
   detalles: Record<string, BrandSedeItem[]>;
+  referenciasPorMarca?: Record<string, BrandRankingItem[]>;
 };
 
 const numero = (valor: number) => Number(valor || 0).toLocaleString("es-CO");
@@ -49,10 +51,11 @@ function Participation({ value }: { value: number }) {
   return <div className={styles.participation}><span className={styles.barTrack} aria-hidden="true"><span className={styles.barFill} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></span><span>{porcentaje(value)}</span></div>;
 }
 
-export default function BrandsReport({ usuario, consulta, sedes, ventas, marcas, referencias, detalles }: BrandsReportProps) {
+export default function BrandsReport({ usuario, consulta, sedes, ventas, marcas, referencias, detalles, referenciasPorMarca = {} }: BrandsReportProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [marcaActiva, setMarcaActiva] = useState<BrandRankingItem | null>(null);
+  const [detailView, setDetailView] = useState<"sedes" | "referencias">("sedes");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const marcaLider = marcas[0];
@@ -101,7 +104,7 @@ export default function BrandsReport({ usuario, consulta, sedes, ventas, marcas,
       </header>
       <section className={styles.metrics} aria-label="Resumen de ventas">
         <Metric icon="reports" label="Unidades vendidas" value={numero(ventas)} count />
-        <Metric icon="trophy" label="Marca líder" value={marcaLider?.nombre || "Sin ventas"} detail={marcaLider ? `${numero(marcaLider.total)} unidades · ${porcentaje(marcaLider.porcentaje)}` : undefined} />
+        <Metric icon="trophy" label="Marca o categoría líder" value={marcaLider?.nombre || "Sin ventas"} detail={marcaLider ? `${numero(marcaLider.total)} unidades · ${porcentaje(marcaLider.porcentaje)}` : undefined} />
         <Metric icon="inventory" label="Referencia líder" value={referenciaLider?.nombre || "Sin ventas"} detail={referenciaLider ? `${numero(referenciaLider.total)} unidades · ${porcentaje(referenciaLider.porcentaje)}` : undefined} reference />
         <Metric icon="tag" label="Referencias vendidas" value={numero(referencias.length)} count />
       </section>
@@ -114,23 +117,24 @@ export default function BrandsReport({ usuario, consulta, sedes, ventas, marcas,
       {pending && <p className={styles.queryStatus} role="status">Consultando el mes y la cobertura seleccionados…</p>}
       <div className={styles.panels}>
         <section className={styles.brandsPanel} aria-labelledby="brands-heading">
-          <div className={styles.panelHeading}><span className={styles.sectionIcon}><DashboardIcon name="reports" /></span><div><h2 id="brands-heading">Marcas vendidas</h2><p>Distribución de unidades y participación.</p></div><span className={styles.badge}>{numero(marcas.length)} marcas</span></div>
-          <div className={styles.brandHint}><DashboardIcon name="store" /><span>Consulta <strong>Ver sedes</strong> para explorar la distribución de cada marca.</span></div>
+          <div className={styles.panelHeading}><span className={styles.sectionIcon}><DashboardIcon name="reports" /></span><div><h2 id="brands-heading">Marcas y categorías</h2><p>Unidades vendidas y participación por grupo.</p></div><span className={styles.badge}>{numero(marcas.length)} grupos</span></div>
+          <div className={styles.brandHint}><DashboardIcon name="store" /><span>Abre <strong>Ver detalle</strong> para consultar sedes y referencias de cada grupo.</span></div>
           <div className={styles.tableScroller}><table className={styles.brandTable}>
             <caption className={styles.visuallyHidden}>Marcas vendidas durante {consulta.periodLabel} en {consulta.cobertura}</caption>
-            <thead><tr><th scope="col">#</th><th scope="col">Marca</th><th scope="col" className={styles.numeric}>Unidades</th><th scope="col">Participación</th><th scope="col">Detalle</th></tr></thead>
-            <tbody>{marcas.length === 0 ? <tr><td colSpan={5} className={styles.empty}>No hay marcas registradas durante este periodo.</td></tr> : marcas.map((item, index) => <tr key={item.nombre} className={index === 0 ? styles.leader : undefined}><td><span className={styles.position}>{index + 1}</span></td><th scope="row">{item.nombre}</th><td className={styles.numeric}>{numero(item.total)}</td><td><Participation value={item.porcentaje} /></td><td><button type="button" className={styles.detailButton} disabled={pending} aria-haspopup="dialog" aria-label={`Ver sedes de ${item.nombre}: ${numero(item.total)} unidades, ${porcentaje(item.porcentaje)}`} onClick={event => { triggerRef.current = event.currentTarget; setMarcaActiva(item); }}>Ver sedes<DashboardIcon name="chevron" /></button></td></tr>)}</tbody>
+            <thead><tr><th scope="col">#</th><th scope="col">Marca / Categoría</th><th scope="col" className={styles.numeric}>Unidades</th><th scope="col">Participación</th><th scope="col">Detalle</th></tr></thead>
+            <tbody>{marcas.length === 0 ? <tr><td colSpan={5} className={styles.empty}>No hay marcas registradas durante este periodo.</td></tr> : marcas.map((item, index) => <tr key={item.nombre} className={index === 0 ? styles.leader : undefined}><td><span className={styles.position}>{index + 1}</span></td><th scope="row">{item.nombre}</th><td className={styles.numeric}>{numero(item.total)}</td><td><Participation value={item.porcentaje} /></td><td><button type="button" className={styles.detailButton} disabled={pending} aria-haspopup="dialog" aria-label={`Ver detalle de ${item.nombre}: ${numero(item.total)} unidades, ${porcentaje(item.porcentaje)}`} onClick={event => { triggerRef.current = event.currentTarget; setDetailView(["OTRAS MARCAS", "ELECTRODOMÉSTICOS"].includes(item.nombre) ? "referencias" : "sedes"); setMarcaActiva(item); }}>Ver detalle<DashboardIcon name="chevron" /></button></td></tr>)}</tbody>
           </table></div>
-          <footer className={styles.panelFooter}>{numero(marcas.length)} marcas · {numero(ventas)} unidades vendidas</footer>
+          <footer className={styles.panelFooter}>{numero(marcas.length)} grupos · {numero(ventas)} unidades vendidas</footer>
         </section>
         <ReferenceSalesPanel key={`${consulta.period}:${consulta.sedeId}`} topItems={referencias.slice(0, 10)} allItems={referencias} />
       </div>
     </main>
     {marcaActiva && <dialog ref={dialogRef} className={styles.brandDialog} aria-labelledby="brand-dialog-title" aria-describedby="brand-dialog-period" onCancel={event => { event.preventDefault(); cerrarDetalle(); }} onClose={() => { setMarcaActiva(null); triggerRef.current?.focus({ preventScroll: true }); }}>
-      <div className={styles.dialogHeading}><div><span className={styles.dialogEyebrow}>Ventas por sede</span><h2 id="brand-dialog-title">{marcaActiva.nombre}</h2></div><button type="button" className={styles.closeIcon} aria-label="Cerrar detalle" onClick={cerrarDetalle} autoFocus><DashboardIcon name="close" /></button></div>
+      <div className={styles.dialogHeading}><div><span className={styles.dialogEyebrow}>Detalle de ventas</span><h2 id="brand-dialog-title">{marcaActiva.nombre}</h2></div><button type="button" className={styles.closeIcon} aria-label="Cerrar detalle" onClick={cerrarDetalle} autoFocus><DashboardIcon name="close" /></button></div>
       <div className={styles.dialogContext}><p id="brand-dialog-period">{capitalize(consulta.periodLabel)}</p><span>{consulta.cobertura}</span></div>
-      <div className={styles.brandTotal}><span className={styles.metricIcon}><DashboardIcon name="inventory" /></span><div><p>Total vendido de esta marca</p><p><strong>{numero(marcaActiva.total)}</strong> <span>unidades</span></p></div></div>
-      <div className={styles.tableScroller}><table className={styles.sedeTable}><thead><tr><th scope="col">Sede</th><th scope="col">Unidades</th><th scope="col">Participación</th></tr></thead><tbody>{detalleSedes.map(sede => <tr key={sede.sedeId}><th scope="row">{sede.nombre}</th><td>{numero(sede.total)}</td><td><Participation value={sede.porcentaje} /></td></tr>)}</tbody><tfoot><tr><th scope="row">Total</th><td>{numero(marcaActiva.total)}</td><td><Participation value={marcaActiva.total > 0 ? 100 : 0} /></td></tr></tfoot></table></div>
+      <div className={styles.brandTotal}><span className={styles.metricIcon}><DashboardIcon name="inventory" /></span><div><p>Total vendido del grupo</p><p><strong>{numero(marcaActiva.total)}</strong> <span>unidades</span></p></div></div>
+      <div className={styles.detailViews} role="group" aria-label="Vista del detalle"><button type="button" aria-pressed={detailView === "sedes"} onClick={() => setDetailView("sedes")}><DashboardIcon name="store" />Por sede</button><button type="button" aria-pressed={detailView === "referencias"} onClick={() => setDetailView("referencias")}><DashboardIcon name="inventory" />Referencias <span>{numero((referenciasPorMarca[marcaActiva.nombre] || []).length)}</span></button></div>
+      {detailView === "referencias" ? <BrandReferenceList key={marcaActiva.nombre} label={marcaActiva.nombre} items={referenciasPorMarca[marcaActiva.nombre] || []} /> : <div className={styles.tableScroller}><table className={styles.sedeTable}><thead><tr><th scope="col">Sede</th><th scope="col">Unidades</th><th scope="col">Participación</th></tr></thead><tbody>{detalleSedes.map(sede => <tr key={sede.sedeId}><th scope="row">{sede.nombre}</th><td>{numero(sede.total)}</td><td><Participation value={sede.porcentaje} /></td></tr>)}</tbody><tfoot><tr><th scope="row">Total</th><td>{numero(marcaActiva.total)}</td><td><Participation value={marcaActiva.total > 0 ? 100 : 0} /></td></tr></tfoot></table></div>}
       <footer className={styles.dialogFooter}><button type="button" onClick={cerrarDetalle}>Cerrar</button></footer>
     </dialog>}
   </div>;
