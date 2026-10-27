@@ -92,7 +92,7 @@ export default function ReferenceSalesPanel({
         </p>
       </div>
 
-      <table id={rankingId} className={styles.table}>
+      <div className={styles.tableScroller}><table id={rankingId} className={styles.table}>
         <caption className={styles.visuallyHidden}>
           {termino ? "Resultados de búsqueda" : showAll ? "Ranking completo de referencias" : "Top 10 referencias vendidas"}
         </caption>
@@ -148,7 +148,7 @@ export default function ReferenceSalesPanel({
             );
           })}
         </tbody>
-      </table>
+      </table></div>
 
       <button
         type="button"
