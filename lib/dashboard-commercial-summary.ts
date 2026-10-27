@@ -15,6 +15,7 @@ const MARCAS_VENDIDAS = [
   "XIAOMI",
   "OPPO",
   "HONOR",
+  "IPHONE",
 ];
 const OTRAS_MARCAS = "OTRAS MARCAS";
 
@@ -93,6 +94,10 @@ function resolveBrand(value: string | null | undefined) {
   }
 
   const words = reference.split(/[^A-Z0-9]+/).filter(Boolean);
+  // Keep iPhone sales together, including APPLE IPHONE and compact model labels.
+  if (words.some((word) => /^IPHONE(?:\d[A-Z0-9]*|X(?:R|S(?:MAX)?)?|SE(?:\d+)?)?$/.test(word))) {
+    return "IPHONE";
+  }
   return MARCAS_VENDIDAS.find((marca) => words.includes(marca)) || OTRAS_MARCAS;
 }
 

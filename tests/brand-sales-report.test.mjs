@@ -126,7 +126,7 @@ function createReportModules(rows = fixtureSales, coverageSedes = sedes) {
   return { ...report, ...commercial, calls };
 }
 
-test("las marcas, referencias, puestos y denominadores coinciden con la versión anterior para cada cobertura", async () => {
+test("separa IPHONE del ranking anterior sin alterar otras marcas, referencias ni denominadores por cobertura", async () => {
   for (const sedeId of [null, 1, 2, 3, 4]) {
     const { getBrandSalesReport } = createReportModules();
     const { resumen } = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09", sedeId });
@@ -136,7 +136,19 @@ test("las marcas, referencias, puestos y denominadores coinciden con la versión
       ...(sedeId === null ? {} : { sedeId }),
     }));
     const before = brandRankingsBefore(selected);
-    assert.deepEqual(resumen.topMarcasVendidas, before.topMarcasVendidas);
+    // Sale 7 is the existing APPLE IPHONE 12 fixture; all other old categories stay intact.
+    const iphoneCount = selected.filter((venta) => venta.id === 7).length;
+    const expectedBrands = new Map(before.topMarcasVendidas.map((marca) => [marca.nombre, marca.total]));
+    if (iphoneCount) {
+      expectedBrands.set("IPHONE", iphoneCount);
+      expectedBrands.set("OTRAS MARCAS", expectedBrands.get("OTRAS MARCAS") - iphoneCount);
+    }
+    const expectedNames = [...expectedBrands].filter(([, total]) => total > 0).map(([nombre]) => nombre);
+    assert.deepEqual(new Set(resumen.topMarcasVendidas.map((marca) => marca.nombre)), new Set(expectedNames));
+    for (const marca of resumen.topMarcasVendidas) {
+      assert.equal(marca.total, expectedBrands.get(marca.nombre));
+      assert.equal(marca.porcentaje, marca.total / selected.length * 100);
+    }
     assert.deepEqual(resumen.topReferenciasVendidas, before.topReferenciasVendidas);
     assert.deepEqual(resumen.referenciasVendidas, before.referenciasVendidas);
     assert.equal(resumen.ventas, selected.length);
@@ -152,7 +164,7 @@ test("el detalle sale del mismo recorrido y cada venta aporta una vez, incluso c
   assert.equal(resumen.referenciasVendidas.length, 12);
   assert.equal(resumen.topReferenciasVendidas.length, 10);
   assert.equal(calls.filter((call) => call.operation === "venta.findMany").length, 1);
-  assert.deepEqual(new Set(Object.keys(detalles)), new Set(["INFINIX", "TECNO", "MOTOROLA", "SAMSUNG", "XIAOMI", "OPPO", "HONOR", "OTRAS MARCAS"]));
+  assert.deepEqual(new Set(Object.keys(detalles)), new Set(["INFINIX", "TECNO", "MOTOROLA", "SAMSUNG", "XIAOMI", "OPPO", "HONOR", "IPHONE", "OTRAS MARCAS"]));
   for (const marca of resumen.topMarcasVendidas) {
     const filas = detalles[marca.nombre];
     assert.equal(filas.length, coberturas.length);
@@ -170,12 +182,42 @@ test("conserva prioridad inventario/descripción, SIN REFERENCIA, coincidencia p
   const { resumen, detalles } = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09" });
   assert.equal(resumen.referenciasVendidas.find((item) => item.nombre === "SIN REFERENCIA").total, 2);
   assert.equal(resumen.referenciasVendidas.some((item) => item.nombre === "SAMSUNG A25"), false);
-  assert.equal(resumen.topMarcasVendidas.find((item) => item.nombre === "OTRAS MARCAS").total, 6);
+  assert.equal(resumen.topMarcasVendidas.find((item) => item.nombre === "OTRAS MARCAS").total, 5);
+  assert.equal(resumen.topMarcasVendidas.find((item) => item.nombre === "IPHONE").total, 1);
   assert.equal(resumen.topMarcasVendidas.find((item) => item.nombre === "MOTOROLA").total, 1);
   assert.equal(detalles["OTRAS MARCAS"].find((fila) => fila.sedeId === 1).total, 4);
-  assert.equal(detalles["OTRAS MARCAS"].find((fila) => fila.sedeId === 2).total, 2);
+  assert.equal(detalles["OTRAS MARCAS"].find((fila) => fila.sedeId === 2).total, 1);
   const empatadas = resumen.topMarcasVendidas.filter((marca) => marca.total === 1).map((marca) => marca.nombre);
-  assert.deepEqual(empatadas, ["INFINIX", "MOTOROLA", "XIAOMI", "OPPO", "HONOR"]);
+  assert.deepEqual(empatadas, ["INFINIX", "MOTOROLA", "XIAOMI", "OPPO", "HONOR", "IPHONE"]);
+});
+
+test("IPHONE agrupa modelos y variantes de escritura, conserva su distribución y no duplica ventas", async () => {
+  const phones = [
+    sale(30, 1, "  iphone 13 PRO MAX 128gb  "),
+    sale(31, 1, "APPLE IPHONE 12"),
+    sale(32, 2, "Iphone15PRO 256GB"),
+    sale(33, 2, "IPHONE-16 EXHIBICIÓN"),
+    sale(34, 3, "iPhoneXR 128GB"),
+    sale(35, 3, null, "  Apple iPhone SE 2022  "),
+    { ...sale(36, 1, "IPHONE SE2022"), financierasDetalle: [
+      { nombre: "PAYJOY", valorBruto: 50_000, valorNeto: 50_000 },
+      { nombre: "ADDI", valorBruto: 50_000, valorNeto: 46_000 },
+    ] },
+  ];
+  const others = [sale(37, 1, "APPLE IPAD 10"), sale(38, 2, "APPLE WATCH"), sale(39, 2, "SAMSUNG A16")];
+  const { getBrandSalesReport } = createReportModules([...phones, ...others]);
+  const { resumen, detalles } = await getBrandSalesReport({ rolNombre: "ADMIN" }, { period: "2026-09" });
+  assert.equal(resumen.ventas, 10);
+  assert.equal(resumen.topMarcasVendidas.find((marca) => marca.nombre === "IPHONE").total, 7);
+  assert.equal(resumen.topMarcasVendidas.find((marca) => marca.nombre === "IPHONE").porcentaje, 70);
+  assert.equal(resumen.topMarcasVendidas.find((marca) => marca.nombre === "OTRAS MARCAS").total, 2);
+  assert.equal(resumen.topMarcasVendidas.reduce((sum, marca) => sum + marca.total, 0), 10);
+  assert.deepEqual(detalles.IPHONE.map((sede) => [sede.sedeId, sede.total]).sort((a, b) => a[0] - b[0]), [[1, 3], [2, 2], [3, 2], [4, 0], [5, 0]]);
+  assert.equal(detalles.IPHONE.reduce((sum, sede) => sum + sede.total, 0), 7);
+  const scoped = await getBrandSalesReport({ rolNombre: "AUDITOR" }, { period: "2026-09", sedeId: "2" });
+  assert.equal(scoped.resumen.ventas, 4);
+  assert.equal(scoped.resumen.topMarcasVendidas.find((marca) => marca.nombre === "IPHONE").total, 2);
+  assert.deepEqual(scoped.detalles.IPHONE, [{ sedeId: 2, nombre: "Bogotá", total: 2, porcentaje: 100 }]);
 });
 
 test("una sede válida con nombre vacío conserva la venta en el detalle y no cambia rankings antiguos", async () => {
