@@ -5,6 +5,7 @@ import type { PayJoyExtensionOperation, Prisma } from "@/app/generated/prisma/cl
 import type { getSessionUser } from "@/lib/auth";
 import { puedeConsultarExtensionesPayJoy, puedeGestionarExtensionesPayJoy, scopeRegistrosExtensionesPayJoy } from "@/lib/payjoy-extensions-access";
 import { readPayJoyExtensionDevice, isPayJoyRetailConfigured } from "@/lib/payjoy-retail";
+import { findStoredPayJoyExtensionDevice } from "@/lib/payjoy-extensions-device-store";
 import { beginPayJoyExtension, refreshPayJoyExtensionOptions, selectPayJoyExtension, PayJoyExtensionsProviderError, type PayJoyExtensionOption } from "@/lib/payjoy-extensions-provider";
 import type { PayJoyExtensionOperationView } from "@/lib/payjoy-extensions-types";
 
@@ -15,6 +16,8 @@ const DEVICE_TAG = /^D[A-Z\d]{5,31}$/;
 const errors: Record<string, string> = {
   CONFIG: "Falta configurar la consulta de PayJoy en el servidor. Puedes consultar con el identificador del dispositivo.",
   MISSING_DEVICE_TAG: "PayJoy no devolvió el identificador de extensiones. Usa Consultar por dispositivo con el código de PayJoy del equipo.",
+  DEVICE_UNRESOLVED: "PayJoy respondió sin los datos del equipo. Usa Consultar por dispositivo con el código del enlace de PayJoy. Si no podemos comprobar su asociación, solicita la revisión de un administrador.",
+  DEVICE_ASSOCIATION_CONFLICT: "Los registros tienen asociaciones distintas para este dispositivo. Un administrador debe verificar el código y el cliente antes de continuar.",
   AUTH: "PayJoy no autorizó la consulta. Revisa la configuración del servidor.",
   NOT_FOUND: "PayJoy no encontró información para este dispositivo.",
   RATE_LIMIT: "PayJoy alcanzó su límite de consultas. Intenta más tarde.",
@@ -183,12 +186,45 @@ export async function prepararExtensionPayJoy(session: Session, input: Record<st
   try {
     let deviceTag = tag;
     if (imei || isPayJoyRetailConfigured()) {
-      const device = await readPayJoyExtensionDevice(imei || tag!);
+      let device: Pick<Awaited<ReturnType<typeof readPayJoyExtensionDevice>>, "imei" | "deviceTag" | "customerId"> | null = null;
+      try { device = await readPayJoyExtensionDevice(imei || tag!); }
+      catch (error) {
+        // Only the observed empty response can use an independently verified association.
+        // Transport/authentication errors or contradictory identities never use this fallback.
+        if (errorCode(error) !== "DEVICE_UNRESOLVED") throw error;
+      }
+      if (!device?.deviceTag) {
+        // The commercial record was authorized above. Imported reports only resolve that
+        // exact IMEI/document pair; they never broaden the cédula search or role/sede scope.
+        const stored = await findStoredPayJoyExtensionDevice(record
+          ? { imei: record.serialImei!.trim(), documentoNumero: record.documentoNumero }
+          : { deviceTag: tag! });
+        if (stored) {
+          await assertLocalDeviceScope(session, stored.imei);
+          if (!record) {
+            const owned = await prisma.registroVendedorVenta.findFirst({
+              where: { ...localScope(session), serialImei: stored.imei, documentoNumero: stored.documentoNumero }, select: localSelect,
+            });
+            if (owned && isPayJoy(owned)) record = owned;
+            else if (Object.keys(scopeRegistrosExtensionesPayJoy(session)).length !== 0) {
+              throw new PayJoyExtensionsError("FORBIDDEN_DEVICE", 403);
+            }
+          }
+          device = { imei: stored.imei, deviceTag: stored.deviceTag, customerId: device?.customerId || null };
+        } else if (tag && Object.keys(scopeRegistrosExtensionesPayJoy(session)).length === 0) {
+          // Administrative identities already have explicit global device access.
+          // A manually supplied tag is not attributed to an unverified customer or IMEI.
+          device = { imei: null, deviceTag: tag, customerId: null };
+        } else {
+          throw new PayJoyExtensionsError(device ? "MISSING_DEVICE_TAG" : "DEVICE_UNRESOLVED", 422);
+        }
+      }
       if (device.imei) await assertLocalDeviceScope(session, device.imei);
       deviceTag = device.deviceTag;
       if (!deviceTag) throw new PayJoyExtensionsError("MISSING_DEVICE_TAG", 422);
       row = await prisma.payJoyExtensionOperation.update({ where: { id }, data: {
         deviceTag, activeDeviceKey: deviceTag, imei: device.imei, clienteIdPayjoy: device.customerId,
+        registroId: record?.id || null, clienteDocumentoUltimos4: record?.documentoNumero.slice(-4) || null,
       } });
     }
     if (!deviceTag) throw new PayJoyExtensionsError("MISSING_DEVICE_TAG", 422);

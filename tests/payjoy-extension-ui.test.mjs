@@ -167,3 +167,38 @@ test("un error de consulta permite una nueva consulta explícita sin confirmar u
   assert.equal(ui.calls[1].body.deviceTag, failed.deviceTag);
   assert.equal(ui.state.operation.status, "LISTA");
 });
+
+test("una respuesta sin dispositivo abre la consulta manual y conserva cliente y equipo sin reintentar el IMEI", async () => {
+  for (const errorCode of ["DEVICE_UNRESOLVED", "MISSING_DEVICE_TAG"]) {
+    const device = { registroId: 7, clienteNombre: "Cliente QA", documentoUltimos4: "4321", imei: ready.imei, modelo: "Equipo QA" };
+    const failed = { ...ready, status: "ERROR", deviceTag: null, options: [], errorCode, errorMessage: "PayJoy no devolvió los datos del equipo. Ingresa su identificador." };
+    const ui = probe({ initial: { cedula: "10004321", devices: [device], selectedDevice: 7 }, fetchImpl: async call => response(call.method === "GET" ? { operations: [], canManage: true } : { operation: failed }) });
+    let tree = await ui.mount();
+    getButton(tree, "Consultar extensiones del equipo").props.onClick(); await settle(); tree = ui.render();
+    assert.equal(ui.state.manual, true);
+    assert.equal(ui.state.cedula, "10004321");
+    assert.equal(ui.state.selectedDevice, 7);
+    assert.deepEqual(ui.state.devices, [device]);
+    assert.ok(elements(tree).find(node => node.props?.id === "payjoy-manual"));
+    assert.equal(elements(tree).some(node => node.type === "button" && textOf(node).trim() === "Consultar nuevamente"), false);
+    getButton(tree, "Ingresar identificador del dispositivo").props.onClick(); tree = ui.render();
+    assert.equal(ui.calls.filter(item => item.method === "POST").length, 1);
+    elements(tree).find(node => node.props?.id === "payjoy-device-tag").props.onChange({ target: { value: "DABC1234" } }); tree = ui.render();
+    elements(tree).find(node => node.props?.id === "payjoy-manual").props.onSubmit(submit()); await settle();
+    const writes = ui.calls.filter(item => item.method === "POST");
+    assert.deepEqual(writes.map(item => item.body.action), ["preparar", "preparar"]);
+    assert.equal(writes[0].body.registroId, 7);
+    assert.equal(writes[1].body.deviceTag, "DABC1234");
+    assert.equal(writes[1].body.registroId, undefined);
+    assert.notEqual(writes[0].body.idempotencyKey, writes[1].body.idempotencyKey);
+  }
+});
+
+test("una asociación contradictoria requiere revisión administrativa y no ofrece reintento ni confirmación", async () => {
+  const failed = { ...ready, status: "ERROR", options: [], errorCode: "DEVICE_ASSOCIATION_CONFLICT", errorMessage: "La asociación del dispositivo requiere revisión." };
+  const ui = probe({ initial: { operation: failed }, fetchImpl: async () => response({ operations: [failed], canManage: true }) });
+  const tree = await ui.mount();
+  assert.match(textOf(tree), /Solicita al administrador/);
+  assert.equal(elements(tree).some(node => node.type === "button" && ["Consultar nuevamente", "Revisar gestión", "Confirmar extensión"].includes(textOf(node).trim())), false);
+  assert.equal(ui.calls.filter(item => item.method === "POST").length, 0);
+});

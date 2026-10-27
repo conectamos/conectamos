@@ -99,14 +99,36 @@ test("rechaza una identidad distinta, una respuesta ambigua o un tag contradicto
     [imei, payload({ device: { imei, deviceTag: { secret } } })],
     [imei, payload({ deviceTag: "DOTHER99" })],
     [imei, payload({ device: [] })],
+    [imei, payload({ device: {} })],
+    [imei, payload({ device: "" })],
+    [imei, payload({ device: { imei: Number(imei), deviceTag: tag } })],
     [imei, payload({ valid: "true" })],
-    [imei, { valid: true }],
+    [imei, { valid: true, device: null, deviceTag: "DOTHER99" }],
+    [imei, { valid: true, device: null, customer: { id: "4000005" } }],
+    [imei, { valid: true, message: { secret } }],
     [imei, null],
     [imei, []],
   ];
   for (const [identifier, result] of cases) {
     const reader = client(async () => Response.json(result));
     await assert.rejects(reader.readPayJoyExtensionDevice(identifier), { code: "INVALID_RESPONSE" });
+  }
+});
+
+test("distingue valid:true sin dispositivo y pide identificación manual sin inventar identidad ni reintentar", async () => {
+  for (const identifier of [imei, tag]) {
+    for (const result of [{ valid: true }, { valid: true, device: null }, { valid: true, message: `private=${secret}` }]) {
+      let calls = 0;
+      const reader = client(async () => { calls++; return Response.json(result); });
+      await assert.rejects(reader.readPayJoyExtensionDevice(identifier), (error) => {
+        assert.equal(error.code, "DEVICE_UNRESOLVED");
+        assert.match(error.message, /Consultar por dispositivo.*Device Tag/);
+        assert.doesNotMatch(error.message, /private=|test-server-key/);
+        assert.equal(error.cause, undefined);
+        return true;
+      });
+      assert.equal(calls, 1);
+    }
   }
 });
 

@@ -8,6 +8,7 @@ import type { PayJoyExtensionOperationView as Operation, PayJoyLocalDevice as De
 import styles from "./extensions.module.css";
 
 const API = "/api/payjoy/extensiones";
+const MANUAL_LOOKUP_ERRORS = ["DEVICE_UNRESOLVED", "MISSING_DEVICE_TAG"];
 const STATUS_LABELS: Record<string, string> = {
   PREPARANDO: "Consultando PayJoy", LISTA: "Lista para revisar", SIN_OPCIONES: "Sin opciones disponibles",
   EJECUTANDO: "Gestión en curso", EXITOSA: "Extensión confirmada", RECHAZADA: "Rechazada por PayJoy",
@@ -89,6 +90,7 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
   const historyAbort = useRef<AbortController | null>(null);
   const version = useRef(0);
   const resultHeading = useRef<HTMLHeadingElement>(null);
+  const manualInput = useRef<HTMLInputElement>(null);
 
   const loadHistory = useCallback(async () => {
     historyAbort.current?.abort();
@@ -114,6 +116,8 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
   const uncertain = Boolean(operation && uncertainId === operation.id);
   const canSelect = operation?.status === "LISTA" && !uncertain && !busy;
   const validReason = Boolean(selectedOption && (selectedOption.reasons.length === 0 || selectedOption.reasons.some(item => item.id === reason)));
+  const needsManualIdentifier = operation?.status === "ERROR" && MANUAL_LOOKUP_ERRORS.includes(operation.errorCode || "");
+  const hasDeviceConflict = operation?.errorCode === "DEVICE_ASSOCIATION_CONFLICT";
   const retryInput = operation?.deviceTag
     ? { deviceTag: operation.deviceTag }
     : operation?.imei && selectedDevice !== null && devices?.some(item => item.registroId === selectedDevice && item.imei === operation.imei)
@@ -122,6 +126,7 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
 
   function showOperation(item: Operation) {
     setOperation(item); setOptionId(""); setReason(""); setReview(false); setConfirmed(false);
+    if (MANUAL_LOOKUP_ERRORS.includes(item.errorCode || "") || item.errorCode === "CONFIG") setManual(true);
     setOperations(current => [item, ...current.filter(previous => previous.id !== item.id)]);
     setTimeout(() => resultHeading.current?.focus(), 0);
   }
@@ -149,9 +154,8 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
       const data = await post<{ operation: Operation }>({ action: "preparar", idempotencyKey: prepareAttempt.current.key, ...input });
       if (!data.operation?.id) throw new RequestError("No se pudo recuperar la consulta. Reintenta con el mismo dispositivo.");
       showOperation(data.operation);
-      if (["MISSING_DEVICE_TAG", "CONFIG"].includes(data.operation.errorCode || "")) setManual(true);
     } catch (cause) {
-      if (cause instanceof RequestError && ["MISSING_DEVICE_TAG", "CONFIG"].includes(cause.code)) setManual(true);
+      if (cause instanceof RequestError && [...MANUAL_LOOKUP_ERRORS, "CONFIG"].includes(cause.code)) setManual(true);
       setError(cause instanceof RequestError ? cause.message : "No se pudo recuperar la consulta. Reintenta con el mismo dispositivo; conservaremos el intento.");
     } finally { mutationLock.current = false; setBusy(null); }
   }
@@ -208,7 +212,7 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
             <div className={styles.manual}><button className={`${styles.button} ${styles.full}`} aria-expanded={manual} aria-controls="payjoy-manual" disabled={Boolean(busy)} onClick={() => { setManual(value => !value); setFieldError(null); }}><DashboardIcon name="barcode" />Consultar por dispositivo</button>
               {manual && <form id="payjoy-manual" className={styles.searchForm} onSubmit={event => { event.preventDefault(); void prepare({ deviceTag: deviceTag.trim().toUpperCase() }); }}>
                 <label htmlFor="payjoy-device-tag">Identificador del dispositivo PayJoy</label>
-                <input id="payjoy-device-tag" value={deviceTag} maxLength={32} autoComplete="off" autoCapitalize="characters" spellCheck={false} disabled={Boolean(busy)} onChange={event => setDeviceTag(event.target.value.toUpperCase())} aria-invalid={fieldError === "device"} aria-describedby={fieldError === "device" ? "payjoy-error" : "device-help"} />
+                <input id="payjoy-device-tag" ref={manualInput} value={deviceTag} maxLength={32} autoComplete="off" autoCapitalize="characters" spellCheck={false} disabled={Boolean(busy)} onChange={event => setDeviceTag(event.target.value.toUpperCase())} aria-invalid={fieldError === "device"} aria-describedby={fieldError === "device" ? "payjoy-error" : "device-help"} />
                 <small id="device-help">Usa el código que empieza con D en PayJoy. Este código es diferente del IMEI y de la cédula.</small>
                 <button className={`${styles.button} ${styles.primary}`} disabled={Boolean(busy)} type="submit">{busy === "preparar" && manual ? "Consultando PayJoy…" : "Consultar opciones"}</button>
               </form>}
@@ -228,8 +232,10 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
               {uncertain || operation.status === "INDETERMINADA" ? <div className={styles.warningBox} role="status"><strong>Resultado pendiente de verificar</strong><p>No repitas la extensión. Revisa el estado en PayJoy y actualiza este historial. Una respuesta interrumpida no confirma que la gestión haya fallado.</p><button className={styles.button} disabled={Boolean(busy) || historyLoading} onClick={() => void loadHistory()}>Actualizar estado</button></div> : null}
               {["PREPARANDO", "EJECUTANDO"].includes(operation.status) && <div className={styles.notice} role="status"><p>La operación está en curso. Actualiza el historial para consultar el resultado; no hace falta volver a enviarla.</p><button className={styles.button} disabled={Boolean(busy) || historyLoading} onClick={() => void loadHistory()}>Actualizar estado</button></div>}
               {operation.errorMessage && <p className={styles.inlineError} role="status">{operation.errorMessage}</p>}
+              {needsManualIdentifier && <button className={styles.button} disabled={Boolean(busy)} aria-controls="payjoy-manual" onClick={() => { setManual(true); setFieldError(null); setTimeout(() => manualInput.current?.focus(), 0); }}><DashboardIcon name="barcode" />Ingresar identificador del dispositivo</button>}
+              {hasDeviceConflict && <p className={styles.historyHelp} role="status">Solicita al administrador que revise la asociación entre cliente y dispositivo antes de continuar.</p>}
               {operation.status === "SIN_OPCIONES" && <div className={styles.empty}><DashboardIcon name="clock" /><h3>Sin extensiones disponibles</h3><p>PayJoy no ofrece una opción disponible para este equipo en esta consulta.</p></div>}
-              {["ERROR", "SIN_OPCIONES", "RECHAZADA"].includes(operation.status) && retryInput && <button className={styles.button} disabled={Boolean(busy)} onClick={() => void prepare(retryInput, true)}><DashboardIcon name="refresh" />Consultar nuevamente</button>}
+              {["ERROR", "SIN_OPCIONES", "RECHAZADA"].includes(operation.status) && retryInput && !needsManualIdentifier && !hasDeviceConflict && <button className={styles.button} disabled={Boolean(busy)} onClick={() => void prepare(retryInput, true)}><DashboardIcon name="refresh" />Consultar nuevamente</button>}
               {operation.status === "EXPIRADA" && <div className={styles.warningBox}><strong>Vuelve a consultar las opciones</strong><p>La consulta venció. PayJoy debe confirmar nuevamente la disponibilidad antes de gestionar una extensión.</p>{operation.deviceTag && <button className={styles.button} disabled={Boolean(busy)} onClick={() => void prepare({ deviceTag: operation.deviceTag! }, true)}>Consultar nuevamente</button>}</div>}
               {operation.options.length > 0 && !operation.selectedOption && <fieldset className={styles.optionList} disabled={!canSelect}><legend>Opciones informadas por PayJoy</legend>{operation.options.map(option => <label className={`${styles.option} ${optionId === option.id ? styles.selected : ""} ${!option.available ? styles.unavailable : ""}`} key={option.id}>
                 <input type="radio" name="payjoy-option" checked={optionId === option.id} disabled={!canSelect || !option.available} onChange={() => { setOptionId(option.id); setReason(""); setReview(false); setConfirmed(false); }} />

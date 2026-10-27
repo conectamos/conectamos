@@ -136,12 +136,13 @@ export type PayJoyExtensionSnapshot = {
 };
 
 export type PayJoyExtensionLookupCode =
-  | "INVALID_INPUT" | "INVALID_RESPONSE" | "NOT_FOUND" | "RATE_LIMIT"
+  | "INVALID_INPUT" | "INVALID_RESPONSE" | "DEVICE_UNRESOLVED" | "NOT_FOUND" | "RATE_LIMIT"
   | "AUTH" | "UNAVAILABLE" | "TIMEOUT" | "CONFIG";
 
 const extensionLookupMessages: Record<PayJoyExtensionLookupCode, string> = {
   INVALID_INPUT: "Ingresa un IMEI de 15 o 16 dígitos o un Device Tag válido.",
   INVALID_RESPONSE: "PayJoy devolvió datos que no permiten verificar este dispositivo.",
+  DEVICE_UNRESOLVED: "PayJoy no devolvió datos para identificar el equipo. Usa Consultar por dispositivo e ingresa su Device Tag.",
   NOT_FOUND: "PayJoy no devolvió información para este dispositivo.",
   RATE_LIMIT: "PayJoy alcanzó su límite de consultas. Intenta nuevamente más tarde.",
   AUTH: "PayJoy rechazó las credenciales del servidor. Contacta al administrador.",
@@ -204,6 +205,13 @@ export async function readPayJoyExtensionDevice(identifier: string): Promise<Pay
 
   const data = extensionRecord(result);
   if (data?.valid === false) throw new PayJoyExtensionLookupError("NOT_FOUND");
+  // Retail may acknowledge the lookup with only { valid: true }. This is not
+  // device verification; do not infer an IMEI/tag or hide other identity data.
+  if (data?.valid === true && (data.device === undefined || data.device === null)
+      && Object.keys(data).every((key) => ["valid", "device", "message"].includes(key))
+      && (data.message === undefined || typeof data.message === "string")) {
+    throw new PayJoyExtensionLookupError("DEVICE_UNRESOLVED");
+  }
   const device = extensionRecord(data?.device);
   if (data?.valid !== true || !device) throw new PayJoyExtensionLookupError("INVALID_RESPONSE");
 

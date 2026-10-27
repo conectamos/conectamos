@@ -114,7 +114,14 @@ function setup(options = {}) {
     "next/server": { NextResponse: { json: (value, init) => Response.json(value, init) } },
     "@/lib/payjoy-retail": {
       isPayJoyRetailConfigured: () => options.configured !== false,
-      readPayJoyExtensionDevice: async (...args) => { providerCalls.push({ name: "readPayJoyExtensionDevice", args }); return copy(options.snapshot ?? snapshot); },
+      readPayJoyExtensionDevice: async (...args) => { providerCalls.push({ name: "readPayJoyExtensionDevice", args }); if (options.lookupError) throw options.lookupError; return copy(options.snapshot ?? snapshot); },
+    },
+    "@/lib/payjoy-extensions-device-store": {
+      findStoredPayJoyExtensionDevice: async (input) => {
+        calls.push({ table: "storedAssociation", method: "find", args: copy(input) });
+        if (options.storedError) throw options.storedError;
+        return copy(options.storedDevice ?? null);
+      },
     },
     "@/lib/payjoy-extensions-provider": provider,
   };
@@ -146,6 +153,96 @@ const countProvider = (fixture, name) => fixture.providerCalls.filter((call) => 
 const post = (body, changes = {}) => new Request("https://conectamos.test/api/payjoy/extensiones", {
   method: "POST", headers: { origin: "https://conectamos.test", "content-type": "application/json", ...changes.headers },
   body: typeof body === "string" ? body : JSON.stringify(body),
+});
+
+const unresolved = () => Object.assign(new Error("Empty Retail device response"), { code: "DEVICE_UNRESOLVED" });
+const storedDevice = { imei, documentoNumero: "123456789", deviceTag: tag };
+
+test("respuesta Retail vacía resuelve solo la pareja autorizada en reportes y consulta opciones reales", async () => {
+  const f = setup({ lookupError: unresolved(), storedDevice });
+  const result = await f.prepararExtensionPayJoy(vendor, prepare());
+  assert.equal(result.status, "LISTA");
+  assert.equal(result.deviceTag, tag);
+  assert.equal(result.imei, imei);
+  assert.equal(result.clienteDocumentoUltimos4, "6789");
+  assert.deepEqual(f.calls.filter(call => call.table === "storedAssociation").map(call => call.args), [{ imei, documentoNumero: "123456789" }]);
+  assert.equal(countProvider(f, "beginPayJoyExtension"), 1);
+  assert.equal(countProvider(f, "selectPayJoyExtension"), 0);
+  assert.ok(!JSON.stringify(f.providerCalls).includes("123456789"));
+});
+
+test("no consulta reportes ni PayJoy para un registro ajeno o eliminado", async () => {
+  for (const changes of [{ perfilVendedorId: 22 }, { sedeId: 202 }, { eliminadoEn: new Date() }]) {
+    const f = setup({ records: [local(changes)], lookupError: unresolved(), storedDevice });
+    await assert.rejects(f.prepararExtensionPayJoy(vendor, prepare()), { code: "FORBIDDEN_DEVICE" });
+    assert.equal(f.calls.filter(call => call.table === "storedAssociation").length, 0);
+    assert.equal(f.providerCalls.length, 0);
+  }
+});
+
+test("sin asociación la consulta por IMEI pide código manual y no inicia extensiones", async () => {
+  const f = setup({ lookupError: unresolved() });
+  const result = await f.prepararExtensionPayJoy(vendor, prepare());
+  assert.equal(result.errorCode, "DEVICE_UNRESOLVED");
+  assert.match(result.errorMessage, /sin los datos del equipo/);
+  assert.equal(countProvider(f, "beginPayJoyExtension"), 0);
+});
+
+test("el respaldo importado conserva un solo bloqueo al consultar registro y tag en paralelo", async () => {
+  const f = setup({ lookupError: unresolved(), storedDevice });
+  await Promise.all([
+    f.prepararExtensionPayJoy(vendor, prepare()),
+    f.prepararExtensionPayJoy(vendor, { idempotencyKey: randomUUID(), deviceTag: tag }),
+  ]);
+  assert.equal(countProvider(f, "beginPayJoyExtension"), 1);
+  assert.equal(f.rows.payJoyExtensionOperation.filter(row => row.activeDeviceKey === tag).length, 1);
+  assert.equal(countProvider(f, "selectPayJoyExtension"), 0);
+});
+
+test("un código manual importado requiere un registro autorizado y guarda su vínculo", async () => {
+  const f = setup({ lookupError: unresolved(), storedDevice });
+  const result = await f.prepararExtensionPayJoy(vendor, { idempotencyKey: randomUUID(), deviceTag: tag });
+  assert.equal(result.status, "LISTA");
+  assert.equal(f.rows.payJoyExtensionOperation[0].registroId, 1);
+  assert.equal(result.clienteDocumentoUltimos4, "6789");
+  for (const records of [[], [local({ perfilVendedorId: 22 })], [local({ sedeId: 202 })], [local({ documentoNumero: "999999999" })]]) {
+    const denied = setup({ records, lookupError: unresolved(), storedDevice });
+    const operation = await denied.prepararExtensionPayJoy(vendor, { idempotencyKey: randomUUID(), deviceTag: tag });
+    assert.equal(operation.errorCode, "FORBIDDEN_DEVICE");
+    assert.equal(countProvider(denied, "beginPayJoyExtension"), 0);
+  }
+});
+
+test("solo una identidad global puede consultar código manual sin asociación y no lo adjudica a un cliente", async () => {
+  const f = setup({ lookupError: unresolved() });
+  const result = await f.prepararExtensionPayJoy(admin, { idempotencyKey: randomUUID(), deviceTag: tag });
+  assert.equal(result.status, "LISTA");
+  assert.equal(result.imei, null);
+  assert.equal(result.clienteDocumentoUltimos4, null);
+  assert.equal(f.rows.payJoyExtensionOperation[0].registroId, null);
+  const restricted = setup({ lookupError: unresolved() });
+  const denied = await restricted.prepararExtensionPayJoy({ ...vendor, rolNombre: "ADMIN" }, { idempotencyKey: randomUUID(), deviceTag: tag });
+  assert.equal(denied.errorCode, "DEVICE_UNRESOLVED");
+  assert.equal(countProvider(restricted, "beginPayJoyExtension"), 0);
+});
+
+test("respuesta contradictoria, auth y transporte no usan reportes para esconder el fallo", async () => {
+  for (const code of ["INVALID_RESPONSE", "AUTH", "TIMEOUT", "UNAVAILABLE", "NOT_FOUND"]) {
+    const f = setup({ lookupError: Object.assign(new Error("private"), { code }), storedDevice });
+    const result = await f.prepararExtensionPayJoy(vendor, prepare());
+    assert.equal(result.errorCode, code);
+    assert.equal(f.calls.filter(call => call.table === "storedAssociation").length, 0);
+    assert.equal(countProvider(f, "beginPayJoyExtension"), 0);
+  }
+});
+
+test("conflicto en reportes bloquea el equipo sin invocar extensiones y falta de tag admite pareja verificada", async () => {
+  const conflict = setup({ lookupError: unresolved(), storedError: Object.assign(new Error("conflict"), { code: "DEVICE_ASSOCIATION_CONFLICT" }) });
+  const denied = await conflict.prepararExtensionPayJoy(vendor, prepare());
+  assert.equal(denied.errorCode, "DEVICE_ASSOCIATION_CONFLICT");
+  assert.equal(countProvider(conflict, "beginPayJoyExtension"), 0);
+  const f = setup({ snapshot: { ...snapshot, deviceTag: null }, storedDevice });
+  assert.equal((await f.prepararExtensionPayJoy(vendor, prepare())).status, "LISTA");
 });
 
 test("búsqueda por cédula devuelve solo equipos PayJoy autorizados, activos y únicos; no envía documento a APIs", async () => {
