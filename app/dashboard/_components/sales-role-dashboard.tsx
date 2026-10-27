@@ -35,9 +35,10 @@ function SupportWorkflow({ activity }: { activity: SalesRoleActivitySummary }) {
   ];
   return <section className={styles.workflowPanel} aria-labelledby="sales-role-workflow"><div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="document" /></span><div><h2 id="sales-role-workflow">Flujo operativo</h2><p>Registro y disponibilidad</p></div></div><div className={styles.workflowRows}>{steps.map(step => <div key={step.href} className={styles.workflowRow}><span className={styles.actionIcon}><DashboardIcon name={step.icon} /></span><div><h3>{step.label}</h3><p>{step.description}</p><span>{step.value}</span></div><Link href={step.href} className={styles.button} aria-label={`Abrir ${step.label}`}>Abrir<DashboardIcon name="arrow" /></Link></div>)}</div></section>;
 }
-export default function SalesRoleDashboard({ activity, coverageLabel, earnings, perfilNombre, role, roleLabel, usuario }: {
+export default function SalesRoleDashboard({ activity, coverageLabel, earnings, perfilNombre, role, roleLabel, usuario, puedeVerExtensionesPayJoy = false }: {
   activity: SalesRoleActivitySummary; coverageLabel: string; earnings: VendorEarningsSummary;
   perfilNombre?: string | null; role: SalesRole; roleLabel: string; usuario: string;
+  puedeVerExtensionesPayJoy?: boolean;
 }) {
   const esApoyo = role === "APOYO_OPERATIVO";
   // Preserve the former sidebar destinations, including its implicit CIERRE entry.
@@ -48,12 +49,14 @@ export default function SalesRoleDashboard({ activity, coverageLabel, earnings, 
     ...(esApoyo ? [{ href: "/dashboard/radar", icon: "radar", label: "Radar" } satisfies NavigationItem] : []),
     { href: "/vendedor/lista-negra", icon: "warning", label: "Lista negra" },
     { href: "/vendedor/lista-precios", icon: "tag", label: "Lista de precios" },
+    ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" } satisfies NavigationItem] : []),
   ];
   const quickActions: QuickAction[] = [
     { description: esApoyo ? "Iniciar un registro comercial" : "Registrar una venta nueva", href: "/vendedor/registros", icon: "document-add", label: esApoyo ? "Registrar venta" : "Nueva venta", primary: true },
     ...(esApoyo ? [{ description: "Consultar disponibilidad", href: "/dashboard/radar", icon: "radar", label: "Abrir radar" } satisfies QuickAction] : []),
     { description: "Validar información del cliente", href: "/vendedor/lista-negra", icon: "warning", label: "Consultar lista negra" },
     { description: "Consultar referencias y precios", href: "/vendedor/lista-precios", icon: "tag", label: "Lista de precios" },
+    ...(puedeVerExtensionesPayJoy ? [{ description: "Consultar opciones y gestionar el dispositivo", href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" } satisfies QuickAction] : []),
   ];
   return <div className={styles.page}>
     <header className={styles.topbar}><Link href="/dashboard" className={styles.brand}><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link><nav className={styles.navigation} aria-label="Navegación principal">{navigationItems.map(item => <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === "/dashboard" ? styles.navActive : ""}`} aria-current={item.href === "/dashboard" ? "page" : undefined}><DashboardIcon name={item.icon} />{item.label}</Link>)}</nav><SalesProfile name={usuario} role={`${roleLabel} · ${coverageLabel}`} /></header>

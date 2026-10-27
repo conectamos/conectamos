@@ -34,6 +34,8 @@
     "test:cash": "node --test tests/cash-workspace.test.mjs",
     "test:cash-management": "node --test tests/cash-management-workspace.test.mjs",
     "test:payjoy-cartera": "node --test tests/payjoy-cartera-workspace.test.mjs tests/payjoy-cartera-analysis.test.mjs",
+    "test:payjoy-extensiones": "node --test tests/payjoy-extension-access.test.mjs tests/payjoy-extension-provider.test.mjs tests/payjoy-extensions-provider.test.mjs tests/payjoy-extensions-service.test.mjs tests/payjoy-extension-ui.test.mjs",
+    "db:apply-payjoy-extensiones": "prisma db execute --file scripts/apply-payjoy-extensions-schema.sql && node scripts/verify-payjoy-extensions-schema.mjs",
     "test:sedes": "node --test tests/sedes-admin-workspace.test.mjs",
     "test:record-search": "node --test tests/record-search-contract.test.mjs tests/record-device-media.test.mjs tests/record-catalog-media.test.mjs",
     "proveedores:vapid": "node scripts/generar-vapid.mjs",

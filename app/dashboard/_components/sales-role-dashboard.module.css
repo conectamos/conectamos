@@ -6,7 +6,7 @@
 .brand { display:flex; align-items:center; gap:10px; color:#11161d; text-decoration:none; flex-shrink:0; }
 .brand img { width:44px; height:44px; object-fit:contain; }
 .brand strong { font-size:21px; font-weight:800; letter-spacing:-.6px; }
-.navigation { display:flex; flex:1; gap:24px; align-self:stretch; min-width:0; }
+.navigation { display:flex; flex:1; gap:24px; align-self:stretch; min-width:0; overflow-x:auto; }
 .navItem { display:flex; align-items:center; gap:8px; position:relative; min-height:75px; color:#475569; text-decoration:none; white-space:nowrap; font-size:14px; }
 .navItem:hover, .navActive { color:#e30613; }
 .navActive { font-weight:700; }

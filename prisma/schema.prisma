@@ -379,6 +379,40 @@ model PerfilVendedorSede {
   @@index([sedeId])
 }
 
+// Extensiones PayJoy: no se almacenan tokens ni respuestas completas del proveedor.
+model PayJoyExtensionOperation {
+  id                         String   @id
+  idempotencyKey             String   @unique
+  inputHash                  String
+  usuarioId                  Int
+  perfilId                   Int?
+  sedeId                     Int
+  asesorNombre               String
+  registroId                 Int?
+  clienteDocumentoUltimos4    String?
+  clienteIdPayjoy             String?
+  deviceTag                  String?
+  imei                       String?
+  status                     String
+  // Bloqueo compartido entre procesos, asesores y claves de reenvío distintas.
+  activeDeviceKey            String?  @unique
+  providerRequestId          String?
+  providerIdempotencyKey      String   @unique
+  currentValidThrough        DateTime?
+  options                    Json
+  selectedOption             Json?
+  selectedReason             String?
+  response                   Json?
+  errorCode                  String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  expiresAt                  DateTime?
+  completedAt                DateTime?
+
+  @@index([usuarioId, perfilId, sedeId, createdAt])
+  @@index([deviceTag, createdAt])
+}
+
 model RegistroVendedorVenta {
   id                              Int       @id @default(autoincrement())
   perfilVendedorId                Int
