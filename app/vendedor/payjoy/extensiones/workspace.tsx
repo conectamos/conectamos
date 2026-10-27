@@ -1,8 +1,10 @@
 "use client";
 
+import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
-import { DashboardSidebar, type NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
+import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
 import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import type { PayJoyExtensionOperationView as Operation, PayJoyLocalDevice as Device } from "@/lib/payjoy-extensions-types";
 import styles from "./extensions.module.css";
@@ -16,6 +18,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 const NAVIGATION: NavigationItem[] = [
   { href: "/dashboard", icon: "home", label: "Inicio" },
+  { href: "/cierre", icon: "reports", label: "CIERRE" },
   { href: "/vendedor/registros", icon: "sales", label: "Registrar venta" },
   { href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" },
 ];
@@ -62,9 +65,10 @@ async function post<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export default function PayJoyExtensionsWorkspace({ canManage, session }: {
+export default function PayJoyExtensionsWorkspace({ canManage, session, navigation = NAVIGATION }: {
   canManage: boolean;
-  session: { nombre: string; sedeNombre: string };
+  session: { nombre: string; sedeNombre: string; roleLabel?: string };
+  navigation?: NavigationItem[];
 }) {
   const [cedula, setCedula] = useState("");
   const [devices, setDevices] = useState<Device[] | null>(null);
@@ -83,6 +87,8 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyPage, setHistoryPage] = useState(1);
   const [allowManage, setAllowManage] = useState(canManage);
   const [uncertainId, setUncertainId] = useState<string | null>(null);
   const mutationLock = useRef(false);
@@ -123,6 +129,18 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
     : operation?.imei && selectedDevice !== null && devices?.some(item => item.registroId === selectedDevice && item.imei === operation.imei)
       ? { registroId: selectedDevice }
       : null;
+  const optionsChecked = Boolean(operation?.deviceTag && !["PREPARANDO", "ERROR"].includes(operation.status) && !hasDeviceConflict);
+  const activeStep = operation?.status === "EXITOSA" ? 3 : optionsChecked ? 2 : selectedDevice !== null ? 1 : 0;
+  const recentOperations = operations.slice(0, 30);
+  const historySearch = historyQuery.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+  const filteredHistory = recentOperations.filter(item => [item.deviceTag, item.imei, item.asesorNombre, item.clienteDocumentoUltimos4, STATUS_LABELS[item.status], formatDate(item.createdAt)]
+    .filter(Boolean).join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(historySearch));
+  const historyPages = Math.max(1, Math.ceil(filteredHistory.length / 10));
+  const currentHistoryPage = Math.min(historyPage, historyPages);
+  const visibleHistory = filteredHistory.slice((currentHistoryPage - 1) * 10, currentHistoryPage * 10);
+  const otherNavigation = navigation.filter(item => item.href !== "/vendedor/payjoy/extensiones");
+  const mainNavigation = [...otherNavigation.slice(0, 5), navigation.find(item => item.href === "/vendedor/payjoy/extensiones") || NAVIGATION[NAVIGATION.length - 1]];
+  const moreNavigation = otherNavigation.slice(5);
 
   function showOperation(item: Operation) {
     setOperation(item); setOptionId(""); setReason(""); setReview(false); setConfirmed(false);
@@ -181,17 +199,25 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
   }
 
   return <div className={styles.page}>
-    <DashboardSidebar items={NAVIGATION} activeHref="/vendedor/payjoy/extensiones" coverageLabel={session.sedeNombre} panelLabel="Gestión comercial" />
     <div className={styles.content}>
-      <header className={styles.topbar}><span><DashboardIcon name="clock" /> Servicios PayJoy</span><SalesProfile name={session.nombre} role={session.sedeNombre} /></header>
+      <header className={styles.topbar}>
+        <Link href="/dashboard" className={styles.brand}><Image src="/branding/conectamos-logo.png" width={42} height={42} alt="" priority /><strong>CONECTAMOS</strong></Link>
+        <nav className={styles.navigation} aria-label="Navegación principal"><div className={styles.navLinks}>{mainNavigation.map(item => <Link href={item.href} key={item.href} className={`${styles.navItem} ${item.href === "/vendedor/payjoy/extensiones" ? styles.navActive : ""}`} aria-current={item.href === "/vendedor/payjoy/extensiones" ? "page" : undefined}><DashboardIcon name={item.icon} />{item.label}</Link>)}</div>{moreNavigation.length > 0 && <details className={styles.moreNavigation}><summary>Más<DashboardIcon name="chevron" /></summary><div className={styles.moreMenu}>{moreNavigation.map(item => <Link href={item.href} key={item.href} className={styles.navItem}><DashboardIcon name={item.icon} />{item.label}</Link>)}</div></details>}</nav>
+        <div className={styles.profileWrap}><SalesProfile name={session.nombre} role={session.roleLabel || session.sedeNombre} /></div>
+      </header>
       <main className={styles.main}>
-        <div className={styles.heading}><div><p className={styles.eyebrow}>Gestión de dispositivos</p><h1>Extensiones PayJoy</h1><p>Consulta las opciones del equipo y revisa cada gestión antes de confirmarla.</p></div><span className={styles.context}><DashboardIcon name="shield" />{allowManage ? "Consulta y gestión" : "Solo consulta"}</span></div>
-        <div className={styles.notice}><DashboardIcon name="document-search" /><p>La búsqueda por cédula revisa los registros de <strong>CONECTAMOS</strong> a los que tienes acceso. No es un listado completo de dispositivos en PayJoy. Las opciones de extensión se consultan en PayJoy para el equipo seleccionado.</p></div>
+        <div className={styles.heading}><div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><DashboardIcon name="chevron" /><span>Servicios PayJoy</span></nav><h1>Extensiones PayJoy</h1><p>Consulta las opciones del equipo y revisa cada gestión antes de confirmarla.</p></div><span className={styles.context}><DashboardIcon name="shield" />{allowManage ? "Consulta y gestión" : "Solo consulta"}</span></div>
+        <section className={styles.metrics} aria-label="Resumen de la gestión">
+          <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="store" /></span><div><span>Sede activa</span><strong>{session.sedeNombre}</strong><small>Cobertura de tu sesión</small></div></div>
+          <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="clock" /></span><div><span>Estado de la gestión</span><strong>{busy === "buscar" ? "Buscando cliente" : busy === "preparar" ? "Consultando PayJoy" : busy === "confirmar" ? "Gestión en curso" : operation ? STATUS_LABELS[operation.status] || "Estado por revisar" : "Sin consulta"}</strong><small>{operation?.deviceTag || "Selecciona un equipo para comenzar"}</small></div></div>
+          <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="document" /></span><div><span>Operaciones recientes</span><strong>{historyLoading && !recentOperations.length ? "…" : historyError && !recentOperations.length ? "No disponible" : recentOperations.length.toLocaleString("es-CO")}</strong><small>Hasta 30 operaciones de tu perfil</small></div></div>
+        </section>
+        <details className={styles.rules}><summary><DashboardIcon name="document-search" />Cómo funciona la consulta<DashboardIcon name="chevron" /></summary><div className={styles.notice}><p>La búsqueda por cédula revisa los registros de <strong>CONECTAMOS</strong> a los que tienes acceso. No es un listado completo de dispositivos en PayJoy. Las opciones de extensión se consultan en PayJoy para el equipo seleccionado.</p></div></details>
         {!allowManage && <p className={styles.readOnly}><DashboardIcon name="lock" /> Tu perfil puede consultar dispositivos, opciones e historial. La confirmación requiere un perfil autorizado para gestionar.</p>}
-        <ol className={styles.steps} aria-label="Pasos de la gestión"><li><span>1</span>Busca al cliente</li><li><span>2</span>Selecciona el equipo</li><li><span>3</span>Revisa y confirma</li></ol>
+        <ol className={styles.steps} aria-label="Pasos de la gestión">{[{ title: "Cliente o dispositivo", detail: "Busca y selecciona el equipo" }, { title: "Opciones de extensión", detail: "Consulta la disponibilidad en PayJoy" }, { title: "Revisar y confirmar", detail: operation?.status === "EXITOSA" ? "Extensión confirmada por PayJoy" : "Verifica la gestión antes de enviarla" }].map((step, index) => <li key={step.title} className={index < activeStep ? styles.stepDone : index === activeStep ? styles.stepActive : undefined} aria-current={index === Math.min(activeStep, 2) ? "step" : undefined}><span>{index < activeStep ? <DashboardIcon name="shield" /> : index + 1}</span><div><strong>{step.title}</strong><small>{step.detail}</small></div></li>)}</ol>
         {error && <div className={styles.error} role="alert" id="payjoy-error"><DashboardIcon name="warning" /><p>{error}</p></div>}
         <div className={styles.workspace}>
-          <section className={styles.panel} aria-labelledby="lookup-title" aria-busy={busy === "buscar" || busy === "preparar"}>
+          <section className={`${styles.panel} ${styles.lookupPanel}`} aria-labelledby="lookup-title" aria-busy={busy === "buscar" || busy === "preparar"}>
             <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="search" /></span><div><p>Cliente y dispositivo</p><h2 id="lookup-title">Buscar equipo</h2></div></div>
             <form onSubmit={search} className={styles.searchForm}>
               <label htmlFor="payjoy-cedula">Cédula del cliente</label>
@@ -219,7 +245,7 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
             </div>
           </section>
 
-          <section className={styles.panel} aria-labelledby="options-title" aria-busy={busy === "preparar" || busy === "confirmar"}>
+          <section className={`${styles.panel} ${styles.resultPanel}`} aria-labelledby="options-title" aria-busy={busy === "preparar" || busy === "confirmar"}>
             <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="clock" /></span><div><p>Respuesta de PayJoy</p><h2 id="options-title" tabIndex={-1} ref={resultHeading}>Opciones y resultado</h2></div></div>
             {!operation ? <div className={styles.empty}><DashboardIcon name={busy === "preparar" ? "refresh" : "clock"} /><h3>{busy === "preparar" ? "Consultando el dispositivo…" : "Selecciona un equipo para continuar"}</h3><p>{busy === "preparar" ? "Estamos consultando las opciones disponibles en PayJoy." : "Aquí aparecerán las extensiones disponibles, su duración y las condiciones que informe PayJoy."}</p></div> : <>
               <div className={styles.operationHeading}><Status value={operation.status} /><span>Consulta del {formatDate(operation.createdAt)}</span></div>
@@ -255,11 +281,14 @@ export default function PayJoyExtensionsWorkspace({ canManage, session }: {
 
         <section className={`${styles.panel} ${styles.history}`} aria-labelledby="history-title" aria-busy={historyLoading}>
           <div className={styles.historyHeading}><div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="document" /></span><div><p>Trazabilidad</p><h2 id="history-title">Historial de operaciones</h2></div></div><button className={styles.button} disabled={Boolean(busy) || historyLoading} onClick={() => void loadHistory()}><DashboardIcon name="refresh" />{historyLoading ? "Actualizando…" : "Actualizar historial"}</button></div>
-          <p className={styles.historyHelp}>Puedes recuperar una consulta pendiente para revisarla o consultar el resultado de una gestión. Se muestran las operaciones a las que tu perfil tiene acceso.</p>
+          <div className={styles.historyControls}><p className={styles.historyCount}>{historyLoading && !operations.length ? "Cargando historial…" : historyError && !operations.length ? "Historial no disponible" : `${filteredHistory.length.toLocaleString("es-CO")} ${filteredHistory.length === 1 ? "operación" : "operaciones"}`}<small>Búsqueda sobre las últimas 30 operaciones de tu perfil</small></p><label className={styles.historySearch}><DashboardIcon name="search" /><input type="search" aria-label="Buscar en historial" placeholder="Dispositivo, IMEI, asesor o estado" value={historyQuery} onChange={event => { setHistoryQuery(event.target.value); setHistoryPage(1); }} /></label></div>
           {historyError && <p className={styles.inlineError} role="alert">{historyError}</p>}
-          {historyLoading && !operations.length ? <p className={styles.historyEmpty} role="status">Cargando operaciones…</p> : !operations.length && !historyError ? <p className={styles.historyEmpty}>Todavía no hay operaciones para mostrar.</p> : <ul className={styles.historyList}>{operations.map(item => <li key={item.id}>
-            <div><strong className={styles.mono}>{item.deviceTag || item.imei || "Dispositivo por identificar"}</strong><span>{formatDate(item.createdAt)} · {item.asesorNombre}</span>{item.clienteDocumentoUltimos4 && <span>Cédula terminada en {item.clienteDocumentoUltimos4}</span>}</div><Status value={item.status} /><button className={styles.button} disabled={Boolean(busy)} onClick={() => { if (!mutationLock.current) { showOperation(item); setError(""); } }}>{item.status === "LISTA" ? "Recuperar consulta" : "Ver detalle"}<span className={styles.srOnly}> de {item.deviceTag || item.imei || item.id}</span></button>
-          </li>)}</ul>}
+          {historyLoading && !operations.length ? <p className={styles.historyEmpty} role="status"><DashboardIcon name="refresh" />Cargando operaciones…</p> : historyError && !operations.length ? null : <>
+            <div className={styles.historyScroller}><table className={styles.historyTable}><caption className={styles.srOnly}>Historial de operaciones PayJoy autorizado para tu perfil</caption><thead><tr><th scope="col">Dispositivo / IMEI</th><th scope="col">Fecha / Asesor</th><th scope="col">Cliente</th><th scope="col">Estado</th><th scope="col">Acción</th></tr></thead><tbody>{visibleHistory.length ? visibleHistory.map(item => <tr key={item.id}>
+              <td><strong className={styles.mono}>{item.deviceTag || "Dispositivo por identificar"}</strong>{item.imei && <span className={styles.mono}>IMEI {item.imei}</span>}</td><td><strong>{formatDate(item.createdAt)}</strong><span>{item.asesorNombre}</span></td><td>{item.clienteDocumentoUltimos4 ? `Cédula terminada en ${item.clienteDocumentoUltimos4}` : "No informado"}</td><td><Status value={item.status} /></td><td><button className={styles.button} disabled={Boolean(busy)} onClick={() => { if (!mutationLock.current) { showOperation(item); setError(""); } }}>{item.status === "LISTA" ? "Recuperar consulta" : "Ver detalle"}<DashboardIcon name="arrow" /><span className={styles.srOnly}> de {item.deviceTag || item.imei || item.id}</span></button></td>
+            </tr>) : <tr><td colSpan={5} className={styles.historyEmpty}>{historyQuery.trim() ? "No hay operaciones que coincidan con tu búsqueda." : "Todavía no hay operaciones para mostrar."}</td></tr>}</tbody></table></div>
+            <footer className={styles.historyFooter}><span>{filteredHistory.length ? `Mostrando ${(currentHistoryPage - 1) * 10 + 1}–${Math.min(currentHistoryPage * 10, filteredHistory.length)} de ${filteredHistory.length} ${filteredHistory.length === 1 ? "operación" : "operaciones"}` : "0 operaciones"}</span><nav className={styles.pagination} aria-label="Páginas del historial"><button className={styles.button} disabled={currentHistoryPage <= 1} onClick={() => setHistoryPage(currentHistoryPage - 1)}>Anterior</button>{Array.from({ length: historyPages }, (_, index) => index + 1).map(page => <button key={page} className={styles.button} aria-label={`Página ${page}`} aria-current={currentHistoryPage === page ? "page" : undefined} onClick={() => setHistoryPage(page)}>{page}</button>)}<button className={styles.button} disabled={currentHistoryPage >= historyPages} onClick={() => setHistoryPage(currentHistoryPage + 1)}>Siguiente</button></nav></footer>
+          </>}
         </section>
       </main>
     </div>

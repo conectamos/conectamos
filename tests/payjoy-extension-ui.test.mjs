@@ -42,7 +42,7 @@ function getButton(tree, label) {
   assert.ok(button, `No se encontró el botón ${label}`);
   return button;
 }
-function probe({ initial = {}, canManage = true, fetchImpl } = {}) {
+function probe({ initial = {}, canManage = true, fetchImpl, navigation, session } = {}) {
   const state = { ...initial }; const refs = []; const effects = []; const calls = [];
   let stateIndex = 0; let refIndex = 0; let collectEffects = true;
   const imports = {
@@ -51,11 +51,14 @@ function probe({ initial = {}, canManage = true, fetchImpl } = {}) {
       useState(value) { const name = stateNames[stateIndex++]; if (!(name in state)) state[name] = typeof value === "function" ? value() : value; return [state[name], next => { state[name] = typeof next === "function" ? next(state[name]) : next; }]; },
       useRef(value) { return refs[refIndex++] ??= { current: value }; },
       useCallback: fn => fn,
+      useMemo: fn => fn(),
       useEffect(fn) { if (collectEffects) effects.push(fn); },
     },
-    "@/app/dashboard/_components/dashboard-icon": { __esModule: true, default: () => null },
+    "next/link": { __esModule: true, default: ({ href, children, ...props }) => jsx.jsx("a", { href, ...props, children }) },
+    "next/image": { __esModule: true, default: props => jsx.jsx("img", Object.fromEntries(Object.entries(props).filter(([key]) => !["priority", "fill"].includes(key)))) },
+    "@/app/dashboard/_components/dashboard-icon": { __esModule: true, default: ({ name }) => jsx.jsx("svg", { "data-icon": name }) },
     "@/app/dashboard/_components/operations-dashboard": { DashboardSidebar: () => null },
-    "@/app/ventas/_components/sales-dashboard-parts": { SalesProfile: () => null },
+    "@/app/ventas/_components/sales-dashboard-parts": { SalesProfile: ({ name, role }) => jsx.jsx("span", { "data-profile": true, children: `${name} · ${role}` }) },
     "./extensions.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
   };
   const loaded = { exports: {} };
@@ -68,7 +71,7 @@ function probe({ initial = {}, canManage = true, fetchImpl } = {}) {
   }, { randomUUID }, () => 0);
   const render = () => {
     stateIndex = 0; refIndex = 0;
-    const tree = resolve(loaded.exports.default({ canManage, session: { nombre: "Asesor QA", sedeNombre: "Sede QA" } }));
+    const tree = resolve(loaded.exports.default({ canManage, navigation, session: { nombre: "Asesor QA", sedeNombre: "Sede QA", ...session } }));
     collectEffects = false; return tree;
   };
   return { state, calls, render, mount: async () => { render(); effects.forEach(fn => fn()); await settle(); return render(); } };
@@ -219,4 +222,181 @@ test("una selección bloqueada antes del envío no se presenta como gestionada y
       assert.equal(elements(tree).some(node => node.type === "button" && textOf(node).trim() === "Consultar nuevamente"), false);
     }
   }
+});
+
+test("la navegación superior conserva exclusivamente los enlaces autorizados recibidos y marca PayJoy activo", async () => {
+  const navigation = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/vendedor/registros", icon: "sales", label: "Registrar venta" },
+    { href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" },
+  ];
+  const ui = probe({ navigation, session: { roleLabel: "Vendedor" } });
+  const tree = await ui.mount();
+  const nav = elements(tree).find(node => node.type === "nav" && node.props["aria-label"] === "Navegación principal");
+  assert.ok(nav);
+  const links = elements(nav).filter(node => node.type === "a");
+  assert.deepEqual(links.map(node => node.props.href), navigation.map(item => item.href));
+  assert.deepEqual(links.filter(node => node.props["aria-current"] === "page").map(node => node.props.href), ["/vendedor/payjoy/extensiones"]);
+  assert.equal(links.some(node => node.props.href === "/dashboard/sedes"), false);
+  assert.match(textOf(tree), /Asesor QA · Vendedor/);
+  assert.deepEqual(ui.calls.map(call => call.method), ["GET"]);
+});
+
+test("la navegación administrativa conserva todos sus destinos y mantiene PayJoy visible fuera de Más", async () => {
+  const navigation = [
+    { href: "/dashboard", icon: "home", label: "Inicio" },
+    { href: "/ventas", icon: "sales", label: "Ventas" },
+    { href: "/inventario", icon: "inventory", label: "Inventario" },
+    { href: "/prestamos", icon: "loans", label: "Préstamos" },
+    { href: "/caja", icon: "wallet", label: "Caja" },
+    { href: "/cierre", icon: "reports", label: "CIERRE" },
+    { href: "/dashboard/aprobaciones", icon: "approvals", label: "Aprobaciones" },
+    { href: "/dashboard/reportes", icon: "reports", label: "Reportes" },
+    { href: "/dashboard/sedes", icon: "settings", label: "Configuración" },
+    { href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" },
+  ];
+  const ui = probe({ navigation, session: { roleLabel: "Administrador" } });
+  const tree = await ui.mount();
+  const nav = elements(tree).find(node => node.type === "nav" && node.props["aria-label"] === "Navegación principal");
+  const links = elements(nav).filter(node => node.type === "a");
+  assert.equal(links.length, navigation.length);
+  assert.deepEqual(new Set(links.map(node => node.props.href)), new Set(navigation.map(item => item.href)));
+  const more = elements(nav).find(node => node.type === "details");
+  assert.ok(more);
+  assert.notEqual(more.props.open, true);
+  assert.ok(elements(more).some(node => node.type === "summary" && textOf(node).trim() === "Más"));
+  const overflow = elements(more).filter(node => node.type === "a");
+  assert.deepEqual(overflow.map(node => node.props.href), ["/cierre", "/dashboard/aprobaciones", "/dashboard/reportes", "/dashboard/sedes"]);
+  const active = links.filter(node => node.props["aria-current"] === "page");
+  assert.equal(active.length, 1);
+  assert.equal(active[0].props.href, "/vendedor/payjoy/extensiones");
+  assert.equal(overflow.includes(active[0]), false);
+  assert.match(textOf(tree), /Asesor QA · Administrador/);
+  assert.deepEqual(ui.calls.map(call => call.method), ["GET"]);
+});
+
+test("las reglas permanecen en una ayuda desplegable y los indicadores usan el historial autorizado", async () => {
+  const ui = probe({ fetchImpl: async () => response({ operations: [ready, { ...ready, id: "other", status: "ERROR" }], canManage: true }) });
+  const tree = await ui.mount();
+  const rules = elements(tree).find(node => node.type === "details");
+  assert.ok(rules);
+  assert.notEqual(rules.props.open, true);
+  assert.ok(elements(rules).some(node => node.type === "summary" && /consulta/.test(textOf(node))));
+  assert.match(textOf(rules), /No es un listado completo de dispositivos en PayJoy/);
+  const metrics = elements(tree).find(node => node.type === "section" && node.props["aria-label"] === "Resumen de la gestión");
+  assert.ok(metrics);
+  assert.match(textOf(metrics), /Sede QA/);
+  assert.match(textOf(metrics), /Sin consulta/);
+  assert.match(textOf(metrics), /Operaciones recientes 2/);
+  assert.equal(ui.calls.length, 1);
+});
+
+test("los pasos distinguen inicio, equipo seleccionado, opciones y resultado confirmado sin adelantar el éxito", async () => {
+  const cases = [
+    { initial: {}, active: "Cliente o dispositivo", completed: 0 },
+    { initial: { devices: [{ registroId: 4 }] }, active: "Cliente o dispositivo", completed: 0 },
+    { initial: { devices: [{ registroId: 4 }], selectedDevice: 4 }, active: "Opciones de extensión", completed: 1 },
+    { initial: { operation: { ...ready, status: "ERROR" } }, active: "Cliente o dispositivo", completed: 0 },
+    { initial: { operation: ready }, active: "Revisar y confirmar", completed: 2 },
+    { initial: { operation: ready, optionId: option.id, reason: "medical", review: true }, active: "Revisar y confirmar", completed: 2 },
+    { initial: { operation: { ...ready, status: "EXITOSA", selectedOption: option, result: { success: true, status: "GRANTED", newValidThrough: null } } }, active: "Revisar y confirmar", completed: 3 },
+  ];
+  for (const { initial, active, completed } of cases) {
+    const ui = probe({ initial });
+    const tree = await ui.mount();
+    const steps = elements(tree).find(node => node.type === "ol" && node.props["aria-label"] === "Pasos de la gestión");
+    assert.ok(steps);
+    const current = elements(steps).filter(node => node.type === "li" && node.props["aria-current"] === "step");
+    assert.equal(current.length, 1);
+    assert.ok(textOf(current[0]).includes(active));
+    assert.equal(elements(steps).filter(node => node.type === "svg" && node.props["data-icon"] === "shield").length, completed);
+    if (initial.operation?.status !== "EXITOSA") assert.doesNotMatch(textOf(steps), /Extensión confirmada por PayJoy/);
+    assert.equal(ui.calls.filter(call => call.method === "POST").length, 0);
+  }
+});
+
+test("el historial pagina diez operaciones y busca sobre todas antes de paginar sin enviar gestiones", async () => {
+  const history = Array.from({ length: 23 }, (_, index) => ({
+    ...ready, id: `history-${index + 1}`, deviceTag: `DQA${String(index + 1).padStart(5, "0")}`,
+    imei: String(index + 1).padStart(15, "0"), asesorNombre: index === 22 ? "Asesóra Única" : `Asesor ${index + 1}`,
+  }));
+  const ui = probe({ fetchImpl: async () => response({ operations: history, canManage: true }) });
+  let tree = await ui.mount();
+  const rows = () => {
+    const table = elements(tree).find(node => node.type === "table");
+    const body = elements(table).find(node => node.type === "tbody");
+    return elements(body).filter(node => node.type === "tr");
+  };
+  assert.equal(rows().length, 10);
+  assert.match(textOf(rows()), /DQA00001/);
+  assert.doesNotMatch(textOf(rows()), /DQA00011/);
+  assert.equal(getButton(tree, "Anterior").props.disabled, true);
+  getButton(tree, "Siguiente").props.onClick(); tree = ui.render();
+  assert.equal(rows().length, 10);
+  assert.match(textOf(rows()), /DQA00011/);
+  getButton(tree, "Siguiente").props.onClick(); tree = ui.render();
+  assert.equal(rows().length, 3);
+  assert.match(textOf(tree), /Mostrando 21–23 de 23 operaciones/);
+  assert.equal(getButton(tree, "Siguiente").props.disabled, true);
+  elements(tree).find(node => node.type === "input" && node.props["aria-label"] === "Buscar en historial").props.onChange({ target: { value: " asesora unica " } }); tree = ui.render();
+  assert.equal(rows().length, 1);
+  assert.match(textOf(rows()), /DQA00023/);
+  assert.match(textOf(rows()), /000000000000023/);
+  assert.match(textOf(tree), /Mostrando 1–1 de 1 operación/);
+  assert.equal(getButton(tree, "Anterior").props.disabled, true);
+  getButton(tree, "Recuperar consulta").props.onClick(); tree = ui.render();
+  assert.equal(ui.state.operation.id, "history-23");
+  assert.deepEqual(ui.calls.map(call => call.method), ["GET"]);
+});
+
+test("preparar una consulta nueva conserva el límite reciente de treinta sin ocultar su resultado ni ejecutar la extensión", async () => {
+  const history = Array.from({ length: 30 }, (_, index) => ({
+    ...ready, id: `previous-${index + 1}`, deviceTag: `DOLD${String(index + 1).padStart(5, "0")}`,
+    imei: String(index + 1).padStart(15, "0"),
+  }));
+  const next = { ...ready, id: "fresh-query", deviceTag: "DNEW1234", imei: "000999999999999" };
+  const ui = probe({ initial: { manual: true, deviceTag: next.deviceTag }, fetchImpl: async call =>
+    response(call.method === "GET" ? { operations: history, canManage: true } : { operation: next }),
+  });
+  let tree = await ui.mount();
+  elements(tree).find(node => node.props?.id === "payjoy-manual").props.onSubmit(submit());
+  await settle(); tree = ui.render();
+  const rows = () => {
+    const table = elements(tree).find(node => node.type === "table");
+    const body = elements(table).find(node => node.type === "tbody");
+    return elements(body).filter(node => node.type === "tr");
+  };
+  const metrics = elements(tree).find(node => node.type === "section" && node.props["aria-label"] === "Resumen de la gestión");
+  assert.match(textOf(metrics), /Operaciones recientes 30/);
+  assert.match(textOf(rows()), /DNEW1234/);
+  assert.match(textOf(tree), /Mostrando 1–10 de 30 operaciones/);
+  getButton(tree, "Siguiente").props.onClick(); tree = ui.render();
+  getButton(tree, "Siguiente").props.onClick(); tree = ui.render();
+  assert.equal(rows().length, 10);
+  assert.match(textOf(tree), /Mostrando 21–30 de 30 operaciones/);
+  assert.match(textOf(rows()), /DOLD00029/);
+  assert.doesNotMatch(textOf(rows()), /DOLD00030/);
+  assert.equal(getButton(tree, "Siguiente").props.disabled, true);
+  elements(tree).find(node => node.type === "input" && node.props["aria-label"] === "Buscar en historial").props.onChange({ target: { value: "DOLD00030" } }); tree = ui.render();
+  assert.match(textOf(rows()), /No hay operaciones que coincidan/);
+  elements(tree).find(node => node.type === "input" && node.props["aria-label"] === "Buscar en historial").props.onChange({ target: { value: "DNEW1234" } }); tree = ui.render();
+  assert.equal(rows().length, 1);
+  assert.match(textOf(rows()), /DNEW1234/);
+  assert.match(textOf(rows()), /000999999999999/);
+  assert.equal(ui.state.operation.id, next.id);
+  assert.deepEqual(ui.calls.map(call => [call.method, call.body?.action]), [["GET", undefined], ["POST", "preparar"]]);
+});
+
+test("la carga y el fallo del historial no inventan cifras ni limpian los campos de consulta", async () => {
+  const ui = probe({ initial: { cedula: "10000001", deviceTag: "DABC1234", manual: true }, fetchImpl: async () => response({ error: "No se pudo cargar el historial de prueba." }, 503) });
+  let tree = ui.render();
+  const before = elements(tree).find(node => node.type === "section" && node.props["aria-label"] === "Resumen de la gestión");
+  assert.match(textOf(before), /Operaciones recientes …/);
+  tree = await ui.mount();
+  const after = elements(tree).find(node => node.type === "section" && node.props["aria-label"] === "Resumen de la gestión");
+  assert.match(textOf(after), /Operaciones recientes No disponible/);
+  assert.match(textOf(tree), /No se pudo cargar el historial/);
+  assert.equal(ui.state.cedula, "10000001");
+  assert.equal(ui.state.deviceTag, "DABC1234");
+  assert.equal(ui.calls.filter(call => call.method === "POST").length, 0);
 });
