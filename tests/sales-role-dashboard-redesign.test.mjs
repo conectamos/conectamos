@@ -56,6 +56,11 @@ const earnings = {
 const activity = { periodo: utils.getBogotaMonthRangeFromInput("2026-10"), registrosPeriodo: 77, pendientes: 9, convertidos: 62 };
 const base = { activity, coverageLabel: "SEDE QA", earnings, perfilNombre: "Perfil comercial QA", role: "VENDEDOR", roleLabel: "Vendedor", usuario: "Usuario de prueba" };
 const render = changes => renderToStaticMarkup(React.createElement(Dashboard, { ...base, ...changes }));
+test("el acceso a extensiones PayJoy solo aparece con el permiso recibido del servidor", () => {
+  assert.doesNotMatch(render({}), /href="\/vendedor\/payjoy\/extensiones"/);
+  assert.doesNotMatch(render({ puedeVerExtensionesPayJoy: false }), /href="\/vendedor\/payjoy\/extensiones"/);
+  assert.match(render({ puedeVerExtensionesPayJoy: true }), /href="\/vendedor\/payjoy\/extensiones"/);
+});
 const text = html => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 function section(html, label) {
   const found = html.match(new RegExp(`<section\\b[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</section>`));
