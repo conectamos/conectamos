@@ -45,15 +45,15 @@ test("las identidades administrativas explícitas conservan consulta global", ()
   }
   for (const session of [perfil("AUDITOR", "AUDITOR"), { rolNombre: "AUDITOR" }]) {
     assert.equal(puedeConsultar(session), true);
-    assert.equal(puedeGestionar(session), false);
+    assert.equal(puedeGestionar(session), true);
     assert.deepEqual(scope(session), {});
   }
 });
 
-test("auditor nunca puede gestionar aunque use un perfil comercial", () => {
+test("un asesor con cuenta base de auditor puede gestionar sin ampliar su ámbito comercial", () => {
   const session = perfil("VENDEDOR", "AUDITOR");
   assert.equal(puedeConsultar(session), true);
-  assert.equal(puedeGestionar(session), false);
+  assert.equal(puedeGestionar(session), true);
   assert.deepEqual(scope(session), { perfilVendedorId: 7, sedeId: 3 });
 });
 

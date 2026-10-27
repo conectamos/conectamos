@@ -35,7 +35,9 @@ Este contrato se obtuvo de la aplicación oficial, no de una especificación pú
 
 ## Confirmación, permisos e idempotencia
 
-Consulta: vendedor, apoyo operativo, supervisor, administrador y auditor con sesión válida. Gestión: los mismos salvo auditor. Bodega y facturador se deniegan aunque el login base tenga otro rol. Los perfiles comerciales no heredan acceso global de un login administrador. Página, API y servicio validan permisos. Los POST requieren JSON y un origen público configurado; se rechazan solicitudes marcadas como `cross-site`.
+Consulta y gestión: vendedor, apoyo operativo, supervisor, administrador y auditor con sesión válida. El auditor también puede confirmar extensiones, según la autorización operativa del 27 de octubre de 2026. Bodega y facturador se deniegan aunque el login base tenga otro rol. Los perfiles comerciales mantienen su ámbito de perfil y sede aunque la cuenta base sea de administrador o auditor. Página, API y servicio validan permisos. Los POST requieren JSON y un origen público configurado; se rechazan solicitudes marcadas como `cross-site`.
+
+Cuando una consulta está `LISTA` y tiene opciones, «Revisar gestión» permanece visible para los perfiles autorizados. Se habilita al elegir una opción disponible y, cuando corresponde, un motivo válido. La ayuda indica qué selección falta; los estados cerrados o indeterminados no permiten iniciar otra confirmación.
 
 `PayJoyExtensionOperation` registra usuario, perfil, nombre del asesor, sede, referencia del registro local, últimos cuatro dígitos de documento, ID PayJoy cuando existe, dispositivo, opciones obtenidas, selección/motivo, fechas, respuesta mínima y estado. No duplica documentos completos, teléfono, domicilio ni respuestas sin filtrar. El historial muestra las últimas 30 gestiones de la misma identidad y sede.
 

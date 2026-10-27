@@ -125,9 +125,20 @@ test("exige motivo real, revisión y confirmación; el doble clic solo ejecuta u
     return new Promise(resolve => { finish = () => resolve(response({ operation: { ...ready, status: "EXITOSA", selectedOption: option, result: { success: true, status: "GRANTED", newValidThrough: "2026-10-29T12:00:00.000Z" } } })); });
   } });
   let tree = await ui.mount();
+  assert.equal(getButton(tree, "Revisar gestión").props.disabled, true);
+  assert.equal(getButton(tree, "Revisar gestión").props["aria-describedby"], "payjoy-review-help");
+  assert.match(textOf(tree), /Selecciona una opción disponible para revisar la gestión/);
+  getButton(tree, "Revisar gestión").props.onClick(); tree = ui.render();
+  assert.equal(ui.state.review, false);
   elements(tree).find(node => node.type === "input" && node.props.name === "payjoy-option").props.onChange(); tree = ui.render();
   assert.equal(getButton(tree, "Revisar gestión").props.disabled, true);
+  assert.match(textOf(tree), /Selecciona el motivo de la extensión para continuar/);
+  getButton(tree, "Revisar gestión").props.onClick(); tree = ui.render();
+  assert.equal(ui.state.review, false);
   elements(tree).find(node => node.props?.id === "payjoy-reason").props.onChange({ target: { value: "medical" } }); tree = ui.render();
+  assert.equal(getButton(tree, "Revisar gestión").props.disabled, false);
+  assert.equal(getButton(tree, "Revisar gestión").props["aria-describedby"], undefined);
+  assert.equal(ui.calls.filter(item => item.method === "POST").length, 0);
   getButton(tree, "Revisar gestión").props.onClick(); tree = ui.render();
   assert.equal(getButton(tree, "Confirmar extensión").props.disabled, true);
   elements(tree).find(node => node.type === "input" && node.props.type === "checkbox").props.onChange({ target: { checked: true } }); tree = ui.render();
@@ -152,11 +163,43 @@ test("una respuesta perdida al confirmar bloquea la repetición y pide revisar e
   assert.equal(ui.calls.filter(item => item.method === "POST").length, 1);
 });
 
-test("auditor e historial indeterminado no permiten abrir una confirmación", async () => {
+test("un perfil sin permiso de gestión o historial indeterminado no permiten abrir una confirmación", async () => {
   for (const config of [{ canManage: false, operation: ready }, { canManage: true, operation: { ...ready, status: "INDETERMINADA" } }]) {
     const ui = probe({ canManage: config.canManage, initial: { operation: config.operation, optionId: option.id, reason: "medical" } });
     const tree = await ui.mount();
     assert.equal(elements(tree).some(node => node.type === "button" && ["Revisar gestión", "Confirmar extensión"].includes(textOf(node).trim())), false);
+    assert.equal(ui.calls.filter(item => item.method === "POST").length, 0);
+  }
+});
+
+test("revisar permanece visible durante la carga pero no permite abrir una revisión", async () => {
+  const ui = probe({ initial: { operation: ready, optionId: option.id, reason: "medical", busy: "preparar" } });
+  let tree = await ui.mount();
+  assert.equal(getButton(tree, "Revisar gestión").props.disabled, true);
+  getButton(tree, "Revisar gestión").props.onClick(); tree = ui.render();
+  assert.equal(ui.state.review, false);
+  assert.equal(ui.calls.filter(item => item.method === "POST").length, 0);
+});
+
+test("el botón visible no permite revisar opciones no disponibles ni operaciones cerradas o ambiguas", async () => {
+  const unavailable = { ...option, available: false, status: "denied" };
+  const blocked = probe({ initial: { operation: { ...ready, options: [unavailable] }, optionId: option.id, reason: "medical" } });
+  let tree = await blocked.mount();
+  assert.equal(getButton(tree, "Revisar gestión").props.disabled, true);
+  getButton(tree, "Revisar gestión").props.onClick(); tree = blocked.render();
+  assert.equal(blocked.state.review, false);
+  assert.equal(blocked.calls.filter(item => item.method === "POST").length, 0);
+  for (const changes of [
+    { operation: { ...ready, status: "EXPIRADA" } },
+    { operation: { ...ready, status: "ERROR" } },
+    { operation: { ...ready, status: "EJECUTANDO", selectedOption: option } },
+    { operation: { ...ready, status: "EXITOSA", selectedOption: option } },
+    { operation: { ...ready, status: "LISTA", selectedOption: option } },
+    { uncertainId: ready.id },
+  ]) {
+    const ui = probe({ initial: { operation: ready, optionId: option.id, reason: "medical", ...changes } });
+    tree = await ui.mount();
+    assert.equal(elements(tree).some(node => node.type === "button" && textOf(node).trim() === "Revisar gestión"), false);
     assert.equal(ui.calls.filter(item => item.method === "POST").length, 0);
   }
 });

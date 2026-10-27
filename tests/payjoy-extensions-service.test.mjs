@@ -313,13 +313,34 @@ test("entrada manual bloquea equipo conocido de otro perfil o sede antes de cons
   }
 });
 
-test("auditor puede consultar pero no confirmar; perfil restringido no hereda ADMIN", async () => {
+test("auditor y asesor con cuenta base de auditor pueden confirmar una sola vez su operación", async () => {
+  for (const actor of [auditor, { ...auditor, perfilId: null, perfilTipo: null }, { ...vendor, rolNombre: "AUDITOR" }]) {
+    const f = setup();
+    const operation = await f.prepararExtensionPayJoy(actor, prepare());
+    assert.equal((await f.historialExtensionesPayJoy(actor)).canManage, true);
+    const result = await f.confirmarExtensionPayJoy(actor, confirm(operation));
+    assert.equal(result.status, "EXITOSA");
+    assert.equal((await f.confirmarExtensionPayJoy(actor, confirm(operation))).status, "EXITOSA");
+    assert.equal(countProvider(f, "selectPayJoyExtension"), 1);
+  }
+});
+
+test("el asesor con cuenta base de auditor conserva el ámbito de sus registros", async () => {
+  const actor = { ...vendor, rolNombre: "AUDITOR" };
+  for (const record of [local({ perfilVendedorId: 22 }), local({ sedeId: 202 })]) {
+    const f = setup({ records: [record] });
+    await assert.rejects(f.prepararExtensionPayJoy(actor, prepare()), { code: "FORBIDDEN_DEVICE" });
+    assert.equal(countProvider(f, "beginPayJoyExtension"), 0);
+    assert.equal(countProvider(f, "selectPayJoyExtension"), 0);
+  }
+});
+
+test("perfil restringido no hereda gestión de su cuenta ADMIN ni AUDITOR", async () => {
   const f = setup();
-  const operation = await f.prepararExtensionPayJoy(auditor, prepare());
-  assert.equal((await f.historialExtensionesPayJoy(auditor)).canManage, false);
-  await assert.rejects(f.confirmarExtensionPayJoy(auditor, confirm(operation)), { code: "FORBIDDEN" });
   for (const perfilTipo of ["BODEGA", "FACTURADOR", "DESCONOCIDO"]) {
-    await assert.rejects(f.prepararExtensionPayJoy({ ...admin, perfilTipo }, prepare()), { code: "FORBIDDEN" });
+    for (const rolNombre of ["ADMIN", "AUDITOR"]) {
+      await assert.rejects(f.prepararExtensionPayJoy({ ...admin, perfilTipo, rolNombre }, prepare()), { code: "FORBIDDEN" });
+    }
   }
   assert.equal(countProvider(f, "selectPayJoyExtension"), 0);
 });

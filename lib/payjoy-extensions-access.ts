@@ -28,9 +28,9 @@ export function puedeConsultarExtensionesPayJoy(session: PayJoyExtensionsSession
 }
 
 export function puedeGestionarExtensionesPayJoy(session: PayJoyExtensionsSession | null | undefined) {
-  return puedeConsultarExtensionesPayJoy(session)
-    && normalizarPerfilTipo(session?.perfilTipo) !== "AUDITOR"
-    && normalizarRolNombre(session?.rolNombre) !== "AUDITOR";
+  // Extension management is authorized for all consulting profiles, including
+  // auditors. Record ownership and profile/sede scope still apply separately.
+  return puedeConsultarExtensionesPayJoy(session);
 }
 
 export function scopeRegistrosExtensionesPayJoy(

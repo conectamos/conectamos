@@ -122,6 +122,8 @@ export default function PayJoyExtensionsWorkspace({ canManage, session, navigati
   const uncertain = Boolean(operation && uncertainId === operation.id);
   const canSelect = operation?.status === "LISTA" && !uncertain && !busy;
   const validReason = Boolean(selectedOption && (selectedOption.reasons.length === 0 || selectedOption.reasons.some(item => item.id === reason)));
+  const reviewHelp = !selectedOption?.available ? "Selecciona una opción disponible para revisar la gestión."
+    : !validReason ? "Selecciona el motivo de la extensión para continuar." : null;
   const needsManualIdentifier = operation?.status === "ERROR" && MANUAL_LOOKUP_ERRORS.includes(operation.errorCode || "");
   const hasDeviceConflict = operation?.errorCode === "DEVICE_ASSOCIATION_CONFLICT";
   const retryInput = operation?.deviceTag
@@ -267,9 +269,12 @@ export default function PayJoyExtensionsWorkspace({ canManage, session, navigati
                 <input type="radio" name="payjoy-option" checked={optionId === option.id} disabled={!canSelect || !option.available} onChange={() => { setOptionId(option.id); setReason(""); setReview(false); setConfirmed(false); }} />
                 <span><span className={styles.optionHeading}><strong>{optionTitle(option)}</strong><span className={styles.status}>{option.available ? "Disponible" : "No disponible"}</span></span><OptionDetails option={option} /></span>
               </label>)}</fieldset>}
-              {selectedOption && canSelect && <div className={styles.selection}>
-                {selectedOption.reasons.length > 0 && <label className={styles.field} htmlFor="payjoy-reason">Motivo de la extensión<select id="payjoy-reason" value={reason} onChange={event => { setReason(event.target.value); setReview(false); setConfirmed(false); }} disabled={Boolean(busy)}><option value="">Selecciona un motivo</option>{selectedOption.reasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
-                {!review && allowManage && <button className={`${styles.button} ${styles.primary}`} disabled={!validReason || Boolean(busy)} onClick={openReview}>Revisar gestión<DashboardIcon name="arrow" /></button>}
+              {operation.status === "LISTA" && operation.options.length > 0 && !operation.selectedOption && !uncertain && <div className={styles.selection}>
+                {selectedOption && selectedOption.reasons.length > 0 && <label className={styles.field} htmlFor="payjoy-reason">Motivo de la extensión<select id="payjoy-reason" value={reason} onChange={event => { setReason(event.target.value); setReview(false); setConfirmed(false); }} disabled={Boolean(busy)}><option value="">Selecciona un motivo</option>{selectedOption.reasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
+                {!review && allowManage && <>
+                  {reviewHelp && <p id="payjoy-review-help" className={styles.historyHelp}>{reviewHelp}</p>}
+                  <button className={`${styles.button} ${styles.primary}`} disabled={!selectedOption?.available || !validReason || !canSelect} aria-describedby={reviewHelp ? "payjoy-review-help" : undefined} onClick={openReview}>Revisar gestión<DashboardIcon name="arrow" /></button>
+                </>}
               </div>}
               {review && selectedOption && operation.status === "LISTA" && !uncertain && <section className={styles.review} aria-labelledby="review-title"><h3 id="review-title">Revisa antes de confirmar</h3><dl className={styles.summary}><div><dt>Dispositivo</dt><dd className={styles.mono}>{operation.deviceTag}</dd></div><div><dt>Opción seleccionada</dt><dd>{optionTitle(selectedOption)}</dd></div>{reason && <div><dt>Motivo</dt><dd>{selectedOption.reasons.find(item => item.id === reason)?.label}</dd></div>}</dl><p>Al confirmar se solicitará esta extensión a PayJoy. La disponibilidad y el resultado final dependen de PayJoy.</p><label className={styles.confirmCheck}><input type="checkbox" checked={confirmed} disabled={Boolean(busy)} onChange={event => setConfirmed(event.target.checked)} /><span>Verifiqué el cliente, el dispositivo y la opción seleccionada.</span></label><div className={styles.actions}><button className={styles.button} disabled={Boolean(busy)} onClick={() => { setReview(false); setConfirmed(false); }}>Volver a opciones</button><button className={`${styles.button} ${styles.primary}`} disabled={!confirmed || Boolean(busy) || !allowManage} onClick={() => void confirm()}>{busy === "confirmar" ? "Gestionando en PayJoy…" : "Confirmar extensión"}</button></div></section>}
               {operation.selectedOption && <div className={styles.selectedResult}><h3>Opción seleccionada</h3><strong>{optionTitle(operation.selectedOption)}</strong><OptionDetails option={operation.selectedOption} /></div>}
