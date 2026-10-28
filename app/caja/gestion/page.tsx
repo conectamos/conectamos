@@ -9,7 +9,7 @@ import { formatPaymentAmountInput, normalizePaymentAmountInput } from "@/lib/pro
 import { useLiveRefresh } from "@/lib/use-live-refresh";
 import styles from "./gestion.module.css";
 
-type Sede = { id: number; nombre: string };
+type Sede = { id: number; nombre: string; activa?: boolean };
 type SessionUser = { id: number; nombre: string; usuario: string; sedeId: number; sedeNombre: string; rolId: number; rolNombre: string };
 type CajaMovimiento = {
   id: number; tipo: string; concepto: string; valor: number; descripcion: string | null;
@@ -62,6 +62,8 @@ export default function GestionCajaPage() {
   const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
   const puedeEliminar = rolActual === "ADMIN";
   const ocupado = guardando || eliminandoId !== null;
+  const sedeRetirada = sedes.some((sede) => String(sede.id) === sedeId && sede.activa === false);
+  const sedesParaMovimiento = sedes.filter((sede) => sede.activa !== false || (editandoId !== null && String(sede.id) === sedeId));
   const cobertura = sedes.find((sede) => String(sede.id) === sedeId)?.nombre
     || (sedeId === String(user?.sedeId) ? user?.sedeNombre : "")
     || (user ? "Sede seleccionada" : "Cargando sede…");
@@ -133,6 +135,7 @@ export default function GestionCajaPage() {
       if (!concepto.trim()) throw new Error("Debes ingresar el concepto.");
       if (!valor || !Number.isFinite(Number(valor)) || Number(valor) <= 0) throw new Error("Debes ingresar un valor mayor a 0.");
       if (!sedeId || Number(sedeId) <= 0) throw new Error("Debes seleccionar la sede.");
+      if (!editandoId && sedeRetirada) throw new Error("Selecciona una sede activa para registrar el movimiento.");
       const res = await fetch(editandoId ? `/api/caja?id=${editandoId}` : "/api/caja/registrar", {
         method: editandoId ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tipo, concepto, valor: Number(valor), descripcion, sedeId: Number(sedeId) }),
@@ -204,8 +207,8 @@ export default function GestionCajaPage() {
           <fieldset disabled={!user || ocupado} className={styles.formFields}><legend className={styles.srOnly}>Datos del movimiento</legend>
             <div className={styles.typeSelector} role="group" aria-label="Tipo de movimiento">{(["INGRESO", "EGRESO"] as const).map((item) => <button key={item} type="button" aria-pressed={tipo === item} className={tipo === item ? styles.selectedType : ""} onClick={() => setTipo(item)}><DashboardIcon name="arrow" className={item === "INGRESO" ? styles.upArrow : styles.downArrow} />{item === "INGRESO" ? "Ingreso" : "Egreso"}</button>)}</div>
             <div className={styles.twoFields}>
-              <label className={styles.field}>Sede{esAdmin ? <span className={styles.select}><select value={sedeId} required onChange={(event) => { setSedeId(event.target.value); setPage(1); setGestion(null); setMovimientos([]); setCargando(true); }}>
-                {!sedes.some((sede) => String(sede.id) === sedeId) && <option value={sedeId}>{cobertura}</option>}{sedes.map((sede) => <option key={sede.id} value={sede.id}>{sede.nombre}</option>)}
+              <label className={styles.field}>Sede{esAdmin ? <span className={styles.select}><select value={!editandoId && sedeRetirada ? "" : sedeId} required onChange={(event) => { setSedeId(event.target.value); setPage(1); setGestion(null); setMovimientos([]); setCargando(true); }}>
+                {!editandoId && sedeRetirada ? <option value="">Seleccionar sede activa</option> : !sedesParaMovimiento.some((sede) => String(sede.id) === sedeId) && <option value={sedeId}>{cobertura}</option>}{sedesParaMovimiento.map((sede) => <option key={sede.id} value={sede.id}>{sede.nombre}</option>)}
               </select><DashboardIcon name="chevron" /></span> : <input value={user?.sedeNombre || "Cargando…"} readOnly />}</label>
               <label className={styles.field}>Valor<span className={styles.moneyInput}><span aria-hidden="true">$</span><input aria-label="Valor" inputMode="decimal" required value={formatPaymentAmountInput(valor)} placeholder="0" onChange={(event) => setValor(normalizePaymentAmountInput(event.target.value, valor))} onPaste={(event) => { event.preventDefault(); setValor(normalizePaymentAmountInput(event.clipboardData.getData("text"), valor, true)); }} /></span></label>
             </div>

@@ -42,13 +42,14 @@ export async function getSessionUser(sessionTokenOverride?: string) {
         select: {
           id: true,
           nombre: true,
+          activa: true,
           soloInventarioPorCobrar: true,
         },
       },
     },
   });
 
-  if (!user || !user.activo) return null;
+  if (!user || !user.activo || user.sede?.activa === false) return null;
 
   if (!session.profileId) {
     if (!session.sessionKey || user.activeSessionKey !== session.sessionKey) {

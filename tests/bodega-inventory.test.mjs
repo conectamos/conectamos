@@ -20,6 +20,7 @@ function load(path, imports = {}) {
 const access = load("lib/access-control.ts");
 const imeis = load("lib/inventory-imeis.ts");
 const productTypes = load("lib/product-types.ts");
+const activeEntities = load("lib/active-operational-entities.ts");
 class NextResponse extends Response {
   static json(body, options = {}) { return new NextResponse(JSON.stringify(body), { ...options, headers: { "Content-Type": "application/json", ...options.headers } }); }
 }
@@ -33,6 +34,7 @@ function probe({ user = bodega, item = baseItem, ventas = [], records = [], pres
   const state = { calls: [], item: clone(item), references: [{ id: 1, nombre: "EQUIPO QA", activo: true, eliminado: false, createdAt: new Date("2026-10-19T15:00:00Z"), updatedAt: new Date("2026-10-19T15:00:00Z") }] };
   const record = (name, result) => async args => { state.calls.push({ name, args: clone(args) }); return typeof result === "function" ? result(args) : clone(result); };
   const db = {
+    $queryRaw: async () => [],
     inventarioPrincipal: {
       findMany: record("principal.read", () => state.item ? [clone(state.item)] : []),
       findUnique: record("principal.lookup", () => clone(state.item)),
@@ -42,7 +44,7 @@ function probe({ user = bodega, item = baseItem, ventas = [], records = [], pres
     },
     sede: {
       findFirst: record("bodega.read", { id: 1, nombre: "BODEGA PRINCIPAL" }),
-      findUnique: record("sede.read", ({ where }) => where.id === 2 ? { id: 2, nombre: "SEDE 2" } : where.id === 1 ? { id: 1, nombre: "BODEGA PRINCIPAL" } : null),
+      findUnique: record("sede.read", ({ where }) => where.id === 2 ? { id: 2, nombre: "SEDE 2", activa: true } : where.id === 1 ? { id: 1, nombre: "BODEGA PRINCIPAL", activa: true } : null),
       findMany: record("sede.list", [{ id: 2, nombre: "SEDE 2" }]),
     },
     inventarioSede: {
@@ -73,6 +75,7 @@ function probe({ user = bodega, item = baseItem, ventas = [], records = [], pres
     "next/server": { NextResponse }, "@/lib/prisma": { __esModule: true, default: db },
     "@/lib/auth": { getSessionUser: async () => user }, "@/lib/access-control": access,
     "@/lib/product-types": productTypes,
+    "@/lib/active-operational-entities": activeEntities,
     "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: async () => {} },
     "@/lib/record-catalog-media": { enriquecerRegistrosConCatalogo: async rows => rows.map(row => ({ ...row, catalogoEquipo: null })) },
     "@/lib/prestamos": { NOMBRE_SEDE_BODEGA: "BODEGA PRINCIPAL", PROVEEDOR_FINSER: "Proveedor Finser" },

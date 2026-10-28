@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { verifyPassword } from "@/lib/password";
 import { esPerfilBodega, esSedeBodegaPrincipal } from "@/lib/access-control";
+import { validarSedesActivasOperacion } from "@/lib/active-operational-entities";
 import {
   type AvatarPerfilKey,
   normalizarAvatarPerfil,
@@ -99,6 +100,8 @@ async function validarSedesExistentes(sedeIds: number[]) {
       id: {
         in: sedeIds,
       },
+      activa: true,
+      eliminadoEn: null,
     },
   });
 
@@ -155,10 +158,12 @@ async function validarDuplicadosPerfil(
   }
 }
 
-async function syncPerfilSedes(perfilId: number, sedeIds: number[]) {
-  await prisma.perfilVendedorSede.deleteMany({
+async function syncPerfilSedes(perfilId: number, sedeIds: number[], db: Pick<typeof prisma, "perfilVendedorSede"> = prisma) {
+  await db.perfilVendedorSede.deleteMany({
     where: {
       perfilVendedorId: perfilId,
+      // Retired-site assignments remain as historical links, outside the editable selector.
+      sede: { activa: true, eliminadoEn: null },
     },
   });
 
@@ -166,7 +171,7 @@ async function syncPerfilSedes(perfilId: number, sedeIds: number[]) {
     return;
   }
 
-  await prisma.perfilVendedorSede.createMany({
+  await db.perfilVendedorSede.createMany({
     data: sedeIds.map((sedeId) => ({
       perfilVendedorId: perfilId,
       sedeId,
@@ -181,7 +186,7 @@ export async function obtenerPerfilesVendedor(options?: {
   await ensureVendorProfilesSchema();
 
   const perfiles = await prisma.perfilVendedor.findMany({
-    where: options?.soloActivos ? { activo: true } : undefined,
+    where: { eliminadoEn: null, ...(options?.soloActivos ? { activo: true } : {}) },
     select: {
       id: true,
       nombre: true,
@@ -193,6 +198,7 @@ export async function obtenerPerfilesVendedor(options?: {
       tipo: true,
       debeCambiarPin: true,
       sedes: {
+        where: { sede: { activa: true, eliminadoEn: null } },
         select: {
           sede: {
             select: {
@@ -238,7 +244,8 @@ export async function obtenerPerfilesVendedor(options?: {
 }
 
 export async function obtenerPerfilesAccesoPorSede(sedeId: number, options?: { soloBodega?: boolean }) {
-  const sede = await prisma.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } });
+  const sede = await prisma.sede.findUnique({ where: { id: sedeId }, select: { nombre: true, activa: true } });
+  if (!sede || sede.activa === false) return [];
   const perfiles = await prisma.perfilVendedor.findMany({
     where: {
       activo: true,
@@ -283,6 +290,8 @@ export async function validarPerfilAccesoPorSede(params: {
   sedeId: number;
   soloBodega?: boolean;
 }) {
+  const sede = await prisma.sede.findUnique({ where: { id: params.sedeId }, select: { nombre: true, activa: true } });
+  if (!sede || sede.activa === false) return null;
   const perfil = await prisma.perfilVendedor.findFirst({
     where: {
       id: params.perfilId,
@@ -314,7 +323,6 @@ export async function validarPerfilAccesoPorSede(params: {
   }
 
   if (esPerfilBodega(perfil.tipo)) {
-    const sede = await prisma.sede.findUnique({ where: { id: params.sedeId }, select: { nombre: true } });
     if (!esSedeBodegaPrincipal(sede?.nombre)) return null;
   }
 
@@ -341,26 +349,28 @@ export async function crearPerfilVendedor(payload: PerfilVendedorPayload) {
   await validarSedePerfilBodega(payload);
   await validarDuplicadosPerfil(payload);
 
-  const perfil = await prisma.perfilVendedor.create({
-    data: {
-      nombre: payload.nombre,
-      documento: payload.documento,
-      telefono: payload.telefono,
-      correo: payload.correo,
-      avatarKey: payload.avatarKey,
-      pinHash: String(payload.pinHash || ""),
-      activo: payload.activo,
-      tipo: payload.tipo,
-      debeCambiarPin: payload.debeCambiarPin ?? true,
-    },
-    select: {
-      id: true,
-    },
+  return prisma.$transaction(async (tx) => {
+    await validarSedesActivasOperacion(tx, payload.sedeIds);
+    const perfil = await tx.perfilVendedor.create({
+      data: {
+        nombre: payload.nombre,
+        documento: payload.documento,
+        telefono: payload.telefono,
+        correo: payload.correo,
+        avatarKey: payload.avatarKey,
+        pinHash: String(payload.pinHash || ""),
+        activo: payload.activo,
+        tipo: payload.tipo,
+        debeCambiarPin: payload.debeCambiarPin ?? true,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    await syncPerfilSedes(perfil.id, payload.sedeIds, tx);
+    return perfil.id;
   });
-
-  await syncPerfilSedes(perfil.id, payload.sedeIds);
-
-  return perfil.id;
 }
 
 export async function actualizarPerfilVendedor(
@@ -372,22 +382,25 @@ export async function actualizarPerfilVendedor(
   await validarSedePerfilBodega(payload);
   await validarDuplicadosPerfil(payload, perfilId);
 
-  await prisma.perfilVendedor.update({
-    where: { id: perfilId },
-    data: {
-      nombre: payload.nombre,
-      documento: payload.documento,
-      telefono: payload.telefono,
-      correo: payload.correo,
-      avatarKey: payload.avatarKey,
-      activo: payload.activo,
-      tipo: payload.tipo,
-      ...(payload.pinHash ? { pinHash: payload.pinHash } : {}),
-      ...(payload.debeCambiarPin !== undefined
-        ? { debeCambiarPin: payload.debeCambiarPin }
-        : {}),
-    },
-  });
+  await prisma.$transaction(async (tx) => {
+    await validarSedesActivasOperacion(tx, payload.sedeIds);
+    await tx.perfilVendedor.update({
+      where: { id: perfilId, eliminadoEn: null },
+      data: {
+        nombre: payload.nombre,
+        documento: payload.documento,
+        telefono: payload.telefono,
+        correo: payload.correo,
+        avatarKey: payload.avatarKey,
+        activo: payload.activo,
+        tipo: payload.tipo,
+        ...(payload.pinHash ? { pinHash: payload.pinHash } : {}),
+        ...(payload.debeCambiarPin !== undefined
+          ? { debeCambiarPin: payload.debeCambiarPin }
+          : {}),
+      },
+    });
 
-  await syncPerfilSedes(perfilId, payload.sedeIds);
+    await syncPerfilSedes(perfilId, payload.sedeIds, tx);
+  });
 }

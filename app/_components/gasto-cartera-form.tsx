@@ -9,7 +9,7 @@ import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import { triggerLiveRefresh } from "@/lib/use-live-refresh";
 import styles from "./gasto-cartera-form.module.css";
 
-type Sede = { id: number; nombre: string };
+type Sede = { id: number; nombre: string; activa?: boolean };
 type SessionUser = { id: number; nombre: string; usuario: string; sedeId: number; sedeNombre: string; rolId: number; rolNombre: string };
 type GastoCarteraFormProps = { backHref?: string; badgeLabel?: string; detailHref?: string | null; description?: string };
 type PendingRequest = { key: string; payload: { valor: number; observacion: string; sedeId: number } };
@@ -62,7 +62,7 @@ export default function GastoCarteraForm({
           const resSedes = await fetch("/api/sedes", { cache: "no-store" });
           const result = await resSedes.json();
           if (!resSedes.ok || !Array.isArray(result)) throw new Error("No se pudieron cargar las sedes. Recarga la página.");
-          dataSedes = result;
+          dataSedes = result.filter((sede: Sede) => sede.activa !== false);
         }
         if (!active) return;
         setUser(dataUser); setSedes(dataSedes); setSedeId(String(dataUser.sedeId || ""));

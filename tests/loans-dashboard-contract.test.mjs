@@ -591,6 +591,7 @@ function route(path, user, prisma) {
     "next/server": responseMock, "@/lib/prisma": { __esModule: true, default: prisma },
     "@/lib/auth": { getSessionUser: async () => user }, "@/lib/access-control": access,
     "@/lib/prestamos": loanHelpers, "@/lib/sedes": sedeHelpers,
+    "@/lib/active-operational-entities": load("lib/active-operational-entities.ts"),
   });
 }
 const postRequest = (body) => new Request("http://localhost/api/prestamos/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

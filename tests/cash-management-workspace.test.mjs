@@ -281,6 +281,21 @@ test('vista previa cambia tipo, importe colombiano, sede, concepto y descripció
   assert.equal(instance.state.sedeId, '2'); assert.ok(textOf(tree).includes('$ 0')); assert.deepEqual(instance.calls, []);
 });
 
+test('sede retirada se excluye de altas sin ocultar historial ni impedir edición histórica', async () => {
+  const catalogo = [{ id: 1, nombre: 'SEDE 1', activa: true }, { id: 2, nombre: 'SEDE COMPATIBLE' }, { id: 3, nombre: 'SEDE RETIRADA', activa: false }];
+  const blocked = workspaceProbe({ initial: { sedes: catalogo, sedeId: '3', concepto: 'Concepto QA', valor: '1000' } });
+  let tree = blocked.render().tree;
+  assert.deepEqual(blocked.state.sedes.map(sede => sede.id), [1, 2, 3]);
+  assert.deepEqual(blocked.view.sedesParaMovimiento.map(sede => sede.id), [1, 2]);
+  assert.ok(!elements(control(tree, node => node.type === 'select')).some(node => node.type === 'option' && node.props.value === 3));
+  assert.equal(elements(tree).filter(node => node.type === 'tr').length, 11);
+  await blocked.view.guardar(); assert.deepEqual(blocked.calls, []); assert.equal(blocked.state.notice.error, true);
+  const editing = workspaceProbe({ initial: { sedes: catalogo, sedeId: '3', editandoId: uiRow.id, concepto: 'Histórico QA', valor: '1000' }, fetchImpl: async (_url, options) => options.method === 'PUT' ? { ok: true, data: { mensaje: 'Edición confirmada QA' } } : { ok: true, data: uiData } });
+  tree = editing.render().tree;
+  assert.ok(elements(control(tree, node => node.type === 'select')).some(node => node.type === 'option' && node.props.value === 3));
+  await editing.view.guardar(); assert.equal(editing.calls[0].options.method, 'PUT'); assert.equal(JSON.parse(editing.calls[0].options.body).sedeId, 3);
+});
+
 test('registro bloquea doble clic inmediato y solo confirma y limpia cuando el servidor guarda', async () => {
   for (const tipo of ['INGRESO', 'EGRESO']) {
     let resolveSave; const pending = new Promise(resolve => { resolveSave = resolve; });

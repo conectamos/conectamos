@@ -837,6 +837,7 @@ function apiProbe(user, options = {}) {
     "@/lib/access-control": access, "@/lib/prestamos": prestamos, "@/lib/sedes": sedes, "@/lib/product-types": productTypes,
     "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: record("ensure-schema", undefined) }, "@/lib/siigo": {},
     "@/lib/inventory-intake-registration": {},
+    "@/lib/active-operational-entities": loadTypeScript("lib/active-operational-entities.ts"),
     "@/lib/inventory-creditors": {
       ...creditorHelpers,
       resolverIdentidadesAcreedores: async (rows) => new Map([...new Set(rows.map((item) => creditorHelpers.nombreHistoricoAcreedor(item.deboA)).filter((name) => name !== null))]

@@ -71,6 +71,18 @@ async function runEnsureVendorProfilesSchema() {
   `);
 
   await prisma.$executeRawUnsafe(`
+    ALTER TABLE "PerfilVendedor"
+      ADD COLUMN IF NOT EXISTS "eliminadoEn" TIMESTAMP(3),
+      ADD COLUMN IF NOT EXISTS "eliminadoPor" TEXT;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "Sede"
+      ADD COLUMN IF NOT EXISTS "eliminadoEn" TIMESTAMP(3),
+      ADD COLUMN IF NOT EXISTS "eliminadoPor" TEXT;
+  `);
+
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "PerfilVendedorSede" (
       "id" SERIAL NOT NULL,
       "perfilVendedorId" INTEGER NOT NULL,

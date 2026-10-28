@@ -12,6 +12,7 @@ import {
   esRegistroDestinoBloqueanteParaPrestamo,
 } from "@/lib/prestamos";
 import { esSedeVentas } from "@/lib/sedes";
+import { EntidadOperativaInactivaError, validarSedesActivasOperacion } from "@/lib/active-operational-entities";
 
 export async function POST(req: Request) {
   try {
@@ -182,6 +183,7 @@ export async function POST(req: Request) {
     }
 
     await prisma.$transaction(async (tx) => {
+      await validarSedesActivasOperacion(tx, [inventario.sedeId, sedeDestinoId]);
       await tx.prestamoSede.create({
         data: {
           imei: inventario.imei,
@@ -229,6 +231,7 @@ export async function POST(req: Request) {
       mensaje: "Solicitud de prestamo enviada. La sede destino debe aprobarla para recibir el equipo.",
     });
   } catch (error) {
+    if (error instanceof EntidadOperativaInactivaError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("ERROR CREAR PRESTAMO DESDE INVENTARIO:", error);
     return NextResponse.json(
       { error: "Error interno al crear prestamo entre sedes" },

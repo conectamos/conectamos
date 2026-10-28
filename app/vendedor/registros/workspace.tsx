@@ -76,6 +76,7 @@ type FinancieraCatalogoOption = {
 type SedeOption = {
   id: number;
   nombre: string;
+  activa?: boolean;
 };
 
 type ListaNegraAlerta = {
@@ -1107,6 +1108,7 @@ export default function VendedorRegistroWorkspace({
     );
   const router = useRouter();
   const searchParams = useSearchParams();
+  const edicionDesdeRuta = Number(searchParams.get("editar")) > 0;
   const [form, setForm] = useState<FormState>(() => createInitialState(session));
   const [modoManual, setModoManual] = useState(false);
   const modoManualRef = useRef(false);
@@ -1333,7 +1335,8 @@ export default function VendedorRegistroWorkspace({
 
         if (sedesRes.ok && Array.isArray(sedesData)) {
           setSedes(sedesData);
-          const puntosVentaPermitidos = sedesData
+          const puntosVentaPermitidos = (sedesData as SedeOption[])
+            .filter((sede) => sede.activa !== false)
             .map((item) => String(item?.nombre || "").trim())
             .filter(
               (nombre) =>
@@ -1345,6 +1348,7 @@ export default function VendedorRegistroWorkspace({
             ...current,
             puntoVenta:
               current.puntoVenta &&
+              (edicionDesdeRuta || puntosVentaPermitidos.includes(current.puntoVenta)) &&
               !PUNTOS_VENTA_EXCLUIDOS.has(current.puntoVenta.toUpperCase())
                 ? current.puntoVenta
                 : puntosVentaPermitidos[0] || "",
@@ -1378,7 +1382,7 @@ export default function VendedorRegistroWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [session.sedeNombre]);
+  }, [session.sedeNombre, edicionDesdeRuta]);
 
   useEffect(() => {
     const documento = onlyDigits(form.documentoNumero, 15);
@@ -3617,7 +3621,11 @@ export default function VendedorRegistroWorkspace({
 
   const puntosVenta = Array.from(
     new Map(
-      [session.sedeNombre, ...sedes.map((item) => item.nombre)]
+      [
+        ...(sedes.some((sede) => sede.nombre === session.sedeNombre && sede.activa === false) ? [] : [session.sedeNombre]),
+        ...sedes.filter((sede) => sede.activa !== false).map((item) => item.nombre),
+        ...(registroEditando?.puntoVenta ? [registroEditando.puntoVenta] : []),
+      ]
         .map((nombre) => String(nombre || "").trim())
         .filter(
           (nombre) =>

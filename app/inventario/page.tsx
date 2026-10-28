@@ -68,6 +68,7 @@ type SessionUser = {
 type Sede = {
   id: number;
   nombre: string;
+  activa?: boolean;
 };
 
 type EstadoOperativoFiltro =
@@ -1065,6 +1066,7 @@ export default function InventarioPage() {
   const sedesDestinoMasivo = useMemo(() => {
     return sedes.filter(
       (sede) =>
+        sede.activa !== false &&
         esSedeOperativaInventario(sede.nombre) &&
         itemsSeleccionadosParaPrestamo.every((item) => item.sedeId !== sede.id)
     );
@@ -2053,6 +2055,7 @@ vistaDisponible && (pestana === "deudas" || filtrosEstado.includes("DEUDA") || i
                 {sedes
                   .filter(
                     (sede) =>
+                      sede.activa !== false &&
                       sede.id !== itemPrestamo.sedeId &&
                       esSedeOperativaInventario(sede.nombre)
                   )

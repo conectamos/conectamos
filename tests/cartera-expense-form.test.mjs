@@ -123,6 +123,18 @@ test("usuario de sede conserva cobertura restringida y no consulta el listado ad
   assert.ok(!elements(tree).some(node => node.type === "a" && node.props.href === "/dashboard/sedes"));
 });
 
+test("sedes retiradas no aparecen para registrar gastos nuevos y se conserva compatibilidad sin bandera activa", async () => {
+  const catalogo = [{ id: 1, nombre: "ACTIVA QA", activa: true }, { id: 3, nombre: "COMPATIBLE QA" }, { id: 8, nombre: "RETIRADA QA", activa: false }];
+  const instance = formProbe({ fetchImpl: async url => response(url === "/api/session" ? admin : url === "/api/sedes" ? catalogo : savedResult) });
+  const tree = await instance.init();
+  assert.deepEqual(instance.state.sedes.map(sede => sede.id), [1, 3]);
+  assert.ok(!elements(control(tree, "cartera-sede")).some(node => node.type === "option" && node.props.value === 8));
+  instance.state.sedeId = "8"; instance.state.valor = "1500"; instance.render();
+  await instance.view.guardar(submitEvent());
+  assert.equal(instance.calls.filter(call => call.options.method === "POST").length, 0);
+  assert.equal(instance.state.notice.error, true);
+});
+
 test("el formulario compartido conserva Volver personalizado y la opción de ocultar Ver detalle", () => {
   const instance = formProbe();
   const tree = instance.render({ backHref: "/caja", detailHref: null, description: "Registro desde caja QA" });

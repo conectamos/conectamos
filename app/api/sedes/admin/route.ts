@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { hashPassword } from "@/lib/password";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { puedeEliminarEntidadesCentrales } from "@/lib/admin-entity-removal-access";
+import { AdminEntityRemovalError, eliminarSedeAdministrativa } from "@/lib/admin-entity-removal";
 
 function esAdmin(rolNombre: string) {
   return ["ADMIN", "AUDITOR"].includes(String(rolNombre || "").trim().toUpperCase());
@@ -130,6 +132,7 @@ async function obtenerSedesAdmin() {
   await ensureVendorProfilesSchema();
 
   const sedes = await prisma.sede.findMany({
+    where: { eliminadoEn: null },
     select: {
       id: true,
       nombre: true,
@@ -407,6 +410,7 @@ export async function PATCH(req: Request) {
         id: true,
         nombre: true,
         codigo: true,
+        eliminadoEn: true,
         usuarios: {
           select: {
             id: true,
@@ -429,6 +433,10 @@ export async function PATCH(req: Request) {
         { error: "Sede no encontrada" },
         { status: 404 }
       );
+    }
+
+    if (sedeActual.eliminadoEn) {
+      return NextResponse.json({ error: "La sede fue eliminada y no se puede modificar." }, { status: 409 });
     }
 
     const accesoExistente = sedeActual.usuarios.find(
@@ -509,7 +517,7 @@ export async function PATCH(req: Request) {
 
     await prisma.$transaction(async (tx) => {
       await tx.sede.update({
-        where: { id: sedeId },
+        where: { id: sedeId, eliminadoEn: null },
         data: {
           nombre,
           codigo,
@@ -552,10 +560,36 @@ export async function PATCH(req: Request) {
       sedes,
     });
   } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2025") {
+      return NextResponse.json({ error: "La sede ya no está disponible para edición. Actualiza el listado." }, { status: 409 });
+    }
     console.error("ERROR PATCH ADMIN SEDES:", error);
     return NextResponse.json(
       { error: "Error actualizando sede" },
       { status: 500 }
     );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await requireAdmin();
+    if (!session.ok) return session.response;
+    if (!puedeEliminarEntidadesCentrales(session.user)) {
+      return NextResponse.json({ error: "Solo el administrador central puede eliminar sedes." }, { status: 403 });
+    }
+    let body: Record<string, unknown>;
+    try {
+      const parsed: unknown = await req.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      body = parsed as Record<string, unknown>;
+    } catch { return NextResponse.json({ error: "La solicitud no es válida." }, { status: 400 }); }
+    if (body.confirmed !== true) return NextResponse.json({ error: "Debes confirmar la eliminación de la sede." }, { status: 400 });
+    await eliminarSedeAdministrativa(session.user, body.sedeId);
+    return NextResponse.json({ ok: true, mensaje: "Sede eliminada. Se conserva su historial.", sedes: await obtenerSedesAdmin() }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error) {
+    if (error instanceof AdminEntityRemovalError) return NextResponse.json({ error: error.message }, { status: error.status });
+    console.error("ERROR DELETE ADMIN SEDES:", error);
+    return NextResponse.json({ error: "No se pudo confirmar la eliminación de la sede. Conserva los datos y reintenta." }, { status: 500 });
   }
 }

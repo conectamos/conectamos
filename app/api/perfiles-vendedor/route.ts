@@ -4,6 +4,9 @@ import prisma from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { esPerfilBodega, esRolAdmin } from "@/lib/access-control";
+import { puedeEliminarEntidadesCentrales } from "@/lib/admin-entity-removal-access";
+import { AdminEntityRemovalError, eliminarPerfilComercial } from "@/lib/admin-entity-removal";
+import { EntidadOperativaInactivaError } from "@/lib/active-operational-entities";
 import {
   actualizarPerfilVendedor,
   crearPerfilVendedor,
@@ -55,6 +58,7 @@ async function cargarRespuestaAdmin() {
   const [perfiles, sedes] = await Promise.all([
     obtenerPerfilesVendedor(),
     prisma.sede.findMany({
+      where: { eliminadoEn: null, activa: true },
       select: {
         id: true,
         nombre: true,
@@ -175,6 +179,7 @@ export async function POST(req: Request) {
       ...(await cargarRespuestaAdmin()),
     });
   } catch (error) {
+    if (error instanceof EntidadOperativaInactivaError) return NextResponse.json({ error: error.message }, { status: error.status });
     const message =
       error instanceof Error ? error.message : "Error creando perfil";
 
@@ -234,7 +239,9 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const perfilActual = await prisma.perfilVendedor.findUnique({ where: { id: perfilId }, select: { tipo: true } });
+    const perfilActual = await prisma.perfilVendedor.findUnique({ where: { id: perfilId }, select: { tipo: true, eliminadoEn: true } });
+    if (!perfilActual) return NextResponse.json({ error: "El perfil no existe." }, { status: 404 });
+    if (perfilActual.eliminadoEn) return NextResponse.json({ error: "El vendedor fue eliminado y no se puede modificar." }, { status: 409 });
     if ((esPerfilBodega(tipo) || esPerfilBodega(perfilActual?.tipo)) && !esRolAdmin(session.user.rolNombre)) {
       return NextResponse.json({ error: "Solo el administrador puede gestionar el perfil Bodega" }, { status: 403 });
     }
@@ -257,11 +264,38 @@ export async function PATCH(req: Request) {
       ...(await cargarRespuestaAdmin()),
     });
   } catch (error) {
+    if (error instanceof EntidadOperativaInactivaError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (error && typeof error === "object" && "code" in error && error.code === "P2025") {
+      return NextResponse.json({ error: "El vendedor ya no está disponible para edición. Actualiza el listado." }, { status: 409 });
+    }
     const message =
       error instanceof Error ? error.message : "Error actualizando perfil";
 
     console.error("ERROR PATCH PERFILES VENDEDOR:", error);
 
     return NextResponse.json({ error: message }, { status: error instanceof PerfilBodegaValidationError ? 400 : 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await requireAdmin();
+    if (!session.ok) return session.response;
+    if (!puedeEliminarEntidadesCentrales(session.user)) {
+      return NextResponse.json({ error: "Solo el administrador central puede eliminar vendedores." }, { status: 403 });
+    }
+    let body: Record<string, unknown>;
+    try {
+      const parsed: unknown = await req.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      body = parsed as Record<string, unknown>;
+    } catch { return NextResponse.json({ error: "La solicitud no es válida." }, { status: 400 }); }
+    if (body.confirmed !== true) return NextResponse.json({ error: "Debes confirmar la eliminación del vendedor." }, { status: 400 });
+    await eliminarPerfilComercial(session.user, body.id);
+    return NextResponse.json({ ok: true, mensaje: "Vendedor eliminado. Se conserva su historial.", ...(await cargarRespuestaAdmin()) }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error) {
+    if (error instanceof AdminEntityRemovalError) return NextResponse.json({ error: error.message }, { status: error.status });
+    console.error("ERROR DELETE PERFILES VENDEDOR:", error);
+    return NextResponse.json({ error: "No se pudo confirmar la eliminación del vendedor. Conserva los datos y reintenta." }, { status: 500 });
   }
 }

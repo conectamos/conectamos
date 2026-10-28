@@ -6,6 +6,7 @@ import { esSedeVentas } from "@/lib/sedes";
 import { normalizarTipoProducto } from "@/lib/product-types";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { InventoryIntakeError, leerClaveCarga, leerImeisCarga, registrarCargaInventarioUnaVez } from "@/lib/inventory-intake-registration";
+import { EntidadOperativaInactivaError, validarSedesActivasOperacion } from "@/lib/active-operational-entities";
 import {
   nombreHistoricoAcreedor,
   obtenerSaldoPendienteInventario,
@@ -256,6 +257,7 @@ export async function POST(req: Request) {
       usuarioId: user.id, destino: "SEDE", clave, imeis,
       solicitud: { imeis, referencia, tipoProducto, color, costo, distribuidor, sedeId, estadoFinanciero, deboA },
       registrar: async (tx) => {
+        await validarSedesActivasOperacion(tx, [sedeId]);
         const sede = await tx.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } });
         if (!sede) throw new InventoryIntakeError("Sede inválida.");
         if (esSedeVentas(sede.nombre)) throw new InventoryIntakeError("La sede VENTAS es informativa y no puede recibir equipos de inventario.");
@@ -282,6 +284,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json(resultado, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof EntidadOperativaInactivaError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error instanceof InventoryIntakeError) {
       return NextResponse.json({ error: error.message, codigo: error.codigo }, { status: error.status });
     }

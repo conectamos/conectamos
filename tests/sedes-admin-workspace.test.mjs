@@ -22,6 +22,11 @@ function load(path, imports = {}) {
   return loadedModule.exports;
 }
 
+const centralRemovalAccess = load('lib/admin-entity-removal-access.ts', {
+  '@/lib/access-control': load('lib/access-control.ts'),
+});
+class AdminEntityRemovalError extends Error {}
+
 function matches(row, where = {}) {
   return Object.entries(where).every(([key, value]) => value && typeof value === 'object'
     ? 'not' in value ? row[key] !== value.not : matches(row[key] || {}, value)
@@ -55,7 +60,7 @@ const initialSites = [
     id: index + 4, nombre: `SEDE QA ${index + 4}`, codigo: `QA-${index + 4}`, activa: true,
     soloInventarioPorCobrar: false, ...integration, siigoEnabled: index % 2 === 0,
   })),
-];
+].map(site => ({ ...site, eliminadoEn: null }));
 const initialUsers = [
   { id: 1, nombre: 'Administrador QA', usuario: 'adminqa', activo: true, rolId: 1, sedeId: 1, claveHash: 'hash-administrador-oculto', rol: { nombre: 'ADMIN' } },
   { id: 11, nombre: 'Usuario SEDE 1', usuario: 'sede1', activo: false, rolId: 2, sedeId: 1, claveHash: 'hash-sede1-oculto', rol: { nombre: 'USUARIO' } },
@@ -63,8 +68,9 @@ const initialUsers = [
   { id: 21, nombre: 'Usuario SEDE 2', usuario: 'sede2', activo: true, rolId: 2, sedeId: 2, claveHash: 'hash-sede2-oculto', rol: { nombre: 'USUARIO' } },
 ];
 
-function probe(user = administrator, { failAt = '', missingUserRole = false } = {}) {
+function probe(user = administrator, { failAt = '', missingUserRole = false, retiredSiteId } = {}) {
   let state = structuredClone({ sites: initialSites, users: initialUsers });
+  if (retiredSiteId) state.sites.find(site => site.id === retiredSiteId).eliminadoEn = new Date('2026-10-28T12:00:00Z');
   const calls = []; const mutations = []; const hashes = [];
   let schemaChecks = 0; let committedTransactions = 0;
   function failure(method) {
@@ -82,20 +88,21 @@ function probe(user = administrator, { failAt = '', missingUserRole = false } = 
         findFirst: async args => { record('sede.findFirst', args); return project(forState.sites.find(row => matches(row, args.where)), args.select); },
         findMany: async args => {
           record('sede.findMany', args);
-          return [...forState.sites].sort((a, b) => a.id - b.id).map(site => project({
+          return forState.sites.filter(site => matches(site, args.where)).sort((a, b) => a.id - b.id).map(site => project({
             ...site, usuarios: forState.users.filter(account => account.sedeId === site.id).sort((a, b) => a.id - b.id),
           }, args.select));
         },
         create: async args => {
           assert.ok(inTransaction, 'La sede y su acceso deben crearse dentro de una transacción');
           mutations.push({ method: 'sede.create', ...args }); failure('sede.create');
-          const row = { id: Math.max(...forState.sites.map(site => site.id)) + 1, ...args.data };
+          const row = { id: Math.max(...forState.sites.map(site => site.id)) + 1, eliminadoEn: null, ...args.data };
           forState.sites.push(row); return project(row, args.select);
         },
         update: async args => {
           assert.ok(inTransaction, 'La sede y su acceso deben editarse dentro de una transacción');
           mutations.push({ method: 'sede.update', ...args }); failure('sede.update');
-          const row = forState.sites.find(site => site.id === args.where.id);
+          const row = forState.sites.find(site => matches(site, args.where));
+          assert.ok(row, 'La edición debe respetar la protección contra sedes eliminadas');
           Object.assign(row, args.data); return project(row, args.select);
         },
       },
@@ -134,6 +141,8 @@ function probe(user = administrator, { failAt = '', missingUserRole = false } = 
     '@/lib/auth': { getSessionUser: async () => user },
     '@/lib/password': { hashPassword: value => { hashes.push(value); return `hash-qa:${value}`; } },
     '@/lib/vendor-profile-schema': { ensureVendorProfilesSchema: async () => { schemaChecks++; failure('schema'); } },
+    '@/lib/admin-entity-removal-access': centralRemovalAccess,
+    '@/lib/admin-entity-removal': { AdminEntityRemovalError, eliminarSedeAdministrativa: async () => { assert.fail('Estos casos de regresión no deben eliminar sedes'); } },
   });
   return { ...api, calls, mutations, hashes, state: () => structuredClone(state), schemaChecks: () => schemaChecks, committedTransactions: () => committedTransactions };
 }
@@ -164,8 +173,19 @@ test('sedes: ADMIN y AUDITOR conservan el listado completo de todas las sedes', 
     assert.equal(response.status, 200); assert.equal(body.ok, true); assert.equal(body.sedes.length, initialSites.length);
     assert.deepEqual(body.sedes.map(row => row.id), initialSites.map(row => row.id));
     const query = instance.calls.find(call => call.method === 'sede.findMany');
-    assert.equal(query.take, undefined); assert.equal(query.where, undefined); assert.equal(instance.schemaChecks(), 1);
+    assert.equal(query.take, undefined); assert.deepEqual(query.where, { eliminadoEn: null }); assert.equal(instance.schemaChecks(), 1);
   }
+});
+
+test('sedes: listado omite sedes retiradas y su edición no reactiva identidad ni accesos', async () => {
+  const instance = probe(administrator, { retiredSiteId: 2 }); const before = instance.state();
+  const listed = await request(instance, 'GET');
+  assert.equal(listed.response.status, 200); assert.equal(listed.body.sedes.length, initialSites.length - 1);
+  assert.equal(listed.body.sedes.some(site => site.id === 2), false);
+  assert.ok(listed.body.sedes.some(site => site.id === 3), 'Una sede inactiva sin retirar conserva su edición y acceso');
+  const edited = await request(instance, 'PATCH', { ...editPayload, sedeId: 2, nombre: 'INTENTO REACTIVAR QA', codigo: 'REACTIVAR-QA', usuario: 'reactivarqa', clave: 'clave-qa' });
+  assert.equal(edited.response.status, 409); assert.match(edited.body.error, /eliminada/);
+  assert.deepEqual(instance.mutations, []); assert.deepEqual(instance.hashes, []); assert.deepEqual(instance.state(), before);
 });
 
 test('sedes: las respuestas jamás exponen claves ni hashes, incluso al crear o cambiar una clave', async () => {

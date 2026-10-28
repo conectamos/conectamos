@@ -10,6 +10,7 @@ import {
   puedeAccederPanelVendedor,
 } from "@/lib/access-control";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { EntidadOperativaInactivaError, validarPerfilActivoOperacion, validarSedesActivasOperacion } from "@/lib/active-operational-entities";
 import { buscarEquipoRegistroVentaPorImei } from "@/lib/vendor-sale-inventory";
 import { buscarDocumentoListaNegra } from "@/lib/vendor-blacklist";
 import { normalizarTipoProducto } from "@/lib/product-types";
@@ -1341,23 +1342,28 @@ export async function POST(req: Request) {
       }
     }
 
-    const creado = await prisma.registroVendedorVenta.create({
-      data: {
-        perfilVendedorId: access.session.perfilId,
-        sedeId: sedeRegistro.id,
-        ...payload.data,
-        puntoVenta: sedeRegistro.nombre,
-        referenciaEquipo: equipoValidado.equipo.referencia,
-        tipoProducto: equipoValidado.equipo.tipoProducto,
-        color: equipoValidado.equipo.color ?? payload.data.color ?? null,
-        asesorNombre:
-          payload.data.asesorNombre ??
-          access.session.perfilNombre ??
-          access.session.nombre,
-      },
-      select: {
-        id: true,
-      },
+    const perfilId = access.session.perfilId;
+    const creado = await prisma.$transaction(async (tx) => {
+      await validarSedesActivasOperacion(tx, [access.session.sedeId, sedeRegistro.id]);
+      await validarPerfilActivoOperacion(tx, perfilId);
+      return tx.registroVendedorVenta.create({
+        data: {
+          perfilVendedorId: perfilId,
+          sedeId: sedeRegistro.id,
+          ...payload.data,
+          puntoVenta: sedeRegistro.nombre,
+          referenciaEquipo: equipoValidado.equipo.referencia,
+          tipoProducto: equipoValidado.equipo.tipoProducto,
+          color: equipoValidado.equipo.color ?? payload.data.color ?? null,
+          asesorNombre:
+            payload.data.asesorNombre ??
+            access.session.perfilNombre ??
+            access.session.nombre,
+        },
+        select: {
+          id: true,
+        },
+      });
     });
 
     await syncVendorRewardSnapshotForSale(creado.id).catch((error) => {
@@ -1369,6 +1375,7 @@ export async function POST(req: Request) {
       mensaje: "Registro guardado correctamente",
     });
   } catch (error) {
+    if (error instanceof EntidadOperativaInactivaError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("ERROR POST REGISTROS VENDEDOR:", error);
     return NextResponse.json(
       { error: "Error guardando el registro del vendedor" },

@@ -38,6 +38,7 @@ type ItemPrincipal = {
 type Sede = {
   id: number;
   nombre: string;
+  activa?: boolean;
 };
 
 type ReferenciaCatalogo = {
@@ -585,6 +586,10 @@ export default function InventarioPrincipalPage() {
       ),
     [sedes]
   );
+  const sedesDestinoActivas = useMemo(
+    () => sedesDestinoOperativas.filter((sede) => sede.activa !== false),
+    [sedesDestinoOperativas]
+  );
 
   const exportarInventarioExcel = useCallback(async () => {
     if (itemsTabla.length === 0) {
@@ -1120,7 +1125,7 @@ export default function InventarioPrincipalPage() {
       return;
     }
 
-    if (!sedesDestinoOperativas.some(sede => String(sede.id) === sedeDestinoId)) {
+    if (!sedesDestinoActivas.some(sede => String(sede.id) === sedeDestinoId)) {
       setErrorEnvio("Debes seleccionar una sede destino disponible.");
       setMensaje("Debes seleccionar una sede destino");
       return;
@@ -1167,7 +1172,7 @@ export default function InventarioPrincipalPage() {
   };
 
   const enviarMasivoASede = async () => {
-    if (!sedeDestinoId) {
+    if (!sedesDestinoActivas.some(sede => String(sede.id) === sedeDestinoId)) {
       setMensaje("Debes seleccionar una sede destino");
       return;
     }
@@ -1729,7 +1734,7 @@ export default function InventarioPrincipalPage() {
                 className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
               >
                 <option value="">Seleccionar sede</option>
-                {sedesDestinoOperativas.map((sede) => (
+                {sedesDestinoActivas.map((sede) => (
                   <option key={sede.id} value={sede.id}>
                     {sede.nombre}
                   </option>
@@ -1762,7 +1767,7 @@ export default function InventarioPrincipalPage() {
 
       {mostrarModal && itemSeleccionado && <DispatchConfirmationDialog
         equipo={itemSeleccionado}
-        sedes={sedesDestinoOperativas}
+        sedes={sedesDestinoActivas}
         sedeDestinoId={sedeDestinoId}
         acreedorNombre={PROVEEDOR_FINSER}
         busy={cargando}

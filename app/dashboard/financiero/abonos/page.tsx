@@ -11,6 +11,7 @@ type CatalogoPersonalResponse = {
 type Sede = {
   id: number;
   nombre: string;
+  activa?: boolean;
 };
 
 type SessionUser = {
@@ -65,7 +66,7 @@ export default function AbonosFinancierosPage() {
       const data = await res.json();
 
       if (res.ok) {
-        setSedes(Array.isArray(data) ? data : []);
+        setSedes(Array.isArray(data) ? data.filter((sede: Sede) => sede.activa !== false) : []);
       }
     } catch {}
   };

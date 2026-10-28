@@ -39,12 +39,13 @@ async function getPendingUser() {
       sede: {
         select: {
           nombre: true,
+          activa: true,
         },
       },
     },
   });
 
-  if (!user || !user.activo) {
+  if (!user || !user.activo || user.sede?.activa === false) {
     return null;
   }
 

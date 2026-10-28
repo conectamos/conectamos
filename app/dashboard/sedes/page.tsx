@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
 import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import styles from "./sedes.module.css";
+import AdminDeleteDialog from "@/app/_components/admin-delete-dialog";
+import { puedeEliminarEntidadesCentrales } from "@/lib/admin-entity-removal-access";
 
 type SessionUser = {
   id: number;
@@ -15,6 +17,7 @@ type SessionUser = {
   sedeNombre: string;
   rolId: number;
   rolNombre: string;
+  perfilTipo?: string | null;
 };
 
 type SedeAdminItem = {
@@ -438,6 +441,10 @@ export default function GestionSedesPage() {
   const [catalogosSiigoError, setCatalogosSiigoError] = useState("");
   const [catalogTab, setCatalogTab] = useState("documents");
   const [catalogSearch, setCatalogSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<SedeAdminItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const deleteLock = useRef(false);
   const catalogDialog = useRef<HTMLDialogElement>(null);
   const editorRef = useRef<HTMLElement>(null);
   const editorHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -445,9 +452,10 @@ export default function GestionSedesPage() {
   const catalogTriggerRef = useRef<HTMLElement | null>(null);
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(user?.rolNombre?.trim().toUpperCase() || "");
-  const busy = guardandoNueva || procesandoId !== null || guardandoSiigoMasivo;
+  const busy = guardandoNueva || procesandoId !== null || guardandoSiigoMasivo || deleting;
   const selectedSede = typeof editor === "number" ? sedes.find((sede) => sede.id === editor) : undefined;
   const edicion = selectedSede ? ediciones[selectedSede.id] || crearEdicionDesdeSede(selectedSede) : undefined;
+  const puedeEliminarSede = puedeEliminarEntidadesCentrales(user) && selectedSede && selectedSede.id !== user?.sedeId && ![selectedSede.nombre, selectedSede.codigo].some(value => ["BODEGAPRINCIPAL", "PRINCIPAL"].includes(String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "")));
   const documentosSiigo = extraerItemsCatalogo(catalogosSiigo?.documentTypes);
   const notasCreditoSiigo = extraerItemsCatalogo(catalogosSiigo?.creditNoteDocumentTypes);
   const usuariosSiigo = extraerItemsCatalogo(catalogosSiigo?.users);
@@ -701,7 +709,25 @@ export default function GestionSedesPage() {
 
 
 
+  const eliminarSede = async () => {
+    if (deleteLock.current || busy || !deleteTarget || !puedeEliminarEntidadesCentrales(user)) return;
+    deleteLock.current = true; setDeleting(true); setDeleteError(""); setMensaje("");
+    try {
+      const res = await fetch("/api/sedes/admin", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sedeId: deleteTarget.id, confirmed: true }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.ok !== true || !Array.isArray(data.sedes) || data.sedes.some((item: SedeAdminItem) => item.id === deleteTarget.id)) throw new Error(data?.error || "No se pudo confirmar la eliminación. Conservamos los datos para reintentar.");
+      actualizarSedes(data.sedes, deleteTarget.id); setDeleteTarget(null); setEditor(null); setShowPassword(false); setFormError("");
+      setMensaje(data.mensaje || "Sede eliminada de la operación. El historial se conserva.");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "No se pudo eliminar la sede. Intenta nuevamente.");
+    } finally { deleteLock.current = false; setDeleting(false); }
+  };
+
   const guardarSede = async (sedeId: number) => {
+    if (deleteLock.current) return;
     setProcesandoId(sedeId);
     setFormError(""); setMensaje("");
     try {
@@ -868,7 +894,7 @@ export default function GestionSedesPage() {
                   </> : <p className={styles.formError}>La sede seleccionada ya no está disponible.</p>}
                   {formError && <p className={styles.formError} role="alert">{formError}</p>}
                 </div>
-                <footer className={styles.editorFooter}><button type="button" className={styles.button} onClick={cerrarEditor} disabled={busy}>Cancelar</button><button type="submit" className={`${styles.button} ${styles.primary}`} disabled={busy || (editor !== "new" && !selectedSede)}>{guardandoNueva ? "Creando…" : procesandoId !== null ? "Guardando…" : editor === "new" ? "Crear sede" : selectedSede?.acceso ? "Guardar cambios" : "Crear acceso"}</button></footer>
+                <footer className={styles.editorFooter}><button type="button" className={styles.button} onClick={cerrarEditor} disabled={busy}>Cancelar</button>{puedeEliminarSede && <button type="button" className={`${styles.button} ${styles.deleteButton}`} disabled={busy} onClick={() => { if (!busy && selectedSede) { setDeleteTarget(selectedSede); setDeleteError(""); } }}><DashboardIcon name="close" />Eliminar sede</button>}<button type="submit" className={`${styles.button} ${styles.primary}`} disabled={busy || (editor !== "new" && !selectedSede)}>{guardandoNueva ? "Creando…" : procesandoId !== null ? "Guardando…" : editor === "new" ? "Crear sede" : selectedSede?.acceso ? "Guardar cambios" : "Crear acceso"}</button></footer>
               </form>
             </aside>
           </>}
@@ -897,5 +923,6 @@ export default function GestionSedesPage() {
         </section>
       </>}
     </dialog>
+    {deleteTarget && <AdminDeleteDialog key={deleteTarget.id} entityLabel="sede" targetName={deleteTarget.nombre} busy={deleting} error={deleteError} onCancel={() => { if (!deleteLock.current) { setDeleteTarget(null); setDeleteError(""); } }} onConfirm={() => void eliminarSede()} />}
   </div>;
 }

@@ -19,6 +19,7 @@ function load(path, imports = {}) {
 const access = load("lib/access-control.ts");
 const helpers = load("lib/prestamos.ts");
 const sedes = load("lib/sedes.ts");
+const activeEntities = load("lib/active-operational-entities.ts");
 const warehouse = { id: 99, nombre: "BODEGA PRINCIPAL" };
 const userBodega = { id: 10, sedeId: 99, rolNombre: "BODEGA", perfilTipo: "BODEGA" };
 const loan = { id: 7, imei: "001234567890123", referencia: "Equipo real", color: "Negro", costo: 750000, sedeOrigenId: 99, sedeDestinoId: 2, estado: "PENDIENTE", createdAt: new Date("2026-10-19T12:00:00Z") };
@@ -50,9 +51,10 @@ function probe(path, options = {}) {
   };
   const model = (name) => Object.fromEntries(["create", "update", "updateMany", "delete", "deleteMany"].map((action) => [action, mutate(name, action)]));
   const db = {
+    $queryRaw: async () => [],
     sede: {
       findFirst: async () => options.noWarehouse ? null : warehouse,
-      findUnique: async ({ where }) => ({ id: where.id, nombre: where.id === 99 ? warehouse.nombre : `SEDE ${where.id}` }),
+      findUnique: async ({ where }) => ({ id: where.id, nombre: where.id === 99 ? warehouse.nombre : `SEDE ${where.id}`, activa: true }),
       findMany: async () => [warehouse, { id: 2, nombre: "SEDE 2" }, { id: 3, nombre: "SEDE 3" }],
     },
     prestamoSede: {
@@ -81,6 +83,7 @@ function probe(path, options = {}) {
     "@/lib/access-control": access,
     "@/lib/prestamos": helpers,
     "@/lib/sedes": sedes,
+    "@/lib/active-operational-entities": activeEntities,
   });
   return { route, writes, queries, request: (body = {}, search = "") => ({ url: `https://conectamos.app/api/prestamos${search}`, json: async () => body }) };
 }

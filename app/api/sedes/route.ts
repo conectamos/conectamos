@@ -17,6 +17,7 @@ export async function GET() {
       select: {
         id: true,
         nombre: true,
+        activa: true,
       },
       orderBy: {
         id: "asc",

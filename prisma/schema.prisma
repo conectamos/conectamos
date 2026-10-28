@@ -126,6 +126,8 @@ model Sede {
   nombre                   String                   @unique
   codigo                   String?                  @unique
   activa                   Boolean                  @default(true)
+  eliminadoEn              DateTime?
+  eliminadoPor             String?
   soloInventarioPorCobrar  Boolean                  @default(false)
   facturacionNombre        String?
   facturacionTipoDocumento String?
@@ -356,6 +358,8 @@ model PerfilVendedor {
   avatarKey               String?
   pinHash                 String
   activo                  Boolean                 @default(true)
+  eliminadoEn             DateTime?
+  eliminadoPor            String?
   tipo                    TipoPerfilVendedor      @default(SUPERVISOR_TIENDA)
   debeCambiarPin          Boolean                 @default(true)
   activeSessionKey        String?

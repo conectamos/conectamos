@@ -27,6 +27,7 @@ type SessionUser = {
 type Sede = {
   id: number;
   nombre: string;
+  activa?: boolean;
 };
 
 type ImeiResponse = {
@@ -217,7 +218,7 @@ export default function NuevoPrestamoPage() {
   };
 
   const sedesOperativasInventario = useMemo(() => {
-    return sedes.filter((sede) => esSedeOperativaInventario(sede.nombre));
+    return sedes.filter((sede) => sede.activa !== false && esSedeOperativaInventario(sede.nombre));
   }, [sedes]);
 
   const sedesDestinoDisponibles = useMemo(() => {

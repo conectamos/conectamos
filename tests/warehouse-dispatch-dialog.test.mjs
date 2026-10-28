@@ -174,7 +174,7 @@ function handlerProbe({ initial = {}, fetchImpl, refreshImpl } = {}) {
     ts.forEachChild(node, visit);
   };
   visit(ast); assert.equal(declarations.size, 3, "Deben conservarse los handlers existentes del flujo individual");
-  const state = { itemSeleccionado: equipo, sedesDestinoOperativas: sedes, sedeDestinoId: "6", cargando: false, mostrarModal: true, errorEnvio: "", mensaje: "", ...initial };
+  const state = { itemSeleccionado: equipo, sedesDestinoActivas: sedes, sedeDestinoId: "6", cargando: false, mostrarModal: true, errorEnvio: "", mensaje: "", ...initial };
   const envioEnCurso = { current: false }, calls = [], events = [];
   let handlers;
   const setters = Object.fromEntries(["Cargando", "Mensaje", "ErrorEnvio", "MostrarModal", "ItemSeleccionado", "SedeDestinoId"].map(name => [`set${name}`, value => { const key = name[0].toLowerCase() + name.slice(1); state[key] = typeof value === "function" ? value(state[key]) : value; events.push([key, state[key]]); }]));

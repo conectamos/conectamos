@@ -15,6 +15,7 @@ import {
   NOMBRE_SEDE_BODEGA,
 } from "@/lib/prestamos";
 import { esSedeVentas } from "@/lib/sedes";
+import { EntidadOperativaInactivaError, validarSedesActivasOperacion } from "@/lib/active-operational-entities";
 
 function parseSedeId(value: string | null) {
   const sedeId = Number(value);
@@ -469,6 +470,7 @@ export async function POST(req: Request) {
       esProveedorFinser(inventarioOrigen.deboA);
 
     const nuevo = await prisma.$transaction(async (tx) => {
+      await validarSedesActivasOperacion(tx, [sedeOrigenId, sedeDestinoId]);
       const prestamo = await tx.prestamoSede.create({
         data: {
           imei: inventarioOrigen.imei,
@@ -519,6 +521,7 @@ export async function POST(req: Request) {
       prestamo: nuevo,
     });
   } catch (error) {
+    if (error instanceof EntidadOperativaInactivaError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("ERROR POST PRESTAMOS:", error);
     return NextResponse.json(
       { error: "Error al guardar prestamo" },

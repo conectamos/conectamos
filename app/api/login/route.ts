@@ -41,6 +41,7 @@ export async function POST(req: Request) {
         sede: {
           select: {
             nombre: true,
+            activa: true,
           },
         },
         activo: true,
@@ -59,6 +60,10 @@ export async function POST(req: Request) {
         { error: "Usuario inactivo" },
         { status: 401 }
       );
+    }
+
+    if (user.sede?.activa === false) {
+      return NextResponse.json({ error: "La sede está inactiva y no permite iniciar sesión." }, { status: 401 });
     }
 
     if (!verifyPassword(clave, user.claveHash)) {

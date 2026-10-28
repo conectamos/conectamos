@@ -143,7 +143,9 @@
 .siigoFields .fields { margin: 20px 0; }
 .siigoFields > .checkbox { margin-top: 14px; }
 .siigoFields > .button { margin-top: 20px; }
-.editorFooter { display: flex; justify-content: space-between; gap: 16px; position: sticky; bottom: 0; margin: 0 24px; padding: 20px 0 22px; border-top: 1px solid #d9e1ec; background: #fff; }
+.editorFooter { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; position: sticky; bottom: 0; margin: 0 24px; padding: 20px 0 22px; border-top: 1px solid #d9e1ec; background: #fff; }
+.editorFooter .deleteButton { color: #b01223; border-color: #efbac3; background: #fff2f3; min-width: 130px; }
+.editorFooter .deleteButton:hover { background: #ffe6e9; border-color: #e30613; }
 .editorFooter .button { min-width: 120px; min-height: 46px; }
 .editorFooter .primary { min-width: 160px; }
 .notice, .error { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin: 0 0 18px; border: 1px solid #d6e0ea; border-radius: 9px; background: #fff; color: #344258; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }

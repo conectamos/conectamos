@@ -20,8 +20,8 @@ function load(path, imports = {}) {
 }
 const access = load("lib/access-control.ts");
 const avatars = load("lib/profile-avatars.ts");
-const warehouse = { id: 1, nombre: "BODEGA PRINCIPAL" };
-const branch = { id: 2, nombre: "SEDE 2" };
+const warehouse = { id: 1, nombre: "BODEGA PRINCIPAL", activa: true, eliminadoEn: null };
+const branch = { id: 2, nombre: "SEDE 2", activa: true, eliminadoEn: null };
 const clone = value => structuredClone(value);
 function matches(row, where = {}) {
   return Object.entries(where).every(([key, value]) => {
@@ -36,7 +36,7 @@ function matches(row, where = {}) {
   });
 }
 const profile = (id, tipo, sedeIds = [1]) => ({
-  id, tipo, nombre: `${tipo} QA`, pinHash: "pin:1234", activo: true, avatarKey: "SUPERVISOR",
+  id, tipo, nombre: `${tipo} QA`, pinHash: "pin:1234", activo: true, eliminadoEn: null, avatarKey: "SUPERVISOR",
   debeCambiarPin: false, activeSessionKey: "profile-key", activeSessionLastSeenAt: new Date(),
   sedes: sedeIds.map(sedeId => ({ sedeId, sede: sedeId === 1 ? warehouse : branch })),
 });
@@ -46,7 +46,7 @@ function profilesProbe(rows = [profile(10, "BODEGA"), profile(20, "AUDITOR", [])
     sede: {
       findUnique: async ({ where }) => clone([warehouse, branch].find(item => item.id === where.id) ?? null),
       count: async ({ where }) => [warehouse, branch].filter(item => where.id.in.includes(item.id)).length,
-      findMany: async ({ where } = {}) => clone([warehouse, branch].filter(item => !where || where.id.in.includes(item.id))),
+      findMany: async ({ where } = {}) => clone([warehouse, branch].filter(item => !where || matches(item, where))),
     },
     perfilVendedor: {
       findMany: async ({ where }) => clone(state.rows.filter(item => matches(item, where))),
@@ -59,9 +59,12 @@ function profilesProbe(rows = [profile(10, "BODEGA"), profile(20, "AUDITOR", [])
       createMany: async ({ data }) => state.links.push(clone(data)),
     },
   };
+  prisma.$queryRaw = async () => [];
+  prisma.$transaction = async callback => callback(prisma);
   const service = load("lib/vendor-profiles.ts", {
     "@/lib/prisma": { __esModule: true, default: prisma },
     "@/lib/access-control": access,
+    "@/lib/active-operational-entities": load("lib/active-operational-entities.ts"),
     "@/lib/profile-avatars": avatars,
     "@/lib/password": { verifyPassword: (pin, hash) => hash === `pin:${pin}` },
     "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: async () => state.schemaCalls++ },
@@ -186,6 +189,9 @@ function managementProbe(rolNombre, tipoActual = "BODEGA") {
     "next/server": { NextResponse }, "@/lib/auth": { getSessionUser: async () => ({ id: 1, rolNombre }) },
     "@/lib/prisma": { __esModule: true, default: { ...prisma, perfilVendedor: { findUnique: async () => ({ tipo: tipoActual }) } } },
     "@/lib/password": { hashPassword: pin => `hash:${pin}` }, "@/lib/access-control": access,
+    "@/lib/admin-entity-removal-access": load("lib/admin-entity-removal-access.ts", { "@/lib/access-control": access }),
+    "@/lib/admin-entity-removal": {},
+    "@/lib/active-operational-entities": load("lib/active-operational-entities.ts"),
     "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: async () => {} },
     "@/lib/vendor-profiles": { ...service, obtenerPerfilesVendedor: async () => [], crearPerfilVendedor: async data => writes.push(data), actualizarPerfilVendedor: async (id, data) => writes.push({ id, ...data }) },
   });

@@ -2,7 +2,11 @@
 // Multi-replica safety and progress live in PostgreSQL, not in this timer.
 export async function register() {
   if (process.env.NEXT_PHASE === "phase-production-build") return;
-  if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.CIERRE_SYNC_ENABLED !== "1") return;
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // Next awaits register before serving requests; additive schema precedes Prisma model reads.
+  const { ensureVendorProfilesSchema } = await import("@/lib/vendor-profile-schema");
+  await ensureVendorProfilesSchema();
+  if (process.env.CIERRE_SYNC_ENABLED !== "1") return;
   const state = globalThis as typeof globalThis & { cierreTimer?: ReturnType<typeof setTimeout>; cierreRunning?: boolean };
   if (state.cierreTimer || state.cierreRunning) return;
   const { runCierreSyncBatch, readCierrePriorityProgress } = await import("@/lib/cierre-sync");

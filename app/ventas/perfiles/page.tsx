@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import AdminDeleteDialog from "@/app/_components/admin-delete-dialog";
+import { puedeEliminarEntidadesCentrales, puedeEliminarPerfilComercial } from "@/lib/admin-entity-removal-access";
 import {
   DashboardSidebar,
   type NavigationItem,
@@ -23,6 +25,8 @@ type SessionUser = {
   sedeNombre: string;
   rolId: number;
   rolNombre: string;
+  perfilId?: number | null;
+  perfilTipo?: string | null;
 };
 
 type SedeItem = {
@@ -136,6 +140,10 @@ export default function PerfilesVendedorPage() {
   const [guardandoNuevo, setGuardandoNuevo] = useState(false);
   const [procesandoId, setProcesandoId] = useState<number | null>(null);
   const [perfilAbiertoId, setPerfilAbiertoId] = useState<number | null>(null);
+  const [perfilEliminar, setPerfilEliminar] = useState<PerfilItem | null>(null);
+  const [eliminando, setEliminando] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const mutationLock = useRef(false);
 
   const [nuevoNombre, setNuevoNombre] = useState("");
   const [nuevoDocumento, setNuevoDocumento] = useState("");
@@ -153,6 +161,8 @@ export default function PerfilesVendedorPage() {
 
   const esAdmin = ["ADMIN", "AUDITOR"].includes(String(user?.rolNombre || "").toUpperCase());
   const puedeAsignarBodega = esRolAdmin(user?.rolNombre);
+  const puedeEliminarVendedores = puedeEliminarEntidadesCentrales(user);
+  const ocupado = guardandoNuevo || procesandoId !== null || eliminando;
   const sedesBodega = sedes.filter((sede) => esSedeBodegaPrincipal(sede.nombre));
 
   const aplicarCarga = (data: {
@@ -264,6 +274,8 @@ export default function PerfilesVendedorPage() {
   };
 
   const crearPerfil = async () => {
+    if (mutationLock.current) return;
+    mutationLock.current = true;
     try {
       setGuardandoNuevo(true);
       setMensaje("");
@@ -307,11 +319,14 @@ export default function PerfilesVendedorPage() {
     } catch {
       setMensaje("Error creando perfil");
     } finally {
+      mutationLock.current = false;
       setGuardandoNuevo(false);
     }
   };
 
   const guardarPerfil = async (perfilId: number) => {
+    if (mutationLock.current) return;
+    mutationLock.current = true;
     try {
       setProcesandoId(perfilId);
       setMensaje("");
@@ -349,8 +364,36 @@ export default function PerfilesVendedorPage() {
     } catch {
       setMensaje("Error actualizando perfil");
     } finally {
+      mutationLock.current = false;
       setProcesandoId(null);
     }
+  };
+
+  const eliminarPerfil = async () => {
+    if (mutationLock.current || !perfilEliminar || !puedeEliminarVendedores) return;
+    const target = perfiles.find(perfil => perfil.id === perfilEliminar.id);
+    if (!target || !puedeEliminarPerfilComercial(target.tipo) || target.id === user?.perfilId) {
+      setDeleteError("Este perfil no se puede eliminar desde esta sesión.");
+      return;
+    }
+    mutationLock.current = true;
+    setEliminando(true); setDeleteError("");
+    try {
+      const res = await fetch("/api/perfiles-vendedor", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: target.id, confirmed: true }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.ok !== true || !Array.isArray(data.perfiles) || !Array.isArray(data.sedes) || data.perfiles.some((perfil: PerfilItem) => perfil.id === target.id)) {
+        throw new Error(typeof data?.error === "string" ? data.error : "No se pudo confirmar la eliminación. Conservamos los datos para que puedas reintentar.");
+      }
+      aplicarCarga(data);
+      setPerfilEliminar(null);
+      setMensaje(data.mensaje || "Vendedor eliminado. Su historial se conserva.");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "No se recibió la confirmación del servidor. Conservamos los datos para reintentar.");
+    } finally { mutationLock.current = false; setEliminando(false); }
   };
 
   if (cargando) {
@@ -581,11 +624,18 @@ export default function PerfilesVendedorPage() {
         </div>
       </div>
 
-      <div className="mt-5 flex justify-end">
+      <div className="mt-5 flex flex-wrap justify-end gap-3">
+        {puedeEliminarVendedores && puedeEliminarPerfilComercial(perfil.tipo) && perfil.id !== user?.perfilId && <button
+          type="button"
+          onClick={() => { if (!mutationLock.current) { setPerfilEliminar(perfil); setDeleteError(""); } }}
+          disabled={ocupado}
+          aria-label={`Eliminar vendedor ${perfil.nombre}`}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 transition hover:border-red-300 hover:bg-red-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e30613] disabled:cursor-not-allowed disabled:opacity-60"
+        ><DashboardIcon name="close" className="h-4 w-4" />Eliminar vendedor</button>}
         <button
           type="button"
           onClick={() => void guardarPerfil(perfil.id)}
-          disabled={procesandoId === perfil.id || (perfil.tipo === "BODEGA" && !puedeAsignarBodega)}
+          disabled={ocupado || (perfil.tipo === "BODEGA" && !puedeAsignarBodega)}
           className="min-h-11 rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {procesandoId === perfil.id ? "Guardando..." : "Guardar cambios"}
@@ -876,7 +926,7 @@ export default function PerfilesVendedorPage() {
             <button
               type="button"
               onClick={() => void crearPerfil()}
-              disabled={guardandoNuevo}
+              disabled={ocupado}
               className="min-h-11 rounded-xl bg-[#e30613] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#c9000b] disabled:cursor-not-allowed disabled:opacity-70"
             >
               {guardandoNuevo ? "Creando..." : "Crear perfil"}
@@ -1026,6 +1076,15 @@ export default function PerfilesVendedorPage() {
           </section>
         </main>
       </div>
+      {perfilEliminar && <AdminDeleteDialog
+        key={perfilEliminar.id}
+        entityLabel="vendedor"
+        targetName={perfilEliminar.nombre}
+        busy={eliminando}
+        error={deleteError}
+        onCancel={() => { if (!mutationLock.current) { setPerfilEliminar(null); setDeleteError(""); } }}
+        onConfirm={() => void eliminarPerfil()}
+      />}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { puedeGestionarBodegaPrincipal } from "@/lib/access-control";
 import { NOMBRE_SEDE_BODEGA, PROVEEDOR_FINSER } from "@/lib/prestamos";
 import { esSedeVentas } from "@/lib/sedes";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
+import { EntidadOperativaInactivaError, validarSedesActivasOperacion } from "@/lib/active-operational-entities";
 
 export async function POST(req: Request) {
   try {
@@ -147,6 +148,7 @@ export async function POST(req: Request) {
     }
 
     await prisma.$transaction(async (tx) => {
+      await validarSedesActivasOperacion(tx, [sedeBodega.id, sedeDestinoId]);
       await tx.inventarioSede.create({
         data: {
           imei: item.imei,
@@ -209,6 +211,7 @@ export async function POST(req: Request) {
         "Equipo enviado correctamente a la sede. Ingresa en bodega con deuda a Proveedor Finser.",
     });
   } catch (error) {
+    if (error instanceof EntidadOperativaInactivaError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("ERROR ENVIAR PRINCIPAL A SEDE:", error);
     return NextResponse.json(
       { error: "Error enviando equipo a sede" },

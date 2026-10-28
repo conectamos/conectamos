@@ -21,6 +21,7 @@ function load(path, imports = {}) {
 const imeiHelpers = load("lib/inventory-imeis.ts");
 const access = load("lib/access-control.ts");
 const productTypes = load("lib/product-types.ts");
+const operationalEntities = load("lib/active-operational-entities.ts");
 class NextResponse extends Response {
   static json(body, options = {}) {
     return new NextResponse(JSON.stringify(body), { ...options, headers: { "Content-Type": "application/json", ...options.headers } });
@@ -33,7 +34,7 @@ const SECOND = "101234567890123";
 const THIRD = "201234567890123";
 
 function databaseProbe() {
-  const state = { journal: new Map(), principal: [], sedes: [], sedeLookups: [], movements: [], sql: [], schemaAttempts: 0, failSchema: false, failMovement: false, failResult: false, incompleteCreate: false };
+  const state = { journal: new Map(), principal: [], sedes: [], sedeLookups: [], movements: [], sql: [], schemaAttempts: 0, failSchema: false, failMovement: false, failResult: false, incompleteCreate: false, inactiveSedes: new Set() };
   let queue = Promise.resolve();
   const clone = value => structuredClone(value);
   const find = kind => async ({ where = {} } = {}) => state[kind].filter(item => {
@@ -44,7 +45,7 @@ function databaseProbe() {
   }).map(clone);
   const makeModels = () => ({
     sede: {
-      findUnique: async ({ where }) => [1, 2, 3].includes(where.id) ? { nombre: `SEDE ${where.id}` } : where.id === 4 ? { nombre: "VENTAS" } : null,
+      findUnique: async ({ where }) => [1, 2, 3].includes(where.id) ? { nombre: `SEDE ${where.id}`, activa: !state.inactiveSedes.has(where.id) } : where.id === 4 ? { nombre: "VENTAS", activa: true } : null,
       findMany: async args => {
         state.sedeLookups.push(clone(args));
         return [1, 2, 3, 4].filter(id => args.where.id.in.includes(id)).map(id => ({ id, nombre: id === 4 ? "VENTAS" : `SEDE ${id}` }));
@@ -110,6 +111,7 @@ function databaseProbe() {
             assert.match(values[0], /^inventario-imei:\d{15}$/);
             return [{ pg_advisory_xact_lock: "" }];
           }
+          if (sql.includes('FROM "Sede"')) { assert.match(sql, /FOR KEY SHARE/); return [{ id: values[0] }]; }
           assert.match(sql, /FOR UPDATE/);
           const entry = state.journal.get(`${values[0]}:${values[1]}:${values[2]}`);
           return entry ? [clone(entry)] : [];
@@ -131,6 +133,7 @@ function serverProbe({ user = ADMIN, database = databaseProbe(), activeReference
     "@/lib/auth": { getSessionUser: async () => user },
     "@/lib/access-control": access,
     "@/lib/product-types": productTypes,
+    "@/lib/active-operational-entities": operationalEntities,
     "@/lib/inventory-imeis": imeiHelpers,
     "@/lib/inventory-intake-registration": registration,
     "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: async () => {} },
@@ -216,10 +219,17 @@ test("validates commercial requirements, positive finite cost, sede existence an
   }
   assert.equal((await serverProbe({ activeReference: false }).principal()).status, 400);
   for (const values of [{ sedeId: 50 }, { sedeId: 4 }, { sedeId: 0 }, { sedeId: true }, { sedeId: 1.5 }, { estadoFinanciero: "" }, { deboA: "" }]) {
-    const server = serverProbe(); assert.equal((await server.sede(values)).status, 400);
+    const server = serverProbe(); assert.equal((await server.sede(values)).status, values.sedeId === 50 ? 409 : 400);
     assert.equal(server.state.sedes.length, 0);
   }
   assert.equal((await serverProbe().sede({ estadoFinanciero: "PAGO", deboA: null })).status, 200);
+});
+
+test("retired destination rejects even ADMIN intake inside transaction without inventory, movements or successful journal", async () => {
+  const server = serverProbe(); server.state.inactiveSedes.add(2);
+  const result = await server.sede({ sedeId: 2 }); assert.equal(result.status, 409); assert.match(result.body.error, /inactiva|eliminada/);
+  assert.equal(server.state.sedes.length, 0); assert.equal(server.state.movements.length, 0); assert.equal(server.state.journal.size, 0);
+  assert.ok(server.state.sql.some(query => query.sql.includes('FROM "Sede"') && query.sql.includes('FOR KEY SHARE')));
 });
 
 test("existing inventory rejects the whole batch and never silently succeeds for unsaved entries", async () => {
