@@ -215,7 +215,7 @@ export async function readPayJoyExtensionDevice(identifier: string): Promise<Pay
   const device = extensionRecord(data?.device);
   if (data?.valid !== true || !device) throw new PayJoyExtensionLookupError("INVALID_RESPONSE");
 
-  // A tag lookup must return a usable IMEI so callers can enforce local scope.
+  // A populated tag lookup must return a usable, consistent device identity.
   const imei = typeof device.imei === "string" ? device.imei.trim() : "";
   if (!/^\d{15,16}$/.test(imei) || (isImei && imei !== locator)) {
     throw new PayJoyExtensionLookupError("INVALID_RESPONSE");

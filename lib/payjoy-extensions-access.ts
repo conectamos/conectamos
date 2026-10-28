@@ -29,7 +29,8 @@ export function puedeConsultarExtensionesPayJoy(session: PayJoyExtensionsSession
 
 export function puedeGestionarExtensionesPayJoy(session: PayJoyExtensionsSession | null | undefined) {
   // Extension management is authorized for all consulting profiles, including
-  // auditors. Record ownership and profile/sede scope still apply separately.
+  // auditors. Local record lookups and operation history keep their own scope;
+  // a manually supplied PayJoy tag can belong to another advisor or sede.
   return puedeConsultarExtensionesPayJoy(session);
 }
 
@@ -40,7 +41,8 @@ export function scopeRegistrosExtensionesPayJoy(
   if (!session || !puedeConsultarExtensionesPayJoy(session)) return sinAcceso;
   const perfil = normalizarPerfilTipo(session.perfilTipo);
 
-  // Global access belongs to the selected administrative identity only.
+  // Global access to commercial records belongs to the selected administrative
+  // identity only. This scope does not restrict direct PayJoy tag management.
   if (perfil === "ADMINISTRADOR" || perfil === "AUDITOR" || !perfil) return {};
   if (!esIdValido(session.perfilId) || !esIdValido(session.sedeId)) return sinAcceso;
   return { perfilVendedorId: session.perfilId, sedeId: session.sedeId };

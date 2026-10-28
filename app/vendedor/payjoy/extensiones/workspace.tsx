@@ -241,7 +241,7 @@ export default function PayJoyExtensionsWorkspace({ canManage, session, navigati
               {manual && <form id="payjoy-manual" className={styles.searchForm} onSubmit={event => { event.preventDefault(); void prepare({ deviceTag: deviceTag.trim().toUpperCase() }); }}>
                 <label htmlFor="payjoy-device-tag">Identificador del dispositivo PayJoy</label>
                 <input id="payjoy-device-tag" ref={manualInput} value={deviceTag} maxLength={32} autoComplete="off" autoCapitalize="characters" spellCheck={false} disabled={Boolean(busy)} onChange={event => setDeviceTag(event.target.value.toUpperCase())} aria-invalid={fieldError === "device"} aria-describedby={fieldError === "device" ? "payjoy-error" : "device-help"} />
-                <small id="device-help">Usa el código que empieza con D en PayJoy. Este código es diferente del IMEI y de la cédula.</small>
+                <small id="device-help">Usa el código que empieza con D en PayJoy, diferente del IMEI y de la cédula. Puedes gestionar equipos de cualquier asesor o sede; las opciones dependen de PayJoy.</small>
                 <button className={`${styles.button} ${styles.primary}`} disabled={Boolean(busy)} type="submit">{busy === "preparar" && manual ? "Consultando PayJoy…" : "Consultar opciones"}</button>
               </form>}
             </div>

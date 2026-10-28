@@ -129,14 +129,6 @@ export async function historialExtensionesPayJoy(session: Session) {
   return { operations: rows.map(view), canManage: puedeGestionarExtensionesPayJoy(session) };
 }
 
-async function assertLocalDeviceScope(session: Session, imei: string) {
-  if (Object.keys(scopeRegistrosExtensionesPayJoy(session)).length === 0) return;
-  const known = await prisma.registroVendedorVenta.findFirst({ where: { serialImei: imei, eliminadoEn: null }, select: { id: true } });
-  if (!known) return; // Manual codes may belong to clients not registered locally.
-  const authorized = await prisma.registroVendedorVenta.findFirst({ where: { ...localScope(session), serialImei: imei }, select: { id: true } });
-  if (!authorized) throw new PayJoyExtensionsError("FORBIDDEN_DEVICE", 403);
-}
-
 export async function prepararExtensionPayJoy(session: Session, input: Record<string, unknown>) {
   requireAccess(session);
   const key = input.idempotencyKey;
@@ -159,10 +151,9 @@ export async function prepararExtensionPayJoy(session: Session, input: Record<st
     if (!record || !isPayJoy(record) || !/^\d{15,16}$/.test(record.serialImei?.trim() || "")) throw new PayJoyExtensionsError("FORBIDDEN_DEVICE", 404);
   }
   const imei = record?.serialImei?.trim() || null;
-  // Retail lookup is needed to enforce local ownership for manual device tags.
-  if (tag && !isPayJoyRetailConfigured() && Object.keys(scopeRegistrosExtensionesPayJoy(session)).length !== 0) {
-    throw new PayJoyExtensionsError("CONFIG", 503, "Falta configurar PayJoy en el servidor para validar el dispositivo y tus permisos.");
-  }
+  // Authorized profiles can manage a manually supplied tag across advisors/sedes.
+  // Only record-based lookups link a local sale; manual lookup never reads another
+  // advisor's sale or attributes its customer/document to this operation.
   const lock = tag || `IMEI:${imei}`;
   const active = await prisma.payJoyExtensionOperation.findFirst({ where: {
     activeDeviceKey: { not: null },
@@ -201,32 +192,21 @@ export async function prepararExtensionPayJoy(session: Session, input: Record<st
         if (errorCode(error) !== "DEVICE_UNRESOLVED") throw error;
       }
       if (!device?.deviceTag) {
-        // The commercial record was authorized above. Imported reports only resolve that
-        // exact IMEI/document pair; they never broaden the cédula search or role/sede scope.
+        // Imported reports only resolve a verified identity. They do not broaden
+        // the cédula search or grant access to another advisor's commercial record.
         const stored = await findStoredPayJoyExtensionDevice(record
           ? { imei: record.serialImei!.trim(), documentoNumero: record.documentoNumero }
           : { deviceTag: tag! });
         if (stored) {
-          await assertLocalDeviceScope(session, stored.imei);
-          if (!record) {
-            const owned = await prisma.registroVendedorVenta.findFirst({
-              where: { ...localScope(session), serialImei: stored.imei, documentoNumero: stored.documentoNumero }, select: localSelect,
-            });
-            if (owned && isPayJoy(owned)) record = owned;
-            else if (Object.keys(scopeRegistrosExtensionesPayJoy(session)).length !== 0) {
-              throw new PayJoyExtensionsError("FORBIDDEN_DEVICE", 403);
-            }
-          }
           device = { imei: stored.imei, deviceTag: stored.deviceTag, customerId: device?.customerId || null };
-        } else if (tag && Object.keys(scopeRegistrosExtensionesPayJoy(session)).length === 0) {
-          // Administrative identities already have explicit global device access.
-          // A manually supplied tag is not attributed to an unverified customer or IMEI.
+        } else if (tag) {
+          // PayJoy's extension service validates the supplied tag and availability.
+          // Do not infer an IMEI or customer from an empty Retail response.
           device = { imei: null, deviceTag: tag, customerId: null };
         } else {
           throw new PayJoyExtensionsError(device ? "MISSING_DEVICE_TAG" : "DEVICE_UNRESOLVED", 422);
         }
       }
-      if (device.imei) await assertLocalDeviceScope(session, device.imei);
       deviceTag = device.deviceTag;
       if (!deviceTag) throw new PayJoyExtensionsError("MISSING_DEVICE_TAG", 422);
       row = await prisma.payJoyExtensionOperation.update({ where: { id }, data: {
@@ -272,7 +252,8 @@ export async function confirmarExtensionPayJoy(session: Session, input: Record<s
     const record = await prisma.registroVendedorVenta.findFirst({ where: { ...localScope(session), id: row.registroId }, select: localSelect });
     if (!record || !isPayJoy(record) || record.serialImei?.trim() !== row.imei) throw new PayJoyExtensionsError("FORBIDDEN_DEVICE", 403);
   }
-  if (row.imei) await assertLocalDeviceScope(session, row.imei);
+  // A direct tag operation has no local sale to authorize. Ownership of the
+  // operation, profile permissions and the provider's current options still apply.
   const option = (row.options as unknown as PayJoyExtensionOption[]).find((item) => item.id === input.optionId);
   if (!option?.available || (option.reasons.length ? !option.reasons.some((reason) => reason.id === input.reason) : input.reason !== "")) {
     throw new PayJoyExtensionsError("INVALID_OPTION", 400, "Selecciona una opción y un motivo disponibles en PayJoy.");

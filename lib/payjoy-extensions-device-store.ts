@@ -71,7 +71,7 @@ function uniqueAssociation(rows: unknown, matches: (row: StoredPayJoyExtensionDe
   return association;
 }
 
-/** Caller must establish local record ownership and scope before using a result. */
+/** Resolves identity only; it does not authorize access to a local sale/customer. */
 export async function findStoredPayJoyExtensionDevice(input: DeviceInput): Promise<StoredPayJoyExtensionDevice | null> {
   const value = record(input);
   if (!value) return null;
