@@ -30,6 +30,7 @@ const warehouseApiMethods: Record<string, readonly string[]> = {
   "/api/inventario-principal/enviar-a-sede": ["POST"],
   "/api/inventario-principal/restaurar-bodega": ["POST"],
   "/api/inventario-principal/referencias": ["GET", "POST"],
+  "/api/inventario-principal/distribuidores": ["GET", "POST", "DELETE"],
   "/api/inventario/revisar": ["POST"],
   "/api/prestamos": ["GET", "POST"],
   "/api/prestamos/buscar-imei": ["POST"],

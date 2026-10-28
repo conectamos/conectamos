@@ -61,6 +61,7 @@ function probe({ state: stateInput = {}, fetchImpl, session = admin, storage = n
     "@/lib/access-control": accessControl,
     "@/lib/use-live-refresh": { triggerLiveRefresh: source => refreshes.push(source) },
     "./nuevo.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
+    "./distributor-selector": { __esModule: true, default: props => jsx.jsx("select", { id: "ingreso-distribuidor", value: props.value, disabled: props.disabled, onChange: event => props.onChange(event.target.value) }) },
   };
   const loaded = { exports: {} };
   new Function("require", "module", "exports", "__capture", "crypto", "sessionStorage", "fetch", output)(name => { assert.ok(name in imports, `Import inesperado ${name}`); return imports[name]; }, loaded, loaded.exports, value => { captured = value; }, { randomUUID }, {

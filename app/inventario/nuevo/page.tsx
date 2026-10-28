@@ -12,9 +12,9 @@ import { esRolBodega, puedeGestionarBodegaPrincipal } from "@/lib/access-control
 import { extraerImeisMasivos, normalizarSeparadoresImeisMasivos } from "@/lib/inventory-imeis";
 import { triggerLiveRefresh } from "@/lib/use-live-refresh";
 import styles from "./nuevo.module.css";
+import DistributorSelector from "./distributor-selector";
 
 const OPCIONES_PROVEEDOR_SEDE = ["Proveedor FINSER", "Proveedor BUNQUER", "Proveedor TECNOSUPER", "Proveedor IPHONE ANGIE", "Proveedor Felipe", "Proveedor SEDE 1", "Proveedor SEDE 2", "Proveedor SEDE 3", "Proveedor SEDE 4", "Proveedor SEDE 5", "Proveedor SEDE 6", "Proveedor SEDE 7", "Proveedor EMOVIL", "Proveedor POLLO", "Proveedor ANDRES", "Proveedor EMMATECH"];
-const OPCIONES_PROVEEDOR_BODEGA = ["COMUNICARIBE", "HOLA PLAZA", "CONMOVIL", "CORBETA", "OPORTUNIDADES", "Proveedor Felipe"];
 type SessionUser = { id: number; nombre: string; usuario: string; sedeId: number; sedeNombre: string; rolNombre: string };
 type ReferenciaCatalogo = { id: number; nombre: string; activo: boolean };
 type Entry = { indice: number; imei: string; estado: "VALIDO" | "INCORRECTO" | "REPETIDO" | "EXISTENTE"; mensaje: string };
@@ -63,7 +63,6 @@ export default function NuevoInventarioPage() {
   const entrada = modo === "masiva" ? imeisMasivos : imei;
   const entradas = useMemo(() => modo === "masiva" ? extraerImeisMasivos(imeisMasivos) : imei.trim() ? [imei.trim()] : [], [modo, imei, imeisMasivos]);
   const referenciasActivas = useMemo(() => catalogo.filter((item) => item.activo), [catalogo]);
-  const opcionesDistribuidor = esAdmin ? OPCIONES_PROVEEDOR_BODEGA : OPCIONES_PROVEEDOR_SEDE;
   const listReady = review !== null && reviewedInput.current === `${modo}:${entrada}`;
   const cantidadValida = pending ? requestRef.current?.payload.imeis.length || 0 : listReady ? review.validos : 0;
   const excluidos = listReady ? review.incorrectos + review.repetidos + review.existentes : 0;
@@ -196,7 +195,7 @@ export default function NuevoInventarioPage() {
               <label htmlFor="ingreso-color">Color<input id="ingreso-color" value={color} onChange={(event) => setColor(event.target.value)} placeholder="Color del equipo" /></label>
               <label htmlFor="ingreso-costo">Costo unitario<input id="ingreso-costo" value={costo ? pesos(costo) : ""} onChange={(event) => setCosto(event.target.value.replace(/\D/g, ""))} inputMode="numeric" autoComplete="off" placeholder="$ 0" required /></label>
               {esAdmin && <label htmlFor="ingreso-factura">Número de factura<input id="ingreso-factura" value={numeroFactura} onChange={(event) => setNumeroFactura(event.target.value)} placeholder="Número de factura" required /></label>}
-              <label htmlFor="ingreso-distribuidor">Distribuidor<select id="ingreso-distribuidor" value={distribuidor} onChange={(event) => setDistribuidor(event.target.value)} required><option value="">Seleccionar distribuidor</option>{opcionesDistribuidor.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+              {esAdmin ? <DistributorSelector value={distribuidor} onChange={setDistribuidor} disabled={ocupado} /> : <label htmlFor="ingreso-distribuidor">Distribuidor<select id="ingreso-distribuidor" value={distribuidor} onChange={(event) => setDistribuidor(event.target.value)} required><option value="">Seleccionar distribuidor</option>{OPCIONES_PROVEEDOR_SEDE.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>}
             </fieldset>
           </section>
           {!esAdmin && <section className={styles.card} aria-labelledby="financiero-title"><h2 id="financiero-title">Estado financiero</h2><fieldset className={styles.fields} disabled={ocupado}><label htmlFor="ingreso-estado">Estado financiero<select id="ingreso-estado" value={estadoFinanciero} onChange={(event) => { setEstadoFinanciero(event.target.value); if (event.target.value !== "DEUDA") setDeboA(""); }}><option value="PAGO">Pago</option><option value="DEUDA">Deuda</option><option value="CANCELADO">Cancelado</option></select></label>{estadoFinanciero === "DEUDA" && <label htmlFor="ingreso-acreedor">Debe a<select id="ingreso-acreedor" value={deboA} onChange={(event) => setDeboA(event.target.value)} required><option value="">Seleccionar proveedor</option>{OPCIONES_PROVEEDOR_SEDE.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>}</fieldset></section>}

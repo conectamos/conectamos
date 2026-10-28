@@ -1,0 +1,42 @@
+.field { min-width: 0; }
+.field > label { display: block; margin-bottom: 9px; }
+.selectorRow { display: flex; gap: 8px; align-items: stretch; }
+.selectorRow select { flex: 1; min-width: 0; }
+.field button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 12px; border: 1px solid #c1cfe0; border-radius: 8px; background: #fff; color: #27364b; font-size: 13px; font-weight: 700; line-height: 1.4; }
+.field button:hover { background: #f5f6f8; border-color: #8f9eb2; }
+.field button:disabled { opacity: .55; cursor: not-allowed; }
+.field button svg, .search svg { width: 18px; height: 18px; flex-shrink: 0; }
+.field button.manage { color: #e30613; border-color: #ffb8bf; }
+.error, .success { margin: 9px 0 0; font-size: 13px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
+.error { color: #ad1320; }
+.success { color: #08704b; }
+.field .error button { min-height: 32px; margin: 5px 0 0; color: #ad1320; font-size: 12px; }
+.panel { margin-top: 12px; border: 1px solid #c8d2df; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 5px 14px #0f172a09; }
+.heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: #f5f6f8; border-bottom: 1px solid #d6dee8; padding: 12px 14px; }
+.heading span { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .7px; }
+.heading h3 { margin: 3px 0 0; font-size: 16px; color: #11161d; }
+.field .close { padding: 8px; min-width: 40px; min-height: 40px; background: #fff; }
+.add { padding: 14px; border-bottom: 1px solid #d6dee8; }
+.add label { margin-bottom: 8px; }
+.addRow { display: flex; gap: 8px; }
+.addRow input { flex: 1; min-width: 0; }
+.field button.primary { background: #e30613; border-color: #e30613; color: #fff; }
+.field button.primary:hover { background: #c80511; }
+.listHeading { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px 4px; gap: 10px; color: #64748b; font-size: 12px; }
+.listHeading button { min-height: 34px; padding: 6px; }
+.search { position: relative; margin: 0 14px 10px; }
+.search svg { position: absolute; top: 13px; left: 11px; color: #64748b; }
+.field .search input { padding-left: 36px; font-size: 13px; }
+.list { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow-y: auto; }
+.list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; border-top: 1px solid #e0e5ed; color: #253347; font-size: 13px; }
+.list li > span { overflow-wrap: anywhere; min-width: 0; }
+.field button.remove { color: #b41321; border-color: #f5cbd0; min-height: 36px; padding: 6px 9px; font-size: 12px; }
+.field button.remove svg { width: 14px; height: 14px; }
+.empty { padding: 16px 14px; color: #64748b; font-size: 13px; font-weight: 400; }
+.confirm { border-top: 1px solid #f5bcc4; background: #fff2f3; padding: 14px; font-size: 13px; }
+.confirm strong { color: #8c1220; overflow-wrap: anywhere; }
+.confirm p { color: #6f3e47; font-size: 12px; font-weight: 400; margin: 7px 0 12px; line-height: 1.5; }
+.confirm > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.field button.danger { background: #e30613; color: #fff; border-color: #e30613; }
+@media (max-width: 1150px) and (min-width: 521px) { .selectorRow, .addRow { flex-wrap: wrap; } .selectorRow select, .addRow input { flex-basis: 100%; } }
+@media (max-width: 390px) { .selectorRow, .addRow { flex-wrap: wrap; } .selectorRow select, .addRow input { flex-basis: 100%; } }

@@ -246,6 +246,7 @@ function uiProbe(path, { user = bodega, state: initial = {}, refs = {}, fetchImp
     "./warehouse.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
     "./_components/dispatch-confirmation-dialog": noop,
     "./nuevo.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
+    "./distributor-selector": { __esModule: true, default: props => jsx.jsx("select", { id: "ingreso-distribuidor", value: props.value, disabled: props.disabled, onChange: event => props.onChange(event.target.value) }) },
   };
   const compiled = ts.transpileModule(injected, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
   const loaded = { exports: {} }; const calls = [];
