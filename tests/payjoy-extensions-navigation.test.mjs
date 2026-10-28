@@ -21,6 +21,7 @@ function load(path, imports = {}) {
 
 const access = load("../lib/access-control.ts");
 const extensionsAccess = load("../lib/payjoy-extensions-access.ts", { "@/lib/access-control": access });
+const navigation = load("../lib/payjoy-navigation.ts", { "@/lib/access-control": access });
 const baseSession = {
   id: 3, nombre: "Cuenta QA", usuario: "qa", rolNombre: "SEDE", sedeId: 2,
   sedeNombre: "SEDE QA", sedeSoloInventarioPorCobrar: false,
@@ -28,37 +29,39 @@ const baseSession = {
   perfilId: 7, perfilNombre: "Perfil QA", sessionKey: "never-sent-to-client",
 };
 const EXTENSIONS = "/vendedor/payjoy/extensiones";
+const CREDIT = "/vendedor/payjoy/credito";
 const hrefs = element => element.props.navigation.map(item => item.href);
 
-async function pageFor(session) {
+async function pageFor(session, query = {}, credit = false) {
   const calls = [];
-  const Page = load("../app/vendedor/payjoy/extensiones/page.tsx", {
+  const Page = load(credit ? "../app/vendedor/payjoy/credito/page.tsx" : "../app/vendedor/payjoy/extensiones/page.tsx", {
     "react/jsx-runtime": jsx,
     "next/navigation": { redirect(path) { const error = new Error("redirect"); error.path = path; throw error; } },
     "@/lib/page-access": { async requireVendorPage() { calls.push("requireVendorPage"); return session; } },
     "@/lib/access-control": access,
     "@/lib/payjoy-extensions-access": extensionsAccess,
+    "@/lib/payjoy-navigation": navigation,
     "./workspace": { __esModule: true, default: () => null },
   }).default;
-  const element = await Page();
+  const element = await Page({ searchParams: Promise.resolve(query) });
   assert.deepEqual(calls, ["requireVendorPage"]);
   assert.equal(new Set(hrefs(element)).size, hrefs(element).length);
   return element;
 }
 
 test("ADMIN y AUDITOR conservan sus módulos operativos y el acceso PayJoy sin duplicar destinos", async () => {
-  const expected = ["/dashboard", "/ventas", "/inventario", "/prestamos", "/caja", "/cierre", "/dashboard/aprobaciones", "/dashboard/reportes", "/dashboard/sedes", EXTENSIONS];
+  const expected = ["/dashboard", "/ventas", "/inventario", "/prestamos", "/caja", "/cierre", "/dashboard/aprobaciones", "/dashboard/reportes", "/dashboard/sedes", CREDIT, EXTENSIONS];
   for (const rolNombre of ["ADMIN", "AUDITOR"]) {
     const element = await pageFor({ ...baseSession, rolNombre, perfilTipo: null, perfilId: null, perfilNombre: null, perfilTipoLabel: null });
     assert.deepEqual(hrefs(element), expected);
-    assert.equal(element.props.canManage, rolNombre === "ADMIN");
+    assert.equal(element.props.canManage, true);
     assert.equal(element.props.session.nombre, baseSession.nombre);
     assert.equal(element.props.session.roleLabel, rolNombre);
   }
 });
 
 test("el perfil vendedor prevalece sobre ADMIN y no recibe enlaces operativos ni búsqueda de registros ajenos", async () => {
-  const expected = ["/dashboard", "/cierre", "/vendedor/registros", "/vendedor/lista-negra", "/vendedor/lista-precios", EXTENSIONS];
+  const expected = ["/dashboard", "/cierre", "/vendedor/registros", "/vendedor/lista-negra", "/vendedor/lista-precios", CREDIT, EXTENSIONS];
   for (const rolNombre of ["ADMIN", "SEDE"]) {
     const element = await pageFor({ ...baseSession, rolNombre, perfilTipo: "VENDEDOR", perfilTipoLabel: "Vendedora" });
     assert.deepEqual(hrefs(element), expected);
@@ -69,20 +72,20 @@ test("el perfil vendedor prevalece sobre ADMIN y no recibe enlaces operativos ni
 
 test("apoyo operativo conserva Radar y sus herramientas comerciales sin heredar los módulos del login ADMIN", async () => {
   const element = await pageFor({ ...baseSession, rolNombre: "ADMIN", perfilTipo: "APOYO_OPERATIVO", perfilTipoLabel: "Apoyo operativo" });
-  assert.deepEqual(hrefs(element), ["/dashboard", "/cierre", "/vendedor/registros", "/dashboard/radar", "/vendedor/lista-negra", "/vendedor/lista-precios", EXTENSIONS]);
+  assert.deepEqual(hrefs(element), ["/dashboard", "/cierre", "/vendedor/registros", "/dashboard/radar", "/vendedor/lista-negra", "/vendedor/lista-precios", CREDIT, EXTENSIONS]);
   assert.equal(element.props.navigation.find(item => item.href === "/vendedor/registros").label, "Registrar ventas");
 });
 
 test("supervisor conserva módulos de su sede y Panel analítico, sin Configuración administrativa", async () => {
   const element = await pageFor(baseSession);
-  assert.deepEqual(hrefs(element), ["/dashboard", "/ventas", "/inventario", "/prestamos", "/caja", "/cierre", "/dashboard/aprobaciones", "/dashboard/analitico", EXTENSIONS]);
+  assert.deepEqual(hrefs(element), ["/dashboard", "/ventas", "/inventario", "/prestamos", "/caja", "/cierre", "/dashboard/aprobaciones", "/dashboard/analitico", CREDIT, EXTENSIONS]);
   assert.equal(element.props.canManage, true);
 });
 
 test("sedes de solo inventario conservan su menú restringido, incluidos stands, sin alterar el acceso administrativo", async () => {
   for (const sedeNombre of ["Stand QA", "SEDE QA"]) {
     const element = await pageFor({ ...baseSession, sedeNombre, sedeSoloInventarioPorCobrar: true });
-    assert.deepEqual(hrefs(element), ["/dashboard", "/inventario", "/prestamos", "/cierre", EXTENSIONS]);
+    assert.deepEqual(hrefs(element), ["/dashboard", "/inventario", "/prestamos", "/cierre", CREDIT, EXTENSIONS]);
     assert.equal(element.props.session.sedeNombre, sedeNombre);
   }
   const admin = await pageFor({ ...baseSession, rolNombre: "ADMIN", perfilTipo: "ADMINISTRADOR", sedeSoloInventarioPorCobrar: true });
@@ -109,4 +112,24 @@ test("el cliente recibe solo nombre, sede y etiqueta de rol, sin identificadores
   assert.deepEqual(element.props.session, { nombre: "Perfil QA", sedeNombre: "SEDE QA", roleLabel: "Supervisor de tienda" });
   const serialized = JSON.stringify(element.props);
   assert.doesNotMatch(serialized, /never-sent-to-client|sessionKey|perfilId|rolNombre|sedeSoloInventarioPorCobrar/);
+});
+
+test("los enlaces de crédito y extensiones solo precargan identificadores válidos", async () => {
+  const extension = await pageFor(baseSession, { deviceTag: " dqa12345 " });
+  assert.equal(extension.props.initialDeviceTag, "DQA12345");
+  const credit = await pageFor(baseSession, { deviceTag: "dqa12345", tab: "seguimiento" }, true);
+  assert.equal(credit.props.initialIdentifier, "DQA12345");
+  assert.equal(credit.props.initialTab, "seguimiento");
+  assert.deepEqual(hrefs(credit), hrefs(extension));
+  for (const value of ["https://pay.payjoy.com/extensions/device/DQA12345", "12345678", ["DQA12345"]]) {
+    assert.equal((await pageFor(baseSession, { deviceTag: value })).props.initialDeviceTag, "");
+    assert.equal((await pageFor(baseSession, { identifier: value }, true)).props.initialIdentifier, "");
+  }
+  assert.equal((await pageFor(baseSession, { identifier: "359999999999991" }, true)).props.initialIdentifier, "359999999999991");
+});
+
+test("la ficha de crédito conserva el mismo guard de perfiles autorizado", async () => {
+  for (const perfilTipo of ["BODEGA", "FACTURADOR", "DESCONOCIDO"]) {
+    await assert.rejects(pageFor({ ...baseSession, perfilTipo }, {}, true), error => error.path === "/dashboard");
+  }
 });

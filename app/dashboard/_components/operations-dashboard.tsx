@@ -918,6 +918,7 @@ export default function OperationsDashboard({
         { href: "/vendedor/lista-negra", label: "Lista negra" },
         { href: "/vendedor/registros/buscar", label: "Buscar registro" },
         ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/extensiones", label: "Extensiones PayJoy", description: "Consulta opciones y gestiona extensiones de dispositivos." }] : []),
+        ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/credito", label: "Crédito y seguimiento PayJoy", description: "Consulta el saldo, los datos del crédito y el seguimiento de tus extensiones." }] : []),
         { href: "/ventas/aprobaciones", label: "Aprobar ventas" },
         ...(!esAdmin ? [{ href: "/vendedor/lista-precios", label: "Lista de precios" }] : []),
         ...(esAdmin || esSupervisor

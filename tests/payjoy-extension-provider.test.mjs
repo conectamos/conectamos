@@ -185,6 +185,7 @@ test("clasifica HTTP, JSON inválido y errores de red con mensajes seguros sin r
 test("un timeout leyendo el cuerpo se clasifica sin filtrar el error original", async () => {
   const reader = client(async () => ({
     ok: true,
+    headers: new Headers(),
     text: async () => { throw new DOMException(secret, "TimeoutError"); },
   }));
   await assert.rejects(reader.readPayJoyExtensionDevice(imei), { code: "TIMEOUT" });

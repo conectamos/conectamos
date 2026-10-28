@@ -120,13 +120,7 @@ function resolveCost14(payload: PayJoyPublicResponse) {
   return cost7 === null ? null : cost7 * 2;
 }
 
-export async function getPayJoyPaymentSnapshot(deviceTag: string) {
-  const normalizedDeviceTag = normalizeDeviceTag(deviceTag);
-
-  if (!normalizedDeviceTag) {
-    throw new Error("El device tag es obligatorio.");
-  }
-
+function requestPayJoyPaymentPayload(normalizedDeviceTag: string, signal?: AbortSignal) {
   const body = new URLSearchParams();
   body.set("deviceTag", normalizedDeviceTag);
   body.set("endpoint", "pay-payment-api-html");
@@ -134,7 +128,7 @@ export async function getPayJoyPaymentSnapshot(deviceTag: string) {
   body.set("type[countryCode]", DEFAULT_COUNTRY_CODE);
   body.set("type[vendor]", DEFAULT_VENDOR);
 
-  const response = await fetch(PAYJOY_PUBLIC_PAYMENT_URL, {
+  return fetch(PAYJOY_PUBLIC_PAYMENT_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -142,7 +136,55 @@ export async function getPayJoyPaymentSnapshot(deviceTag: string) {
     },
     body: body.toString(),
     cache: "no-store",
+    ...(signal ? { signal, redirect: "error" as const } : {}),
   });
+}
+
+/** Read-only server adapter. No payment is recorded by this existing endpoint. */
+export async function readPayJoyCreditPaymentPayload(deviceTag: string): Promise<unknown> {
+  const tag = typeof deviceTag === "string" ? normalizeDeviceTag(deviceTag) : "";
+  if (!/^D[A-Z0-9]{5,31}$/.test(tag)) throw Object.assign(new Error("Identificador inválido."), { code: "INVALID_INPUT" });
+  const signal = AbortSignal.timeout(20_000);
+  try {
+    const response = await requestPayJoyPaymentPayload(tag, signal);
+    if (!response.ok) throw Object.assign(new Error("No fue posible consultar PayJoy."), { status: response.status });
+    const max = 262_144;
+    if (Number(response.headers.get("content-length")) > max) throw Object.assign(new Error(), { code: "INVALID_RESPONSE" });
+    let raw = "";
+    if (response.body) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let bytes = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytes += value.byteLength;
+          if (bytes > max) { await reader.cancel(); throw Object.assign(new Error(), { code: "INVALID_RESPONSE" }); }
+          raw += decoder.decode(value, { stream: true });
+        }
+        raw += decoder.decode();
+      } finally { reader.releaseLock(); }
+    } else {
+      raw = await response.text();
+      if (raw.length > max) throw Object.assign(new Error(), { code: "INVALID_RESPONSE" });
+    }
+    try { return JSON.parse(raw); }
+    catch { throw Object.assign(new Error(), { code: "INVALID_RESPONSE" }); }
+  } catch (error) {
+    const failure = error as { code?: unknown; status?: unknown; name?: unknown } | null;
+    const code = signal.aborted || failure?.name === "AbortError" || failure?.name === "TimeoutError" || failure?.status === 408 ? "TIMEOUT"
+      : failure?.code === "INVALID_RESPONSE" ? "INVALID_RESPONSE"
+        : failure?.status === 401 || failure?.status === 403 ? "AUTH"
+          : failure?.status === 404 ? "NOT_FOUND" : failure?.status === 429 ? "RATE_LIMIT" : "UNAVAILABLE";
+    throw Object.assign(new Error("No se pudo verificar la consulta de PayJoy."), { code });
+  }
+}
+
+export async function getPayJoyPaymentSnapshot(deviceTag: string) {
+  const normalizedDeviceTag = normalizeDeviceTag(deviceTag);
+  if (!normalizedDeviceTag) throw new Error("El device tag es obligatorio.");
+  const response = await requestPayJoyPaymentPayload(normalizedDeviceTag);
 
   const text = await response.text();
   let data: PayJoyPublicResponse | null = null;

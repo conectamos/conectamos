@@ -1196,6 +1196,7 @@ export default async function DashboardPage({
         { href: "/dashboard/payjoy", label: "Cartera PayJoy", tone: "primary" },
         { href: "/dashboard/payjoy/40-60", label: "40/60", tone: "secondary" },
         ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/extensiones", label: "Extensiones PayJoy", tone: "secondary" } satisfies ModuleAction] : []),
+        ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/credito", label: "Crédito y seguimiento", tone: "secondary" } satisfies ModuleAction] : []),
       ],
       tone: "slate",
     },

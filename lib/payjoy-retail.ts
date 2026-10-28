@@ -177,7 +177,7 @@ function extensionId(value: unknown) {
  * Payment options and calculated installments are not extension offers.
  * https://www.payjoy.com/apidocs/endpoints.html#lookup-customer
  */
-export async function readPayJoyExtensionDevice(identifier: string): Promise<PayJoyExtensionSnapshot> {
+export async function readPayJoyCreditRetailPayload(identifier: string): Promise<unknown> {
   const locator = typeof identifier === "string" ? identifier.trim().toUpperCase() : "";
   const isImei = /^\d{15,16}$/.test(locator);
   if (!isImei && !/^D[A-Z0-9]{5,31}$/.test(locator)) {
@@ -189,7 +189,7 @@ export async function readPayJoyExtensionDevice(identifier: string): Promise<Pay
     result = await fetchPayJoy<unknown>("lookup-customer.php", {
       customerLocator: locator,
       fields: "device.description",
-    }, { timeoutMs: 20_000 });
+    }, { timeoutMs: 20_000, maxBodyLength: 262_144, noRedirect: true });
   } catch (error) {
     // Never pass through remote messages, URLs, credentials or underlying causes.
     const failure = error as { status?: unknown; code?: unknown; name?: unknown } | null;
@@ -202,6 +202,18 @@ export async function readPayJoyExtensionDevice(identifier: string): Promise<Pay
       : "UNAVAILABLE";
     throw new PayJoyExtensionLookupError(code);
   }
+  return result;
+}
+
+export async function readPayJoyExtensionDevice(identifier: string): Promise<PayJoyExtensionSnapshot> {
+  return parsePayJoyExtensionDeviceResponse(identifier, await readPayJoyCreditRetailPayload(identifier));
+}
+
+/** Reuse the same verified identity in the credit sheet without a second lookup. */
+export function parsePayJoyExtensionDeviceResponse(identifier: string, result: unknown): PayJoyExtensionSnapshot {
+  const locator = typeof identifier === "string" ? identifier.trim().toUpperCase() : "";
+  const isImei = /^\d{15,16}$/.test(locator);
+  if (!isImei && !/^D[A-Z0-9]{5,31}$/.test(locator)) throw new PayJoyExtensionLookupError("INVALID_INPUT");
 
   const data = extensionRecord(result);
   if (data?.valid === false) throw new PayJoyExtensionLookupError("NOT_FOUND");
@@ -605,7 +617,7 @@ function getPayJoyDateFromRecord(record: Record<string, unknown> | null | undefi
 async function fetchPayJoy<T>(
   endpoint: string,
   params: Record<string, string | number>,
-  options: { timeoutMs?: number } = {}
+  options: { timeoutMs?: number; maxBodyLength?: number; noRedirect?: boolean } = {}
 ) {
   const url = new URL(`${PAYJOY_RETAIL_API_BASE_URL}/${endpoint}`);
 
@@ -622,6 +634,7 @@ async function fetchPayJoy<T>(
   try {
     response = await fetch(url, {
       cache: "no-store",
+      ...(options.noRedirect ? { redirect: "error" as const } : {}),
       ...(signal ? { signal } : {}),
     });
   } catch (error) {
@@ -635,7 +648,35 @@ async function fetchPayJoy<T>(
     });
   }
 
-  const text = await response.text();
+  let text: string;
+  try {
+    if (options.maxBodyLength) {
+      const max = options.maxBodyLength;
+      if (Number(response.headers.get("content-length")) > max) throw Object.assign(new Error(), { code: "INVALID_RESPONSE" });
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let bytes = 0;
+        let result = "";
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            bytes += value.byteLength;
+            if (bytes > max) { await reader.cancel(); throw Object.assign(new Error(), { code: "INVALID_RESPONSE" }); }
+            result += decoder.decode(value, { stream: true });
+          }
+          text = result + decoder.decode();
+        } finally { reader.releaseLock(); }
+      } else {
+        text = await response.text();
+        if (text.length > max) throw Object.assign(new Error(), { code: "INVALID_RESPONSE" });
+      }
+    } else text = await response.text();
+  } catch (error) {
+    if (signal?.aborted) throw Object.assign(new PayJoyRetailLookupError("PayJoy supero el tiempo maximo de respuesta."), { status: 408 });
+    throw error;
+  }
   let data: T & { message?: string; valid?: boolean };
 
   try {

@@ -65,17 +65,18 @@ async function post<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export default function PayJoyExtensionsWorkspace({ canManage, session, navigation = NAVIGATION }: {
+export default function PayJoyExtensionsWorkspace({ canManage, session, navigation = NAVIGATION, initialDeviceTag = "" }: {
   canManage: boolean;
   session: { nombre: string; sedeNombre: string; roleLabel?: string };
   navigation?: NavigationItem[];
+  initialDeviceTag?: string;
 }) {
   const [cedula, setCedula] = useState("");
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [limited, setLimited] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<number | null>(null);
-  const [manual, setManual] = useState(false);
-  const [deviceTag, setDeviceTag] = useState("");
+  const [manual, setManual] = useState(Boolean(initialDeviceTag));
+  const [deviceTag, setDeviceTag] = useState(initialDeviceTag);
   const [operation, setOperation] = useState<Operation | null>(null);
   const [optionId, setOptionId] = useState("");
   const [reason, setReason] = useState("");
@@ -209,6 +210,7 @@ export default function PayJoyExtensionsWorkspace({ canManage, session, navigati
       </header>
       <main className={styles.main}>
         <div className={styles.heading}><div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><DashboardIcon name="chevron" /><span>Servicios PayJoy</span></nav><h1>Extensiones PayJoy</h1><p>Consulta las opciones del equipo y revisa cada gestión antes de confirmarla.</p></div><span className={styles.context}><DashboardIcon name="shield" />{allowManage ? "Consulta y gestión" : "Solo consulta"}</span></div>
+        <nav className={styles.actions} aria-label="Servicios PayJoy" style={{ margin: "0 0 20px" }}><Link className={styles.button} href={`/vendedor/payjoy/credito${operation?.deviceTag ? `?deviceTag=${encodeURIComponent(operation.deviceTag)}` : ""}`}><DashboardIcon name="document-search" />Ficha del crédito</Link><Link className={styles.button} href={`/vendedor/payjoy/credito?tab=seguimiento${operation?.deviceTag ? `&deviceTag=${encodeURIComponent(operation.deviceTag)}` : ""}`}><DashboardIcon name="clock" />Seguimiento de extensiones</Link></nav>
         <section className={styles.metrics} aria-label="Resumen de la gestión">
           <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="store" /></span><div><span>Sede activa</span><strong>{session.sedeNombre}</strong><small>Cobertura de tu sesión</small></div></div>
           <div className={styles.metric}><span className={styles.metricIcon}><DashboardIcon name="clock" /></span><div><span>Estado de la gestión</span><strong>{busy === "buscar" ? "Buscando cliente" : busy === "preparar" ? "Consultando PayJoy" : busy === "confirmar" ? "Gestión en curso" : operation ? STATUS_LABELS[operation.status] || "Estado por revisar" : "Sin consulta"}</strong><small>{operation?.deviceTag || "Selecciona un equipo para comenzar"}</small></div></div>

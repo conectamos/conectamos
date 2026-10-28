@@ -413,6 +413,31 @@ model PayJoyExtensionOperation {
   @@index([deviceTag, createdAt])
 }
 
+// Consultas de crédito: evidencia mínima de lectura, sin tokens ni respuestas crudas.
+model PayJoyCreditCheck {
+  id              String   @id
+  idempotencyKey  String   @unique
+  inputHash       String
+  usuarioId       Int
+  perfilId        Int?
+  sedeId          Int
+  asesorNombre    String
+  identifier      String
+  deviceTag       String?
+  imei            String?
+  status          String
+  snapshot        Json?
+  errorCode       String?
+  activeLookupKey String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  completedAt     DateTime?
+
+  @@index([usuarioId, perfilId, sedeId, createdAt], map: "PayJoyCreditCheck_scope_createdAt_idx")
+  @@index([usuarioId, perfilId, sedeId, deviceTag, createdAt], map: "PayJoyCreditCheck_scope_deviceTag_createdAt_idx")
+  @@index([usuarioId, perfilId, sedeId, imei, createdAt], map: "PayJoyCreditCheck_scope_imei_createdAt_idx")
+}
+
 model RegistroVendedorVenta {
   id                              Int       @id @default(autoincrement())
   perfilVendedorId                Int

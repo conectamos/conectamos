@@ -59,7 +59,7 @@ npm run prisma:generate
 npm run build
 ```
 
-La instalación SQL es idempotente: `scripts/apply-payjoy-extensions-schema.sql`, dentro de una transacción con límites de espera de bloqueos y ejecución. El comando verifica después las 26 columnas y los seis índices requeridos mediante `scripts/verify-payjoy-extensions-schema.mjs`, sin leer registros de clientes. No hay creación de tablas durante las peticiones. Si falta la tabla, la API informa que el módulo requiere actualización y no ejecuta operaciones de PayJoy.
+La instalación SQL es idempotente: `scripts/apply-payjoy-extensions-schema.sql`, dentro de una transacción con límites de espera de bloqueos y ejecución. El comando verifica después las 26 columnas y los seis índices de `PayJoyExtensionOperation` mediante `scripts/verify-payjoy-extensions-schema.mjs`, sin leer registros de clientes. La ampliación de [ficha de crédito y seguimiento](PAYJOY_CREDITO.md) incorpora en el mismo script `PayJoyCreditCheck`, con 17 columnas y seis índices, y verifica ambas tablas; debe aplicarse antes de activar esa ampliación. No hay creación de tablas durante las peticiones. Si falta la tabla, la API informa que el módulo requiere actualización y no ejecuta operaciones de PayJoy.
 
 En Railway, el servicio `conectamos` ejecuta `npm run db:apply-cierre` y luego `npm run db:apply-payjoy-extensiones` como paso previo al despliegue. Un fallo de migración o de verificación impide activar esa versión. Conservar ambos comandos en futuros despliegues. La validación con un dispositivo real se realiza por separado después de publicar, con confirmación explícita en pantalla.
 
