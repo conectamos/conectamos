@@ -134,4 +134,39 @@ render({ groups, storageUserKey: '7:12', legacyStorageUserKey: 'Ana Pérez' }); 
 assert.equal(nodes(frequent()).filter(n => n.type === 'Link').length, 2);
 assert.equal(nodes().filter(n => typeof n.props.onToggle === 'function').every(n => !n.props.disabled), true);
 
-console.log('PASS: legacy migration + authorized IDs, new empty key precedence, defaults, remove/add persistence and focus, user switch isolation, blocked storage fallback.');
+reset();
+const creditLinks = [
+  { href: '/vendedor/payjoy/credito', icon: 'document-search', label: 'Ficha del crédito PayJoy' },
+  { href: '/vendedor/payjoy/credito?tab=seguimiento', icon: 'clock', label: 'Seguimiento de extensiones' },
+];
+const creditGroups = [{ title: 'Registro comercial', description: 'PayJoy autorizado', icon: 'sales', links: creditLinks }];
+render({ groups: creditGroups, quickActions: creditLinks, storageUserKey: 'auditor:qa' }); settle();
+const quick = nodes().find(n => n.props['aria-label'] === 'Acciones rápidas');
+assert.deepEqual(nodes(quick).filter(n => n.type === 'Link').map(n => n.props.href), creditLinks.map(link => link.href));
+for (const link of creditLinks) {
+  nodes().find(n => n.type === 'input').props.onChange({ target: { value: link.label } }); settle();
+  assert.ok(nodes().some(n => n.type === 'Link' && n.props.href === link.href));
+  nodes().find(n => typeof n.props.onToggle === 'function' && n.props.label === link.label).props.onToggle(); settle();
+}
+assert.deepEqual(nodes(frequent()).filter(n => n.type === 'Link').map(n => n.props.href), creditLinks.map(link => link.href));
+assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), creditLinks.map(link => id('Registro comercial', link.href, link.label)));
+render({ groups, quickActions: [], storageUserKey: 'auditor:qa' }); settle();
+assert.ok(nodes().filter(n => n.type === 'Link').every(n => !n.props.href.startsWith('/vendedor/payjoy/')));
+
+reset();
+const renamedGroups = [...creditGroups, {
+  title: 'Rutas ambiguas QA', description: 'No deben migrar por URL sola', icon: 'sales',
+  links: [{ href: '/ruta-ambigua', label: 'Destino uno' }, { href: '/ruta-ambigua', label: 'Destino dos' }],
+}];
+store.set(key('auditor:qa'), JSON.stringify([
+  id('Registro comercial', '/vendedor/payjoy/credito', 'Crédito y seguimiento PayJoy'),
+  id('Registro comercial', '/vendedor/payjoy/credito?tab=seguimiento', 'Seguimiento anterior'),
+  id('Antes', '/ruta-ambigua', 'Nombre anterior'),
+  id('No autorizado', '/admin/secreto', 'Secreto'),
+  id('Registro comercial', '/vendedor/payjoy/credito?tab=ausente', 'Ficha antigua'),
+]));
+render({ groups: renamedGroups, storageUserKey: 'auditor:qa' }); settle();
+assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), creditLinks.map(link => id('Registro comercial', link.href, link.label)));
+assert.deepEqual(nodes(frequent()).filter(n => n.type === 'Link').map(n => n.props.href), creditLinks.map(link => link.href));
+
+console.log('PASS: legacy migration + authorized IDs, new empty key precedence, defaults, remove/add persistence and focus, user switch isolation, blocked storage fallback, PayJoy ficha/seguimiento search + favorites with distinct URLs, unique authorized rename preserves favorites without accepting missing or ambiguous routes.');

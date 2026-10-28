@@ -122,6 +122,50 @@ async function runPage(session, params = { period: "2026-09" }, failures = []) {
 }
 function getCall(result, name) { return result.calls.find((call) => call.name === name)?.args; }
 
+function operationsNavigation(props) {
+  const stub = { __esModule: true, default: () => null };
+  const css = { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) };
+  const Component = loadTypeScript("app/dashboard/_components/operations-dashboard.tsx", {
+    "next/image": stub, "next/link": stub, "./dashboard-filters": stub,
+    "./dashboard-icon": stub, "./dashboard-utility-gate": stub, "./logout-button": stub,
+    "@/lib/monthly-reports-view": { formatoPesos: String, formatoNumero: String },
+    "./home-interactions": { HomeDetailDialog: () => null, HomeProfile: () => null, OperationsTabs: () => null },
+    "./home.module.css": css, "./sidebar-white.module.css": css, "./operations-tool-center": stub,
+  }).default;
+  const tree = Component(props);
+  const sidebar = findProps(tree, item => "items" in item && "panelLabel" in item);
+  const tools = findProps(tree, item => "groups" in item && "quickActions" in item)
+    || findProps(tree, item => "toolGroups" in item && "quickActions" in item);
+  return { sidebar: sidebar.items, quick: tools.quickActions, catalog: (tools.groups || tools.toolGroups).flatMap(group => group.links) };
+}
+
+test("perfil AUDITOR recibe los dos accesos PayJoy en menú, acciones rápidas y catálogo", async () => {
+  const result = await runPage({ ...baseSession, rolNombre: "AUDITOR", perfilTipo: "AUDITOR", perfilTipoLabel: "Auditor" });
+  assert.equal(result.props.puedeVerExtensionesPayJoy, true);
+  const navigation = operationsNavigation(result.props);
+  const expected = [
+    { href: "/vendedor/payjoy/credito", label: "Ficha del crédito PayJoy" },
+    { href: "/vendedor/payjoy/credito?tab=seguimiento", label: "Seguimiento de extensiones" },
+  ];
+  for (const values of Object.values(navigation)) {
+    assert.deepEqual(values.filter(item => item.href.startsWith("/vendedor/payjoy/credito")).map(({ href, label }) => ({ href, label })), expected);
+    assert.equal(new Set(values.map(item => item.href)).size, values.length);
+  }
+});
+
+test("el permiso PayJoy controla también los enlaces de stand y evita accesos sin autorización", async () => {
+  const result = await runPage({ ...baseSession, rolNombre: "AUDITOR", perfilTipo: "AUDITOR" });
+  for (const stand of [{}, { esStand: true }, { esStand: true, esStandSoloInventario: true }]) {
+    const restricted = operationsNavigation({ ...result.props, ...stand, puedeVerExtensionesPayJoy: false });
+    for (const values of Object.values(restricted)) assert.ok(values.every(item => !item.href.startsWith("/vendedor/payjoy/")));
+    const allowed = operationsNavigation({ ...result.props, ...stand, puedeVerExtensionesPayJoy: true });
+    for (const values of Object.values(allowed)) {
+      assert.ok(values.some(item => item.href === "/vendedor/payjoy/credito"));
+      assert.ok(values.some(item => item.href === "/vendedor/payjoy/credito?tab=seguimiento"));
+    }
+  }
+});
+
 test("BODEGA recibe su dashboard antes de consultar resúmenes comerciales, caja, ventas o sedes ajenas", { skip: Boolean(process.env.OPERATIONS_DASHBOARD_TEST_SOURCE) }, async () => {
   for (const rolNombre of ["BODEGA", " bodega "]) {
     for (const perfilTipo of ["BODEGA", "VENDEDOR", "ADMINISTRADOR"]) {

@@ -132,7 +132,9 @@ export default function OperationsToolCenter({ groups, storageUserKey, legacySto
         const [, previousHref, previousLabel] = id.split("::");
         const movedTool = allTools.find((tool) => tool.link.href === previousHref &&
           normalize(tool.link.label) === normalize(previousLabel || ""));
-        return movedTool ? [movedTool.id] : [];
+        if (movedTool) return [movedTool.id];
+        const renamedTools = allTools.filter((tool) => tool.link.href === previousHref);
+        return renamedTools.length === 1 ? [renamedTools[0].id] : [];
       }))) : defaultFavorites();
     } catch {
       nextFavorites = defaultFavorites();

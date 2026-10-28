@@ -58,7 +58,10 @@ export default function SalesRoleDashboard({ activity, coverageLabel, earnings, 
     { description: "Validar información del cliente", href: "/vendedor/lista-negra", icon: "warning", label: "Consultar lista negra" },
     { description: "Consultar referencias y precios", href: "/vendedor/lista-precios", icon: "tag", label: "Lista de precios" },
     ...(puedeVerExtensionesPayJoy ? [{ description: "Consultar opciones y gestionar el dispositivo", href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" } satisfies QuickAction] : []),
-    ...(puedeVerExtensionesPayJoy ? [{ description: "Consultar el crédito y seguir tus extensiones", href: "/vendedor/payjoy/credito", icon: "document-search", label: "Crédito y seguimiento PayJoy" } satisfies QuickAction] : []),
+    ...(puedeVerExtensionesPayJoy ? [
+      { description: "Consultar el saldo y los datos del equipo", href: "/vendedor/payjoy/credito", icon: "document-search", label: "Ficha del crédito PayJoy" } satisfies QuickAction,
+      { description: "Revisar el estado posterior de tus gestiones", href: "/vendedor/payjoy/credito?tab=seguimiento", icon: "clock", label: "Seguimiento de extensiones" } satisfies QuickAction,
+    ] : []),
   ];
   return <div className={styles.page}>
     <header className={styles.topbar}><Link href="/dashboard" className={styles.brand}><Image src="/branding/conectamos-logo.png" width={44} height={44} alt="" priority /><strong>CONECTAMOS</strong></Link><nav className={styles.navigation} aria-label="Navegación principal">{navigationItems.map(item => <Link key={item.href} href={item.href} className={`${styles.navItem} ${item.href === "/dashboard" ? styles.navActive : ""}`} aria-current={item.href === "/dashboard" ? "page" : undefined}><DashboardIcon name={item.icon} />{item.label}</Link>)}</nav><SalesProfile name={usuario} role={`${roleLabel} · ${coverageLabel}`} /></header>

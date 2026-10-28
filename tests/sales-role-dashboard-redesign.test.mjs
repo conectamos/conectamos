@@ -61,6 +61,22 @@ test("el acceso a extensiones PayJoy solo aparece con el permiso recibido del se
   assert.doesNotMatch(render({ puedeVerExtensionesPayJoy: false }), /href="\/vendedor\/payjoy\/extensiones"/);
   assert.match(render({ puedeVerExtensionesPayJoy: true }), /href="\/vendedor\/payjoy\/extensiones"/);
 });
+test("vendedor y apoyo ven ficha y seguimiento por separado solo con permiso PayJoy", () => {
+  for (const role of ["VENDEDOR", "APOYO_OPERATIVO"]) {
+    const authorized = render({ role, puedeVerExtensionesPayJoy: true });
+    const actions = links(authorized, "Accesos comerciales");
+    assert.ok(actions.includes("/vendedor/payjoy/credito"));
+    assert.ok(actions.includes("/vendedor/payjoy/credito?tab=seguimiento"));
+    assert.equal(new Set(actions).size, actions.length);
+    assert.match(authorized, /Ficha del crédito PayJoy/);
+    assert.match(authorized, /Seguimiento de extensiones/);
+    assert.ok(links(authorized, "Navegación principal").includes("/vendedor/payjoy/credito"));
+    for (const puedeVerExtensionesPayJoy of [undefined, false]) {
+      const restricted = render({ role, puedeVerExtensionesPayJoy });
+      assert.doesNotMatch(restricted, /href="\/vendedor\/payjoy\//);
+    }
+  }
+});
 const text = html => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 function section(html, label) {
   const found = html.match(new RegExp(`<section\\b[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</section>`));
