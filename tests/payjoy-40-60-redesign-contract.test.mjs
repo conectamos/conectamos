@@ -46,13 +46,12 @@ test("historial está disponible antes de procesar, cerrado inicialmente y conti
   assert.match(source, /loadStoredRecord\(record\.id\)/);
 });
 
-test("procesar, guardar y actualizar conservan sus contratos y toda la carga", () => {
+test("procesar y Guardar conservan sus contratos y toda la carga sin usar la página visible", () => {
   for (const endpoint of ["/api/payjoy/40-60/weeks", "/api/payjoy/40-60", "/api/payjoy/40-60/registros"]) assert.ok(source.includes(endpoint));
   assert.match(source, /formData\.append\("file", selectedFile\)/);
   assert.match(source, /formData\.append\("week", selectedWeek\)/);
   assert.match(source, /summary: liveSummary,\s*rows,/);
-  assert.match(source, /summary: summarizeRows\(nextRows\),\s*rows: nextRows,/);
-  assert.doesNotMatch(source, /summary: summarizeRows\(paginatedRows\)|rows: paginatedRows/);
+  assert.doesNotMatch(source, /summary: summarizeRows\((?:paginatedRows|visibleRows)\)|rows: (?:paginatedRows|visibleRows)/);
   assert.match(source, /const pageSize = 25/);
   assert.match(source, /paginatedRows\.map\(row =>/);
 });
