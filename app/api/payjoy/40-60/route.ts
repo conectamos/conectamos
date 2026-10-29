@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { parsePayJoyFortySixtyWorkbook } from "@/lib/payjoy-40-60-import";
 import { getLatestNationalIdsByDeviceTags } from "@/lib/payjoy-cortes-store";
 import { getPayJoyPaymentSnapshot } from "@/lib/payjoy";
+import { colombiaCalendarDate } from "@/lib/payjoy-40-60-age";
 
 export const runtime = "nodejs";
 
@@ -183,6 +184,7 @@ export async function POST(req: Request) {
     }
 
     const file = files[0];
+    const ageReferenceDate = colombiaCalendarDate();
     const imported = parsePayJoyFortySixtyWorkbook(
       Buffer.from(await file.arrayBuffer()),
       file.name || "40-60.xlsx"
@@ -233,6 +235,7 @@ export async function POST(req: Request) {
       fileName: imported.fileName,
       sheetName: imported.sheetName,
       week: selectedWeekLabel,
+      ageReferenceDate,
       totalRows: imported.totalRows,
       filteredRows: rows.length,
       summary: summarizeRows(rows),

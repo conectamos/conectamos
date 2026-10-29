@@ -17,6 +17,8 @@ export default async function PayJoyFortySixtyPage() {
     <PayJoyFortySixtyWorkspace
       puedeEliminar={String(user.rolNombre || "").toUpperCase() === "ADMIN"}
       user={{
+        id: user.id,
+        perfilId: user.perfilId,
         nombre: user.nombre,
         usuario: user.usuario,
         rolNombre: user.rolNombre,

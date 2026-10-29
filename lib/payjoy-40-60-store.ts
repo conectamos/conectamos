@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { calendarDayNumber, colombiaCalendarDate } from "@/lib/payjoy-40-60-age";
 
 export type FortySixtyStoredStatus = "40/60 APROBADO" | "40/60 NO APROBADO";
 
@@ -25,6 +26,8 @@ export type FortySixtyStoredSummary = {
 
 export type FortySixtyStoredListItem = {
   id: number;
+  revision: number;
+  ageReferenceDate: string | null;
   recordName: string;
   week: string;
   fileName: string;
@@ -44,6 +47,8 @@ export type FortySixtyStoredDetail = FortySixtyStoredListItem & {
 };
 
 type SaveFortySixtyInput = {
+  clientKey?: string;
+  ageReferenceDate?: string | null;
   recordName: string;
   week: string;
   fileName: string;
@@ -54,6 +59,7 @@ type SaveFortySixtyInput = {
   rows: FortySixtyStoredRow[];
   savedBy: {
     id: number | null;
+    perfilId?: number | null;
     nombre: string;
     usuario: string;
   };
@@ -61,10 +67,13 @@ type SaveFortySixtyInput = {
 
 type UpdateFortySixtyInput = SaveFortySixtyInput & {
   id: number;
+  expectedRevision?: number;
 };
 
 type StoredRecordRow = {
   id: number;
+  revision: number;
+  ageReferenceDate: string | null;
   recordName: string;
   week: string;
   fileName: string;
@@ -84,6 +93,33 @@ type StoredRecordRow = {
 };
 
 let ensureFortySixtyTablePromise: Promise<void> | null = null;
+
+export class FortySixtyRevisionConflictError extends Error {
+  readonly code = "REVISION_CONFLICT";
+  constructor(readonly currentRevision: number) {
+    super("Este corte cambió en otra sesión. Consulta la versión actual antes de guardar nuevamente.");
+    this.name = "FortySixtyRevisionConflictError";
+  }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function creationKey(input: SaveFortySixtyInput) {
+  if (input.clientKey === undefined) return null;
+  if (!UUID_PATTERN.test(input.clientKey) || !Number.isSafeInteger(input.savedBy.id) || Number(input.savedBy.id) <= 0 ||
+    (input.savedBy.perfilId != null && (!Number.isSafeInteger(input.savedBy.perfilId) || input.savedBy.perfilId <= 0))) {
+    throw new Error("La identificación del nuevo corte no es válida.");
+  }
+  // The immutable creation identity must not depend on the last editor (guardado_por_id).
+  return `${input.savedBy.id}:${input.savedBy.perfilId ?? "usuario"}:${input.clientKey.toLowerCase()}`;
+}
+
+function assertAgeReferenceDate(value: string | null | undefined) {
+  if (value === undefined || value === null) return;
+  if (typeof value !== "string" || calendarDayNumber(value) === null || value < "0001-01-01" || value > colombiaCalendarDate()) {
+    throw new Error("La fecha base de la edad debe ser válida y no futura en Colombia.");
+  }
+}
 
 function parseJsonColumn<T>(value: unknown, fallback: T): T {
   if (value === null || value === undefined) {
@@ -121,7 +157,7 @@ function normalizeText(value: unknown) {
 }
 
 function normalizeStoredRow(row: unknown): FortySixtyStoredRow | null {
-  if (!row || typeof row !== "object") {
+  if (!row || typeof row !== "object" || Array.isArray(row)) {
     return null;
   }
 
@@ -170,6 +206,24 @@ function normalizeStoredRow(row: unknown): FortySixtyStoredRow | null {
   };
 }
 
+function validatedRows(value: unknown, incoming = false): FortySixtyStoredRow[] {
+  if (!Array.isArray(value) || !value.length) throw new Error("El corte debe contener filas completas.");
+  if (incoming && value.some(row => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return true;
+    const candidate = row as Record<string, unknown>;
+    return ["id", "week", "merchantName", "deviceTag", "cedula"].some(key => typeof candidate[key] !== "string") ||
+      !normalizeText(candidate.id) || !normalizeText(candidate.week) || typeof candidate.paidInFull !== "boolean" ||
+      ![null, 0, 1].includes(candidate.pay40At60 as null | number) ||
+      [candidate.loanAgeDays, candidate.numberOfPayments, candidate.loanRepaymentBiweek].some(number =>
+        number !== null && (typeof number !== "number" || !Number.isFinite(number)));
+  })) throw new Error("El corte contiene una fila inválida. No se guardó ninguna fila.");
+  const rows = value.map(normalizeStoredRow);
+  if (rows.some(row => row === null)) throw new Error("El corte contiene una fila inválida. No se guardó ninguna fila.");
+  const valid = rows as FortySixtyStoredRow[];
+  if (incoming && new Set(valid.map(row => row.id)).size !== valid.length) throw new Error("El corte contiene identificadores de fila duplicados.");
+  return valid;
+}
+
 function mapStoredRecord(record: StoredRecordRow): FortySixtyStoredListItem {
   const savedAtDate =
     record.savedAt instanceof Date
@@ -178,6 +232,8 @@ function mapStoredRecord(record: StoredRecordRow): FortySixtyStoredListItem {
 
   return {
     id: toNumber(record.id),
+    revision: toNumber(record.revision, 1),
+    ageReferenceDate: record.ageReferenceDate || null,
     recordName: normalizeText(record.recordName),
     week: normalizeText(record.week),
     fileName: normalizeText(record.fileName),
@@ -235,6 +291,18 @@ async function ensureFortySixtyTable() {
         )
       `);
 
+      // Idempotent additive upgrade for installations created before autosave.
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE payjoy_40_60_guardados
+        ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1,
+        ADD COLUMN IF NOT EXISTS creation_key TEXT,
+        ADD COLUMN IF NOT EXISTS age_reference_date DATE
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_payjoy_40_60_guardados_creation_key
+        ON payjoy_40_60_guardados (creation_key)
+      `);
+
       await prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS idx_payjoy_40_60_guardados_updated_at
         ON payjoy_40_60_guardados (updated_at DESC)
@@ -255,6 +323,8 @@ export async function listStoredFortySixtyRecords(limit = 24) {
     `
       SELECT
         id,
+        revision,
+        age_reference_date::text AS "ageReferenceDate",
         nombre_registro AS "recordName",
         week_label AS "week",
         file_name AS "fileName",
@@ -287,6 +357,8 @@ export async function getStoredFortySixtyRecordById(id: number) {
     `
       SELECT
         id,
+        revision,
+        age_reference_date::text AS "ageReferenceDate",
         nombre_registro AS "recordName",
         week_label AS "week",
         file_name AS "fileName",
@@ -318,11 +390,7 @@ export async function getStoredFortySixtyRecordById(id: number) {
 
   const record = mapStoredRecord(row);
   const rawRows = parseJsonColumn<unknown[]>(row.rows, []);
-  const parsedRows = (Array.isArray(rawRows) ? rawRows : [])
-    .map(normalizeStoredRow)
-    .filter(
-      (candidate): candidate is FortySixtyStoredRow => candidate !== null
-    );
+  const parsedRows = validatedRows(rawRows);
 
   return {
     ...record,
@@ -331,6 +399,9 @@ export async function getStoredFortySixtyRecordById(id: number) {
 }
 
 export async function saveStoredFortySixtyRecord(input: SaveFortySixtyInput) {
+  assertAgeReferenceDate(input.ageReferenceDate);
+  const rowValues = validatedRows(input.rows, true);
+  const key = creationKey(input);
   await ensureFortySixtyTable();
 
   const rows = await prisma.$queryRawUnsafe<StoredRecordRow[]>(
@@ -350,6 +421,8 @@ export async function saveStoredFortySixtyRecord(input: SaveFortySixtyInput) {
         guardado_por_id,
         guardado_por_nombre,
         guardado_por_usuario,
+        creation_key,
+        age_reference_date,
         updated_at
       )
       VALUES (
@@ -367,10 +440,16 @@ export async function saveStoredFortySixtyRecord(input: SaveFortySixtyInput) {
         $12,
         $13,
         $14,
+        $15,
+        $16::date,
         NOW()
       )
+      ON CONFLICT (creation_key) DO NOTHING
       RETURNING
         id,
+        revision,
+        age_reference_date::text AS "ageReferenceDate",
+        rows_json AS "rows",
         nombre_registro AS "recordName",
         week_label AS "week",
         file_name AS "fileName",
@@ -397,16 +476,31 @@ export async function saveStoredFortySixtyRecord(input: SaveFortySixtyInput) {
     input.summary.noAprobados,
     input.summary.cedulasEncontradas,
     input.summary.cedulasPendientes,
-    JSON.stringify(input.rows),
+    JSON.stringify(rowValues),
     input.savedBy.id,
     input.savedBy.nombre,
-    input.savedBy.usuario
+    input.savedBy.usuario,
+    key,
+    input.ageReferenceDate ?? null
   );
 
-  return mapStoredRecord(rows[0]);
+  if (rows[0]) return { ...mapStoredRecord(rows[0]), rows: validatedRows(parseJsonColumn<unknown[]>(rows[0].rows, [])), replayed: false };
+  // A conflicting INSERT waits for the first creator to commit. This separate
+  // statement sees that committed row, including any later revisions, without writing it.
+  const existing = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
+    `SELECT id FROM payjoy_40_60_guardados WHERE creation_key = $1 LIMIT 1`, key
+  );
+  const record = existing[0] ? await getStoredFortySixtyRecordById(existing[0].id) : null;
+  if (!record) throw new Error("No fue posible recuperar el corte creado. Reintenta con la misma identificación.");
+  return { ...record, replayed: true };
 }
 
 export async function updateStoredFortySixtyRecord(input: UpdateFortySixtyInput) {
+  assertAgeReferenceDate(input.ageReferenceDate);
+  const rowValues = validatedRows(input.rows, true);
+  if (input.expectedRevision !== undefined && (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1 || input.expectedRevision > 2147483647)) {
+    throw new Error("La revisión del corte no es válida.");
+  }
   await ensureFortySixtyTable();
 
   const rows = await prisma.$queryRawUnsafe<StoredRecordRow[]>(
@@ -427,10 +521,14 @@ export async function updateStoredFortySixtyRecord(input: UpdateFortySixtyInput)
         guardado_por_id = $13,
         guardado_por_nombre = $14,
         guardado_por_usuario = $15,
+        revision = revision + 1,
+        age_reference_date = CASE WHEN $17::boolean THEN $18::date ELSE age_reference_date END,
         updated_at = NOW()
-      WHERE id = $1
+      WHERE id = $1 AND ($16::integer IS NULL OR revision = $16)
       RETURNING
         id,
+        revision,
+        age_reference_date::text AS "ageReferenceDate",
         nombre_registro AS "recordName",
         week_label AS "week",
         file_name AS "fileName",
@@ -458,13 +556,23 @@ export async function updateStoredFortySixtyRecord(input: UpdateFortySixtyInput)
     input.summary.noAprobados,
     input.summary.cedulasEncontradas,
     input.summary.cedulasPendientes,
-    JSON.stringify(input.rows),
+    JSON.stringify(rowValues),
     input.savedBy.id,
     input.savedBy.nombre,
-    input.savedBy.usuario
+    input.savedBy.usuario,
+    input.expectedRevision ?? null,
+    input.ageReferenceDate !== undefined,
+    input.ageReferenceDate ?? null
   );
 
-  return rows[0] ? mapStoredRecord(rows[0]) : null;
+  if (rows[0]) return mapStoredRecord(rows[0]);
+  if (input.expectedRevision !== undefined) {
+    const current = await prisma.$queryRawUnsafe<Array<{ revision: number }>>(
+      `SELECT revision FROM payjoy_40_60_guardados WHERE id = $1 LIMIT 1`, input.id
+    );
+    if (current[0]) throw new FortySixtyRevisionConflictError(toNumber(current[0].revision, 1));
+  }
+  return null;
 }
 
 export async function deleteStoredFortySixtyRecordById(id: number) {

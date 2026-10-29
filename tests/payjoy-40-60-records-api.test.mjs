@@ -9,6 +9,10 @@ const { NextResponse } = require('next/server');
 const compiled = ts.transpileModule(readFileSync(new URL('../app/api/payjoy/40-60/registros/route.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
 }).outputText;
+const age = {};
+new Function('exports', ts.transpileModule(readFileSync(new URL('../lib/payjoy-40-60-age.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText)(age);
 const fixtureRows = () => Array.from({ length: 32 }, (_, i) => ({
   id: 'qa-' + i, week: '2026-10-19', merchantName: 'Comercio QA', deviceTag: 'QA' + String(i).padStart(6, '0'),
   loanAgeDays: 50, numberOfPayments: i, loanRepaymentBiweek: 125000, cedula: i === 25 ? '000123456789' : '',
@@ -51,6 +55,7 @@ function environment(role = 'ADMIN') {
     if (name === 'next/server') return { NextResponse };
     if (name === '@/lib/auth') return { getSessionUser: async () => controls.role === null ? null : { id: 8, rolNombre: controls.role, nombre: 'Autor sesión QA', usuario: 'qa' } };
     if (name === '@/lib/payjoy-40-60-store') return store;
+    if (name === '@/lib/payjoy-40-60-age') return age;
     throw Error('Dependencia inesperada en prueba aislada: ' + name);
   }, loaded, loaded.exports, { error() {} });
   return { route: loaded.exports, calls, controls, records };
