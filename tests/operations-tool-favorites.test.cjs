@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- This CommonJS VM harness loads the transpiled component without application dependencies. */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -135,26 +136,26 @@ assert.equal(nodes(frequent()).filter(n => n.type === 'Link').length, 2);
 assert.equal(nodes().filter(n => typeof n.props.onToggle === 'function').every(n => !n.props.disabled), true);
 
 reset();
-const creditLinks = [
-  { href: '/vendedor/payjoy/credito', icon: 'document-search', label: 'Ficha del crédito PayJoy' },
-  { href: '/vendedor/payjoy/credito?tab=seguimiento', icon: 'clock', label: 'Seguimiento de extensiones' },
+const payjoyLinks = [
+  { href: '/vendedor/payjoy/extensiones', icon: 'clock', label: 'Extensiones PayJoy' },
+  { href: '/vendedor/payjoy/seguimiento', icon: 'clock', label: 'Seguimiento de extensiones' },
 ];
-const creditGroups = [{ title: 'Registro comercial', description: 'PayJoy autorizado', icon: 'sales', links: creditLinks }];
-render({ groups: creditGroups, quickActions: creditLinks, storageUserKey: 'auditor:qa' }); settle();
+const payjoyGroups = [{ title: 'Registro comercial', description: 'PayJoy autorizado', icon: 'sales', links: payjoyLinks }];
+render({ groups: payjoyGroups, quickActions: payjoyLinks, storageUserKey: 'auditor:qa' }); settle();
 const quick = nodes().find(n => n.props['aria-label'] === 'Acciones rápidas');
-assert.deepEqual(nodes(quick).filter(n => n.type === 'Link').map(n => n.props.href), creditLinks.map(link => link.href));
-for (const link of creditLinks) {
+assert.deepEqual(nodes(quick).filter(n => n.type === 'Link').map(n => n.props.href), payjoyLinks.map(link => link.href));
+for (const link of payjoyLinks) {
   nodes().find(n => n.type === 'input').props.onChange({ target: { value: link.label } }); settle();
   assert.ok(nodes().some(n => n.type === 'Link' && n.props.href === link.href));
   nodes().find(n => typeof n.props.onToggle === 'function' && n.props.label === link.label).props.onToggle(); settle();
 }
-assert.deepEqual(nodes(frequent()).filter(n => n.type === 'Link').map(n => n.props.href), creditLinks.map(link => link.href));
-assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), creditLinks.map(link => id('Registro comercial', link.href, link.label)));
+assert.deepEqual(nodes(frequent()).filter(n => n.type === 'Link').map(n => n.props.href), payjoyLinks.map(link => link.href));
+assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), payjoyLinks.map(link => id('Registro comercial', link.href, link.label)));
 render({ groups, quickActions: [], storageUserKey: 'auditor:qa' }); settle();
 assert.ok(nodes().filter(n => n.type === 'Link').every(n => !n.props.href.startsWith('/vendedor/payjoy/')));
 
 reset();
-const renamedGroups = [...creditGroups, {
+const renamedGroups = [...payjoyGroups, {
   title: 'Rutas ambiguas QA', description: 'No deben migrar por URL sola', icon: 'sales',
   links: [{ href: '/ruta-ambigua', label: 'Destino uno' }, { href: '/ruta-ambigua', label: 'Destino dos' }],
 }];
@@ -166,7 +167,22 @@ store.set(key('auditor:qa'), JSON.stringify([
   id('Registro comercial', '/vendedor/payjoy/credito?tab=ausente', 'Ficha antigua'),
 ]));
 render({ groups: renamedGroups, storageUserKey: 'auditor:qa' }); settle();
-assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), creditLinks.map(link => id('Registro comercial', link.href, link.label)));
-assert.deepEqual(nodes(frequent()).filter(n => n.type === 'Link').map(n => n.props.href), creditLinks.map(link => link.href));
+const followUp = payjoyLinks[1];
+assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), [id('Registro comercial', followUp.href, followUp.label)]);
+assert.deepEqual(nodes(frequent()).filter(n => n.type === 'Link').map(n => n.props.href), [followUp.href]);
+assert.ok(nodes().filter(n => n.type === 'Link').every(n => !n.props.href.startsWith('/vendedor/payjoy/credito')));
 
-console.log('PASS: legacy migration + authorized IDs, new empty key precedence, defaults, remove/add persistence and focus, user switch isolation, blocked storage fallback, PayJoy ficha/seguimiento search + favorites with distinct URLs, unique authorized rename preserves favorites without accepting missing or ambiguous routes.');
+reset();
+const legacyFollowUp = id('Registro comercial', '/vendedor/payjoy/credito?tab=seguimiento', 'Seguimiento de extensiones');
+store.set(key('auditor:qa'), JSON.stringify([legacyFollowUp]));
+render({ groups, storageUserKey: 'auditor:qa' }); settle();
+assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), []);
+assert.ok(nodes().filter(n => n.type === 'Link').every(n => !n.props.href.startsWith('/vendedor/payjoy/')));
+
+reset();
+store.set(key('auditor:qa'), JSON.stringify([legacyFollowUp, id('Registro comercial', followUp.href, followUp.label)]));
+render({ groups: payjoyGroups, storageUserKey: 'auditor:qa' }); settle();
+assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), [id('Registro comercial', followUp.href, followUp.label)]);
+assert.equal(nodes(frequent()).filter(n => n.type === 'Link').length, 1);
+
+console.log('PASS: legacy migration + authorized IDs, new empty key precedence, defaults, remove/add persistence and focus, user switch isolation, blocked storage fallback, PayJoy extensiones/seguimiento search + favorites, old seguimiento migrates once only when authorized, removed ficha/missing/ambiguous routes remain hidden.');

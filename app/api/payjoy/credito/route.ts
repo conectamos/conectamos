@@ -17,7 +17,7 @@ function failure(error: unknown) {
   if (error instanceof PayJoyCreditError) return reply({ error: error.message, code: error.code }, error.status);
   const schemaMissing = ["P2021", "P2022"].includes(String((error as { code?: unknown })?.code));
   return reply({ code: schemaMissing ? "SCHEMA_REQUIRED" : "INTERNAL", error: schemaMissing
-    ? "La ficha requiere actualizar su base de datos. Contacta al administrador."
+    ? "El seguimiento requiere actualizar su base de datos. Contacta al administrador."
     : "No se pudo completar la consulta. Revisa el historial antes de volver a intentar." }, 503);
 }
 export async function GET() {

@@ -226,6 +226,6 @@ test("API exige sesión, permiso, origen, JSON y tamaño; no expone errores inte
   assert.equal(f.providerCalls.length, 0);
   const failed = setup({ beforeDb: () => { throw Object.assign(new Error("postgres://secret@host"), { code: "P2021" }); } });
   const result = await failed.route.GET(); assert.equal(result.status, 503);
-  assert.deepEqual(await result.json(), { code: "SCHEMA_REQUIRED", error: "La ficha requiere actualizar su base de datos. Contacta al administrador." });
+  assert.deepEqual(await result.json(), { code: "SCHEMA_REQUIRED", error: "El seguimiento requiere actualizar su base de datos. Contacta al administrador." });
   const ok = await setup().route.GET(); assert.equal(ok.headers.get("cache-control"), "private, no-store");
 });

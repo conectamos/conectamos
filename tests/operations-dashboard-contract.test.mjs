@@ -139,17 +139,22 @@ function operationsNavigation(props) {
   return { sidebar: sidebar.items, quick: tools.quickActions, catalog: (tools.groups || tools.toolGroups).flatMap(group => group.links) };
 }
 
-test("perfil AUDITOR recibe los dos accesos PayJoy en menú, acciones rápidas y catálogo", async () => {
-  const result = await runPage({ ...baseSession, rolNombre: "AUDITOR", perfilTipo: "AUDITOR", perfilTipoLabel: "Auditor" });
-  assert.equal(result.props.puedeVerExtensionesPayJoy, true);
-  const navigation = operationsNavigation(result.props);
-  const expected = [
-    { href: "/vendedor/payjoy/credito", label: "Ficha del crédito PayJoy" },
-    { href: "/vendedor/payjoy/credito?tab=seguimiento", label: "Seguimiento de extensiones" },
-  ];
-  for (const values of Object.values(navigation)) {
-    assert.deepEqual(values.filter(item => item.href.startsWith("/vendedor/payjoy/credito")).map(({ href, label }) => ({ href, label })), expected);
-    assert.equal(new Set(values.map(item => item.href)).size, values.length);
+test("ADMIN y AUDITOR ven seguimiento en menú, acciones y catálogo y conservan extensiones sin la ficha retirada", async () => {
+  for (const identity of [
+    { rolNombre: "AUDITOR", perfilTipo: "AUDITOR", perfilTipoLabel: "Auditor" },
+    { rolNombre: "ADMIN", perfilTipo: "AUDITOR", perfilTipoLabel: "Auditor" },
+    { rolNombre: "AUDITOR", perfilTipo: null, perfilId: null },
+    { rolNombre: "ADMIN", perfilTipo: "ADMINISTRADOR" },
+  ]) {
+    const result = await runPage({ ...baseSession, ...identity });
+    assert.equal(result.props.puedeVerExtensionesPayJoy, true);
+    const navigation = operationsNavigation(result.props);
+    for (const values of Object.values(navigation)) {
+      assert.ok(values.some(item => item.href === "/vendedor/payjoy/seguimiento" && item.label === "Seguimiento de extensiones"));
+      assert.ok(values.every(item => !item.href.startsWith("/vendedor/payjoy/credito") && !/Ficha del crédito|Crédito PayJoy/.test(item.label)));
+      assert.equal(new Set(values.map(item => item.href)).size, values.length);
+    }
+    assert.ok(navigation.catalog.some(item => item.href === "/vendedor/payjoy/extensiones"));
   }
 });
 
@@ -160,8 +165,8 @@ test("el permiso PayJoy controla también los enlaces de stand y evita accesos s
     for (const values of Object.values(restricted)) assert.ok(values.every(item => !item.href.startsWith("/vendedor/payjoy/")));
     const allowed = operationsNavigation({ ...result.props, ...stand, puedeVerExtensionesPayJoy: true });
     for (const values of Object.values(allowed)) {
-      assert.ok(values.some(item => item.href === "/vendedor/payjoy/credito"));
-      assert.ok(values.some(item => item.href === "/vendedor/payjoy/credito?tab=seguimiento"));
+      assert.ok(values.some(item => item.href === "/vendedor/payjoy/seguimiento"));
+      assert.ok(values.every(item => !item.href.startsWith("/vendedor/payjoy/credito")));
     }
   }
 });

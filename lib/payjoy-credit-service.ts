@@ -15,7 +15,7 @@ const LIMIT = 30;
 const STALE_MS = 180_000;
 const messages: Record<string, string> = {
   INVALID_INPUT: "Ingresa un código PayJoy o un IMEI de 15 o 16 dígitos.",
-  FORBIDDEN: "Tu perfil no tiene acceso a la ficha de PayJoy.",
+  FORBIDDEN: "Tu perfil no tiene acceso al seguimiento de extensiones PayJoy.",
   IDEMPOTENCY_CONFLICT: "Esta solicitud pertenece a otra consulta. Inicia una nueva consulta.",
   DEVICE_UNRESOLVED: "PayJoy no informó el código de este IMEI. Consulta con el código que empieza con D.",
   DEVICE_ASSOCIATION_CONFLICT: "La asociación del equipo es contradictoria. Solicita la revisión de un administrador.",
@@ -129,7 +129,7 @@ function extensionBase(row: PayJoyExtensionOperation): PayJoyExtensionFollowUp {
     followUp: {
       status: needsReview ? "REQUIERE_REVISION" : granted ? "SIN_COMPROBAR" : "NO_APLICA",
       checkId: null, checkedAt: null,
-      message: needsReview ? "Verifica el resultado de la extensión en PayJoy. Consultar la ficha no confirma su ejecución ni libera el bloqueo."
+      message: needsReview ? "Verifica el resultado de la extensión en PayJoy. Comprobar el equipo no confirma su ejecución ni libera el bloqueo."
         : granted ? "Aún no hay una consulta del equipo iniciada después de esta extensión."
           : "Esta operación no tiene una extensión aplicada y confirmada por PayJoy.",
       currentValidThrough: null, remainingBalance: null, currency: null, paidInFull: null, paymentAfterExtension: null,

@@ -1,4 +1,12 @@
-# Ficha de crédito y seguimiento PayJoy
+# Seguimiento de extensiones PayJoy
+
+## Cambio de alcance — 29 de octubre de 2026
+
+La ficha del crédito se retiró de la interfaz y de los accesos de todos los perfiles a solicitud del usuario. La pantalla vigente es `/vendedor/payjoy/seguimiento`; la ruta anterior `/vendedor/payjoy/credito` redirige al seguimiento. Se conservan la gestión de extensiones y sus comprobaciones posteriores. Los datos históricos y los lectores del proveedor permanecen disponibles para ese seguimiento, sin modificar el módulo de cartera ni el reporte 40/60.
+
+La integración revisada no incluye un contrato verificado para emitir o descargar paz y salvos. PayJoy Colombia informa que estas solicitudes se tramitan mediante sus canales de atención: https://www.payjoy.com/co/terminos-y-condiciones (consultado el 29 de octubre de 2026). No se implementó un endpoint supuesto ni se genera un certificado a partir del saldo o del estado `paidInFull`.
+
+Las siguientes secciones documentan la implementación original de los lectores y la trazabilidad que reutiliza el seguimiento.
 
 Implementación del 28 de octubre de 2026. Pantalla: `/vendedor/payjoy/credito`. API interna: `/api/payjoy/credito`. Este documento describe el código y la preparación del entorno; no acredita por sí mismo un despliegue ni una consulta real exitosa.
 

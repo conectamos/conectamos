@@ -50,7 +50,7 @@ export default function SalesRoleDashboard({ activity, coverageLabel, earnings, 
     { href: "/vendedor/lista-negra", icon: "warning", label: "Lista negra" },
     { href: "/vendedor/lista-precios", icon: "tag", label: "Lista de precios" },
     ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" } satisfies NavigationItem] : []),
-    ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/credito", icon: "document-search", label: "Crédito PayJoy" } satisfies NavigationItem] : []),
+    ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/seguimiento", icon: "clock", label: "Seguimiento de extensiones" } satisfies NavigationItem] : []),
   ];
   const quickActions: QuickAction[] = [
     { description: esApoyo ? "Iniciar un registro comercial" : "Registrar una venta nueva", href: "/vendedor/registros", icon: "document-add", label: esApoyo ? "Registrar venta" : "Nueva venta", primary: true },
@@ -59,8 +59,7 @@ export default function SalesRoleDashboard({ activity, coverageLabel, earnings, 
     { description: "Consultar referencias y precios", href: "/vendedor/lista-precios", icon: "tag", label: "Lista de precios" },
     ...(puedeVerExtensionesPayJoy ? [{ description: "Consultar opciones y gestionar el dispositivo", href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" } satisfies QuickAction] : []),
     ...(puedeVerExtensionesPayJoy ? [
-      { description: "Consultar el saldo y los datos del equipo", href: "/vendedor/payjoy/credito", icon: "document-search", label: "Ficha del crédito PayJoy" } satisfies QuickAction,
-      { description: "Revisar el estado posterior de tus gestiones", href: "/vendedor/payjoy/credito?tab=seguimiento", icon: "clock", label: "Seguimiento de extensiones" } satisfies QuickAction,
+      { description: "Revisar el estado posterior de tus gestiones", href: "/vendedor/payjoy/seguimiento", icon: "clock", label: "Seguimiento de extensiones" } satisfies QuickAction,
     ] : []),
   ];
   return <div className={styles.page}>
