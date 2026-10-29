@@ -119,6 +119,7 @@ function createReportModules(rows = fixtureSales, coverageSedes = sedes) {
     "@/lib/ventas-utils": ventasUtils,
     "@/lib/ventas-financieras": financieras,
     "@/lib/product-types": productTypes,
+    "@/lib/commercial-product-brand": loadTypeScript("lib/commercial-product-brand.ts", { "@/lib/product-types": productTypes }),
   });
   const report = loadTypeScript("lib/brand-sales-report.ts", {
     "@/lib/access-control": accessControl,

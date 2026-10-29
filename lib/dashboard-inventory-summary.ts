@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { esSedeRetiradaParaSupervisor } from "@/lib/sedes";
+import { MARCAS_VENDIDAS, resolveCommercialProductBrand } from "@/lib/commercial-product-brand";
 
 export type InventoryBrandReferenceSummary = {
   referencia: string;
@@ -26,20 +27,7 @@ export type InventoryAdminSummary = {
   marcas: InventoryBrandSummary[];
 };
 
-const MARCAS_RADAR = [
-  "APPLE",
-  "HONOR",
-  "SAMSUNG",
-  "INFINIX",
-  "MOTOROLA",
-  "OPPO",
-  "TECNO",
-  "XIAOMI",
-  "ZTE",
-];
-const ALIAS_MARCA_RADAR: Record<string, string> = {
-  IPHONE: "APPLE",
-};
+const MARCAS_RADAR = MARCAS_VENDIDAS;
 
 function normalizeReference(value: string | null | undefined) {
   return String(value || "SIN REFERENCIA")
@@ -48,27 +36,16 @@ function normalizeReference(value: string | null | undefined) {
     .toUpperCase();
 }
 
-function resolveBrand(reference: string) {
-  const words = reference.split(/[^A-Z0-9]+/).filter(Boolean);
-  const brand = MARCAS_RADAR.find((item) => words.includes(item));
-
-  if (brand) {
-    return brand;
-  }
-
-  const alias = Object.entries(ALIAS_MARCA_RADAR).find(([word]) =>
-    words.includes(word)
-  );
-
-  return alias?.[1] || "OTRAS REFERENCIAS";
-}
-
 function ensureReference(
   map: Map<string, InventoryBrandReferenceSummary>,
-  rawReference: string | null | undefined
+  rawReference: string | null | undefined,
+  tipoProducto?: string | null
 ) {
   const referencia = normalizeReference(rawReference);
-  const existing = map.get(referencia);
+  // Use the sales Top rules, while counting each available unit only once.
+  const marca = resolveCommercialProductBrand(referencia, tipoProducto);
+  const key = `${marca}\u0000${referencia}`;
+  const existing = map.get(key);
 
   if (existing) {
     return existing;
@@ -82,7 +59,7 @@ function ensureReference(
     sedesDetalle: [],
   };
 
-  map.set(referencia, next);
+  map.set(key, next);
   return next;
 }
 
@@ -106,6 +83,7 @@ export async function getAdminInventorySummary(options?: {
       },
       select: {
         referencia: true,
+        tipoProducto: true,
       },
     }),
     prisma.inventarioSede.findMany({
@@ -114,6 +92,7 @@ export async function getAdminInventorySummary(options?: {
       },
       select: {
         referencia: true,
+        tipoProducto: true,
         sede: {
           select: {
             nombre: true,
@@ -129,13 +108,13 @@ export async function getAdminInventorySummary(options?: {
   const referencias = new Map<string, InventoryBrandReferenceSummary>();
 
   for (const item of principalRows) {
-    const ref = ensureReference(referencias, item.referencia);
+    const ref = ensureReference(referencias, item.referencia, item.tipoProducto);
     ref.total += 1;
     ref.bodegaPrincipal += 1;
   }
 
   for (const item of sedeRowsVisibles) {
-    const ref = ensureReference(referencias, item.referencia);
+    const ref = ensureReference(referencias, item.referencia, item.tipoProducto);
     const sedeNombre = String(item.sede?.nombre || "Sede sin nombre").trim();
     ref.total += 1;
     ref.sedes += 1;
@@ -161,8 +140,8 @@ export async function getAdminInventorySummary(options?: {
     });
   }
 
-  for (const referencia of referencias.values()) {
-    const marca = resolveBrand(referencia.referencia);
+  for (const [key, referencia] of referencias) {
+    const marca = key.slice(0, key.indexOf("\u0000"));
     const group =
       brandMap.get(marca) ||
       ({
@@ -210,7 +189,7 @@ export async function getAdminInventorySummary(options?: {
     totalBodega: principalRows.length + sedeRowsVisibles.length,
     totalBodegaPrincipal: principalRows.length,
     totalSedes: sedeRowsVisibles.length,
-    referenciasEnBodega: referencias.size,
+    referenciasEnBodega: new Set(Array.from(referencias.values(), item => item.referencia)).size,
     marcas,
   };
 }

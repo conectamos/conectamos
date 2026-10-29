@@ -1,448 +1,176 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
+import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
+import styles from "./equipo-comercial.module.css";
 
-type SessionUser = {
-  id: number;
-  nombre: string;
-  usuario: string;
-  sedeId: number;
-  sedeNombre: string;
-  rolId: number;
-  rolNombre: string;
-};
-
-type OpcionCatalogo = {
-  id: number;
-  nombre: string;
-  aplicaIntermediacion?: boolean;
-  porcentajeIntermediacion?: number;
-};
-
-type CatalogoResponse = {
-  jaladores: OpcionCatalogo[];
-  cerradores: OpcionCatalogo[];
-  financieras: OpcionCatalogo[];
-};
-
+type SessionUser = { id: number; nombre: string; usuario: string; sedeId: number; sedeNombre: string; rolId: number; rolNombre: string };
+type OpcionCatalogo = { id: number; nombre: string; aplicaIntermediacion?: boolean; porcentajeIntermediacion?: number };
+type CatalogoResponse = { jaladores: OpcionCatalogo[]; cerradores: OpcionCatalogo[]; financieras: OpcionCatalogo[] };
 type TipoCatalogo = "JALADOR" | "CERRADOR" | "FINANCIERA";
-
-const tipoMeta: Record<
-  TipoCatalogo,
-  {
-    titulo: string;
-    descripcion: string;
-    badge: string;
-    ring: string;
-    text: string;
-    button: string;
-  }
-> = {
-  JALADOR: {
-    titulo: "Jaladores",
-    descripcion: "Equipo comercial que impulsa la venta desde la prospeccion.",
-    badge: "Operacion comercial",
-    ring: "ring-blue-100",
-    text: "text-blue-700",
-    button: "bg-blue-600 hover:bg-blue-700",
-  },
-  CERRADOR: {
-    titulo: "Cerradores",
-    descripcion: "Responsables del cierre y formalizacion final de la venta.",
-    badge: "Cierre comercial",
-    ring: "ring-emerald-100",
-    text: "text-emerald-700",
-    button: "bg-emerald-600 hover:bg-emerald-700",
-  },
-  FINANCIERA: {
-    titulo: "Financieras",
-    descripcion: "Catalogo de entidades financieras disponibles para ventas y abonos.",
-    badge: "Cobertura financiera",
-    ring: "ring-amber-100",
-    text: "text-amber-700",
-    button: "bg-amber-600 hover:bg-amber-700",
-  },
+type DeleteTarget = OpcionCatalogo & { tipo: TipoCatalogo };
+const tipos: TipoCatalogo[] = ["JALADOR", "CERRADOR", "FINANCIERA"];
+const tipoMeta: Record<TipoCatalogo, { titulo: string; singular: string; key: keyof CatalogoResponse; icon: DashboardIconName }> = {
+  JALADOR: { titulo: "Jaladores", singular: "jalador", key: "jaladores", icon: "users" },
+  CERRADOR: { titulo: "Cerradores", singular: "cerrador", key: "cerradores", icon: "user" },
+  FINANCIERA: { titulo: "Financieras", singular: "financiera", key: "financieras", icon: "cash" },
 };
+const navigationItems: { href: string; label: string; icon: DashboardIconName }[] = [
+  { href: "/dashboard", label: "Inicio", icon: "home" }, { href: "/ventas", label: "Ventas", icon: "sales" },
+  { href: "/inventario", label: "Inventario", icon: "inventory" }, { href: "/prestamos", label: "Préstamos", icon: "loans" },
+  { href: "/caja", label: "Caja", icon: "cash" }, { href: "/dashboard/aprobaciones", label: "Aprobaciones", icon: "approvals" },
+  { href: "/dashboard/reportes", label: "Reportes", icon: "reports" }, { href: "/dashboard/sedes", label: "Configuración", icon: "settings" },
+];
+const normalizarBusqueda = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es").trim();
+function esCatalogo(value: unknown): value is CatalogoResponse {
+  if (!value || typeof value !== "object") return false;
+  return ["jaladores", "cerradores", "financieras"].every(key => {
+    const items = (value as Record<string, unknown>)[key];
+    return Array.isArray(items) && items.every(item => item && Number.isInteger(item.id) && item.id > 0 && typeof item.nombre === "string");
+  });
+}
+
+function ConfirmarRetiro({ target, busy, error, onCancel, onConfirm }: {
+  target: DeleteTarget; busy: boolean; error: string; onCancel: () => void; onConfirm: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    if (element && !element.open) element.showModal();
+    cancel.current?.focus();
+    return () => { if (element?.open) element.close(); };
+  }, []);
+  return <dialog ref={dialog} className={styles.dialog} role="alertdialog" aria-modal="true" aria-labelledby="catalog-delete-title" aria-describedby="catalog-delete-description" onCancel={event => { event.preventDefault(); if (!busy) onCancel(); }}>
+    <header className={styles.dialogHeading}><span className={styles.iconBox}><DashboardIcon name="warning" /></span><div><p>Catálogo comercial</p><h2 id="catalog-delete-title">Eliminar {tipoMeta[target.tipo].singular}</h2></div><button type="button" className={styles.iconButton} aria-label="Cerrar confirmación" disabled={busy} onClick={onCancel}><DashboardIcon name="close" /></button></header>
+    <div className={styles.dialogBody}><strong className={styles.targetName}>{target.nombre}</strong><p id="catalog-delete-description">Dejará de estar disponible para seleccionar en nuevas ventas y abonos. Los registros anteriores conservan su información.</p>{error && <p className={styles.error} role="alert">{error}</p>}</div>
+    <footer className={styles.dialogFooter}><button ref={cancel} type="button" className={styles.button} disabled={busy} onClick={onCancel}>Cancelar</button><button type="button" className={`${styles.button} ${styles.primary}`} disabled={busy} onClick={onConfirm}><DashboardIcon name={busy ? "refresh" : "close"} />{busy ? "Eliminando…" : "Eliminar del catálogo"}</button></footer>
+  </dialog>;
+}
 
 export default function EquipoComercialPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
-  const [catalogo, setCatalogo] = useState<CatalogoResponse>({
-    jaladores: [],
-    cerradores: [],
-    financieras: [],
-  });
+  const [catalogo, setCatalogo] = useState<CatalogoResponse>({ jaladores: [], cerradores: [], financieras: [] });
   const [tipo, setTipo] = useState<TipoCatalogo>("JALADOR");
   const [nombre, setNombre] = useState("");
   const [aplicaIntermediacion, setAplicaIntermediacion] = useState(false);
   const [porcentajeIntermediacion, setPorcentajeIntermediacion] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error">("success");
+  const [loadError, setLoadError] = useState("");
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [eliminandoId, setEliminandoId] = useState<number | null>(null);
-
-  const rolActual = user?.rolNombre?.toUpperCase() || "";
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [search, setSearch] = useState("");
+  const [pages, setPages] = useState<Record<TipoCatalogo, number>>({ JALADOR: 1, CERRADOR: 1, FINANCIERA: 1 });
+  const mutationLock = useRef(false);
+  const loadSequence = useRef(0);
+  const rolActual = user?.rolNombre?.trim().toUpperCase() || "";
   const esAdmin = ["ADMIN", "AUDITOR"].includes(rolActual);
   const puedeEliminar = rolActual === "ADMIN";
+  const ocupado = guardando || eliminandoId !== null;
 
-  const cargarTodo = async () => {
+  const cargarTodo = useCallback(async () => {
+    if (mutationLock.current) return;
+    const sequence = ++loadSequence.current;
+    setCargando(true); setLoadError("");
     try {
       const [resSession, resCatalogo] = await Promise.all([
-        fetch("/api/session", { cache: "no-store" }),
-        fetch("/api/ventas/catalogo-personal", { cache: "no-store" }),
+        fetch("/api/session", { cache: "no-store" }), fetch("/api/ventas/catalogo-personal", { cache: "no-store" }),
       ]);
-
-      const sessionData = await resSession.json();
-      const catalogoData = await resCatalogo.json();
-
-      if (resSession.ok) {
-        setUser(sessionData);
-      }
-
-      if (resCatalogo.ok) {
-        setCatalogo(catalogoData);
-      } else {
-        setMensaje(catalogoData.error || "No se pudo cargar el catalogo comercial");
-      }
-    } catch {
-      setMensaje("Error cargando el catalogo comercial");
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  useEffect(() => {
-    void cargarTodo();
+      const [sessionData, catalogoData] = await Promise.all([resSession.json(), resCatalogo.json()]);
+      if (sequence !== loadSequence.current) return;
+      if (!resSession.ok || typeof sessionData?.rolNombre !== "string") throw new Error("No se pudo validar la sesión. Actualiza la página o inicia sesión nuevamente.");
+      setUser(sessionData);
+      if (!resCatalogo.ok || !esCatalogo(catalogoData)) throw new Error(catalogoData?.error || "No se pudo cargar el catálogo comercial.");
+      setCatalogo(catalogoData);
+    } catch (error) {
+      if (sequence === loadSequence.current) setLoadError(error instanceof Error ? error.message : "Error cargando el catálogo comercial.");
+    } finally { if (sequence === loadSequence.current) setCargando(false); }
   }, []);
-
-  useEffect(() => {
-    if (tipo !== "FINANCIERA") {
-      setAplicaIntermediacion(false);
-      setPorcentajeIntermediacion("");
-    }
-  }, [tipo]);
+  useEffect(() => { void cargarTodo(); return () => { loadSequence.current += 1; }; }, [cargarTodo]);
+  useEffect(() => { if (tipo !== "FINANCIERA") { setAplicaIntermediacion(false); setPorcentajeIntermediacion(""); } }, [tipo]);
 
   const agregarRegistro = async () => {
+    if (mutationLock.current || !esAdmin || cargando || loadError) return;
+    const nombreLimpio = nombre.trim();
+    const porcentaje = Number(porcentajeIntermediacion.replace(",", ".") || 0);
+    if (!nombreLimpio || (tipo === "FINANCIERA" && aplicaIntermediacion && (!Number.isFinite(porcentaje) || porcentaje <= 0))) {
+      setMessageType("error"); setMensaje(!nombreLimpio ? "Debes ingresar un nombre." : "Define un porcentaje válido de intermediación."); return;
+    }
+    mutationLock.current = true; setGuardando(true); setMensaje("");
     try {
-      setGuardando(true);
-      setMensaje("");
-
-      const nombreLimpio = nombre.trim();
-
-      if (!nombreLimpio) {
-        setMensaje("Debes ingresar un nombre");
-        return;
-      }
-
-      if (
-        tipo === "FINANCIERA" &&
-        aplicaIntermediacion &&
-        Number(porcentajeIntermediacion || 0) <= 0
-      ) {
-        setMensaje("Define un porcentaje valido de intermediacion");
-        return;
-      }
-
       const res = await fetch("/api/ventas/catalogo-personal", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          tipo,
-          nombre: nombreLimpio,
-          aplicaIntermediacion: tipo === "FINANCIERA" ? aplicaIntermediacion : false,
-          porcentajeIntermediacion:
-            tipo === "FINANCIERA" && aplicaIntermediacion
-              ? Number(porcentajeIntermediacion || 0)
-              : 0,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo, nombre: nombreLimpio, aplicaIntermediacion: tipo === "FINANCIERA" ? aplicaIntermediacion : false, porcentajeIntermediacion: tipo === "FINANCIERA" && aplicaIntermediacion ? porcentaje : 0 }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMensaje(data.error || "No se pudo guardar el registro");
-        return;
-      }
-
-      setCatalogo(data.catalogo);
-      setNombre("");
-      setAplicaIntermediacion(false);
-      setPorcentajeIntermediacion("");
-      setMensaje(data.mensaje || "Registro agregado correctamente");
-    } catch {
-      setMensaje("Error guardando el registro");
-    } finally {
-      setGuardando(false);
-    }
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.ok !== true || !esCatalogo(data.catalogo)) throw new Error(data?.error || "No se pudo confirmar el guardado. Conservamos los datos para reintentar.");
+      setCatalogo(data.catalogo); setNombre(""); setAplicaIntermediacion(false); setPorcentajeIntermediacion("");
+      setMessageType("success"); setMensaje(data.mensaje || "Registro agregado correctamente.");
+    } catch (error) { setMessageType("error"); setMensaje(error instanceof Error ? error.message : "Error guardando el registro. Intenta nuevamente."); }
+    finally { mutationLock.current = false; setGuardando(false); }
   };
-
   const eliminarRegistro = async (id: number) => {
-    const confirmado = window.confirm(
-      "Este registro dejara de estar disponible en ventas. Deseas continuar?"
-    );
-
-    if (!confirmado) {
-      return;
-    }
-
+    if (mutationLock.current || !puedeEliminar || !deleteTarget || deleteTarget.id !== id) return;
+    mutationLock.current = true; setEliminandoId(id); setDeleteError(""); setMensaje("");
     try {
-      setEliminandoId(id);
-      setMensaje("");
-
-      const res = await fetch(`/api/ventas/catalogo-personal?id=${id}`, {
-        method: "DELETE",
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMensaje(data.error || "No se pudo eliminar el registro");
-        return;
-      }
-
-      setCatalogo(data.catalogo);
-      setMensaje(data.mensaje || "Registro eliminado correctamente");
-    } catch {
-      setMensaje("Error eliminando el registro");
-    } finally {
-      setEliminandoId(null);
-    }
+      const res = await fetch(`/api/ventas/catalogo-personal?id=${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.ok !== true || !esCatalogo(data.catalogo) || tipos.some(item => data.catalogo[tipoMeta[item].key].some((entry: OpcionCatalogo) => entry.id === id))) throw new Error(data?.error || "No se pudo confirmar la eliminación. Intenta nuevamente.");
+      setCatalogo(data.catalogo); setDeleteTarget(null); setMessageType("success"); setMensaje(data.mensaje || "Registro eliminado del catálogo.");
+    } catch (error) { setDeleteError(error instanceof Error ? error.message : "Error eliminando el registro. Intenta nuevamente."); }
+    finally { mutationLock.current = false; setEliminandoId(null); }
   };
 
-  const seccionCatalogo = (
-    tipoActual: TipoCatalogo,
-    items: OpcionCatalogo[]
-  ) => {
-    const meta = tipoMeta[tipoActual];
-
-    return (
-      <section
-        className={`rounded-[30px] bg-white p-6 shadow-sm ring-1 ${meta.ring}`}
-      >
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-              {meta.badge}
-            </div>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-              {meta.titulo}
-            </h2>
-            <p className="mt-2 text-sm text-slate-500">{meta.descripcion}</p>
-          </div>
-
-          <div className={`text-sm font-semibold ${meta.text}`}>
-            {items.length} registro{items.length === 1 ? "" : "s"}
-          </div>
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          {items.length === 0 ? (
-            <div className="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-              No hay registros en esta lista.
-            </div>
-          ) : (
-            items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
-              >
-                <span className="text-sm font-semibold text-slate-900">
-                  {item.nombre}
-                </span>
-                {tipoActual === "FINANCIERA" && (
-                  <span className={`rounded-xl px-3 py-1 text-[11px] font-semibold ${
-                    item.aplicaIntermediacion
-                      ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
-                      : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                  }`}>
-                    {item.aplicaIntermediacion
-                      ? `Intermediacion ${Number(item.porcentajeIntermediacion || 0)}%`
-                      : "Sin intermediacion"}
-                  </span>
-                )}
-                {puedeEliminar && (
-                  <button
-                    type="button"
-                    onClick={() => void eliminarRegistro(item.id)}
-                    disabled={eliminandoId === item.id}
-                    className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {eliminandoId === item.id ? "Eliminando..." : "Eliminar"}
-                  </button>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-    );
+  const query = normalizarBusqueda(search);
+  const filtered = Object.fromEntries(tipos.map(item => [tipoMeta[item].key, catalogo[tipoMeta[item].key].filter(entry => normalizarBusqueda(entry.nombre).includes(query))])) as CatalogoResponse;
+  const total = tipos.reduce((sum, item) => sum + catalogo[tipoMeta[item].key].length, 0);
+  const totalFiltrado = tipos.reduce((sum, item) => sum + filtered[tipoMeta[item].key].length, 0);
+  const numero = (value: number) => value.toLocaleString("es-CO");
+  const seccionCatalogo = (tipoActual: TipoCatalogo) => {
+    const meta = tipoMeta[tipoActual]; const items = filtered[meta.key];
+    const totalPages = Math.max(1, Math.ceil(items.length / 10)); const page = Math.min(pages[tipoActual], totalPages); const start = (page - 1) * 10;
+    const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1).filter(value => value === 1 || value === totalPages || Math.abs(value - page) <= 1);
+    return <section className={styles.catalogCard} key={tipoActual} aria-labelledby={`title-${tipoActual}`}>
+      <header className={styles.cardHeading}><span className={styles.iconBox}><DashboardIcon name={meta.icon} /></span><div><h3 id={`title-${tipoActual}`}>{meta.titulo}</h3><p>{numero(catalogo[meta.key].length)} en el catálogo</p></div><span className={styles.count}>{numero(items.length)}</span></header>
+      <div className={styles.columnHeading}><span>Nombre</span><span>{tipoActual === "FINANCIERA" ? "Intermediación / Acción" : "Acción"}</span></div>
+      <ul className={styles.rows}>{items.slice(start, start + 10).map(item => <li key={item.id}>
+        <strong>{item.nombre}</strong><div className={styles.rowActions}>{tipoActual === "FINANCIERA" && <span className={`${styles.financeBadge} ${item.aplicaIntermediacion ? styles.withFee : ""}`}>{item.aplicaIntermediacion ? `${Number(item.porcentajeIntermediacion || 0).toLocaleString("es-CO", { maximumFractionDigits: 6 })}%` : "Sin intermediación"}</span>}
+          {puedeEliminar ? <button type="button" className={styles.deleteButton} disabled={ocupado} aria-label={`Eliminar ${meta.singular} ${item.nombre}`} onClick={() => { if (!mutationLock.current) { setDeleteTarget({ ...item, tipo: tipoActual }); setDeleteError(""); } }}><DashboardIcon name="close" /><span>Eliminar</span></button> : <span className={styles.readOnly}><DashboardIcon name="lock" /><span>Solo consulta</span></span>}
+        </div></li>)}</ul>
+      {!items.length && <div className={styles.empty}><DashboardIcon name={search ? "search" : meta.icon} /><strong>{search ? "Sin coincidencias" : "Sin registros"}</strong><p>{search ? "Prueba con otro nombre." : `Agrega un registro al catálogo de ${meta.titulo.toLowerCase()}.`}</p></div>}
+      <footer className={styles.cardFooter}><span>{items.length ? `${start + 1}–${Math.min(start + 10, items.length)} de ${numero(items.length)}` : "0 resultados"}</span><nav aria-label={`Páginas de ${meta.titulo}`}><button type="button" aria-label={`Anterior en ${meta.titulo}`} disabled={page === 1} onClick={() => setPages(current => ({ ...current, [tipoActual]: page - 1 }))}><DashboardIcon name="chevron" /></button>{pageNumbers.map((number, index) => <span key={number}>{index > 0 && number - pageNumbers[index - 1] > 1 && <span className={styles.ellipsis}>…</span>}<button type="button" aria-label={`Página ${number} de ${meta.titulo}`} aria-current={number === page ? "page" : undefined} onClick={() => setPages(current => ({ ...current, [tipoActual]: number }))}>{number}</button></span>)}<button type="button" aria-label={`Siguiente en ${meta.titulo}`} disabled={page === totalPages} onClick={() => setPages(current => ({ ...current, [tipoActual]: page + 1 }))}><DashboardIcon name="chevron" /></button></nav></footer>
+    </section>;
   };
 
-  if (cargando) {
-    return (
-      <div className="min-h-screen bg-[#eef2f7] px-4 py-8">
-        <div className="mx-auto max-w-6xl rounded-[32px] bg-white px-8 py-12 shadow-sm ring-1 ring-slate-200">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Ventas
-          </p>
-          <h1 className="mt-3 text-3xl font-black text-slate-950">
-            Cargando equipo comercial...
-          </h1>
-        </div>
-      </div>
-    );
-  }
-
-  if (!esAdmin) {
-    return (
-      <div className="min-h-screen bg-[#eef2f7] px-4 py-8">
-        <div className="mx-auto max-w-4xl rounded-[32px] bg-white p-8 shadow-sm ring-1 ring-slate-200">
-          <div className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">
-            Acceso restringido
-          </div>
-          <h1 className="mt-4 text-3xl font-black text-slate-950">
-            Solo el administrador puede gestionar jaladores, cerradores y financieras
-          </h1>
-          <p className="mt-3 text-sm text-slate-500">
-            Esta pantalla esta reservada para mantenimiento del catalogo comercial y financiero.
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/ventas"
-              className="inline-flex rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              Volver a ventas
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-[#eef2f7] px-4 py-8">
-      <div className="mx-auto max-w-6xl">
-        <section className="overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,#0f172a_0%,#111827_48%,#7f1d1d_100%)] px-6 py-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:px-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/90">
-                Ventas
-              </div>
-
-              <h1 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-                Equipo comercial
-              </h1>
-
-              <p className="mt-3 text-sm leading-6 text-slate-200 md:text-base">
-                Administra el catalogo de jaladores, cerradores y financieras
-                que aparece en los formularios de ventas y abonos.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/ventas/nuevo"
-                className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-center text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
-              >
-                Nueva venta
-              </Link>
-              <Link
-                href="/ventas"
-                className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                Volver a ventas
-              </Link>
-            </div>
-          </div>
+  return <div className={styles.page}>
+    <header className={styles.topbar}><Link href="/dashboard" className={styles.brand} aria-label="CONECTAMOS, Inicio"><Image src="/branding/conectamos-logo.png" width={42} height={42} alt="" priority /><strong>CONECTAMOS</strong></Link>
+      {esAdmin && <nav className={styles.navigation} aria-label="Navegación principal">{navigationItems.map(item => <Link key={item.href} href={item.href} className={item.href === "/ventas" ? styles.activeNav : ""} aria-current={item.href === "/ventas" ? "page" : undefined}><DashboardIcon name={item.icon} /><span>{item.label}</span></Link>)}<Link href="/cierre"><DashboardIcon name="document" /><span>Cierre</span></Link></nav>}
+      {user && <div className={styles.profileSlot}><SalesProfile name={user.nombre || user.usuario} role={user.rolNombre} /></div>}
+    </header>
+    <main className={styles.main}><div className={styles.breadcrumb}><Link href="/ventas">Ventas</Link><DashboardIcon name="chevron" /><span>Equipo comercial</span></div>
+      <header className={styles.heading}><div><h1>Equipo comercial</h1><p>Jaladores, cerradores y financieras.</p></div><div className={styles.headingActions}><Link href="/ventas" className={styles.button}><DashboardIcon name="arrow" />Volver a ventas</Link>{esAdmin && <Link href="/ventas/nuevo" className={`${styles.button} ${styles.primary}`}><span aria-hidden="true" className={styles.plus}>+</span>Nueva venta</Link>}</div></header>
+      {cargando ? <div className={styles.state} role="status"><DashboardIcon name="refresh" /><h2>Cargando equipo comercial…</h2><p>Consultando los catálogos.</p></div> : loadError ? <div className={styles.state} role="alert"><DashboardIcon name="warning" /><h2>No se pudo cargar el catálogo</h2><p>{loadError}</p><button type="button" className={styles.button} onClick={() => void cargarTodo()}><DashboardIcon name="refresh" />Reintentar</button></div> : !esAdmin ? <div className={styles.state}><DashboardIcon name="lock" /><h2>Acceso restringido</h2><p>Solo ADMIN y AUDITOR pueden gestionar el catálogo comercial.</p><Link href="/ventas" className={styles.button}>Volver a ventas</Link></div> : <>
+        <section className={styles.metrics} aria-label="Resumen del catálogo">{[{ label: "Registros del catálogo", value: total, icon: "catalog" as const }, ...tipos.map(item => ({ label: tipoMeta[item].titulo, value: catalogo[tipoMeta[item].key].length, icon: tipoMeta[item].icon }))].map(item => <div key={item.label}><span><DashboardIcon name={item.icon} /></span><div><strong>{numero(item.value)}</strong><p>{item.label}</p></div></div>)}</section>
+        {mensaje && <div className={`${styles.notice} ${messageType === "error" ? styles.noticeError : ""}`} role={messageType === "error" ? "alert" : "status"}><DashboardIcon name={messageType === "error" ? "warning" : "approvals"} /><span>{mensaje}</span><button type="button" className={styles.iconButton} aria-label="Cerrar mensaje" onClick={() => setMensaje("")}><DashboardIcon name="close" /></button></div>}
+        <section className={styles.formCard} aria-labelledby="new-catalog-title"><header className={styles.formHeading}><span className={styles.iconBox}><DashboardIcon name="document-add" /></span><div><h2 id="new-catalog-title">Nuevo registro</h2><p>Disponible en los formularios de ventas y abonos.</p></div></header>
+          <form onSubmit={event => { event.preventDefault(); void agregarRegistro(); }}><fieldset className={styles.formFields} disabled={ocupado}><legend className={styles.srOnly}>Datos del nuevo registro</legend>
+            <label>Tipo de registro<select value={tipo} onChange={event => setTipo(event.target.value as TipoCatalogo)}><option value="JALADOR">Jalador</option><option value="CERRADOR">Cerrador</option><option value="FINANCIERA">Financiera</option></select></label>
+            <label className={styles.nameField}>Nombre<input required value={nombre} onChange={event => setNombre(event.target.value)} placeholder={`Nombre del ${tipo === "FINANCIERA" ? "registro financiero" : tipoMeta[tipo].singular}`} /></label>
+            <button type="submit" className={`${styles.button} ${styles.primary}`}><DashboardIcon name={guardando ? "refresh" : "document-add"} />{guardando ? "Guardando…" : "Agregar registro"}</button>
+            {tipo === "FINANCIERA" && <div className={styles.financeFields}><label className={styles.checkbox}><input type="checkbox" checked={aplicaIntermediacion} onChange={event => setAplicaIntermediacion(event.target.checked)} />Aplica intermediación</label><label>Porcentaje de intermediación<span className={styles.percentInput}><input required={aplicaIntermediacion} disabled={!aplicaIntermediacion} inputMode="decimal" value={porcentajeIntermediacion} placeholder="0" onChange={event => setPorcentajeIntermediacion(event.target.value.replace(/[^\d.,]/g, "").replace(/([.,].*?)[.,].*/g, "$1"))} /><span aria-hidden="true">%</span></span></label><p>Se conserva la regla de intermediación de cada financiera.</p></div>}
+          </fieldset></form>
         </section>
-
-        {mensaje && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 shadow-sm">
-            {mensaje}
-          </div>
-        )}
-
-        <section className="mt-6 rounded-[30px] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_220px]">
-            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-              Tipo de registro
-              <select
-                value={tipo}
-                onChange={(event) => setTipo(event.target.value as TipoCatalogo)}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              >
-                <option value="JALADOR">Jalador</option>
-                <option value="CERRADOR">Cerrador</option>
-                <option value="FINANCIERA">Financiera</option>
-              </select>
-            </label>
-
-            <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-              Nombre
-              <input
-                value={nombre}
-                onChange={(event) => setNombre(event.target.value)}
-                placeholder={`Agregar ${
-                  tipo === "JALADOR"
-                    ? "jalador"
-                    : tipo === "CERRADOR"
-                      ? "cerrador"
-                      : "financiera"
-                }`}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <div className="flex flex-col justify-end">
-              <button
-                type="button"
-                onClick={() => void agregarRegistro()}
-                disabled={guardando}
-                className={`rounded-2xl px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-70 ${tipoMeta[tipo].button}`}
-              >
-                {guardando ? "Guardando..." : "Agregar"}
-              </button>
-            </div>
-          </div>
-
-          {tipo === "FINANCIERA" && (
-            <div className="mt-5 grid gap-4 rounded-[24px] border border-amber-100 bg-amber-50/60 p-4 md:grid-cols-[220px_minmax(0,1fr)]">
-              <label className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
-                <input
-                  type="checkbox"
-                  checked={aplicaIntermediacion}
-                  onChange={(event) => setAplicaIntermediacion(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-300"
-                />
-                Aplica intermediacion
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm font-semibold text-slate-700">
-                Porcentaje de intermediacion
-                <input
-                  value={porcentajeIntermediacion}
-                  onChange={(event) =>
-                    setPorcentajeIntermediacion(
-                      event.target.value.replace(/[^\d.]/g, "").replace(/(\..*?)\..*/g, "$1")
-                    )
-                  }
-                  disabled={!aplicaIntermediacion}
-                  placeholder="%"
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                />
-              </label>
-            </div>
-          )}
-        </section>
-
-        <div className="mt-6 grid gap-6 xl:grid-cols-3">
-          {seccionCatalogo("JALADOR", catalogo.jaladores)}
-          {seccionCatalogo("CERRADOR", catalogo.cerradores)}
-          {seccionCatalogo("FINANCIERA", catalogo.financieras)}
-        </div>
-      </div>
-    </div>
-  );
+        <section aria-labelledby="catalogs-title"><header className={styles.catalogsHeading}><div><h2 id="catalogs-title">Catálogos comerciales</h2><p>{numero(totalFiltrado)} {totalFiltrado === 1 ? "registro" : "registros"}{search && ` de ${numero(total)}`}</p></div><div className={styles.searchTools}><label className={styles.search}><DashboardIcon name="search" /><input aria-label="Buscar en los catálogos" value={search} onChange={event => { setSearch(event.target.value); setPages({ JALADOR: 1, CERRADOR: 1, FINANCIERA: 1 }); }} placeholder="Buscar nombre o financiera…" />{search && <button type="button" aria-label="Limpiar búsqueda" onClick={() => { setSearch(""); setPages({ JALADOR: 1, CERRADOR: 1, FINANCIERA: 1 }); }}><DashboardIcon name="close" /></button>}</label><button type="button" className={styles.button} disabled={ocupado} onClick={() => void cargarTodo()}><DashboardIcon name="refresh" />Actualizar</button></div></header><div className={styles.catalogGrid}>{tipos.map(seccionCatalogo)}</div></section>
+        <p className={styles.permissionNote}><DashboardIcon name="shield" />{puedeEliminar ? "Administración del catálogo · ADMIN" : "Puedes agregar registros. La eliminación está reservada a ADMIN."}</p>
+      </>}
+    </main>
+    {deleteTarget && <ConfirmarRetiro key={deleteTarget.id} target={deleteTarget} busy={eliminandoId !== null} error={deleteError} onCancel={() => { if (!mutationLock.current) { setDeleteTarget(null); setDeleteError(""); } }} onConfirm={() => void eliminarRegistro(deleteTarget.id)} />}
+  </div>;
 }

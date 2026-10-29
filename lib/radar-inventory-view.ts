@@ -14,7 +14,7 @@ export type RadarQuery = {
 
 export type RadarReference = InventoryBrandReferenceSummary & { marca: string };
 
-const BRAND_TAB_ORDER = ["APPLE", "HONOR", "SAMSUNG", "MOTOROLA", "XIAOMI", "INFINIX"];
+const BRAND_TAB_ORDER = ["IPHONE", "HONOR", "SAMSUNG", "MOTOROLA", "XIAOMI", "INFINIX", "VIVO", "ZTE", "POCO", "OPPO", "TECNO", "ELECTRODOMÉSTICOS", "CONSOLAS", "PORTÁTILES", "FLECHAS", "TABLETS"];
 const PAGE_SIZE = 10;
 
 function normalizeSearch(value: string) {
@@ -31,7 +31,9 @@ export function buildRadarView(
   requestedPage = 1
 ) {
   const search = normalizeSearch(query.search);
-  const selectedBrand = normalizeSearch(query.brand) || "TODAS";
+  const normalizedBrand = normalizeSearch(query.brand) || "TODAS";
+  // Older bookmarked export URLs used APPLE for the iPhone group.
+  const selectedBrand = normalizedBrand === "APPLE" ? "IPHONE" : normalizedBrand === "OTRAS REFERENCIAS" ? "OTRAS MARCAS" : normalizedBrand;
   const brandIndexes = new Map(summary.marcas.map((brand, index) => [brand.marca, index]));
   const brands: InventoryBrandSummary[] = summary.marcas
     .map((brand) => {
@@ -89,7 +91,7 @@ export function buildRadarView(
     totalBodega: 0,
     totalBodegaPrincipal: 0,
     totalSedes: 0,
-    referenciasEnBodega: references.length,
+    referenciasEnBodega: new Set(references.map(reference => reference.referencia)).size,
   };
 
   for (const reference of references) {

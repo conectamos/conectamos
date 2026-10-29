@@ -22,6 +22,8 @@ function load(path, imports = {}, injected = {}, transform = text => text) {
 }
 const access = load('lib/access-control.ts');
 const sedes = load('lib/sedes.ts');
+const productTypes = load("lib/product-types.ts");
+const productBrands = load("lib/commercial-product-brand.ts", { "@/lib/product-types": productTypes });
 const administrator = { id: 10, nombre: 'Administrador QA', rolNombre: 'ADMIN', perfilTipo: 'ADMINISTRADOR', sedeId: 1, sedeNombre: 'SEDE 1' };
 const supervisor = { ...administrator, rolNombre: 'SUPERVISOR', perfilTipo: 'SUPERVISOR_TIENDA' };
 const principalRows = [
@@ -46,7 +48,7 @@ function summaryProbe({ principal = principalRows, branches = sedeRows, fail = f
     inventarioPrincipal: { findMany: async args => { calls.push({ model: 'principal', ...args }); if (fail) throw Error('Inventario QA no disponible'); return principal.filter(row => row.estado === args.where.estado); } },
     inventarioSede: { findMany: async args => { calls.push({ model: 'sede', ...args }); if (fail) throw Error('Inventario QA no disponible'); return branches.filter(row => row.estadoActual === args.where.estadoActual); } },
   };
-  const library = load('lib/dashboard-inventory-summary.ts', { '@/lib/prisma': { __esModule: true, default: database }, '@/lib/sedes': sedes });
+  const library = load('lib/dashboard-inventory-summary.ts', { '@/lib/prisma': { __esModule: true, default: database }, '@/lib/sedes': sedes, '@/lib/commercial-product-brand': productBrands });
   return { calls, database, ...library };
 }
 
@@ -58,7 +60,7 @@ test('disponibilidad conserva BODEGA y no duplica un traslado de principal a sed
   assert.deepEqual(instance.calls.map(call => call.where), [{ estado: 'BODEGA' }, { estadoActual: 'BODEGA' }]);
   const motorola = result.marcas.find(brand => brand.marca === 'MOTOROLA');
   assert.equal(motorola.total, 1); assert.equal(motorola.referencias[0].bodegaPrincipal, 0); assert.equal(motorola.referencias[0].sedes, 1);
-  const apple = result.marcas.find(brand => brand.marca === 'APPLE');
+  const apple = result.marcas.find(brand => brand.marca === 'IPHONE');
   assert.equal(apple.total, 3); assert.equal(apple.referencias.length, 1); assert.equal(apple.referencias[0].referencia, 'IPHONE 13');
   assert.deepEqual(apple.referencias[0].sedesDetalle, [{ sede: 'SEDE 1', total: 1 }]);
   assert.equal(result.marcas.reduce((total, brand) => total + brand.total, 0), result.totalBodega);
@@ -84,7 +86,7 @@ test('detalle de referencia agrupa y ordena cantidades por sede sin perder su to
   ];
   const summary = await summaryProbe({ principal: [{ referencia: 'IPHONE QA', estado: 'BODEGA' }], branches }).getAdminInventorySummary();
   const { buildRadarView } = viewLibrary();
-  const result = buildRadarView(summary, { search: 'QA', location: 'TODAS', brand: 'APPLE' }, 1);
+  const result = buildRadarView(summary, { search: 'QA', location: 'TODAS', brand: 'IPHONE' }, 1);
   assert.equal(result.references.length, 1); const ref = result.references[0];
   assert.equal(ref.bodegaPrincipal, 1); assert.equal(ref.sedes, 5); assert.equal(ref.total, 6);
   assert.deepEqual(ref.sedesDetalle, [{ sede: 'SEDE B', total: 3 }, { sede: 'SEDE A', total: 2 }]);
@@ -97,7 +99,7 @@ function reference(referencia, principal, branches, name = 'SEDE QA') {
 function fixtures() {
   const apple = Array.from({ length: 17 }, (_, index) => reference(`IPHONE QA ${String(index + 1).padStart(2, '0')}`, index % 3, index + 1, index % 2 ? 'SEDE 1' : 'SEDE 2'));
   const brands = [
-    { marca: 'APPLE', referencias: apple },
+    { marca: 'IPHONE', referencias: apple },
     { marca: 'HONOR', referencias: [reference('HONOR QA PRO', 8, 0), reference('HONOR QA LITE', 0, 3)] },
     { marca: 'SAMSUNG', referencias: [reference('SAMSUNG QA A16', 1, 2), reference('SAMSUNG QA A26', 0, 5)] },
     { marca: 'MOTOROLA', referencias: [reference('MOTOROLA QA G55', 4, 0)] },
@@ -106,13 +108,65 @@ function fixtures() {
     { marca: 'TECNO', referencias: [reference('TECNO QA SPARK', 0, 1)] },
     { marca: 'OPPO', referencias: [] },
     { marca: 'ZTE', referencias: [reference('ZTE QA A75', 1, 0)] },
-    { marca: 'OTRAS REFERENCIAS', referencias: [reference('DISPOSITIVO QA NFC', 0, 4)] },
+    { marca: 'OTRAS MARCAS', referencias: [reference('DISPOSITIVO QA NFC', 0, 4)] },
   ].map(brand => ({ ...brand, total: brand.referencias.reduce((total, ref) => total + ref.total, 0) }));
   const rows = brands.flatMap(brand => brand.referencias);
   return { marcas: brands, totalBodega: rows.reduce((total, ref) => total + ref.total, 0), totalBodegaPrincipal: rows.reduce((total, ref) => total + ref.bodegaPrincipal, 0), totalSedes: rows.reduce((total, ref) => total + ref.sedes, 0), referenciasEnBodega: rows.length };
 }
 const data = fixtures();
 function viewLibrary() { return load('lib/radar-inventory-view.ts'); }
+
+const radarGroupCases = [
+  ['  vivo y05 128gb ', 'TELEFONIA', 'VIVO'], ['VIVOY05 128GB', 'TELEFONIA', 'VIVO'],
+  ['ZTE BLADE A75', 'TELEFONIA', 'ZTE'], ['ZTEA35E', 'TELEFONIA', 'ZTE'],
+  ['POCO X8 PRO 512/12', 'TELEFONIA', 'POCO'], ['POCO X8 PRO MAX 512/12', 'TELEFONIA', 'POCO'],
+  ['NEVERA HACEB 200', 'TELEFONIA', 'ELECTRODOMÉSTICOS'], ['PRODUCTO QA 032', 'ELECTRODOMESTICO', 'ELECTRODOMÉSTICOS'],
+  ['PLAY STATION 5', 'TELEFONIA', 'CONSOLAS'], ['SMART WATCH', 'ELECTRODOMESTICO', 'CONSOLAS'],
+  ['PORTARL HP INTEL CELERON N4500 512/8', 'TELEFONIA', 'PORTÁTILES'], ['LENOVO B15', 'ELECTRODOMESTICO', 'PORTÁTILES'],
+  ['MACBOOK NEO', 'TELEFONIA', 'PORTÁTILES'], ['COMPUTADOR HP 14', 'TELEFONIA', 'ELECTRODOMÉSTICOS'],
+  ['TABLET SAMSUNG A9', 'TELEFONIA', 'TABLETS'], ['FLECHA SAMSUNG', 'TELEFONIA', 'FLECHAS'],
+  ['16 PRO MAX DE EXHIBICION', 'ELECTRODOMESTICO', 'IPHONE'], ['  iphone 16 pro max ', 'TELEFONIA', 'IPHONE'],
+  ['REDMI NOTE 17 PRO MAX', 'TELEFONIA', 'XIAOMI'], ['MOTO G85 G5 256GB', 'TELEFONIA', 'MOTOROLA'],
+  ['NOTE 60 PRO', 'TELEFONIA', 'INFINIX'], ['SAMSING A37 DE 256', 'TELEFONIA', 'SAMSUNG'],
+  ['SAMSUG S26 ULTRA', 'TELEFONIA', 'SAMSUNG'], ['VIVOTEK CAMARA', 'TELEFONIA', 'OTRAS MARCAS'],
+];
+function radarGroupRows() {
+  return {
+    principal: radarGroupCases.map(([referencia, tipoProducto], index) => ({ id: index + 1, referencia, tipoProducto, estado: 'BODEGA' })),
+    branches: radarGroupCases.map(([referencia, tipoProducto], index) => ({ id: index + 101, referencia, tipoProducto, estadoActual: 'BODEGA', sede: { nombre: 'SEDE QA' } })),
+  };
+}
+
+test('Radar usa las mismas líneas del Top, conserva referencias y asigna una sola categoría a cada unidad', async () => {
+  const rows = radarGroupRows();
+  const result = await summaryProbe(rows).getAdminInventorySummary();
+  assert.equal(result.totalBodega, radarGroupCases.length * 2);
+  assert.equal(result.totalBodegaPrincipal, radarGroupCases.length); assert.equal(result.totalSedes, radarGroupCases.length);
+  for (const [referenceName, tipoProducto, expected] of radarGroupCases) {
+    const reference = referenceName.trim().replace(/\s+/g, ' ').toUpperCase();
+    assert.equal(productBrands.resolveCommercialProductBrand(referenceName, tipoProducto), expected);
+    const matching = result.marcas.flatMap(group => group.referencias.filter(item => item.referencia === reference).map(item => ({ group: group.marca, ...item })));
+    assert.equal(matching.length, 1, reference); assert.equal(matching[0].group, expected, reference); assert.equal(matching[0].total, 2);
+    assert.equal(matching[0].bodegaPrincipal, 1); assert.equal(matching[0].sedes, 1);
+    assert.deepEqual(matching[0].sedesDetalle, [{ sede: 'SEDE QA', total: 1 }]);
+  }
+  for (const group of productBrands.MARCAS_VENDIDAS) assert.ok(result.marcas.some(item => item.marca === group));
+  assert.ok(result.marcas.every(item => item.marca === item.marca.toLocaleUpperCase('es-CO')));
+  assert.equal(result.marcas.reduce((sum, group) => sum + group.total, 0), result.totalBodega);
+});
+
+test('una referencia histórica con tipos distintos conserva indicador único y cada equipo cuenta exactamente una vez', async () => {
+  const result = await summaryProbe({
+    principal: [{ referencia: 'PRODUCTO QA MIXTO', tipoProducto: 'TELEFONIA', estado: 'BODEGA' }],
+    branches: [{ referencia: 'producto qa mixto', tipoProducto: 'ELECTRODOMESTICO', estadoActual: 'BODEGA', sede: { nombre: 'SEDE QA' } }],
+  }).getAdminInventorySummary();
+  assert.equal(result.referenciasEnBodega, 1); assert.equal(result.totalBodega, 2);
+  const all = viewLibrary().buildRadarView(result, { search: '', brand: 'TODAS', location: 'TODAS' });
+  assert.equal(all.metrics.referenciasEnBodega, 1); assert.equal(all.metrics.totalBodega, 2); assert.equal(all.totalReferences, 2);
+  const electro = viewLibrary().buildRadarView(result, { search: '', brand: 'ELECTRODOMESTICOS', location: 'TODAS' });
+  assert.equal(electro.metrics.totalBodega, 1); assert.equal(electro.pageRows[0].sedes, 1);
+  assert.equal(electro.pageRows[0].bodegaPrincipal, 0);
+});
 
 const jsx = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'fragment' };
 const nullComponent = { __esModule: true, default: () => null };
@@ -175,7 +229,7 @@ test('consulta completa distingue unidades y referencias y pagina como máximo 1
 
 test('búsqueda y filtros combinados consultan todo el inventario antes de paginar', () => {
   const { buildRadarView } = viewLibrary();
-  const queried = buildRadarView(data, { search: '  iphóne qa 17  ', location: 'SEDES', brand: 'APPLE' }, 2);
+  const queried = buildRadarView(data, { search: '  iphóne qa 17  ', location: 'SEDES', brand: 'IPHONE' }, 2);
   assert.equal(queried.totalReferences, 1); assert.equal(queried.page, 1); assert.equal(queried.pageRows[0].referencia, 'IPHONE QA 17');
   assert.equal(queried.pageRows[0].total, 17); assert.equal(queried.pageRows[0].bodegaPrincipal, 0); assert.equal(queried.metrics.totalBodega, 17);
   assert.deepEqual(queried.pageRows[0].sedesDetalle, [{ sede: 'SEDE 2', total: 17 }]);
@@ -183,25 +237,25 @@ test('búsqueda y filtros combinados consultan todo el inventario antes de pagin
   assert.equal(combined.references.length, 1); assert.equal(combined.references[0].referencia, 'HONOR QA PRO');
   assert.equal(combined.references[0].total, 8); assert.equal(combined.references[0].sedes, 0); assert.deepEqual(combined.references[0].sedesDetalle, []);
   assert.deepEqual(combined.metrics, { totalBodega: 8, totalBodegaPrincipal: 8, totalSedes: 0, referenciasEnBodega: 1 });
-  assert.equal(buildRadarView(data, { search: 'SAMSUNG', location: 'TODAS', brand: 'APPLE' }, 1).totalReferences, 0);
+  assert.equal(buildRadarView(data, { search: 'SAMSUNG', location: 'TODAS', brand: 'IPHONE' }, 1).totalReferences, 0);
 });
 
 test('marcas muestran unidades del alcance de búsqueda y ubicación, sin confundirlas con referencias', () => {
   const { buildRadarView } = viewLibrary();
-  const result = buildRadarView(data, { search: 'QA', location: 'PRINCIPAL', brand: 'APPLE' }, 1);
+  const result = buildRadarView(data, { search: 'QA', location: 'PRINCIPAL', brand: 'IPHONE' }, 1);
   const honor = result.brands.find(brand => brand.marca === 'HONOR');
   assert.equal(honor.total, 8); assert.equal(honor.referencias.length, 1);
   assert.equal(result.brands.find(brand => brand.marca === 'OPPO').total, 0);
-  assert.ok(result.brands.some(brand => brand.marca === 'OTRAS REFERENCIAS'));
+  assert.ok(result.brands.some(brand => brand.marca === 'OTRAS MARCAS'));
   assert.equal(result.brands.reduce((total, brand) => total + brand.total, 0), result.totalUnits);
-  assert.equal(result.metrics.totalBodega, data.marcas.find(brand => brand.marca === 'APPLE').referencias.reduce((total, ref) => total + ref.bodegaPrincipal, 0));
+  assert.equal(result.metrics.totalBodega, data.marcas.find(brand => brand.marca === 'IPHONE').referencias.reduce((total, ref) => total + ref.bodegaPrincipal, 0));
   assert.ok(result.totalUnits > result.metrics.totalBodega);
 });
 
 test('página fuera de rango se ajusta y consulta vacía conserva ceros consistentes sin mutar el resumen', () => {
   const { buildRadarView } = viewLibrary(); const before = JSON.stringify(data);
   for (const page of [-10, 0, 999]) {
-    const result = buildRadarView(data, { search: '', location: 'TODAS', brand: 'APPLE' }, page);
+    const result = buildRadarView(data, { search: '', location: 'TODAS', brand: 'IPHONE' }, page);
     assert.ok(result.page >= 1 && result.page <= result.pageCount); assert.ok(result.pageRows.length <= 10);
   }
   const empty = buildRadarView(data, { search: 'NO EXISTE QA', location: 'SEDES', brand: 'TODAS' }, 99);
@@ -233,7 +287,7 @@ function exportProbe(user = administrator, options = {}) {
     '@/lib/prisma': { __esModule: true, default: summary.database },
     '@/lib/dashboard-inventory-summary': summary,
     '@/lib/radar-inventory-view': viewLibrary(), '@/lib/radar-inventory-export': load('lib/radar-inventory-export.ts'),
-    '@/lib/sedes': sedes,
+    '@/lib/sedes': sedes, '@/lib/commercial-product-brand': productBrands,
   });
   return { calls: summary.calls, async request(query = '') {
     return route.GET(new Request(`http://qa.local/api/dashboard/radar/export${query}`));
@@ -254,17 +308,17 @@ test('Excel conserva el contrato previo de bodega principal cuando no se solicit
 
 test('Excel de consulta conserva marca, búsqueda, ubicación y distribución con cantidades reales', async () => {
   const instance = exportProbe();
-  const workbook = await readWorkbook(await instance.request('?alcance=consulta&q=iph%C3%B3ne&ubicacion=SEDES&marca=APPLE'));
+  const workbook = await readWorkbook(await instance.request('?alcance=consulta&q=iph%C3%B3ne&ubicacion=SEDES&marca=IPHONE'));
   assert.equal(workbook.worksheets.length, 2);
   assert.deepEqual(values(workbook.getWorksheet('Disponibilidad')), [
-    ['MARCA', 'REFERENCIA', 'BODEGA PRINCIPAL', 'UNIDADES EN SEDES', 'TOTAL DISPONIBLE'], ['APPLE', 'IPHONE 13', 0, 1, 1],
+    ['MARCA', 'REFERENCIA', 'BODEGA PRINCIPAL', 'UNIDADES EN SEDES', 'TOTAL DISPONIBLE'], ['IPHONE', 'IPHONE 13', 0, 1, 1],
   ]);
   assert.deepEqual(values(workbook.getWorksheet('Distribución')), [
-    ['MARCA', 'REFERENCIA', 'UBICACIÓN', 'UNIDADES DISPONIBLES'], ['APPLE', 'IPHONE 13', 'SEDE 1', 1],
+    ['MARCA', 'REFERENCIA', 'UBICACIÓN', 'UNIDADES DISPONIBLES'], ['IPHONE', 'IPHONE 13', 'SEDE 1', 1],
   ]);
-  const principal = await readWorkbook(await exportProbe().request('?alcance=consulta&ubicacion=PRINCIPAL&marca=APPLE'));
-  assert.deepEqual(values(principal.getWorksheet('Disponibilidad')).slice(1), [['APPLE', 'IPHONE 13', 2, 0, 2]]);
-  assert.deepEqual(values(principal.getWorksheet('Distribución')).slice(1), [['APPLE', 'IPHONE 13', 'Bodega principal', 2]]);
+  const principal = await readWorkbook(await exportProbe().request('?alcance=consulta&ubicacion=PRINCIPAL&marca=IPHONE'));
+  assert.deepEqual(values(principal.getWorksheet('Disponibilidad')).slice(1), [['IPHONE', 'IPHONE 13', 2, 0, 2]]);
+  assert.deepEqual(values(principal.getWorksheet('Distribución')).slice(1), [['IPHONE', 'IPHONE 13', 'Bodega principal', 2]]);
 });
 
 test('Excel incluye todos los resultados filtrados y sus sedes, sin limitarse a diez referencias', async () => {
@@ -278,6 +332,36 @@ test('Excel incluye todos los resultados filtrados y sus sedes, sin limitarse a 
   assert.equal(distribution.reduce((total, row) => total + row[3], 0), 50);
   assert.ok(exported.every(row => row[2] === 1 && row[3] === 1 && row[4] === 2));
   assert.ok(instance.calls.every(call => !('take' in call) && !('skip' in call)));
+});
+
+test('Excel de las nuevas líneas respeta marca, búsqueda, ubicación y distribución del Radar', async () => {
+  const rows = radarGroupRows();
+  for (const brand of ['VIVO', 'ZTE', 'POCO', 'ELECTRODOMÉSTICOS', 'CONSOLAS', 'PORTÁTILES', 'FLECHAS', 'TABLETS', 'IPHONE']) {
+    const query = new URLSearchParams({ alcance: 'consulta', marca: brand, ubicacion: 'SEDES' });
+    const workbook = await readWorkbook(await exportProbe(administrator, rows).request(`?${query}`));
+    const inventory = values(workbook.getWorksheet('Disponibilidad')).slice(1);
+    const distribution = values(workbook.getWorksheet('Distribución')).slice(1);
+    const expected = radarGroupCases.filter(([, , group]) => group === brand).length;
+    assert.equal(inventory.length, expected, brand); assert.equal(distribution.length, expected, brand);
+    assert.ok(inventory.every(row => row[0] === brand && row[2] === 0 && row[3] === 1 && row[4] === 1));
+    assert.ok(distribution.every(row => row[0] === brand && row[2] === 'SEDE QA' && row[3] === 1));
+    assert.equal(inventory.reduce((sum, row) => sum + row[4], 0), expected);
+  }
+  const queried = await readWorkbook(await exportProbe(administrator, rows).request('?alcance=consulta&marca=POCO&ubicacion=PRINCIPAL&q=MAX'));
+  const exported = values(queried.getWorksheet('Disponibilidad')).slice(1);
+  assert.deepEqual(exported, [['POCO', 'POCO X8 PRO MAX 512/12', 1, 0, 1]]);
+});
+
+test('URLs anteriores APPLE siguen consultando IPHONE y las nuevas categorías vacías mantienen cero real', async () => {
+  const summary = await summaryProbe().getAdminInventorySummary();
+  const current = viewLibrary().buildRadarView(summary, { search: '', brand: 'IPHONE', location: 'TODAS' });
+  const legacy = viewLibrary().buildRadarView(summary, { search: '', brand: 'APPLE', location: 'TODAS' });
+  assert.deepEqual(legacy.references, current.references); assert.equal(legacy.metrics.totalBodega, 3);
+  for (const brand of ['VIVO', 'POCO', 'ELECTRODOMÉSTICOS', 'CONSOLAS', 'PORTÁTILES', 'FLECHAS', 'TABLETS']) {
+    const group = summary.marcas.find(item => item.marca === brand); assert.ok(group); assert.equal(group.total, 0); assert.deepEqual(group.referencias, []);
+  }
+  const workbook = await readWorkbook(await exportProbe().request('?alcance=consulta&marca=APPLE'));
+  assert.equal(values(workbook.getWorksheet('Disponibilidad'))[1][0], 'IPHONE');
 });
 
 test('exportación del supervisor aplica los mismos puntos retirados que la consulta en pantalla', async () => {
@@ -369,7 +453,7 @@ function workspaceProbe({ initial = {}, fetchImpl, summary = data } = {}) {
 }
 
 test('controles reales reinician página al buscar, cambiar ubicación y seleccionar cualquier marca', () => {
-  const instance = workspaceProbe({ initial: { pagina: 2, marcaActiva: 'APPLE' } });
+  const instance = workspaceProbe({ initial: { pagina: 2, marcaActiva: 'IPHONE' } });
   elements(instance.render()).find(node => node.type === 'input' && node.props.id === 'radar-search').props.onChange({ target: { value: 'QA' } });
   assert.equal(instance.state.busqueda, 'QA'); assert.equal(instance.state.pagina, 1);
   instance.state.pagina = 2;
@@ -387,7 +471,7 @@ test('controles reales reinician página al buscar, cambiar ubicación y selecci
 
 test('detalle abre desde botón o cantidad por sede y al cerrar conserva filtros, página y foco', () => {
   for (const entry of ['detail', 'units']) {
-    const instance = workspaceProbe({ initial: { pagina: 2, marcaActiva: 'APPLE', busqueda: 'QA', ubicacion: 'TODAS' } });
+    const instance = workspaceProbe({ initial: { pagina: 2, marcaActiva: 'IPHONE', busqueda: 'QA', ubicacion: 'TODAS' } });
     const tree = instance.render(); const target = instance.view.view.pageRows[0]; const focused = [];
     const button = elements(tree).find(node => node.type === 'button' && node.props['aria-label'] === (entry === 'detail' ? `Ver sedes de ${target.referencia}` : `Ver ${target.sedes} unidades en sedes de ${target.referencia}`));
     assert.ok(button); button.props.onClick({ currentTarget: { focus: options => focused.push(options) } });
@@ -397,17 +481,17 @@ test('detalle abre desde botón o cantidad por sede y al cerrar conserva filtros
     let closed = false; instance.view.dialogRef.current = { close() { closed = true; } };
     elements(opened).find(node => node.type === 'button' && node.props['aria-label'] === 'Cerrar detalle').props.onClick();
     assert.equal(closed, true); assert.equal(instance.state.referenciaActiva, null); assert.deepEqual(focused, [{ preventScroll: true }]);
-    assert.equal(instance.state.pagina, 2); assert.equal(instance.state.marcaActiva, 'APPLE'); assert.equal(instance.state.busqueda, 'QA'); assert.equal(instance.state.ubicacion, 'TODAS');
+    assert.equal(instance.state.pagina, 2); assert.equal(instance.state.marcaActiva, 'IPHONE'); assert.equal(instance.state.busqueda, 'QA'); assert.equal(instance.state.ubicacion, 'TODAS');
   }
 });
 
 test('exportar usa consulta completa sin página, evita doble descarga y presenta errores sin éxito falso', async () => {
   let release; const pending = new Promise(resolve => { release = resolve; });
-  const instance = workspaceProbe({ initial: { pagina: 2, marcaActiva: 'APPLE', busqueda: ' QA ', ubicacion: 'SEDES' }, fetchImpl: async () => pending });
+  const instance = workspaceProbe({ initial: { pagina: 2, marcaActiva: 'IPHONE', busqueda: ' QA ', ubicacion: 'SEDES' }, fetchImpl: async () => pending });
   const one = instance.view.exportar(); const duplicate = instance.view.exportar();
   assert.equal(instance.calls.length, 1); assert.equal(instance.state.exportando, true); assert.deepEqual(instance.downloads, []);
   const params = new URL(instance.calls[0].url, 'http://qa.local').searchParams;
-  assert.deepEqual(Object.fromEntries(params), { alcance: 'consulta', q: 'QA', ubicacion: 'SEDES', marca: 'APPLE' });
+  assert.deepEqual(Object.fromEntries(params), { alcance: 'consulta', q: 'QA', ubicacion: 'SEDES', marca: 'IPHONE' });
   release(new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Disposition': 'attachment; filename="radar-qa.xlsx"' } }));
   await Promise.all([one, duplicate]); assert.equal(instance.state.exportando, false);
   assert.deepEqual(instance.downloads, [{ href: 'blob:qa-radar', download: 'radar-qa.xlsx' }]); assert.equal(instance.urls.at(-1).operation, 'revoke');
@@ -416,4 +500,27 @@ test('exportar usa consulta completa sin página, evita doble descarga y present
   const empty = workspaceProbe({ initial: { busqueda: 'NO_EXISTE_QA' } });
   const button = elements(empty.render()).find(node => node.type === 'button' && textOf(node).trim() === 'Exportar Excel'); assert.ok(button.props.disabled);
   await empty.view.exportar(); assert.deepEqual(empty.calls, []); assert.deepEqual(empty.downloads, []);
+});
+
+test('Más marcas ofrece todas las líneas del Top en mayúsculas con unidades reales y filtros funcionales', async () => {
+  const summary = await summaryProbe(radarGroupRows()).getAdminInventorySummary();
+  const instance = workspaceProbe({ summary, initial: { pagina: 3 } });
+  const tree = instance.render();
+  const menu = elements(tree).find(node => node.props?.['aria-label'] === 'Todas las marcas');
+  const options = elements(menu).filter(node => node.type === 'button');
+  assert.equal(options.length, summary.marcas.length);
+  for (const group of summary.marcas) {
+    const option = options.find(node => textOf(node).includes(group.marca)); assert.ok(option, group.marca);
+    assert.equal(textOf(elements(option).find(node => node.type === 'strong')).replace(' unidades disponibles', '').trim(), String(group.total));
+  }
+  const labels = elements(menu).filter(node => node.type === 'span').map(node => textOf(node).trim()).filter(label => summary.marcas.some(group => group.marca === label));
+  assert.deepEqual(new Set(labels), new Set(summary.marcas.map(group => group.marca)));
+  assert.ok(labels.every(label => label === label.toLocaleUpperCase('es-CO')));
+  for (const brand of ['VIVO', 'ZTE', 'POCO', 'ELECTRODOMÉSTICOS', 'CONSOLAS']) {
+    const currentMenu = elements(instance.render()).find(node => node.props?.['aria-label'] === 'Todas las marcas');
+    const option = elements(currentMenu).find(node => node.type === 'button' && textOf(node).includes(brand));
+    option.props.onClick(); assert.equal(instance.state.marcaActiva, brand); assert.equal(instance.state.pagina, 1);
+    instance.render(); assert.ok(instance.view.view.pageRows.length > 0); assert.ok(instance.view.view.references.every(item => item.marca === brand));
+    assert.equal(instance.view.view.metrics.totalBodega, summary.marcas.find(group => group.marca === brand).total);
+  }
 });

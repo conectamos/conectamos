@@ -23,6 +23,8 @@ function load(path, imports = {}) {
 const access = load("lib/access-control.ts");
 const navigation = load("lib/bodega-navigation.ts");
 const sedes = load("lib/sedes.ts");
+const productTypes = load("lib/product-types.ts");
+const productBrands = load("lib/commercial-product-brand.ts", { "@/lib/product-types": productTypes });
 const view = load("lib/radar-inventory-view.ts");
 const legacy = load("lib/radar-inventory-export.ts");
 const bodega = { id: 9, rolNombre: "BODEGA", perfilTipo: "BODEGA", perfilNombre: "Encargado QA", perfilTipoLabel: "Bodega", sedeId: 1, sedeNombre: "BODEGA PRINCIPAL" };
@@ -43,7 +45,7 @@ function summaryProbe({ principalRows = principal, sedeRows = branches, fail = f
     inventarioPrincipal: { findMany: async args => { calls.push({ model: "principal", ...args }); if (fail) throw Error("Error QA"); return principalRows.filter(row => row.estado === args.where.estado); } },
     inventarioSede: { findMany: async args => { calls.push({ model: "sedes", ...args }); if (fail) throw Error("Error QA"); return sedeRows.filter(row => row.estadoActual === args.where.estadoActual); } },
   };
-  return { calls, db, ...load("lib/dashboard-inventory-summary.ts", { "@/lib/prisma": { __esModule: true, default: db }, "@/lib/sedes": sedes }) };
+  return { calls, db, ...load("lib/dashboard-inventory-summary.ts", { "@/lib/prisma": { __esModule: true, default: db }, "@/lib/sedes": sedes, "@/lib/commercial-product-brand": productBrands }) };
 }
 const jsx = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
 const css = { __esModule: true, default: new Proxy({}, { get: (_object, key) => String(key) }) };

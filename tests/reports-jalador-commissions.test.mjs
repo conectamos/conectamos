@@ -143,6 +143,7 @@ test("el helper real suma Venta.comision sólo en jaladores personales con el mi
     "@/lib/prisma": { __esModule: true, default: prisma }, "@/lib/ventas-utils": utils,
     "@/lib/ventas-financieras": financieras,
     "@/lib/product-types": productTypes,
+    "@/lib/commercial-product-brand": loadTypeScript("lib/commercial-product-brand.ts", { "@/lib/product-types": productTypes }),
   });
   const all = await helper.getMonthlyCommercialSummary({ period: "2026-09" });
   assert.deepEqual(all.topJaladores, [
