@@ -42,7 +42,7 @@ function getButton(tree, label) {
   assert.ok(button, `No se encontró el botón ${label}`);
   return button;
 }
-function probe({ initial = {}, canManage = true, fetchImpl, navigation, session } = {}) {
+function probe({ initial = {}, initialDeviceTag, canManage = true, fetchImpl, navigation, session } = {}) {
   const state = { ...initial }; const refs = []; const effects = []; const calls = [];
   let stateIndex = 0; let refIndex = 0; let collectEffects = true;
   const imports = {
@@ -71,20 +71,27 @@ function probe({ initial = {}, canManage = true, fetchImpl, navigation, session 
   }, { randomUUID }, () => 0);
   const render = () => {
     stateIndex = 0; refIndex = 0;
-    const tree = resolve(loaded.exports.default({ canManage, navigation, session: { nombre: "Asesor QA", sedeNombre: "Sede QA", ...session } }));
+    const tree = resolve(loaded.exports.default({ canManage, navigation, initialDeviceTag, session: { nombre: "Asesor QA", sedeNombre: "Sede QA", ...session } }));
     collectEffects = false; return tree;
   };
   return { state, calls, render, mount: async () => { render(); effects.forEach(fn => fn()); await settle(); return render(); } };
 }
 
-test("al montar solo carga historial; recuperar una consulta no envía operaciones a PayJoy", async () => {
-  const ui = probe({ fetchImpl: async () => response({ operations: [ready], canManage: true }) });
-  let tree = await ui.mount();
-  assert.deepEqual(ui.calls.map(item => item.method), ["GET"]);
-  getButton(tree, "Recuperar consulta").props.onClick(); tree = ui.render();
-  assert.equal(ui.state.operation.id, ready.id);
-  assert.match(textOf(tree), /Extensión de 24 horas/);
-  assert.equal(ui.calls.length, 1);
+test("montar con enlace antiguo o recuperar una consulta solo carga el historial, sin consultas automáticas a PayJoy", async () => {
+  for (const initialDeviceTag of ["", ready.deviceTag]) {
+    const ui = probe({ initialDeviceTag, fetchImpl: async () => response({ operations: [ready], canManage: true }) });
+    let tree = await ui.mount();
+    assert.deepEqual(ui.calls.map(item => [item.url, item.method]), [["/api/payjoy/extensiones", "GET"]]);
+    assert.equal(ui.state.deviceTag, initialDeviceTag);
+    assert.equal(ui.state.manual, Boolean(initialDeviceTag));
+    assert.equal(ui.state.operation, null);
+    assert.doesNotMatch(textOf(tree), /Ficha del crédito|Seguimiento de extensiones/);
+    assert.ok(elements(tree).filter(node => node.type === "a").every(node => !/^\/vendedor\/payjoy\/(?:credito|seguimiento)/.test(node.props.href)));
+    getButton(tree, "Recuperar consulta").props.onClick(); tree = ui.render();
+    assert.equal(ui.state.operation.id, ready.id);
+    assert.match(textOf(tree), /Extensión de 24 horas/);
+    assert.equal(ui.calls.length, 1);
+  }
 });
 
 test("la búsqueda distingue registros locales y ofrece consulta manual cuando no encuentra equipos", async () => {

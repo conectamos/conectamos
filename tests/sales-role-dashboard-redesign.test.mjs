@@ -61,16 +61,13 @@ test("el acceso a extensiones PayJoy solo aparece con el permiso recibido del se
   assert.doesNotMatch(render({ puedeVerExtensionesPayJoy: false }), /href="\/vendedor\/payjoy\/extensiones"/);
   assert.match(render({ puedeVerExtensionesPayJoy: true }), /href="\/vendedor\/payjoy\/extensiones"/);
 });
-test("vendedor y apoyo conservan extensiones y seguimiento sin ficha de crédito y solo con permiso PayJoy", () => {
+test("vendedor y apoyo conservan extensiones con permiso PayJoy sin accesos a ficha o seguimiento", () => {
   for (const role of ["VENDEDOR", "APOYO_OPERATIVO"]) {
     const authorized = render({ role, puedeVerExtensionesPayJoy: true });
     const actions = links(authorized, "Accesos comerciales");
     assert.ok(actions.includes("/vendedor/payjoy/extensiones"));
-    assert.ok(actions.includes("/vendedor/payjoy/seguimiento"));
     assert.equal(new Set(actions).size, actions.length);
-    assert.doesNotMatch(authorized, /Ficha del crédito|Crédito PayJoy|href="\/vendedor\/payjoy\/credito/);
-    assert.match(authorized, /Seguimiento de extensiones/);
-    assert.ok(links(authorized, "Navegación principal").includes("/vendedor/payjoy/seguimiento"));
+    assert.doesNotMatch(authorized, /Ficha del crédito|Crédito PayJoy|Seguimiento de extensiones|href="\/vendedor\/payjoy\/(?:credito|seguimiento)/);
     assert.ok(links(authorized, "Navegación principal").includes("/vendedor/payjoy/extensiones"));
     for (const puedeVerExtensionesPayJoy of [undefined, false]) {
       const restricted = render({ role, puedeVerExtensionesPayJoy });

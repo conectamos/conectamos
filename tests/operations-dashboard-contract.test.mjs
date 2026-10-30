@@ -139,7 +139,7 @@ function operationsNavigation(props) {
   return { sidebar: sidebar.items, quick: tools.quickActions, catalog: (tools.groups || tools.toolGroups).flatMap(group => group.links) };
 }
 
-test("ADMIN y AUDITOR ven seguimiento en menú, acciones y catálogo y conservan extensiones sin la ficha retirada", async () => {
+test("ADMIN y AUDITOR conservan extensiones y retiran ficha y seguimiento de menú, acciones y catálogo", async () => {
   for (const identity of [
     { rolNombre: "AUDITOR", perfilTipo: "AUDITOR", perfilTipoLabel: "Auditor" },
     { rolNombre: "ADMIN", perfilTipo: "AUDITOR", perfilTipoLabel: "Auditor" },
@@ -150,23 +150,23 @@ test("ADMIN y AUDITOR ven seguimiento en menú, acciones y catálogo y conservan
     assert.equal(result.props.puedeVerExtensionesPayJoy, true);
     const navigation = operationsNavigation(result.props);
     for (const values of Object.values(navigation)) {
-      assert.ok(values.some(item => item.href === "/vendedor/payjoy/seguimiento" && item.label === "Seguimiento de extensiones"));
-      assert.ok(values.every(item => !item.href.startsWith("/vendedor/payjoy/credito") && !/Ficha del crédito|Crédito PayJoy/.test(item.label)));
+      assert.ok(values.some(item => item.href === "/vendedor/payjoy/extensiones"));
+      assert.ok(values.every(item => !/^\/vendedor\/payjoy\/(?:credito|seguimiento)/.test(item.href) && !/Ficha del crédito|Crédito PayJoy|Seguimiento de extensiones/.test(item.label)));
       assert.equal(new Set(values.map(item => item.href)).size, values.length);
     }
     assert.ok(navigation.catalog.some(item => item.href === "/vendedor/payjoy/extensiones"));
   }
 });
 
-test("el permiso PayJoy controla también los enlaces de stand y evita accesos sin autorización", async () => {
+test("el permiso PayJoy controla extensiones y ningún tipo de stand conserva accesos a ficha o seguimiento", async () => {
   const result = await runPage({ ...baseSession, rolNombre: "AUDITOR", perfilTipo: "AUDITOR" });
   for (const stand of [{}, { esStand: true }, { esStand: true, esStandSoloInventario: true }]) {
     const restricted = operationsNavigation({ ...result.props, ...stand, puedeVerExtensionesPayJoy: false });
     for (const values of Object.values(restricted)) assert.ok(values.every(item => !item.href.startsWith("/vendedor/payjoy/")));
     const allowed = operationsNavigation({ ...result.props, ...stand, puedeVerExtensionesPayJoy: true });
     for (const values of Object.values(allowed)) {
-      assert.ok(values.some(item => item.href === "/vendedor/payjoy/seguimiento"));
-      assert.ok(values.every(item => !item.href.startsWith("/vendedor/payjoy/credito")));
+      assert.ok(values.some(item => item.href === "/vendedor/payjoy/extensiones"));
+      assert.ok(values.every(item => !/^\/vendedor\/payjoy\/(?:credito|seguimiento)/.test(item.href)));
     }
   }
 });

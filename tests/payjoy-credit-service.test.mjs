@@ -214,18 +214,18 @@ test("el último fallo posterior no se oculta detrás de una comprobación anter
   assert.equal((await f.historialFichaPayJoy(actor)).extensions[0].followUp.status, "ERROR_CONSULTA");
 });
 
-test("API exige sesión, permiso, origen, JSON y tamaño; no expone errores internos", async () => {
+test("API retirada conserva permisos y no lee historiales ni consulta PayJoy desde pestañas antiguas", async () => {
   for (const [session, status] of [[null, 401], [{ ...actor, perfilTipo: "FACTURADOR" }, 403]]) {
     const f = setup({ session }); assert.equal((await f.route.GET()).status, status);
     assert.equal((await f.route.POST(post(input()))).status, status); assert.equal(f.calls.length, 0);
   }
-  const f = setup();
-  for (const [request, status] of [[post(input(), { origin: "https://evil.test" }), 403],
-    [post(input(), { "content-type": "text/plain" }), 415], [post("{"), 400], [post("[]"), 400],
-    [post("x".repeat(2049)), 413]]) assert.equal((await f.route.POST(request)).status, status);
-  assert.equal(f.providerCalls.length, 0);
-  const failed = setup({ beforeDb: () => { throw Object.assign(new Error("postgres://secret@host"), { code: "P2021" }); } });
-  const result = await failed.route.GET(); assert.equal(result.status, 503);
-  assert.deepEqual(await result.json(), { code: "SCHEMA_REQUIRED", error: "El seguimiento requiere actualizar su base de datos. Contacta al administrador." });
-  const ok = await setup().route.GET(); assert.equal(ok.headers.get("cache-control"), "private, no-store");
+  const f = setup({ checks: [check()], extensions: [extension()] });
+  const saved = structuredClone(f.rows);
+  for (const result of [await f.route.GET(), await f.route.POST(post(input()))]) {
+    assert.equal(result.status, 410);
+    assert.equal((await result.json()).code, "MODULE_RETIRED");
+    assert.equal(result.headers.get("cache-control"), "private, no-store");
+  }
+  assert.equal(f.providerCalls.length, 0); assert.equal(f.calls.length, 0);
+  assert.deepEqual(f.rows, saved);
 });

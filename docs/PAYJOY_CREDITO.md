@@ -1,5 +1,9 @@
 # Seguimiento de extensiones PayJoy
 
+## Retiro del seguimiento — 30 de octubre de 2026
+
+Se retiraron la pantalla de seguimiento y todos sus accesos a solicitud del usuario. Las rutas `/vendedor/payjoy/seguimiento` y `/vendedor/payjoy/credito` redirigen a `/vendedor/payjoy/extensiones`, con los mismos controles de acceso. La gestión de extensiones y su historial de operaciones siguen disponibles. La API antigua `/api/payjoy/credito` devuelve `410 MODULE_RETIRED` a perfiles autorizados; no consulta PayJoy ni lee o modifica observaciones históricas. Los registros existentes se conservan. Las secciones siguientes documentan el alcance histórico, ya retirado.
+
 ## Cambio de alcance — 29 de octubre de 2026
 
 La ficha del crédito se retiró de la interfaz y de los accesos de todos los perfiles a solicitud del usuario. La pantalla vigente es `/vendedor/payjoy/seguimiento`; la ruta anterior `/vendedor/payjoy/credito` redirige al seguimiento. Se conservan la gestión de extensiones y sus comprobaciones posteriores. Los datos históricos y los lectores del proveedor permanecen disponibles para ese seguimiento, sin modificar el módulo de cartera ni el reporte 40/60.

@@ -880,8 +880,8 @@ export default function OperationsDashboard({
       ? !operationalAvailable
       : !commercialAvailable || !financialAvailable || !operationalAvailable;
   const reportHref = esAdmin ? "/dashboard/reportes" : "/dashboard/analitico";
-  const payJoyFollowUpLinks: NavigationItem[] = puedeVerExtensionesPayJoy ? [
-    { href: "/vendedor/payjoy/seguimiento", icon: "clock", label: "Seguimiento de extensiones" },
+  const payJoyExtensionLinks: NavigationItem[] = puedeVerExtensionesPayJoy ? [
+    { href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" },
   ] : [];
   const defaultToolGroups: OperationsToolGroup[] = [
     {
@@ -920,8 +920,7 @@ export default function OperationsDashboard({
         { href: "/vendedor/registros", label: "Registrar venta" },
         { href: "/vendedor/lista-negra", label: "Lista negra" },
         { href: "/vendedor/registros/buscar", label: "Buscar registro" },
-        ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/extensiones", label: "Extensiones PayJoy", description: "Consulta opciones y gestiona extensiones de dispositivos." }] : []),
-        ...payJoyFollowUpLinks,
+        ...payJoyExtensionLinks,
         { href: "/ventas/aprobaciones", label: "Aprobar ventas" },
         ...(!esAdmin ? [{ href: "/vendedor/lista-precios", label: "Lista de precios" }] : []),
         ...(esAdmin || esSupervisor
@@ -1095,8 +1094,8 @@ export default function OperationsDashboard({
     : esStand
       ? standToolGroups
       : defaultToolGroups;
-  const toolGroups: OperationsToolGroup[] = (esStand || esStandSoloInventario) && payJoyFollowUpLinks.length
-    ? [...roleToolGroups, { title: "PayJoy", description: "Seguimiento de tus extensiones.", icon: "clock", links: payJoyFollowUpLinks }]
+  const toolGroups: OperationsToolGroup[] = (esStand || esStandSoloInventario) && payJoyExtensionLinks.length
+    ? [...roleToolGroups, { title: "PayJoy", description: "Consulta opciones y gestiona extensiones de dispositivos.", icon: "clock", links: payJoyExtensionLinks }]
     : roleToolGroups;
   const roleQuickActions: NavigationItem[] = esStandSoloInventario
     ? [
@@ -1126,8 +1125,8 @@ export default function OperationsDashboard({
           label: esAdmin ? "Ver reportes" : "Panel analítico",
         },
       ];
-  const quickActions = [...roleQuickActions, ...payJoyFollowUpLinks];
-  const visibleNavigation = [...navigationItems, ...payJoyFollowUpLinks.filter(link => !navigationItems.some(item => item.href === link.href))];
+  const quickActions = [...roleQuickActions, ...payJoyExtensionLinks];
+  const visibleNavigation = [...navigationItems, ...payJoyExtensionLinks.filter(link => !navigationItems.some(item => item.href === link.href))];
 
   const context = `${periodLabel} · ${coverageLabel}`;
   const unavailable = <p className={styles.empty}>Datos comerciales no disponibles. Reintenta la actualización.</p>;

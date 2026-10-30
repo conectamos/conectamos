@@ -130,11 +130,10 @@ export default function OperationsToolCenter({ groups, storageUserKey, legacySto
         if (typeof id !== "string") return [];
         if (validIds.has(id)) return [id];
         const [, previousHref, previousLabel] = id.split("::");
-        const currentHref = previousHref === "/vendedor/payjoy/credito?tab=seguimiento" ? "/vendedor/payjoy/seguimiento" : previousHref;
-        const movedTool = allTools.find((tool) => tool.link.href === currentHref &&
+        const movedTool = allTools.find((tool) => tool.link.href === previousHref &&
           normalize(tool.link.label) === normalize(previousLabel || ""));
         if (movedTool) return [movedTool.id];
-        const renamedTools = allTools.filter((tool) => tool.link.href === currentHref);
+        const renamedTools = allTools.filter((tool) => tool.link.href === previousHref);
         return renamedTools.length === 1 ? [renamedTools[0].id] : [];
       }))) : defaultFavorites();
     } catch {

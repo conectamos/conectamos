@@ -29,7 +29,6 @@ const baseSession = {
   perfilId: 7, perfilNombre: "Perfil QA", sessionKey: "never-sent-to-client",
 };
 const EXTENSIONS = "/vendedor/payjoy/extensiones";
-const FOLLOW_UP = "/vendedor/payjoy/seguimiento";
 const hrefs = element => element.props.navigation.map(item => item.href);
 
 async function pageFor(session, query = {}, page = "extensiones") {
@@ -51,7 +50,7 @@ async function pageFor(session, query = {}, page = "extensiones") {
 }
 
 test("ADMIN y AUDITOR conservan sus módulos operativos y el acceso PayJoy sin duplicar destinos", async () => {
-  const expected = ["/dashboard", "/ventas", "/inventario", "/prestamos", "/caja", "/cierre", "/dashboard/aprobaciones", "/dashboard/reportes", "/dashboard/sedes", FOLLOW_UP, EXTENSIONS];
+  const expected = ["/dashboard", "/ventas", "/inventario", "/prestamos", "/caja", "/cierre", "/dashboard/aprobaciones", "/dashboard/reportes", "/dashboard/sedes", EXTENSIONS];
   for (const rolNombre of ["ADMIN", "AUDITOR"]) {
     const element = await pageFor({ ...baseSession, rolNombre, perfilTipo: null, perfilId: null, perfilNombre: null, perfilTipoLabel: null });
     assert.deepEqual(hrefs(element), expected);
@@ -62,7 +61,7 @@ test("ADMIN y AUDITOR conservan sus módulos operativos y el acceso PayJoy sin d
 });
 
 test("el perfil vendedor prevalece sobre ADMIN y no recibe enlaces operativos ni búsqueda de registros ajenos", async () => {
-  const expected = ["/dashboard", "/cierre", "/vendedor/registros", "/vendedor/lista-negra", "/vendedor/lista-precios", FOLLOW_UP, EXTENSIONS];
+  const expected = ["/dashboard", "/cierre", "/vendedor/registros", "/vendedor/lista-negra", "/vendedor/lista-precios", EXTENSIONS];
   for (const rolNombre of ["ADMIN", "AUDITOR", "SEDE"]) {
     const element = await pageFor({ ...baseSession, rolNombre, perfilTipo: "VENDEDOR", perfilTipoLabel: "Vendedora" });
     assert.deepEqual(hrefs(element), expected);
@@ -73,20 +72,20 @@ test("el perfil vendedor prevalece sobre ADMIN y no recibe enlaces operativos ni
 
 test("apoyo operativo conserva Radar y sus herramientas comerciales sin heredar los módulos del login ADMIN", async () => {
   const element = await pageFor({ ...baseSession, rolNombre: "ADMIN", perfilTipo: "APOYO_OPERATIVO", perfilTipoLabel: "Apoyo operativo" });
-  assert.deepEqual(hrefs(element), ["/dashboard", "/cierre", "/vendedor/registros", "/dashboard/radar", "/vendedor/lista-negra", "/vendedor/lista-precios", FOLLOW_UP, EXTENSIONS]);
+  assert.deepEqual(hrefs(element), ["/dashboard", "/cierre", "/vendedor/registros", "/dashboard/radar", "/vendedor/lista-negra", "/vendedor/lista-precios", EXTENSIONS]);
   assert.equal(element.props.navigation.find(item => item.href === "/vendedor/registros").label, "Registrar ventas");
 });
 
 test("supervisor conserva módulos de su sede y Panel analítico, sin Configuración administrativa", async () => {
   const element = await pageFor(baseSession);
-  assert.deepEqual(hrefs(element), ["/dashboard", "/ventas", "/inventario", "/prestamos", "/caja", "/cierre", "/dashboard/aprobaciones", "/dashboard/analitico", FOLLOW_UP, EXTENSIONS]);
+  assert.deepEqual(hrefs(element), ["/dashboard", "/ventas", "/inventario", "/prestamos", "/caja", "/cierre", "/dashboard/aprobaciones", "/dashboard/analitico", EXTENSIONS]);
   assert.equal(element.props.canManage, true);
 });
 
 test("sedes de solo inventario conservan su menú restringido, incluidos stands, sin alterar el acceso administrativo", async () => {
   for (const sedeNombre of ["Stand QA", "SEDE QA"]) {
     const element = await pageFor({ ...baseSession, sedeNombre, sedeSoloInventarioPorCobrar: true });
-    assert.deepEqual(hrefs(element), ["/dashboard", "/inventario", "/prestamos", "/cierre", FOLLOW_UP, EXTENSIONS]);
+    assert.deepEqual(hrefs(element), ["/dashboard", "/inventario", "/prestamos", "/cierre", EXTENSIONS]);
     assert.equal(element.props.session.sedeNombre, sedeNombre);
   }
   const admin = await pageFor({ ...baseSession, rolNombre: "ADMIN", perfilTipo: "ADMINISTRADOR", sedeSoloInventarioPorCobrar: true });
@@ -117,34 +116,34 @@ test("el cliente recibe solo nombre, sede y etiqueta de rol, sin identificadores
   assert.doesNotMatch(serialized, /never-sent-to-client|sessionKey|perfilId|rolNombre|sedeSoloInventarioPorCobrar/);
 });
 
-test("seguimiento filtra solo identificadores válidos y conserva los permisos y menú de extensiones", async () => {
+test("extensiones solo precarga códigos PayJoy válidos, nunca documentos, URL o IMEI", async () => {
   const extension = await pageFor(baseSession, { deviceTag: " dqa12345 " });
   assert.equal(extension.props.initialDeviceTag, "DQA12345");
-  const followUp = await pageFor(baseSession, { deviceTag: "dqa12345" }, "seguimiento");
-  assert.equal(followUp.props.initialIdentifier, "DQA12345");
-  assert.deepEqual(hrefs(followUp), hrefs(extension));
-  for (const value of ["https://pay.payjoy.com/extensions/device/DQA12345", "12345678", ["DQA12345"]]) {
+  for (const value of ["https://pay.payjoy.com/extensions/device/DQA12345", "12345678", "359999999999991", ["DQA12345"]]) {
     assert.equal((await pageFor(baseSession, { deviceTag: value })).props.initialDeviceTag, "");
-    assert.equal((await pageFor(baseSession, { identifier: value }, "seguimiento")).props.initialIdentifier, "");
   }
-  assert.equal((await pageFor(baseSession, { identifier: "359999999999991" }, "seguimiento")).props.initialIdentifier, "359999999999991");
 });
 
-test("el enlace antiguo de crédito redirige al seguimiento sin perder un filtro válido ni mostrar la ficha", async () => {
+test("los enlaces retirados de crédito y seguimiento redirigen a extensiones y conservan solo un código válido", async () => {
   for (const [query, suffix] of [
     [{}, ""],
-    [{ deviceTag: " dqa12345 ", tab: "seguimiento" }, "?identifier=DQA12345"],
-    [{ identifier: "359999999999991", tab: "credito" }, "?identifier=359999999999991"],
-    [{ identifier: "DQA12345", deviceTag: "DOTRO123" }, "?identifier=DQA12345"],
+    [{ deviceTag: " dqa12345 ", tab: "seguimiento" }, "?deviceTag=DQA12345"],
+    [{ identifier: "359999999999991", tab: "credito" }, ""],
+    [{ identifier: " dqa12345 " }, "?deviceTag=DQA12345"],
+    [{ identifier: "DQA12345", deviceTag: "DOTRO123" }, "?deviceTag=DOTRO123"],
     [{ identifier: "https://pay.payjoy.com/extensions/device/DQA12345" }, ""],
     [{ identifier: "12345678" }, ""],
     [{ deviceTag: ["DQA12345"] }, ""],
+    [{ identifier: ["DQA12345"] }, ""],
+    [{ identifier: "DQA12345/../../confirmar", action: "confirmar" }, ""],
   ]) {
-    await assert.rejects(pageFor(baseSession, query, "credito"), error => error.path === `${FOLLOW_UP}${suffix}`);
+    for (const page of ["credito", "seguimiento"]) {
+      await assert.rejects(pageFor(baseSession, query, page), error => error.path === `${EXTENSIONS}${suffix}`);
+    }
   }
 });
 
-test("seguimiento es accesible para asesores y auditor seleccionado o base sin exponer la ficha retirada", async () => {
+test("asesores y auditor seleccionado o base mantienen extensiones sin enlaces a módulos retirados", async () => {
   for (const identity of [
     { rolNombre: "SEDE", perfilTipo: "VENDEDOR" },
     { rolNombre: "AUDITOR", perfilTipo: "VENDEDOR" },
@@ -152,10 +151,12 @@ test("seguimiento es accesible para asesores y auditor seleccionado o base sin e
     { rolNombre: "AUDITOR", perfilTipo: null, perfilId: null },
   ]) {
     const session = { ...baseSession, ...identity };
-    const followUp = await pageFor(session, {}, "seguimiento");
-    assert.deepEqual(hrefs(followUp), hrefs(await pageFor(session)));
-    assert.ok(hrefs(followUp).includes(FOLLOW_UP));
-    assert.ok(hrefs(followUp).includes(EXTENSIONS));
-    assert.ok(hrefs(followUp).every(href => !href.startsWith("/vendedor/payjoy/credito")));
+    const extension = await pageFor(session);
+    assert.ok(hrefs(extension).includes(EXTENSIONS));
+    assert.ok(hrefs(extension).every(href => !/^\/vendedor\/payjoy\/(?:credito|seguimiento)/.test(href)));
+    assert.equal(extension.props.canManage, true);
+    for (const page of ["credito", "seguimiento"]) {
+      await assert.rejects(pageFor(session, {}, page), error => error.path === EXTENSIONS);
+    }
   }
 });

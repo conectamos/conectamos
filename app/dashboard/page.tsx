@@ -1191,12 +1191,11 @@ export default async function DashboardPage({
       title: "PAYJOY",
       eyebrow: "Cartera",
       description:
-        "Gestiona cartera y seguimiento operativo de PayJoy desde el panel administrativo.",
+        "Gestiona cartera y extensiones de PayJoy desde el panel administrativo.",
       actions: [
         { href: "/dashboard/payjoy", label: "Cartera PayJoy", tone: "primary" },
         { href: "/dashboard/payjoy/40-60", label: "40/60", tone: "secondary" },
         ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/extensiones", label: "Extensiones PayJoy", tone: "secondary" } satisfies ModuleAction] : []),
-        ...(puedeVerExtensionesPayJoy ? [{ href: "/vendedor/payjoy/seguimiento", label: "Seguimiento de extensiones", tone: "secondary" } satisfies ModuleAction] : []),
       ],
       tone: "slate",
     },

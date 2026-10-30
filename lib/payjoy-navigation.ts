@@ -19,7 +19,6 @@ export function payJoyNavigationFor(session: Awaited<ReturnType<typeof requireVe
         : []),
       { href: "/vendedor/lista-negra", icon: "warning", label: "Lista negra" },
       { href: "/vendedor/lista-precios", icon: "tag", label: "Lista de precios" },
-      { href: "/vendedor/payjoy/seguimiento", icon: "clock", label: "Seguimiento de extensiones" },
       payjoy,
     ];
   }
@@ -31,7 +30,6 @@ export function payJoyNavigationFor(session: Awaited<ReturnType<typeof requireVe
       { href: "/inventario", icon: "inventory", label: "Inventario" },
       { href: "/prestamos", icon: "loans", label: "Préstamos" },
       cierre,
-      { href: "/vendedor/payjoy/seguimiento", icon: "clock", label: "Seguimiento de extensiones" },
       payjoy,
     ];
   }
@@ -48,7 +46,6 @@ export function payJoyNavigationFor(session: Awaited<ReturnType<typeof requireVe
     ...(administrative
       ? [{ href: "/dashboard/sedes", icon: "settings", label: "Configuración" } satisfies NavigationItem]
       : []),
-    { href: "/vendedor/payjoy/seguimiento", icon: "clock", label: "Seguimiento de extensiones" },
     payjoy,
   ];
 }

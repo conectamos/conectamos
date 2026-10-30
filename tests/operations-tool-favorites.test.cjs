@@ -138,7 +138,6 @@ assert.equal(nodes().filter(n => typeof n.props.onToggle === 'function').every(n
 reset();
 const payjoyLinks = [
   { href: '/vendedor/payjoy/extensiones', icon: 'clock', label: 'Extensiones PayJoy' },
-  { href: '/vendedor/payjoy/seguimiento', icon: 'clock', label: 'Seguimiento de extensiones' },
 ];
 const payjoyGroups = [{ title: 'Registro comercial', description: 'PayJoy autorizado', icon: 'sales', links: payjoyLinks }];
 render({ groups: payjoyGroups, quickActions: payjoyLinks, storageUserKey: 'auditor:qa' }); settle();
@@ -162,15 +161,17 @@ const renamedGroups = [...payjoyGroups, {
 store.set(key('auditor:qa'), JSON.stringify([
   id('Registro comercial', '/vendedor/payjoy/credito', 'Crédito y seguimiento PayJoy'),
   id('Registro comercial', '/vendedor/payjoy/credito?tab=seguimiento', 'Seguimiento anterior'),
+  id('Registro comercial', '/vendedor/payjoy/seguimiento', 'Seguimiento de extensiones'),
+  id('Categoría anterior', '/vendedor/payjoy/extensiones', 'Extensiones PayJoy'),
   id('Antes', '/ruta-ambigua', 'Nombre anterior'),
   id('No autorizado', '/admin/secreto', 'Secreto'),
   id('Registro comercial', '/vendedor/payjoy/credito?tab=ausente', 'Ficha antigua'),
 ]));
 render({ groups: renamedGroups, storageUserKey: 'auditor:qa' }); settle();
-const followUp = payjoyLinks[1];
-assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), [id('Registro comercial', followUp.href, followUp.label)]);
-assert.deepEqual(nodes(frequent()).filter(n => n.type === 'Link').map(n => n.props.href), [followUp.href]);
-assert.ok(nodes().filter(n => n.type === 'Link').every(n => !n.props.href.startsWith('/vendedor/payjoy/credito')));
+const extension = payjoyLinks[0];
+assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), [id('Registro comercial', extension.href, extension.label)]);
+assert.deepEqual(nodes(frequent()).filter(n => n.type === 'Link').map(n => n.props.href), [extension.href]);
+assert.ok(nodes().filter(n => n.type === 'Link').every(n => !/^\/vendedor\/payjoy\/(?:credito|seguimiento)/.test(n.props.href)));
 
 reset();
 const legacyFollowUp = id('Registro comercial', '/vendedor/payjoy/credito?tab=seguimiento', 'Seguimiento de extensiones');
@@ -180,9 +181,13 @@ assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), []);
 assert.ok(nodes().filter(n => n.type === 'Link').every(n => !n.props.href.startsWith('/vendedor/payjoy/')));
 
 reset();
-store.set(key('auditor:qa'), JSON.stringify([legacyFollowUp, id('Registro comercial', followUp.href, followUp.label)]));
+store.set(key('auditor:qa'), JSON.stringify([
+  legacyFollowUp,
+  id('Registro comercial', '/vendedor/payjoy/seguimiento', 'Seguimiento de extensiones'),
+  id('Registro comercial', '/vendedor/payjoy/credito', 'Ficha del crédito PayJoy'),
+]));
 render({ groups: payjoyGroups, storageUserKey: 'auditor:qa' }); settle();
-assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), [id('Registro comercial', followUp.href, followUp.label)]);
-assert.equal(nodes(frequent()).filter(n => n.type === 'Link').length, 1);
+assert.deepEqual(JSON.parse(store.get(key('auditor:qa'))), []);
+assert.equal(nodes(frequent()).filter(n => n.type === 'Link').length, 0);
 
-console.log('PASS: legacy migration + authorized IDs, new empty key precedence, defaults, remove/add persistence and focus, user switch isolation, blocked storage fallback, PayJoy extensiones/seguimiento search + favorites, old seguimiento migrates once only when authorized, removed ficha/missing/ambiguous routes remain hidden.');
+console.log('PASS: legacy migration + authorized IDs, new empty key precedence, defaults, remove/add persistence and focus, user switch isolation, blocked storage fallback, PayJoy extension favorites preserved, removed ficha/seguimiento favorites disappear without creating replacement favorites, missing/ambiguous routes remain hidden.');
