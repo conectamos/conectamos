@@ -12,6 +12,10 @@ import {
 } from "@/lib/ventas-financieras";
 import { obtenerCatalogoPersonalVenta } from "@/lib/ventas-personal";
 import {
+  cashMovementDate, cashMovementDetails, cashMovementExcelParts, cashMovementReference,
+  drawCashMovementsTable, type CashMovementRow,
+} from "@/lib/cierre-caja-movimientos";
+import {
   getBogotaDayRangeFromInput,
   getBogotaMonthRangeFromInput,
   getTodayBogotaDateKey,
@@ -73,13 +77,6 @@ const FALLBACK_FINANCIERAS_CIERRE = [
 type PdfFonts = {
   regular: string;
   bold: string;
-};
-
-type CashMovementRow = {
-  tipo: string;
-  concepto: string;
-  sedeNombre: string;
-  valor: number;
 };
 
 type SaleDetailRow = {
@@ -838,27 +835,57 @@ async function buildExcelCierreTabla(params: {
   });
 
   worksheet.addRow([]);
-  const cajaHeaderRow = worksheet.addRow(["MOVIMIENTO", "CONCEPTO", "SEDE", "VALOR"]);
+  const detailNotice = worksheet.addRow(["Detalle de movimientos: hoja Movimientos de caja"]);
+  worksheet.mergeCells(detailNotice.number, 1, detailNotice.number, Math.min(6, totalColumns));
+  detailNotice.height = 28;
+  detailNotice.font = { bold: true, size: 11, color: { argb: "FF151923" } };
+  detailNotice.alignment = { vertical: "middle", wrapText: true };
+  worksheet.addRow([`${params.movimientos.length} movimientos registrados`]);
+
+  const cashWorksheet = workbook.addWorksheet("Movimientos de caja", {
+    views: [{ state: "frozen", ySplit: 5, showGridLines: false }],
+    properties: { defaultRowHeight: 24 },
+  });
+  cashWorksheet.columns = [18, 25, 16, 85, 30, 22].map(width => ({ width }));
+  cashWorksheet.mergeCells("A1:F1");
+  cashWorksheet.getCell("A1").value = "CIERRE DEL DÍA · MOVIMIENTOS DE CAJA";
+  cashWorksheet.getCell("A1").font = { bold: true, size: 14, color: { argb: "FF151923" } };
+  cashWorksheet.getRow(1).height = 28;
+  cashWorksheet.mergeCells("A2:F2");
+  cashWorksheet.getCell("A2").value = `${params.periodoKey} | ${params.cobertura} | ${params.movimientos.length} movimientos`;
+  cashWorksheet.mergeCells("A3:F3");
+  cashWorksheet.getCell("A3").value = "En las continuaciones del detalle, el valor aparece sólo en la primera fila del movimiento.";
+  cashWorksheet.getCell("A3").font = { size: 10, color: { argb: "FF64748B" } };
+  cashWorksheet.addRow([]);
+  const cajaHeaderRow = cashWorksheet.addRow(["REFERENCIA", "FECHA Y HORA (BOGOTÁ)", "MOVIMIENTO", "CONCEPTO Y DETALLE", "SEDE", "VALOR"]);
+  cajaHeaderRow.height = 30;
   cajaHeaderRow.eachCell((cell) => {
     cell.fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: "FF2B3446" },
     };
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 9 };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+    cell.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
     cell.border = {
       bottom: { style: "thin", color: { argb: "FFB08A3A" } },
     };
   });
 
   params.movimientos.forEach((movimiento, index) => {
-    const row = worksheet.addRow([
+    const parts = cashMovementExcelParts(cashMovementDetails(movimiento));
+    parts.forEach((detail, partIndex) => {
+    const row = cashWorksheet.addRow([
+      `${cashMovementReference(movimiento)}${partIndex ? " (continuación)" : ""}`,
+      partIndex ? "" : cashMovementDate(movimiento),
       movimiento.tipo,
-      movimiento.concepto,
+      detail,
       movimiento.sedeNombre,
-      moneyCell(movimiento.valor),
+      partIndex ? null : moneyCell(movimiento.valor),
     ]);
+    const detailLines = detail.split(/\r?\n/).reduce((sum, line) => sum + Math.max(1, Math.ceil(Array.from(line).length / 70)), 0);
+    const siteLines = movimiento.sedeNombre.split(/\r?\n/).reduce((sum, line) => sum + Math.max(1, Math.ceil(Array.from(line).length / 25)), 0);
+    row.height = Math.min(409, Math.max(48, Math.max(detailLines, siteLines) * 15 + 14));
     row.eachCell((cell, colNumber) => {
       const isEgreso = movimiento.tipo.toUpperCase() === "EGRESO";
       const isIngreso = movimiento.tipo.toUpperCase() === "INGRESO";
@@ -866,7 +893,7 @@ async function buildExcelCierreTabla(params: {
         color: {
           argb: isEgreso ? "FF9F2737" : isIngreso ? "FF16694F" : "FF151923",
         },
-        size: 9,
+        size: 10,
       };
       cell.fill = {
         type: "pattern",
@@ -882,17 +909,21 @@ async function buildExcelCierreTabla(params: {
         },
       };
       cell.alignment = {
-        horizontal: colNumber === 4 ? "right" : "left",
-        vertical: "middle",
+        horizontal: colNumber === 6 ? "right" : "left",
+        vertical: "top",
+        wrapText: true,
       };
       cell.border = {
         bottom: { style: "thin", color: { argb: "FFE2E5EA" } },
       };
-      if (colNumber === 4) {
+      if (colNumber === 6) {
         cell.numFmt = '"$"#,##0;[Red]-"$"#,##0';
       }
     });
+    });
   });
+  cashWorksheet.autoFilter = { from: { row: cajaHeaderRow.number, column: 1 }, to: { row: cashWorksheet.rowCount, column: 6 } };
+  cashWorksheet.pageSetup = { orientation: "landscape", paperSize: 5, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "1:5" };
 
   worksheet.autoFilter = {
     from: { row: headerRow.number, column: 1 },
@@ -1543,16 +1574,14 @@ async function buildPdfCierreTabla(params: {
     .text("DETALLE DE MOVIMIENTOS", tableX, y);
   y += 18;
 
-  const cashColumns = fitColumns(
-    [
-      { key: "tipo", title: "MOVIMIENTO", width: 110 },
-      { key: "concepto", title: "CONCEPTO", width: 520 },
-      { key: "sede", title: "SEDE", width: 180 },
-      { key: "valor", title: "VALOR", width: 150, align: "right", tone: "money" },
-    ],
-    contentWidth
-  );
-  y = drawCompactTableHeader(doc, cashColumns, y, tableX, params.fonts);
+  y = drawCashMovementsTable(doc, params.movimientos, {
+    x: tableX, y, width: contentWidth, bottomMargin: 38, fonts: params.fonts,
+    formatAmount: formatoPesos,
+    onPage: () => {
+      doc.addPage();
+      return drawCierreContinuationHeader(doc, "MOVIMIENTOS DE CAJA - CONTINUACION", params.periodoLabel, params.cobertura, params.fonts);
+    },
+  });
 
   if (!params.movimientos.length) {
     doc
@@ -1560,45 +1589,6 @@ async function buildPdfCierreTabla(params: {
       .font(params.fonts.regular)
       .fontSize(9)
       .text("No hay ingresos o egresos registrados para este dia.", tableX, y + 16);
-  } else {
-    for (const movimiento of params.movimientos) {
-      if (y + 25 > doc.page.height - 38) {
-        doc.addPage();
-        y = drawCierreContinuationHeader(
-          doc,
-          "MOVIMIENTOS DE CAJA - CONTINUACION",
-          params.periodoLabel,
-          params.cobertura,
-          params.fonts
-        );
-        y = drawCompactTableHeader(doc, cashColumns, y, tableX, params.fonts);
-      }
-
-      const tipoMovimiento = movimiento.tipo.toUpperCase();
-      y = drawCompactRow(
-        doc,
-        cashColumns,
-        {
-          tipo: movimiento.tipo,
-          concepto: movimiento.concepto,
-          sede: movimiento.sedeNombre,
-          valor: formatoPesos(movimiento.valor),
-        },
-        y,
-        tableX,
-        25,
-        params.fonts,
-        {
-          index: params.movimientos.indexOf(movimiento),
-          rowTone:
-            tipoMovimiento === "EGRESO"
-              ? "expense"
-              : tipoMovimiento === "INGRESO"
-                ? "income"
-                : undefined,
-        }
-      );
-    }
   }
 
   drawCierrePageFooters(
@@ -1672,52 +1662,6 @@ function ensureSpace(
 
   doc.addPage();
   return drawSectionTitle(doc, title, 44, fonts);
-}
-
-function drawCashTableHeader(doc: PDFKit.PDFDocument, y: number, fonts: PdfFonts) {
-  doc
-    .fillColor("#475569")
-    .font(fonts.bold)
-    .fontSize(8)
-    .text("TIPO", 42, y)
-    .text("CONCEPTO", 106, y)
-    .text("SEDE", 300, y)
-    .text("VALOR", 464, y, { width: 104, align: "right" });
-
-  return y + 16;
-}
-
-function drawCashRow(
-  doc: PDFKit.PDFDocument,
-  row: CashMovementRow,
-  y: number,
-  fonts: PdfFonts
-) {
-  doc
-    .moveTo(36, y - 5)
-    .lineTo(576, y - 5)
-    .strokeColor("#e2e8f0")
-    .stroke();
-
-  doc
-    .fillColor("#0f172a")
-    .font(fonts.regular)
-    .fontSize(8.5)
-    .text(row.tipo, 42, y, { width: 58 })
-    .text(row.concepto, 106, y, {
-      width: 184,
-      ellipsis: true,
-    })
-    .text(row.sedeNombre, 300, y, {
-      width: 150,
-      ellipsis: true,
-    })
-    .text(formatoPesos(row.valor), 464, y, {
-      width: 104,
-      align: "right",
-    });
-
-  return y + 20;
 }
 
 function drawSaleField(
@@ -1966,6 +1910,8 @@ export async function GET(req: Request) {
           ...scope,
         },
         select: {
+          id: true,
+          createdAt: true,
           tipo: true,
           concepto: true,
           valor: true,
@@ -1989,6 +1935,8 @@ export async function GET(req: Request) {
           ...scope,
         },
         select: {
+          id: true,
+          createdAt: true,
           valor: true,
           observacion: true,
           sede: {
@@ -2168,16 +2116,20 @@ export async function GET(req: Request) {
       egresosCajaDia + egresosCarteraDia + salidasVentasTotal;
     const movimientosCierre: CashMovementRow[] = [
       ...movimientosDia.map((movimiento) => ({
+        id: String(movimiento.id),
+        createdAt: movimiento.createdAt,
         tipo: String(movimiento.tipo || "-"),
         concepto: String(movimiento.concepto || "-"),
+        descripcion: movimiento.descripcion || "",
         sedeNombre: movimiento.sede?.nombre || "-",
         valor: Number(movimiento.valor || 0),
       })),
       ...gastosCarteraDia.map((gasto) => ({
+        id: `GC-${gasto.id}`,
+        createdAt: gasto.createdAt,
         tipo: "EGRESO",
-        concepto: `${CONCEPTO_GASTO_CARTERA}${
-          gasto.observacion ? ` - ${gasto.observacion}` : ""
-        }`,
+        concepto: CONCEPTO_GASTO_CARTERA,
+        descripcion: gasto.observacion || "",
         sedeNombre: gasto.sede?.nombre || "-",
         valor: Number(gasto.valor || 0),
       })),
@@ -2338,7 +2290,8 @@ export async function GET(req: Request) {
 
     y += 18;
 
-    if (y + 78 > 716) {
+    // Keep the section title, table header and the first movement together.
+    if (y + 120 > 716) {
       doc.addPage();
       y = 44;
     }
@@ -2356,16 +2309,13 @@ export async function GET(req: Request) {
         .text("No hay ingresos o salidas de caja registrados para este dia.", 50, y + 15);
       y += 60;
     } else {
-      y = drawCashTableHeader(doc, y, fonts);
-
-      for (const movimiento of movimientosCierre) {
-        y = ensureSpace(doc, y, 24, fonts, "Detalles de caja");
-        if (y === 66) {
-          y = drawCashTableHeader(doc, y, fonts);
-        }
-
-        y = drawCashRow(doc, movimiento, y, fonts);
-      }
+      y = drawCashMovementsTable(doc, movimientosCierre, {
+        x: 36, y, width: contentWidth, bottomMargin: 76, fonts, formatAmount: formatoPesos,
+        onPage: () => {
+          doc.addPage();
+          return drawSectionTitle(doc, "Detalles de caja · continuación", 44, fonts);
+        },
+      });
     }
 
     doc
