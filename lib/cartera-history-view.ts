@@ -74,8 +74,8 @@ export function carteraHistorySummary(items: CarteraHistoryItem[]) {
   return { total, count: items.length, average: items.length ? total / items.length : 0 };
 }
 
-export function paginateCarteraHistory(items: CarteraHistoryItem[], requestedPage: number, requestedSize = 10) {
-  const size = Math.min(10, Math.max(1, Math.floor(requestedSize) || 10));
+export function paginateCarteraHistory(items: CarteraHistoryItem[], requestedPage: number, requestedSize = 20) {
+  const size = Math.min(20, Math.max(1, Math.floor(requestedSize) || 20));
   const pages = Math.max(1, Math.ceil(items.length / size));
   const page = Math.min(pages, Math.max(1, Math.floor(requestedPage) || 1));
   const offset = (page - 1) * size;

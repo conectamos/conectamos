@@ -152,10 +152,10 @@ test("rango inválido devuelve error breve y no produce resultados ni una export
   assert.equal(view.carteraDateRangeError("2026-10-14", "2026-10-14"), "");
 });
 
-test("paginación limita tamaños arbitrarios a diez, ajusta páginas vacías y conserva el contador real", () => {
+test("paginación limita tamaños arbitrarios a veinte, ajusta páginas vacías y conserva el contador real", () => {
   const view = load("lib/cartera-history-view.ts");
   const page = view.paginateCarteraHistory(rows, 99, 100);
-  assert.deepEqual({ page: page.page, pages: page.pages, size: page.size, total: page.total, from: page.from, to: page.to }, { page: 3, pages: 3, size: 10, total: 27, from: 21, to: 27 });
+  assert.deepEqual({ page: page.page, pages: page.pages, size: page.size, total: page.total, from: page.from, to: page.to }, { page: 2, pages: 2, size: 20, total: 27, from: 21, to: 27 });
   assert.deepEqual(page.items, rows.slice(20));
   assert.deepEqual(view.paginateCarteraHistory([], 99, 10), { page: 1, pages: 1, size: 10, total: 0, from: 0, to: 0, items: [] });
   assert.deepEqual(view.carteraHistoryPageNumbers(25, 51), [1, "…", 24, 25, 26, "…", 51]);
@@ -173,28 +173,33 @@ test("historial mantiene navegación superior autorizada, Caja activa, perfil y 
   assert.ok(elements(tree).some(node => node?.type === "a" && node.props.href === "/dashboard/financiero/cartera" && textOf(node).includes("Registrar gasto")));
 });
 
-test("paginación usa todos los resultados reales y nunca muestra más de diez registros", async () => {
+test("paginación muestra veinte registros por defecto y conserva el resto en la siguiente página", async () => {
   const instance = probe(); let tree = await instance.settle();
-  assert.equal(dataRows(tree).length, 10);
+  assert.equal(dataRows(tree).length, 20);
   assert.ok(textOf(tree).includes("27"));
-  button(tree, "2").props.onClick(); tree = await instance.settle();
-  assert.equal(dataRows(tree).length, 10);
-  assert.equal(rowId(dataRows(tree)[0]), rows[10].id);
   button(tree, "Siguiente").props.onClick(); tree = await instance.settle();
   assert.equal(dataRows(tree).length, 7);
+  assert.equal(rowId(dataRows(tree)[0]), rows[20].id);
   assert.equal(rowId(dataRows(tree).at(-1)), rows[26].id);
   assert.equal(button(tree, "Siguiente").props.disabled, true);
   button(tree, "Anterior").props.onClick(); tree = await instance.settle();
-  assert.equal(dataRows(tree).length, 10);
+  assert.equal(dataRows(tree).length, 20);
 });
 
-test("selector de filas conserva el máximo de diez y reinicia la página al cambiar tamaño", async () => {
+test("selector ofrece veinte, diez y cinco filas y reinicia la página al cambiar tamaño", async () => {
   const instance = probe(); let tree = await instance.settle();
   const options = elements(byId(tree, "cartera-filas")).filter(node => node?.type === "option").map(node => Number(node.props.value));
-  assert.ok(options.every(value => value > 0 && value <= 10));
-  button(tree, "3").props.onClick(); tree = await instance.settle();
+  assert.deepEqual(options, [20, 10, 5]);
+  button(tree, "2").props.onClick(); tree = await instance.settle();
   byId(tree, "cartera-filas").props.onChange({ target: { value: "5" } }); tree = await instance.settle();
   assert.equal(dataRows(tree).length, 5);
+  assert.equal(rowId(dataRows(tree)[0]), rows[0].id);
+  assert.equal(button(tree, "Anterior").props.disabled, true);
+  byId(tree, "cartera-filas").props.onChange({ target: { value: "10" } }); tree = await instance.settle();
+  assert.equal(dataRows(tree).length, 10);
+  button(tree, "2").props.onClick(); tree = await instance.settle();
+  byId(tree, "cartera-filas").props.onChange({ target: { value: "20" } }); tree = await instance.settle();
+  assert.equal(dataRows(tree).length, 20);
   assert.equal(rowId(dataRows(tree)[0]), rows[0].id);
   assert.equal(button(tree, "Anterior").props.disabled, true);
 });
@@ -222,14 +227,14 @@ test("tabla conserva columnas y muestra fecha y hora de Colombia en dos líneas"
   assert.ok(elements(row).some(node => node?.props?.["aria-label"]?.includes("Eliminar")));
 });
 
-test("exportación contiene todos los resultados filtrados y no sólo los diez visibles", async () => {
+test("exportación contiene todos los resultados filtrados independientemente de las veinte filas visibles", async () => {
   const instance = probe(); let tree = await instance.settle();
   await button(tree, "Exportar Excel").props.onClick(); await instance.settle();
   assert.equal(instance.exports.length, 1);
   const firstSheet = instance.exports[0].book.sheets[0].sheet;
   assert.equal(firstSheet.data.filter(row => Array.isArray(row) ? String(row[0]).includes("950") : JSON.stringify(row).includes("950")).length, 27);
   searchField(tree).props.onChange({ target: { value: "recaudo" } }); tree = await instance.settle();
-  assert.equal(dataRows(tree).length, 10);
+  assert.equal(dataRows(tree).length, 13);
   await button(tree, "Exportar Excel").props.onClick(); await instance.settle();
   const filtered = instance.exports[1].book.sheets[0].sheet.data;
   assert.equal(filtered.filter(row => JSON.stringify(row).includes("Gasto sintético")).length, 13);
@@ -241,8 +246,8 @@ test("ADMIN edita y elimina, AUDITOR sólo edita y usuario de sede sólo consult
     const instance = probe({ user }); const tree = await instance.settle();
     const editActions = elements(tree).filter(node => node?.type === "button" && /^Editar gasto/i.test(node.props["aria-label"] ?? ""));
     const deleteActions = elements(tree).filter(node => node?.type === "button" && /^Eliminar gasto/i.test(node.props["aria-label"] ?? ""));
-    assert.equal(editActions.length, user.rolNombre === "SUPERVISOR" ? 0 : 10);
-    assert.equal(deleteActions.length, user.rolNombre === "ADMIN" ? 10 : 0);
+    assert.equal(editActions.length, user.rolNombre === "SUPERVISOR" ? 0 : 20);
+    assert.equal(deleteActions.length, user.rolNombre === "ADMIN" ? 20 : 0);
     if (user.rolNombre === "SUPERVISOR") {
       assert.ok(!instance.calls.some(call => call.url === "/api/sedes"));
       assert.ok(dataRows(tree).every(row => textOf(row).includes("SEDE 3")));
@@ -438,7 +443,7 @@ test("cambio de sesión ADMIN a sede oculta indicadores anteriores hasta recibir
   } });
   let tree = await instance.settle(); const previousTotal = instance.view.total;
   button(tree, "2").props.onClick(); tree = await instance.settle();
-  rowAction(tree, "Editar", rows[10].id).props.onClick(); tree = instance.render().tree;
+  rowAction(tree, "Editar", rows[20].id).props.onClick(); tree = instance.render().tree;
   assert.ok(elements(tree).some(node => node?.props?.role === "dialog"));
   phase = "old"; const oldLoad = instance.view.cargar("", false);
   session = supervisor; phase = "new"; const refresh = instance.refresh();
@@ -463,7 +468,7 @@ test("cambio de sesión ADMIN a sede oculta indicadores anteriores hasta recibir
 
 test("fallo transitorio de sesión en actualización conserva borrador y filtros y permite recuperar el historial", async () => {
   let failSession = false;
-  const instance = probe({ fetchImpl: url => url === "/api/session" && failSession ? response({ error: "Sesión temporalmente no disponible QA" }, 503) : null });
+  const instance = probe({ initial: { filas: 10 }, fetchImpl: url => url === "/api/session" && failSession ? response({ error: "Sesión temporalmente no disponible QA" }, 503) : null });
   let tree = await instance.settle();
   searchField(tree).props.onChange({ target: { value: "corte" } }); tree = await instance.settle();
   button(tree, "2").props.onClick(); tree = await instance.settle();

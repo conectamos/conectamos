@@ -42,7 +42,7 @@ export default function DetalleCarteraPage() {
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [pagina, setPagina] = useState(1);
-  const [filas, setFilas] = useState(10);
+  const [filas, setFilas] = useState(20);
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [valorEditando, setValorEditando] = useState("");
   const [observacionEditando, setObservacionEditando] = useState("");
@@ -291,7 +291,7 @@ export default function DetalleCarteraPage() {
                   </tr>; })}
           </tbody></table>
         </div>
-        <footer className={styles.pagination}><div className={styles.resultCount}><label><span className={styles.srOnly}>Filas por página</span><select id="cartera-filas" value={filas} onChange={(event) => { setFilas(Number(event.target.value)); setPagina(1); }}><option value={10}>10 por página</option><option value={5}>5 por página</option></select></label><span aria-live="polite">{unavailable ? "—" : `Mostrando ${paginacion.from}–${paginacion.to} de ${paginacion.total.toLocaleString("es-CO")}`}</span></div>
+        <footer className={styles.pagination}><div className={styles.resultCount}><label><span className={styles.srOnly}>Filas por página</span><select id="cartera-filas" value={filas} onChange={(event) => { setFilas(Number(event.target.value)); setPagina(1); }}><option value={20}>20 por página</option><option value={10}>10 por página</option><option value={5}>5 por página</option></select></label><span aria-live="polite">{unavailable ? "—" : `Mostrando ${paginacion.from}–${paginacion.to} de ${paginacion.total.toLocaleString("es-CO")}`}</span></div>
           <nav className={styles.pageNumbers} aria-label="Paginación de gastos"><button type="button" className={styles.button} disabled={unavailable || paginacion.page === 1} onClick={() => setPagina(paginacion.page - 1)}>Anterior</button>{carteraHistoryPageNumbers(paginacion.page, paginacion.pages).map((page, index) => page === "…" ? <span key={`gap-${index}`} className={styles.ellipsis}>…</span> : <button type="button" key={page} className={`${styles.pageButton} ${page === paginacion.page ? styles.pageActive : ""}`} disabled={unavailable} aria-current={page === paginacion.page ? "page" : undefined} aria-label={`Página ${page}`} onClick={() => setPagina(page)}>{page}</button>)}<button type="button" className={styles.button} disabled={unavailable || paginacion.page === paginacion.pages} onClick={() => setPagina(paginacion.page + 1)}>Siguiente</button></nav>
         </footer>
       </section>
