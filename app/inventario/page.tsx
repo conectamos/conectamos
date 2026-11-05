@@ -63,6 +63,7 @@ type SessionUser = {
   sedeNombre: string;
   rolId: number;
   rolNombre: string;
+  puedeIngresarInventario: boolean;
 };
 
 type Sede = {
@@ -1668,7 +1669,9 @@ vistaDisponible && (pestana === "deudas" || filtrosEstado.includes("DEUDA") || i
             <div className={styles.headerControls}>
               <Link href="/inventario/historial">Centro IMEI</Link>
               <Link href="/prestamos">Préstamos</Link>
-              <Link className={styles.newInventory} href="/inventario/nuevo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>Nuevo inventario</Link>
+              {user?.puedeIngresarInventario === true && (
+                <Link className={styles.newInventory} href="/inventario/nuevo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>Nuevo inventario</Link>
+              )}
               <SalesProfile name={user?.nombre || user?.usuario || "Usuario"} role={user?.rolNombre || ""} />
             </div>
           </header>

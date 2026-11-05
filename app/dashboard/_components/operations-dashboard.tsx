@@ -579,17 +579,7 @@ function PayJoyAdvisorsPanel({ asesores, context }: { asesores: CommercialSummar
 function FinancialTab({ financieras, ocultarMonto }: { financieras: CommercialSummary["topFinancieras"]; ocultarMonto: boolean }) {
   return financieras.length === 0 ? <p className={styles.empty}>Sin usos de financieras en el periodo.</p> : <div className={styles.tableWrap}><table className={`${styles.table} ${styles.financialTable}`}><thead><tr><th>Financiera</th><th>Usos</th>{!ocultarMonto && <th>Monto financiado</th>}</tr></thead><tbody>{financieras.map((item, index) => <tr key={`${index}-${item.nombre}`}><td>{item.nombre}</td><td data-label="Usos">{formatoNumero(item.total)}</td>{!ocultarMonto && <td data-label="Monto financiado" className={item.monto < 0 ? styles.negative : undefined}>{formatoPesos(item.monto)}</td>}</tr>)}</tbody></table></div>;
 }
-function QuickActions({
-  actions = [
-    { href: "/ventas/nuevo", icon: "sales", label: "Nueva venta" },
-    { href: "/inventario/nuevo", icon: "inventory", label: "Nuevo inventario" },
-    { href: "/caja/gestion", icon: "cash", label: "Registrar egreso" },
-    { href: "/dashboard/analitico", icon: "reports", label: "Ver reportes" },
-  ],
-}: {
-  actions?: NavigationItem[];
-}) {
-
+function QuickActions({ actions }: { actions: NavigationItem[] }) {
   return (
     <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.045)]">
       <h2 className="text-xl font-black tracking-tight text-slate-950">Accesos rápidos</h2>
@@ -839,6 +829,7 @@ export default function OperationsDashboard({
   operationalAvailable = true,
   period,
   periodLabel,
+  puedeIngresarInventario,
   puedeVerEquality,
   puedeVerFacturacion,
   puedeVerReporteSiigo,
@@ -864,6 +855,7 @@ export default function OperationsDashboard({
   operationalAvailable?: boolean;
   period: string;
   periodLabel: string;
+  puedeIngresarInventario: boolean;
   puedeVerEquality: boolean;
   puedeVerFacturacion: boolean;
   puedeVerReporteSiigo: boolean;
@@ -880,6 +872,9 @@ export default function OperationsDashboard({
       ? !operationalAvailable
       : !commercialAvailable || !financialAvailable || !operationalAvailable;
   const reportHref = esAdmin ? "/dashboard/reportes" : "/dashboard/analitico";
+  const nuevoInventario: NavigationItem[] = puedeIngresarInventario
+    ? [{ href: "/inventario/nuevo", icon: "inventory", label: "Nuevo inventario" }]
+    : [];
   const payJoyExtensionLinks: NavigationItem[] = puedeVerExtensionesPayJoy ? [
     { href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" },
   ] : [];
@@ -1032,7 +1027,7 @@ export default function OperationsDashboard({
       icon: "inventory",
       links: [
         { href: "/inventario", label: "Ver inventario" },
-        { href: "/inventario/nuevo", label: "Nuevo inventario" },
+        ...nuevoInventario,
         { href: "/inventario/historial", label: "Historial IMEI" },
       ],
     },
@@ -1073,7 +1068,7 @@ export default function OperationsDashboard({
       icon: "inventory",
       links: [
         { href: "/inventario", label: "Ver inventario" },
-        { href: "/inventario/nuevo", label: "Nuevo inventario" },
+        ...nuevoInventario,
         { href: "/inventario/historial", label: "Historial IMEI" },
       ],
     },
@@ -1100,24 +1095,20 @@ export default function OperationsDashboard({
   const roleQuickActions: NavigationItem[] = esStandSoloInventario
     ? [
         { href: "/inventario", icon: "inventory", label: "Ver inventario" },
-        {
-          href: "/inventario/nuevo",
-          icon: "inventory",
-          label: "Nuevo inventario",
-        },
+        ...nuevoInventario,
         { href: "/prestamos", icon: "loans", label: "Ver préstamos" },
         { href: "/prestamos/nuevo", icon: "loans", label: "Nuevo préstamo" },
       ]
     : esStand
     ? [
         { href: "/ventas/nuevo", icon: "sales", label: "Nueva venta" },
-        { href: "/inventario/nuevo", icon: "inventory", label: "Nuevo inventario" },
+        ...nuevoInventario,
         { href: "/caja/gestion", icon: "cash", label: "Registrar movimiento" },
         { href: "/caja/cierre-dia", icon: "reports", label: "Cierre del día" },
       ]
     : [
         { href: "/ventas/nuevo", icon: "sales", label: "Nueva venta" },
-        { href: "/inventario/nuevo", icon: "inventory", label: "Nuevo inventario" },
+        ...nuevoInventario,
         { href: "/caja/gestion", icon: "cash", label: "Registrar egreso" },
         {
           href: reportHref,

@@ -12,6 +12,14 @@ import * as accessControl from "../lib/access-control.ts";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const jsx = createRequire(import.meta.url)("react/jsx-runtime");
+const intakeAccess = {};
+const intakeAccessSource = ts.transpileModule(readFileSync(join(ROOT, "lib/inventory-intake-access.ts"), "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS },
+}).outputText;
+new Function("require", "exports", intakeAccessSource)((name) => {
+  assert.equal(name, "@/lib/access-control");
+  return accessControl;
+}, intakeAccess);
 const path = "app/inventario/nuevo/page.tsx";
 const source = readFileSync(join(ROOT, path), "utf8");
 const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -33,7 +41,8 @@ function textOf(node) { if (node == null || typeof node === "boolean") return ""
 function control(tree, id) { const found = elements(tree).find(node => node.props?.id === id); assert.ok(found, `Falta ${id}`); return found; }
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const event = () => ({ preventDefault() {} });
-const admin = { id: 4, nombre: "Administrador QA", usuario: "adminqa", sedeId: 1, sedeNombre: "BODEGA PRINCIPAL", rolNombre: "ADMIN" };
+const admin = { id: 4, nombre: "Administrador QA", usuario: "adminqa", sedeId: 1, sedeNombre: "BODEGA PRINCIPAL", rolNombre: "ADMIN", puedeIngresarInventario: true };
+const supervisor = { ...admin, id: 8, sedeId: 2, sedeNombre: "SEDE QA", rolNombre: "SUPERVISOR", perfilTipo: "SUPERVISOR_TIENDA" };
 const catalogo = [{ id: 1, nombre: "Referencia QA", activo: true }, { id: 2, nombre: "Referencia oculta QA", activo: false }];
 const valid = "001234567890123";
 const existing = "101234567890123";
@@ -59,6 +68,7 @@ function probe({ state: stateInput = {}, fetchImpl, session = admin, storage = n
     "@/lib/inventory-imeis": imeis,
     "@/lib/bodega-navigation": bodegaNavigation,
     "@/lib/access-control": accessControl,
+    "@/lib/inventory-intake-access": intakeAccess,
     "@/lib/use-live-refresh": { triggerLiveRefresh: source => refreshes.push(source) },
     "./nuevo.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "./distributor-selector": { __esModule: true, default: props => jsx.jsx("select", { id: "ingreso-distribuidor", value: props.value, disabled: props.disabled, onChange: event => props.onChange(event.target.value) }) },
@@ -87,7 +97,7 @@ function probe({ state: stateInput = {}, fetchImpl, session = admin, storage = n
 
 test("carga sesión y catálogo; navegación completa conserva Inventario activo y referencias ocultas excluidas", async () => {
   const instance = probe(); let tree = instance.render();
-  assert.equal(elements(tree).find(node => node.type === "button" && node.props.type === "submit").props.disabled, true);
+  assert.ok(!elements(tree).some(node => node.type === "form"));
   tree = await instance.init();
   assert.deepEqual(instance.calls.map(call => call.url), ["/api/session", "/api/inventario-principal/referencias"]);
   assert.ok(elements(tree).some(node => node.type === "a" && node.props.href === "/inventario" && node.props["aria-current"] === "page"));
@@ -183,16 +193,43 @@ test("conflicto de inventario conserva campos, invalida revisión y permite corr
   assert.equal(control(tree, "imei-individual").props.disabled, false); assert.deepEqual(instance.refreshes, []);
 });
 
-test("usuario de sede conserva deuda, acreedor y ruta propia; no obtiene acceso administrativo", async () => {
-  const instance = probe({ state: { ...initial, user: { ...admin, id: 8, rolNombre: "SUPERVISOR", sedeNombre: "SEDE QA" }, imei: valid, distribuidor: "Proveedor FINSER", estadoFinanciero: "DEUDA", deboA: "Proveedor FINSER" } });
-  let tree = instance.render();
-  assert.ok(control(tree, "ingreso-acreedor")); assert.equal(control(tree, "ingreso-referencia").type, "input");
-  assert.ok(!elements(tree).some(node => node.props?.id === "ingreso-factura"));
-  assert.ok(!elements(tree).some(node => node.type === "a" && node.props.href === "/dashboard/sedes"));
-  await instance.review(); await instance.save();
-  assert.equal(instance.calls[0].url, "/api/inventario/revisar"); assert.equal(JSON.parse(instance.calls[0].options.body).destino, "SEDE");
-  const write = instance.calls.at(-1); const payload = JSON.parse(write.options.body);
-  assert.equal(write.url, "/api/inventario"); assert.equal(payload.estadoFinanciero, "DEUDA"); assert.equal(payload.deboA, "Proveedor FINSER"); assert.equal(payload.imei, valid);
+test("un supervisor sin permiso no carga el formulario ni los catálogos y no puede enviar solicitudes de ingreso", async () => {
+  for (const rolNombre of ["SUPERVISOR", "ADMIN"]) {
+    const instance = probe({ session: { ...supervisor, rolNombre, puedeIngresarInventario: false } });
+    const tree = await instance.init();
+    assert.ok(textOf(tree).includes("Ingreso de inventario deshabilitado"));
+    assert.ok(!elements(tree).some(node => node.type === "form"));
+    assert.ok(elements(tree).some(node => node.type === "a" && node.props.href === "/inventario" && textOf(node) === "Volver al inventario"));
+    await instance.review();
+    await instance.save();
+    assert.deepEqual(instance.calls.map(call => call.url), ["/api/session"]);
+  }
+});
+
+test("un supervisor habilitado conserva el destino de su sede incluso si la cuenta base es ADMIN", async () => {
+  for (const rolNombre of ["SUPERVISOR", "ADMIN"]) {
+    const instance = probe({
+      session: { ...supervisor, rolNombre },
+      state: { ...initial, user: null, loading: true, imei: valid, distribuidor: "Proveedor FINSER", estadoFinanciero: "DEUDA", deboA: "Proveedor FINSER" },
+    });
+    const tree = await instance.init();
+    assert.deepEqual(instance.calls.map(call => call.url), ["/api/session"]);
+    assert.equal(instance.view.destino, "SEDE QA");
+    assert.ok(control(tree, "ingreso-acreedor"));
+    assert.equal(control(tree, "ingreso-referencia").type, "input");
+    assert.ok(!elements(tree).some(node => node.props?.id === "ingreso-factura"));
+    assert.ok(!elements(tree).some(node => node.type === "a" && node.props.href === "/dashboard/sedes"));
+    await instance.review();
+    await instance.save();
+    assert.equal(instance.calls[1].url, "/api/inventario/revisar");
+    assert.equal(JSON.parse(instance.calls[1].options.body).destino, "SEDE");
+    const write = instance.calls.at(-1);
+    const payload = JSON.parse(write.options.body);
+    assert.equal(write.url, "/api/inventario");
+    assert.equal(payload.estadoFinanciero, "DEUDA");
+    assert.equal(payload.deboA, "Proveedor FINSER");
+    assert.equal(payload.imei, valid);
+  }
 });
 
 test("recargar recupera un intento pendiente y confirma su clave sin volver a insertar con otra", async () => {

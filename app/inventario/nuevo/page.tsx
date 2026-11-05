@@ -8,14 +8,24 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import DashboardIcon, { type DashboardIconName } from "@/app/dashboard/_components/dashboard-icon";
 import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
-import { esRolBodega, puedeGestionarBodegaPrincipal } from "@/lib/access-control";
+import { esRolBodega } from "@/lib/access-control";
+import { puedeIngresarInventarioPrincipal } from "@/lib/inventory-intake-access";
 import { extraerImeisMasivos, normalizarSeparadoresImeisMasivos } from "@/lib/inventory-imeis";
 import { triggerLiveRefresh } from "@/lib/use-live-refresh";
 import styles from "./nuevo.module.css";
 import DistributorSelector from "./distributor-selector";
 
 const OPCIONES_PROVEEDOR_SEDE = ["Proveedor FINSER", "Proveedor BUNQUER", "Proveedor TECNOSUPER", "Proveedor IPHONE ANGIE", "Proveedor Felipe", "Proveedor SEDE 1", "Proveedor SEDE 2", "Proveedor SEDE 3", "Proveedor SEDE 4", "Proveedor SEDE 5", "Proveedor SEDE 6", "Proveedor SEDE 7", "Proveedor EMOVIL", "Proveedor POLLO", "Proveedor ANDRES", "Proveedor EMMATECH"];
-type SessionUser = { id: number; nombre: string; usuario: string; sedeId: number; sedeNombre: string; rolNombre: string };
+type SessionUser = {
+  id: number;
+  nombre: string;
+  usuario: string;
+  sedeId: number;
+  sedeNombre: string;
+  rolNombre: string;
+  perfilTipo?: string | null;
+  puedeIngresarInventario: boolean;
+};
 type ReferenciaCatalogo = { id: number; nombre: string; activo: boolean };
 type Entry = { indice: number; imei: string; estado: "VALIDO" | "INCORRECTO" | "REPETIDO" | "EXISTENTE"; mensaje: string };
 type Review = { ok: boolean; entradas: Entry[]; imeisValidos: string[]; detectados: number; validos: number; incorrectos: number; repetidos: number; existentes: number };
@@ -56,7 +66,8 @@ export default function NuevoInventarioPage() {
   const requestRef = useRef<Pending | null>(null);
   const reviewedInput = useRef("");
   const lookupRef = useRef(0);
-  const esAdmin = puedeGestionarBodegaPrincipal(user?.rolNombre);
+  const esAdmin = puedeIngresarInventarioPrincipal(user);
+  const puedeIngresarInventario = user?.puedeIngresarInventario === true;
   const esBodega = esRolBodega(user?.rolNombre);
   const destino = esAdmin ? "Bodega principal" : user?.sedeNombre || "Tu sede";
   const rutaCancelar = esAdmin ? "/inventario-principal" : "/inventario";
@@ -81,7 +92,12 @@ export default function NuevoInventarioPage() {
       try {
         const res = await fetch("/api/session", { cache: "no-store" }); const data = await res.json();
         if (!res.ok || !data.id) throw new Error(data.error || "No se pudo cargar la sesión.");
-        const admin = puedeGestionarBodegaPrincipal(data.rolNombre);
+        if (!active) return;
+        if (data.puedeIngresarInventario !== true) {
+          setUser(data);
+          return;
+        }
+        const admin = puedeIngresarInventarioPrincipal(data);
         let referencias: ReferenciaCatalogo[] = [];
         if (admin) {
           const resCatalogo = await fetch("/api/inventario-principal/referencias", { cache: "no-store" }); const dataCatalogo = await resCatalogo.json();
@@ -118,7 +134,7 @@ export default function NuevoInventarioPage() {
     } catch { /* Optional autofill does not prevent manual entry. */ }
   };
   const revisarLista = async (): Promise<Review | null> => {
-    if (reviewLock.current || !user) return null;
+    if (reviewLock.current || !puedeIngresarInventario) return null;
     if (entradas.length === 0) { setNotice({ error: true, text: "Ingresa al menos un IMEI para revisar." }); return null; }
     reviewLock.current = true; setReviewing(true); setNotice(null); setResultado(false);
     try {
@@ -130,7 +146,7 @@ export default function NuevoInventarioPage() {
   };
   const guardar = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (lock.current || reviewLock.current || loading || initError || !user) return;
+    if (lock.current || reviewLock.current || loading || initError || !puedeIngresarInventario || !user) return;
     setNotice(null); setResultado(false);
     if (!requestRef.current) {
       if (!referencia.trim() || (esAdmin && !referenciasActivas.some((item) => item.nombre === referencia))) { setNotice({ error: true, text: esAdmin ? "Selecciona una referencia activa del catálogo." : "La referencia es obligatoria." }); return; }
@@ -175,7 +191,14 @@ export default function NuevoInventarioPage() {
       <header className={styles.heading}><div><nav className={styles.breadcrumb} aria-label="Ubicación"><Link href={rutaCancelar}>Inventario</Link><span>/</span><span>{destino}</span></nav><h1>Ingresar equipos</h1><p>Registra equipos individuales o en lote.</p></div><span className={styles.destination}><DashboardIcon name="store" />{destino}</span></header>
       {initError && <div className={styles.error} role="alert"><DashboardIcon name="warning" />{initError}</div>}
       {notice && <div className={notice.error ? styles.error : styles.success} role={notice.error ? "alert" : "status"}><DashboardIcon name={notice.error ? "warning" : "approvals"} /><span>{notice.text}{pending && !guardando && " Los datos permanecen bloqueados hasta confirmar el resultado."}</span>{resultado && <Link href={rutaCancelar}>Ver inventario <DashboardIcon name="arrow" /></Link>}</div>}
-      <form className={styles.workspace} onSubmit={(event) => void guardar(event)} aria-busy={guardando || reviewing}>
+      {!loading && user && !puedeIngresarInventario && (
+        <section className={styles.card} aria-labelledby="ingreso-deshabilitado">
+          <h2 id="ingreso-deshabilitado">Ingreso de inventario deshabilitado</h2>
+          <p className={styles.sectionNote}>Los equipos se reciben por despacho desde bodega principal.</p>
+          <Link href={rutaCancelar} className={styles.button}>Volver al inventario</Link>
+        </section>
+      )}
+      {puedeIngresarInventario && <form className={styles.workspace} onSubmit={(event) => void guardar(event)} aria-busy={guardando || reviewing}>
         <div className={styles.formColumn}>
           <section className={styles.card} aria-labelledby="identificacion-title">
             <h2 id="identificacion-title">Identificación de equipos</h2>
@@ -208,7 +231,7 @@ export default function NuevoInventarioPage() {
             <Link href={rutaCancelar} className={styles.button} onClick={(event) => { if (guardando) event.preventDefault(); }}>Cancelar</Link>
           </div>
         </aside>
-      </form>
+      </form>}
       {loading && <p className={styles.loading} role="status">Cargando sesión y catálogos…</p>}
     </main>
   </div>;

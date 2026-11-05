@@ -20,6 +20,7 @@ function load(path, imports = {}) {
 }
 const imeiHelpers = load("lib/inventory-imeis.ts");
 const access = load("lib/access-control.ts");
+const intakeAccess = load("lib/inventory-intake-access.ts", { "@/lib/access-control": access });
 const productTypes = load("lib/product-types.ts");
 const operationalEntities = load("lib/active-operational-entities.ts");
 class NextResponse extends Response {
@@ -132,6 +133,11 @@ function serverProbe({ user = ADMIN, database = databaseProbe(), activeReference
     "next/server": { NextResponse },
     "@/lib/auth": { getSessionUser: async () => user },
     "@/lib/access-control": access,
+    "@/lib/inventory-intake-access": intakeAccess,
+    "@/lib/inventory-intake-policy": {
+      consultarPermisoIngresoSede: async (actor) => intakeAccess.puedeIngresarInventarioSede(actor, true),
+      leerIngresoDirectoSede: async () => true,
+    },
     "@/lib/product-types": productTypes,
     "@/lib/active-operational-entities": operationalEntities,
     "@/lib/inventory-imeis": imeiHelpers,

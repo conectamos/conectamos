@@ -8,6 +8,8 @@ import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import styles from "./sedes.module.css";
 import AdminDeleteDialog from "@/app/_components/admin-delete-dialog";
 import { puedeEliminarEntidadesCentrales } from "@/lib/admin-entity-removal-access";
+import { esAdministradorCentral } from "@/lib/access-control";
+import InventoryIntakeSetting from "./inventory-intake-setting";
 
 type SessionUser = {
   id: number;
@@ -805,6 +807,7 @@ export default function GestionSedesPage() {
           <div className={`${styles.metric} ${styles.siigoIcon}`}><DashboardIcon name="document" /><div><strong>{sedes.filter((sede) => sede.siigoEnabled).length.toLocaleString("es-CO")}</strong><span>Siigo activo</span></div></div>
           <div className={`${styles.metric} ${styles.creditIcon}`}><DashboardIcon name="inventory" /><div><strong>{sedes.filter((sede) => sede.soloInventarioPorCobrar).length.toLocaleString("es-CO")}</strong><span>Solo por cobrar</span></div></div>
         </section>
+        {esAdministradorCentral(user) && <InventoryIntakeSetting />}
         {mensaje && <div className={styles.notice} role="status">{mensaje}</div>}
         <div className={`${styles.workspace} ${editor !== null ? styles.withEditor : ""}`}>
           <div className={styles.listColumn}>

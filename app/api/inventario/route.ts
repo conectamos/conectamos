@@ -6,6 +6,8 @@ import { esSedeVentas } from "@/lib/sedes";
 import { normalizarTipoProducto } from "@/lib/product-types";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { InventoryIntakeError, leerClaveCarga, leerImeisCarga, registrarCargaInventarioUnaVez } from "@/lib/inventory-intake-registration";
+import { INGRESO_DIRECTO_DESHABILITADO, puedeIngresarInventarioSede } from "@/lib/inventory-intake-access";
+import { consultarPermisoIngresoSede, leerIngresoDirectoSede } from "@/lib/inventory-intake-policy";
 import { EntidadOperativaInactivaError, validarSedesActivasOperacion } from "@/lib/active-operational-entities";
 import {
   nombreHistoricoAcreedor,
@@ -221,8 +223,11 @@ export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    if (!puedeAccederModulosOperativos(user.perfilTipo)) {
+    if (!puedeIngresarInventarioSede(user, true)) {
       return NextResponse.json({ error: "Este perfil no puede ingresar inventario" }, { status: 403 });
+    }
+    if (!(await consultarPermisoIngresoSede(user))) {
+      return NextResponse.json({ error: INGRESO_DIRECTO_DESHABILITADO }, { status: 403 });
     }
     let data: Record<string, unknown>;
     try {
@@ -239,7 +244,7 @@ export async function POST(req: Request) {
     const distribuidor = String(data.distribuidor ?? "").trim();
     const estadoFinanciero = String(data.estadoFinanciero ?? "").trim().toUpperCase();
     const deboA = data.deboA ? String(data.deboA).trim() : null;
-    const esAdmin = ["ADMIN", "AUDITOR"].includes(user.rolNombre.toUpperCase());
+    const esAdmin = puedeIngresarInventarioSede(user);
     const sedeSolicitada = data.sedeId === undefined ? user.sedeId :
       typeof data.sedeId === "number" || typeof data.sedeId === "string" ? Number(data.sedeId) : NaN;
     if (!Number.isInteger(sedeSolicitada) || sedeSolicitada <= 0) throw new InventoryIntakeError("Sede inválida.");
@@ -257,6 +262,9 @@ export async function POST(req: Request) {
       usuarioId: user.id, destino: "SEDE", clave, imeis,
       solicitud: { imeis, referencia, tipoProducto, color, costo, distribuidor, sedeId, estadoFinanciero, deboA },
       registrar: async (tx) => {
+        if (!esAdmin && !(await leerIngresoDirectoSede(tx))) {
+          throw new InventoryIntakeError(INGRESO_DIRECTO_DESHABILITADO, 403, "INGRESO_DESHABILITADO");
+        }
         await validarSedesActivasOperacion(tx, [sedeId]);
         const sede = await tx.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } });
         if (!sede) throw new InventoryIntakeError("Sede inválida.");

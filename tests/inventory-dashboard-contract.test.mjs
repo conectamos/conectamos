@@ -31,6 +31,7 @@ const prestamos = loadTypeScript("lib/prestamos.ts");
 const sedes = loadTypeScript("lib/sedes.ts");
 const productTypes = loadTypeScript("lib/product-types.ts");
 const access = loadTypeScript("lib/access-control.ts");
+const intakeAccess = loadTypeScript("lib/inventory-intake-access.ts", { "@/lib/access-control": access });
 const creditorHelpers = loadTypeScript("lib/inventory-creditors.ts", {
   "@/lib/prisma": { __esModule: true, default: {} }, "@/lib/prestamos": prestamos,
 });
@@ -837,6 +838,8 @@ function apiProbe(user, options = {}) {
     "@/lib/access-control": access, "@/lib/prestamos": prestamos, "@/lib/sedes": sedes, "@/lib/product-types": productTypes,
     "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: record("ensure-schema", undefined) }, "@/lib/siigo": {},
     "@/lib/inventory-intake-registration": {},
+    "@/lib/inventory-intake-access": intakeAccess,
+    "@/lib/inventory-intake-policy": { consultarPermisoIngresoSede: async () => false, leerIngresoDirectoSede: async () => false },
     "@/lib/active-operational-entities": loadTypeScript("lib/active-operational-entities.ts"),
     "@/lib/inventory-creditors": {
       ...creditorHelpers,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import BodegaDashboard from "./_components/bodega-dashboard";
 import { getBodegaDashboard, type BodegaDashboardData } from "@/lib/bodega-dashboard";
 import { getSessionUser } from "@/lib/auth";
+import { consultarPermisoIngresoInventario } from "@/lib/inventory-intake-policy";
 import { puedeConsultarExtensionesPayJoy } from "@/lib/payjoy-extensions-access";
 import prisma from "@/lib/prisma";
 import {
@@ -728,6 +729,7 @@ export default async function DashboardPage({
   const esSupervisor =
     esPerfilSupervisor(session.perfilTipo) ||
     String(session.rolNombre || "").toUpperCase() === "SUPERVISOR";
+  const puedeIngresarInventario = await consultarPermisoIngresoInventario(session);
   const esSedeSoloInventario = !esAdmin && Boolean(session.sedeSoloInventarioPorCobrar);
   const esStandSoloInventario =
     esSedeSoloInventario && esSedeStand(session.sedeNombre);
@@ -953,6 +955,7 @@ export default async function DashboardPage({
           operationalAvailable={resumenOperativoDisponible}
           period={mesActual.key}
           periodLabel={mesActual.label}
+          puedeIngresarInventario={puedeIngresarInventario}
           puedeVerEquality={puedeVerEquality}
           puedeVerFacturacion={puedeVerFacturacion}
           puedeVerReporteSiigo={puedeVerReporteSiigo}
@@ -1040,7 +1043,9 @@ export default async function DashboardPage({
         "Consulta inventario, movimientos y trazabilidad del equipo disponible.",
       actions: [
         { href: "/inventario", label: "Ver inventario", tone: "primary" },
-        { href: "/inventario/nuevo", label: "Nuevo inventario", tone: "secondary" },
+        ...(puedeIngresarInventario
+          ? ([{ href: "/inventario/nuevo", label: "Nuevo inventario", tone: "secondary" }] as ModuleAction[])
+          : []),
         ...(esAdmin
           ? ([{ href: "/inventario-principal", label: "Bodega principal", tone: "secondary" }] as ModuleAction[])
           : []),

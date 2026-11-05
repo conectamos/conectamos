@@ -6,6 +6,7 @@ import { normalizarTipoProducto } from "@/lib/product-types";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { enriquecerRegistrosConCatalogo } from "@/lib/record-catalog-media";
 import { InventoryIntakeError, leerClaveCarga, leerImeisCarga, registrarCargaInventarioUnaVez } from "@/lib/inventory-intake-registration";
+import { puedeIngresarInventarioPrincipal } from "@/lib/inventory-intake-access";
 import {
   buscarReferenciaInventarioActiva,
   normalizarReferenciaInventario,
@@ -79,8 +80,7 @@ export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    const esAdmin = puedeGestionarBodegaPrincipal(user.rolNombre);
-    if (!esAdmin) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    if (!puedeIngresarInventarioPrincipal(user)) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
 
     let body: Record<string, unknown>;
     try {

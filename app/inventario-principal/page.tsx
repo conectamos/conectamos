@@ -6,6 +6,7 @@ import Image from "next/image";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NOMBRE_SEDE_BODEGA, PROVEEDOR_FINSER } from "@/lib/prestamos";
 import { esRolAdministrativo, esRolBodega } from "@/lib/access-control";
+import { puedeIngresarInventarioPrincipal } from "@/lib/inventory-intake-access";
 import { TIPOS_PRODUCTO } from "@/lib/product-types";
 import { esSedeOperativaInventario } from "@/lib/sedes";
 import { useLiveRefresh } from "@/lib/use-live-refresh";
@@ -52,6 +53,7 @@ type SessionUser = {
   nombre: string;
   usuario: string;
   rolNombre: string;
+  perfilTipo?: string | null;
 };
 
 type FiltroEstado =
@@ -1264,7 +1266,7 @@ export default function InventarioPrincipalPage() {
       <main className={styles.main}>
         <header className={styles.heading}>
           <div><h1>Inventario principal</h1><p>Bodega principal</p></div>
-          <Link href="/inventario/nuevo" className={styles.primaryButton}><span aria-hidden="true" className={styles.plus}>+</span> Nuevo inventario</Link>
+          {puedeIngresarInventarioPrincipal(user) && <Link href="/inventario/nuevo" className={styles.primaryButton}><span aria-hidden="true" className={styles.plus}>+</span> Nuevo inventario</Link>}
         </header>
         {mensaje && <div role={mensajeEsError ? "alert" : "status"} className={`${styles.message} ${mensajeEsError ? styles.error : styles.success}`}>{mensaje}</div>}
         {inventoryError && <div role="alert" className={`${styles.message} ${styles.error}`}>{inventoryError}<button type="button" onClick={() => void cargarInventarioPrincipal()} disabled={inventoryLoading}>Reintentar</button></div>}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { consultarPermisoIngresoInventario } from "@/lib/inventory-intake-policy";
 
 export async function GET() {
   const user = await getSessionUser();
@@ -11,5 +12,8 @@ export async function GET() {
     );
   }
 
-  return NextResponse.json(user);
+  return NextResponse.json({
+    ...user,
+    puedeIngresarInventario: await consultarPermisoIngresoInventario(user),
+  }, { headers: { "Cache-Control": "no-store" } });
 }

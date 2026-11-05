@@ -18,6 +18,7 @@ function load(path, imports = {}) {
   return loaded.exports;
 }
 const access = load("lib/access-control.ts");
+const intakeAccess = load("lib/inventory-intake-access.ts", { "@/lib/access-control": access });
 const imeis = load("lib/inventory-imeis.ts");
 const productTypes = load("lib/product-types.ts");
 const activeEntities = load("lib/active-operational-entities.ts");
@@ -74,6 +75,8 @@ function probe({ user = bodega, item = baseItem, ventas = [], records = [], pres
   const imports = {
     "next/server": { NextResponse }, "@/lib/prisma": { __esModule: true, default: db },
     "@/lib/auth": { getSessionUser: async () => user }, "@/lib/access-control": access,
+    "@/lib/inventory-intake-access": intakeAccess,
+    "@/lib/inventory-intake-policy": { consultarPermisoIngresoSede: async () => false },
     "@/lib/product-types": productTypes,
     "@/lib/active-operational-entities": activeEntities,
     "@/lib/vendor-profile-schema": { ensureVendorProfilesSchema: async () => {} },
@@ -225,7 +228,7 @@ function uiProbe(path, { user = bodega, state: initial = {}, refs = {}, fetchImp
   const capturedNames = component.body.statements.flatMap(node => ts.isVariableStatement(node) ? node.declarationList.declarations.filter(entry => ts.isIdentifier(entry.name)).map(entry => entry.name.text) : []);
   const lastReturn = component.body.statements.findLast(ts.isReturnStatement);
   const injected = `${source.slice(0, lastReturn.getStart(ast))}capture({ ${capturedNames.join(",")} });\n${source.slice(lastReturn.getStart(ast))}`;
-  const state = { user: user ? { nombre: "Operador QA", sedeNombre: "BODEGA PRINCIPAL", ...user } : null, loading: false, inventoryLoading: false, ...initial };
+  const state = { user: user ? { nombre: "Operador QA", sedeNombre: "BODEGA PRINCIPAL", puedeIngresarInventario: true, ...user } : null, loading: false, inventoryLoading: false, ...initial };
   const refState = {}; let cursor = 0; let refCursor = 0; let captured;
   const hooks = {
     useState(value) { const name = names[cursor++]; if (!(name in state)) state[name] = typeof value === "function" ? value() : value; return [state[name], next => { state[name] = typeof next === "function" ? next(state[name]) : next; }]; },
@@ -239,6 +242,7 @@ function uiProbe(path, { user = bodega, state: initial = {}, refs = {}, fetchImp
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/lib/bodega-navigation": load("lib/bodega-navigation.ts"),
     "@/lib/access-control": access, "@/lib/prestamos": { NOMBRE_SEDE_BODEGA: "BODEGA PRINCIPAL", PROVEEDOR_FINSER: "Proveedor Finser" },
+    "@/lib/inventory-intake-access": intakeAccess,
     "@/lib/product-types": productTypes, "@/lib/inventory-imeis": imeis,
     "@/lib/sedes": { esSedeOperativaInventario: () => true },
     "@/lib/use-live-refresh": { useLiveRefresh() {}, triggerLiveRefresh() {} },

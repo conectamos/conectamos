@@ -38,6 +38,11 @@ export function esPerfilAdministrador(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "ADMINISTRADOR";
 }
 
+export function esAdministradorCentral(user: { rolNombre?: unknown; perfilTipo?: unknown } | null | undefined) {
+  return Boolean(user && esRolAdmin(user.rolNombre) &&
+    (!normalizarPerfilTipo(user.perfilTipo) || esPerfilAdministrador(user.perfilTipo)));
+}
+
 export function esPerfilAuditor(perfilTipo: unknown) {
   return normalizarPerfilTipo(perfilTipo) === "AUDITOR";
 }

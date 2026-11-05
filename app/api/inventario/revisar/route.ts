@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { esRolBodega, esRolAdministrativo, puedeAccederModulosOperativos, puedeGestionarBodegaPrincipal } from "@/lib/access-control";
+import { INGRESO_DIRECTO_DESHABILITADO, puedeIngresarInventarioPrincipal, puedeIngresarInventarioSede } from "@/lib/inventory-intake-access";
+import { consultarPermisoIngresoSede } from "@/lib/inventory-intake-policy";
 import prisma from "@/lib/prisma";
 import { ensureVendorProfilesSchema } from "@/lib/vendor-profile-schema";
 import { esSedeVentas } from "@/lib/sedes";
@@ -11,8 +12,6 @@ export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    const esAdmin = esRolAdministrativo(user.rolNombre);
-    const puedePrincipal = puedeGestionarBodegaPrincipal(user.rolNombre);
     let body: Record<string, unknown>;
     try {
       const parsed: unknown = await req.json();
@@ -22,9 +21,12 @@ export async function POST(req: Request) {
     if (body.destino !== "PRINCIPAL" && body.destino !== "SEDE") {
       return NextResponse.json({ error: "Selecciona un destino válido." }, { status: 400 });
     }
-    if ((body.destino === "PRINCIPAL" && !puedePrincipal) ||
-        (body.destino === "SEDE" && (esRolBodega(user.rolNombre) || !puedeAccederModulosOperativos(user.perfilTipo)))) {
+    if ((body.destino === "PRINCIPAL" && !puedeIngresarInventarioPrincipal(user)) ||
+        (body.destino === "SEDE" && !puedeIngresarInventarioSede(user, true))) {
       return NextResponse.json({ error: "No tienes permiso para esta carga." }, { status: 403 });
+    }
+    if (body.destino === "SEDE" && !(await consultarPermisoIngresoSede(user))) {
+      return NextResponse.json({ error: INGRESO_DIRECTO_DESHABILITADO }, { status: 403 });
     }
     if (!Array.isArray(body.imeis) || !body.imeis.length) {
       return NextResponse.json({ error: "Debes ingresar al menos un IMEI." }, { status: 400 });
@@ -36,7 +38,7 @@ export async function POST(req: Request) {
       if (!Number.isInteger(sedeId) || sedeId <= 0) {
         return NextResponse.json({ error: "Sede inválida." }, { status: 400 });
       }
-      if (!esAdmin && sedeId !== user.sedeId) {
+      if (!puedeIngresarInventarioSede(user) && sedeId !== user.sedeId) {
         return NextResponse.json({ error: "No tienes permiso para esa sede." }, { status: 403 });
       }
       const sede = await prisma.sede.findUnique({ where: { id: sedeId }, select: { nombre: true } });

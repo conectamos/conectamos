@@ -59,6 +59,7 @@ function probe({ user = administrator, target = 2, fetchImpl = async () => respo
     '@/lib/access-control': access,
     '@/lib/admin-entity-removal-access': removalAccess,
     '@/app/_components/admin-delete-dialog': { __esModule: true, default: props => jsx.jsx('qa-delete-dialog', withoutKey(props)) },
+    './inventory-intake-setting': { __esModule: true, default: () => null },
     './sedes.module.css': { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
   };
   const mod = { exports: {} };

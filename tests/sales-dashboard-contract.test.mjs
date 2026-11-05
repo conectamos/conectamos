@@ -378,10 +378,11 @@ test("layout de ventas y sesión conservan guardia servidor aun si el cliente no
     assert.deepEqual(redirects, user === session ? [] : [user ? "/dashboard" : "/"]);
     const sessionApi = loadTypeScript("app/api/session/route.ts", {
       "@/lib/auth": auth, "next/server": { NextResponse: { json: (data, options) => Response.json(data, options) } },
+      "@/lib/inventory-intake-policy": { consultarPermisoIngresoInventario: async () => user === session },
     });
     const response = await sessionApi.GET();
     assert.equal(response.status, user ? 200 : 401);
-    if (user) assert.deepEqual(await response.json(), user);
+    if (user) assert.deepEqual(await response.json(), { ...user, puedeIngresarInventario: user === session });
   }
 });
 

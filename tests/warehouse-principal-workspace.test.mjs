@@ -21,6 +21,7 @@ function load(file, imports = {}, injected = {}, transform = value => value) {
 }
 const sedesModule = load('lib/sedes.ts');
 const products = load('lib/product-types.ts');
+const access = load('lib/access-control.ts');
 const media = load('lib/record-device-media.ts');
 const debtGroups = load('lib/warehouse-debt-groups.ts');
 const css = { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) };
@@ -77,7 +78,8 @@ function probe({ initial = {}, fetchImpl, confirmation = true } = {}) {
     '@/lib/prestamos': { NOMBRE_SEDE_BODEGA: 'BODEGA PRINCIPAL', PROVEEDOR_FINSER: 'Proveedor Finser' }, '@/lib/product-types': products, '@/lib/sedes': sedesModule,
     '@/lib/warehouse-debt-groups': debtGroups,
     '@/lib/bodega-navigation': load('lib/bodega-navigation.ts'),
-    '@/lib/access-control': load('lib/access-control.ts'),
+    '@/lib/access-control': access,
+    '@/lib/inventory-intake-access': load('lib/inventory-intake-access.ts', { '@/lib/access-control': access }),
     '@/lib/use-live-refresh': { useLiveRefresh() {} },
     '@/app/dashboard/_components/dashboard-icon': { __esModule: true, default: () => null },
     '@/app/ventas/_components/sales-dashboard-parts': { SalesProfile: props => jsx.jsx('div', { 'data-profile': true, children: `${props.name} ${props.role}` }) },

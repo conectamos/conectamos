@@ -84,6 +84,7 @@ function probePage(session, failures = []) {
     "./_components/bodega-dashboard": defaultComponent,
     "@/lib/bodega-dashboard": { getBodegaDashboard: record("bodega", { metrics: { equiposEnBodega: 4 }, deudores: [], equiposConDeuda: [] }) },
     "@/lib/auth": { getSessionUser: record("session", session) },
+    "@/lib/inventory-intake-policy": { consultarPermisoIngresoInventario: async (user) => user.puedeIngresarInventario === true },
     "@/lib/prisma": { __esModule: true, default: { sede: { findMany: record("sedes", sedes) } } },
     "@/lib/access-control": access,
     "@/lib/payjoy-extensions-access": extensionsAccess,
