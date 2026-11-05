@@ -376,13 +376,24 @@ test("layout de ventas y sesión conservan guardia servidor aun si el cliente no
     if (user === session) assert.equal(await Layout({ children: "contenido autorizado" }), "contenido autorizado");
     else await assert.rejects(() => Layout({ children: "contenido autorizado" }), /REDIRECT/);
     assert.deepEqual(redirects, user === session ? [] : [user ? "/dashboard" : "/"]);
+    let consultasPermiso = 0;
     const sessionApi = loadTypeScript("app/api/session/route.ts", {
       "@/lib/auth": auth, "next/server": { NextResponse: { json: (data, options) => Response.json(data, options) } },
-      "@/lib/inventory-intake-policy": { consultarPermisoIngresoInventario: async () => user === session },
+      "@/lib/inventory-intake-policy": {
+        consultarPermisoIngresoInventario: async () => {
+          consultasPermiso++;
+          return user === session;
+        },
+      },
     });
-    const response = await sessionApi.GET();
+    const response = await sessionApi.GET(new Request("http://qa.test/api/session"));
     assert.equal(response.status, user ? 200 : 401);
-    if (user) assert.deepEqual(await response.json(), { ...user, puedeIngresarInventario: user === session });
+    assert.equal(consultasPermiso, 0);
+    if (user) assert.deepEqual(await response.json(), user);
+    const scoped = await sessionApi.GET(new Request("http://qa.test/api/session?permiso=ingreso-inventario"));
+    assert.equal(scoped.status, user ? 200 : 401);
+    assert.equal(consultasPermiso, user ? 1 : 0);
+    if (user) assert.deepEqual(await scoped.json(), { ...user, puedeIngresarInventario: user === session });
   }
 });
 

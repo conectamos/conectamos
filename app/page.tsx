@@ -3,7 +3,6 @@
 import Image from "next/image";
 import styles from "./login.module.css";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   type AvatarPerfilKey,
   normalizarAvatarPerfil,
@@ -70,6 +69,11 @@ function loginRequestErrorMessage(error: unknown, fallback: string) {
   }
 
   return fallback;
+}
+
+function abrirDashboardTrasAutenticar() {
+  // A new document discards route data fetched before the session cookie changed.
+  window.location.replace("/dashboard");
 }
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
@@ -274,8 +278,6 @@ function LoginEyeIcon({ crossed = false }: { crossed?: boolean }) {
 }
 
 export default function Home() {
-  const router = useRouter();
-
   const [usuario, setUsuario] = useState("");
   const [clave, setClave] = useState("");
   const [pin, setPin] = useState("");
@@ -434,9 +436,7 @@ export default function Home() {
 
       setMensaje(`Bienvenido ${data.usuario?.nombre || usuario}`);
 
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 700);
+      abrirDashboardTrasAutenticar();
     } catch (error) {
       setMensaje(
         loginRequestErrorMessage(error, "Error al conectar con el servidor")
@@ -497,9 +497,7 @@ export default function Home() {
 
       setMensaje(data.mensaje || "Acceso correcto");
 
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 700);
+      abrirDashboardTrasAutenticar();
     } catch (error) {
       setMensaje(loginRequestErrorMessage(error, "Error validando el perfil"));
     } finally {
@@ -553,9 +551,7 @@ export default function Home() {
       );
       setMensaje(data.mensaje || "PIN actualizado correctamente");
 
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 700);
+      abrirDashboardTrasAutenticar();
     } catch (error) {
       setMensaje(loginRequestErrorMessage(error, "Error actualizando el PIN"));
     } finally {

@@ -212,7 +212,7 @@ export default function OperationsToolCenter({ groups, storageUserKey, legacySto
       {!favoritesLoaded ? <p className={styles.favoriteState} role="status">Cargando accesos frecuentes…</p>
         : frequentTools.length === 0 ? <p className={styles.favoriteState}>Marca la estrella de una herramienta para agregarla a tus accesos frecuentes.</p>
           : frequentTools.map((tool) => <article key={`frequent-${tool.id}`} className={styles.favoriteCard}>
-            <Link href={tool.link.href} className={styles.favoriteLink}>
+            <Link href={tool.link.href} prefetch={tool.link.href === "/inventario" ? false : undefined} className={styles.favoriteLink}>
               <DashboardIcon name={toolIcon(tool)} className={styles.favoriteToolIcon} />
               <span>{tool.link.label}</span>
             </Link>
@@ -243,7 +243,7 @@ export default function OperationsToolCenter({ groups, storageUserKey, legacySto
             <p>{normalizedQuery ? "No encontramos herramientas para esta búsqueda." : "No hay herramientas disponibles en esta categoría."}</p>
             {normalizedQuery && <button type="button" onClick={() => { setQuery(""); searchRef.current?.focus(); }}>Limpiar búsqueda</button>}
           </div> : visibleTools.map((tool) => <article key={tool.id} className={styles.toolCard}>
-            <Link href={tool.link.href} className={styles.toolLink}>
+            <Link href={tool.link.href} prefetch={tool.link.href === "/inventario" ? false : undefined} className={styles.toolLink}>
               <span className={styles.toolIconBackground}><DashboardIcon name={toolIcon(tool)} className={styles.toolIcon} /></span>
               <span className={styles.toolLabel}>{tool.link.label}{normalizedQuery && <span className={styles.toolCategory}>{tool.group.title}</span>}</span>
               <DashboardIcon name="arrow" className={styles.toolArrow} />
@@ -252,7 +252,7 @@ export default function OperationsToolCenter({ groups, storageUserKey, legacySto
           </article>)}
         </div>
         {quickActions.length > 0 && <div className={styles.quickActions} aria-label="Acciones rápidas">
-          {quickActions.map((action, index) => <Link key={`${action.href}-${action.label}`} href={action.href} className={`${styles.quickAction} ${index === 0 ? styles.primaryAction : ""}`}>
+          {quickActions.map((action, index) => <Link key={`${action.href}-${action.label}`} href={action.href} prefetch={action.href === "/inventario" ? false : undefined} className={`${styles.quickAction} ${index === 0 ? styles.primaryAction : ""}`}>
             <DashboardIcon name={action.icon} className={styles.quickIcon} /><span>{action.label}</span>
           </Link>)}
         </div>}

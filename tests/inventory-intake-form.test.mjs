@@ -49,6 +49,7 @@ const existing = "101234567890123";
 const valid2 = "201234567890123";
 const initial = { user: admin, catalogo, loading: false, referencia: "Referencia QA", costo: "610000", numeroFactura: "QA-741", distribuidor: "COMUNICARIBE", color: "GRIS" };
 const storageKey = userId => `conectamos:inventario-ingreso:pendiente:${userId}`;
+const sessionPath = "/api/session?permiso=ingreso-inventario";
 
 function probe({ state: stateInput = {}, fetchImpl, session = admin, storage = new Map() } = {}) {
   const state = { ...stateInput }; const refs = []; const effects = []; const calls = []; const refreshes = [];
@@ -79,7 +80,7 @@ function probe({ state: stateInput = {}, fetchImpl, session = admin, storage = n
   }, async (url, options = {}) => {
     calls.push({ url, options });
     if (fetchImpl) return fetchImpl(url, options);
-    if (url === "/api/session") return response(session);
+    if (url === sessionPath) return response(session);
     if (url === "/api/inventario-principal/referencias") return response({ referencias: catalogo });
     if (url === "/api/inventario/revisar") return response({ ok: true, ...imeis.revisarEntradasImeis(JSON.parse(options.body).imeis, new Set([existing])) });
     return response({ ok: true, insertados: JSON.parse(options.body).imeis.length, omitidos: 0 });
@@ -99,7 +100,7 @@ test("carga sesión y catálogo; navegación completa conserva Inventario activo
   const instance = probe(); let tree = instance.render();
   assert.ok(!elements(tree).some(node => node.type === "form"));
   tree = await instance.init();
-  assert.deepEqual(instance.calls.map(call => call.url), ["/api/session", "/api/inventario-principal/referencias"]);
+  assert.deepEqual(instance.calls.map(call => call.url), [sessionPath, "/api/inventario-principal/referencias"]);
   assert.ok(elements(tree).some(node => node.type === "a" && node.props.href === "/inventario" && node.props["aria-current"] === "page"));
   assert.ok(elements(tree).some(node => node.type === "a" && node.props.href === "/dashboard/aprobaciones"));
   assert.ok(elements(tree).some(node => node.type === "a" && node.props.href === "/dashboard/sedes"));
@@ -202,7 +203,7 @@ test("un supervisor sin permiso no carga el formulario ni los catálogos y no pu
     assert.ok(elements(tree).some(node => node.type === "a" && node.props.href === "/inventario" && textOf(node) === "Volver al inventario"));
     await instance.review();
     await instance.save();
-    assert.deepEqual(instance.calls.map(call => call.url), ["/api/session"]);
+    assert.deepEqual(instance.calls.map(call => call.url), [sessionPath]);
   }
 });
 
@@ -213,7 +214,7 @@ test("un supervisor habilitado conserva el destino de su sede incluso si la cuen
       state: { ...initial, user: null, loading: true, imei: valid, distribuidor: "Proveedor FINSER", estadoFinanciero: "DEUDA", deboA: "Proveedor FINSER" },
     });
     const tree = await instance.init();
-    assert.deepEqual(instance.calls.map(call => call.url), ["/api/session"]);
+    assert.deepEqual(instance.calls.map(call => call.url), [sessionPath]);
     assert.equal(instance.view.destino, "SEDE QA");
     assert.ok(control(tree, "ingreso-acreedor"));
     assert.equal(control(tree, "ingreso-referencia").type, "input");

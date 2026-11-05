@@ -85,6 +85,7 @@ function SidebarContent({
               <Link
                 key={`${item.label}-${item.href}`}
                 href={item.href}
+                prefetch={item.href === "/inventario" ? false : undefined}
                 aria-current={activo ? "page" : undefined}
                 className={`${whiteSidebarStyles.navigationLink} ${activo ? whiteSidebarStyles.activeLink : ""}`}
               >
@@ -152,6 +153,7 @@ function SidebarContent({
             <Link
               key={`${item.label}-${item.href}`}
               href={item.href}
+              prefetch={item.href === "/inventario" ? false : undefined}
               aria-current={activo ? "page" : undefined}
               className={[
                 financial
@@ -530,6 +532,7 @@ function AlertRow({
       </div>
       <Link
         href={href}
+        prefetch={href === "/inventario" ? false : undefined}
         className="hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-[#e30613]/30 hover:text-[#e30613] sm:inline-flex"
       >
         Revisar
@@ -588,6 +591,7 @@ function QuickActions({ actions }: { actions: NavigationItem[] }) {
           <Link
             key={action.href}
             href={action.href}
+            prefetch={action.href === "/inventario" ? false : undefined}
             className="group flex min-h-[72px] items-center gap-3 rounded-xl border border-slate-200 px-3.5 transition hover:border-[#e30613]/35 hover:bg-red-50/40"
           >
             <span className={[
@@ -702,6 +706,7 @@ function StandInventoryContent({
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <Link
               href="/inventario"
+              prefetch={false}
               className="group flex min-h-[112px] items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-5 transition hover:border-[#e30613]/30 hover:bg-red-50/40"
             >
               <div>
@@ -1143,7 +1148,7 @@ export default function OperationsDashboard({
           {operationalAvailable && <>
             {!esStand && <Link href="/dashboard/aprobaciones" aria-label={`${operational.aprobacionesPendientes} aprobaciones: ${operational.detalleAprobaciones.prestamos} de préstamos y ${operational.detalleAprobaciones.ventas} de ventas`}><strong>{formatoNumero(operational.aprobacionesPendientes)}</strong> aprobaciones</Link>}
             <Link href="/prestamos"><strong>{formatoNumero(operational.prestamosActivos)}</strong> préstamos sin cierre</Link>
-            <Link href="/inventario"><strong>{formatoNumero(operational.inventarioAtencion)}</strong> equipos por revisar</Link>
+            <Link href="/inventario" prefetch={false}><strong>{formatoNumero(operational.inventarioAtencion)}</strong> equipos por revisar</Link>
           </>}
           <Link href={esStand ? "/alertas/prestamos" : "/dashboard/aprobaciones"} aria-label="Ver todos los pendientes"><DashboardIcon name="arrow" /></Link>
         </section>

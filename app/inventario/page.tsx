@@ -277,7 +277,7 @@ export default function InventarioPage() {
 
   const cargarUsuario = useCallback(async () => {
     try {
-      const res = await fetch("/api/session", { cache: "no-store" });
+      const res = await fetch("/api/session?permiso=ingreso-inventario", { cache: "no-store" });
       const data = await res.json();
 
       if (!res.ok) {

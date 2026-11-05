@@ -94,7 +94,7 @@ function pageProbe(initialState = {}, responses = {}, exportOptions = {}) {
   const declaredNames = page.body.statements.flatMap((node) => ts.isVariableStatement(node)
     ? node.declarationList.declarations.filter((declaration) => ts.isIdentifier(declaration.name)).map((declaration) => declaration.name.text) : []);
   const captureNames = [
-    "esAdmin", "puedeEliminar", "cargarInventario", "totalBodega", "totalPendiente", "totalGarantia", "totalPrestamo", "valorPrestamosPorCobrar",
+    "esAdmin", "puedeEliminar", "cargarUsuario", "cargarInventario", "totalBodega", "totalPendiente", "totalGarantia", "totalPrestamo", "valorPrestamosPorCobrar",
     "totalPagados", "totalCancelados", "totalDeuda", "totalPagado", "totalDeudaVista", "totalPrestamoVista", "totalDeudaAcreedorSeleccionado",
     "resumenDeudaPorAcreedor", "itemsFiltrados", "itemsSeleccionados", "itemsSeleccionadosParaPrestamo", "itemsSeleccionadosParaPago",
     "itemsSeleccionadosParaPendiente", "itemsSeleccionadosParaGarantia", "itemsSeleccionadosParaFactura", "seleccionFacturaStandValida",
@@ -794,6 +794,25 @@ test("carga aplica sede únicamente ADMIN/AUDITOR y mantiene refresco a60s y men
   await failure.view.cargarInventario();
   assert.equal(failure.state.mensaje, "Base no disponible");
   assert.equal(failure.state.inventarioCargado, false);
+});
+
+test("el supervisor sin ingreso habilitado consulta su inventario y conserva sus acciones", { skip: baselineMode }, async () => {
+  const sessionPath = "/api/session?permiso=ingreso-inventario";
+  const supervisor = { ...session, rolNombre: "SUPERVISOR", perfilTipo: "SUPERVISOR_TIENDA", puedeIngresarInventario: false };
+  const probe = pageProbe({ user: null, items: [], inventarioCargado: false }, {
+    [sessionPath]: { ok: true, data: supervisor },
+  });
+
+  await probe.view.cargarUsuario();
+  probe.render();
+  await probe.view.cargarInventario();
+
+  const { tree } = probe.render();
+  assert.deepEqual(probe.calls.filter((call) => call.name === "fetch").map((call) => call.url), [sessionPath, "/api/inventario"]);
+  assert.ok(textOf(tree).includes(items[0].referencia));
+  assert.ok(!elements(tree).some((node) => node?.type === "a" && node.props.href === "/inventario/nuevo"));
+  assert.ok(probe.view.accionesEquipo(items[0]).some((action) => action.key === "prestamo" && typeof action.onClick === "function"));
+  assert.ok(probe.view.accionesEquipo(items[0]).some((action) => action.key === "historial"));
 });
 
 test("operaciones masivas procesan sólo elegibles, mantienen errores parciales y recargan sin modificar los demás", async () => {

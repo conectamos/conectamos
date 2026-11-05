@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { consultarPermisoIngresoInventario } from "@/lib/inventory-intake-policy";
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await getSessionUser();
 
   if (!user) {
@@ -12,8 +12,13 @@ export async function GET() {
     );
   }
 
+  const options = { headers: { "Cache-Control": "no-store" } };
+  if (new URL(request.url).searchParams.get("permiso") !== "ingreso-inventario") {
+    return NextResponse.json(user, options);
+  }
+
   return NextResponse.json({
     ...user,
     puedeIngresarInventario: await consultarPermisoIngresoInventario(user),
-  }, { headers: { "Cache-Control": "no-store" } });
+  }, options);
 }

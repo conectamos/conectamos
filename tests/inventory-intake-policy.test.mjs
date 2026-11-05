@@ -31,12 +31,14 @@ const equipment = {
   costo: 350000, distribuidor: "QA", numeroFactura: "QA-123", estadoFinanciero: "PAGO",
 };
 
-function harness({ user, value, beforeRegister = () => {} }) {
-  const state = { user, value, stock: [], movements: [], settingsWrites: [], registrationAttempts: 0 };
+function harness({ user, value, beforeRegister = () => {}, failSettingsRead = false }) {
+  const state = { user, value, stock: [], movements: [], settingsWrites: [], settingsReads: 0, registrationAttempts: 0 };
   const db = {
     $queryRaw: async (query, key) => {
       assert.match(query.join("?"), /FROM "ConfiguracionSistema"/);
       assert.equal(key, "inventario.ingresoDirectoSede");
+      state.settingsReads++;
+      if (failSettingsRead) throw new Error("Configuración temporalmente no disponible");
       return state.value === undefined ? [] : [{ valor: state.value }];
     },
     $executeRaw: async (query, key, value, actor) => {
@@ -117,7 +119,8 @@ function harness({ user, value, beforeRegister = () => {} }) {
   });
   return {
     state,
-    session: session.GET,
+    session: (query = "") => session.GET(request(`/api/session${query}`, "GET")),
+    sessionWithIntake: () => session.GET(request("/api/session?permiso=ingreso-inventario", "GET")),
     setting: setting.GET,
     patch: body => setting.PATCH(request("/api/admin/inventario-ingreso", "PATCH", body)),
     sede: body => sede.POST(request("/api/inventario", "POST", { ...equipment, ...body })),
@@ -152,10 +155,24 @@ test("solo el administrador central consulta y modifica el ajuste con booleanos 
   ]);
 });
 
-test("sin permiso guardado, ambos tipos de supervisor quedan bloqueados en sesión, revisión e ingreso", async () => {
+test("una falla de configuración no afecta la sesión y solo cierra el permiso solicitado", async () => {
+  const api = harness({ user: supervisor, failSettingsRead: true });
+  for (const query of ["", "?permiso=otro"]) {
+    const response = await api.session(query);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), supervisor);
+    assert.equal(api.state.settingsReads, 0);
+  }
+  const scoped = await api.sessionWithIntake();
+  assert.equal(scoped.status, 200);
+  assert.deepEqual(await scoped.json(), { ...supervisor, puedeIngresarInventario: false });
+  assert.equal(api.state.settingsReads, 1);
+});
+
+test("sin permiso guardado, ambos tipos de supervisor pueden consultar su sesión pero no ingresar ni revisar cargas", async () => {
   for (const user of [supervisor, supervisorProfile]) {
     const api = harness({ user });
-    assert.equal((await (await api.session()).json()).puedeIngresarInventario, false);
+    assert.equal((await (await api.sessionWithIntake()).json()).puedeIngresarInventario, false);
     assert.equal((await api.review("SEDE")).status, 403);
     assert.equal((await api.sede()).status, 403);
     assert.equal((await api.principal()).status, 403);
@@ -168,7 +185,7 @@ test("habilitar permite ingresar y revisar solo en la sede propia, incluso con c
   const api = harness({ user: admin });
   assert.equal((await api.patch({ habilitado: true })).status, 200);
   api.state.user = supervisorProfile;
-  assert.equal((await (await api.session()).json()).puedeIngresarInventario, true);
+  assert.equal((await (await api.sessionWithIntake()).json()).puedeIngresarInventario, true);
   assert.equal((await api.review("SEDE", supervisor.sedeId)).status, 200);
   assert.equal((await api.review("SEDE", 3)).status, 403);
   assert.equal((await api.review("PRINCIPAL")).status, 403);
@@ -189,7 +206,7 @@ test("habilitar permite ingresar y revisar solo en la sede propia, incluso con c
 
 test("BODEGA ingresa por principal y el ajuste no abre el ingreso directo a sedes", async () => {
   const api = harness({ user: bodega, value: true });
-  assert.equal((await (await api.session()).json()).puedeIngresarInventario, true);
+  assert.equal((await (await api.sessionWithIntake()).json()).puedeIngresarInventario, true);
   assert.equal((await api.review("SEDE")).status, 403);
   assert.equal((await api.sede()).status, 403);
   assert.equal((await api.review("PRINCIPAL")).status, 200);

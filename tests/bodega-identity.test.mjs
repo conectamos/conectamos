@@ -303,16 +303,17 @@ test("login, perfil BODEGA y cambio obligatorio de PIN abren su dashboard solo t
   const ast = ts.createSourceFile("login.tsx", page, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const component = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.modifiers?.some(item => item.kind === ts.SyntaxKind.DefaultKeyword));
   const names = ["login", "confirmarPerfil", "confirmarCambioPin"];
+  const openDashboard = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "abrirDashboardTrasAutenticar");
+  assert.ok(openDashboard);
   const statements = component.body.statements.filter(node => ts.isVariableStatement(node) && node.declarationList.declarations.some(entry => names.includes(entry.name.getText(ast))));
-  const handlersSource = statements.map(node => node.getText(ast)).join("\n");
+  const handlersSource = [openDashboard, ...statements].map(node => node.getText(ast)).join("\n");
   for (const [handlerName, endpoint] of [["login", "/api/login"], ["confirmarPerfil", "/api/login/perfil"], ["confirmarCambioPin", "/api/login/perfil/cambiar-pin"]]) {
-    const pushes = []; const calls = [];
+    const documentNavigations = []; const calls = [];
     let finishRequest;
     const request = new Promise(resolve => { finishRequest = resolve; });
     const noop = () => {};
     const dependencies = {
-      router: { push: href => pushes.push(href) },
-      setTimeout: fn => fn(),
+      window: { location: { replace: href => documentNavigations.push(href) } },
       fetchLoginApi: async (path, options) => { calls.push({ path, options }); return request; },
       setCargando: noop, setMensaje: noop, setPasoPerfil: noop, setPerfiles: noop,
       setUsuarioPendiente: noop, setClave: noop, setModalModo: noop,
@@ -324,10 +325,10 @@ test("login, perfil BODEGA y cambio obligatorio de PIN abren su dashboard solo t
     };
     const handlers = new Function(...Object.keys(dependencies), `${handlersSource}; return { ${names.join(",")} };`)(...Object.values(dependencies));
     const operation = handlers[handlerName]();
-    assert.deepEqual(pushes, [], handlerName);
+    assert.deepEqual(documentNavigations, [], handlerName);
     assert.equal(calls[0].path, endpoint);
     finishRequest({ response: { ok: true }, data: { usuario: { nombre: "Bodega QA", rol: { nombre: "BODEGA" } }, perfil: { id: 10, tipo: "BODEGA" } } });
     await operation;
-    assert.deepEqual(pushes, ["/dashboard"], handlerName);
+    assert.deepEqual(documentNavigations, ["/dashboard"], handlerName);
   }
 });

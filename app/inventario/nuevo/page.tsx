@@ -90,7 +90,7 @@ export default function NuevoInventarioPage() {
     let active = true;
     const init = async () => {
       try {
-        const res = await fetch("/api/session", { cache: "no-store" }); const data = await res.json();
+        const res = await fetch("/api/session?permiso=ingreso-inventario", { cache: "no-store" }); const data = await res.json();
         if (!res.ok || !data.id) throw new Error(data.error || "No se pudo cargar la sesión.");
         if (!active) return;
         if (data.puedeIngresarInventario !== true) {
