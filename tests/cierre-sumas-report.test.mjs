@@ -22,7 +22,7 @@ test("SUMASPAY cuenta créditos API de IDs distintos y conserva locales sólo pa
     observation(2), observation(3, {}, { principal: 1250000 }), local(4, { amount: 800000 }), local(5, { amount: 700000 }),
   ] });
   const report = await read(db, params("&financier=SUMASPAY"), admin, true);
-  assert.deepEqual(report.totals, { units: 3, amount: 3250000 });
+  assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: 3, amount: 3250000 });
   assert.equal(report.items.length, 3);
   assert.ok(report.items.every((row) => row.source === "API SUMASPAY" && row.status === "EFECTIVO"));
   assert.equal(report.complete, false);
@@ -37,7 +37,7 @@ test("sin API efectiva no muestra cero ni sustituye total por las ventas locales
   for (const state of ["PENDIENTE", "ERROR", "REVISADO"]) {
     const db = database({ cierreCredito: [local(1)], cierreSyncTrabajo: [{ key: "j", financial: "SUMASPAY", localKey: "VENTA:1:SUMASPAY", state, lastSuccess: new Date("2026-10-01T08:00:00Z") }] });
     const report = await read(db, params("&financier=SUMASPAY"), admin, true);
-    assert.deepEqual(report.totals, { units: null, amount: null });
+    assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: null, amount: null });
     assert.equal(report.items.length, 0);
     assert.equal(report.financiers[0].reconciliation.basis, "SUMASPAY_API");
     assert.equal(report.financiers[0].reconciliation.local.units, 1);
@@ -103,7 +103,7 @@ test("capital y fecha API determinan día, semana, mes y rango históricos en Bo
     ["mode=range&from=2026-09-14&to=2026-09-20", 2, 2200000], ["mode=month&month=2026-09", 4, 4200000],
   ]) {
     const report = await read(db, new URLSearchParams(`${query}&financier=SUMASPAY`), admin, true);
-    assert.deepEqual(report.totals, { units, amount });
+    assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units, amount });
   }
 });
 
@@ -117,7 +117,7 @@ test("negativos, aprobaciones pendientes, tombstones e IDs repetidos no inflan e
   ] });
   const environment = modules(db.prisma);
   const report = await environment.load("lib/cierre-report.ts").readCierreReport(params("&financier=SUMASPAY"), admin, true);
-  assert.deepEqual(report.totals, { units: 1, amount: 1000000 });
+  assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: 1, amount: 1000000 });
   assert.ok(!environment.imports.some((name) => /cierre-providers|sumasconsulta|cierre-sync/.test(name)));
   assert.ok(!db.calls.some((call) => ["create", "update", "upsert", "deleteMany", "updateMany"].includes(call.method)));
 });
@@ -126,7 +126,7 @@ test("180 hechos API sintéticos totalizan su capital sin sumar créditos locale
   const rows = Array.from({ length: 180 }, (_, index) => observation(index + 1, {}, { principal: index === 179 ? 3341714 : 900000 }));
   const db = database({ cierreCredito: [...rows, local(300, { amount: 10000000 })] });
   const report = await read(db, params("&financier=SUMASPAY"), admin, true, true);
-  assert.deepEqual(report.totals, { units: 180, amount: 164441714 });
+  assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: 180, amount: 164441714 });
   assert.equal(report.items.length, 180);
   assert.equal(report.complete, false);
 });

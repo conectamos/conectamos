@@ -12,8 +12,12 @@ function scheduler(runBatch, env = {}, readProgress) {
   let now = 1_000_000;
   const mod = { exports: {} };
   new Function("require", "exports", "module", "process", "globalThis", "setTimeout", "Date", "console", code)(
-    () => ({ runCierreSyncBatch: async (options) => { calls.push(options); return runBatch(options); },
-      readCierrePriorityProgress: readProgress ? async () => { progressCalls.push(now); return readProgress(); } : undefined }),
+    (id) => {
+      if (id === "@/lib/vendor-profile-schema") return { ensureVendorProfilesSchema: async () => {} };
+      assert.equal(id, "@/lib/cierre-sync");
+      return { runCierreSyncBatch: async (options) => { calls.push(options); return runBatch(options); },
+        readCierrePriorityProgress: readProgress ? async () => { progressCalls.push(now); return readProgress(); } : undefined };
+    },
     mod.exports, mod, { env: { NEXT_RUNTIME: "nodejs", CIERRE_SYNC_ENABLED: "1", ...env } }, state,
     (fn, delay) => { const timer = { fn, delay, unref() {} }; timers.push(timer); return timer; },
     { now: () => now }, { info: (...args) => logs.push(args), error: (...args) => logs.push(args) },

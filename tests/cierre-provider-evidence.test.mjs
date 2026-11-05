@@ -123,7 +123,7 @@ for (const financial of providers) {
     assert.equal(run.row().evidence.providerObservation.raw.localTombstone, undefined);
     const read = run.loader.load("lib/cierre-report.ts").readCierreReport;
     const own = await read(params(`&financier=${financial}`), supervisor, true, true);
-    assert.deepEqual(own.totals, { units: 1, amount: 1000000 });
+    assert.deepEqual({ units: own.totals.units, amount: own.totals.amount }, { units: 1, amount: 1000000 });
     assert.equal(own.items[0].status, "EFECTIVO");
     const other = await read(params(`&financier=${financial}`), { ...supervisor, sedeId: 2 }, true, true);
     assert.equal(other.items.length, 0);

@@ -17,12 +17,23 @@ export async function GET(request: Request) {
       ["CIERRE", report.period.label, report.scope.label],
       ["Estado", report.coverageLabel],
       ["Última actualización", report.lastUpdatedAt || "Pendiente"],
-      [], ["Financiera", "Unidades de créditos", "Valor de los créditos", "Estado", "Fuente"],
-      ...report.financiers.map((r) => [r.name, r.units ?? "Sin confirmar", r.amount ?? "Sin confirmar", r.coverageLabel, r.source]),
-      ["TOTAL", report.totals.units ?? "Sin confirmar", report.totals.amount ?? "Sin confirmar"],
+      [], ["Financiera", "Unidades de créditos", "Valor del cierre", "Estado", "Fuente", "Recaudado", "Saldo", "Valor sincronizado", "Corrección manual", "Nota del ajuste", "Ajuste actualizado (Colombia)", "Actualizado por"],
+      ...report.financiers.map((r) => [r.name, r.units ?? "Sin confirmar", r.amount ?? "Sin confirmar", r.coverageLabel, r.source,
+        r.collectedAmount ?? "Sin registrar", r.balance ?? "Sin calcular", r.syncedAmount ?? "Sin confirmar",
+        r.correctedAmount === null ? "No" : "Sí", r.accounting.note || "",
+        r.accounting.updatedAt ? new Intl.DateTimeFormat("es-CO", { timeZone: "America/Bogota", dateStyle: "short", timeStyle: "short" }).format(new Date(r.accounting.updatedAt)) : "",
+        r.accounting.updatedBy || ""]),
+      ["TOTAL", report.totals.units ?? "Sin confirmar", report.totals.amount ?? "Sin confirmar", "", "",
+        report.totals.collectedAmount ?? "Por completar", report.totals.balance ?? "Por completar", report.totals.syncedAmount ?? "Sin confirmar"],
+      [], ["Los ajustes corresponden únicamente al periodo y la sede indicados. El detalle conserva los créditos sincronizados; una corrección manual no acredita cobertura completa."],
+      [`Financieras ocultas en este periodo: ${report.hiddenFinanciers.length}. No se incluyen en los totales ni en las hojas de este archivo.`],
     ]);
-    summary.columns = [{ width: 28 }, { width: 30 }, { width: 30 }, { width: 24 }, { width: 52 }];
-    summary.getColumn(3).numFmt = '"$" #,##0.00';
+    summary.columns = [{ width: 28 }, { width: 30 }, { width: 30 }, { width: 24 }, { width: 52 },
+      { width: 26 }, { width: 26 }, { width: 30 }, { width: 22 }, { width: 54 }, { width: 32 }, { width: 28 }];
+    for (const column of [3, 6, 7, 8]) summary.getColumn(column).numFmt = '"$" #,##0.00';
+    summary.getColumn(10).alignment = { wrapText: true, vertical: "top" };
+    summary.views = [{ state: "frozen", ySplit: 5 }];
+    summary.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5 + report.financiers.length, column: 12 } };
     const sheet = book.addWorksheet("Créditos", { views: [{ state: "frozen", ySplit: 1 }] });
     sheet.columns = [
       { header: "Financiera", key: "financial", width: 22 }, { header: "Fecha (America/Bogota)", key: "date", width: 25 },

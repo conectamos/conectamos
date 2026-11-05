@@ -117,7 +117,7 @@ test("auditoría conserva septiembre API tras edición de fecha local y separa c
   const result = await audit.readCierrePayJoyAudit(db.prisma, scope);
   const report = await loader.load("lib/cierre-report.ts").readCierreReport(new URLSearchParams("mode=month&month=2026-09&financier=PAYJOY"), admin, true);
   assert.deepEqual(result.totals.apiReportable, { units: 1, amount: 100, missingAmount: 0 });
-  assert.deepEqual(report.totals, { units: 1, amount: 100 });
+  assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: 1, amount: 100 });
   assert.deepEqual(result.totals.ledgerEffective, { units: 2, amount: 500, missingAmount: 0 });
   assert.equal(result.byDay.find((day) => day.date === "2026-09-15").apiEffectiveEvidence.amount, 100);
   assert.equal(result.byDay.find((day) => day.date === "2026-09-20").apiEffectiveEvidence.units, 0);

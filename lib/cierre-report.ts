@@ -4,6 +4,7 @@ import { readCierreLocalCoverage } from "@/lib/cierre-coverage";
 import { aggregateCierreProviderSync, CIERRE_API_READERS, CIERRE_SOURCE_LIMITATIONS, readCierreProviderProgress } from "@/lib/cierre-progress";
 import { readCierrePayJoyReport } from "@/lib/cierre-payjoy-report";
 import { readCierreSumasReport } from "@/lib/cierre-sumas-report";
+import { applyCierreAccounting, canManageCierreAccounting, readCierreAccounting } from "@/lib/cierre-accounting";
 
 type ApiReport = Awaited<ReturnType<typeof readCierrePayJoyReport>> | Awaited<ReturnType<typeof readCierreSumasReport>>;
 
@@ -48,7 +49,7 @@ export async function readCierreReport(params: URLSearchParams, session: Session
     if (sedeId !== null && !sedes.some((s) => s.id === sedeId)) throw new CierreRequestError("Sede no encontrada", 404);
     const scopeWhere = sedeId === null ? {} : { sedeId };
     const where = { ...scopeWhere, effectiveAt: { gte: period.start, lt: period.end }, status: "EFECTIVO", amount: { gt: 0 }, ...(financier ? { financial: financier } : {}) };
-    const [ledgerGroups, state, coverage, knownFinancials, sources, providerProgress, payjoy, sumas] = await Promise.all([
+    const [ledgerGroups, state, coverage, knownFinancials, sources, providerProgress, payjoy, sumas, accounting] = await Promise.all([
       tx.cierreCredito.groupBy({ by: ["financial"], where, _count: { _all: true }, _sum: { amount: true }, _max: { syncedAt: true } }),
       tx.cierreSyncEstado.findUnique({ where: { key: "LOCAL" } }),
       readCierreLocalCoverage(tx, { sedeId, start: period.start, end: period.end }),
@@ -59,6 +60,7 @@ export async function readCierreReport(params: URLSearchParams, session: Session
         sedeId, start: period.start, end: period.end, from: period.desde, to: period.hasta,
       }) : null,
       !financier || financier === "SUMASPAY" ? readCierreSumasReport(tx, { sedeId, start: period.start, end: period.end }) : null,
+      readCierreAccounting(tx, { sedeId, from: period.desde, to: period.hasta }),
     ]);
     const apiReports = new Map<string, ApiReport>();
     if (payjoy) apiReports.set("PAYJOY", payjoy);
@@ -72,7 +74,7 @@ export async function readCierreReport(params: URLSearchParams, session: Session
     const localComplete = Boolean(state && coverage.pending === 0 && !coverage.unresolved);
     // Reference readers and PAYJOY's daily list still lack a verified exhaustive
     // pagination contract; successful jobs do not establish complete coverage.
-    const rows = Array.from(new Set([...PROVIDERS, ...knownFinancials.map((r) => r.financial)]))
+    const allRows = Array.from(new Set([...PROVIDERS, ...knownFinancials.map((r) => r.financial), ...accounting.keys()]))
       .filter((name) => !financier || name === financier).map((name) => {
         const group = groups.find((g) => g.financial === name);
         const complete = localComplete && !API_READERS.has(name);
@@ -102,29 +104,42 @@ export async function readCierreReport(params: URLSearchParams, session: Session
           reconciliation,
           lastUpdatedAt: reconciliation ? api?.lastUpdatedAt?.toISOString() || null
             : group?._max.syncedAt?.toISOString() || state?.lastSuccess?.toISOString() || null };
-      }).sort((a, b) => a.name.localeCompare(b.name, "es"));
-    const complete = rows.every((r) => r.complete);
+      }).map((row) => applyCierreAccounting(row, accounting.get(row.key)))
+      .sort((a, b) => a.name.localeCompare(b.name, "es"));
+    const rows = allRows.filter((row) => !row.hidden);
+    const hiddenFinanciers = allRows.filter((row) => row.hidden);
+    if (financier && hiddenFinanciers.length) throw new CierreRequestError("La financiera está oculta en este periodo. Vuelve a mostrarla para consultar su detalle.", 404);
+    // Visibility and a manual amount never certify external provider coverage.
+    const complete = allRows.every((r) => r.complete);
     const lastDataUpdate = rows.filter((row) => (row.units ?? 0) > 0 && row.lastUpdatedAt)
       .map((row) => row.lastUpdatedAt!).sort().at(-1) || null;
-    const units = groups.reduce((n, g) => n + g._count._all, 0);
-    const amount = Math.round(groups.reduce((n, g) => n + Number(g._sum.amount || 0), 0) * 100) / 100;
+    const visibleFinancials = new Set(rows.map((row) => row.key));
+    const units = rows.reduce((n, row) => n + (row.units ?? 0), 0);
+    const sumMoney = (values: (number | null)[]) => values.reduce<number>((n, value) => n + Math.round((value ?? 0) * 100), 0) / 100;
+    const amount = sumMoney(rows.map((row) => row.amount));
+    const syncedAmount = sumMoney(rows.map((row) => row.syncedAmount));
+    const collectedAmount = rows.some((row) => row.collectedAmount === null) ? null : sumMoney(rows.map((row) => row.collectedAmount));
+    const balance = rows.some((row) => row.balance === null) ? null : sumMoney(rows.map((row) => row.balance));
+    const hasCorrection = rows.some((row) => row.correctedAmount !== null);
+    const empty = rows.length === 0;
     const base = {
       period: { label: period.label, from: period.desde, to: period.hasta },
       scope: { sedeId, label: sedeId === null ? "Todas las sedes" : sedes.find((s) => s.id === sedeId)!.nombre },
-      options: { sedes, canSelectSede: canViewGlobalCierre(session) },
-      totals: { units: units || (complete ? 0 : null), amount: amount || (complete ? 0 : null) },
+      options: { sedes, canSelectSede: canViewGlobalCierre(session), canEditAccounting: canManageCierreAccounting(session) },
+      totals: { units: units || (complete || empty ? 0 : null), amount: amount || (complete || empty || hasCorrection ? 0 : null),
+        syncedAmount: syncedAmount || (complete || empty ? 0 : null), collectedAmount, balance },
       localSync: { pending: coverage.pending, complete: localComplete, lastUpdatedAt: state?.lastSuccess?.toISOString() || null },
-      providerSync: aggregateCierreProviderSync(rows.map((row) => row.providerSync)),
+      providerSync: aggregateCierreProviderSync(allRows.map((row) => row.providerSync)),
       coverageLabel: financier && apiReports.has(financier) ? rows[0]?.coverageLabel || "Cobertura parcial" : !localComplete ? "Carga local pendiente" : complete ? "Completo" : "Cobertura parcial",
-      financiers: rows, complete, lastUpdatedAt: financier && apiReports.has(financier) ? apiReports.get(financier)?.lastUpdatedAt?.toISOString() || null : lastDataUpdate,
+      financiers: rows, hiddenFinanciers, complete, lastUpdatedAt: financier && apiReports.has(financier) ? apiReports.get(financier)?.lastUpdatedAt?.toISOString() || null : lastDataUpdate,
     };
-    if (!detail && !exporting) return { ...base, items: [], unmatchedLocalItems: [], total: units, page: 1, pageSize: 10 as const, units: base.totals.units, amount: base.totals.amount };
+    if (!detail && !exporting) return { ...base, items: [], unmatchedLocalItems: [], total: units, page: 1, pageSize: 10 as const, units: base.totals.units, amount: base.totals.amount, syncedAmount: base.totals.syncedAmount };
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(units / 10)));
     const otherRecords = financier && apiReports.has(financier) ? [] : await tx.cierreCredito.findMany({
-      where: { ...where, ...(apiReports.size ? { financial: { in: ledgerGroups.filter((group) => !apiReports.has(group.financial)).map((group) => group.financial) } } : {}) },
+      where: { ...where, financial: { in: ledgerGroups.filter((group) => !apiReports.has(group.financial) && visibleFinancials.has(group.financial)).map((group) => group.financial) } },
       orderBy: [{ effectiveAt: "desc" }, { id: "asc" }], ...(exporting ? {} : { skip: (page - 1) * 10, take: 10 }),
     });
-    const records = [...otherRecords, ...[...apiReports.values()].flatMap((api) => api.records)]
+    const records = [...otherRecords, ...[...apiReports.entries()].filter(([name]) => visibleFinancials.has(name)).flatMap(([, api]) => api.records)]
       .sort((a, b) => b.effectiveAt!.getTime() - a.effectiveAt!.getTime() || a.id.localeCompare(b.id));
     const mapItem = (r: (typeof records)[number]) => ({
       id: r.id, date: r.effectiveAt!.toISOString(), creditNumber: r.creditNumber || r.providerCreditId || null,
@@ -133,7 +148,7 @@ export async function readCierreReport(params: URLSearchParams, session: Session
       amount: Number(r.amount), status: r.status, source: r.source,
     });
     const items = (exporting || !financier || !apiReports.has(financier) ? records : records.slice((page - 1) * 10, page * 10)).map(mapItem);
-    const unmatchedLocalItems = exporting ? [...apiReports.values()].flatMap((api) => api.unmatchedLocalRecords).map(mapItem) : [];
-    return { ...base, items, unmatchedLocalItems, total: units, page, pageSize: 10 as const, units: base.totals.units, amount: base.totals.amount };
+    const unmatchedLocalItems = exporting ? [...apiReports.entries()].filter(([name]) => visibleFinancials.has(name)).flatMap(([, api]) => api.unmatchedLocalRecords).map(mapItem) : [];
+    return { ...base, items, unmatchedLocalItems, total: units, page, pageSize: 10 as const, units: base.totals.units, amount: base.totals.amount, syncedAmount: base.totals.syncedAmount };
   }, { isolationLevel: "RepeatableRead", timeout: exporting ? 60_000 : 20_000 });
 }

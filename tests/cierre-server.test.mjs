@@ -346,8 +346,9 @@ test("Excel real incluye todos los resultados autorizados, pesos completos y tot
   assert.ok(!JSON.stringify(sheet.getSheetValues()).includes("Privado"));
   const summary = workbook.getWorksheet("Cierre");
   assert.match(summary.getCell("B2").value, /parcial/);
-  assert.equal(summary.getRow(summary.rowCount).getCell(2).value, 23);
-  assert.equal(summary.getRow(summary.rowCount).getCell(3).value, 23000000);
+  const total = summary.getSheetValues().find((row) => row?.[1] === "TOTAL");
+  assert.equal(total[2], 23);
+  assert.equal(total[3], 23000000);
   const sources = workbook.getWorksheet("Fuentes");
   assert.ok(sources);
   assert.ok(sources.getSheetValues().slice(2).every((row) => !row || row[6] === "Centro"));

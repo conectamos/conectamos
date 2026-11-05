@@ -75,6 +75,18 @@ Los diagnósticos de ADDI registran únicamente códigos de motivo, presencia/ti
 
 ## Verificación realizada
 
+### Ajustes contables del cierre
+
+El administrador central puede guardar un valor corregido, un recaudado y la visibilidad de cada financiera. Se conservan en `CierreAjuste`, por financiera, fecha inicial/final inclusivas de Colombia y ámbito (todas las sedes o una sede concreta). Un mes y su rango personalizado equivalente comparten el ajuste; otros meses, rangos superpuestos y el consolidado global no heredan ni suman ajustes de ámbitos diferentes.
+
+El valor del cierre usa la corrección cuando existe. El valor sincronizado y los créditos originales permanecen intactos; el detalle sigue mostrando únicamente créditos realmente registrados. El saldo es valor del cierre menos recaudado, admite saldo negativo y queda sin calcular cuando falta alguno de esos importes. Un recaudado sin registrar no equivale a cero. El total recaudado/saldo queda por completar mientras alguna financiera visible no tenga el dato necesario.
+
+La X oculta una financiera del periodo y ámbito consultados, excluyéndola de los totales y de las hojas Excel. «Financieras ocultas» permite restaurarla sin perder sus importes, historial ni créditos. Una corrección u ocultación no acredita cobertura completa de una API. Las respuestas del reporte conservan ese estado y la exportación distingue valor sincronizado, corrección manual y recaudado.
+
+Los cambios requieren sesión de administrador central, origen autorizado, ámbito validado en el servidor y una versión vigente para evitar sobrescrituras entre usuarios. `CierreAjusteEvento` registra de forma transaccional el antes/después, autor y momento de cada modificación. Reanudar la sincronización no sobreescribe estos ajustes. La migración aditiva existente crea ambas tablas antes del despliegue.
+
+Las variables actuales de SUMASPAY (`SUMASCONSULTA_URL`, `SUMASCONSULTA_USUARIO` y `SUMASCONSULTA_CLAVE`) configuran el lector individual existente. Agregar variables no habilita un reporte mensual exhaustivo sin un contrato o endpoint real del proveedor. Para contrastar una diferencia mensual hace falta ese reporte o el Excel oficial con identificadores, fecha efectiva, estado y capital; un ajuste manual no explica por sí mismo cuáles créditos faltan.
+
 Las pruebas de `tests/cierre-providers.test.mjs` utilizan respuestas sintéticas e inyección de lectores; no consumen APIs reales. Cubren capital sin inicial/precio/cuotas, aprobaciones sin crédito, IDs duplicados, varios créditos por cliente, anulaciones/reversos/rechazos, créditos pagados, fechas Bogotá, límites de periodo, histórico parcial, configuración ausente y ausencia de llamadas en financieras de fuente local. Las pruebas del dominio/servidor complementan filtros, asociación local, paginación y permisos.
 
 El trabajador y las lecturas autorizadas se verifican mediante sus registros de ejecución. PAYJOY y SUMASPAY disponen de agregados de auditoría basados en la evidencia persistida; no contienen PII. Sigue pendiente acreditar el periodo más antiguo disponible y la cobertura exhaustiva de cada fuente. Un conteo de referencias revisadas nunca certifica por sí solo el cierre completo.

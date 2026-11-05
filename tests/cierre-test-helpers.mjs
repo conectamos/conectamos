@@ -68,6 +68,7 @@ function database(seed = {}) {
   const calls = [];
   const tables = {
     cierreCredito: [], cierreEvento: [], cierreVentaPendiente: [], cierreSyncTrabajo: [],
+    cierreAjuste: [], cierreAjusteEvento: [],
     cierreSyncEstado: [{ key: "LOCAL", initialized: true, lastSuccess: new Date("2026-10-13T12:00:00Z") }, { key: "WORKER", updatedAt: new Date(), lockedUntil: null }],
     venta: [], registroVendedorVenta: [], sede: [{ id: 1, nombre: "Centro" }, { id: 2, nombre: "Norte" }], ...seed,
   };
@@ -116,6 +117,11 @@ function database(seed = {}) {
     }
     const implementations = {
       findMany: select, findUnique: (args) => select(args)[0] || null, findFirst: (args) => select(args)[0] || null,
+      findUniqueOrThrow: (args) => {
+        const row = select(args)[0];
+        if (!row) throw new Error(`Missing mock ${table} row`);
+        return row;
+      },
       count: (args) => select(args).length,
       create: ({ data }) => create(data),
       update: ({ where, data }) => change(rows.find((row) => matches(row, where)), data),

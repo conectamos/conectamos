@@ -149,9 +149,62 @@
 .pagination > div { color: #334155; }
 .pagination .secondaryButton { padding: 8px 12px; font-size: 13px; }
 .dialogFooter { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 20px; margin-top: 20px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 12px; }
-.shell :is(button, input, select, a, summary, [tabindex]):focus-visible { outline: 3px solid #e30613; outline-offset: 3px; }
+.shell :is(button, input, textarea, select, a, summary, [tabindex]):focus-visible { outline: 3px solid #e30613; outline-offset: 3px; }
 .shell button:disabled { opacity: .55; cursor: not-allowed; }
 @media (min-width: 1024px) { .workspace { padding-left: 252px; } }
 @media (max-width: 1200px) { .main { padding: 24px; } .identity { display: none; } .metric { padding-inline: 22px; } .panelHeader { align-items: flex-start; } .panelHeader p { max-width: 190px; text-align: right; line-height: 1.5; } }
 @media (max-width: 760px) { .main { padding: 20px 16px 32px; } .header { align-items: flex-start; flex-wrap: wrap; gap: 16px; } .header h1 { font-size: 28px; } .headerActions { margin-left: auto; align-self: flex-end; } .titleIcon { width: 42px; height: 42px; } .titleBlock { gap: 10px; } .filters { padding: 16px; gap: 12px; } .filters label { flex-basis: calc(50% - 12px); } .filters .primaryButton { flex: 1 1 calc(50% - 12px); } .metrics { grid-template-columns: .7fr 1.3fr; padding: 18px 0; } .metric { padding-inline: 18px; } .metricHeading { align-items: flex-start; gap: 6px; } .metric h3 { font-size: 12px; line-height: 1.4; } .metricValue { font-size: 28px; margin-top: 9px; } .metricIcon, .currency { display: none; } .metricDetail { font-size: 12px; line-height: 1.5; } .coverageBar { align-items: flex-start; flex-direction: column; gap: 8px; padding-block: 12px; } .sources { width: 100%; } .sources > summary { justify-content: flex-start; padding-left: 0; min-height: 36px; } .sourceDetails { position: static; width: 100%; max-height: 400px; margin-top: 5px; box-shadow: 0 4px 14px #0f172a05; } .reportContext { margin-top: 20px; } .reportContext h2 { font-size: 19px; } .queryResult { font-size: 12px; } .panelHeader { flex-wrap: wrap; padding: 18px 16px; gap: 5px; } .panelHeader h2 { font-size: 18px; } .panelHeader p { max-width: none; text-align: left; } .panelFooter { padding: 14px 16px; } .table th, .table td { padding-inline: 16px; } .dialog { width: calc(100% - 24px); padding: 20px 16px; max-height: calc(100dvh - 24px); } .detailSummary > span:last-child { margin-left: 0; } .pagination { flex-direction: column; align-items: flex-start; gap: 16px; } .dialogFooter { flex-wrap: wrap; } }
 @media (max-width: 480px) { .headerActions { width: 100%; margin-left: 0; } .exportButton { width: 100%; } .filters label, .filters .primaryButton { flex-basis: 100%; } .filterNote { flex-direction: column; gap: 5px; } .metrics { grid-template-columns: 1fr; padding: 0 18px; } .metric { padding: 16px 0; } .metric + .metric { border-left: 0; border-top: 1px solid #dce3eb; } .metricHeading { min-height: 0; } .metricValue { font-size: clamp(24px, 7.2vw, 30px); letter-spacing: -.6px; white-space: nowrap; overflow-wrap: normal; overflow-x: auto; overflow-y: hidden; } .periodHeading { gap: 7px; } .reportContext h2 { font-size: 18px; } .pagination > div { gap: 7px; } .error { flex-direction: column; align-items: flex-start; } }
+
+.accountingTotals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 14px 0 4px; }
+.accountingTotals > div { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; min-width: 0; padding: 16px 22px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; }
+.accountingTotals span { color: #475569; font-size: 14px; font-weight: 700; }
+.accountingTotals strong { min-width: 0; text-align: right; overflow-wrap: anywhere; font-size: 20px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.accountingTotals small { grid-column: 1 / -1; color: #64748b; font-size: 12px; }
+.accountingHint { margin: -5px 24px 16px; color: #64748b; font-size: 12px; line-height: 1.5; }
+.accountingNotice { margin: 14px 0; padding: 12px 16px; border: 1px solid #a7f3d0; border-radius: 10px; background: #ecfdf5; color: #047857; font-size: 13px; line-height: 1.5; }
+.accountingTable { min-width: 1020px; }
+.accountingTable th, .accountingTable td { padding-inline: 16px; }
+.accountingTable tbody th { width: 32%; min-width: 280px; }
+.accountingTable td { min-width: 132px; }
+.accountingTable .amountValue { font-size: 14px; }
+.accountingTable .financierAvatar { width: 32px; height: 32px; }
+.adjustmentBadge { display: table; margin: 6px 0 0 auto; padding: 3px 6px; border: 1px solid #fde68a; border-radius: 5px; background: #fffbeb; color: #92400e; font-size: 12px; line-height: 1.3; }
+.originalAmount { display: block; min-width: 155px; margin-top: 5px; color: #64748b; font-size: 12px; line-height: 1.45; }
+.rowActions { display: flex; justify-content: flex-end; gap: 8px; }
+.editButton, .hideButton { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; cursor: pointer; }
+.editButton { padding: 10px 12px; color: #334155; font-size: 13px; font-weight: 700; }
+.hideButton { color: #64748b; }
+.editButton:hover { background: #f1f5f9; }
+.hideButton:hover { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.hiddenFinanciers { padding: 16px 24px; border-bottom: 1px solid #e2e8f0; }
+.hiddenFinanciers summary { display: list-item; min-height: 44px; align-content: center; color: #475569; font-size: 14px; font-weight: 700; cursor: pointer; }
+.hiddenFinanciers p { color: #64748b; font-size: 12px; line-height: 1.5; }
+.hiddenFinanciers ul { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; padding: 0; list-style: none; }
+.hiddenFinanciers li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 10px; color: #334155; font-size: 13px; }
+.hiddenFinanciers .secondaryButton { padding: 8px 10px; font-size: 12px; }
+.accountingDialog { width: min(560px, calc(100% - 40px)); }
+.syncedValue { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin: 22px 0; padding: 14px 0; border-block: 1px solid #e2e8f0; }
+.syncedValue span { color: #64748b; font-size: 13px; }
+.syncedValue strong { font-size: 20px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.accountingFields { display: flex; flex-direction: column; gap: 18px; }
+.accountingFields label { display: flex; flex-direction: column; gap: 7px; color: #334155; font-size: 14px; font-weight: 700; }
+.accountingFields input, .accountingFields textarea { width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #0f172a; font-size: 16px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.accountingFields textarea { resize: vertical; min-height: 90px; font-size: 14px; }
+.accountingFields label > span { color: #64748b; font-size: 12px; font-weight: 400; line-height: 1.45; }
+.useSyncedButton { align-self: flex-start; min-height: 44px; margin-top: -14px; padding: 8px 0; color: #475569; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.useSyncedButton:hover { color: #e30613; }
+.balancePreview { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; padding: 14px 16px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
+.balancePreview > span { color: #475569; font-size: 14px; font-weight: 700; }
+.balancePreview strong { text-align: right; font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.balancePreview small { grid-column: 1 / -1; color: #64748b; font-size: 12px; }
+.accountingFormError { margin-top: 16px; padding: 12px; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 13px; line-height: 1.5; }
+.lastAdjustment { margin-top: 16px; color: #64748b; font-size: 12px; line-height: 1.5; }
+.accountingDialogFooter { margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0; }
+.accountingDialogFooter p { margin-bottom: 16px; color: #64748b; font-size: 12px; line-height: 1.5; }
+.accountingDialogFooter > div { display: flex; justify-content: flex-end; gap: 10px; }
+.detailAdjustment { display: flex; flex-direction: column; gap: 6px; margin: 0 0 20px; padding: 14px 16px; border: 1px solid #fde68a; border-radius: 10px; background: #fffbeb; color: #92400e; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.detailAdjustment strong { font-weight: 700; }
+@media (max-width: 1000px) { .accountingTotals > div { grid-template-columns: 1fr; } .accountingTotals strong { text-align: left; } }
+@media (max-width: 760px) { .accountingHint { margin-inline: 16px; } .accountingTotals { gap: 12px; } .accountingTotals > div { padding: 16px; } .accountingTotals strong { font-size: 18px; } .hiddenFinanciers { padding: 12px 16px; } .accountingDialog { width: calc(100% - 24px); } }
+@media (max-width: 480px) { .accountingTotals { grid-template-columns: 1fr; } .hiddenFinanciers ul, .hiddenFinanciers li { width: 100%; } .accountingDialogFooter > div { flex-wrap: wrap; } .accountingDialogFooter button { flex: 1; } .balancePreview { grid-template-columns: 1fr; } .balancePreview strong { text-align: left; } }

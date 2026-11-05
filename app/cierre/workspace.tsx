@@ -4,13 +4,23 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
 import { DashboardSidebar, type NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
-import type { CierreDetail, CierreFilters, CierreFinancier, CierreProviderSync, CierreReconciliation, CierreReport, PeriodMode } from "./types";
+import type { CierreAccounting, CierreDetail, CierreFilters, CierreFinancier, CierreProviderSync, CierreReconciliation, CierreReport, PeriodMode } from "./types";
 import styles from "./cierre.module.css";
 
 const count = (value: number | null) => value === null ? "Sin confirmar" : value.toLocaleString("es-CO");
 const pesos = (value: number | null) => value === null ? "Sin confirmar" : new Intl.NumberFormat("es-CO", {
   style: "currency", currency: "COP", maximumFractionDigits: 2,
 }).format(value);
+const recordedPesos = (value: number | null | undefined) => value == null ? "Sin registrar" : pesos(value);
+const inputPesos = (value: number | null | undefined) => value == null ? "" : value.toLocaleString("es-CO", { maximumFractionDigits: 2 });
+function parsePesos(value: string) {
+  const cleaned = value.trim().replace(/[\s$]/g, "");
+  if (!cleaned) return null;
+  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/.test(cleaned)) throw new Error("Escribe importes positivos en pesos, por ejemplo 178.027.733 o 178.027.733,50.");
+  const parsed = Number(cleaned.replace(/\./g, "").replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed > 999_999_999_999.99) throw new Error("El importe supera el máximo permitido.");
+  return parsed;
+}
 const dateTime = (value: string) => new Intl.DateTimeFormat("es-CO", {
   timeZone: "America/Bogota", dateStyle: "medium", timeStyle: "short",
 }).format(new Date(value));
@@ -92,6 +102,7 @@ function reconciliationProgress(value: CierreReconciliation) {
 }
 
 function totalSource(financier: CierreFinancier) {
+  if (financier.accounting?.correctedAmount != null) return `Valor corregido manualmente · créditos: ${financier.reconciliation?.financial || (financier.reconciliation?.basis === "SUMASPAY_API" ? "SUMASPAY" : financier.reconciliation?.basis === "PAYJOY_API" ? "PAYJOY" : financier.source)}`;
   if (!financier.reconciliation) return financier.source;
   const progress = reconciliationProgress(financier.reconciliation);
   return `Fuente del total: ${progress.financial}${progress.pending ? " · consulta pendiente" : ""}`;
@@ -182,6 +193,15 @@ export default function CierreWorkspace({ today, user }: {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [detailSettledKey, setDetailSettledKey] = useState("");
+  const [editing, setEditing] = useState<CierreFinancier | null>(null);
+  const [correctedInput, setCorrectedInput] = useState("");
+  const [collectedInput, setCollectedInput] = useState("");
+  const [accountingNote, setAccountingNote] = useState("");
+  const [accountingError, setAccountingError] = useState("");
+  const [accountingNotice, setAccountingNotice] = useState("");
+  const [savingAccounting, setSavingAccounting] = useState<string | null>(null);
+  const accountingDialogRef = useRef<HTMLDialogElement>(null);
+  const accountingTriggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const invalidRange = filters.mode === "range" && filters.from > filters.to;
@@ -238,6 +258,15 @@ export default function CierreWorkspace({ today, user }: {
   }, [selected]);
 
   useEffect(() => {
+    if (!editing) return;
+    const dialog = accountingDialogRef.current;
+    dialog?.showModal();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { dialog?.close(); document.body.style.overflow = overflow; };
+  }, [editing]);
+
+  useEffect(() => {
     if (!selected) return;
     const controller = new AbortController();
     const params = new URLSearchParams(query);
@@ -267,6 +296,8 @@ export default function CierreWorkspace({ today, user }: {
     setRefreshing(false);
     setCheckedAt(null);
     setExportError("");
+    setAccountingError("");
+    setAccountingNotice("");
     setReport(null);
     setQuery(queryFor(filters));
     setReload((value) => value + 1);
@@ -292,6 +323,62 @@ export default function CierreWorkspace({ today, user }: {
     setDetailError("");
     setDetail(null);
     setPage(next);
+  }
+
+  function openAccounting(financier: CierreFinancier, trigger: HTMLButtonElement) {
+    accountingTriggerRef.current = trigger;
+    setCorrectedInput(inputPesos(financier.accounting?.correctedAmount));
+    setCollectedInput(inputPesos(financier.accounting?.collectedAmount));
+    setAccountingNote(financier.accounting?.note || "");
+    setAccountingError("");
+    setAccountingNotice("");
+    setEditing(financier);
+  }
+
+  function closeAccounting() {
+    if (savingAccounting) return;
+    accountingDialogRef.current?.close();
+    setEditing(null);
+    setAccountingError("");
+    accountingTriggerRef.current?.focus({ preventScroll: true });
+  }
+
+  async function persistAccounting(financier: CierreFinancier, patch: Partial<CierreAccounting>) {
+    if (!report?.options.canEditAccounting || savingAccounting || loading || unapplied) return false;
+    setSavingAccounting(financier.key);
+    setAccountingError("");
+    setAccountingNotice("");
+    try {
+      await readJson<{ adjustment: CierreAccounting }>(await fetch(`/api/cierre/ajustes?${query}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ financial: financier.key, version: financier.accounting?.version ?? 0, ...patch }),
+      }));
+      setAccountingNotice(`${financier.name}: ${patch.hidden === true ? "ocultada del informe" : patch.hidden === false ? "visible de nuevo" : "ajuste guardado"} · ${report.period.label} · ${report.scope.label}.`);
+      setLoading(true);
+      setReload((value) => value + 1);
+      setDetailReload((value) => value + 1);
+      return true;
+    } catch (reason) {
+      setAccountingError(reason instanceof Error ? reason.message : "No fue posible guardar el ajuste.");
+      return false;
+    } finally { setSavingAccounting(null); }
+  }
+
+  async function saveAccounting(event: FormEvent) {
+    event.preventDefault();
+    if (!editing) return;
+    try {
+      const correctedAmount = parsePesos(correctedInput);
+      const collectedAmount = parsePesos(collectedInput);
+      if (correctedAmount !== null && !accountingNote.trim()) {
+        throw new Error("Indica el motivo o la referencia del valor corregido.");
+      }
+      if (await persistAccounting(editing, { correctedAmount, collectedAmount, note: accountingNote.trim() || null })) {
+        accountingDialogRef.current?.close();
+        setEditing(null);
+        accountingTriggerRef.current?.focus({ preventScroll: true });
+      }
+    } catch (reason) { setAccountingError(reason instanceof Error ? reason.message : "Revisa los importes ingresados."); }
   }
 
   async function exportExcel() {
@@ -340,6 +427,20 @@ export default function CierreWorkspace({ today, user }: {
     ? `Cargando ventas del periodo: ${count(report.localSync.pending)} pendientes.`
     : "Preparando las ventas del periodo…";
   const noLoadedCredits = report && !report.financiers.some((financier) => (financier.units ?? 0) > 0);
+  const hasCorrections = report?.financiers.some((financier) => financier.accounting?.correctedAmount != null) ?? false;
+  const hiddenFinanciers = report?.hiddenFinanciers || [];
+  const accountingDisabled = loading || unapplied || Boolean(savingAccounting);
+  const detailSyncedAmount = detail && "syncedAmount" in detail ? detail.syncedAmount ?? null
+    : currentFinancier && "syncedAmount" in currentFinancier ? currentFinancier.syncedAmount ?? null
+    : detail?.amount ?? currentFinancier?.amount ?? null;
+  let editingBalance: number | null = null;
+  if (editing) {
+    try {
+      const amount = parsePesos(correctedInput) ?? ("syncedAmount" in editing ? editing.syncedAmount ?? null : editing.amount);
+      const collected = parsePesos(collectedInput);
+      if (amount !== null && collected !== null) editingBalance = (Math.round(amount * 100) - Math.round(collected * 100)) / 100;
+    } catch { /* Invalid input is explained on save; never preview a guessed amount. */ }
+  }
   const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 
   return <div className={styles.shell}>
@@ -347,7 +448,7 @@ export default function CierreWorkspace({ today, user }: {
     <div className={styles.workspace}><main className={styles.main}>
       <header className={styles.header}>
         <div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><DashboardIcon name="chevron" className="h-3 w-3 -rotate-90" /><span>CIERRE</span></nav><div className={styles.titleBlock}><span className={styles.titleIcon}><DashboardIcon name="reports" className="h-6 w-6" /></span><div><h1>CIERRE</h1><p>Créditos efectivos por financiera</p></div></div></div>
-        <div className={styles.headerActions}><div className={styles.identity}><span className={styles.userAvatar} aria-hidden="true">{initials}</span><span>{user.name}</span></div><button type="button" className={styles.exportButton} onClick={exportExcel} disabled={loading || exporting || !report}><DashboardIcon name="download" className="h-4 w-4" />{exporting ? "Exportando…" : "Exportar Excel"}</button></div>
+        <div className={styles.headerActions}><div className={styles.identity}><span className={styles.userAvatar} aria-hidden="true">{initials}</span><span>{user.name}</span></div><button type="button" className={styles.exportButton} onClick={exportExcel} disabled={loading || exporting || !report || Boolean(savingAccounting)}><DashboardIcon name="download" className="h-4 w-4" />{exporting ? "Exportando…" : "Exportar Excel"}</button></div>
       </header>
       {exportError && <p className={styles.exportError} role="alert">{exportError}</p>}
 
@@ -375,8 +476,14 @@ export default function CierreWorkspace({ today, user }: {
         {refreshError && <p className={styles.refreshError} role="alert">No se pudo actualizar el cierre. Se conservan los últimos datos y se reintentará automáticamente. <span>{refreshError}</span></p>}
         <section className={styles.metrics} aria-label="Totales del periodo">
           <div className={styles.metric}><div className={styles.metricHeading}><span className={styles.metricIcon}><DashboardIcon name="document" className="h-5 w-5" /></span><h3>Total de créditos</h3></div><p className={styles.metricValue}>{loading ? "—" : count(report?.totals.units ?? null)}</p><span className={styles.metricDetail}>{pending ? "Total parcial" : "Créditos efectivos"}</span></div>
-          <div className={styles.metric}><div className={styles.metricHeading}><span className={styles.metricIcon}><DashboardIcon name="wallet" className="h-5 w-5" /></span><h3>Valor total de los créditos</h3><span className={styles.currency}>COP</span></div><p className={styles.metricValue}>{loading ? "—" : pesos(report?.totals.amount ?? null)}</p><span className={styles.metricDetail}>{pending ? "Total parcial" : "Importe real financiado"}</span></div>
+          <div className={styles.metric}><div className={styles.metricHeading}><span className={styles.metricIcon}><DashboardIcon name="wallet" className="h-5 w-5" /></span><h3>Valor total del cierre</h3><span className={styles.currency}>COP</span></div><p className={styles.metricValue}>{loading ? "—" : pesos(report?.totals.amount ?? null)}</p><span className={styles.metricDetail}>{hasCorrections ? "Incluye valores corregidos manualmente" : pending ? "Total parcial" : "Importe real financiado"}</span></div>
         </section>
+        <section className={styles.accountingTotals} aria-label="Recaudo y saldo del periodo">
+          <div><span>Recaudado</span><strong>{loading ? "—" : recordedPesos(report?.totals.collectedAmount)}</strong><small>Valores ingresados por financiera</small></div>
+          <div><span>Saldo</span><strong>{loading ? "—" : report?.totals.balance == null ? "Pendiente" : pesos(report.totals.balance)}</strong><small>Valor del cierre − recaudado</small></div>
+        </section>
+        {accountingNotice && <p className={styles.accountingNotice} role="status">{accountingNotice}</p>}
+        {accountingError && !editing && <p className={styles.exportError} role="alert">{accountingError}</p>}
         {report && <div className={styles.coverageBar}><Completeness complete={report.complete} label={report.coverageLabel} /><div className={styles.queryFeedback} role="status" aria-live="polite" aria-atomic="true">
           {loadingSales ? <span>{syncMessage} El cierre se actualiza automáticamente.</span> : <span>{pending ? providerProgress(report.providerSync) : "Créditos confirmados en las fuentes disponibles."}{syncingProviders && " Se actualiza automáticamente."}</span>}
           {noLoadedCredits && pending && <span>{loadingSales ? "Todavía no hay créditos cargados; los totales aparecerán a medida que avance la carga." : "No hay créditos confirmados en las fuentes disponibles para este periodo."}</span>}
@@ -389,25 +496,48 @@ export default function CierreWorkspace({ today, user }: {
         {report?.providerSync?.enabled && <ProviderActivity sync={report.providerSync} />}
         <section className={styles.panel} aria-labelledby="financiers-title">
           <div className={styles.panelHeader}><div className={styles.panelTitle}><h2 id="financiers-title">Créditos por financiera</h2>{report && <span className={styles.countBadge}>{count(report.financiers.length)}</span>}</div><p>Selecciona una financiera para ver el detalle.</p></div>
+          {report?.options.canEditAccounting && <p className={styles.accountingHint}>Los ajustes y las financieras ocultas se guardan para este periodo y sede. La X excluye la financiera de los totales y del Excel.</p>}
           <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Consolidado por financiera">
-            <table className={styles.table}><thead><tr><th scope="col">Financiera</th><th scope="col">Unidades de créditos</th><th scope="col">Valor de los créditos</th></tr></thead><tbody>
-              {loading ? <tr><td colSpan={3} className={styles.empty} role="status">Cargando créditos registrados…</td></tr> : report?.financiers.length ? report.financiers.map((financier) => <tr key={financier.key}>
+            <table className={`${styles.table} ${styles.accountingTable}`}><thead><tr><th scope="col">Financiera</th><th scope="col">Unidades de créditos</th><th scope="col">Valor de los créditos</th><th scope="col">Recaudado</th><th scope="col">Saldo</th>{report?.options.canEditAccounting && <th scope="col">Acciones</th>}</tr></thead><tbody>
+              {loading ? <tr><td colSpan={report?.options.canEditAccounting ? 6 : 5} className={styles.empty} role="status">Cargando créditos registrados…</td></tr> : report?.financiers.length ? report.financiers.map((financier) => <tr key={financier.key}>
                 <th scope="row"><button type="button" className={styles.financierButton} onClick={(event) => openDetail(financier, event.currentTarget)} aria-haspopup="dialog"><span className={styles.financierAvatar} aria-hidden="true">{financier.name.replace(/[^A-Z]/gi, "").slice(0, 2)}</span><span className={styles.financierCopy}><span className={styles.financierName}><strong>{financier.name}</strong><span className={`${styles.rowStatus} ${financier.complete ? styles.rowComplete : styles.rowPending}`}>{sourceCoverage(financier)}</span></span><span className={styles.source}>{totalSource(financier)}</span>
                   {(financier.reconciliation || financier.providerSync?.enabled) && <span className={styles.source}>{sourceReadProgress(financier)}</span>}
                 </span><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button></th>
                 <td><strong className={financier.units === null ? styles.unknownValue : styles.unitsValue}>{count(financier.units)}</strong></td>
-                <td><strong className={financier.amount === null ? styles.unknownValue : styles.amountValue}>{pesos(financier.amount)}</strong></td>
-              </tr>) : <tr><td colSpan={3} className={styles.empty}>No hay créditos efectivos registrados para este periodo.{pending && " La cobertura de las fuentes es parcial."}</td></tr>}
-            </tbody>{report && <tfoot><tr><th scope="row">Total{pending && <span className={styles.partial}>Cobertura parcial · totales confirmados</span>}</th><td>{count(report.totals.units)}</td><td>{pesos(report.totals.amount)}</td></tr></tfoot>}</table>
+                <td><strong className={financier.amount === null ? styles.unknownValue : styles.amountValue}>{pesos(financier.amount)}</strong>{financier.accounting?.correctedAmount != null && <><span className={styles.adjustmentBadge}>Corregido</span><span className={styles.originalAmount}>Sincronizado: {pesos(financier.syncedAmount ?? null)}</span></>}</td>
+                <td><strong className={financier.collectedAmount == null ? styles.unknownValue : styles.amountValue}>{recordedPesos(financier.collectedAmount)}</strong></td>
+                <td><strong className={financier.balance == null ? styles.unknownValue : styles.amountValue}>{financier.balance == null ? "Pendiente" : pesos(financier.balance)}</strong></td>
+                {report.options.canEditAccounting && <td><div className={styles.rowActions}><button type="button" className={styles.editButton} disabled={accountingDisabled} onClick={(event) => openAccounting(financier, event.currentTarget)} aria-label={`Editar valores de ${financier.name}`} aria-haspopup="dialog">Editar</button><button type="button" className={styles.hideButton} disabled={accountingDisabled} onClick={() => { void persistAccounting(financier, { hidden: true }); }} aria-label={`Ocultar ${financier.name} de este informe`} title={`Ocultar ${financier.name} de este informe`}><DashboardIcon name="close" className="h-4 w-4" /></button></div></td>}
+              </tr>) : <tr><td colSpan={report?.options.canEditAccounting ? 6 : 5} className={styles.empty}>{hiddenFinanciers.length ? <>Todas las financieras están ocultas para este periodo.{report?.options.canEditAccounting && " Puedes volver a mostrarlas abajo."}</> : <>No hay créditos efectivos registrados para este periodo.{pending && " La cobertura de las fuentes es parcial."}</>}</td></tr>}
+            </tbody>{report && <tfoot><tr><th scope="row">Total visible{pending && <span className={styles.partial}>Cobertura parcial{hasCorrections ? " · incluye ajustes manuales" : " · totales confirmados"}</span>}</th><td>{count(report.totals.units)}</td><td>{pesos(report.totals.amount)}</td><td>{recordedPesos(report.totals.collectedAmount)}</td><td>{report.totals.balance == null ? "Pendiente" : pesos(report.totals.balance)}</td>{report.options.canEditAccounting && <td />}</tr></tfoot>}</table>
           </div>
+          {hiddenFinanciers.length > 0 && <details className={styles.hiddenFinanciers}><summary>Financieras ocultas ({count(hiddenFinanciers.length)})</summary><p>No se incluyen en este informe ni en sus totales o exportación.</p><ul>{hiddenFinanciers.map((financier) => <li key={financier.key}><span>{financier.name}</span>{report?.options.canEditAccounting && <button type="button" className={styles.secondaryButton} disabled={accountingDisabled} onClick={() => { void persistAccounting(financier, { hidden: false }); }} aria-label={`Mostrar ${financier.name} en este informe`}>Volver a mostrar</button>}</li>)}</ul></details>}
           <footer className={styles.panelFooter}><span><DashboardIcon name="clock" className="h-4 w-4" />Última actualización: {report?.lastUpdatedAt ? dateTime(report.lastUpdatedAt) : "pendiente"}</span><span><DashboardIcon name="document" className="h-4 w-4" />Créditos efectivos · valores en COP</span></footer>
         </section>
       </div>}
     </main></div>
 
+    {editing && report && <dialog ref={accountingDialogRef} className={`${styles.dialog} ${styles.accountingDialog}`} aria-labelledby="accounting-title" aria-describedby="accounting-context" onCancel={(event) => { event.preventDefault(); closeAccounting(); }} onClose={() => { setEditing(null); accountingTriggerRef.current?.focus({ preventScroll: true }); }}>
+      <form onSubmit={saveAccounting}>
+        <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Ajuste del cierre</p><h2 id="accounting-title">{editing.name}</h2><p id="accounting-context">{report.period.label} · {report.scope.label}</p></div><button type="button" className={styles.closeButton} aria-label="Cerrar ajuste" disabled={Boolean(savingAccounting)} onClick={closeAccounting}><DashboardIcon name="close" /></button></div>
+        <div className={styles.syncedValue}><span>Valor sincronizado</span><strong>{pesos("syncedAmount" in editing ? editing.syncedAmount ?? null : editing.amount)}</strong></div>
+        <div className={styles.accountingFields}>
+          <label htmlFor="corrected-amount">Valor corregido (COP)<input id="corrected-amount" type="text" inputMode="decimal" autoComplete="off" value={correctedInput} onChange={(event) => setCorrectedInput(event.target.value)} placeholder="Usar el valor sincronizado" disabled={Boolean(savingAccounting)} aria-describedby="corrected-help" autoFocus /><span id="corrected-help">Déjalo vacío para usar el valor sincronizado.</span></label>
+          <button type="button" className={styles.useSyncedButton} disabled={Boolean(savingAccounting) || !correctedInput} onClick={() => setCorrectedInput("")}>Usar valor sincronizado</button>
+          <label htmlFor="collected-amount">Recaudado (COP)<input id="collected-amount" type="text" inputMode="decimal" autoComplete="off" value={collectedInput} onChange={(event) => setCollectedInput(event.target.value)} placeholder="Sin registrar" disabled={Boolean(savingAccounting)} aria-describedby="collected-help" /><span id="collected-help">Escribe 0 si todavía no has recaudado. Vacío significa sin registrar.</span></label>
+          <div className={styles.balancePreview}><span>Saldo</span><strong>{editingBalance === null ? "Pendiente de registrar" : pesos(editingBalance)}</strong><small>Valor del cierre − recaudado</small></div>
+          <label htmlFor="accounting-note">Motivo o referencia del ajuste<textarea id="accounting-note" rows={3} maxLength={500} value={accountingNote} onChange={(event) => setAccountingNote(event.target.value)} disabled={Boolean(savingAccounting)} placeholder="Ej. Total del reporte oficial de la financiera" /><span>Obligatorio al corregir el valor de los créditos.</span></label>
+        </div>
+        {editing.accounting?.updatedAt && <p className={styles.lastAdjustment}>Último ajuste: {dateTime(editing.accounting.updatedAt)}{editing.accounting.updatedBy ? ` · ${editing.accounting.updatedBy}` : ""}</p>}
+        {accountingError && <p className={styles.accountingFormError} role="alert">{accountingError}</p>}
+        <footer className={styles.accountingDialogFooter}><p>Se guarda para este periodo y sede. Se conserva el valor original de la fuente.</p><div><button type="button" className={styles.secondaryButton} disabled={Boolean(savingAccounting)} onClick={closeAccounting}>Cancelar</button><button type="submit" className={styles.primaryButton} disabled={Boolean(savingAccounting) || loading || unapplied}>{savingAccounting ? "Guardando…" : "Guardar ajuste"}</button></div></footer>
+      </form>
+    </dialog>}
+
     {selected && report && <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="detail-title" aria-describedby="detail-context" onCancel={(event) => { event.preventDefault(); closeDetail(); }} onClose={() => { setSelected(null); triggerRef.current?.focus({ preventScroll: true }); }}>
       <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Detalle de créditos</p><h2 id="detail-title">{selected.name}</h2><p id="detail-context">{report.period.label} · {report.scope.label}</p></div><button type="button" className={styles.closeButton} aria-label="Cerrar detalle" onClick={closeDetail} autoFocus><DashboardIcon name="close" /></button></div>
-      <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detail?.amount ?? currentFinancier?.amount ?? null)}</strong></span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} label={currentFinancier ? sourceCoverage(currentFinancier) : undefined} /></div>
+      <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detailSyncedAmount)}</strong>{currentFinancier?.accounting?.correctedAmount != null && <span className={styles.source}>Subtotal sincronizado del detalle</span>}</span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} label={currentFinancier ? sourceCoverage(currentFinancier) : undefined} /></div>
+      {currentFinancier?.accounting?.correctedAmount != null && <div className={styles.detailAdjustment}><strong>Valor del cierre corregido: {pesos(currentFinancier.amount)}</strong><span>Este ajuste manual no modifica los créditos del listado ni confirma la cobertura de la financiera.</span>{currentFinancier.accounting.note && <span>{currentFinancier.accounting.note}</span>}</div>}
       {currentFinancier?.reconciliation ? <FinancialSource financier={currentFinancier} /> : currentFinancier?.providerSync?.enabled && <ProviderActivity sync={currentFinancier.providerSync} compact />}
       {((loadingSales && !currentFinancier?.reconciliation) || syncingProviders || detailRefreshing) && <p className={styles.detailProgress} role="status">{detailRefreshing ? "Actualizando el listado de créditos…" : `${loadingSales && !currentFinancier?.reconciliation ? syncMessage : providerProgress(currentFinancier?.providerSync)} El listado se actualiza automáticamente.`}</p>}
       {detailError && <div className={styles.error} role="alert"><p>{detail && "No se pudo actualizar el detalle. Se conserva el último listado. "}{detailError}</p><button type="button" className={styles.secondaryButton} onClick={() => { setDetailError(""); if (!detail) setDetailLoading(true); setDetailReload((value) => value + 1); }}>Reintentar</button></div>}

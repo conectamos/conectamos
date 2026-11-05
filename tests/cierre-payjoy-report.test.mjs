@@ -29,7 +29,7 @@ test("PAYJOY usa órdenes API independientes y no suma locales sin conciliar", a
   const report = await read(db, params("&financier=PAYJOY"), admin, true);
   const row = report.financiers[0];
   assert.equal(report.total, 3);
-  assert.deepEqual(report.totals, { units: 3, amount: 3250000 });
+  assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: 3, amount: 3250000 });
   assert.equal(report.items.reduce((sum, item) => sum + item.amount, 0), 3250000);
   assert.ok(report.items.every((item) => item.status === "EFECTIVO" && item.source === "API PAYJOY"));
   assert.equal(row.coverageLabel, "Cobertura parcial");
@@ -69,7 +69,7 @@ test("días faltantes, pendientes o con error nunca sustituyen API por ventas lo
     else jobs[29].state = change;
     const db = database({ cierreSyncTrabajo: jobs, cierreCredito: [local(1, { amount: 800000 }), observation(2)] });
     const report = await read(db, params("&financier=PAYJOY"), admin, true);
-    assert.deepEqual(report.totals, { units: 1, amount: 1000000 });
+    assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: 1, amount: 1000000 });
     assert.equal(report.items[0].id, "2");
     assert.equal(report.financiers[0].reconciliation.basis, "PAYJOY_API");
     assert.deepEqual(report.financiers[0].reconciliation.api, { units: 1, amount: 1000000 });
@@ -108,7 +108,7 @@ test("API usa capital y fecha de evidencia, sin depender de importe o fecha lega
     observation(4, {}, { effectiveDate: end }),
   ] });
   const report = await read(db, params("&financier=PAYJOY"), admin, true);
-  assert.deepEqual(report.totals, { units: 2, amount: 2100000 });
+  assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: 2, amount: 2100000 });
   assert.deepEqual(report.items.map((item) => item.id), ["3", "1"]);
   assert.equal(report.items[1].date, start);
   assert.equal(report.items[1].amount, 1200000);
@@ -124,7 +124,7 @@ test("negativos, tombstones y pendientes financieros reales no se promueven a ef
     observation(11, {}, { providerStatus: "PENDING" }), observation(12, { status: "VINCULADO" }),
   ] });
   const report = await read(db, params("&financier=PAYJOY"), admin, true);
-  assert.deepEqual(report.totals, { units: 1, amount: 1000000 });
+  assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: 1, amount: 1000000 });
   assert.deepEqual(report.items.map((item) => item.id), ["1"]);
 });
 
@@ -164,7 +164,7 @@ test("sin observaciones no informa cero confirmado y filtros no importan cliente
   const environment = modules(db.prisma);
   const report = await environment.load("lib/cierre-report.ts").readCierreReport(params("&financier=PAYJOY"), admin, true);
   assert.equal(report.complete, false);
-  assert.deepEqual(report.totals, { units: null, amount: null });
+  assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: null, amount: null });
   assert.deepEqual(report.financiers[0].reconciliation.api, { units: 0, amount: 0 });
   assert.equal(report.financiers[0].coverageLabel, "Cobertura parcial", "El listado diario no necesita una venta local para consultar");
   assert.equal(report.financiers[0].lastUpdatedAt, null, "La carga local no es una actualización de PAYJOY");

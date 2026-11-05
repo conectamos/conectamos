@@ -2,6 +2,28 @@
 BEGIN;
 SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '120s';
+-- Administrative accounting overlays, separate from all provider evidence.
+CREATE TABLE IF NOT EXISTS "CierreAjuste" (
+ "key" TEXT PRIMARY KEY, "financial" TEXT NOT NULL,
+ "periodFrom" TEXT NOT NULL, "periodTo" TEXT NOT NULL, "scopeKey" TEXT NOT NULL, "sedeId" INTEGER,
+ "correctedAmount" DECIMAL(16,2), "collectedAmount" DECIMAL(16,2),
+ "hidden" BOOLEAN NOT NULL DEFAULT false, "note" TEXT, "version" INTEGER NOT NULL DEFAULT 1,
+ "updatedById" INTEGER NOT NULL, "updatedByProfileId" INTEGER, "updatedBy" TEXT NOT NULL,
+ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CONSTRAINT "CierreAjuste_correctedAmount_check" CHECK ("correctedAmount" IS NULL OR "correctedAmount" >= 0),
+ CONSTRAINT "CierreAjuste_collectedAmount_check" CHECK ("collectedAmount" IS NULL OR "collectedAmount" >= 0),
+ CONSTRAINT "CierreAjuste_version_check" CHECK ("version" > 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "CierreAjuste_periodFrom_periodTo_scopeKey_financial_key"
+ ON "CierreAjuste" ("periodFrom", "periodTo", "scopeKey", "financial");
+CREATE TABLE IF NOT EXISTS "CierreAjusteEvento" (
+ "id" SERIAL PRIMARY KEY, "adjustmentKey" TEXT NOT NULL, "version" INTEGER NOT NULL,
+ "actorId" INTEGER NOT NULL, "actorProfileId" INTEGER, "actorName" TEXT NOT NULL,
+ "snapshot" JSONB NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "CierreAjusteEvento_adjustmentKey_version_key"
+ ON "CierreAjusteEvento" ("adjustmentKey", "version");
 CREATE TABLE IF NOT EXISTS "CierreCredito" (
  "id" TEXT PRIMARY KEY, "financial" TEXT NOT NULL, "providerCreditId" TEXT,
  "localKey" TEXT UNIQUE, "ventaId" INTEGER, "registroId" INTEGER,

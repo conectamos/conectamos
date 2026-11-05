@@ -158,7 +158,7 @@ test("SUMAS CANCELADO exacto recupera crédito pagado legacy y snapshot sin cons
   const result = await audit.readCierreSumasAudit(db.prisma, scope);
   assert.deepEqual(result.totals.apiReportable, { units: 2, amount: 1800000, missingAmount: 0 });
   const report = await loader.load("lib/cierre-report.ts").readCierreReport(new URLSearchParams("mode=month&month=2026-09&financier=SUMASPAY"), admin, true, true);
-  assert.deepEqual(report.totals, { units: 2, amount: 1800000 });
+  assert.deepEqual({ units: report.totals.units, amount: report.totals.amount }, { units: 2, amount: 1800000 });
   assert.equal(report.items.length, 2);
   assert.ok(report.items.every((item) => item.status === "EFECTIVO"));
   assert.ok(db.calls.every((call) => !["create", "update", "upsert", "updateMany", "deleteMany"].includes(call.method)));

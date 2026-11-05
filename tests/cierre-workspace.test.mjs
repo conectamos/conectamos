@@ -30,18 +30,20 @@ function textOf(node) {
   return textOf(node.props?.children);
 }
 
-function harness({ admin = true, delayed = false, reports = [report], detailOverrides = {} } = {}) {
+function harness({ admin = true, delayed = false, reports = [report], detailOverrides = {}, saveOutcomes = [] } = {}) {
   const slots = [];
   const effects = [];
   const calls = [];
   const pending = [];
   const downloads = [];
+  const accountingRecords = new Map();
   const timers = new Map();
   const dialogCalls = { opened: 0, closed: 0 };
   const dialogElement = { showModal() { dialogCalls.opened++; }, close() { dialogCalls.closed++; } };
   let timerId = 0;
   let now = 0;
   let reportIndex = 0;
+  let saveIndex = 0;
   let index = 0;
   let dirty = true;
   let tree;
@@ -73,7 +75,18 @@ function harness({ admin = true, delayed = false, reports = [report], detailOver
   };
   const testModule = { exports: {} };
   const mockFetch = async (url, options) => {
-    calls.push({ url: String(url), signal: options.signal });
+    calls.push({ url: String(url), signal: options.signal, method: options.method || "GET", body: options.body ? JSON.parse(options.body) : null });
+    if (String(url).startsWith("/api/cierre/ajustes?")) {
+      const outcome = saveOutcomes[saveIndex++];
+      if (outcome instanceof Error) return { ok: false, json: async () => ({ error: outcome.message }) };
+      const { financial, version, ...patch } = JSON.parse(options.body);
+      const key = `${String(url).split("?")[1]}:${financial}`;
+      const previous = accountingRecords.get(key) || { correctedAmount: null, collectedAmount: null, hidden: false, note: null, version: 0 };
+      if (version !== previous.version) return { ok: false, json: async () => ({ error: "El cierre cambió. Actualiza el informe antes de guardar." }) };
+      const adjustment = { ...previous, ...patch, version: version + 1, updatedAt: "2026-11-05T16:00:00Z", updatedBy: "Administración" };
+      accountingRecords.set(key, adjustment);
+      return { ok: true, json: async () => ({ adjustment }) };
+    }
     if (String(url).startsWith("/api/cierre/export?")) return { ok: true, blob: async () => new Blob(["Excel"]) };
     if (String(url).startsWith("/api/cierre/detalle?")) {
       const page = Number(new URL(url, "http://localhost").searchParams.get("page"));
@@ -81,7 +94,18 @@ function harness({ admin = true, delayed = false, reports = [report], detailOver
     }
     const next = reports[Math.min(reportIndex++, reports.length - 1)];
     if (next instanceof Error) return { ok: false, json: async () => ({ error: next.message }) };
-    const result = { ...next, options: { ...next.options, canSelectSede: admin } };
+    let result = { ...next, options: { ...next.options, canSelectSede: admin, canEditAccounting: admin && Boolean(next.options.canEditAccounting) } };
+    if (next.options.canEditAccounting) {
+      const financiers = [...next.financiers, ...(next.hiddenFinanciers || [])].map((row) => {
+        const accounting = accountingRecords.get(`${String(url).split("?")[1]}:${row.key}`) || row.accounting || { correctedAmount: null, collectedAmount: null, hidden: false, note: null, version: 0, updatedAt: null, updatedBy: null };
+        const syncedAmount = row.syncedAmount ?? row.amount;
+        const amount = accounting.correctedAmount ?? syncedAmount;
+        return { ...row, syncedAmount, amount, collectedAmount: accounting.collectedAmount, balance: accounting.collectedAmount === null || amount === null ? null : amount - accounting.collectedAmount, hidden: accounting.hidden, accounting };
+      });
+      const visible = financiers.filter((row) => !row.hidden);
+      const total = (key) => visible.some((row) => row[key] === null) ? null : visible.reduce((sum, row) => sum + row[key], 0);
+      result = { ...result, financiers: visible, hiddenFinanciers: financiers.filter((row) => row.hidden), totals: { units: total("units"), amount: total("amount"), collectedAmount: total("collectedAmount"), balance: total("balance") } };
+    }
     if (delayed) return new Promise((resolve) => pending.push({ signal: options.signal, resolve: (value = result) => resolve({ ok: true, json: async () => value }) }));
     return { ok: true, json: async () => result };
   };
@@ -117,7 +141,7 @@ function harness({ admin = true, delayed = false, reports = [report], detailOver
   }
   async function setControl(label, value) {
     const field = descendants(tree).find((node) => node.type === "label" && node.props.children[0] === label);
-    const control = descendants(field).find((node) => node.type === "input" || node.type === "select");
+    const control = descendants(field).find((node) => node.type === "input" || node.type === "select" || node.type === "textarea");
     assert.ok(control, `No control for ${label}`);
     control.props.onChange({ target: { value } });
     await settle();
@@ -668,5 +692,201 @@ test("pending local ingestion and linking metadata do not turn SUMASPAY API cred
   assert.match(dialog, /La cuenta no acredita un listado exhaustivo del periodo/);
   assert.doesNotMatch(dialog, /vinculad|vínculo|venta local|ventas locales|Cargando ventas|9\.999|sin confirmación|Diferencia|160\.000\.000/i);
   assert.doesNotMatch(textOf(ui.find("button", "SUMASPAY")), /vinculad|sin confirmación/i);
+  ui.unmount();
+});
+
+const accountingSource = {
+  ...report,
+  period: { from: "2026-10-01", to: "2026-10-31", label: "Octubre de 2026" },
+  financiers: [{ ...financier, key: "SUMASPAY", name: "SUMASPAY", units: 4, amount: 168_787_733, syncedAmount: 168_787_733, complete: false }],
+  options: { ...report.options, canEditAccounting: true },
+};
+function accountingButton(ui, label) {
+  const button = ui.nodes().find((node) => node.type === "button" && node.props["aria-label"] === label);
+  assert.ok(button, `Missing accounting button: ${label}`);
+  return button;
+}
+async function editAccounting(ui) {
+  accountingButton(ui, "Editar valores de SUMASPAY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+}
+async function saveAccounting(ui) {
+  await ui.find("form", "Guardar ajuste").props.onSubmit({ preventDefault() {} });
+  await ui.settle();
+}
+function inputValue(ui, id) {
+  return ui.nodes().find((node) => node.props.id === id)?.props.value;
+}
+
+test("accounting correction and collected amount persist after reloading and preserve synchronized evidence", async () => {
+  const ui = harness({ reports: [accountingSource] });
+  await ui.settle();
+  await editAccounting(ui);
+  assert.match(textOf(ui.find("dialog")), /Octubre de 2026 · Todas las sedes/);
+  assert.match(textOf(ui.find("dialog")), /Valor sincronizado\$\s*168\.787\.733/);
+  await ui.setControl("Valor corregido (COP)", "$ 178.027.733");
+  await ui.setControl("Recaudado (COP)", "150.000.000");
+  await ui.setControl("Motivo o referencia del ajuste", "Total del reporte oficial de octubre");
+  assert.match(textOf(ui.find("dialog")), /Saldo\$\s*28\.027\.733/);
+  await saveAccounting(ui);
+  const writes = ui.calls.filter((call) => call.method === "POST");
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].url, /mode=month&sedeId=TODAS&month=2026-10/);
+  assert.deepEqual(writes[0].body, { financial: "SUMASPAY", version: 0, correctedAmount: 178_027_733, collectedAmount: 150_000_000, note: "Total del reporte oficial de octubre" });
+  assert.equal(ui.nodes().filter((node) => node.type === "dialog").length, 0);
+  assert.match(ui.text(), /ajuste guardado/);
+  const row = ui.nodes().find((node) => node.type === "tr" && textOf(node).includes("SUMASPAY"));
+  assert.match(textOf(row), /178\.027\.733CorregidoSincronizado: \$\s*168\.787\.733/);
+  assert.match(textOf(row), /150\.000\.000.*28\.027\.733/);
+  assert.match(ui.text(), /Incluye valores corregidos manualmente/);
+  await editAccounting(ui);
+  assert.equal(inputValue(ui, "corrected-amount"), "178.027.733");
+  assert.equal(inputValue(ui, "collected-amount"), "150.000.000");
+  assert.match(textOf(ui.find("dialog")), /Último ajuste.*Administración/);
+  assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre")));
+  ui.unmount();
+});
+
+test("zero collection is recorded, negative balances are visible and clearing a correction restores the synchronized amount", async () => {
+  const ui = harness({ reports: [accountingSource] });
+  await ui.settle();
+  assert.match(ui.text(), /RecaudadoSin registrar/);
+  await editAccounting(ui);
+  await ui.setControl("Valor corregido (COP)", "178.027.733");
+  await ui.setControl("Recaudado (COP)", "0");
+  await ui.setControl("Motivo o referencia del ajuste", "Reporte oficial");
+  await saveAccounting(ui);
+  assert.equal(ui.calls.find((call) => call.method === "POST").body.collectedAmount, 0);
+  assert.match(ui.text(), /Recaudado\$\s*0/);
+  await editAccounting(ui);
+  await ui.setControl("Recaudado (COP)", "180.000.000");
+  assert.match(textOf(ui.find("dialog")), /Saldo-\$\s*1\.972\.267/);
+  await saveAccounting(ui);
+  await editAccounting(ui);
+  ui.find("button", "Usar valor sincronizado").props.onClick();
+  await ui.settle();
+  assert.equal(inputValue(ui, "corrected-amount"), "");
+  assert.match(textOf(ui.find("dialog")), /Saldo-\$\s*11\.212\.267/);
+  await saveAccounting(ui);
+  const writes = ui.calls.filter((call) => call.method === "POST");
+  assert.equal(writes.at(-1).body.correctedAmount, null);
+  assert.equal(writes.at(-1).body.version, 2);
+  assert.doesNotMatch(ui.text(), /Corregido|Incluye valores corregidos/);
+  assert.match(ui.text(), /-\$\s*11\.212\.267/);
+  ui.unmount();
+});
+
+test("hiding and restoring a financial preserves its saved adjustment and excludes it from the visible report", async () => {
+  const ui = harness({ reports: [accountingSource] });
+  await ui.settle();
+  await editAccounting(ui);
+  await ui.setControl("Recaudado (COP)", "80.000.000");
+  await saveAccounting(ui);
+  accountingButton(ui, "Ocultar SUMASPAY de este informe").props.onClick();
+  await ui.settle();
+  const hide = ui.calls.filter((call) => call.method === "POST").at(-1);
+  assert.deepEqual(hide.body, { financial: "SUMASPAY", version: 1, hidden: true });
+  assert.match(ui.text(), /Todas las financieras están ocultas/);
+  assert.match(ui.text(), /Financieras ocultas \(1\)/);
+  assert.equal(ui.nodes().filter((node) => node.type === "tr" && textOf(node).includes("SUMASPAY")).length, 0);
+  assert.deepEqual(ui.nodes().filter((node) => node.props?.className === "metricValue").map(textOf), ["0", "$ 0"]);
+  await ui.find("button", "Exportar Excel").props.onClick();
+  assert.equal(ui.calls.at(-1).url, `/api/cierre/export?${hide.url.split("?")[1]}`);
+  accountingButton(ui, "Mostrar SUMASPAY en este informe").props.onClick();
+  await ui.settle();
+  const restore = ui.calls.filter((call) => call.method === "POST").at(-1);
+  assert.deepEqual(restore.body, { financial: "SUMASPAY", version: 2, hidden: false });
+  assert.doesNotMatch(ui.text(), /Financieras ocultas/);
+  await editAccounting(ui);
+  assert.equal(inputValue(ui, "collected-amount"), "80.000.000");
+  ui.unmount();
+});
+
+test("save failures and conflicts preserve the entered values and require an explicit retry", async () => {
+  for (const message of ["No fue posible guardar el ajuste.", "El cierre cambió. Actualiza el informe antes de guardar."]) {
+    const ui = harness({ reports: [accountingSource], saveOutcomes: [new Error(message)] });
+    await ui.settle();
+    await editAccounting(ui);
+    await ui.setControl("Valor corregido (COP)", "178.027.733,50");
+    await ui.setControl("Recaudado (COP)", "0");
+    await ui.setControl("Motivo o referencia del ajuste", "Reporte oficial");
+    await saveAccounting(ui);
+    assert.match(textOf(ui.find("dialog")), new RegExp(message.replace(/\./g, "\\.")));
+    assert.equal(inputValue(ui, "corrected-amount"), "178.027.733,50");
+    assert.equal(inputValue(ui, "collected-amount"), "0");
+    assert.equal(ui.calls.filter((call) => call.method === "POST").length, 1);
+    assert.equal(ui.calls.filter((call) => call.url.startsWith("/api/cierre?")).length, 1);
+    await saveAccounting(ui);
+    assert.equal(ui.calls.filter((call) => call.method === "POST").length, 2);
+    assert.equal(ui.nodes().filter((node) => node.type === "dialog").length, 0);
+    assert.match(ui.text(), /178\.027\.733,5/);
+    ui.unmount();
+  }
+});
+
+test("invalid amounts and missing correction references are not sent and inputs remain intact", async () => {
+  const ui = harness({ reports: [accountingSource] });
+  await ui.settle();
+  await editAccounting(ui);
+  for (const amount of ["-10", "1.23", "1000000000000", "1.000,123", "NaN"]) {
+    await ui.setControl("Valor corregido (COP)", amount);
+    await saveAccounting(ui);
+    assert.equal(inputValue(ui, "corrected-amount"), amount);
+    assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
+  }
+  await ui.setControl("Valor corregido (COP)", "178.027.733");
+  await saveAccounting(ui);
+  assert.match(textOf(ui.find("dialog")), /Indica el motivo o la referencia/);
+  assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
+  ui.unmount();
+});
+
+test("accounting edits are admin-only and apply to the currently queried period and scope", async () => {
+  const restricted = harness({ admin: false, reports: [accountingSource] });
+  await restricted.settle();
+  assert.ok(!restricted.nodes().some((node) => node.type === "button" && /Editar valores|Ocultar/.test(node.props["aria-label"] || "")));
+  assert.equal(restricted.calls.filter((call) => call.method === "POST").length, 0);
+  const ui = harness({ reports: [accountingSource] });
+  await ui.settle();
+  await editAccounting(ui);
+  await ui.setControl("Recaudado (COP)", "0");
+  await saveAccounting(ui);
+  await ui.setControl("Mes", "2026-09");
+  assert.equal(accountingButton(ui, "Editar valores de SUMASPAY").props.disabled, true);
+  assert.equal(accountingButton(ui, "Ocultar SUMASPAY de este informe").props.disabled, true);
+  await ui.submit();
+  await editAccounting(ui);
+  assert.equal(inputValue(ui, "collected-amount"), "");
+  ui.find("button", "Cancelar").props.onClick();
+  await ui.settle();
+  await ui.setControl("Mes", "2026-10");
+  await ui.submit();
+  await editAccounting(ui);
+  assert.equal(inputValue(ui, "collected-amount"), "0");
+  ui.find("button", "Cancelar").props.onClick();
+  await ui.settle();
+  await ui.setControl("Sede", "2");
+  await ui.submit();
+  await editAccounting(ui);
+  assert.equal(inputValue(ui, "collected-amount"), "");
+  ui.unmount();
+  restricted.unmount();
+});
+
+test("manual correction in the report never presents fabricated credit details or confirms provider coverage", async () => {
+  const ui = harness({ reports: [accountingSource], detailOverrides: { total: 4, units: 4, amount: 178_027_733, syncedAmount: 168_787_733, complete: false } });
+  await ui.settle();
+  await editAccounting(ui);
+  await ui.setControl("Valor corregido (COP)", "178.027.733");
+  await ui.setControl("Motivo o referencia del ajuste", "Reporte oficial");
+  await saveAccounting(ui);
+  ui.find("button", "SUMASPAY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  const dialog = textOf(ui.find("dialog"));
+  assert.match(dialog, /4 créditos\$\s*168\.787\.733Subtotal sincronizado del detalle/);
+  assert.match(dialog, /Valor del cierre corregido: \$\s*178\.027\.733/);
+  assert.match(dialog, /no modifica los créditos del listado ni confirma la cobertura/);
+  assert.doesNotMatch(dialog, /Periodo completo/);
+  assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre")));
   ui.unmount();
 });

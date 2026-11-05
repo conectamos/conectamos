@@ -9,6 +9,44 @@ datasource db {
 
 // CIERRE is a durable read model. Source sales may be deleted; these rows and
 // their event history deliberately have no cascading foreign keys to Venta.
+// Accounting corrections never overwrite provider evidence or credit counts.
+// Scope and civil dates identify the exact report chosen by the administrator.
+model CierreAjuste {
+  key                String   @id
+  financial          String
+  periodFrom         String
+  periodTo           String
+  scopeKey           String
+  sedeId             Int?
+  correctedAmount    Decimal? @db.Decimal(16, 2)
+  collectedAmount    Decimal? @db.Decimal(16, 2)
+  hidden             Boolean  @default(false)
+  note               String?
+  version            Int      @default(1)
+  updatedById        Int
+  updatedByProfileId Int?
+  updatedBy          String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([periodFrom, periodTo, scopeKey, financial])
+}
+
+// Append-only through the application; historical actors/values survive deletion
+// of source sales, credits or a user profile.
+model CierreAjusteEvento {
+  id            Int      @id @default(autoincrement())
+  adjustmentKey String
+  version       Int
+  actorId       Int
+  actorProfileId Int?
+  actorName     String
+  snapshot      Json
+  createdAt     DateTime @default(now())
+
+  @@unique([adjustmentKey, version])
+}
+
 model CierreCredito {
   id               String   @id @default(cuid())
   financial        String

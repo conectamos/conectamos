@@ -44,6 +44,12 @@ export type CierreFinancier = {
   name: string;
   units: number | null;
   amount: number | null;
+  syncedAmount?: number | null;
+  correctedAmount?: number | null;
+  collectedAmount?: number | null;
+  balance?: number | null;
+  hidden?: boolean;
+  accounting?: CierreAccounting;
   complete: boolean;
   source: string;
   lastUpdatedAt: string | null;
@@ -53,17 +59,28 @@ export type CierreFinancier = {
   reconciliation?: CierreReconciliation;
 };
 
+export type CierreAccounting = {
+  correctedAmount: number | null;
+  collectedAmount: number | null;
+  hidden: boolean;
+  version: number;
+  updatedAt: string | null;
+  updatedBy: string | null;
+  note: string | null;
+};
+
 export type CierreReport = {
   period: { label: string; from: string; to: string };
   scope: { sedeId: number | null; label: string };
-  totals: { units: number | null; amount: number | null };
+  totals: { units: number | null; amount: number | null; collectedAmount?: number | null; balance?: number | null };
   financiers: CierreFinancier[];
+  hiddenFinanciers?: CierreFinancier[];
   complete: boolean;
   lastUpdatedAt: string | null;
   localSync: { pending: number; complete: boolean; lastUpdatedAt: string | null };
   providerSync?: CierreProviderSync | null;
   coverageLabel?: string;
-  options: { sedes: { id: number; nombre: string }[]; canSelectSede: boolean };
+  options: { sedes: { id: number; nombre: string }[]; canSelectSede: boolean; canEditAccounting?: boolean };
 };
 
 export type CierreDetail = {
@@ -83,5 +100,6 @@ export type CierreDetail = {
   total: number;
   units: number | null;
   amount: number | null;
+  syncedAmount?: number | null;
   complete: boolean;
 };
