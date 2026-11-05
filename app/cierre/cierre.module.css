@@ -169,8 +169,6 @@
 .accountingTable td { min-width: 132px; }
 .accountingTable .amountValue { font-size: 14px; }
 .accountingTable .financierAvatar { width: 32px; height: 32px; }
-.adjustmentBadge { display: table; margin: 6px 0 0 auto; padding: 3px 6px; border: 1px solid #fde68a; border-radius: 5px; background: #fffbeb; color: #92400e; font-size: 12px; line-height: 1.3; }
-.originalAmount { display: block; min-width: 155px; margin-top: 5px; color: #64748b; font-size: 12px; line-height: 1.45; }
 .rowActions { display: flex; justify-content: flex-end; gap: 8px; }
 .editButton, .hideButton { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; cursor: pointer; }
 .editButton { padding: 10px 12px; color: #334155; font-size: 13px; font-weight: 700; }

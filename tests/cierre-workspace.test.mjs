@@ -736,7 +736,8 @@ test("accounting correction and collected amount persist after reloading and pre
   assert.equal(ui.nodes().filter((node) => node.type === "dialog").length, 0);
   assert.match(ui.text(), /ajuste guardado/);
   const row = ui.nodes().find((node) => node.type === "tr" && textOf(node).includes("SUMASPAY"));
-  assert.match(textOf(row), /178\.027\.733CorregidoSincronizado: \$\s*168\.787\.733/);
+  assert.match(textOf(row), /178\.027\.733/);
+  assert.doesNotMatch(textOf(row), /Corregido|Sincronizado:|168\.787\.733/);
   assert.match(textOf(row), /150\.000\.000.*28\.027\.733/);
   assert.match(ui.text(), /Incluye valores corregidos manualmente/);
   await editAccounting(ui);
