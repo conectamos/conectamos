@@ -62,6 +62,7 @@ export type CierreFinancier = {
 export type CierreAccounting = {
   correctedAmount: number | null;
   collectedAmount: number | null;
+  payments?: CierreReceivedPayment[];
   hidden: boolean;
   version: number;
   updatedAt: string | null;
@@ -69,10 +70,17 @@ export type CierreAccounting = {
   note: string | null;
 };
 
+export type CierreReceivedPayment = {
+  id: string;
+  date: string | null;
+  amount: number;
+  reference: string | null;
+};
+
 export type CierreReport = {
   period: { label: string; from: string; to: string };
   scope: { sedeId: number | null; label: string };
-  totals: { units: number | null; amount: number | null; collectedAmount?: number | null; balance?: number | null };
+  totals: { units: number | null; amount: number | null; collectedAmount?: number | null; balance?: number | null; recordedPaymentsAmount?: number | null; recordedBalance?: number | null };
   financiers: CierreFinancier[];
   hiddenFinanciers?: CierreFinancier[];
   complete: boolean;

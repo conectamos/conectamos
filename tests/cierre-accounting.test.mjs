@@ -16,6 +16,8 @@ function setup(session = actor, seed = {}) {
 }
 const payload = (changes = {}) => ({ financial: "SUMASPAY", version: 0, correctedAmount: 178027733,
   collectedAmount: null, note: "Reporte oficial octubre", ...changes });
+const payment = (id, amount, changes = {}) => ({ id, date: "2026-11-05", amount, reference: null, ...changes });
+const paymentsPayload = (payments, changes = {}) => ({ financial: "SUMASPAY", version: 0, payments, ...changes });
 
 test("ajuste conserva el capital sincronizado, deja recaudo desconocido y calcula saldo en centavos", async () => {
   const { db, accounting } = setup();
@@ -155,4 +157,124 @@ test("servidor solo permite administrador real y conserva restricciones de sede 
   } finally {
     if (priorUrl === undefined) delete process.env.APP_URL; else process.env.APP_URL = priorUrl;
   }
+});
+
+test("varios pagos suman en centavos, admiten recaudos posteriores al cierre y conservan cada referencia", async () => {
+  const { db, accounting } = setup();
+  const payments = [payment("pago-1", 10.10, { reference: "Transferencia 001" }), payment("pago-2", 20.20, { date: "2026-12-01" })];
+  const saved = await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload(payments)));
+  assert.equal(saved.collectedAmount, 30.30);
+  assert.deepEqual(saved.payments, payments);
+  assert.equal(accounting.applyCierreAccounting({ name: "SUMASPAY", amount: 100 }, saved).balance, 69.70);
+  assert.deepEqual(db.tables.cierreAjuste[0].payments, payments);
+  assert.deepEqual((await accounting.readCierreAccounting(db.prisma, scope)).get("SUMASPAY").payments, payments);
+  assert.deepEqual(db.tables.cierreAjusteEvento[0].snapshot.before.payments, []);
+  assert.deepEqual(db.tables.cierreAjusteEvento[0].snapshot.after.payments, payments);
+});
+
+test("editar y retirar pagos recalcula el total sin tocar el capital ni perder trazabilidad", async () => {
+  const { db, accounting } = setup();
+  const initial = [payment("pago-1", 100), payment("pago-2", 200), payment("pago-3", 300)];
+  await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload(initial, { correctedAmount: 1000, note: "Reporte oficial" })));
+  const modified = [payment("pago-1", 125, { reference: "Importe corregido" }), payment("pago-3", 300)];
+  const saved = await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload(modified, { version: 1 })));
+  assert.equal(saved.correctedAmount, 1000);
+  assert.equal(saved.collectedAmount, 425);
+  assert.equal(accounting.applyCierreAccounting({ name: "SUMASPAY", amount: 950 }, saved).balance, 575);
+  assert.deepEqual(db.tables.cierreAjusteEvento[1].snapshot.before.payments, initial);
+  assert.deepEqual(db.tables.cierreAjusteEvento[1].snapshot.after.payments, modified);
+  assert.equal(db.tables.cierreCredito.length, 0);
+  assert.equal(db.tables.cierreAjuste[0].version, 2);
+});
+
+test("recaudado histórico aparece como pago sin fecha; lectura y ocultación no inventan ni reescriben datos", async () => {
+  const { db, accounting } = setup();
+  await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(payload({ collectedAmount: 300 })));
+  const readsBefore = db.tables.cierreAjusteEvento.length;
+  const saved = (await accounting.readCierreAccounting(db.prisma, scope)).get("SUMASPAY");
+  assert.deepEqual(saved.payments, [{ id: "legacy-collected", date: null, amount: 300, reference: null }]);
+  assert.equal(db.tables.cierreAjuste[0].payments, undefined, "Leer no migra el registro histórico");
+  assert.equal(db.tables.cierreAjusteEvento.length, readsBefore);
+  const hidden = await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch({ financial: "SUMASPAY", version: 1, hidden: true }));
+  assert.deepEqual(hidden.payments, saved.payments);
+  assert.equal(db.tables.cierreAjuste[0].payments, undefined);
+  const migrated = await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload([...saved.payments, payment("pago-nuevo", 50)], { version: 2 })));
+  assert.equal(migrated.collectedAmount, 350);
+  assert.deepEqual(db.tables.cierreAjuste[0].payments, [...saved.payments, payment("pago-nuevo", 50)]);
+  assert.equal(migrated.payments[0].date, null);
+});
+
+test("sin registrar sigue siendo null hasta guardar una lista; lista vacía y cero histórico son cero explícito", async () => {
+  const { db, accounting } = setup();
+  const blank = await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch({ financial: "SUMASPAY", version: 0, hidden: true }));
+  assert.equal(blank.collectedAmount, null);
+  assert.deepEqual(blank.payments, []);
+  const recorded = await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload([], { version: 1 })));
+  assert.equal(recorded.collectedAmount, 0);
+  assert.deepEqual(recorded.payments, []);
+  assert.deepEqual(db.tables.cierreAjuste[0].payments, []);
+  const previousZero = await accounting.saveCierreAccounting(db.prisma, { ...scope, sedeId: 1 }, actor,
+    accounting.parseCierreAccountingPatch({ financial: "SUMASPAY", version: 0, collectedAmount: 0 }));
+  assert.equal(previousZero.collectedAmount, 0);
+  assert.deepEqual(previousZero.payments, []);
+});
+
+test("valida filas de pago, fechas reales, importes positivos, IDs únicos y suma segura", async () => {
+  const { db, accounting } = setup();
+  for (const amount of [0, null, -1, 0.001, NaN, Infinity, "10.00", 1e15]) {
+    assert.throws(() => accounting.parseCierreAccountingPatch(paymentsPayload([payment("p-1", amount)])));
+  }
+  for (const date of [undefined, "2026-02-30", "2026-13-01", "2026-2-01", "0000-01-01", "2026-10-01T05:00:00Z", 20261001]) {
+    assert.throws(() => accounting.parseCierreAccountingPatch(paymentsPayload([payment("p-1", 1, { date })])), /fecha/);
+  }
+  assert.throws(() => accounting.parseCierreAccountingPatch(paymentsPayload([payment("same", 1), payment("same", 2)])), /única/);
+  assert.throws(() => accounting.parseCierreAccountingPatch(paymentsPayload([payment("bad id", 1)])), /única/);
+  assert.throws(() => accounting.parseCierreAccountingPatch(paymentsPayload([payment("p-1", 1, { reference: "x".repeat(201) })])), /200/);
+  assert.throws(() => accounting.parseCierreAccountingPatch(paymentsPayload([payment("p-1", 1, { extra: true })])), /campos/);
+  assert.throws(() => accounting.parseCierreAccountingPatch(paymentsPayload([payment("p-1", 999999999999.99), payment("p-2", 0.01)])), /suma/);
+  assert.throws(() => accounting.parseCierreAccountingPatch(paymentsPayload(Array.from({ length: 1001 }, (_, i) => payment(`p-${i}`, 1)))), /1000/);
+  await assert.rejects(accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload([payment("legacy-collected", 10, { date: null })]))), /fecha/);
+  assert.equal(db.tables.cierreAjuste.length, 0);
+  assert.equal(db.tables.cierreAjusteEvento.length, 0);
+  assert.equal(accounting.parseCierreAccountingPatch(paymentsPayload([payment("leap", 1, { date: "2028-02-29" })])).payments[0].date, "2028-02-29");
+});
+
+test("el total no puede contradecir el detalle y clientes anteriores no borran pagos registrados", async () => {
+  const { db, accounting } = setup();
+  assert.throws(() => accounting.parseCierreAccountingPatch(paymentsPayload([payment("p-1", 10)], { collectedAmount: 20 })), /coincidir/);
+  const initial = await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload([payment("p-1", 10)], { collectedAmount: 10 })));
+  await assert.rejects(accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch({ financial: "SUMASPAY", version: 1, collectedAmount: 20 })), /detalle de pagos/);
+  await assert.rejects(accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch({ financial: "SUMASPAY", version: 1, collectedAmount: null })), /detalle de pagos/);
+  const same = await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch({ financial: "SUMASPAY", version: 1, collectedAmount: 10, hidden: true }));
+  assert.deepEqual(same.payments, initial.payments);
+  assert.equal(same.collectedAmount, 10);
+  await assert.rejects(accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload([], { version: 1 }))), (error) => error.status === 409);
+  assert.equal(db.tables.cierreAjusteEvento.length, 2);
+  assert.equal(db.tables.cierreAjuste[0].payments.length, 1);
+});
+
+test("pagos no se trasladan a otra sede o periodo aunque compartan financiera e ID", async () => {
+  const { db, accounting } = setup();
+  await accounting.saveCierreAccounting(db.prisma, scope, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload([payment("p-1", 100)])));
+  await accounting.saveCierreAccounting(db.prisma, { ...scope, sedeId: 1 }, actor,
+    accounting.parseCierreAccountingPatch(paymentsPayload([payment("p-1", 20)])));
+  const november = { from: "2026-11-01", to: "2026-11-30", sedeId: null };
+  assert.equal((await accounting.readCierreAccounting(db.prisma, scope)).get("SUMASPAY").collectedAmount, 100);
+  assert.equal((await accounting.readCierreAccounting(db.prisma, { ...scope, sedeId: 1 })).get("SUMASPAY").collectedAmount, 20);
+  assert.equal((await accounting.readCierreAccounting(db.prisma, november)).size, 0);
 });

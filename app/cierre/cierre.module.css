@@ -203,6 +203,37 @@
 .accountingDialogFooter > div { display: flex; justify-content: flex-end; gap: 10px; }
 .detailAdjustment { display: flex; flex-direction: column; gap: 6px; margin: 0 0 20px; padding: 14px 16px; border: 1px solid #fde68a; border-radius: 10px; background: #fffbeb; color: #92400e; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .detailAdjustment strong { font-weight: 700; }
+.paymentsButton { display: block; min-height: 44px; margin: 4px 0 0 auto; padding: 8px 0; color: #475569; font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; white-space: nowrap; }
+.paymentsButton:hover { color: #e30613; }
+.correctionEditor { display: flex; flex-direction: column; gap: 18px; }
+.correctionEditor h3, .paymentsHeading h3 { color: #0f172a; font-size: 17px; font-weight: 800; }
+.paymentsEditor { padding-top: 18px; border-top: 1px solid #e2e8f0; }
+.accountingFields > .paymentsEditor:first-child { padding-top: 0; border-top: 0; }
+.accountingFields > .paymentsEditor + .correctionEditor { padding-top: 18px; border-top: 1px solid #e2e8f0; }
+.paymentsHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.paymentsHeading > span { color: #64748b; font-size: 12px; }
+.paymentHelp { margin: 7px 0 16px; color: #64748b; font-size: 12px; line-height: 1.5; }
+.paymentEntry { position: relative; min-width: 0; margin: 0 0 18px; padding: 10px 0 18px; border-bottom: 1px solid #e2e8f0; }
+.paymentEntry legend { padding: 0 96px 0 0; color: #334155; font-size: 13px; font-weight: 700; }
+.paymentGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 14px; margin-top: 12px; }
+.paymentReference { grid-column: 1 / -1; }
+.paymentGrid label { min-width: 0; font-size: 13px; }
+.paymentGrid input { min-width: 0; }
+.removePaymentButton { position: absolute; top: -32px; right: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 8px; border-radius: 8px; color: #b91c1c; font-size: 12px; cursor: pointer; }
+.removePaymentButton:hover { background: #fef2f2; }
+.paymentActions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.paymentActions .useSyncedButton { margin: 0; }
+.paymentEmpty { padding: 12px 0; color: #64748b; font-size: 13px; line-height: 1.5; }
+.paymentTotal { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e2e8f0; }
+.paymentTotal span { color: #475569; font-size: 14px; font-weight: 700; }
+.paymentTotal strong { font-size: 20px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; }
+.receivedPaymentDetails { margin-bottom: 20px; padding: 14px 16px; border: 1px solid #e2e8f0; border-radius: 10px; color: #334155; }
+.receivedPaymentDetails summary { min-height: 44px; align-content: center; cursor: pointer; font-size: 14px; font-weight: 700; }
+.receivedPaymentDetails ul { margin-top: 10px; padding: 0; list-style: none; }
+.receivedPaymentDetails li { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; padding: 12px 0; border-top: 1px solid #e2e8f0; font-size: 13px; }
+.receivedPaymentDetails strong { font-variant-numeric: tabular-nums; text-align: right; }
+.receivedPaymentDetails p { grid-column: 1 / -1; margin-top: 6px; color: #64748b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 @media (max-width: 1000px) { .accountingTotals > div { grid-template-columns: 1fr; } .accountingTotals strong { text-align: left; } }
 @media (max-width: 760px) { .accountingHint { margin-inline: 16px; } .accountingTotals { gap: 12px; } .accountingTotals > div { padding: 16px; } .accountingTotals strong { font-size: 18px; } .hiddenFinanciers { padding: 12px 16px; } .accountingDialog { width: calc(100% - 24px); } }
 @media (max-width: 480px) { .accountingTotals { grid-template-columns: 1fr; } .hiddenFinanciers ul, .hiddenFinanciers li { width: 100%; } .accountingDialogFooter > div { flex-wrap: wrap; } .accountingDialogFooter button { flex: 1; } .balancePreview { grid-template-columns: 1fr; } .balancePreview strong { text-align: left; } }
+@media (max-width: 480px) { .paymentGrid { grid-template-columns: 1fr; gap: 12px; } .paymentTotal { align-items: flex-start; flex-direction: column; gap: 6px; } .paymentTotal strong { text-align: left; } .receivedPaymentDetails li { grid-template-columns: 1fr; } .receivedPaymentDetails strong { text-align: left; } }

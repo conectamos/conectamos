@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
 import { DashboardSidebar, type NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
-import type { CierreAccounting, CierreDetail, CierreFilters, CierreFinancier, CierreProviderSync, CierreReconciliation, CierreReport, PeriodMode } from "./types";
+import type { CierreAccounting, CierreDetail, CierreFilters, CierreFinancier, CierreProviderSync, CierreReceivedPayment, CierreReconciliation, CierreReport, PeriodMode } from "./types";
 import styles from "./cierre.module.css";
 
 const count = (value: number | null) => value === null ? "Sin confirmar" : value.toLocaleString("es-CO");
@@ -20,6 +20,28 @@ function parsePesos(value: string) {
   const parsed = Number(cleaned.replace(/\./g, "").replace(",", "."));
   if (!Number.isFinite(parsed) || parsed > 999_999_999_999.99) throw new Error("El importe supera el máximo permitido.");
   return parsed;
+}
+type PaymentInput = { id: string; date: string; amount: string; reference: string; datelessAllowed: boolean };
+function receivedPayments(accounting?: CierreAccounting) {
+  if (accounting?.payments) return accounting.payments;
+  return accounting?.collectedAmount && accounting.collectedAmount > 0
+    ? [{ id: "legacy-collected", date: null, amount: accounting.collectedAmount, reference: null }] : [];
+}
+function parsePaymentInputs(inputs: PaymentInput[]): CierreReceivedPayment[] {
+  if (inputs.length > 1000) throw new Error("Puedes registrar hasta 1.000 pagos por financiera y periodo.");
+  let totalCents = 0;
+  return inputs.map((input, index) => {
+    const amount = parsePesos(input.amount);
+    if (amount === null || amount <= 0) throw new Error(`Indica un importe mayor que cero para el pago ${index + 1}.`);
+    totalCents += Math.round(amount * 100);
+    if (!Number.isSafeInteger(totalCents) || totalCents > 99_999_999_999_999) throw new Error("El total recaudado supera el máximo permitido.");
+    if (!input.date && !input.datelessAllowed) throw new Error(`Indica la fecha del pago ${index + 1}.`);
+    if (input.date) {
+      const date = new Date(`${input.date}T12:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== input.date) throw new Error(`Revisa la fecha del pago ${index + 1}.`);
+    }
+    return { id: input.id, date: input.date || null, amount, reference: input.reference.trim() || null };
+  });
 }
 const dateTime = (value: string) => new Intl.DateTimeFormat("es-CO", {
   timeZone: "America/Bogota", dateStyle: "medium", timeStyle: "short",
@@ -195,7 +217,9 @@ export default function CierreWorkspace({ today, user }: {
   const [detailSettledKey, setDetailSettledKey] = useState("");
   const [editing, setEditing] = useState<CierreFinancier | null>(null);
   const [correctedInput, setCorrectedInput] = useState("");
-  const [collectedInput, setCollectedInput] = useState("");
+  const [paymentInputs, setPaymentInputs] = useState<PaymentInput[]>([]);
+  const [paymentsTouched, setPaymentsTouched] = useState(false);
+  const [paymentsFirst, setPaymentsFirst] = useState(false);
   const [accountingNote, setAccountingNote] = useState("");
   const [accountingError, setAccountingError] = useState("");
   const [accountingNotice, setAccountingNotice] = useState("");
@@ -325,14 +349,32 @@ export default function CierreWorkspace({ today, user }: {
     setPage(next);
   }
 
-  function openAccounting(financier: CierreFinancier, trigger: HTMLButtonElement) {
+  function openAccounting(financier: CierreFinancier, trigger: HTMLButtonElement, focusPayments = false) {
     accountingTriggerRef.current = trigger;
     setCorrectedInput(inputPesos(financier.accounting?.correctedAmount));
-    setCollectedInput(inputPesos(financier.accounting?.collectedAmount));
+    setPaymentInputs(receivedPayments(financier.accounting).map((payment) => ({ id: payment.id, date: payment.date || "", amount: inputPesos(payment.amount), reference: payment.reference || "", datelessAllowed: payment.date === null })));
+    setPaymentsTouched(false);
+    setPaymentsFirst(focusPayments);
     setAccountingNote(financier.accounting?.note || "");
     setAccountingError("");
     setAccountingNotice("");
     setEditing(financier);
+  }
+
+  function addPayment() {
+    if (paymentInputs.length >= 1000) return;
+    setPaymentInputs((current) => [...current, { id: `payment_${crypto.randomUUID()}`, date: today, amount: "", reference: "", datelessAllowed: false }]);
+    setPaymentsTouched(true);
+  }
+
+  function changePayment(id: string, patch: Partial<PaymentInput>) {
+    setPaymentInputs((current) => current.map((payment) => payment.id === id ? { ...payment, ...patch } : payment));
+    setPaymentsTouched(true);
+  }
+
+  function removePayment(id: string) {
+    setPaymentInputs((current) => current.filter((payment) => payment.id !== id));
+    setPaymentsTouched(true);
   }
 
   function closeAccounting() {
@@ -369,11 +411,11 @@ export default function CierreWorkspace({ today, user }: {
     if (!editing) return;
     try {
       const correctedAmount = parsePesos(correctedInput);
-      const collectedAmount = parsePesos(collectedInput);
+      const payments = paymentsTouched ? parsePaymentInputs(paymentInputs) : undefined;
       if (correctedAmount !== null && !accountingNote.trim()) {
         throw new Error("Indica el motivo o la referencia del valor corregido.");
       }
-      if (await persistAccounting(editing, { correctedAmount, collectedAmount, note: accountingNote.trim() || null })) {
+      if (await persistAccounting(editing, { correctedAmount, ...(payments ? { payments } : {}), note: accountingNote.trim() || null })) {
         accountingDialogRef.current?.close();
         setEditing(null);
         accountingTriggerRef.current?.focus({ preventScroll: true });
@@ -434,14 +476,43 @@ export default function CierreWorkspace({ today, user }: {
     : currentFinancier && "syncedAmount" in currentFinancier ? currentFinancier.syncedAmount ?? null
     : detail?.amount ?? currentFinancier?.amount ?? null;
   let editingBalance: number | null = null;
+  let editingCollected: number | null = editing?.accounting?.collectedAmount ?? null;
+  let paymentsPreviewValid = true;
   if (editing) {
     try {
       const amount = parsePesos(correctedInput) ?? ("syncedAmount" in editing ? editing.syncedAmount ?? null : editing.amount);
-      const collected = parsePesos(collectedInput);
-      if (amount !== null && collected !== null) editingBalance = (Math.round(amount * 100) - Math.round(collected * 100)) / 100;
-    } catch { /* Invalid input is explained on save; never preview a guessed amount. */ }
+      if (paymentsTouched) editingCollected = parsePaymentInputs(paymentInputs).reduce((cents, payment) => cents + Math.round(payment.amount * 100), 0) / 100;
+      if (amount !== null && editingCollected !== null) editingBalance = (Math.round(amount * 100) - Math.round(editingCollected * 100)) / 100;
+    } catch { paymentsPreviewValid = false; editingCollected = null; /* Never preview a guessed amount. */ }
   }
+  const recordedPaymentsTotal = report?.totals.collectedAmount ?? report?.totals.recordedPaymentsAmount ?? null;
+  const recordedBalanceTotal = report?.totals.balance ?? report?.totals.recordedBalance ?? null;
+  const partialRecordedBalance = report?.totals.balance == null && recordedBalanceTotal !== null;
   const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+
+  const paymentsEditor = <section className={styles.paymentsEditor} aria-labelledby="payments-title">
+    <div className={styles.paymentsHeading}><h3 id="payments-title">Pagos recibidos</h3><span>{count(paymentInputs.length)} {paymentInputs.length === 1 ? "pago" : "pagos"}</span></div>
+    <p className={styles.paymentHelp}>Registra cada pago de la financiera con su fecha e importe. La fecha puede ser posterior al periodo del cierre.</p>
+    {paymentInputs.map((payment, index) => <fieldset key={payment.id} className={styles.paymentEntry}>
+      <legend>Pago {index + 1}</legend>
+      <button type="button" className={styles.removePaymentButton} disabled={Boolean(savingAccounting)} onClick={() => removePayment(payment.id)} aria-label={`Quitar pago ${index + 1}`}><DashboardIcon name="close" className="h-4 w-4" />Quitar</button>
+      <div className={styles.paymentGrid}>
+        <label htmlFor={`payment-date-${payment.id}`}>Fecha del pago {index + 1}<input id={`payment-date-${payment.id}`} type="date" value={payment.date} required={!payment.datelessAllowed} disabled={Boolean(savingAccounting)} onChange={(event) => changePayment(payment.id, { date: event.target.value })} autoFocus={paymentsFirst && index === 0} />{payment.datelessAllowed && !payment.date && <span>Importe anterior: fecha sin registrar.</span>}</label>
+        <label htmlFor={`payment-amount-${payment.id}`}>Importe del pago {index + 1} (COP)<input id={`payment-amount-${payment.id}`} type="text" inputMode="decimal" autoComplete="off" value={payment.amount} required disabled={Boolean(savingAccounting)} onChange={(event) => changePayment(payment.id, { amount: event.target.value })} placeholder="0" /></label>
+        <label className={styles.paymentReference} htmlFor={`payment-reference-${payment.id}`}>Referencia del pago {index + 1}<input id={`payment-reference-${payment.id}`} type="text" value={payment.reference} maxLength={200} disabled={Boolean(savingAccounting)} onChange={(event) => changePayment(payment.id, { reference: event.target.value })} placeholder="Opcional: comprobante, transferencia…" /></label>
+      </div>
+    </fieldset>)}
+    {!paymentInputs.length && <p className={styles.paymentEmpty}>{editingCollected === null && !paymentsTouched ? "Todavía no se ha registrado el recaudo." : "Sin pagos recibidos. El recaudado es $ 0."}</p>}
+    <div className={styles.paymentActions}><button type="button" className={styles.secondaryButton} onClick={addPayment} disabled={Boolean(savingAccounting) || paymentInputs.length >= 1000} autoFocus={paymentsFirst && paymentInputs.length === 0}>+ Agregar pago</button>{paymentInputs.length === 0 && !paymentsTouched && editingCollected === null && <button type="button" className={styles.useSyncedButton} disabled={Boolean(savingAccounting)} onClick={() => setPaymentsTouched(true)}>Confirmar sin pagos ($ 0)</button>}</div>
+    <div className={styles.paymentTotal}><span>Recaudado (COP)</span><strong>{paymentsPreviewValid ? recordedPesos(editingCollected) : "Revisa los pagos"}</strong></div>
+  </section>;
+
+  const correctionEditor = <section className={styles.correctionEditor} aria-labelledby="correction-title">
+    <h3 id="correction-title">Valor del cierre</h3>
+    <label htmlFor="corrected-amount">Valor corregido (COP)<input id="corrected-amount" type="text" inputMode="decimal" autoComplete="off" value={correctedInput} onChange={(event) => setCorrectedInput(event.target.value)} placeholder="Usar el valor sincronizado" disabled={Boolean(savingAccounting)} aria-describedby="corrected-help" autoFocus={!paymentsFirst} /><span id="corrected-help">Déjalo vacío para usar el valor sincronizado.</span></label>
+    <button type="button" className={styles.useSyncedButton} disabled={Boolean(savingAccounting) || !correctedInput} onClick={() => setCorrectedInput("")}>Usar valor sincronizado</button>
+    <label htmlFor="accounting-note">Motivo o referencia del ajuste<textarea id="accounting-note" rows={3} maxLength={500} value={accountingNote} onChange={(event) => setAccountingNote(event.target.value)} disabled={Boolean(savingAccounting)} placeholder="Ej. Total del reporte oficial de la financiera" /><span>Obligatorio al corregir el valor de los créditos.</span></label>
+  </section>;
 
   return <div className={styles.shell}>
     <DashboardSidebar activeHref="/cierre" coverageLabel={report?.scope.label || (user.isAdmin ? "Todas las sedes" : user.sedeName)} items={navigation} />
@@ -479,8 +550,8 @@ export default function CierreWorkspace({ today, user }: {
           <div className={styles.metric}><div className={styles.metricHeading}><span className={styles.metricIcon}><DashboardIcon name="wallet" className="h-5 w-5" /></span><h3>Valor total del cierre</h3><span className={styles.currency}>COP</span></div><p className={styles.metricValue}>{loading ? "—" : pesos(report?.totals.amount ?? null)}</p><span className={styles.metricDetail}>{hasCorrections ? "Incluye valores corregidos manualmente" : pending ? "Total parcial" : "Importe real financiado"}</span></div>
         </section>
         <section className={styles.accountingTotals} aria-label="Recaudo y saldo del periodo">
-          <div><span>Recaudado</span><strong>{loading ? "—" : recordedPesos(report?.totals.collectedAmount)}</strong><small>Valores ingresados por financiera</small></div>
-          <div><span>Saldo</span><strong>{loading ? "—" : report?.totals.balance == null ? "Pendiente" : pesos(report.totals.balance)}</strong><small>Valor del cierre − recaudado</small></div>
+          <div><span>Recaudado</span><strong>{loading ? "—" : recordedPesos(recordedPaymentsTotal)}</strong><small>Total de pagos registrados{report?.totals.collectedAmount == null && recordedPaymentsTotal !== null && " · hay financieras sin registrar"}</small></div>
+          <div><span>Saldo</span><strong>{loading ? "—" : recordedBalanceTotal === null ? "Pendiente" : pesos(recordedBalanceTotal)}</strong><small>{partialRecordedBalance ? "Saldo parcial · financieras con recaudo registrado" : "Valor del cierre − recaudado"}</small></div>
         </section>
         {accountingNotice && <p className={styles.accountingNotice} role="status">{accountingNotice}</p>}
         {accountingError && !editing && <p className={styles.exportError} role="alert">{accountingError}</p>}
@@ -505,7 +576,7 @@ export default function CierreWorkspace({ today, user }: {
                 </span><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button></th>
                 <td><strong className={financier.units === null ? styles.unknownValue : styles.unitsValue}>{count(financier.units)}</strong></td>
                 <td><strong className={financier.amount === null ? styles.unknownValue : styles.amountValue}>{pesos(financier.amount)}</strong></td>
-                <td><strong className={financier.collectedAmount == null ? styles.unknownValue : styles.amountValue}>{recordedPesos(financier.collectedAmount)}</strong></td>
+                <td><strong className={financier.collectedAmount == null ? styles.unknownValue : styles.amountValue}>{recordedPesos(financier.collectedAmount)}</strong>{report.options.canEditAccounting && <button type="button" className={styles.paymentsButton} disabled={accountingDisabled} onClick={(event) => openAccounting(financier, event.currentTarget, true)} aria-label={`Pagos recibidos de ${financier.name}`} aria-haspopup="dialog">Pagos recibidos{receivedPayments(financier.accounting).length > 0 && ` (${count(receivedPayments(financier.accounting).length)})`}</button>}</td>
                 <td><strong className={financier.balance == null ? styles.unknownValue : styles.amountValue}>{financier.balance == null ? "Pendiente" : pesos(financier.balance)}</strong></td>
                 {report.options.canEditAccounting && <td><div className={styles.rowActions}><button type="button" className={styles.editButton} disabled={accountingDisabled} onClick={(event) => openAccounting(financier, event.currentTarget)} aria-label={`Editar valores de ${financier.name}`} aria-haspopup="dialog">Editar</button><button type="button" className={styles.hideButton} disabled={accountingDisabled} onClick={() => { void persistAccounting(financier, { hidden: true }); }} aria-label={`Ocultar ${financier.name} de este informe`} title={`Ocultar ${financier.name} de este informe`}><DashboardIcon name="close" className="h-4 w-4" /></button></div></td>}
               </tr>) : <tr><td colSpan={report?.options.canEditAccounting ? 6 : 5} className={styles.empty}>{hiddenFinanciers.length ? <>Todas las financieras están ocultas para este periodo.{report?.options.canEditAccounting && " Puedes volver a mostrarlas abajo."}</> : <>No hay créditos efectivos registrados para este periodo.{pending && " La cobertura de las fuentes es parcial."}</>}</td></tr>}
@@ -521,12 +592,8 @@ export default function CierreWorkspace({ today, user }: {
       <form onSubmit={saveAccounting}>
         <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Ajuste del cierre</p><h2 id="accounting-title">{editing.name}</h2><p id="accounting-context">{report.period.label} · {report.scope.label}</p></div><button type="button" className={styles.closeButton} aria-label="Cerrar ajuste" disabled={Boolean(savingAccounting)} onClick={closeAccounting}><DashboardIcon name="close" /></button></div>
         <div className={styles.syncedValue}><span>Valor sincronizado</span><strong>{pesos("syncedAmount" in editing ? editing.syncedAmount ?? null : editing.amount)}</strong></div>
-        <div className={styles.accountingFields}>
-          <label htmlFor="corrected-amount">Valor corregido (COP)<input id="corrected-amount" type="text" inputMode="decimal" autoComplete="off" value={correctedInput} onChange={(event) => setCorrectedInput(event.target.value)} placeholder="Usar el valor sincronizado" disabled={Boolean(savingAccounting)} aria-describedby="corrected-help" autoFocus /><span id="corrected-help">Déjalo vacío para usar el valor sincronizado.</span></label>
-          <button type="button" className={styles.useSyncedButton} disabled={Boolean(savingAccounting) || !correctedInput} onClick={() => setCorrectedInput("")}>Usar valor sincronizado</button>
-          <label htmlFor="collected-amount">Recaudado (COP)<input id="collected-amount" type="text" inputMode="decimal" autoComplete="off" value={collectedInput} onChange={(event) => setCollectedInput(event.target.value)} placeholder="Sin registrar" disabled={Boolean(savingAccounting)} aria-describedby="collected-help" /><span id="collected-help">Escribe 0 si todavía no has recaudado. Vacío significa sin registrar.</span></label>
-          <div className={styles.balancePreview}><span>Saldo</span><strong>{editingBalance === null ? "Pendiente de registrar" : pesos(editingBalance)}</strong><small>Valor del cierre − recaudado</small></div>
-          <label htmlFor="accounting-note">Motivo o referencia del ajuste<textarea id="accounting-note" rows={3} maxLength={500} value={accountingNote} onChange={(event) => setAccountingNote(event.target.value)} disabled={Boolean(savingAccounting)} placeholder="Ej. Total del reporte oficial de la financiera" /><span>Obligatorio al corregir el valor de los créditos.</span></label>
+        <div className={styles.accountingFields}>{paymentsFirst ? <>{paymentsEditor}{correctionEditor}</> : <>{correctionEditor}{paymentsEditor}</>}
+          <div className={styles.balancePreview}><span>Saldo</span><strong>{editingBalance === null ? "Pendiente de registrar" : pesos(editingBalance)}</strong><small>{editingBalance !== null && editingBalance < 0 ? "Saldo a favor · recaudado superior al valor del cierre" : "Valor del cierre − recaudado"}</small></div>
         </div>
         {editing.accounting?.updatedAt && <p className={styles.lastAdjustment}>Último ajuste: {dateTime(editing.accounting.updatedAt)}{editing.accounting.updatedBy ? ` · ${editing.accounting.updatedBy}` : ""}</p>}
         {accountingError && <p className={styles.accountingFormError} role="alert">{accountingError}</p>}
@@ -538,6 +605,7 @@ export default function CierreWorkspace({ today, user }: {
       <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>Detalle de créditos</p><h2 id="detail-title">{selected.name}</h2><p id="detail-context">{report.period.label} · {report.scope.label}</p></div><button type="button" className={styles.closeButton} aria-label="Cerrar detalle" onClick={closeDetail} autoFocus><DashboardIcon name="close" /></button></div>
       <div className={styles.detailSummary}><span><strong>{count(detail?.units ?? currentFinancier?.units ?? null)}</strong> créditos</span><span><strong>{pesos(detailSyncedAmount)}</strong>{currentFinancier?.accounting?.correctedAmount != null && <span className={styles.source}>Subtotal sincronizado del detalle</span>}</span><Completeness complete={detail?.complete ?? currentFinancier?.complete ?? false} label={currentFinancier ? sourceCoverage(currentFinancier) : undefined} /></div>
       {currentFinancier?.accounting?.correctedAmount != null && <div className={styles.detailAdjustment}><strong>Valor del cierre corregido: {pesos(currentFinancier.amount)}</strong><span>Este ajuste manual no modifica los créditos del listado ni confirma la cobertura de la financiera.</span>{currentFinancier.accounting.note && <span>{currentFinancier.accounting.note}</span>}</div>}
+      {currentFinancier?.accounting?.collectedAmount != null && <details className={styles.receivedPaymentDetails}><summary>Pagos recibidos ({count(receivedPayments(currentFinancier.accounting).length)}) · {pesos(currentFinancier.accounting.collectedAmount)}</summary>{receivedPayments(currentFinancier.accounting).length ? <ul>{receivedPayments(currentFinancier.accounting).map((payment) => <li key={payment.id}><span>{payment.date ? dateLabel(payment.date) : "Fecha sin registrar"}</span><strong>{pesos(payment.amount)}</strong>{payment.reference && <p>{payment.reference}</p>}</li>)}</ul> : <p>Sin pagos recibidos. El recaudado registrado es $ 0.</p>}</details>}
       {currentFinancier?.reconciliation ? <FinancialSource financier={currentFinancier} /> : currentFinancier?.providerSync?.enabled && <ProviderActivity sync={currentFinancier.providerSync} compact />}
       {((loadingSales && !currentFinancier?.reconciliation) || syncingProviders || detailRefreshing) && <p className={styles.detailProgress} role="status">{detailRefreshing ? "Actualizando el listado de créditos…" : `${loadingSales && !currentFinancier?.reconciliation ? syncMessage : providerProgress(currentFinancier?.providerSync)} El listado se actualiza automáticamente.`}</p>}
       {detailError && <div className={styles.error} role="alert"><p>{detail && "No se pudo actualizar el detalle. Se conserva el último listado. "}{detailError}</p><button type="button" className={styles.secondaryButton} onClick={() => { setDetailError(""); if (!detail) setDetailLoading(true); setDetailReload((value) => value + 1); }}>Reintentar</button></div>}

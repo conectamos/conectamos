@@ -81,9 +81,9 @@ function harness({ admin = true, delayed = false, reports = [report], detailOver
       if (outcome instanceof Error) return { ok: false, json: async () => ({ error: outcome.message }) };
       const { financial, version, ...patch } = JSON.parse(options.body);
       const key = `${String(url).split("?")[1]}:${financial}`;
-      const previous = accountingRecords.get(key) || { correctedAmount: null, collectedAmount: null, hidden: false, note: null, version: 0 };
+      const previous = accountingRecords.get(key) || reports.flatMap((item) => item.financiers || []).find((item) => item.key === financial)?.accounting || { correctedAmount: null, collectedAmount: null, payments: [], hidden: false, note: null, version: 0 };
       if (version !== previous.version) return { ok: false, json: async () => ({ error: "El cierre cambió. Actualiza el informe antes de guardar." }) };
-      const adjustment = { ...previous, ...patch, version: version + 1, updatedAt: "2026-11-05T16:00:00Z", updatedBy: "Administración" };
+      const adjustment = { ...previous, ...patch, ...(Object.hasOwn(patch, "payments") ? { collectedAmount: patch.payments.reduce((sum, payment) => sum + Math.round(payment.amount * 100), 0) / 100 } : {}), version: version + 1, updatedAt: "2026-11-05T16:00:00Z", updatedBy: "Administración" };
       accountingRecords.set(key, adjustment);
       return { ok: true, json: async () => ({ adjustment }) };
     }
@@ -97,14 +97,15 @@ function harness({ admin = true, delayed = false, reports = [report], detailOver
     let result = { ...next, options: { ...next.options, canSelectSede: admin, canEditAccounting: admin && Boolean(next.options.canEditAccounting) } };
     if (next.options.canEditAccounting) {
       const financiers = [...next.financiers, ...(next.hiddenFinanciers || [])].map((row) => {
-        const accounting = accountingRecords.get(`${String(url).split("?")[1]}:${row.key}`) || row.accounting || { correctedAmount: null, collectedAmount: null, hidden: false, note: null, version: 0, updatedAt: null, updatedBy: null };
+        const accounting = accountingRecords.get(`${String(url).split("?")[1]}:${row.key}`) || row.accounting || { correctedAmount: null, collectedAmount: null, payments: [], hidden: false, note: null, version: 0, updatedAt: null, updatedBy: null };
         const syncedAmount = row.syncedAmount ?? row.amount;
         const amount = accounting.correctedAmount ?? syncedAmount;
         return { ...row, syncedAmount, amount, collectedAmount: accounting.collectedAmount, balance: accounting.collectedAmount === null || amount === null ? null : amount - accounting.collectedAmount, hidden: accounting.hidden, accounting };
       });
       const visible = financiers.filter((row) => !row.hidden);
       const total = (key) => visible.some((row) => row[key] === null) ? null : visible.reduce((sum, row) => sum + row[key], 0);
-      result = { ...result, financiers: visible, hiddenFinanciers: financiers.filter((row) => row.hidden), totals: { units: total("units"), amount: total("amount"), collectedAmount: total("collectedAmount"), balance: total("balance") } };
+      const recordedTotal = (key) => visible.some((row) => row[key] !== null) ? visible.reduce((sum, row) => sum + (row[key] ?? 0), 0) : null;
+      result = { ...result, financiers: visible, hiddenFinanciers: financiers.filter((row) => row.hidden), totals: { units: total("units"), amount: total("amount"), collectedAmount: total("collectedAmount"), balance: total("balance"), recordedPaymentsAmount: recordedTotal("collectedAmount"), recordedBalance: recordedTotal("balance") } };
     }
     if (delayed) return new Promise((resolve) => pending.push({ signal: options.signal, resolve: (value = result) => resolve({ ok: true, json: async () => value }) }));
     return { ok: true, json: async () => result };
@@ -140,7 +141,7 @@ function harness({ admin = true, delayed = false, reports = [report], detailOver
     return found;
   }
   async function setControl(label, value) {
-    const field = descendants(tree).find((node) => node.type === "label" && node.props.children[0] === label);
+    const field = descendants(tree).find((node) => node.type === "label" && [node.props.children].flat().filter((child) => typeof child === "string" || typeof child === "number").join("") === label);
     const control = descendants(field).find((node) => node.type === "input" || node.type === "select" || node.type === "textarea");
     assert.ok(control, `No control for ${label}`);
     control.props.onChange({ target: { value } });
@@ -717,6 +718,21 @@ async function saveAccounting(ui) {
 function inputValue(ui, id) {
   return ui.nodes().find((node) => node.props.id === id)?.props.value;
 }
+function paymentValue(ui, kind, index = 0) {
+  return ui.nodes().filter((node) => node.type === "input" && node.props.id?.startsWith(`payment-${kind}-`))[index]?.props.value;
+}
+async function addPaymentInput(ui, amount, date = "2026-10-13", reference = "") {
+  ui.find("button", "+ Agregar pago").props.onClick();
+  await ui.settle();
+  const number = ui.nodes().filter((node) => node.type === "fieldset").length;
+  await ui.setControl(`Importe del pago ${number} (COP)`, amount);
+  await ui.setControl(`Fecha del pago ${number}`, date);
+  if (reference) await ui.setControl(`Referencia del pago ${number}`, reference);
+}
+async function confirmNoPayments(ui) {
+  ui.find("button", "Confirmar sin pagos").props.onClick();
+  await ui.settle();
+}
 
 test("accounting correction and collected amount persist after reloading and preserve synchronized evidence", async () => {
   const ui = harness({ reports: [accountingSource] });
@@ -725,14 +741,14 @@ test("accounting correction and collected amount persist after reloading and pre
   assert.match(textOf(ui.find("dialog")), /Octubre de 2026 · Todas las sedes/);
   assert.match(textOf(ui.find("dialog")), /Valor sincronizado\$\s*168\.787\.733/);
   await ui.setControl("Valor corregido (COP)", "$ 178.027.733");
-  await ui.setControl("Recaudado (COP)", "150.000.000");
+  await addPaymentInput(ui, "150.000.000", "2026-11-05", "Comprobante 01");
   await ui.setControl("Motivo o referencia del ajuste", "Total del reporte oficial de octubre");
   assert.match(textOf(ui.find("dialog")), /Saldo\$\s*28\.027\.733/);
   await saveAccounting(ui);
   const writes = ui.calls.filter((call) => call.method === "POST");
   assert.equal(writes.length, 1);
   assert.match(writes[0].url, /mode=month&sedeId=TODAS&month=2026-10/);
-  assert.deepEqual(writes[0].body, { financial: "SUMASPAY", version: 0, correctedAmount: 178_027_733, collectedAmount: 150_000_000, note: "Total del reporte oficial de octubre" });
+  assert.deepEqual({ ...writes[0].body, payments: writes[0].body.payments.map(({ id, ...payment }) => { assert.match(id, /^payment_/); return payment; }) }, { financial: "SUMASPAY", version: 0, correctedAmount: 178_027_733, payments: [{ date: "2026-11-05", amount: 150_000_000, reference: "Comprobante 01" }], note: "Total del reporte oficial de octubre" });
   assert.equal(ui.nodes().filter((node) => node.type === "dialog").length, 0);
   assert.match(ui.text(), /ajuste guardado/);
   const row = ui.nodes().find((node) => node.type === "tr" && textOf(node).includes("SUMASPAY"));
@@ -742,7 +758,9 @@ test("accounting correction and collected amount persist after reloading and pre
   assert.match(ui.text(), /Incluye valores corregidos manualmente/);
   await editAccounting(ui);
   assert.equal(inputValue(ui, "corrected-amount"), "178.027.733");
-  assert.equal(inputValue(ui, "collected-amount"), "150.000.000");
+  assert.equal(paymentValue(ui, "amount"), "150.000.000");
+  assert.equal(paymentValue(ui, "date"), "2026-11-05");
+  assert.equal(paymentValue(ui, "reference"), "Comprobante 01");
   assert.match(textOf(ui.find("dialog")), /Último ajuste.*Administración/);
   assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre")));
   ui.unmount();
@@ -754,13 +772,13 @@ test("zero collection is recorded, negative balances are visible and clearing a 
   assert.match(ui.text(), /RecaudadoSin registrar/);
   await editAccounting(ui);
   await ui.setControl("Valor corregido (COP)", "178.027.733");
-  await ui.setControl("Recaudado (COP)", "0");
+  await confirmNoPayments(ui);
   await ui.setControl("Motivo o referencia del ajuste", "Reporte oficial");
   await saveAccounting(ui);
-  assert.equal(ui.calls.find((call) => call.method === "POST").body.collectedAmount, 0);
+  assert.deepEqual(ui.calls.find((call) => call.method === "POST").body.payments, []);
   assert.match(ui.text(), /Recaudado\$\s*0/);
   await editAccounting(ui);
-  await ui.setControl("Recaudado (COP)", "180.000.000");
+  await addPaymentInput(ui, "180.000.000");
   assert.match(textOf(ui.find("dialog")), /Saldo-\$\s*1\.972\.267/);
   await saveAccounting(ui);
   await editAccounting(ui);
@@ -781,7 +799,7 @@ test("hiding and restoring a financial preserves its saved adjustment and exclud
   const ui = harness({ reports: [accountingSource] });
   await ui.settle();
   await editAccounting(ui);
-  await ui.setControl("Recaudado (COP)", "80.000.000");
+  await addPaymentInput(ui, "80.000.000");
   await saveAccounting(ui);
   accountingButton(ui, "Ocultar SUMASPAY de este informe").props.onClick();
   await ui.settle();
@@ -799,7 +817,7 @@ test("hiding and restoring a financial preserves its saved adjustment and exclud
   assert.deepEqual(restore.body, { financial: "SUMASPAY", version: 2, hidden: false });
   assert.doesNotMatch(ui.text(), /Financieras ocultas/);
   await editAccounting(ui);
-  assert.equal(inputValue(ui, "collected-amount"), "80.000.000");
+  assert.equal(paymentValue(ui, "amount"), "80.000.000");
   ui.unmount();
 });
 
@@ -809,12 +827,12 @@ test("save failures and conflicts preserve the entered values and require an exp
     await ui.settle();
     await editAccounting(ui);
     await ui.setControl("Valor corregido (COP)", "178.027.733,50");
-    await ui.setControl("Recaudado (COP)", "0");
+    await confirmNoPayments(ui);
     await ui.setControl("Motivo o referencia del ajuste", "Reporte oficial");
     await saveAccounting(ui);
     assert.match(textOf(ui.find("dialog")), new RegExp(message.replace(/\./g, "\\.")));
     assert.equal(inputValue(ui, "corrected-amount"), "178.027.733,50");
-    assert.equal(inputValue(ui, "collected-amount"), "0");
+    assert.match(textOf(ui.find("dialog")), /Recaudado \(COP\)\$\s*0/);
     assert.equal(ui.calls.filter((call) => call.method === "POST").length, 1);
     assert.equal(ui.calls.filter((call) => call.url.startsWith("/api/cierre?")).length, 1);
     await saveAccounting(ui);
@@ -845,31 +863,31 @@ test("invalid amounts and missing correction references are not sent and inputs 
 test("accounting edits are admin-only and apply to the currently queried period and scope", async () => {
   const restricted = harness({ admin: false, reports: [accountingSource] });
   await restricted.settle();
-  assert.ok(!restricted.nodes().some((node) => node.type === "button" && /Editar valores|Ocultar/.test(node.props["aria-label"] || "")));
+  assert.ok(!restricted.nodes().some((node) => node.type === "button" && /Editar valores|Ocultar|Pagos recibidos/.test(node.props["aria-label"] || "")));
   assert.equal(restricted.calls.filter((call) => call.method === "POST").length, 0);
   const ui = harness({ reports: [accountingSource] });
   await ui.settle();
   await editAccounting(ui);
-  await ui.setControl("Recaudado (COP)", "0");
+  await confirmNoPayments(ui);
   await saveAccounting(ui);
   await ui.setControl("Mes", "2026-09");
   assert.equal(accountingButton(ui, "Editar valores de SUMASPAY").props.disabled, true);
   assert.equal(accountingButton(ui, "Ocultar SUMASPAY de este informe").props.disabled, true);
   await ui.submit();
   await editAccounting(ui);
-  assert.equal(inputValue(ui, "collected-amount"), "");
+  assert.match(textOf(ui.find("dialog")), /Todavía no se ha registrado el recaudo/);
   ui.find("button", "Cancelar").props.onClick();
   await ui.settle();
   await ui.setControl("Mes", "2026-10");
   await ui.submit();
   await editAccounting(ui);
-  assert.equal(inputValue(ui, "collected-amount"), "0");
+  assert.match(textOf(ui.find("dialog")), /Recaudado \(COP\)\$\s*0/);
   ui.find("button", "Cancelar").props.onClick();
   await ui.settle();
   await ui.setControl("Sede", "2");
   await ui.submit();
   await editAccounting(ui);
-  assert.equal(inputValue(ui, "collected-amount"), "");
+  assert.match(textOf(ui.find("dialog")), /Todavía no se ha registrado el recaudo/);
   ui.unmount();
   restricted.unmount();
 });
@@ -889,5 +907,167 @@ test("manual correction in the report never presents fabricated credit details o
   assert.match(dialog, /no modifica los créditos del listado ni confirma la cobertura/);
   assert.doesNotMatch(dialog, /Periodo completo/);
   assert.ok(ui.calls.every((call) => call.url.startsWith("/api/cierre")));
+  ui.unmount();
+});
+
+test("received payments opens directly, sums cents exactly and persists independent dates and references", async () => {
+  const source = { ...accountingSource, financiers: [{ ...accountingSource.financiers[0], amount: 100, syncedAmount: 100 }] };
+  const ui = harness({ reports: [source] });
+  await ui.settle();
+  accountingButton(ui, "Pagos recibidos de SUMASPAY").props.onClick({ currentTarget: { focus() {} } });
+  await ui.settle();
+  const sections = descendants(ui.find("dialog")).filter((node) => node.type === "section");
+  assert.equal(sections[0].props["aria-labelledby"], "payments-title");
+  assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
+  await addPaymentInput(ui, "25,10", "2026-11-01", "Transferencia 001");
+  await addPaymentInput(ui, "24,20", "2026-11-05", "Transferencia 002");
+  assert.match(textOf(ui.find("dialog")), /Recaudado \(COP\)\$\s*49,3/);
+  assert.match(textOf(ui.find("dialog")), /Saldo\$\s*50,7/);
+  await saveAccounting(ui);
+  const write = ui.calls.find((call) => call.method === "POST");
+  assert.equal(write.body.payments.length, 2);
+  assert.notEqual(write.body.payments[0].id, write.body.payments[1].id);
+  assert.deepEqual(write.body.payments.map(({ date, amount, reference }) => ({ date, amount, reference })), [
+    { date: "2026-11-01", amount: 25.1, reference: "Transferencia 001" },
+    { date: "2026-11-05", amount: 24.2, reference: "Transferencia 002" },
+  ]);
+  assert.ok(!Object.hasOwn(write.body, "collectedAmount"));
+  assert.match(ui.text(), /Pagos recibidos \(2\)/);
+  await editAccounting(ui);
+  assert.equal(paymentValue(ui, "amount", 0), "25,1");
+  assert.equal(paymentValue(ui, "amount", 1), "24,2");
+  assert.equal(paymentValue(ui, "date", 1), "2026-11-05");
+  assert.equal(paymentValue(ui, "reference", 1), "Transferencia 002");
+  ui.unmount();
+});
+
+test("editing and deleting received payments keeps stable remaining IDs and deleting the last payment records zero", async () => {
+  const ui = harness({ reports: [accountingSource] });
+  await ui.settle();
+  await editAccounting(ui);
+  await addPaymentInput(ui, "10.000", "2026-11-01", "Primero");
+  await addPaymentInput(ui, "20.000", "2026-11-02", "Segundo");
+  await saveAccounting(ui);
+  const original = ui.calls.find((call) => call.method === "POST").body.payments;
+  await editAccounting(ui);
+  accountingButton(ui, "Quitar pago 1").props.onClick();
+  await ui.settle();
+  await ui.setControl("Importe del pago 1 (COP)", "24.000,25");
+  await ui.setControl("Referencia del pago 1", "Segundo corregido");
+  await saveAccounting(ui);
+  let write = ui.calls.filter((call) => call.method === "POST").at(-1);
+  assert.deepEqual(write.body.payments, [{ id: original[1].id, date: "2026-11-02", amount: 24000.25, reference: "Segundo corregido" }]);
+  await editAccounting(ui);
+  accountingButton(ui, "Quitar pago 1").props.onClick();
+  await ui.settle();
+  assert.match(textOf(ui.find("dialog")), /Recaudado \(COP\)\$\s*0/);
+  await saveAccounting(ui);
+  write = ui.calls.filter((call) => call.method === "POST").at(-1);
+  assert.deepEqual(write.body.payments, []);
+  assert.match(ui.text(), /Recaudado\$\s*0/);
+  ui.unmount();
+});
+
+test("an untouched unknown collection stays unknown when saving a correction and canceling new payments makes no write", async () => {
+  const ui = harness({ reports: [accountingSource] });
+  await ui.settle();
+  await editAccounting(ui);
+  await ui.setControl("Valor corregido (COP)", "178.027.733");
+  await ui.setControl("Motivo o referencia del ajuste", "Reporte oficial");
+  await saveAccounting(ui);
+  const write = ui.calls.find((call) => call.method === "POST");
+  assert.ok(!Object.hasOwn(write.body, "payments"));
+  assert.ok(!Object.hasOwn(write.body, "collectedAmount"));
+  assert.match(ui.text(), /RecaudadoSin registrar/);
+  await editAccounting(ui);
+  await addPaymentInput(ui, "1.500", "2026-11-05", "Sin guardar");
+  ui.find("button", "Cancelar").props.onClick();
+  await ui.settle();
+  assert.equal(ui.calls.filter((call) => call.method === "POST").length, 1);
+  await editAccounting(ui);
+  assert.equal(paymentValue(ui, "amount"), undefined);
+  assert.match(textOf(ui.find("dialog")), /Todavía no se ha registrado el recaudo/);
+  ui.unmount();
+});
+
+test("legacy aggregate payment remains dateless and keeps its stable identity when adding new payments", async () => {
+  const legacy = { correctedAmount: null, collectedAmount: 80000, payments: [{ id: "legacy-collected", date: null, amount: 80000, reference: null }], hidden: false, note: null, version: 2, updatedAt: null, updatedBy: null };
+  const source = { ...accountingSource, financiers: [{ ...accountingSource.financiers[0], accounting: legacy }] };
+  const ui = harness({ reports: [source] });
+  await ui.settle();
+  await editAccounting(ui);
+  assert.equal(paymentValue(ui, "date"), "");
+  assert.match(textOf(ui.find("dialog")), /Importe anterior: fecha sin registrar/);
+  await addPaymentInput(ui, "20.000", "2026-11-05", "Pago posterior");
+  await saveAccounting(ui);
+  const write = ui.calls.find((call) => call.method === "POST");
+  assert.equal(write.body.version, 2);
+  assert.deepEqual(write.body.payments[0], { id: "legacy-collected", date: null, amount: 80000, reference: null });
+  assert.equal(write.body.payments[1].date, "2026-11-05");
+  assert.match(ui.text(), /Recaudado\$\s*100\.000/);
+  const restricted = harness({ admin: false, reports: [source] });
+  await restricted.settle();
+  restricted.find("button", "SUMASPAY").props.onClick({ currentTarget: { focus() {} } });
+  await restricted.settle();
+  assert.match(textOf(restricted.find("dialog")), /Pagos recibidos \(1\).*Fecha sin registrar.*80\.000/);
+  assert.ok(!restricted.nodes().some((node) => node.type === "button" && /Quitar pago|Agregar pago/.test(node.props["aria-label"] || textOf(node))));
+  ui.unmount();
+  restricted.unmount();
+});
+
+test("invalid payment amount or date blocks saving without dropping the entries", async () => {
+  const ui = harness({ reports: [accountingSource] });
+  await ui.settle();
+  await editAccounting(ui);
+  await addPaymentInput(ui, "0");
+  for (const amount of ["0", "-10", "", "1.23", "1,234"]) {
+    await ui.setControl("Importe del pago 1 (COP)", amount);
+    await saveAccounting(ui);
+    assert.equal(paymentValue(ui, "amount"), amount);
+    assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
+  }
+  await ui.setControl("Importe del pago 1 (COP)", "1.000");
+  for (const date of ["", "2026-02-30", "2026-13-01"]) {
+    await ui.setControl("Fecha del pago 1", date);
+    await saveAccounting(ui);
+    assert.equal(paymentValue(ui, "date"), date);
+    assert.equal(paymentValue(ui, "amount"), "1.000");
+    assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
+  }
+  assert.match(textOf(ui.find("dialog")), /Revisa la fecha del pago 1/);
+  ui.unmount();
+});
+
+test("failed payment save keeps all payment values and IDs for an explicit retry", async () => {
+  const ui = harness({ reports: [accountingSource], saveOutcomes: [new Error("Otro usuario cambió este cierre.")] });
+  await ui.settle();
+  await editAccounting(ui);
+  await addPaymentInput(ui, "12.000,10", "2026-11-01", "Abono 1");
+  await addPaymentInput(ui, "34.000,20", "2026-11-05", "Abono 2");
+  await saveAccounting(ui);
+  assert.match(textOf(ui.find("dialog")), /Otro usuario cambió este cierre/);
+  assert.equal(paymentValue(ui, "amount", 0), "12.000,10");
+  assert.equal(paymentValue(ui, "amount", 1), "34.000,20");
+  assert.equal(paymentValue(ui, "reference", 1), "Abono 2");
+  await saveAccounting(ui);
+  const writes = ui.calls.filter((call) => call.method === "POST");
+  assert.deepEqual(writes[1].body.payments, writes[0].body.payments);
+  assert.match(ui.text(), /Recaudado\$\s*46\.000,3/);
+  ui.unmount();
+});
+
+test("recorded payments show in the summary without treating another financier's unknown collection as zero", async () => {
+  const source = { ...accountingSource, financiers: [
+    { ...accountingSource.financiers[0], amount: 100, syncedAmount: 100, accounting: { correctedAmount: null, collectedAmount: 20, payments: [{ id: "known", date: "2026-11-05", amount: 20, reference: "Pago" }], hidden: false, version: 1 } },
+    { ...financier, amount: 30, syncedAmount: 30 },
+  ] };
+  const ui = harness({ reports: [source] });
+  await ui.settle();
+  const summary = ui.nodes().find((node) => node.type === "section" && node.props["aria-label"] === "Recaudo y saldo del periodo");
+  assert.match(textOf(summary), /Recaudado\$\s*20Total de pagos registrados · hay financieras sin registrar/);
+  assert.match(textOf(summary), /Saldo\$\s*80Saldo parcial · financieras con recaudo registrado/);
+  const payjoy = ui.nodes().find((node) => node.type === "tr" && textOf(node).includes("PAYJOY"));
+  assert.match(textOf(payjoy), /Sin registrar.*Pendiente/);
+  assert.doesNotMatch(textOf(payjoy), /\$\s*0/);
   ui.unmount();
 });

@@ -120,6 +120,10 @@ export async function readCierreReport(params: URLSearchParams, session: Session
     const syncedAmount = sumMoney(rows.map((row) => row.syncedAmount));
     const collectedAmount = rows.some((row) => row.collectedAmount === null) ? null : sumMoney(rows.map((row) => row.collectedAmount));
     const balance = rows.some((row) => row.balance === null) ? null : sumMoney(rows.map((row) => row.balance));
+    const recordedPaymentsAmount = rows.some((row) => row.collectedAmount !== null)
+      ? sumMoney(rows.map((row) => row.collectedAmount)) : null;
+    const recordedBalance = rows.some((row) => row.balance !== null)
+      ? sumMoney(rows.map((row) => row.balance)) : null;
     const hasCorrection = rows.some((row) => row.correctedAmount !== null);
     const empty = rows.length === 0;
     const base = {
@@ -127,7 +131,7 @@ export async function readCierreReport(params: URLSearchParams, session: Session
       scope: { sedeId, label: sedeId === null ? "Todas las sedes" : sedes.find((s) => s.id === sedeId)!.nombre },
       options: { sedes, canSelectSede: canViewGlobalCierre(session), canEditAccounting: canManageCierreAccounting(session) },
       totals: { units: units || (complete || empty ? 0 : null), amount: amount || (complete || empty || hasCorrection ? 0 : null),
-        syncedAmount: syncedAmount || (complete || empty ? 0 : null), collectedAmount, balance },
+        syncedAmount: syncedAmount || (complete || empty ? 0 : null), collectedAmount, balance, recordedPaymentsAmount, recordedBalance },
       localSync: { pending: coverage.pending, complete: localComplete, lastUpdatedAt: state?.lastSuccess?.toISOString() || null },
       providerSync: aggregateCierreProviderSync(allRows.map((row) => row.providerSync)),
       coverageLabel: financier && apiReports.has(financier) ? rows[0]?.coverageLabel || "Cobertura parcial" : !localComplete ? "Carga local pendiente" : complete ? "Completo" : "Cobertura parcial",

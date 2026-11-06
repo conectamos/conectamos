@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       ["CIERRE", report.period.label, report.scope.label],
       ["Estado", report.coverageLabel],
       ["Última actualización", report.lastUpdatedAt || "Pendiente"],
-      [], ["Financiera", "Unidades de créditos", "Valor del cierre", "Estado", "Fuente", "Recaudado", "Saldo", "Valor sincronizado", "Corrección manual", "Nota del ajuste", "Ajuste actualizado (Colombia)", "Actualizado por"],
+      [], ["Financiera", "Unidades de créditos", "Valor del cierre", "Estado", "Fuente", "Pagos recibidos", "Saldo", "Valor sincronizado", "Corrección manual", "Nota del ajuste", "Ajuste actualizado (Colombia)", "Actualizado por"],
       ...report.financiers.map((r) => [r.name, r.units ?? "Sin confirmar", r.amount ?? "Sin confirmar", r.coverageLabel, r.source,
         r.collectedAmount ?? "Sin registrar", r.balance ?? "Sin calcular", r.syncedAmount ?? "Sin confirmar",
         r.correctedAmount === null ? "No" : "Sí", r.accounting.note || "",
@@ -25,6 +25,10 @@ export async function GET(request: Request) {
         r.accounting.updatedBy || ""]),
       ["TOTAL", report.totals.units ?? "Sin confirmar", report.totals.amount ?? "Sin confirmar", "", "",
         report.totals.collectedAmount ?? "Por completar", report.totals.balance ?? "Por completar", report.totals.syncedAmount ?? "Sin confirmar"],
+      ...((report.totals.collectedAmount === null && report.totals.recordedPaymentsAmount !== null)
+        || (report.totals.balance === null && report.totals.recordedBalance !== null)
+        ? [["TOTAL REGISTRADO", "", "", "", "", report.totals.recordedPaymentsAmount, report.totals.recordedBalance ?? "Sin calcular"],
+          ["El saldo registrado incluye únicamente financieras con valor y pagos registrados."]] : []),
       [], ["Los ajustes corresponden únicamente al periodo y la sede indicados. El detalle conserva los créditos sincronizados; una corrección manual no acredita cobertura completa."],
       [`Financieras ocultas en este periodo: ${report.hiddenFinanciers.length}. No se incluyen en los totales ni en las hojas de este archivo.`],
     ]);
@@ -44,6 +48,21 @@ export async function GET(request: Request) {
     ];
     const formatter = new Intl.DateTimeFormat("es-CO", { timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit" });
     for (const row of report.items) sheet.addRow({ ...row, date: formatter.format(new Date(row.date)), creditNumber: row.creditNumber || "No informado", customerName: row.customerName || "No informado" });
+    const payments = book.addWorksheet("Pagos recibidos", { views: [{ state: "frozen", ySplit: 1 }] });
+    payments.columns = [
+      { header: "Financiera", key: "financial", width: 24 },
+      { header: "Fecha del pago", key: "date", width: 24 },
+      { header: "Importe (COP)", key: "amount", width: 24, style: { numFmt: '"$" #,##0.00' } },
+      { header: "Referencia o nota", key: "reference", width: 50 },
+    ];
+    for (const row of report.financiers) {
+      for (const payment of row.accounting.payments) payments.addRow({
+        financial: row.name,
+        date: payment.date ? payment.date.split("-").reverse().join("/") : "Sin fecha registrada",
+        amount: payment.amount, reference: payment.reference || "",
+      });
+    }
+    payments.getColumn("reference").alignment = { wrapText: true, vertical: "top" };
     const sources = book.addWorksheet("Fuentes", { views: [{ state: "frozen", ySplit: 1 }] });
     sources.columns = [
       { header: "Financiera", key: "name", width: 22 }, { header: "Fuente utilizada", key: "source", width: 44 },
@@ -85,7 +104,7 @@ export async function GET(request: Request) {
     });
     sources.getColumn("reasons").alignment = { wrapText: true, vertical: "top" };
     sources.getColumn("limitation").alignment = { wrapText: true, vertical: "top" };
-    for (const [ws, index] of [[summary, 5], [sheet, 1], [sources, 1]] as const) {
+    for (const [ws, index] of [[summary, 5], [sheet, 1], [payments, 1], [sources, 1]] as const) {
       ws.getRow(index).eachCell((cell) => { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF11161D" } }; });
     }
     const buffer = await book.xlsx.writeBuffer();

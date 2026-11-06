@@ -190,3 +190,33 @@ test("Excel de sede no expone ajustes ni ocultamientos del consolidado global", 
   const response = await loader.load("app/api/cierre/export/route.ts").GET(new Request("https://conectamos.test/api/cierre/export?mode=month&month=2026-10&sedeId=2"));
   assert.equal(response.status, 403);
 });
+
+test("varios abonos conservan su fecha e importe; el saldo parcial y Excel usan el mismo filtro", async () => {
+  const { db, loader, read, save } = setup();
+  const payments = [
+    { id: "abono-uno", date: "2026-10-25", amount: 10000000.25, reference: "Primer abono" },
+    { id: "abono-dos", date: "2026-11-04", amount: 20000000.5, reference: "Segundo abono" },
+  ];
+  await save({ payments });
+  const report = await read();
+  assert.equal(report.totals.collectedAmount, null, "las demás financieras siguen sin registro");
+  assert.equal(report.totals.recordedPaymentsAmount, 30000000.75);
+  assert.equal(report.totals.recordedBalance, 138787732.25);
+  const row = financier(report);
+  assert.deepEqual(row.accounting.payments, payments);
+  assert.equal(row.collectedAmount, 30000000.75);
+  assert.equal(row.balance, 138787732.25);
+  assert.equal(financier(await read(params("&sedeId=1"), supervisor)).collectedAmount, null);
+  assert.equal(financier(await read(new URLSearchParams("mode=month&month=2026-11"))).collectedAmount, null);
+  const book = await exportBook(loader);
+  assert.deepEqual(book.getWorksheet("Pagos recibidos").getSheetValues().slice(2).map((line) => line.slice(1)), [
+    ["SUMASPAY", "25/10/2026", 10000000.25, "Primer abono"],
+    ["SUMASPAY", "04/11/2026", 20000000.5, "Segundo abono"],
+  ]);
+  assert.equal(sheetRow(book, "Cierre", "TOTAL REGISTRADO")[7], 138787732.25);
+  const sedeBook = await exportBook(modules(db.prisma, { session: supervisor }), params("&sedeId=1"));
+  assert.equal(sedeBook.getWorksheet("Pagos recibidos").rowCount, 1);
+  await save({ version: 1, hidden: true });
+  const hiddenBook = await exportBook(loader);
+  assert.equal(hiddenBook.getWorksheet("Pagos recibidos").rowCount, 1);
+});

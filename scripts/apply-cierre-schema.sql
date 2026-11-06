@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS "CierreAjuste" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "CierreAjuste_periodFrom_periodTo_scopeKey_financial_key"
  ON "CierreAjuste" ("periodFrom", "periodTo", "scopeKey", "financial");
+-- Null identifies older aggregate-only receipts and untouched collections.
+-- No invented dates or automatic rewrites of historical accounting values.
+ALTER TABLE "CierreAjuste" ADD COLUMN IF NOT EXISTS "payments" JSONB;
 CREATE TABLE IF NOT EXISTS "CierreAjusteEvento" (
  "id" SERIAL PRIMARY KEY, "adjustmentKey" TEXT NOT NULL, "version" INTEGER NOT NULL,
  "actorId" INTEGER NOT NULL, "actorProfileId" INTEGER, "actorName" TEXT NOT NULL,
