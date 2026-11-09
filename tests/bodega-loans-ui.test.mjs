@@ -75,7 +75,7 @@ test("BODEGA dispone de logística de principal, sin elegibilidad ni controles d
 
 test("BODEGA conserva todos los estados consultables y únicamente navegación autorizada", async () => {
   const p = probe({ sedeFiltroId: "2" });
-  assert.deepEqual(p.view.navigationItems.map((item) => item.href), ["/dashboard", "/inventario-principal", "/inventario/nuevo", "/prestamos", "/dashboard/radar", "/dashboard#quien-me-debe"]);
+  assert.deepEqual(p.view.navigationItems.map((item) => item.href), ["/dashboard", "/inventario-principal", "/inventario/nuevo", "/prestamos", "/dashboard/radar", "/dashboard#quien-me-debe", "/dashboard/bodega/deuda"]);
   assert.ok(p.view.estadosFiltro.includes("PAGO_PENDIENTE_APROBACION"));
   assert.ok(p.view.estadosFiltro.includes("DEVOLUCION_PENDIENTE"));
   await p.view.cargarPrestamos();

@@ -269,7 +269,7 @@ function uiProbe(path, { user = bodega, state: initial = {}, refs = {}, fetchImp
 test("las dos pantallas BODEGA exponen solo navegación y destino de bodega principal", () => {
   for (const path of ["app/inventario-principal/page.tsx", "app/inventario/nuevo/page.tsx"]) {
     const ui = uiProbe(path); const navigation = ui.captured.navigation || ui.captured.navigationItems;
-    assert.deepEqual(navigation.map(item => item.href), ["/dashboard", "/inventario-principal", "/inventario/nuevo", "/prestamos", "/dashboard/radar", "/dashboard#quien-me-debe"]);
+    assert.deepEqual(navigation.map(item => item.href), ["/dashboard", "/inventario-principal", "/inventario/nuevo", "/prestamos", "/dashboard/radar", "/dashboard#quien-me-debe", "/dashboard/bodega/deuda"]);
     if (ui.captured.rutaCancelar) { assert.equal(ui.captured.rutaCancelar, "/inventario-principal"); assert.equal(ui.captured.destino, "Bodega principal"); }
     const pending = uiProbe(path, { user: null });
     assert.deepEqual(pending.captured.navigation || pending.captured.navigationItems, []);

@@ -4,8 +4,7 @@ export type BodegaNavigationItem = {
   label: string;
 };
 
-// Shared, client-safe routes for the warehouse role. Keep logistics separate
-// from collection and payment actions: the debt view is read-only.
+// Shared, client-safe routes for the warehouse role.
 export function getBodegaNavigation(): BodegaNavigationItem[] {
   return [
     { href: "/dashboard", icon: "home", label: "Inicio" },
@@ -14,5 +13,6 @@ export function getBodegaNavigation(): BodegaNavigationItem[] {
     { href: "/prestamos", icon: "loans", label: "Préstamos" },
     { href: "/dashboard/radar", icon: "radar", label: "Radar" },
     { href: "/dashboard#quien-me-debe", icon: "receivable", label: "Quién le debe" },
+    { href: "/dashboard/bodega/deuda", icon: "receivable", label: "Deuda" },
   ];
 }

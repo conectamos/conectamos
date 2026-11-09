@@ -1,0 +1,273 @@
+.form {
+  display: grid;
+  gap: 16px;
+  padding-top: 16px;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field label {
+  color: #263344;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #d4dce6;
+  border-radius: 9px;
+  background: #fff;
+  color: #11161d;
+  font: inherit;
+  font-size: 14px;
+}
+
+.field input[readonly] {
+  background: #f5f6f8;
+  color: #536174;
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.primary:focus-visible {
+  outline: 2px solid #e30613;
+  outline-offset: 2px;
+}
+
+.inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.note {
+  margin: 0;
+  color: #536174;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.error,
+.success {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #f3c5ca;
+  border-radius: 9px;
+  background: #fff4f4;
+  color: #9a1420;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.form .error,
+.form .success {
+  margin: 0;
+}
+
+.success {
+  border-color: #b9e5ce;
+  background: #effaf4;
+  color: #145c39;
+}
+
+table.table {
+  min-width: 940px;
+}
+
+table.table th,
+table.table td {
+  padding: 12px 14px;
+  overflow-wrap: anywhere;
+}
+
+.date,
+.money,
+.imei {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tableDevices,
+.selectedDevices,
+.paymentHistory ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tableDevices li + li {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid #e9edf2;
+}
+
+.equipmentDetails summary {
+  color: #263344;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.equipmentDetails[open] summary {
+  margin-bottom: 8px;
+}
+
+.imei {
+  display: block;
+  color: #536174;
+  font-size: 12px;
+}
+
+.paid {
+  display: block;
+  color: #145c39;
+  font-size: 11px;
+}
+
+.selectedDevices,
+.paymentHistory ul {
+  border: 1px solid #dce3eb;
+  border-radius: 9px;
+}
+
+.selectedDevices li,
+.paymentHistory li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.selectedDevices li + li,
+.paymentHistory li + li {
+  border-top: 1px solid #e0e5ec;
+}
+
+button.primary {
+  min-height: 44px;
+  padding: 10px 15px;
+  border: 1px solid #e30613;
+  border-radius: 9px;
+  background: #e30613;
+  color: #fff;
+  font-weight: 650;
+}
+
+button.primary:hover:enabled {
+  background: #c30510;
+}
+
+button.primary:disabled {
+  border-color: #e0e5ec;
+  background: #eef1f5;
+  color: #677587;
+  cursor: not-allowed;
+}
+
+.invoiceProvider,
+.paymentHistory h3 {
+  margin: 0;
+  color: #11161d;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.invoiceProvider {
+  overflow-wrap: anywhere;
+}
+
+.invoiceProvider span {
+  display: block;
+  margin-top: 4px;
+  color: #536174;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.balance {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 14px 0;
+  border-radius: 9px;
+  background: #262f38;
+  color: #fff;
+}
+
+.balance > div {
+  display: grid;
+  gap: 5px;
+  padding: 0 14px;
+}
+
+.balance > div + div {
+  border-left: 1px solid #586575;
+}
+
+.balance span {
+  color: #e0e6ee;
+  font-size: 12px;
+}
+
+.balance strong,
+.paymentHistory li strong {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.balance strong {
+  font-size: clamp(13px, 3vw, 18px);
+}
+
+.paymentHistory {
+  display: grid;
+  gap: 8px;
+}
+
+.paymentHistory li span {
+  display: block;
+  color: #536174;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .balance {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0 12px;
+  }
+
+  .balance > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    padding: 10px 0;
+  }
+
+  .balance > div + div {
+    border-left: 0;
+    border-top: 1px solid #586575;
+  }
+}
+
+@media (max-width: 520px) {
+  .fields,
+  .inline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

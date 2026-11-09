@@ -54,6 +54,9 @@ test("BODEGA no se convierte en administrativo ni recibe permisos financieros o 
 test("allowlist permite operaciones logísticas concretas y rechaza métodos alternativos", () => {
   for (const [path, verb] of [
     ["/dashboard", "GET"], ["/dashboard/radar", "GET"],
+    ["/dashboard/bodega/deuda", "GET"],
+    ["/api/bodega/deudas", "GET"], ["/api/bodega/deudas", "POST"],
+    ["/api/bodega/deudas/pagos", "POST"],
     ["/api/dashboard/bodega", "GET"], ["/api/dashboard/bodega", "HEAD"],
     ["/api/dashboard/radar/export", "GET"], ["/api/dashboard/radar/export", "HEAD"],
     ["/inventario-principal", "GET"], ["/inventario/nuevo", "GET"],
@@ -65,6 +68,9 @@ test("allowlist permite operaciones logísticas concretas y rechaza métodos alt
   ]) assert.equal(paths.puedeAccederRutaBodega(path, verb), true, `${verb} ${path}`);
   for (const [path, verb] of [
     ["/dashboard", "POST"], ["/dashboard/radar", "PATCH"],
+    ["/dashboard/bodega/deuda", "POST"], ["/api/bodega/deudas", "DELETE"],
+    ["/api/bodega/deudas/pagos", "GET"], ["/api/bodega/deudas/pagos", "PATCH"],
+    ["/api/bodega/deudas/1", "POST"],
     ["/api/dashboard/bodega", "POST"], ["/api/dashboard/bodega", "PATCH"],
     ["/api/dashboard/bodega", "DELETE"], ["/api/dashboard/radar/export", "POST"],
     ["/api/dashboard/radar/export", "PATCH"], ["/api/dashboard/radar/export", "DELETE"],
@@ -168,8 +174,9 @@ test("navegación compartida de BODEGA solo enlaza sus rutas explícitas y no co
   assert.equal(links[0].href, paths.BODEGA_HOME_PATH);
   assert.deepEqual(Array.from(links, item => item.href), [
     "/dashboard", "/inventario-principal", "/inventario/nuevo", "/prestamos",
-    "/dashboard/radar", "/dashboard#quien-me-debe",
+    "/dashboard/radar", "/dashboard#quien-me-debe", "/dashboard/bodega/deuda",
   ]);
+  assert.equal(links.find(link => link.href === "/dashboard/bodega/deuda")?.label, "Deuda");
   for (const link of links) {
     assert.equal(paths.puedeAccederRutaBodega(link.href.split("#")[0]), true, link.href);
     assert.ok(link.icon && link.label);
