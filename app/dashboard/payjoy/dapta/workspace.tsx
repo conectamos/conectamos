@@ -25,7 +25,7 @@ const VOICE_API = "/api/payjoy/voz";
 const NAVIGATION = [
   { href: "/dashboard", label: "Inicio", icon: "home" as const },
   { href: "/dashboard/payjoy", label: "Cartera PayJoy", icon: "receivable" as const },
-  { href: "/dashboard/payjoy/dapta", label: "Preparación Dapta", icon: "document" as const },
+  { href: "/dashboard/payjoy/dapta", label: "Gestión Dapta", icon: "document" as const },
 ];
 const LOOKUP_LABELS = { PENDING: "Consulta pendiente", CHECKING: "Consulta en curso", FOUND: "Móvil encontrado", MISSING: "Sin móvil disponible", ERROR: "Error de consulta" };
 type CopyStatus = "copying" | "copied" | "error";
@@ -334,53 +334,32 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
       <SalesProfile name={user.nombre} role={user.rolNombre} />
     </header>
     <main className={styles.main}>
-      <div className={styles.heading}><div><p className={styles.eyebrow}>PayJoy · Preparación de contactos</p><h1>Borradores para Dapta</h1><p>Consulta móviles sugeridos y revisa el contenido antes de cualquier gestión de contacto.</p></div><div className={styles.convention}><span>Convenio Efecty</span><strong>{PAYJOY_DAPTA_AGREEMENT}</strong></div></div>
-      <div className={styles.notice} role="note"><DashboardIcon name="lock" /><div><strong>Mensajes WhatsApp · Envío deshabilitado</strong><p>Los mensajes se conservan como borradores en CONECTAMOS. Las llamadas con Valeria se revisan y programan por separado; encontrar un móvil no confirma su titularidad ni la autorización de contacto.</p></div></div>
+      <div className={styles.heading}>
+        <div><p className={styles.eyebrow}>PayJoy · Gestión de voz</p><h1>Llamadas con Valeria</h1><p>Programa y consulta las llamadas de tus lotes de dispositivos.</p></div>
+        <a href="#saved-batches" className={styles.button}><DashboardIcon name="document" />Ver lotes guardados</a>
+      </div>
+      <dl className={styles.overview} aria-label="Resumen de voz">
+        <div className={styles.overviewState}><dt><DashboardIcon name="clock" />Estado de la programación</dt><dd>{voiceLoading ? "Consultando estado…" : voice?.batch ? VOICE_BATCH_LABELS[voice.batch.status] : !batch ? "Selecciona un lote" : voiceCanSchedule ? "Lista para revisar" : voiceError ? "Estado por consultar" : voice && !voice.configuration.ready ? "Configuración pendiente" : "Pendiente de revisión"}</dd><small>{voice?.batch ? `${voice.batch.calls.length} llamadas en el lote` : "Se confirma al abrir el lote"}</small></div>
+        <div><dt><DashboardIcon name="calendar" />Fecha programada</dt><dd>10 nov. 2026 · 10:00 a. m.</dd><small>Bogotá · Ventana de 10:00 a 10:30 a. m.</small></div>
+        <div><dt><DashboardIcon name="receivable" />Convenio Efecty</dt><dd>{PAYJOY_DAPTA_AGREEMENT}</dd><small>Adelantos Colombia</small></div>
+        <div><dt><DashboardIcon name="user" />Línea de voz</dt><dd>312 408 5562</dd><small>Valeria · CONECTAMOS</small></div>
+      </dl>
       {error && <p className={styles.error} role="alert">{error}</p>}
       {progress && <div className={styles.progress} role="status" aria-live="polite"><DashboardIcon name={busy ? "refresh" : "document"} /><span>{progress}</span></div>}
       <div className={styles.workspace}>
-        <section className={styles.panel} aria-labelledby="devices-title" aria-busy={busy === "create" || busy === "validate"}>
-          <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="barcode" /></span><div><p>1. Dispositivos</p><h2 id="devices-title">Preparar lote</h2></div></div>
-          <p className={styles.description}>Pega los códigos de dispositivo del reporte de PayJoy. Los códigos repetidos se consolidan antes de la consulta.</p>
-          <form className={styles.form} onSubmit={create}>
-            <label htmlFor="dapta-devices">Identificadores PayJoy</label>
-            <textarea id="dapta-devices" value={input} maxLength={5000} autoComplete="off" autoCapitalize="characters" spellCheck={false} disabled={draftDisabled} onChange={event => { setInput(event.target.value); setInputError(""); }} aria-invalid={Boolean(inputError)} aria-describedby={inputError ? "dapta-device-error dapta-device-help" : "dapta-device-help"} />
-            <small id="dapta-device-help">Códigos que empiezan con D, separados por saltos de línea, espacios, comas o punto y coma. Máximo {PAYJOY_DAPTA_DEVICE_LIMIT} equipos distintos.</small>
-            <div className={styles.inputSummary}><span><strong>{parsed.devices.length}</strong> equipos válidos</span>{parsed.duplicates > 0 && <span>{parsed.duplicates} repetidos omitidos</span>}{parsed.invalid.length > 0 && <span>{parsed.invalid.length} por corregir</span>}</div>
-            {inputError && <p className={styles.contactError} id="dapta-device-error" role="alert">{inputError}</p>}
-            <button type="submit" className={`${styles.button} ${styles.primary}`} disabled={draftDisabled}><DashboardIcon name="search" />{busy === "create" ? "Guardando borrador…" : busy === "validate" ? "Consultando contactos…" : "Consultar contactos y guardar"}</button>
-          </form>
-          <div className={styles.scope}><DashboardIcon name="shield" /><p>Consulta administrativa de PayJoy. El móvil puede provenir del dato precargado para Nequi y requiere verificar a quién pertenece.</p></div>
-        </section>
-
-        <section className={styles.panel} aria-labelledby="results-title" aria-busy={Boolean(busy)}>
-          <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="users" /></span><div><p>2. Revisión del borrador</p><h2 id="results-title" ref={resultHeading} tabIndex={-1}>Contactos y mensajes</h2></div></div>
-          {!batch ? <div className={styles.empty}><DashboardIcon name="document-search" /><h3>Consulta los equipos para revisar sus contactos</h3><p>Verás el móvil sugerido, su origen y el borrador del mensaje con el convenio Efecty {PAYJOY_DAPTA_AGREEMENT}.</p></div> : <>
-            <div className={styles.batchHeading}><span className={styles.status}>Borrador · Sin envío</span><p>Creado el {dateLabel(batch.createdAt)} · {batch.createdBy}</p></div>
-            <div className={styles.stats} aria-label="Resumen del lote"><div><strong>{batch.counts.total}</strong><span>Equipos en el lote</span></div><div><strong>{batch.counts.found}</strong><span>Móviles encontrados</span></div><div><strong>{batch.counts.duplicatePhones}</strong><span>Móviles duplicados</span></div></div>
-            <div className={styles.batchActions}>
-              <button className={styles.button} disabled={draftDisabled} onClick={() => void openBatch(batch.id)}><DashboardIcon name="refresh" />Actualizar borrador</button>
-              {batch.counts.pending > 0 && <button className={`${styles.button} ${styles.graphite}`} disabled={draftDisabled} onClick={() => void continueBatch()}>Continuar consulta ({batch.counts.pending})</button>}
-              {(batch.counts.error > 0 || batch.counts.checking > 0) && <button className={styles.button} disabled={draftDisabled} onClick={() => void continueBatch(true)}>Reintentar consultas pendientes</button>}
-            </div>
-            <div className={styles.reviewNotice}><DashboardIcon name="warning" /><p>Encontrar un móvil no acredita su titularidad. Todos los contactos permanecen pendientes de revisión. Este borrador no consulta saldos ni cuotas y no afirma que exista mora.</p></div>
-            <ul className={styles.contacts}>{batch.items.map(item => <ContactItem key={item.id} item={item} duplicateDevice={batch.items.find(other => other.id === item.duplicateOfId)?.deviceTag} copyStatus={copyState?.itemId === item.id && copyState.message === item.messagePreview ? copyState.status : undefined} copying={copyState?.status === "copying"} onCopy={() => copyMessage(item)} />)}</ul>
-          </>}
-        </section>
-      </div>
-
-      {batch && <section className={`${styles.panel} ${styles.voicePanel}`} aria-labelledby="voice-title" aria-busy={voiceLoading || Boolean(voiceAction)}>
+        <section className={`${styles.panel} ${styles.voicePanel}`} aria-labelledby="voice-title" aria-busy={voiceLoading || Boolean(voiceAction)}>
         <div className={styles.voiceHeading}>
-          <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="calendar" /></span><div><p>3. Programación única</p><h2 id="voice-title">Llamadas con Valeria</h2></div></div>
-          <button type="button" className={styles.button} disabled={voiceDisabled} onClick={() => void loadVoice(batch.id)}><DashboardIcon name="refresh" />{voiceLoading ? "Consultando estado…" : "Actualizar llamadas"}</button>
+          <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="calendar" /></span><div><p>Gestión de voz</p><h2 id="voice-title" ref={resultHeading} tabIndex={-1}>Programación y llamadas</h2></div></div>
+          <button type="button" className={styles.button} disabled={voiceDisabled || !batch} onClick={() => { if (batch) void loadVoice(batch.id); }}><DashboardIcon name="refresh" />{voiceLoading ? "Consultando estado…" : "Actualizar llamadas"}</button>
         </div>
-        <p className={styles.description}>Valeria se identifica como asistente virtual de CONECTAMOS por el crédito PayJoy y confirma la identidad antes de hablar del crédito. Sólo llamadas de voz; no se envía WhatsApp automáticamente.</p>
-        <dl className={styles.voiceFacts}>
-          <div><dt>Fecha y hora</dt><dd>10 de noviembre de 2026 · 10:00 a. m.</dd></div>
-          <div><dt>Zona horaria</dt><dd>Bogotá · America/Bogota</dd></div>
-          <div><dt>Ventana de ejecución</dt><dd>10:00 a 10:30 a. m. · Una sola fecha</dd></div>
-          <div><dt>Pago en Efecty</dt><dd>112090 — Adelantos Colombia</dd></div>
-        </dl>
+        {!batch ? <div className={styles.empty}>
+          <span className={styles.voiceAvatar}>V</span>
+          <h3>Abre un lote para ver sus llamadas</h3>
+          <p>Después de recargar la página, puedes volver al lote guardado y consultar su programación.</p>
+          {batches[0] ? <button type="button" className={`${styles.button} ${styles.primary}`} disabled={draftDisabled} onClick={() => void openBatch(batches[0].id)}>Abrir último lote<DashboardIcon name="arrow" /></button> : <a href="#new-batch" className={`${styles.button} ${styles.graphite}`}>Preparar un lote<DashboardIcon name="arrow" /></a>}
+        </div> : <>
+          <div className={styles.selectedBatch}><DashboardIcon name="users" /><div><strong>{batch.counts.total} equipos en el lote seleccionado</strong><span>{dateLabel(batch.createdAt)} · {batch.createdBy}</span></div><a href="#saved-batches">Cambiar lote</a></div>
+          <p className={styles.description}>Valeria se presenta como asistente virtual de CONECTAMOS y confirma la identidad antes de hablar del crédito PayJoy.</p>
         <p className={styles.historyHelp}>Máximo {PAYJOY_VOICE_MAX_CALLS} equipos y una llamada por móvil en esta fecha. El servidor vuelve a comprobar cada contacto antes de solicitar la llamada.</p>
         {voiceLoading && <p className={styles.contactNote} role="status">Recuperando la programación guardada…</p>}
         {voiceError && <p className={styles.error} role="alert">{voiceError}</p>}
@@ -394,7 +373,7 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
           <div className={styles.batchHeading}><span className={styles.status}>{VOICE_BATCH_LABELS[voice.batch.status]}</span><p>Autorizada por {voice.batch.createdBy} · {dateLabel(voice.batch.authorizedAt)}</p></div>
           <p className={styles.historyHelp}>Aceptada por Dapta significa que recibió la solicitud. La atención y la identidad del interlocutor sólo se confirman con el resultado de la llamada.</p>
           <ul className={styles.voiceTargets} aria-label="Estado de las llamadas">{voice.batch.calls.map(call => <li key={call.id}>
-            <div><strong>{call.deviceTag}</strong><span>{batch.items.find(item => item.deviceTag === call.deviceTag)?.phone || call.phoneMasked}</span></div>
+            <div><strong>{call.deviceTag}</strong><span>{call.phoneMasked}</span></div>
             <div><span className={styles.status}>{VOICE_CALL_LABELS[call.status] || "Estado pendiente de revisión"}</span><p>{call.identityConfirmedAt ? `Identidad confirmada durante la llamada · ${dateLabel(call.identityConfirmedAt)}` : "Identidad del interlocutor sin confirmar"}</p>{call.latestOutcome && <p>{VOICE_OUTCOMES[call.latestOutcome] || "Resultado pendiente de revisión"}</p>}{call.reasonCode && <p>{VOICE_REASONS[call.reasonCode] || "La gestión requiere revisión. Motivo registrado por el servidor."}</p>}</div>
           </li>)}</ul>
           {voice.batch.canCancel && <div className={styles.voiceActions}>
@@ -414,18 +393,47 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
             <div className={styles.voiceActions}><button type="button" className={`${styles.button} ${styles.primary}`} disabled={voiceDisabled || !voiceCanSchedule || !voiceOwnership || !voiceConsent} onClick={() => void scheduleVoice()}>{voiceAction === "schedule" ? "Guardando programación…" : "Confirmar programación"}</button><button type="button" className={styles.button} disabled={voiceDisabled} onClick={() => { setVoiceReview(false); setVoiceOwnership(false); setVoiceConsent(false); }}>Volver al lote</button></div>
           </div>}
         </>}
-      </section>}
-
-      <section className={`${styles.panel} ${styles.history}`} aria-labelledby="history-title" aria-busy={historyLoading}>
-        <div className={styles.historyHeading}><div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="document" /></span><div><p>Borradores guardados</p><h2 id="history-title">Historial de lotes</h2></div></div><button className={styles.button} disabled={draftDisabled || historyLoading} onClick={() => void loadHistory()}><DashboardIcon name="refresh" />{historyLoading ? "Cargando historial…" : "Actualizar historial"}</button></div>
-        <p className={styles.historyHelp}>Los últimos 20 lotes guardados. Abrir o actualizar un borrador solo recupera lo registrado en CONECTAMOS; no vuelve a consultar PayJoy.</p>
+        </>}
+      </section>
+        <section className={`${styles.panel} ${styles.history}`} id="saved-batches" aria-labelledby="history-title" aria-busy={historyLoading}>
+        <div className={styles.historyHeading}><div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="document" /></span><div><p>Tu trabajo guardado</p><h2 id="history-title">Lotes guardados</h2></div></div><button className={styles.button} disabled={draftDisabled || historyLoading} onClick={() => void loadHistory()}><DashboardIcon name="refresh" />{historyLoading ? "Cargando historial…" : "Actualizar historial"}</button></div>
+        <p className={styles.historyHelp}>Abre uno de los últimos 20 lotes para consultar sus llamadas y borradores.</p>
         {historyError && <p className={styles.error} role="alert">{historyError}</p>}
-        {historyLoading && !batches.length ? <p className={styles.historyEmpty} role="status">Cargando borradores…</p> : !batches.length && !historyError ? <p className={styles.historyEmpty}>Todavía no hay lotes guardados.</p> : <ul className={styles.historyList}>{batches.map(item => <li key={item.id}>
-          <div><strong>Borrador del {dateLabel(item.createdAt)}</strong><span>{item.createdBy} · Efecty {item.agreement}</span><span>Sin envío · Actualizado {dateLabel(item.updatedAt)}</span></div>
+        {historyLoading && !batches.length ? <p className={styles.historyEmpty} role="status">Cargando lotes…</p> : !batches.length && !historyError ? <p className={styles.historyEmpty}>Todavía no hay lotes guardados.</p> : <ul className={styles.historyList}>{batches.map(item => <li key={item.id} className={batch?.id === item.id ? styles.selectedHistory : undefined}>
+          <div><strong>Lote del {dateLabel(item.createdAt)}</strong>{batch?.id === item.id && <span className={styles.currentBatch}>En pantalla</span>}<span>{item.createdBy} · Efecty {item.agreement}</span><span>Actualizado {dateLabel(item.updatedAt)}</span></div>
           <div className={styles.historyNumbers}><strong>{item.counts.total}</strong> equipos · <strong>{item.counts.found}</strong> móviles encontrados<span>{item.counts.pending + item.counts.checking} consultas pendientes · {item.counts.error} con error</span></div>
-          <button className={styles.button} disabled={draftDisabled} onClick={() => void openBatch(item.id)}>Abrir borrador<span className={styles.srOnly}> del {dateLabel(item.createdAt)}</span><DashboardIcon name="arrow" /></button>
+          <button className={styles.button} disabled={draftDisabled} onClick={() => void openBatch(item.id)}>Abrir lote<span className={styles.srOnly}> del {dateLabel(item.createdAt)}</span><DashboardIcon name="arrow" /></button>
         </li>)}</ul>}
       </section>
+        <section className={`${styles.panel} ${styles.preparePanel}`} id="new-batch" aria-labelledby="devices-title" aria-busy={busy === "create" || busy === "validate"}>
+          <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="barcode" /></span><div><p>Nuevo lote</p><h2 id="devices-title">Consultar otros equipos</h2></div></div>
+          <p className={styles.description}>Pega los códigos de dispositivo del reporte de PayJoy. Los códigos repetidos se consolidan antes de la consulta.</p>
+          <form className={styles.form} onSubmit={create}>
+            <label htmlFor="dapta-devices">Identificadores PayJoy</label>
+            <textarea id="dapta-devices" value={input} maxLength={5000} autoComplete="off" autoCapitalize="characters" spellCheck={false} disabled={draftDisabled} onChange={event => { setInput(event.target.value); setInputError(""); }} aria-invalid={Boolean(inputError)} aria-describedby={inputError ? "dapta-device-error dapta-device-help" : "dapta-device-help"} />
+            <small id="dapta-device-help">Códigos que empiezan con D, separados por saltos de línea, espacios, comas o punto y coma. Máximo {PAYJOY_DAPTA_DEVICE_LIMIT} equipos distintos.</small>
+            <div className={styles.inputSummary}><span><strong>{parsed.devices.length}</strong> equipos válidos</span>{parsed.duplicates > 0 && <span>{parsed.duplicates} repetidos omitidos</span>}{parsed.invalid.length > 0 && <span>{parsed.invalid.length} por corregir</span>}</div>
+            {inputError && <p className={styles.contactError} id="dapta-device-error" role="alert">{inputError}</p>}
+            <button type="submit" className={`${styles.button} ${styles.primary}`} disabled={draftDisabled}><DashboardIcon name="search" />{busy === "create" ? "Guardando borrador…" : busy === "validate" ? "Consultando contactos…" : "Consultar contactos y guardar"}</button>
+          </form>
+          <div className={styles.scope}><DashboardIcon name="shield" /><p>Consulta administrativa de PayJoy. El móvil puede provenir del dato precargado para Nequi y requiere verificar a quién pertenece.</p></div>
+        </section>
+        <section className={`${styles.panel} ${styles.draftsPanel}`} aria-labelledby="results-title" aria-busy={Boolean(busy)}>
+          <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="users" /></span><div><p>Canal WhatsApp</p><h2 id="results-title">Borradores de WhatsApp</h2></div></div>
+          <div className={styles.notice} role="note"><DashboardIcon name="lock" /><div><strong>Envío deshabilitado</strong><p>Revisa o copia los mensajes guardados. La programación de voz se gestiona en la sección de Valeria.</p></div></div>
+          {!batch ? <div className={styles.empty}><DashboardIcon name="document-search" /><h3>Consulta los equipos para revisar sus contactos</h3><p>Verás el móvil sugerido, su origen y el borrador del mensaje con el convenio Efecty {PAYJOY_DAPTA_AGREEMENT}.</p></div> : <>
+            <div className={styles.batchHeading}><span className={styles.status}>Borrador · Sin envío</span><p>Creado el {dateLabel(batch.createdAt)} · {batch.createdBy}</p></div>
+            <div className={styles.stats} aria-label="Resumen del lote"><div><strong>{batch.counts.total}</strong><span>Equipos en el lote</span></div><div><strong>{batch.counts.found}</strong><span>Móviles encontrados</span></div><div><strong>{batch.counts.duplicatePhones}</strong><span>Móviles duplicados</span></div></div>
+            <div className={styles.batchActions}>
+              <button className={styles.button} disabled={draftDisabled} onClick={() => void openBatch(batch.id)}><DashboardIcon name="refresh" />Actualizar borrador</button>
+              {batch.counts.pending > 0 && <button className={`${styles.button} ${styles.graphite}`} disabled={draftDisabled} onClick={() => void continueBatch()}>Continuar consulta ({batch.counts.pending})</button>}
+              {(batch.counts.error > 0 || batch.counts.checking > 0) && <button className={styles.button} disabled={draftDisabled} onClick={() => void continueBatch(true)}>Reintentar consultas pendientes</button>}
+            </div>
+            <div className={styles.reviewNotice}><DashboardIcon name="warning" /><p>Encontrar un móvil no acredita su titularidad. Todos los contactos permanecen pendientes de revisión. Este borrador no consulta saldos ni cuotas y no afirma que exista mora.</p></div>
+            <ul className={styles.contacts}>{batch.items.map(item => <ContactItem key={item.id} item={item} duplicateDevice={batch.items.find(other => other.id === item.duplicateOfId)?.deviceTag} copyStatus={copyState?.itemId === item.id && copyState.message === item.messagePreview ? copyState.status : undefined} copying={copyState?.status === "copying"} onCopy={() => copyMessage(item)} />)}</ul>
+          </>}
+        </section>
+      </div>
     </main>
   </div>;
 }

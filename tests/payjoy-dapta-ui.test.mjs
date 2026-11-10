@@ -85,7 +85,7 @@ test("montar y abrir historial solo lee CONECTAMOS; no consulta proveedores ni e
   let tree = await ui.mount();
   assert.deepEqual(ui.calls.map(call => [call.url, call.method]), [["/api/payjoy/dapta", "GET"]]);
   assert.doesNotMatch(textOf(tree), /\+573000000001/);
-  button(tree, "Abrir borrador").props.onClick(); await settle(); tree = ui.render();
+  button(tree, "Abrir lote").props.onClick(); await settle(); tree = ui.render();
   assert.match(textOf(tree), /Celular informado por PayJoy/);
   assert.match(textOf(tree), /\+573000000001/);
   assert.match(textOf(tree), /Titularidad y autorización de contacto pendientes/);
@@ -95,6 +95,53 @@ test("montar y abrir historial solo lee CONECTAMOS; no consulta proveedores ni e
   assert.ok(ui.calls.some(call => call.url === `/api/payjoy/voz?sourceBatchId=${found.id}`));
   assert.ok(ui.calls.every(call => call.method === "GET"));
   assert.equal(elements(tree).filter(node => node.type === "button").some(node => /enviar|exportar|activar/i.test(textOf(node))), false);
+});
+
+test("prioriza el resumen y los lotes de voz; abrir el último recupera la programación sin ejecutar acciones", async () => {
+  const ui = probe({
+    fetchImpl: async call => response(call.url.includes("batchId=") ? batchResult(found) : history([found])),
+    voiceFetchImpl: async () => response(voiceResult({ ...voiceReady(), batch: scheduledVoice() })),
+  });
+  let tree = await ui.mount();
+  const nodes = elements(tree);
+  assert.deepEqual(nodes.filter(node => node.type === "h1").map(textOf), ["Llamadas con Valeria"]);
+  const overview = nodes.find(node => node.type === "dl" && node.props["aria-label"] === "Resumen de voz");
+  assert.ok(overview);
+  assert.match(textOf(overview), /Selecciona un lote/);
+  assert.deepEqual(elements(overview).filter(node => node.type === "dt").map(node => textOf(node).trim()), [
+    "Estado de la programación", "Fecha programada", "Convenio Efecty", "Línea de voz",
+  ]);
+  assert.match(textOf(overview), /10 nov\. 2026 · 10:00 a\. m\./);
+  assert.match(textOf(overview), /Bogotá/);
+  assert.match(textOf(overview), /112090.*Adelantos Colombia/);
+  assert.match(textOf(overview), /312 408 5562.*Valeria · CONECTAMOS/);
+  const panels = ["voice-title", "history-title", "devices-title", "results-title"].map(id => {
+    const panel = nodes.find(node => node.type === "section" && node.props["aria-labelledby"] === id);
+    assert.ok(panel, `Falta sección ${id}`); return panel;
+  });
+  const [voicePanel, savedPanel, createPanel, draftsPanel] = panels;
+  assert.ok(panels.every(panel => nodes.indexOf(overview) < nodes.indexOf(panel)));
+  assert.ok([voicePanel, savedPanel].every(panel => nodes.indexOf(panel) < nodes.indexOf(createPanel)));
+  assert.ok(nodes.indexOf(createPanel) < nodes.indexOf(draftsPanel));
+  assert.ok(elements(createPanel).some(node => node.type === "form"));
+  assert.match(textOf(draftsPanel), /Borradores de WhatsApp.*Envío deshabilitado/);
+  assert.ok(nodes.some(node => node.type === "a" && node.props.href === "#saved-batches" && textOf(node).trim() === "Ver lotes guardados"));
+  assert.equal(savedPanel.props.id, "saved-batches");
+
+  button(tree, "Abrir último lote").props.onClick(); await settle(); tree = ui.render();
+  const recoveredOverview = elements(tree).find(node => node.type === "dl" && node.props["aria-label"] === "Resumen de voz");
+  assert.match(textOf(recoveredOverview), /Programada/);
+  assert.match(textOf(tree), /En pantalla/);
+  assert.match(textOf(tree), /Identidad del interlocutor sin confirmar/);
+  assert.equal(ui.state.batch.id, found.id);
+  assert.equal(ui.state.voiceData.batch.id, "qa-voice-batch");
+  assert.deepEqual(ui.calls.map(call => [call.url, call.method]), [
+    ["/api/payjoy/dapta", "GET"],
+    [`/api/payjoy/dapta?batchId=${found.id}`, "GET"],
+    [`/api/payjoy/voz?sourceBatchId=${found.id}`, "GET"],
+  ]);
+  assert.equal(elements(tree).some(node => node.type === "button" && textOf(node) === "Confirmar cancelación"), false);
+  assert.equal(button(tree, "Cancelar programación").props.disabled, false);
 });
 
 test("valida códigos y límite antes de crear el borrador", async () => {
@@ -321,9 +368,9 @@ test("cambiar de lote descarta una consulta de voz tardía y borra las confirmac
     return response(voiceResult({ sourceBatchId: second.id }));
   } });
   let tree = await ui.mount();
-  button(tree, "Abrir borrador").props.onClick(); await settle(); tree = ui.render();
+  button(tree, "Abrir lote").props.onClick(); await settle(); tree = ui.render();
   ui.state.voiceReview = true; ui.state.voiceOwnership = true; ui.state.voiceConsent = true;
-  const secondOpen = elements(tree).find(node => node.type === "button" && /Abrir borrador.*8\/11\/2026/.test(textOf(node)));
+  const secondOpen = elements(tree).find(node => node.type === "button" && /Abrir lote.*8\/11\/2026/.test(textOf(node)));
   assert.ok(secondOpen); secondOpen.props.onClick(); await settle();
   finishFirst(); await settle(); tree = ui.render();
   assert.equal(ui.state.batch.id, second.id);

@@ -1,14 +1,26 @@
 {
   "artifactVersion": 1,
-  "status": "PENDING_CONFIGURATION_APPROVAL",
-  "createdInDapta": false,
+  "status": "VERIFIED_IN_DAPTA",
+  "createdInDapta": true,
   "callingEnabled": false,
+  "productionResources": {
+    "agentId": "8ff952f3-000b-495b-acf4-5dbc3ea9c355",
+    "operationsFlowId": "iVWaZ",
+    "schedulerFlowId": "3WLlO"
+  },
+  "post_create_update_args": {
+    "begin_message": "Hola, soy Valeria, asistente virtual de CONECTAMOS. ¿Hablo con el titular de esta línea?",
+    "begin_message_type": "ai_initiates_predefined",
+    "max_call_duration_ms": 180000,
+    "end_call_after_silence_ms": 20000,
+    "dapta_webhook": "https://conectamos.app/api/payjoy/voz/callback"
+  },
   "deploymentNotes": [
-    "Configuración separada para revisión. Crear el agente no programa ni autoriza llamadas.",
+    "Artefacto de configuración sin secretos. Este archivo por sí mismo no activa llamadas ni programa un lote.",
     "Sustituir __OPERATIONS_FLOW_ID__ y __OPERATIONS_FLOW_WEBHOOK__ únicamente en memoria después de crear el puente aislado. Nunca guardar la URL con su clave real en el repositorio.",
     "El proveedor configura tool.url; el destino de cada custom tool está en dapta_webhook.const. No enviar url propia como sustituto.",
     "El idioma y la voz están verificados en el catálogo. Se omite model: el contrato de creación usa Dapta Auto por defecto.",
-    "No se envían begin_message ni begin_message_type en create porque el contrato documenta que los descarta. Verificar el comportamiento inicial y el prompt al releer el agente creado.",
+    "Aplicar post_create_update_args al agente ya creado. Verificar el saludo y la dirección de resultados al releer el agente; un guardado desde la interfaz de Dapta puede borrar esa dirección.",
     "El callback usa la autenticación del event_token firmado por CONECTAMOS y correlación de call_id; no se inventa una firma nativa de Dapta.",
     "El scheduler contiene cron_enabled:false y un límite absoluto de fecha; activar exige reemplazar __NEW_AGENT_ID__/__JOB_SECRET__, revisar el flujo y comprobar scheduled_tasks real. El JSON por sí solo no programa.",
     "El scheduler exige authorize_dispatch con autorización consumible del servidor justo antes de cada llamada. Sólo allowed boolean true y coincidencia exacta de evento, teléfono y equipo permiten ejecutar la plantilla; una negativa omite la llamada, un fallo de red detiene el flujo.",

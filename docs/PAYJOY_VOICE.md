@@ -6,11 +6,21 @@ desde un lote de contactos ya guardado en CONECTAMOS. La ventana está fijada al
 `2026-11-10T15:00:00.000Z` a `2026-11-10T15:30:00.000Z`, sin incluir el extremo
 final. No es una campaña diaria ni una importación automática del Radar.
 
-El código, el esquema y los archivos de configuración no prueban por sí solos
-que exista un agente, un flujo o una tarea activa en Dapta. Los artefactos de voz
-del repositorio se mantienen preparados para revisión, con marcadores privados
-sin sustituir y `cron_enabled: false`. La creación, configuración y activación
-externas deben comprobarse por separado; este documento no las da por hechas.
+Los artefactos del repositorio conservan los marcadores privados sin sustituir y
+`cron_enabled: false` para que una nueva copia no active llamadas. En el espacio
+FINSERPAY se verificaron por separado los recursos de producción: agente
+`8ff952f3-000b-495b-acf4-5dbc3ea9c355`, puente de operaciones `iVWaZ` y flujo
+programado `3WLlO`. La fila del programador quedó activa y sincronizada con
+`0 10 10 11 *` y `America/Bogota`. El flujo y el servidor aplican la ventana
+absoluta de 2026 para impedir llamadas en futuras ejecuciones de ese cron.
+
+El saludo fijo se configura después de crear el agente. Valeria se presenta
+como asistente virtual de CONECTAMOS, pregunta si habla con el titular de la
+línea, termina tras 20 segundos de silencio y limita cada llamada a 3 minutos.
+Después de guardar el agente desde la interfaz de Dapta, verificar de nuevo
+`dapta_webhook`: esa interfaz puede borrar la dirección de devolución de
+resultados. La configuración comprobada apunta a
+`https://conectamos.app/api/payjoy/voz/callback`.
 
 ## Separación respecto a los borradores
 
