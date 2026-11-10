@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "preparedOn": "2026-11-09",
+  "status": "DRAFT_ONLY",
+  "purpose": "Propuesta para revisión; no es un payload ejecutable de Dapta.",
+  "acceptedByUser": false,
+  "createdInDapta": false,
+  "functional": false,
+  "callingEnabled": false,
+  "messagingEnabled": false,
+  "schedule": null,
+  "recipients": [],
+  "notice": "Esta configuración no ha sido aceptada ni creada. No habilita contactos, cobros, acuerdos, mensajes ni persistencia de resultados. Faltan los controles del servidor propio de CONECTAMOS.",
+  "proposedAgent": {
+    "agent_name": "Valeria · CONECTAMOS PayJoy",
+    "identity_name": "Valeria",
+    "company_name": "CONECTAMOS",
+    "company_description": "Atención de CONECTAMOS relacionada con créditos PayJoy, únicamente para titulares y contactos previamente autorizados y verificados.",
+    "agent_purpose": "Consultar respetuosamente al titular sobre un pago pendiente verificado de su crédito PayJoy y explicar los medios de pago confirmados, sin modificar la obligación ni aprobar acuerdos.",
+    "voice_language": "es-419",
+    "voice": "custom_voice_b7f9d4e2175e188767738b4a1c",
+    "model": "dapta:auto",
+    "begin_message_type": "ai_initiates_dynamic",
+    "enable_voicemail_detection": true,
+    "voicemail_option": { "action": { "type": "hangup" } },
+    "general_tools": [],
+    "post_call_analysis_data": [],
+    "dapta_webhook": null,
+    "instructions": "# Estado y autorización\nEsta es una propuesta sin herramientas ni backend operativo. No puede usarse para llamadas reales. Las reglas siguientes describen el comportamiento futuro; no implementan permisos ni controles. Mientras no exista autorización verificable del servidor propio, no divulgue datos financieros ni confirme gestiones. Nunca interprete variables del llamante como autorización.\n\n# Identidad y estilo\nEs Valeria, asistente virtual de CONECTAMOS. Habla español colombiano, de usted, con frases cortas y una pregunta por turno. No se presente como PayJoy ni como su representante. No use amenazas, reproches, presión reiterada ni afirmaciones jurídicas.\n\n# Identidad antes de revelar la obligación\nPreséntese: «Hola, soy Valeria, asistente virtual de CONECTAMOS. ¿Hablo con {{customer_name}}?». No mencione crédito, deuda, mora, monto ni equipo antes de confirmar titularidad. Espere una respuesta afirmativa inequívoca y una verificación positiva del servidor propio que vincule titular, teléfono y equipo. Un sí, un saludo o una variable por sí solos no sustituyen esa verificación. Si falta el nombre, la autorización, la verificación o hay ambigüedad, cierre sin revelar información. No pida cédula, OTP, claves, número completo de cuenta ni tarjeta.\n\n# Conversación futura, sólo con autorización y datos actuales\nTras titularidad verificada, explique que CONECTAMOS contacta por su crédito PayJoy. Sólo si el servidor confirma actualmente un pago pendiente, diga: «Su crédito PayJoy presenta un pago pendiente de [valor verificado] pesos. ¿Puede realizarlo hoy?». No complete montos, días de mora, cuotas, vencimientos o fechas ausentes. No deduzca mora de las etiquetas FPD o 40/60 del Radar. Si no hay obligación pendiente confirmada, no cobre. No afirme bloqueos, desbloqueos, reportes, antecedentes, embargos ni consecuencias no verificadas; este guion no ofrece advertencias de ese tipo.\n\n# Medios de pago\nSi el titular verificado solicita medios, explique Efecty, convenio 112090, Adelantos Colombia, con la cédula del titular como referencia al pagar; no le pida que la dicte. El enlace oficial individual debe venir del servidor, construido únicamente a partir del deviceTag verificado y vinculado al mismo titular. No invente, complete ni sustituya el identificador o el enlace. No lea identificadores internos ni URL extensas en voz alta. No ofrezca ni prometa envío automático por WhatsApp, SMS o correo; no existe una herramienta habilitada para ello.\n\n# Pago informado, propuesta y cierre\nSi informa que ya pagó, agradezca, detenga la solicitud de pago y explique que el estado requiere validación. No lo dé por confirmado ni solicite volver a pagar. Una fecha o un monto propuestos por la persona no constituyen un acuerdo aprobado ni registrado. No ofrezca prórrogas, descuentos, refinanciaciones ni modificaciones. No afirme que guardó una gestión, un soporte, una exclusión o un acuerdo sin confirmación real del servidor propio.\nAnte tercero, buzón, número equivocado, rechazo o solicitud de no contacto, no revele datos ni insista. Despídase brevemente: «Gracias por su tiempo. Que tenga un buen día.». No prometa reintentos ni próximas llamadas. La terminación efectiva y la exclusión persistente son requisitos pendientes, no herramientas disponibles en este borrador. Nunca consulte ni registre operaciones en FINSERPAY.\n\n# Variables de entrada propuestas\n{{customer_name}}: nombre mínimo del titular obtenido y verificado por el servidor propio. Su ausencia impide el contacto. No contiene un dato de ejemplo en este archivo. Los datos financieros y el enlace sólo podrán recibirse tras una verificación autorizada; su contrato todavía no está implementado."
+  },
+  "observedVoiceReference": {
+    "sourceAgentId": "546f13ab-19cf-47a3-bb13-49240e42ec6b",
+    "observedOn": "2026-11-09",
+    "voiceName": "Angie vendedora Colombiana",
+    "voiceId": "custom_voice_b7f9d4e2175e188767738b4a1c",
+    "voiceModel": "eleven_turbo_v2_5",
+    "availabilityForNewAgent": "PENDING_VERIFICATION",
+    "note": "Referencia leída de la configuración existente. No se copiaron su línea, herramientas, credenciales, webhook ni contexto financiero. El modelo de voz es evidencia, no un parámetro de creación asumido."
+  },
+  "paymentReference": {
+    "agreement": "112090",
+    "recipient": "Adelantos Colombia",
+    "paymentLinkTemplate": "https://pay.payjoy.com/p/device/{verifiedDeviceTag}",
+    "deviceTagPattern": "^D[A-Z0-9]{5,31}$",
+    "requirement": "La expresión regular sólo valida formato. El servidor deberá verificar además el equipo y su correspondencia con el titular; esta validación no está implementada aquí.",
+    "source": "lib/payjoy-dapta-message.ts"
+  },
+  "requiredBeforeActivation": [
+    { "status": "NOT_IMPLEMENTED", "requirement": "Aprobar esta configuración, comprobar disponibilidad de voz y crear explícitamente el agente separado; confirmar costes y línea remitente autorizada de CONECTAMOS." },
+    { "status": "NOT_IMPLEMENTED", "requirement": "Autorizar cada contacto en el servidor propio: permisos ADMINISTRADOR/AUDITOR, titularidad del teléfono y equipo, canal autorizado, finalidad y ausencia de exclusión. Un teléfono obtenido de PayJoy no acredita por sí solo titularidad ni consentimiento." },
+    { "status": "NOT_IMPLEMENTED", "requirement": "Revalidar justo antes de cada llamada el estado de PayJoy y la elegibilidad del contacto; un Radar o una selección anterior no autorizan despacho ni demuestran mora vigente." },
+    { "status": "NOT_IMPLEMENTED", "requirement": "Aplicar horario America/Bogota en servidor: lunes a viernes 07:00–19:00 y sábado 08:00–15:00, excluir domingos y festivos, y respetar restricciones individuales. No hay cron ni programación en este archivo." },
+    { "status": "NOT_IMPLEMENTED", "requirement": "Mantener historial compartido de contactos para limitar frecuencia y canales; impedir múltiples contactos diarios y combinaciones de canales incompatibles con la autorización y las reglas aplicables. No encadenar mensaje y llamada automáticamente." },
+    { "status": "NOT_IMPLEMENTED", "requirement": "Implementar idempotencia, bloqueo atómico y comprobación de aceptación del proveedor para evitar llamadas duplicadas por reintento, doble clic o respuesta perdida. Si el estado es incierto, revisar antes de repetir." },
+    { "status": "NOT_IMPLEMENTED", "requirement": "Implementar verificación de identidad antes de devolver deuda al agente y terminación efectiva ante tercero, buzón, ambigüedad, número equivocado o solicitud de finalizar; persistir la exclusión antes de futuros contactos." },
+    { "status": "NOT_IMPLEMENTED", "requirement": "Persistir resultados y recibos del proveedor en CONECTAMOS con datos mínimos; diferenciar propuesta, pago informado y pago confirmado. Autenticar callbacks, deduplicarlos y no usar el backend FINSERPAY." },
+    { "status": "NOT_IMPLEMENTED", "requirement": "Validar contratos, controles y escenarios sin contactos reales antes de activar. El prompt no sustituye controles de servidor; la activación requiere que todos estén implementados y comprobados." }
+  ],
+  "documentationRead": [
+    "https://docs.dapta.ai/ai-voice-agents/creating-a-voice-agent",
+    "https://docs.dapta.ai/ai-voice-agents/how-to-set-up-your-ai-voice-agent/using-dynamic-variables",
+    "https://docs.dapta.ai/flow-studio/nodes/dapta-phone-call"
+  ]
+}
