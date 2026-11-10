@@ -97,11 +97,12 @@ la plantilla de Finser PAY, su convenio ni su flujo de envío.
 validación: recibe identificador de evento, equipo, texto y `PREVIEW_ONLY`;
 responde con `sending_enabled: false`, `accepted_for_delivery: false` y sin
 identificador de mensaje. No recibe celular ni documento, no tiene nodo de
-mensajería, agente, acceso a contactos ni programación. Se comprobó localmente.
-La llamada a `preview_create_flow` falló por transporte; el archivo **no está
-creado ni conectado en Dapta**. No se llamó a ningún `commit_*` ni se ejecutó
-un flujo. Antes de conectarlo se debe obtener una validación real de Dapta,
-revisar y aprobar su diff, y mantener su credencial exclusivamente en servidor.
+mensajería, agente, acceso a contactos ni programación. Se comprobó localmente
+y pasó la validación estricta de Dapta sin advertencias. Tras aprobar el usuario
+su diff se creó el flujo `mvlBw` en el workspace FINSERPAY; Dapta confirmó la
+persistencia y la lectura del mismo contenido. **No se ha ejecutado ni está
+conectado al servidor de CONECTAMOS.** Su conexión posterior debe mantener la
+credencial exclusivamente en servidor. Crear este validador no habilita envíos.
 
 La organización solicitada del lote futuro es: vencidos, vencen hoy y prioridad
 40/60, en ese orden y con una sola entrada por cliente. «No aprobado 40/60» no
@@ -114,10 +115,13 @@ activos en esta versión.
 La URL del Radar proporcionada devuelve inicio de sesión de Google al servidor.
 Su sesión de navegador no se usa como credencial del backend. Falta una API,
 exportación autorizada o acceso a la fuente para formar lotes automáticos; no
-se sustituyó por cortes locales ni por datos simulados.
+se sustituyó por cortes locales ni por datos simulados. El usuario confirmó que
+dispone del correo y clave del formulario propio del Radar; no se solicitaron,
+copiaron ni almacenaron credenciales. Ese acceso aún no constituye un contrato
+de integración automática verificado.
 
-Esta entrega prepara datos para Dapta, pero no crea ni modifica agentes, flujos,
-plantillas o contactos externos. Una futura fase requiere resolver el canal
+Esta entrega prepara datos y el flujo aislado de validación; no modifica agentes,
+plantillas ni contactos externos. Una futura fase requiere resolver el canal
 permitido para este caso, consentimiento, titularidad, plantillas específicas,
 horarios, exclusiones, deduplicación entre campañas y revalidación del crédito.
 La política vigente de WhatsApp enumera `debt collection` entre servicios
