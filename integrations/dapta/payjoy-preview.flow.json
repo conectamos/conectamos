@@ -1,0 +1,137 @@
+{
+  "timeout": 30,
+  "api_nodes": [
+    {
+      "id": "start",
+      "name": "Inicio HTTP",
+      "type": "trigger",
+      "childRef": "check",
+      "childRefs": [
+        "check"
+      ],
+      "api_trigger": {
+        "trigger_options": "http",
+        "trigger_type": "post",
+        "trigger_params": [
+          {
+            "id": "p0",
+            "key": "event_id",
+            "origin": "body",
+            "type": "text",
+            "required": true
+          },
+          {
+            "id": "p1",
+            "key": "device_tag",
+            "origin": "body",
+            "type": "text",
+            "required": true
+          },
+          {
+            "id": "p2",
+            "key": "message_preview",
+            "origin": "body",
+            "type": "text",
+            "required": true
+          },
+          {
+            "id": "p3",
+            "key": "mode",
+            "origin": "body",
+            "type": "text",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "check",
+      "name": "Validar borrador",
+      "type": "action",
+      "parentRefs": [
+        "start"
+      ],
+      "childRef": "reply",
+      "childRefs": [
+        "reply"
+      ],
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "response": [
+          {
+            "variable_name": "ok",
+            "response_value_path": "ok"
+          },
+          {
+            "variable_name": "event_id",
+            "response_value_path": "event_id"
+          },
+          {
+            "variable_name": "mode",
+            "response_value_path": "mode"
+          },
+          {
+            "variable_name": "message_preview",
+            "response_value_path": "message_preview"
+          },
+          {
+            "variable_name": "sending_enabled",
+            "response_value_path": "sending_enabled"
+          },
+          {
+            "variable_name": "accepted_for_delivery",
+            "response_value_path": "accepted_for_delivery"
+          },
+          {
+            "variable_name": "provider_message_id",
+            "response_value_path": "provider_message_id"
+          }
+        ],
+        "code_action": {
+          "code": "const b = params.trigger?.body;\nif (!b || typeof b !== 'object' || Array.isArray(b)) throw new Error('Solicitud no valida');\nif (Object.keys(b).some(k => !['event_id','device_tag','message_preview','mode'].includes(k))) throw new Error('Campo no permitido');\nif (b.mode !== 'PREVIEW_ONLY') throw new Error('Este flujo solo admite vistas previas');\nif (typeof b.event_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(b.event_id)) throw new Error('Evento no valido');\nif (typeof b.device_tag !== 'string' || !/^D[A-Z0-9]{5,31}$/.test(b.device_tag)) throw new Error('Equipo no valido');\nconst paymentLink = 'https://pay.payjoy.com/p/device/' + b.device_tag;\nif (typeof b.message_preview !== 'string' || b.message_preview.length > 1600 || !b.message_preview.startsWith('CONECTAMOS te contacta por tu crédito PayJoy.') || !b.message_preview.includes(paymentLink) || !b.message_preview.includes('convenio 112090')) throw new Error('Vista previa no valida');\nmodule.exports = {ok:true, event_id:b.event_id.toLowerCase(), mode:'PREVIEW_ONLY', message_preview:b.message_preview, sending_enabled:false, accepted_for_delivery:false, provider_message_id:null};"
+        }
+      }
+    },
+    {
+      "id": "reply",
+      "name": "Vista previa sin envio",
+      "type": "response",
+      "parentRefs": [
+        "check"
+      ],
+      "api_response": {
+        "response_params": [
+          {
+            "key": "ok",
+            "value": "{{validar_borrador.ok}}"
+          },
+          {
+            "key": "event_id",
+            "value": "{{validar_borrador.event_id}}"
+          },
+          {
+            "key": "mode",
+            "value": "{{validar_borrador.mode}}"
+          },
+          {
+            "key": "message_preview",
+            "value": "{{validar_borrador.message_preview}}"
+          },
+          {
+            "key": "sending_enabled",
+            "value": "{{validar_borrador.sending_enabled}}"
+          },
+          {
+            "key": "accepted_for_delivery",
+            "value": "{{validar_borrador.accepted_for_delivery}}"
+          },
+          {
+            "key": "provider_message_id",
+            "value": "{{validar_borrador.provider_message_id}}"
+          }
+        ]
+      }
+    }
+  ]
+}

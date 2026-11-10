@@ -43,8 +43,8 @@ function button(tree, label) {
   const result = elements(tree).find(node => node.type === "button" && textOf(node).trim().startsWith(label));
   assert.ok(result, `Falta botón ${label}`); return result;
 }
-function probe({ initial = {}, fetchImpl } = {}) {
-  const state = { ...initial }; const refs = []; const effects = []; const calls = [];
+function probe({ initial = {}, fetchImpl, clipboardImpl, clipboardAvailable = true } = {}) {
+  const state = { ...initial }; const refs = []; const effects = []; const calls = []; const clipboardCalls = [];
   let stateIndex = 0; let refIndex = 0; let collectEffects = true;
   const imports = {
     "react/jsx-runtime": jsx,
@@ -61,18 +61,18 @@ function probe({ initial = {}, fetchImpl } = {}) {
     "./dapta.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
   };
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", "fetch", "crypto", output)(name => {
+  new Function("require", "module", "exports", "fetch", "crypto", "navigator", output)(name => {
     assert.ok(name in imports, `Dependencia inesperada: ${name}`); return imports[name];
   }, loaded, loaded.exports, async (url, init = {}) => {
     const call = { url, method: init.method || "GET", body: init.body ? JSON.parse(init.body) : null }; calls.push(call);
     return fetchImpl ? fetchImpl(call) : response(history());
-  }, { randomUUID });
+  }, { randomUUID }, clipboardAvailable ? { clipboard: { writeText: async value => { clipboardCalls.push(value); await clipboardImpl?.(value); } } } : {});
   const render = () => {
     stateIndex = 0; refIndex = 0;
     const tree = resolve(loaded.exports.default({ user: { nombre: "Administrador QA", rolNombre: "ADMIN", sedeNombre: "Sede QA" } }));
     collectEffects = false; return tree;
   };
-  return { state, calls, render, mount: async () => { render(); effects.forEach(fn => fn()); await settle(); return render(); } };
+  return { state, calls, clipboardCalls, render, mount: async () => { render(); effects.forEach(fn => fn()); await settle(); return render(); } };
 }
 
 test("montar y abrir historial solo lee CONECTAMOS; no consulta proveedores ni envía mensajes", async () => {
@@ -159,7 +159,60 @@ test("móvil duplicado no genera un segundo mensaje ni inventa saldos o mora", a
   const duplicate = { ...found, counts: { ...found.counts, total: 2, found: 2, duplicatePhones: 1 }, items: [found.items[0], { ...found.items[0], id: "qa-item-2", deviceTag: "DQA0002", reviewStatus: "DUPLICATE_PHONE", duplicateOfId: "qa-item", messagePreview: null }] };
   const ui = probe({ initial: { batch: duplicate } }); const tree = await ui.mount();
   assert.equal(elements(tree).filter(node => node.type === "details").length, 1);
+  assert.equal(elements(tree).filter(node => node.type === "button" && textOf(node) === "Copiar mensaje").length, 1);
   assert.match(textOf(tree), /mismo móvil aparece en\s+DQA0001/);
   assert.match(textOf(tree), /no consulta saldos ni cuotas y no afirma que exista mora/);
   assert.match(textOf(tree), /112090/);
+});
+
+test("copia el mensaje exacto con párrafos y enlace completo sin solicitudes ni envíos", async () => {
+  const message = `Borrador QA de CONECTAMOS para PayJoy.\n\nEfecty, convenio 112090 — Adelantos Colombia.\n\nhttps://example.invalid/payjoy/${"qa-device-".repeat(35)}?reference=qa`;
+  const draft = { ...found, items: [{ ...found.items[0], messagePreview: message }] };
+  let finishCopy;
+  const ui = probe({ initial: { batch: draft }, clipboardImpl: () => new Promise(resolve => { finishCopy = resolve; }) });
+  let tree = await ui.mount();
+  assert.ok(elements(tree).some(node => node.type === "p" && node.props.children === message));
+  const copy = button(tree, "Copiar mensaje");
+  assert.equal(copy.props["aria-label"], "Copiar mensaje de DQA0001");
+  const first = copy.props.onClick(); await copy.props.onClick();
+  tree = ui.render();
+  assert.equal(button(tree, "Copiando…").props.disabled, true);
+  assert.deepEqual(ui.clipboardCalls, [message]);
+  assert.doesNotMatch(textOf(tree), /Mensaje copiado\./);
+  finishCopy(); await first; tree = ui.render();
+  const feedback = elements(tree).find(node => node.props?.id === copy.props["aria-describedby"]);
+  assert.equal(feedback.props.role, "status");
+  assert.equal(feedback.props["aria-live"], "polite");
+  assert.equal(feedback.props["aria-atomic"], "true");
+  assert.equal(textOf(feedback), "Mensaje copiado.");
+  assert.equal(button(tree, "Copiar mensaje").props.disabled, false);
+  assert.match(textOf(tree), /Vista previa · Sin enviar/);
+  assert.ok(ui.calls.every(call => call.method === "GET" && call.url === "/api/payjoy/dapta"));
+  assert.equal(elements(tree).some(node => node.type === "a" && /wa\.me|whatsapp/i.test(node.props.href)), false);
+});
+
+test("un fallo del portapapeles se anuncia sin éxito falso y permite reintentar", async () => {
+  let attempts = 0;
+  const ui = probe({ initial: { batch: found }, clipboardImpl: async () => { if (++attempts === 1) throw new Error("denied"); } });
+  let tree = await ui.mount();
+  await button(tree, "Copiar mensaje").props.onClick(); tree = ui.render();
+  const feedback = elements(tree).find(node => node.props?.id === "copy-message-qa-item");
+  assert.equal(feedback.props.role, "status");
+  assert.match(textOf(feedback), /No se pudo copiar.*manualmente/);
+  assert.doesNotMatch(textOf(tree), /Mensaje copiado\./);
+  assert.equal(button(tree, "Copiar mensaje").props.disabled, false);
+  await button(tree, "Copiar mensaje").props.onClick(); tree = ui.render();
+  assert.match(textOf(tree), /Mensaje copiado\./);
+  assert.equal(attempts, 2);
+  assert.ok(ui.calls.every(call => call.method === "GET"));
+});
+
+test("sin API de portapapeles ofrece copia manual y no marca el mensaje como copiado", async () => {
+  const ui = probe({ initial: { batch: found }, clipboardAvailable: false });
+  let tree = await ui.mount();
+  await button(tree, "Copiar mensaje").props.onClick(); tree = ui.render();
+  assert.match(textOf(tree), /No se pudo copiar.*manualmente/);
+  assert.doesNotMatch(textOf(tree), /Mensaje copiado\./);
+  assert.equal(ui.clipboardCalls.length, 0);
+  assert.equal(button(tree, "Copiar mensaje").props.disabled, false);
 });

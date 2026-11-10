@@ -23,6 +23,7 @@ const NAVIGATION = [
   { href: "/dashboard/payjoy/dapta", label: "Preparación Dapta", icon: "document" as const },
 ];
 const LOOKUP_LABELS = { PENDING: "Consulta pendiente", CHECKING: "Consulta en curso", FOUND: "Móvil encontrado", MISSING: "Sin móvil disponible", ERROR: "Error de consulta" };
+type CopyStatus = "copying" | "copied" | "error";
 function dateLabel(value: string | null) {
   if (!value) return "Sin consulta";
   const date = new Date(value);
@@ -44,7 +45,13 @@ async function readResponse<T>(response: Response): Promise<T> {
 function batchSummary(batch: PayJoyDaptaBatchView): PayJoyDaptaBatchSummary {
   return { id: batch.id, status: batch.status, agreement: batch.agreement, createdAt: batch.createdAt, updatedAt: batch.updatedAt, createdBy: batch.createdBy, counts: batch.counts };
 }
-function ContactItem({ item, duplicateDevice }: { item: PayJoyDaptaItemView; duplicateDevice?: string }) {
+function ContactItem({ item, duplicateDevice, copyStatus, copying, onCopy }: {
+  item: PayJoyDaptaItemView;
+  duplicateDevice?: string;
+  copyStatus?: CopyStatus;
+  copying: boolean;
+  onCopy: () => Promise<void>;
+}) {
   const tone = item.lookupStatus === "FOUND" ? styles.found : item.lookupStatus === "ERROR" ? styles.failed : "";
   return <li className={styles.contact}>
     <div className={styles.contactHeading}><h3>{item.deviceTag}</h3><span className={`${styles.status} ${tone}`}>{LOOKUP_LABELS[item.lookupStatus]}</span></div>
@@ -58,7 +65,16 @@ function ContactItem({ item, duplicateDevice }: { item: PayJoyDaptaItemView; dup
     {item.errorMessage && <p className={styles.contactError}>{item.errorMessage}</p>}
     {item.lookupStatus === "MISSING" && <p className={styles.contactNote}>PayJoy no devolvió un móvil utilizable para este dispositivo. No se completó con datos de otra fuente.</p>}
     {item.reviewStatus === "DUPLICATE_PHONE" && <p className={styles.duplicate}>El mismo móvil aparece en {duplicateDevice || "otro dispositivo de este lote"}. Se marcó como duplicado para revisar; no se genera un segundo mensaje.</p>}
-    {item.messagePreview && item.reviewStatus !== "DUPLICATE_PHONE" && <details className={styles.preview}><summary>Borrador del mensaje · Efecty {PAYJOY_DAPTA_AGREEMENT}<DashboardIcon name="chevron" /></summary><p className={styles.message}>{item.messagePreview}</p><p className={styles.previewFooter}>Vista previa guardada. No enviada a Dapta ni al cliente.</p></details>}
+    {item.messagePreview && item.reviewStatus !== "DUPLICATE_PHONE" && <details className={styles.preview}>
+      <summary>Borrador del mensaje · Efecty {PAYJOY_DAPTA_AGREEMENT}<DashboardIcon name="chevron" /></summary>
+      <div className={styles.previewLabel}><span className={styles.status}>Vista previa · Sin enviar</span></div>
+      <p className={styles.message}>{item.messagePreview}</p>
+      <div className={styles.copyActions}>
+        <button type="button" className={styles.button} disabled={copying} aria-label={`Copiar mensaje de ${item.deviceTag}`} aria-describedby={`copy-message-${item.id}`} onClick={onCopy}>{copyStatus === "copying" ? "Copiando…" : "Copiar mensaje"}</button>
+        <p id={`copy-message-${item.id}`} className={`${styles.copyFeedback} ${copyStatus === "error" ? styles.copyError : ""}`} role="status" aria-live="polite" aria-atomic="true">{copyStatus === "copied" ? "Mensaje copiado." : copyStatus === "error" ? "No se pudo copiar. Selecciona el texto y cópialo manualmente." : ""}</p>
+      </div>
+      <p className={styles.previewFooter}>Vista previa guardada. No enviada a Dapta ni al cliente.</p>
+    </details>}
     <p className={styles.contactNote}>Última consulta: {dateLabel(item.checkedAt)}</p>
   </li>;
 }
@@ -73,13 +89,29 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
   const [progress, setProgress] = useState("");
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
+  const [copyState, setCopyState] = useState<{ itemId: string; message: string; status: CopyStatus } | null>(null);
   const mutationLock = useRef(false);
+  const copyLock = useRef(false);
   const createAttempt = useRef<{ signature: string; requestId: string } | null>(null);
   const retryAttempt = useRef<{ batchId: string; requestId: string } | null>(null);
   const historyAbort = useRef<AbortController | null>(null);
   const version = useRef(0);
   const resultHeading = useRef<HTMLHeadingElement>(null);
   const parsed = parseDevices(input);
+
+  async function copyMessage(item: PayJoyDaptaItemView) {
+    if (copyLock.current || !item.messagePreview || item.reviewStatus === "DUPLICATE_PHONE") return;
+    const selection = { itemId: item.id, message: item.messagePreview };
+    copyLock.current = true;
+    setCopyState({ ...selection, status: "copying" });
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(selection.message);
+      setCopyState({ ...selection, status: "copied" });
+    } catch {
+      setCopyState({ ...selection, status: "error" });
+    } finally { copyLock.current = false; }
+  }
 
   const loadHistory = useCallback(async () => {
     historyAbort.current?.abort();
@@ -198,7 +230,7 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
               {(batch.counts.error > 0 || batch.counts.checking > 0) && <button className={styles.button} disabled={Boolean(busy)} onClick={() => void continueBatch(true)}>Reintentar consultas pendientes</button>}
             </div>
             <div className={styles.reviewNotice}><DashboardIcon name="warning" /><p>Encontrar un móvil no acredita su titularidad. Todos los contactos permanecen pendientes de revisión. Este borrador no consulta saldos ni cuotas y no afirma que exista mora.</p></div>
-            <ul className={styles.contacts}>{batch.items.map(item => <ContactItem key={item.id} item={item} duplicateDevice={batch.items.find(other => other.id === item.duplicateOfId)?.deviceTag} />)}</ul>
+            <ul className={styles.contacts}>{batch.items.map(item => <ContactItem key={item.id} item={item} duplicateDevice={batch.items.find(other => other.id === item.duplicateOfId)?.deviceTag} copyStatus={copyState?.itemId === item.id && copyState.message === item.messagePreview ? copyState.status : undefined} copying={copyState?.status === "copying"} onCopy={() => copyMessage(item)} />)}</ul>
           </>}
         </section>
       </div>

@@ -176,6 +176,95 @@ test("invalid device lists cannot reach persistence or lookup", async () => {
   assert.equal(q.providerCalls.length, 0);
 });
 
+test("new drafts persist their template and render a distinct canonical payment link per device", async () => {
+  const q = setup();
+  const { batch } = await q.create([" dqa0002 ", "DQA0001"]);
+  const template = q.batches[0].messageTemplate;
+  assert.ok(template.includes("{{paymentLink}}"));
+  assert.doesNotMatch(template, /DQA000[12]/);
+  const result = await q.service.validatePayJoyDaptaBatch(admin, batch.id);
+  const links = result.batch.items.map(item => {
+    const urls = item.messagePreview.match(/https:\/\/\S+/g);
+    assert.equal(urls.length, 1);
+    const link = new URL(urls[0]);
+    assert.equal(link.href, `https://pay.payjoy.com/p/device/${item.deviceTag}`);
+    assert.equal(link.origin, "https://pay.payjoy.com");
+    assert.equal(link.username, "");
+    assert.equal(link.password, "");
+    assert.equal(link.search, "");
+    assert.equal(link.hash, "");
+    assert.match(item.messagePreview, /Revisa hoy.*Si tienes un pago pendiente, realízalo hoy/s);
+    assert.doesNotMatch(item.messagePreview, /\{\{paymentLink\}\}|mora|saldo|vence|vencido|fecha límite/i);
+    return link.href;
+  });
+  assert.equal(new Set(links).size, 2);
+  assert.equal(q.batches[0].messageTemplate, template);
+  assert.equal(result.sendingEnabled, false);
+});
+
+test("saved historical wording survives validation, GET and creation replay unchanged", async () => {
+  const q = setup(), key = randomUUID();
+  const { batch } = await q.create(["DQA0001"], key);
+  const historical = "Hola, te contactamos de CONECTAMOS por tu crédito PayJoy. Puedes pagar en Efecty, convenio 112090 — Adelantos Colombia, con la cédula del titular como referencia. Consulta el valor a pagar en PayJoy antes de realizar el pago. Si ya pagaste, puedes omitir este recordatorio.";
+  q.batches[0].messageTemplate = historical;
+  const validated = await q.service.validatePayJoyDaptaBatch(admin, batch.id);
+  assert.equal(validated.batch.items[0].messagePreview, historical);
+  const before = copy([q.batches, q.items]);
+  const replayed = await q.create(["DQA0001"], key);
+  const recovered = await q.service.getPayJoyDaptaBatch(auditor, batch.id);
+  assert.equal(replayed.batch.id, batch.id);
+  assert.equal(replayed.batch.items[0].messagePreview, historical);
+  assert.equal(recovered.batch.items[0].messagePreview, historical);
+  assert.deepEqual([q.batches, q.items], before);
+  assert.equal(q.providerCalls.length, 1);
+});
+
+test("preview replaces only the literal payment-link marker and rejects malformed stored tags", async () => {
+  const q = setup();
+  const { batch } = await q.create();
+  q.items[0].lookupStatus = "FOUND";
+  q.batches[0].messageTemplate = "{{paymentLink}} | {{paymentLink}} | {{phone}} | {{ paymentLink }}";
+  const preview = await q.service.getPayJoyDaptaBatch(admin, batch.id);
+  assert.equal(preview.batch.items[0].messagePreview,
+    "https://pay.payjoy.com/p/device/DQA0001 | https://pay.payjoy.com/p/device/DQA0001 | {{phone}} | {{ paymentLink }}");
+  for (const tag of ["https://foreign.example", "DQA0001/../other", "DQA0001?redirect=evil", "DQA0001#x", "DQA0001\n", "dqa0001", `D${"A".repeat(32)}`]) {
+    q.items[0].deviceTag = tag;
+    const current = await q.service.getPayJoyDaptaBatch(admin, batch.id);
+    assert.equal(current.batch.items[0].messagePreview, null);
+  }
+  assert.equal(q.providerCalls.length, 0);
+});
+
+test("GET renders previews and history without provider reads, network calls or database writes", async t => {
+  const q = setup();
+  const { batch } = await q.create(["DQA0001", "DQA0002", "DQA0003"]);
+  q.items[0].lookupStatus = "FOUND";
+  q.items[0].phone = "573000000001";
+  q.items[1].lookupStatus = "CHECKING";
+  q.items[1].claimExpiresAt = new Date(Date.now() - 1000);
+  const before = copy([q.batches, q.items]), callsBefore = q.dbCalls.length;
+  const network = t.mock.method(globalThis, "fetch", async () => { throw new Error("GET must not use network"); });
+  const detailResponse = await q.route.GET(new Request(`http://localhost:3000/api/payjoy/dapta?batchId=${batch.id}`));
+  assert.equal(detailResponse.status, 200);
+  assert.equal(detailResponse.headers.get("cache-control"), "private, no-store");
+  const detail = await detailResponse.json();
+  assert.match(detail.batch.items[0].messagePreview, /https:\/\/pay\.payjoy\.com\/p\/device\/DQA0001/);
+  assert.equal(detail.batch.items[1].errorCode, "LOOKUP_INTERRUPTED");
+  assert.equal(detail.batch.items[2].lookupStatus, "PENDING");
+  assert.equal(detail.batch.status, "DRAFT_ONLY");
+  assert.equal(detail.sendingEnabled, false);
+  const historyResponse = await q.route.GET(new Request("http://localhost:3000/api/payjoy/dapta"));
+  assert.equal(historyResponse.status, 200);
+  const history = await historyResponse.json();
+  assert.equal(history.sendingEnabled, false);
+  assert.equal(history.batches[0].status, "DRAFT_ONLY");
+  assert.equal("items" in history.batches[0], false);
+  assert.equal(network.mock.callCount(), 0);
+  assert.deepEqual(q.providerCalls, []);
+  assert.ok(q.dbCalls.slice(callsBefore).every(call => ["findUnique", "findMany"].includes(call.method)));
+  assert.deepEqual([q.batches, q.items], before);
+});
+
 test("explicit validation reads at most three; concurrent validators cannot repeat claims", async () => {
   const q = setup();
   const { batch } = await q.create(["DQA0001", "DQA0002", "DQA0003", "DQA0004"]);
@@ -193,7 +282,7 @@ test("explicit validation reads at most three; concurrent validators cannot repe
     assert.match(item.phone, /^\+573\d{9}$/);
     assert.equal(item.ownershipStatus, "PENDING_REVIEW");
     assert.equal(item.consentStatus, "PENDING_REVIEW");
-    assert.match(item.messagePreview, /CONECTAMOS.*PayJoy.*112090 — Adelantos Colombia.*cédula del titular/);
+    assert.match(item.messagePreview, /CONECTAMOS.*PayJoy.*112090 — Adelantos Colombia.*cédula del titular/s);
     assert.doesNotMatch(item.messagePreview, /113950/);
   }
   await q.service.validatePayJoyDaptaBatch(admin, batch.id);

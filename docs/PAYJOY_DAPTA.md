@@ -44,9 +44,20 @@ creación usa un identificador de solicitud para impedir duplicados al reenviar.
 Las consultas tienen una reserva temporal para impedir carreras y recuperar
 interrupciones. Abrir o actualizar un borrador no consulta PayJoy de nuevo.
 
-El mensaje de muestra usa exclusivamente **Efecty 112090 — Adelantos Colombia**,
-con la cédula del titular como referencia. No inserta cédulas completas, saldos,
-fechas o promesas no verificadas. No reutiliza el convenio de FINSER PAY.
+La plantilla V2 de los nuevos borradores identifica a CONECTAMOS por el crédito
+PayJoy e invita a revisar el crédito hoy y pagar hoy si hay un pago pendiente.
+Usa exclusivamente **Efecty 112090 — Adelantos Colombia**, con la cédula del
+titular como referencia, y el enlace oficial de cada equipo:
+`https://pay.payjoy.com/p/device/{TAG}`. No afirma mora, saldo ni fecha límite,
+ni inserta cédulas completas o promesas no verificadas. No reutiliza el convenio
+de FINSER PAY.
+
+Cada lote conserva su plantilla completa en `messageTemplate`; no se actualizan
+los textos históricos ni se reemplazan al reenviar la solicitud de creación.
+Al preparar la vista sólo se sustituye el marcador literal `{{paymentLink}}`
+por una URL con host fijo y el código validado del equipo. Una plantilla anterior
+sin ese marcador se muestra exactamente como fue guardada. Esta representación
+no consulta PayJoy, no crea solicitudes de pago ni realiza envíos.
 
 ## Instalación y comprobación
 
@@ -74,6 +85,36 @@ dígitos. No consulta la base ni envía el teléfono a Dapta. Las pruebas usan
 fixtures sintéticos exclusivamente dentro del entorno de pruebas.
 
 ## Fase de envío pendiente
+
+### Preparación de la conexión, 9 de noviembre de 2026
+
+El usuario eligió como remitente CONECTAMOS, mencionando el crédito PayJoy,
+y solicitó una línea separada. La revisión de Dapta encontró una única línea
+Finser PAY y ninguna plantilla específica de CONECTAMOS/PayJoy. No se reutiliza
+la plantilla de Finser PAY, su convenio ni su flujo de envío.
+
+`integrations/dapta/payjoy-preview.flow.json` prepara un flujo HTTP aislado de
+validación: recibe identificador de evento, equipo, texto y `PREVIEW_ONLY`;
+responde con `sending_enabled: false`, `accepted_for_delivery: false` y sin
+identificador de mensaje. No recibe celular ni documento, no tiene nodo de
+mensajería, agente, acceso a contactos ni programación. Se comprobó localmente.
+La llamada a `preview_create_flow` falló por transporte; el archivo **no está
+creado ni conectado en Dapta**. No se llamó a ningún `commit_*` ni se ejecutó
+un flujo. Antes de conectarlo se debe obtener una validación real de Dapta,
+revisar y aprobar su diff, y mantener su credencial exclusivamente en servidor.
+
+La organización solicitada del lote futuro es: vencidos, vencen hoy y prioridad
+40/60, en ese orden y con una sola entrada por cliente. «No aprobado 40/60» no
+demuestra mora. La hora solicitada es 10:00 `America/Bogota`; permanece sin
+programar. La integración debe revalidar los datos, excluir domingos/festivos,
+respetar las autorizaciones y bajas y evitar contactos repetidos entre campañas
+y canales. El calendario y los grupos son requisitos pendientes, no filtros ya
+activos en esta versión.
+
+La URL del Radar proporcionada devuelve inicio de sesión de Google al servidor.
+Su sesión de navegador no se usa como credencial del backend. Falta una API,
+exportación autorizada o acceso a la fuente para formar lotes automáticos; no
+se sustituyó por cortes locales ni por datos simulados.
 
 Esta entrega prepara datos para Dapta, pero no crea ni modifica agentes, flujos,
 plantillas o contactos externos. Una futura fase requiere resolver el canal

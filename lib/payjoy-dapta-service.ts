@@ -5,6 +5,7 @@ import type { PayJoyDaptaBatch, PayJoyDaptaItem } from "@/app/generated/prisma/c
 import type { getSessionUser } from "@/lib/auth";
 import { puedePrepararBorradoresPayJoyDapta } from "@/lib/payjoy-dapta-access";
 import { readPayJoyDaptaPhone } from "@/lib/payjoy-dapta-phone-provider";
+import { PAYJOY_DAPTA_MESSAGE_TEMPLATE_V2, renderPayJoyDaptaMessage } from "@/lib/payjoy-dapta-message";
 import { PAYJOY_DAPTA_AGREEMENT, PAYJOY_DAPTA_DEVICE_LIMIT } from "@/lib/payjoy-dapta-types";
 import type { PayJoyDaptaBatchResponse, PayJoyDaptaBatchView, PayJoyDaptaHistoryResponse, PayJoyDaptaItemView } from "@/lib/payjoy-dapta-types";
 
@@ -15,7 +16,6 @@ const TAG = /^D[A-Z\d]{5,31}$/;
 const HISTORY_LIMIT = 20;
 const LOOKUP_LIMIT = 3;
 const LEASE_MS = 120_000;
-const MESSAGE = "Hola, te contactamos de CONECTAMOS por tu crédito PayJoy. Puedes pagar en Efecty, convenio 112090 — Adelantos Colombia, con la cédula del titular como referencia. Consulta el valor a pagar en PayJoy antes de realizar el pago. Si ya pagaste, puedes omitir este recordatorio.";
 const messages: Record<string, string> = {
   UNAUTHENTICATED: "Inicia sesión para preparar borradores de PayJoy.",
   FORBIDDEN: "Solo los perfiles Administrador y Auditor pueden preparar estos borradores.",
@@ -80,7 +80,8 @@ function view(row: BatchWithItems): PayJoyDaptaBatchView {
       ownershipStatus: "PENDING_REVIEW", consentStatus: "PENDING_REVIEW",
       reviewStatus: item.reviewStatus === "DUPLICATE_PHONE" ? "DUPLICATE_PHONE" : "PENDING_REVIEW",
       duplicateOfId: item.duplicateOfId,
-      messagePreview: status === "FOUND" && item.reviewStatus !== "DUPLICATE_PHONE" ? row.messageTemplate : null,
+      messagePreview: status === "FOUND" && item.reviewStatus !== "DUPLICATE_PHONE"
+        ? renderPayJoyDaptaMessage(row.messageTemplate, item.deviceTag) : null,
       errorCode: code, errorMessage: code ? messages[code] || messages.INTERNAL : null,
       checkedAt: item.checkedAt?.toISOString() ?? null,
     };
@@ -149,7 +150,7 @@ export async function createPayJoyDaptaBatch(session: Session, input: Record<str
     const row = await prisma.payJoyDaptaBatch.create({ data: {
       id: randomUUID(), requestId, inputHash, usuarioId: session.id, perfilId: session.perfilId ?? null, sedeId: session.sedeId,
       createdBy: (session.perfilNombre || session.nombre).trim().slice(0, 100),
-      status: "DRAFT_ONLY", agreement: PAYJOY_DAPTA_AGREEMENT, messageTemplate: MESSAGE,
+      status: "DRAFT_ONLY", agreement: PAYJOY_DAPTA_AGREEMENT, messageTemplate: PAYJOY_DAPTA_MESSAGE_TEMPLATE_V2,
       items: { create: tags.map(deviceTag => ({ id: randomUUID(), deviceTag })) },
     } });
     id = row.id;
