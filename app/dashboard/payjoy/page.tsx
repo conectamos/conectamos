@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
+import { puedePrepararBorradoresPayJoyDapta } from "@/lib/payjoy-dapta-access";
 import PayJoyCarteraWorkspace from "./_components/payjoy-cartera-workspace";
 
 export default async function PayJoyPage() {
@@ -16,6 +17,7 @@ export default async function PayJoyPage() {
   return (
     <PayJoyCarteraWorkspace
       puedeEliminar={String(user.rolNombre || "").toUpperCase() === "ADMIN"}
+      puedePrepararDapta={puedePrepararBorradoresPayJoyDapta(user)}
       user={{
         nombre: user.nombre,
         usuario: user.usuario,

@@ -579,9 +579,11 @@ const tableColStatusClass = "w-[210px] min-w-[210px] px-4 py-5";
 
 export default function PayJoyCarteraWorkspace({
   puedeEliminar,
+  puedePrepararDapta = false,
   user,
 }: {
   puedeEliminar: boolean;
+  puedePrepararDapta?: boolean;
   user: {
     nombre: string;
     usuario: string;
@@ -1201,6 +1203,7 @@ export default function PayJoyCarteraWorkspace({
             </div>
             <div className={styles.headingActions}>
               <Link href="/dashboard/payjoy/40-60" className={`${styles.button} ${styles.outlineRed}`}><DashboardIcon name="transfer" />PayJoy 40/60</Link>
+              {puedePrepararDapta && <Link href="/dashboard/payjoy/dapta" className={styles.button}><DashboardIcon name="document" />Preparar lote Dapta</Link>}
               <span className={styles.coverage}><DashboardIcon name="store" />Todas las sedes</span>
             </div>
           </div>
