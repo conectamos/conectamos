@@ -1,0 +1,680 @@
+{
+  "timeout": 600,
+  "api_nodes": [
+    {
+      "id": "trgPJ",
+      "name": "Trigger",
+      "type": "trigger",
+      "childRef": "winPJ",
+      "api_trigger": {
+        "trigger_options": "cron",
+        "trigger_type": "get",
+        "trigger_params": [],
+        "trigger_cron_input_mode": "advanced",
+        "trigger_cron_expression": "0 10 10 11 *",
+        "cron_enabled": false,
+        "trigger_time_zone": "America/Bogota"
+      }
+    },
+    {
+      "id": "winPJ",
+      "name": "Validar ventana",
+      "type": "action",
+      "parentRefs": [
+        "trgPJ"
+      ],
+      "childRef": "clmPJ",
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "const now=Date.now();\nif(now<Date.parse('2026-11-10T15:00:00.000Z')||now>=Date.parse('2026-11-10T15:30:00.000Z'))throw new Error('Fuera de la ventana unica autorizada');\nmodule.exports={payload:JSON.stringify({action:'claim'})};"
+        },
+        "response": [
+          {
+            "variable_name": "payload",
+            "response_value_path": "payload"
+          }
+        ]
+      }
+    },
+    {
+      "id": "clmPJ",
+      "name": "Reclamar llamadas",
+      "type": "action",
+      "parentRefs": [
+        "winPJ"
+      ],
+      "childRef": "lstPJ",
+      "api_action": {
+        "action_type": "api",
+        "on_error": "stop",
+        "external_api_action": {
+          "request_type": "post",
+          "url": "https://conectamos.app/api/payjoy/voz/worker",
+          "body_format": "raw",
+          "body": "{{validar_ventana.payload}}",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "authorization": {
+            "type": "bearer",
+            "token": "__JOB_SECRET__"
+          },
+          "selfsignedCertificate": "false"
+        },
+        "response": [
+          {
+            "variable_name": "response",
+            "response_value_path": "response"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lstPJ",
+      "name": "Validar lote",
+      "type": "action",
+      "parentRefs": [
+        "clmPJ"
+      ],
+      "childRef": "lopPJ",
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "let d=params.reclamar_llamadas?.response;\nif(typeof d==='string'){try{d=JSON.parse(d);}catch{throw new Error('Respuesta de claim invalida');}}\nif(!d||typeof d!=='object'||Array.isArray(d)||d.ok===false||d.error||!Array.isArray(d.calls)||d.calls.length>7)throw new Error('Lote de llamadas invalido');\nconst ids=new Set();const phones=new Set();\nfor(const c of d.calls){\n if(!c||typeof c!=='object'||Array.isArray(c)||typeof c.event_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c.event_id)||typeof c.event_token!=='string'||c.event_token.length<32||c.event_token.length>2048||typeof c.to_number!=='string'||!/^\\+573\\d{9}$/.test(c.to_number)||typeof c.device_tag!=='string'||!/^D[A-Z0-9]{5,31}$/.test(c.device_tag)||ids.has(c.event_id)||phones.has(c.to_number))throw new Error('Contacto de llamada invalido');\n ids.add(c.event_id);phones.add(c.to_number);\n}\nmodule.exports={calls:d.calls,claimed_count:d.calls.length};"
+        },
+        "response": [
+          {
+            "variable_name": "calls",
+            "response_value_path": "calls"
+          },
+          {
+            "variable_name": "claimed_count",
+            "response_value_path": "claimed_count"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lopPJ",
+      "name": "Llamadas autorizadas",
+      "type": "loop",
+      "version": 2,
+      "parentRefs": [
+        "lstPJ",
+        "ackPJ",
+        "skpPJ"
+      ],
+      "childrenLoop": [
+        "prePJ"
+      ],
+      "returnRefs": [
+        "ackPJ",
+        "skpPJ"
+      ],
+      "childrenDone": [
+        "rspPJ"
+      ],
+      "api_loop": {
+        "type": "element",
+        "iterableName": "item",
+        "advance": false,
+        "elementLoop": {
+          "arrayReference": "{{validar_lote.calls}}"
+        },
+        "forLoop": {
+          "start_value": 0,
+          "end_value": 0,
+          "step": 1
+        },
+        "accumulators": []
+      }
+    },
+    {
+      "id": "prePJ",
+      "name": "Preparar llamada",
+      "type": "action",
+      "parentRefs": [
+        "lopPJ"
+      ],
+      "childRef": "autPJ",
+      "loopContextId": "lopPJ",
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "const now=Date.now();if(now<Date.parse('2026-11-10T15:00:00.000Z')||now>=Date.parse('2026-11-10T15:30:00.000Z'))throw new Error('Ventana de llamada terminada');\nconst c=params.llamadas_autorizadas.item;\nmodule.exports={event_id:c.event_id,event_token:c.event_token,to_number:c.to_number,device_tag:c.device_tag,payload:JSON.stringify({action:'authorize_dispatch',event_token:c.event_token})};"
+        },
+        "response": [
+          {
+            "variable_name": "event_id",
+            "response_value_path": "event_id"
+          },
+          {
+            "variable_name": "event_token",
+            "response_value_path": "event_token"
+          },
+          {
+            "variable_name": "to_number",
+            "response_value_path": "to_number"
+          },
+          {
+            "variable_name": "device_tag",
+            "response_value_path": "device_tag"
+          },
+          {
+            "variable_name": "payload",
+            "response_value_path": "payload"
+          }
+        ]
+      }
+    },
+    {
+      "id": "autPJ",
+      "name": "Autorizar despacho",
+      "type": "action",
+      "parentRefs": [
+        "prePJ"
+      ],
+      "childRef": "grdPJ",
+      "loopContextId": "lopPJ",
+      "api_action": {
+        "action_type": "api",
+        "on_error": "stop",
+        "external_api_action": {
+          "request_type": "post",
+          "url": "https://conectamos.app/api/payjoy/voz/worker",
+          "body_format": "raw",
+          "body": "{{preparar_llamada.payload}}",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "authorization": {
+            "type": "bearer",
+            "token": "__JOB_SECRET__"
+          },
+          "selfsignedCertificate": "false"
+        },
+        "response": [
+          {
+            "variable_name": "response",
+            "response_value_path": "response"
+          }
+        ]
+      }
+    },
+    {
+      "id": "grdPJ",
+      "name": "Validar despacho",
+      "type": "action",
+      "parentRefs": [
+        "autPJ"
+      ],
+      "childRef": "ifcPJ",
+      "loopContextId": "lopPJ",
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "let d=params.autorizar_despacho?.response;\nif(typeof d==='string'){try{d=JSON.parse(d);}catch{throw new Error('Autorizacion de despacho invalida');}}\nconst now=Date.now();let allowed=false;\nif(d&&typeof d==='object'&&!Array.isArray(d)&&d.allowed===true&&!d.error&&d.ok!==false&&d.success!==false&&now>=Date.parse('2026-11-10T15:00:00.000Z')&&now<Date.parse('2026-11-10T15:30:00.000Z')){\n const expected=params.preparar_llamada;\n if(d.event_id!==expected.event_id||d.to_number!==expected.to_number||d.device_tag!==expected.device_tag||!/^\\+573\\d{9}$/.test(d.to_number)||!/^D[A-Z0-9]{5,31}$/.test(d.device_tag))throw new Error('Autorizacion no corresponde al contacto');\n allowed=true;\n}\nmodule.exports=allowed?{allowed:true,event_id:d.event_id,to_number:d.to_number,device_tag:d.device_tag}:{allowed:false};"
+        },
+        "response": [
+          {
+            "variable_name": "allowed",
+            "response_value_path": "allowed"
+          },
+          {
+            "variable_name": "event_id",
+            "response_value_path": "event_id"
+          },
+          {
+            "variable_name": "to_number",
+            "response_value_path": "to_number"
+          },
+          {
+            "variable_name": "device_tag",
+            "response_value_path": "device_tag"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ifcPJ",
+      "name": "Despacho permitido",
+      "type": "conditional",
+      "parentRefs": [
+        "grdPJ"
+      ],
+      "childTrue": "calPJ",
+      "childFalse": "skpPJ",
+      "loopContextId": "lopPJ",
+      "api_conditional": {
+        "conditionalGroups": [
+          {
+            "beforeOperator": null,
+            "conditionals": [
+              {
+                "beforeOperator": null,
+                "partOne": "{{validar_despacho.allowed}}",
+                "operator": "eq",
+                "partTwo": "true"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "skpPJ",
+      "name": "Omitir llamada",
+      "type": "action",
+      "parentRefs": [
+        "ifcPJ"
+      ],
+      "childRef": "lopPJ",
+      "childRefs": [
+        "lopPJ"
+      ],
+      "loopContextId": "lopPJ",
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "module.exports={skipped:true};"
+        },
+        "response": [
+          {
+            "variable_name": "skipped",
+            "response_value_path": "skipped"
+          }
+        ]
+      }
+    },
+    {
+      "id": "calPJ",
+      "name": "Llamada PayJoy",
+      "type": "action",
+      "from_template": true,
+      "template_id": "a9bb5e23-e7f9-4f16-b382-5e062db2b10c",
+      "guide": "<h3><strong>Visit Dapta Docs to learn more about this template: </strong></h3>\n<a href=\"https://docs.dapta.ai/flow-studio/nodes/dapta-phone-call\" rel=\"noopener noreferrer\" target=\"_blank\"><h3>Dapta Phone Call</h3></a>",
+      "parentRefs": [
+        "ifcPJ"
+      ],
+      "childRef": "recPJ",
+      "loopContextId": "lopPJ",
+      "api_action": {
+        "action_type": "custom.dapta_phonecall",
+        "on_error": "continue",
+        "database_action": null,
+        "external_api_action": {
+          "request_type": "post",
+          "url": "https://api.dapta.ai/api/devops-dapta-tech-169-938-7/phonecallb?x-api-key=«redacted»",
+          "body_format": "raw",
+          "body": "",
+          "body_params": [],
+          "path_params": [],
+          "query_params": [],
+          "authorization": {
+            "type": "",
+            "token": "",
+            "username": "",
+            "password": "",
+            "credential": ""
+          },
+          "headers": [],
+          "selfsignedCertificate": "false"
+        },
+        "code_action": null,
+        "communication_action": null,
+        "generate_file_action": null,
+        "google_sheets_action": null,
+        "notion_action": null,
+        "openai_action": null,
+        "webflow_action": null,
+        "custom_action": {
+          "attributes": [
+            {
+              "name": "from_number",
+              "displayName": "From Number",
+              "type": "select",
+              "isDynamicLoading": true,
+              "dynamicLoad": {
+                "dependencies": {},
+                "useUserContext": {
+                  "org_id": "{{userContext.organization_id}}"
+                },
+                "external_api_action": {
+                  "request_type": "post",
+                  "url": "https://api.dapta.ai/api/devops-dapta-tech-169-938-7/getdbphonenumbersbyorg_prod?x-api-key=«redacted»",
+                  "body_format": "raw",
+                  "headers": [],
+                  "body": "",
+                  "body_params": [],
+                  "path_params": [],
+                  "query_params": [],
+                  "authorization": {
+                    "type": "",
+                    "token": "",
+                    "username": "",
+                    "password": "",
+                    "credential": ""
+                  },
+                  "selfsignedCertificate": "false"
+                },
+                "custom_action": {
+                  "attributes": [
+                    {
+                      "name": "org_id",
+                      "displayName": "Org ID",
+                      "type": "input",
+                      "external_api_action": {
+                        "body": {
+                          "org_id": "{{value}}"
+                        },
+                        "body_format": "raw"
+                      }
+                    }
+                  ]
+                },
+                "resultMapping": {
+                  "type": "selector",
+                  "displayName": "nickname",
+                  "value": "phone_number",
+                  "array": "response.phoneNumbers"
+                },
+                "noOptionsAction": {
+                  "enabled": true,
+                  "alwaysShow": true,
+                  "label": "Add Phone Number",
+                  "redirectUrl": "/agents-studio/phone-numbers",
+                  "queryParams": {
+                    "create": true
+                  },
+                  "type": "redirect"
+                }
+              },
+              "external_api_action": {
+                "body": {
+                  "from_number": "{{value}}"
+                },
+                "body_format": "raw"
+              }
+            },
+            {
+              "name": "to_number",
+              "displayName": "To Number",
+              "type": "input",
+              "external_api_action": {
+                "body": {
+                  "to_number": "{{value}}"
+                },
+                "body_format": "raw"
+              }
+            },
+            {
+              "name": "agent_id",
+              "displayName": "Agent",
+              "type": "select",
+              "isDynamicLoading": true,
+              "dynamicLoad": {
+                "dependencies": {},
+                "useUserContext": {
+                  "org_id": "{{userContext.organization_id}}"
+                },
+                "external_api_action": {
+                  "request_type": "post",
+                  "url": "https://api.dapta.ai/api/devops-dapta-tech-169-938-7/getdbagentscallbyorg_prod?x-api-key=«redacted»",
+                  "body_format": "raw",
+                  "headers": [],
+                  "body": "",
+                  "body_params": [],
+                  "path_params": [],
+                  "query_params": [],
+                  "authorization": {
+                    "type": "",
+                    "token": "",
+                    "username": "",
+                    "password": "",
+                    "credential": ""
+                  },
+                  "selfsignedCertificate": "false"
+                },
+                "custom_action": {
+                  "attributes": [
+                    {
+                      "name": "org_id",
+                      "displayName": "Org ID",
+                      "type": "input",
+                      "external_api_action": {
+                        "body": {
+                          "org_id": "{{value}}"
+                        },
+                        "body_format": "raw"
+                      }
+                    }
+                  ]
+                },
+                "resultMapping": {
+                  "type": "selector",
+                  "displayName": "name",
+                  "value": "voice_voice-provider_agent_id",
+                  "array": "response.agents"
+                },
+                "optionRedirect": {
+                  "enabled": true,
+                  "idField": "id",
+                  "basePath": "/agents-studio/voice-agents/"
+                }
+              },
+              "external_api_action": {
+                "body": {
+                  "agent_id": "{{value}}"
+                },
+                "body_format": "raw"
+              },
+              "dynamicOptions": []
+            },
+            {
+              "name": "variables",
+              "displayName": "Variables",
+              "type": "key-value",
+              "addButtonText": "Add Variables",
+              "external_api_action": {
+                "body": {
+                  "variables": "{{value}}"
+                },
+                "body_format": "raw"
+              },
+              "isDynamicLoading": true,
+              "dynamicLoad": {
+                "dependencies": {
+                  "agent_id": {
+                    "inheritConfig": true
+                  }
+                },
+                "useUserContext": {
+                  "org_id": "{{userContext.organization_id}}"
+                },
+                "external_api_action": {
+                  "request_type": "post",
+                  "url": "https://api.dapta.ai/api/devops-dapta-tech-169-938-7/getagentvariables?x-api-key=«redacted»",
+                  "body_format": "raw",
+                  "headers": [],
+                  "body": "",
+                  "body_params": [],
+                  "path_params": [],
+                  "query_params": [],
+                  "authorization": {
+                    "type": "",
+                    "token": "",
+                    "username": "",
+                    "password": "",
+                    "credential": ""
+                  },
+                  "selfsignedCertificate": "false"
+                },
+                "custom_action": {
+                  "attributes": [
+                    {
+                      "name": "org_id",
+                      "displayName": "Org ID",
+                      "type": "input",
+                      "external_api_action": {
+                        "body": {
+                          "org_id": "{{value}}"
+                        },
+                        "body_format": "raw"
+                      }
+                    }
+                  ]
+                },
+                "resultMapping": {
+                  "type": "selector",
+                  "displayName": "key",
+                  "value": "value",
+                  "array": "response.variables"
+                }
+              }
+            }
+          ],
+          "values": {
+            "from_number": "+573124085562",
+            "to_number": "{{validar_despacho.to_number}}",
+            "agent_id": "__NEW_AGENT_ID__",
+            "variables": [
+              {
+                "key": "event_token",
+                "value": "{{preparar_llamada.event_token}}"
+              },
+              {
+                "key": "device_tag",
+                "value": "{{validar_despacho.device_tag}}"
+              }
+            ]
+          },
+          "type": "external_api_action",
+          "view": "simple",
+          "version": 1
+        },
+        "response": [
+          {
+            "variable_name": "response",
+            "response_value_path": "response.result"
+          },
+          {
+            "variable_name": "error",
+            "response_value_path": "response.error"
+          }
+        ]
+      }
+    },
+    {
+      "id": "recPJ",
+      "name": "Normalizar recibo",
+      "type": "action",
+      "parentRefs": [
+        "calPJ"
+      ],
+      "childRef": "savPJ",
+      "loopContextId": "lopPJ",
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "const native=params.llamada_payjoy||{};\nconst parse=v=>{if(typeof v!=='string')return v;try{return JSON.parse(v);}catch{return v;}};\nconst hasError=v=>v!==undefined&&v!==null&&v!==''&&v!==false&&(typeof v!=='object'||Object.keys(v).length>0);\nconst failed=(v,depth=0)=>{const p=parse(v);if(!p||typeof p!=='object')return false;if(depth>12)return true;if(Array.isArray(p))return p.some(x=>failed(x,depth+1));if(hasError(p.error)||hasError(p.errors)||hasError(p.node_errors)||p.ok===false||p.success===false||[p.call_status,p.status].some(x=>['error','failed','rejected','cancelled','canceled'].includes(String(x||'').toLowerCase())))return true;return Object.values(p).some(x=>failed(x,depth+1));};\nconst error=failed(native);let current=native.response;let callId=null;\nfor(let i=0;!error&&i<4;i++){current=parse(current);if(!current||typeof current!=='object'||Array.isArray(current))break;if(typeof current.call_id==='string'&&/^[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/.test(current.call_id)){callId=current.call_id;break;}current=current.response??current.result??current.data;}\nconst payload={action:'receipt',event_token:params.preparar_llamada.event_token,accepted:!error&&Boolean(callId)};\nif(!error&&callId)payload.call_id=callId;else payload.error_code=error?'NATIVE_CALL_ERROR':'NATIVE_CALL_UNKNOWN';\nmodule.exports={payload:JSON.stringify(payload)};"
+        },
+        "response": [
+          {
+            "variable_name": "payload",
+            "response_value_path": "payload"
+          }
+        ]
+      }
+    },
+    {
+      "id": "savPJ",
+      "name": "Guardar recibo",
+      "type": "action",
+      "parentRefs": [
+        "recPJ"
+      ],
+      "childRef": "ackPJ",
+      "loopContextId": "lopPJ",
+      "api_action": {
+        "action_type": "api",
+        "on_error": "stop",
+        "external_api_action": {
+          "request_type": "post",
+          "url": "https://conectamos.app/api/payjoy/voz/worker",
+          "body_format": "raw",
+          "body": "{{normalizar_recibo.payload}}",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "authorization": {
+            "type": "bearer",
+            "token": "__JOB_SECRET__"
+          },
+          "selfsignedCertificate": "false"
+        },
+        "response": [
+          {
+            "variable_name": "response",
+            "response_value_path": "response"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ackPJ",
+      "name": "Confirmar recibo",
+      "type": "action",
+      "parentRefs": [
+        "savPJ"
+      ],
+      "childRef": "lopPJ",
+      "loopContextId": "lopPJ",
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "let d=params.guardar_recibo.response;if(typeof d==='string'){try{d=JSON.parse(d);}catch{throw new Error('Recibo sin confirmacion');}}\nif(!d||typeof d!=='object'||Array.isArray(d)||d.recorded!==true||d.error||d.ok===false||d.success===false)throw new Error('No se pudo confirmar el recibo');\nmodule.exports={recorded:true};"
+        },
+        "response": [
+          {
+            "variable_name": "recorded",
+            "response_value_path": "recorded"
+          }
+        ]
+      },
+      "childRefs": [
+        "lopPJ"
+      ]
+    },
+    {
+      "id": "rspPJ",
+      "name": "Resultado scheduler",
+      "type": "response",
+      "parentRefs": [
+        "lopPJ"
+      ],
+      "api_response": {
+        "response_type": "text",
+        "response_text": "{\"ok\":true,\"claimed_count\":{{validar_lote.claimed_count}},\"note\":\"Los recibos individuales constan en CONECTAMOS; este resultado no acredita contacto ni pago.\"}",
+        "response_params": [],
+        "response_redirect_to": ""
+      }
+    }
+  ]
+}

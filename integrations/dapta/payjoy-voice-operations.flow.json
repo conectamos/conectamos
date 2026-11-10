@@ -1,0 +1,109 @@
+{
+  "timeout": 30,
+  "api_nodes": [
+    {
+      "id": "trgOP",
+      "name": "Trigger",
+      "type": "trigger",
+      "childRef": "nrmOP",
+      "api_trigger": {
+        "trigger_options": "http",
+        "trigger_type": "post",
+        "trigger_params": []
+      }
+    },
+    {
+      "id": "nrmOP",
+      "name": "Normalizar operacion",
+      "type": "action",
+      "parentRefs": [
+        "trgOP"
+      ],
+      "childRef": "apiOP",
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "const body=params.trigger.body;if(!body||typeof body!=='object'||Array.isArray(body))throw new Error('Cuerpo invalido');\nconst b=body.args&&typeof body.args==='object'&&!Array.isArray(body.args)?body.args:body;\nconst allowed=new Set(['event_token','action','confirmed','outcome','note','dapta_api_id','dapta_webhook']);\nif(Object.keys(b).some(k=>!allowed.has(k)))throw new Error('Campo no permitido');\nif(typeof b.event_token!=='string'||b.event_token.length<32||b.event_token.length>2048||!['verify_identity','outcome','optout'].includes(b.action))throw new Error('Operacion invalida');\nconst p={event_token:b.event_token,action:b.action};\nif(b.action==='verify_identity'){if(b.confirmed!==true&&b.confirmed!=='true')throw new Error('Titular no confirmado');p.confirmed=true;}\nif(b.action==='outcome'){if(!['PAID_REPORTED','PAYMENT_INTENT','WRONG_NUMBER','THIRD_PARTY','NO_CONTACT','DECLINED','OTHER'].includes(b.outcome))throw new Error('Resultado invalido');p.outcome=b.outcome;}\nif(b.note!==undefined){if(typeof b.note!=='string'||b.note.length>160)throw new Error('Nota invalida');p.note=b.note;}\nmodule.exports={payload:JSON.stringify(p)};"
+        },
+        "response": [
+          {
+            "variable_name": "payload",
+            "response_value_path": "payload"
+          }
+        ]
+      }
+    },
+    {
+      "id": "apiOP",
+      "name": "Enviar operacion",
+      "type": "action",
+      "parentRefs": [
+        "nrmOP"
+      ],
+      "childRef": "fmtOP",
+      "api_action": {
+        "action_type": "api",
+        "on_error": "stop",
+        "external_api_action": {
+          "request_type": "post",
+          "url": "https://conectamos.app/api/payjoy/voz/operation",
+          "body_format": "raw",
+          "body": "{{normalizar_operacion.payload}}",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "authorization": {
+            "type": ""
+          },
+          "selfsignedCertificate": "false"
+        },
+        "response": [
+          {
+            "variable_name": "response",
+            "response_value_path": "response"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fmtOP",
+      "name": "Respuesta operacion",
+      "type": "action",
+      "parentRefs": [
+        "apiOP"
+      ],
+      "childRef": "rspOP",
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "let d=params.enviar_operacion.response;if(typeof d==='string'){try{d=JSON.parse(d);}catch{throw new Error('Respuesta de operacion invalida');}}\nif(!d||typeof d!=='object'||Array.isArray(d))throw new Error('Respuesta de operacion invalida');\nmodule.exports={result:JSON.stringify(d)};"
+        },
+        "response": [
+          {
+            "variable_name": "result",
+            "response_value_path": "result"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rspOP",
+      "name": "Resultado operacion",
+      "type": "response",
+      "parentRefs": [
+        "fmtOP"
+      ],
+      "api_response": {
+        "response_type": "text",
+        "response_text": "{{respuesta_operacion.result}}",
+        "response_params": [],
+        "response_redirect_to": ""
+      }
+    }
+  ]
+}

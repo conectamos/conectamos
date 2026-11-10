@@ -14,9 +14,14 @@ import {
   type PayJoyDaptaHistoryResponse,
   type PayJoyDaptaItemView,
 } from "@/lib/payjoy-dapta-types";
+import {
+  PAYJOY_VOICE_EXPIRES_AT, PAYJOY_VOICE_MAX_CALLS, PAYJOY_VOICE_SCHEDULED_AT,
+  type PayJoyVoiceCallStatus, type PayJoyVoiceViewResponse,
+} from "@/lib/payjoy-voice-types";
 import styles from "./dapta.module.css";
 
 const API = "/api/payjoy/dapta";
+const VOICE_API = "/api/payjoy/voz";
 const NAVIGATION = [
   { href: "/dashboard", label: "Inicio", icon: "home" as const },
   { href: "/dashboard/payjoy", label: "Cartera PayJoy", icon: "receivable" as const },
@@ -24,6 +29,41 @@ const NAVIGATION = [
 ];
 const LOOKUP_LABELS = { PENDING: "Consulta pendiente", CHECKING: "Consulta en curso", FOUND: "Móvil encontrado", MISSING: "Sin móvil disponible", ERROR: "Error de consulta" };
 type CopyStatus = "copying" | "copied" | "error";
+const VOICE_CALL_LABELS: Record<PayJoyVoiceCallStatus, string> = {
+  PENDING: "Pendiente", CHECKING: "Comprobando datos", DISPATCHING: "Solicitando llamada",
+  ACCEPTED: "Aceptada por Dapta · atención no confirmada", IN_PROGRESS: "Llamada en curso",
+  COMPLETED: "Llamada finalizada", SKIPPED: "Omitida", HELD: "Retenida para revisión",
+  UNKNOWN: "Resultado indeterminado · revisar", CANCELLED: "Cancelada",
+};
+const VOICE_BATCH_LABELS = { SCHEDULED: "Programada", CANCELLED: "Cancelada", COMPLETED: "Gestión finalizada", EXPIRED: "Ventana finalizada" };
+const VOICE_BLOCKERS: Record<string, string> = {
+  SOURCE_NOT_READY: "Completa la consulta de todos los móviles del lote antes de programar.",
+  DUPLICATE_PHONE: "El lote contiene móviles duplicados. Revisa los contactos antes de programar.",
+  CAMPAIGN_ALREADY_EXISTS: "Ya existe una programación para esta fecha. No se creará otra campaña.",
+  WINDOW_EXPIRED: "La ventana de programación del 10 de noviembre de 2026 ya terminó.",
+};
+const VOICE_OUTCOMES: Record<string, string> = {
+  PAID_REPORTED: "La persona informó un pago · pendiente de comprobar", PAYMENT_INTENT: "Intención de pago informada",
+  WRONG_NUMBER: "Número equivocado", THIRD_PARTY: "Respondió un tercero", NO_CONTACT: "Sin contacto", OPT_OUT: "Solicitó no recibir contactos",
+  DECLINED: "Contacto rechazado", OTHER: "Resultado pendiente de revisión",
+};
+const VOICE_REASONS: Record<string, string> = {
+  PHONE_CHANGED: "El móvil cambió en PayJoy. Debe revisarse antes de contactar.",
+  PHONE_CONFLICT: "PayJoy devolvió móviles en conflicto. Debe revisarse la identidad.",
+  DEVICE_MISMATCH: "El equipo no coincide con la consulta de PayJoy.",
+  UNSUPPORTED_COUNTRY: "El país del equipo no coincide con esta programación.",
+  CONFIGURATION_CHANGED: "La configuración cambió después de programar. Revisión pendiente.",
+  CANCELLED_BY_USER: "Cancelada por un usuario autorizado.", WINDOW_EXPIRED: "La ventana autorizada terminó.",
+  NO_CONTACT: "No se logró contacto en esta llamada.", OPT_OUT: "Este móvil quedó excluido por solicitud de no recibir contactos.",
+  INTERRUPTED: "La gestión se interrumpió; el resultado requiere revisión.",
+  PROVIDER_UNCERTAIN: "Dapta no confirmó el resultado. No se repetirá la llamada automáticamente.",
+  TIMEOUT: "La comprobación previa tardó demasiado.", UNAVAILABLE: "PayJoy no estuvo disponible para comprobar el contacto.",
+  RATE_LIMIT: "PayJoy limitó la consulta previa.", AUTH: "No se pudo autenticar la consulta previa.",
+  NOT_FOUND: "No se encontró el equipo en la comprobación previa.", INVALID_RESPONSE: "No se pudo verificar la respuesta de PayJoy.",
+  PREFLIGHT_FAILED: "No se pudo completar la comprobación previa.",
+  PAID_IN_FULL: "PayJoy reportó el crédito pagado; la llamada se omitió.",
+  CURRENT_VALID_THROUGH: "La vigencia informada por PayJoy cubre esta fecha; la llamada se omitió.",
+};
 function dateLabel(value: string | null) {
   if (!value) return "Sin consulta";
   const date = new Date(value);
@@ -41,6 +81,23 @@ async function readResponse<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error(typeof data?.error === "string" ? data.error : "No se pudo completar la consulta. El borrador guardado se conserva.");
   if (!data || data.sendingEnabled !== false) throw new Error("La respuesta del módulo no se pudo verificar. Actualiza el historial antes de continuar.");
   return data as T;
+}
+async function readVoiceResponse(response: Response, sourceBatchId: string): Promise<PayJoyVoiceViewResponse> {
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(typeof data?.error === "string" ? data.error : "No se pudo recuperar el estado de las llamadas. Actualízalo antes de continuar.");
+  if (!data || data.sourceBatchId !== sourceBatchId || typeof data.configuration?.ready !== "boolean"
+    || data.scheduledAt !== PAYJOY_VOICE_SCHEDULED_AT || data.expiresAt !== PAYJOY_VOICE_EXPIRES_AT
+    || data.timezone !== "America/Bogota" || data.maxCalls !== PAYJOY_VOICE_MAX_CALLS
+    || !Number.isInteger(data.eligibleCount) || data.eligibleCount < 0 || data.eligibleCount > PAYJOY_DAPTA_DEVICE_LIMIT
+    || !Array.isArray(data.blockers) || data.blockers.some((item: unknown) => typeof item !== "string")
+    || (data.batch !== null && (!data.batch?.id || !Array.isArray(data.batch.calls)
+      || !Object.hasOwn(VOICE_BATCH_LABELS, data.batch.status) || typeof data.batch.canCancel !== "boolean"
+      || data.batch.calls.some((call: { id?: unknown; deviceTag?: unknown; phoneMasked?: unknown; status?: string } | null) => !call
+        || typeof call.id !== "string" || typeof call.deviceTag !== "string" || typeof call.phoneMasked !== "string"
+        || !call.status || !Object.hasOwn(VOICE_CALL_LABELS, call.status))))) {
+    throw new Error("No se pudo verificar la programación. Actualiza el estado de llamadas antes de continuar.");
+  }
+  return data as PayJoyVoiceViewResponse;
 }
 function batchSummary(batch: PayJoyDaptaBatchView): PayJoyDaptaBatchSummary {
   return { id: batch.id, status: batch.status, agreement: batch.agreement, createdAt: batch.createdAt, updatedAt: batch.updatedAt, createdBy: batch.createdBy, counts: batch.counts };
@@ -90,14 +147,36 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
   const [copyState, setCopyState] = useState<{ itemId: string; message: string; status: CopyStatus } | null>(null);
+  const [voiceData, setVoiceData] = useState<PayJoyVoiceViewResponse | null>(null);
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceAction, setVoiceAction] = useState<"schedule" | "cancel" | null>(null);
+  const [voiceError, setVoiceError] = useState("");
+  const [voiceNotice, setVoiceNotice] = useState("");
+  const [voiceReview, setVoiceReview] = useState(false);
+  const [voiceOwnership, setVoiceOwnership] = useState(false);
+  const [voiceConsent, setVoiceConsent] = useState(false);
+  const [voiceCancelReview, setVoiceCancelReview] = useState(false);
   const mutationLock = useRef(false);
   const copyLock = useRef(false);
+  const voiceLock = useRef(false);
+  const voiceSource = useRef<string | null>(null);
+  const voiceVersion = useRef(0);
+  const voiceAbort = useRef<AbortController | null>(null);
+  const voiceAttempt = useRef<{ sourceBatchId: string; requestId: string } | null>(null);
   const createAttempt = useRef<{ signature: string; requestId: string } | null>(null);
   const retryAttempt = useRef<{ batchId: string; requestId: string } | null>(null);
   const historyAbort = useRef<AbortController | null>(null);
   const version = useRef(0);
   const resultHeading = useRef<HTMLHeadingElement>(null);
   const parsed = parseDevices(input);
+  const voice = voiceData?.sourceBatchId === batch?.id ? voiceData : null;
+  const voiceSourceReady = Boolean(batch && batch.items.length > 0 && batch.items.length <= PAYJOY_VOICE_MAX_CALLS
+    && batch.items.every(item => item.lookupStatus === "FOUND" && item.phone && item.reviewStatus !== "DUPLICATE_PHONE")
+    && new Set(batch.items.map(item => item.phone)).size === batch.items.length);
+  const voiceCanSchedule = Boolean(voice && voice.configuration.ready && !voice.batch && !voice.blockers.length
+    && voiceSourceReady && voice.eligibleCount === batch?.items.length);
+  const voiceDisabled = Boolean(busy || voiceLoading || voiceAction);
+  const draftDisabled = Boolean(busy || voiceAction);
 
   async function copyMessage(item: PayJoyDaptaItemView) {
     if (copyLock.current || !item.messagePreview || item.reviewStatus === "DUPLICATE_PHONE") return;
@@ -126,9 +205,61 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
       if (!controller.signal.aborted) setHistoryError(cause instanceof Error ? cause.message : "No se pudo cargar el historial.");
     } finally { if (!controller.signal.aborted) setHistoryLoading(false); }
   }, []);
-  useEffect(() => { void loadHistory(); return () => historyAbort.current?.abort(); }, [loadHistory]);
+  useEffect(() => { void loadHistory(); return () => { historyAbort.current?.abort(); voiceAbort.current?.abort(); }; }, [loadHistory]);
+
+  async function loadVoice(sourceBatchId: string) {
+    if (voiceLock.current) return;
+    voiceAbort.current?.abort();
+    const controller = new AbortController(); voiceAbort.current = controller;
+    const generation = ++voiceVersion.current;
+    voiceSource.current = sourceBatchId;
+    setVoiceReview(false); setVoiceOwnership(false); setVoiceConsent(false); setVoiceCancelReview(false);
+    setVoiceLoading(true); setVoiceError("");
+    try {
+      const data = await readVoiceResponse(await fetch(`${VOICE_API}?sourceBatchId=${encodeURIComponent(sourceBatchId)}`, { cache: "no-store", signal: controller.signal }), sourceBatchId);
+      if (!controller.signal.aborted && generation === voiceVersion.current && voiceSource.current === sourceBatchId) setVoiceData(data);
+    } catch (cause) {
+      if (!controller.signal.aborted && generation === voiceVersion.current) {
+        setVoiceData(null);
+        setVoiceError(cause instanceof Error && cause.name === "Error" ? cause.message : "No se pudo consultar la programación. Actualiza el estado de llamadas.");
+      }
+    } finally { if (!controller.signal.aborted && generation === voiceVersion.current) setVoiceLoading(false); }
+  }
+
+  async function scheduleVoice() {
+    if (voiceLock.current || mutationLock.current || voiceDisabled || !batch || !voiceCanSchedule || !voiceReview || !voiceOwnership || !voiceConsent) return;
+    if (voiceAttempt.current?.sourceBatchId !== batch.id) voiceAttempt.current = { sourceBatchId: batch.id, requestId: crypto.randomUUID() };
+    const sourceBatchId = batch.id;
+    voiceLock.current = true; setVoiceAction("schedule"); setVoiceError(""); setVoiceNotice("");
+    try {
+      const data = await readVoiceResponse(await fetch(VOICE_API, { method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", body: JSON.stringify({ action: "schedule", sourceBatchId, requestId: voiceAttempt.current.requestId, confirmed: true }) }), sourceBatchId);
+      if (!data.batch) throw new Error("No se pudo confirmar la programación. Actualiza el estado antes de continuar.");
+      setVoiceData(data); setVoiceReview(false); setVoiceOwnership(false); setVoiceConsent(false);
+      setVoiceNotice(data.batch?.status === "SCHEDULED" ? "Programación guardada para el 10 de noviembre de 2026 a las 10:00 a. m. de Bogotá. No se ha confirmado atención de ninguna llamada." : "Estado recuperado. Revisa el resultado de la programación.");
+    } catch (cause) {
+      setVoiceError(cause instanceof Error && cause.name === "Error" ? cause.message : "No se pudo confirmar la programación. Actualiza el estado o reintenta: se conserva el identificador de la solicitud para evitar duplicados.");
+    } finally { voiceLock.current = false; setVoiceAction(null); }
+  }
+
+  async function cancelVoice() {
+    if (voiceLock.current || mutationLock.current || voiceDisabled || !batch || !voice?.batch?.canCancel || !voiceCancelReview) return;
+    voiceLock.current = true; setVoiceAction("cancel"); setVoiceError(""); setVoiceNotice("");
+    try {
+      const data = await readVoiceResponse(await fetch(VOICE_API, { method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", body: JSON.stringify({ action: "cancel", batchId: voice.batch.id }) }), batch.id);
+      if (!data.batch) throw new Error("No se pudo confirmar la cancelación. Actualiza el estado antes de continuar.");
+      setVoiceData(data); setVoiceCancelReview(false);
+      setVoiceNotice(data.batch?.status === "CANCELLED" ? "Programación cancelada. No se solicitarán las llamadas pendientes de este lote." : "Estado actualizado. Revisa las llamadas que ya iniciaron su gestión.");
+    } catch (cause) {
+      setVoiceError(cause instanceof Error && cause.name === "Error" ? cause.message : "No se pudo confirmar la cancelación. Actualiza el estado antes de continuar.");
+    } finally { voiceLock.current = false; setVoiceAction(null); }
+  }
 
   function showBatch(value: PayJoyDaptaBatchView) {
+    if (voiceSource.current !== value.id) {
+      voiceSource.current = value.id; voiceVersion.current += 1; voiceAbort.current?.abort();
+      setVoiceData(null); setVoiceLoading(false); setVoiceError(""); setVoiceNotice("");
+      setVoiceReview(false); setVoiceOwnership(false); setVoiceConsent(false); setVoiceCancelReview(false);
+    }
     setBatch(value);
     setBatches(current => [batchSummary(value), ...current.filter(item => item.id !== value.id)].slice(0, 20));
   }
@@ -154,7 +285,7 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
   }
   async function create(event: FormEvent) {
     event.preventDefault();
-    if (mutationLock.current) return;
+    if (mutationLock.current || voiceLock.current) return;
     setInputError(""); setError("");
     if (parsed.invalid.length) { setInputError(`Revisa los códigos: ${parsed.invalid.slice(0, 3).join(", ")}. Usa únicamente identificadores PayJoy que comiencen con D.`); return; }
     if (!parsed.devices.length || parsed.devices.length > PAYJOY_DAPTA_DEVICE_LIMIT) { setInputError(`Ingresa entre 1 y ${PAYJOY_DAPTA_DEVICE_LIMIT} dispositivos distintos.`); return; }
@@ -165,6 +296,7 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
       const data = await post({ action: "create", requestId: createAttempt.current.requestId, devices: parsed.devices });
       if (data.hasMore) { setBusy("validate"); setProgress("Consultando móviles sugeridos en PayJoy…"); await validateBlocks(data.batch.id); }
       else setProgress("Borrador guardado. Las consultas registradas se conservaron; ningún mensaje fue enviado.");
+      void loadVoice(data.batch.id);
       resultHeading.current?.focus();
     } catch (cause) {
       setError(cause instanceof Error && cause.name === "Error" ? cause.message : "No se pudo recuperar el resultado. Puedes reintentar con los mismos códigos o abrir el borrador desde el historial.");
@@ -172,23 +304,25 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
     } finally { mutationLock.current = false; setBusy(null); }
   }
   async function continueBatch(retry = false) {
-    if (mutationLock.current || !batch) return;
+    if (mutationLock.current || voiceLock.current || !batch) return;
     mutationLock.current = true; version.current += 1; setBusy(retry ? "retry" : "validate"); setError(""); setProgress("Consultando los dispositivos pendientes en PayJoy…");
     if (retry && retryAttempt.current?.batchId !== batch.id) retryAttempt.current = { batchId: batch.id, requestId: crypto.randomUUID() };
     try {
       await validateBlocks(batch.id, retry ? retryAttempt.current?.requestId : undefined);
       if (retry) retryAttempt.current = null;
+      void loadVoice(batch.id);
     } catch (cause) {
       setError(cause instanceof Error && cause.name === "Error" ? cause.message : "La consulta se interrumpió. El borrador y los resultados guardados se conservan. Actualiza su estado antes de continuar."); setProgress("");
     } finally { mutationLock.current = false; setBusy(null); }
   }
   async function openBatch(id: string) {
-    if (mutationLock.current) return;
+    if (mutationLock.current || voiceLock.current) return;
     mutationLock.current = true; version.current += 1; setBusy("open"); setError(""); setProgress("");
     try {
       const data = await readResponse<PayJoyDaptaBatchResponse>(await fetch(`${API}?batchId=${encodeURIComponent(id)}`, { cache: "no-store" }));
       if (!data.batch?.id || !Array.isArray(data.batch.items)) throw new Error("No se pudo recuperar el detalle del borrador.");
       showBatch(data.batch); resultHeading.current?.focus();
+      void loadVoice(data.batch.id);
     } catch (cause) { setError(cause instanceof Error && cause.name === "Error" ? cause.message : "No se pudo abrir el borrador. Intenta de nuevo."); }
     finally { mutationLock.current = false; setBusy(null); }
   }
@@ -201,7 +335,7 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
     </header>
     <main className={styles.main}>
       <div className={styles.heading}><div><p className={styles.eyebrow}>PayJoy · Preparación de contactos</p><h1>Borradores para Dapta</h1><p>Consulta móviles sugeridos y revisa el contenido antes de cualquier gestión de contacto.</p></div><div className={styles.convention}><span>Convenio Efecty</span><strong>{PAYJOY_DAPTA_AGREEMENT}</strong></div></div>
-      <div className={styles.notice} role="note"><DashboardIcon name="lock" /><div><strong>Envío deshabilitado</strong><p>Este módulo guarda borradores en CONECTAMOS. No envía mensajes, no carga contactos en Dapta y no confirma la titularidad ni la autorización de contacto.</p></div></div>
+      <div className={styles.notice} role="note"><DashboardIcon name="lock" /><div><strong>Mensajes WhatsApp · Envío deshabilitado</strong><p>Los mensajes se conservan como borradores en CONECTAMOS. Las llamadas con Valeria se revisan y programan por separado; encontrar un móvil no confirma su titularidad ni la autorización de contacto.</p></div></div>
       {error && <p className={styles.error} role="alert">{error}</p>}
       {progress && <div className={styles.progress} role="status" aria-live="polite"><DashboardIcon name={busy ? "refresh" : "document"} /><span>{progress}</span></div>}
       <div className={styles.workspace}>
@@ -210,11 +344,11 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
           <p className={styles.description}>Pega los códigos de dispositivo del reporte de PayJoy. Los códigos repetidos se consolidan antes de la consulta.</p>
           <form className={styles.form} onSubmit={create}>
             <label htmlFor="dapta-devices">Identificadores PayJoy</label>
-            <textarea id="dapta-devices" value={input} maxLength={5000} autoComplete="off" autoCapitalize="characters" spellCheck={false} disabled={Boolean(busy)} onChange={event => { setInput(event.target.value); setInputError(""); }} aria-invalid={Boolean(inputError)} aria-describedby={inputError ? "dapta-device-error dapta-device-help" : "dapta-device-help"} />
+            <textarea id="dapta-devices" value={input} maxLength={5000} autoComplete="off" autoCapitalize="characters" spellCheck={false} disabled={draftDisabled} onChange={event => { setInput(event.target.value); setInputError(""); }} aria-invalid={Boolean(inputError)} aria-describedby={inputError ? "dapta-device-error dapta-device-help" : "dapta-device-help"} />
             <small id="dapta-device-help">Códigos que empiezan con D, separados por saltos de línea, espacios, comas o punto y coma. Máximo {PAYJOY_DAPTA_DEVICE_LIMIT} equipos distintos.</small>
             <div className={styles.inputSummary}><span><strong>{parsed.devices.length}</strong> equipos válidos</span>{parsed.duplicates > 0 && <span>{parsed.duplicates} repetidos omitidos</span>}{parsed.invalid.length > 0 && <span>{parsed.invalid.length} por corregir</span>}</div>
             {inputError && <p className={styles.contactError} id="dapta-device-error" role="alert">{inputError}</p>}
-            <button type="submit" className={`${styles.button} ${styles.primary}`} disabled={Boolean(busy)}><DashboardIcon name="search" />{busy === "create" ? "Guardando borrador…" : busy === "validate" ? "Consultando contactos…" : "Consultar contactos y guardar"}</button>
+            <button type="submit" className={`${styles.button} ${styles.primary}`} disabled={draftDisabled}><DashboardIcon name="search" />{busy === "create" ? "Guardando borrador…" : busy === "validate" ? "Consultando contactos…" : "Consultar contactos y guardar"}</button>
           </form>
           <div className={styles.scope}><DashboardIcon name="shield" /><p>Consulta administrativa de PayJoy. El móvil puede provenir del dato precargado para Nequi y requiere verificar a quién pertenece.</p></div>
         </section>
@@ -225,9 +359,9 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
             <div className={styles.batchHeading}><span className={styles.status}>Borrador · Sin envío</span><p>Creado el {dateLabel(batch.createdAt)} · {batch.createdBy}</p></div>
             <div className={styles.stats} aria-label="Resumen del lote"><div><strong>{batch.counts.total}</strong><span>Equipos en el lote</span></div><div><strong>{batch.counts.found}</strong><span>Móviles encontrados</span></div><div><strong>{batch.counts.duplicatePhones}</strong><span>Móviles duplicados</span></div></div>
             <div className={styles.batchActions}>
-              <button className={styles.button} disabled={Boolean(busy)} onClick={() => void openBatch(batch.id)}><DashboardIcon name="refresh" />Actualizar borrador</button>
-              {batch.counts.pending > 0 && <button className={`${styles.button} ${styles.graphite}`} disabled={Boolean(busy)} onClick={() => void continueBatch()}>Continuar consulta ({batch.counts.pending})</button>}
-              {(batch.counts.error > 0 || batch.counts.checking > 0) && <button className={styles.button} disabled={Boolean(busy)} onClick={() => void continueBatch(true)}>Reintentar consultas pendientes</button>}
+              <button className={styles.button} disabled={draftDisabled} onClick={() => void openBatch(batch.id)}><DashboardIcon name="refresh" />Actualizar borrador</button>
+              {batch.counts.pending > 0 && <button className={`${styles.button} ${styles.graphite}`} disabled={draftDisabled} onClick={() => void continueBatch()}>Continuar consulta ({batch.counts.pending})</button>}
+              {(batch.counts.error > 0 || batch.counts.checking > 0) && <button className={styles.button} disabled={draftDisabled} onClick={() => void continueBatch(true)}>Reintentar consultas pendientes</button>}
             </div>
             <div className={styles.reviewNotice}><DashboardIcon name="warning" /><p>Encontrar un móvil no acredita su titularidad. Todos los contactos permanecen pendientes de revisión. Este borrador no consulta saldos ni cuotas y no afirma que exista mora.</p></div>
             <ul className={styles.contacts}>{batch.items.map(item => <ContactItem key={item.id} item={item} duplicateDevice={batch.items.find(other => other.id === item.duplicateOfId)?.deviceTag} copyStatus={copyState?.itemId === item.id && copyState.message === item.messagePreview ? copyState.status : undefined} copying={copyState?.status === "copying"} onCopy={() => copyMessage(item)} />)}</ul>
@@ -235,14 +369,61 @@ export default function PayJoyDaptaWorkspace({ user }: { user: { nombre: string;
         </section>
       </div>
 
+      {batch && <section className={`${styles.panel} ${styles.voicePanel}`} aria-labelledby="voice-title" aria-busy={voiceLoading || Boolean(voiceAction)}>
+        <div className={styles.voiceHeading}>
+          <div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="calendar" /></span><div><p>3. Programación única</p><h2 id="voice-title">Llamadas con Valeria</h2></div></div>
+          <button type="button" className={styles.button} disabled={voiceDisabled} onClick={() => void loadVoice(batch.id)}><DashboardIcon name="refresh" />{voiceLoading ? "Consultando estado…" : "Actualizar llamadas"}</button>
+        </div>
+        <p className={styles.description}>Valeria se identifica como asistente virtual de CONECTAMOS por el crédito PayJoy y confirma la identidad antes de hablar del crédito. Sólo llamadas de voz; no se envía WhatsApp automáticamente.</p>
+        <dl className={styles.voiceFacts}>
+          <div><dt>Fecha y hora</dt><dd>10 de noviembre de 2026 · 10:00 a. m.</dd></div>
+          <div><dt>Zona horaria</dt><dd>Bogotá · America/Bogota</dd></div>
+          <div><dt>Ventana de ejecución</dt><dd>10:00 a 10:30 a. m. · Una sola fecha</dd></div>
+          <div><dt>Pago en Efecty</dt><dd>112090 — Adelantos Colombia</dd></div>
+        </dl>
+        <p className={styles.historyHelp}>Máximo {PAYJOY_VOICE_MAX_CALLS} equipos y una llamada por móvil en esta fecha. El servidor vuelve a comprobar cada contacto antes de solicitar la llamada.</p>
+        {voiceLoading && <p className={styles.contactNote} role="status">Recuperando la programación guardada…</p>}
+        {voiceError && <p className={styles.error} role="alert">{voiceError}</p>}
+        {voiceNotice && <p className={styles.progress} role="status" aria-live="polite">{voiceNotice}</p>}
+        {!voice && !voiceLoading && !voiceError && <p className={styles.reviewNotice}>Actualiza el estado de llamadas para revisar la configuración y la programación de este lote.</p>}
+        {voice && !voice.configuration.ready && <div className={styles.voiceWarning} role="note"><strong>Configuración pendiente</strong><p>La conexión de voz aún no está lista. La programación está bloqueada hasta que el servidor confirme la configuración.</p></div>}
+        {voice && voice.blockers.length > 0 && <ul className={styles.voiceBlockers}>{voice.blockers.map(code => <li key={code}>{VOICE_BLOCKERS[code] || "Este lote requiere revisión antes de poder programar llamadas."}</li>)}</ul>}
+        {!voice?.batch && !voiceSourceReady && <p className={styles.voiceWarning}>Revisa el lote: se requieren entre 1 y {PAYJOY_VOICE_MAX_CALLS} equipos, todos con móvil encontrado y sin duplicados.</p>}
+
+        {voice?.batch ? <>
+          <div className={styles.batchHeading}><span className={styles.status}>{VOICE_BATCH_LABELS[voice.batch.status]}</span><p>Autorizada por {voice.batch.createdBy} · {dateLabel(voice.batch.authorizedAt)}</p></div>
+          <p className={styles.historyHelp}>Aceptada por Dapta significa que recibió la solicitud. La atención y la identidad del interlocutor sólo se confirman con el resultado de la llamada.</p>
+          <ul className={styles.voiceTargets} aria-label="Estado de las llamadas">{voice.batch.calls.map(call => <li key={call.id}>
+            <div><strong>{call.deviceTag}</strong><span>{batch.items.find(item => item.deviceTag === call.deviceTag)?.phone || call.phoneMasked}</span></div>
+            <div><span className={styles.status}>{VOICE_CALL_LABELS[call.status] || "Estado pendiente de revisión"}</span><p>{call.identityConfirmedAt ? `Identidad confirmada durante la llamada · ${dateLabel(call.identityConfirmedAt)}` : "Identidad del interlocutor sin confirmar"}</p>{call.latestOutcome && <p>{VOICE_OUTCOMES[call.latestOutcome] || "Resultado pendiente de revisión"}</p>}{call.reasonCode && <p>{VOICE_REASONS[call.reasonCode] || "La gestión requiere revisión. Motivo registrado por el servidor."}</p>}</div>
+          </li>)}</ul>
+          {voice.batch.canCancel && <div className={styles.voiceActions}>
+            {!voiceCancelReview ? <button type="button" className={styles.button} disabled={voiceDisabled} onClick={() => setVoiceCancelReview(true)}>Cancelar programación</button> : <div className={styles.voiceConfirmation}>
+              <h3>Confirmar cancelación</h3><p>Se cancelarán las llamadas que aún no hayan iniciado su gestión. El servidor comprobará el estado antes de aplicar la cancelación.</p>
+              <div className={styles.voiceActions}><button type="button" className={`${styles.button} ${styles.primary}`} disabled={voiceDisabled} onClick={() => void cancelVoice()}>{voiceAction === "cancel" ? "Cancelando…" : "Confirmar cancelación"}</button><button type="button" className={styles.button} disabled={voiceDisabled} onClick={() => setVoiceCancelReview(false)}>Conservar programación</button></div>
+            </div>}
+          </div>}
+        </> : <>
+          <ul className={styles.voiceTargets} aria-label="Contactos a revisar para las llamadas">{batch.items.map(item => <li key={item.id}><div><strong>{item.deviceTag}</strong><span>{item.phone || "Móvil no disponible"}</span></div><span className={styles.status}>{item.lookupStatus === "FOUND" && item.reviewStatus !== "DUPLICATE_PHONE" ? "Pendiente de confirmar autorización" : "Contacto pendiente de revisión"}</span></li>)}</ul>
+          {!voiceReview ? <button type="button" className={`${styles.button} ${styles.graphite}`} disabled={voiceDisabled || !voiceCanSchedule} onClick={() => { setVoiceReview(true); setVoiceOwnership(false); setVoiceConsent(false); }}>Revisar programación</button> : <div className={styles.voiceConfirmation} aria-labelledby="voice-confirm-title">
+            <h3 id="voice-confirm-title">Revisar antes de programar</h3>
+            <p>Se programarán {batch.items.length} llamadas de Valeria de CONECTAMOS a los móviles mostrados, únicamente para el 10 de noviembre de 2026 a las 10:00 a. m. de Bogotá. Convenio Efecty 112090. No se envía WhatsApp.</p>
+            <label className={styles.voiceCheck}><input type="checkbox" checked={voiceOwnership} disabled={voiceDisabled} onChange={event => setVoiceOwnership(event.target.checked)} /><span>He comprobado que estos números corresponden a los titulares de los créditos.</span></label>
+            <label className={styles.voiceCheck}><input type="checkbox" checked={voiceConsent} disabled={voiceDisabled} onChange={event => setVoiceConsent(event.target.checked)} /><span>Cuento con autorización para contactar a estos titulares por llamada en el horario indicado.</span></label>
+            <p className={styles.contactNote}>La confirmación queda registrada con tu usuario. La agente también debe verificar la identidad durante la llamada.</p>
+            <div className={styles.voiceActions}><button type="button" className={`${styles.button} ${styles.primary}`} disabled={voiceDisabled || !voiceCanSchedule || !voiceOwnership || !voiceConsent} onClick={() => void scheduleVoice()}>{voiceAction === "schedule" ? "Guardando programación…" : "Confirmar programación"}</button><button type="button" className={styles.button} disabled={voiceDisabled} onClick={() => { setVoiceReview(false); setVoiceOwnership(false); setVoiceConsent(false); }}>Volver al lote</button></div>
+          </div>}
+        </>}
+      </section>}
+
       <section className={`${styles.panel} ${styles.history}`} aria-labelledby="history-title" aria-busy={historyLoading}>
-        <div className={styles.historyHeading}><div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="document" /></span><div><p>Borradores guardados</p><h2 id="history-title">Historial de lotes</h2></div></div><button className={styles.button} disabled={Boolean(busy) || historyLoading} onClick={() => void loadHistory()}><DashboardIcon name="refresh" />{historyLoading ? "Cargando historial…" : "Actualizar historial"}</button></div>
+        <div className={styles.historyHeading}><div className={styles.sectionHeading}><span className={styles.sectionIcon}><DashboardIcon name="document" /></span><div><p>Borradores guardados</p><h2 id="history-title">Historial de lotes</h2></div></div><button className={styles.button} disabled={draftDisabled || historyLoading} onClick={() => void loadHistory()}><DashboardIcon name="refresh" />{historyLoading ? "Cargando historial…" : "Actualizar historial"}</button></div>
         <p className={styles.historyHelp}>Los últimos 20 lotes guardados. Abrir o actualizar un borrador solo recupera lo registrado en CONECTAMOS; no vuelve a consultar PayJoy.</p>
         {historyError && <p className={styles.error} role="alert">{historyError}</p>}
         {historyLoading && !batches.length ? <p className={styles.historyEmpty} role="status">Cargando borradores…</p> : !batches.length && !historyError ? <p className={styles.historyEmpty}>Todavía no hay lotes guardados.</p> : <ul className={styles.historyList}>{batches.map(item => <li key={item.id}>
           <div><strong>Borrador del {dateLabel(item.createdAt)}</strong><span>{item.createdBy} · Efecty {item.agreement}</span><span>Sin envío · Actualizado {dateLabel(item.updatedAt)}</span></div>
           <div className={styles.historyNumbers}><strong>{item.counts.total}</strong> equipos · <strong>{item.counts.found}</strong> móviles encontrados<span>{item.counts.pending + item.counts.checking} consultas pendientes · {item.counts.error} con error</span></div>
-          <button className={styles.button} disabled={Boolean(busy)} onClick={() => void openBatch(item.id)}>Abrir borrador<span className={styles.srOnly}> del {dateLabel(item.createdAt)}</span><DashboardIcon name="arrow" /></button>
+          <button className={styles.button} disabled={draftDisabled} onClick={() => void openBatch(item.id)}>Abrir borrador<span className={styles.srOnly}> del {dateLabel(item.createdAt)}</span><DashboardIcon name="arrow" /></button>
         </li>)}</ul>}
       </section>
     </main>

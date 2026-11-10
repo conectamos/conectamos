@@ -1,9 +1,14 @@
 # Borradores PayJoy para Dapta
 
-Esta primera fase permite consultar el celular del equipo y preparar un lote
-persistente. **No envía mensajes, no llama a Dapta, no crea solicitudes de pago y
-no programa campañas.** Todos los lotes permanecen en `DRAFT_ONLY`; la API retorna
+La API de borradores permite consultar el celular del equipo y preparar un lote
+persistente. **No envía mensajes, no llama a Dapta ni crea solicitudes de pago.**
+Sus lotes permanecen en `DRAFT_ONLY`; `/api/payjoy/dapta` retorna
 `sendingEnabled: false` y no implementa ninguna acción de envío.
+
+La pantalla también incluye una sección independiente de
+[llamadas con Valeria](PAYJOY_VOICE.md). Esa sección usa otra API, otras tablas
+y una autorización explícita para una única fecha. Abrir, consultar o copiar un
+borrador no programa llamadas ni habilita WhatsApp.
 
 ## Fuente real del celular
 
@@ -59,12 +64,18 @@ por una URL con host fijo y el código validado del equipo. Una plantilla anteri
 sin ese marcador se muestra exactamente como fue guardada. Esta representación
 no consulta PayJoy, no crea solicitudes de pago ni realiza envíos.
 
+La vista conserva los párrafos y el enlace completo. «Copiar mensaje» escribe
+únicamente ese texto en el portapapeles y anuncia el resultado; no abre WhatsApp
+ni realiza una solicitud a Dapta.
+
 ## Instalación y comprobación
 
 La migración es aditiva y separada. El comando existente
 `db:apply-payjoy-extensiones` conserva su SQL y verificador, y ahora ejecuta
 `db:apply-payjoy-dapta` al final. Así el predeploy actual de Railway aplica las
 tablas nuevas sin cambiar su configuración ni sustituir el paso de CIERRE.
+La cadena de borradores incorpora además `db:apply-payjoy-voice` para las tablas
+separadas de voz; aplicar ese esquema no activa llamadas.
 No usar `prisma db push` sobre producción.
 
 ```sh
@@ -84,7 +95,7 @@ El diagnóstico utiliza el mismo adaptador y sólo muestra los últimos cuatro
 dígitos. No consulta la base ni envía el teléfono a Dapta. Las pruebas usan
 fixtures sintéticos exclusivamente dentro del entorno de pruebas.
 
-## Fase de envío pendiente
+## WhatsApp y lotes automáticos pendientes
 
 ### Preparación de la conexión, 9 de noviembre de 2026
 
@@ -106,8 +117,8 @@ credencial exclusivamente en servidor. Crear este validador no habilita envíos.
 
 La organización solicitada del lote futuro es: vencidos, vencen hoy y prioridad
 40/60, en ese orden y con una sola entrada por cliente. «No aprobado 40/60» no
-demuestra mora. La hora solicitada es 10:00 `America/Bogota`; permanece sin
-programar. La integración debe revalidar los datos, excluir domingos/festivos,
+demuestra mora. La hora diaria solicitada es 10:00 `America/Bogota`; esa campaña
+recurrente permanece sin programar. La integración debe revalidar los datos, excluir domingos/festivos,
 respetar las autorizaciones y bajas y evitar contactos repetidos entre campañas
 y canales. El calendario y los grupos son requisitos pendientes, no filtros ya
 activos en esta versión.

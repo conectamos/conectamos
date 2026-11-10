@@ -528,6 +528,91 @@ model PayJoyDaptaItem {
   @@index([batchId, phone])
 }
 
+// One-time voice campaign. Draft contact records retain their original checks.
+model PayJoyVoiceBatch {
+  id              String @id
+  requestId       String @unique
+  scopeKey        String @unique
+  inputHash       String
+  sourceBatchId   String
+  status          String @default("SCHEDULED")
+  scheduledAt     DateTime @db.Timestamptz(3)
+  expiresAt       DateTime @db.Timestamptz(3)
+  timeZone        String @default("America/Bogota")
+  agentId         String
+  fromNumber      String
+  agreement       String @default("112090")
+  usuarioId       Int
+  perfilId        Int?
+  sedeId          Int
+  createdBy       String
+  authorizedAt    DateTime @db.Timestamptz(3)
+  scriptVersion   String
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  calls           PayJoyVoiceCall[]
+  events          PayJoyVoiceEvent[]
+
+  @@index([status, scheduledAt])
+  @@index([sourceBatchId, createdAt])
+}
+
+model PayJoyVoiceCall {
+  id                  String @id
+  batchId             String
+  batch               PayJoyVoiceBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  sourceItemId        String
+  deviceTag           String
+  phone               String
+  dayKey              String
+  phoneSource         String @default("PAYJOY_NEQUI_PREFILL")
+  status              String @default("PENDING")
+  claimToken          String?
+  claimExpiresAt      DateTime? @db.Timestamptz(3)
+  preflightAt         DateTime? @db.Timestamptz(3)
+  identityConfirmedAt DateTime? @db.Timestamptz(3)
+  providerCallId      String? @unique
+  reasonCode          String?
+  dispatchedAt        DateTime? @db.Timestamptz(3)
+  dispatchAuthorizedAt DateTime? @db.Timestamptz(3)
+  acceptedAt          DateTime? @db.Timestamptz(3)
+  completedAt         DateTime? @db.Timestamptz(3)
+  latestOutcome       String?
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+  events              PayJoyVoiceEvent[]
+
+  @@unique([batchId, deviceTag])
+  @@unique([dayKey, phone])
+  @@index([batchId, status])
+}
+
+model PayJoyVoiceEvent {
+  id        String @id
+  batchId   String
+  batch     PayJoyVoiceBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  callId    String?
+  call      PayJoyVoiceCall? @relation(fields: [callId], references: [id], onDelete: Restrict)
+  eventKey  String @unique
+  type      String
+  actorType String
+  actorId   String?
+  detail    Json?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([batchId, createdAt])
+  @@index([callId, createdAt])
+}
+
+model PayJoyContactSuppression {
+  phone        String @id
+  reason       String
+  source       String
+  sourceCallId String?
+  createdBy    String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+}
+
 model RegistroVendedorVenta {
   id                              Int       @id @default(autoincrement())
   perfilVendedorId                Int

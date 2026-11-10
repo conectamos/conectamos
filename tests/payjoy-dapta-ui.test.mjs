@@ -20,6 +20,9 @@ const found = { ...pending, counts: { ...pending.counts, pending: 0, found: 1 },
 const summary = batch => Object.fromEntries(Object.entries(batch).filter(([key]) => key !== "items"));
 const history = (batches = []) => ({ batches: batches.map(summary), limit: 20, sendingEnabled: false });
 const batchResult = (batch, processedCount = 0) => ({ batch, hasMore: batch.counts.pending > 0, processedCount, sendingEnabled: false });
+const voiceResult = (overrides = {}) => ({ sourceBatchId: found.id, configuration: { ready: false, reasonCode: "CONFIGURATION_PENDING" }, scheduledAt: "2026-11-10T15:00:00.000Z", expiresAt: "2026-11-10T15:30:00.000Z", timezone: "America/Bogota", maxCalls: 7, batch: null, eligibleCount: 1, blockers: [], ...overrides });
+const voiceReady = () => voiceResult({ configuration: { ready: true, reasonCode: null } });
+const scheduledVoice = (overrides = {}) => ({ id: "qa-voice-batch", status: "SCHEDULED", scheduledAt: "2026-11-10T15:00:00.000Z", expiresAt: "2026-11-10T15:30:00.000Z", canCancel: true, createdBy: "Administrador QA", authorizedAt: "2026-11-09T14:00:00.000Z", calls: [{ id: "qa-call", deviceTag: "DQA0001", phoneMasked: "+57******0001", status: "PENDING", reasonCode: null, latestOutcome: null, identityConfirmedAt: null, acceptedAt: null, completedAt: null }], ...overrides });
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const event = () => ({ preventDefault() {} });
 const settle = async () => { await new Promise(setImmediate); await new Promise(setImmediate); };
@@ -43,7 +46,7 @@ function button(tree, label) {
   const result = elements(tree).find(node => node.type === "button" && textOf(node).trim().startsWith(label));
   assert.ok(result, `Falta botón ${label}`); return result;
 }
-function probe({ initial = {}, fetchImpl, clipboardImpl, clipboardAvailable = true } = {}) {
+function probe({ initial = {}, fetchImpl, voiceFetchImpl, clipboardImpl, clipboardAvailable = true } = {}) {
   const state = { ...initial }; const refs = []; const effects = []; const calls = []; const clipboardCalls = [];
   let stateIndex = 0; let refIndex = 0; let collectEffects = true;
   const imports = {
@@ -58,6 +61,7 @@ function probe({ initial = {}, fetchImpl, clipboardImpl, clipboardAvailable = tr
     "@/app/dashboard/_components/dashboard-icon": { __esModule: true, default: () => null },
     "@/app/ventas/_components/sales-dashboard-parts": { SalesProfile: () => null },
     "@/lib/payjoy-dapta-types": { PAYJOY_DAPTA_AGREEMENT: "112090", PAYJOY_DAPTA_DEVICE_LIMIT: 25 },
+    "@/lib/payjoy-voice-types": { PAYJOY_VOICE_SCHEDULED_AT: "2026-11-10T15:00:00.000Z", PAYJOY_VOICE_EXPIRES_AT: "2026-11-10T15:30:00.000Z", PAYJOY_VOICE_MAX_CALLS: 7 },
     "./dapta.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
   };
   const loaded = { exports: {} };
@@ -65,6 +69,7 @@ function probe({ initial = {}, fetchImpl, clipboardImpl, clipboardAvailable = tr
     assert.ok(name in imports, `Dependencia inesperada: ${name}`); return imports[name];
   }, loaded, loaded.exports, async (url, init = {}) => {
     const call = { url, method: init.method || "GET", body: init.body ? JSON.parse(init.body) : null }; calls.push(call);
+    if (url.startsWith("/api/payjoy/voz")) return voiceFetchImpl ? voiceFetchImpl(call) : response(voiceResult({ sourceBatchId: new URL(url, "http://localhost").searchParams.get("sourceBatchId") || found.id }));
     return fetchImpl ? fetchImpl(call) : response(history());
   }, { randomUUID }, clipboardAvailable ? { clipboard: { writeText: async value => { clipboardCalls.push(value); await clipboardImpl?.(value); } } } : {});
   const render = () => {
@@ -85,6 +90,9 @@ test("montar y abrir historial solo lee CONECTAMOS; no consulta proveedores ni e
   assert.match(textOf(tree), /\+573000000001/);
   assert.match(textOf(tree), /Titularidad y autorización de contacto pendientes/);
   assert.match(textOf(tree), /Envío deshabilitado/);
+  assert.match(textOf(tree), /Configuración pendiente/);
+  assert.equal(button(tree, "Revisar programación").props.disabled, true);
+  assert.ok(ui.calls.some(call => call.url === `/api/payjoy/voz?sourceBatchId=${found.id}`));
   assert.ok(ui.calls.every(call => call.method === "GET"));
   assert.equal(elements(tree).filter(node => node.type === "button").some(node => /enviar|exportar|activar/i.test(textOf(node))), false);
 });
@@ -215,4 +223,141 @@ test("sin API de portapapeles ofrece copia manual y no marca el mensaje como cop
   assert.doesNotMatch(textOf(tree), /Mensaje copiado\./);
   assert.equal(ui.clipboardCalls.length, 0);
   assert.equal(button(tree, "Copiar mensaje").props.disabled, false);
+});
+
+function confirmVoiceChecks(ui) {
+  let tree = ui.render();
+  for (const checkbox of elements(tree).filter(node => node.type === "input" && node.props.type === "checkbox")) {
+    checkbox.props.onChange({ target: { checked: true } });
+  }
+  tree = ui.render(); return tree;
+}
+
+test("Valeria requiere revisión y ambas confirmaciones antes de programar; doble clic no duplica", async () => {
+  let finishSchedule;
+  const ui = probe({ initial: { batch: found, voiceData: voiceReady() }, voiceFetchImpl: async call => {
+    assert.equal(call.body.action, "schedule");
+    return new Promise(resolve => { finishSchedule = () => resolve(response(voiceResult({ ...voiceReady(), batch: scheduledVoice() }))); });
+  } });
+  let tree = await ui.mount();
+  assert.equal(elements(tree).some(node => node.type === "button" && textOf(node) === "Confirmar programación"), false);
+  button(tree, "Revisar programación").props.onClick(); tree = ui.render();
+  assert.match(textOf(tree), /10 de noviembre de 2026.*10:00 a\. m\./);
+  assert.match(textOf(tree), /No se envía WhatsApp/);
+  assert.equal(button(tree, "Confirmar programación").props.disabled, true);
+  button(tree, "Confirmar programación").props.onClick(); await settle();
+  assert.equal(ui.calls.filter(call => call.method === "POST").length, 0);
+  elements(tree).find(node => node.type === "input" && node.props.type === "checkbox").props.onChange({ target: { checked: true } });
+  tree = ui.render();
+  assert.equal(button(tree, "Confirmar programación").props.disabled, true);
+  tree = confirmVoiceChecks(ui);
+  const confirm = button(tree, "Confirmar programación");
+  assert.equal(confirm.props.disabled, false);
+  confirm.props.onClick(); confirm.props.onClick(); await settle();
+  const writes = ui.calls.filter(call => call.method === "POST");
+  assert.equal(writes.length, 1);
+  assert.deepEqual(Object.keys(writes[0].body).sort(), ["action", "confirmed", "requestId", "sourceBatchId"]);
+  assert.equal(writes[0].url, "/api/payjoy/voz");
+  assert.equal(writes[0].body.confirmed, true);
+  assert.equal(writes[0].body.sourceBatchId, found.id);
+  assert.match(writes[0].body.requestId, /^[0-9a-f-]{36}$/);
+  assert.equal(button(ui.render(), "Guardando programación").props.disabled, true);
+  finishSchedule(); await settle(); tree = ui.render();
+  assert.match(textOf(tree), /Programación guardada/);
+  assert.match(textOf(tree), /No se ha confirmado atención/);
+  assert.equal(ui.state.voiceOwnership, false); assert.equal(ui.state.voiceConsent, false);
+});
+
+test("respuesta perdida al programar conserva requestId y no anuncia éxito", async () => {
+  let attempts = 0;
+  const ui = probe({ initial: { batch: found, voiceData: voiceReady() }, voiceFetchImpl: async () => {
+    if (++attempts === 1) throw new TypeError("network");
+    return response(voiceResult({ ...voiceReady(), batch: scheduledVoice() }));
+  } });
+  let tree = await ui.mount(); button(tree, "Revisar programación").props.onClick(); tree = confirmVoiceChecks(ui);
+  button(tree, "Confirmar programación").props.onClick(); await settle(); tree = ui.render();
+  assert.match(textOf(tree), /No se pudo confirmar la programación/);
+  assert.doesNotMatch(textOf(tree), /Programación guardada/);
+  button(tree, "Confirmar programación").props.onClick(); await settle();
+  const writes = ui.calls.filter(call => call.method === "POST");
+  assert.equal(writes.length, 2); assert.equal(writes[0].body.requestId, writes[1].body.requestId);
+});
+
+test("configuración pendiente, contactos incompletos, duplicados y límites bloquean programación", async () => {
+  const eight = { ...found, counts: { ...found.counts, total: 8, found: 8 }, items: Array.from({ length: 8 }, (_, index) => ({ ...found.items[0], id: `qa-item-${index}`, deviceTag: `DQA000${index}`, phone: `+57300000000${index}` })) };
+  const duplicated = { ...found, items: [{ ...found.items[0], reviewStatus: "DUPLICATE_PHONE" }] };
+  for (const [batch, voiceData] of [[found, voiceResult()], [pending, voiceReady()], [duplicated, voiceReady()], [eight, voiceReady()], [found, voiceResult({ ...voiceReady(), blockers: ["CAMPAIGN_ALREADY_EXISTS"] })]]) {
+    const ui = probe({ initial: { batch, voiceData } }); const tree = await ui.mount();
+    assert.equal(button(tree, "Revisar programación").props.disabled, true);
+    assert.equal(ui.calls.filter(call => call.method === "POST").length, 0);
+  }
+});
+
+test("cancelar exige revisión y canCancel; una llamada aceptada no se presenta como atendida", async () => {
+  const acceptedCall = { ...scheduledVoice().calls[0], status: "ACCEPTED", acceptedAt: "2026-11-10T15:00:01.000Z" };
+  const ui = probe({ initial: { batch: found, voiceData: voiceResult({ ...voiceReady(), batch: scheduledVoice() }) }, voiceFetchImpl: async call => {
+    assert.deepEqual(call.body, { action: "cancel", batchId: "qa-voice-batch" });
+    return response(voiceResult({ ...voiceReady(), batch: scheduledVoice({ status: "CANCELLED", canCancel: false }) }));
+  } });
+  let tree = await ui.mount(); button(tree, "Cancelar programación").props.onClick(); tree = ui.render();
+  assert.equal(ui.calls.filter(call => call.method === "POST").length, 0);
+  button(tree, "Confirmar cancelación").props.onClick(); await settle(); tree = ui.render();
+  assert.match(textOf(tree), /Programación cancelada/);
+  assert.equal(elements(tree).some(node => node.type === "button" && textOf(node) === "Cancelar programación"), false);
+
+  const accepted = probe({ initial: { batch: found, voiceData: voiceResult({ ...voiceReady(), batch: scheduledVoice({ canCancel: false, calls: [acceptedCall] }) }) } });
+  const acceptedTree = await accepted.mount();
+  assert.match(textOf(acceptedTree), /Aceptada por Dapta · atención no confirmada/);
+  assert.match(textOf(acceptedTree), /Identidad del interlocutor sin confirmar/);
+  assert.equal(elements(acceptedTree).some(node => node.type === "button" && textOf(node) === "Cancelar programación"), false);
+});
+
+test("cambiar de lote descarta una consulta de voz tardía y borra las confirmaciones anteriores", async () => {
+  const second = { ...found, id: "qa-other-batch", createdAt: "2026-11-08T13:00:00.000Z" };
+  let finishFirst;
+  const ui = probe({ fetchImpl: async call => response(call.url.includes("batchId=") ? batchResult(call.url.endsWith(second.id) ? second : found) : history([found, second])), voiceFetchImpl: async call => {
+    const id = new URL(call.url, "http://localhost").searchParams.get("sourceBatchId");
+    if (id === found.id) return new Promise(resolve => { finishFirst = () => resolve(response(voiceReady())); });
+    return response(voiceResult({ sourceBatchId: second.id }));
+  } });
+  let tree = await ui.mount();
+  button(tree, "Abrir borrador").props.onClick(); await settle(); tree = ui.render();
+  ui.state.voiceReview = true; ui.state.voiceOwnership = true; ui.state.voiceConsent = true;
+  const secondOpen = elements(tree).find(node => node.type === "button" && /Abrir borrador.*8\/11\/2026/.test(textOf(node)));
+  assert.ok(secondOpen); secondOpen.props.onClick(); await settle();
+  finishFirst(); await settle(); tree = ui.render();
+  assert.equal(ui.state.batch.id, second.id);
+  assert.equal(ui.state.voiceData.sourceBatchId, second.id);
+  assert.equal(ui.state.voiceData.configuration.ready, false);
+  assert.equal(ui.state.voiceReview, false); assert.equal(ui.state.voiceOwnership, false); assert.equal(ui.state.voiceConsent, false);
+  assert.equal(button(tree, "Revisar programación").props.disabled, true);
+  assert.ok(ui.calls.every(call => call.method === "GET"));
+});
+
+test("respuesta de voz mal formada bloquea la programación y muestra un error recuperable", async () => {
+  const ui = probe({ initial: { batch: found, voiceData: voiceReady() }, voiceFetchImpl: async () => response(voiceResult({ ...voiceReady(), scheduledAt: "2026-11-11T15:00:00.000Z" })) });
+  let tree = await ui.mount(); button(tree, "Actualizar llamadas").props.onClick(); await settle(); tree = ui.render();
+  assert.match(textOf(tree), /No se pudo verificar la programación/);
+  assert.equal(button(tree, "Revisar programación").props.disabled, true);
+  assert.equal(ui.calls.filter(call => call.method === "POST").length, 0);
+});
+
+test("no confunde una llamada sin contacto con una solicitud expresa de no contactar", async () => {
+  for (const [outcome, expected, absent] of [["NO_CONTACT", "Sin contacto", "Solicitó no recibir contactos"], ["OPT_OUT", "Solicitó no recibir contactos", "Sin contacto"]]) {
+    const call = { ...scheduledVoice().calls[0], status: "COMPLETED", latestOutcome: outcome, reasonCode: outcome };
+    const ui = probe({ initial: { batch: found, voiceData: voiceResult({ ...voiceReady(), batch: scheduledVoice({ status: "COMPLETED", canCancel: false, calls: [call] }) }) } });
+    const tree = await ui.mount();
+    assert.ok(textOf(tree).includes(expected));
+    assert.equal(textOf(tree).includes(absent), false);
+  }
+});
+
+test("POST sin programación persistida no anuncia éxito ni descarta las confirmaciones", async () => {
+  const ui = probe({ initial: { batch: found, voiceData: voiceReady() }, voiceFetchImpl: async () => response(voiceReady()) });
+  let tree = await ui.mount(); button(tree, "Revisar programación").props.onClick(); tree = confirmVoiceChecks(ui);
+  button(tree, "Confirmar programación").props.onClick(); await settle(); tree = ui.render();
+  assert.match(textOf(tree), /No se pudo confirmar la programación/);
+  assert.doesNotMatch(textOf(tree), /Programación guardada/);
+  assert.equal(ui.state.voiceReview, true);
+  assert.equal(ui.state.voiceOwnership, true); assert.equal(ui.state.voiceConsent, true);
 });
