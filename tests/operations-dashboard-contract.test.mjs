@@ -140,6 +140,24 @@ function operationsNavigation(props) {
   return { sidebar: sidebar.items, quick: tools.quickActions, catalog: (tools.groups || tools.toolGroups).flatMap(group => group.links) };
 }
 
+test("Pago de facturas aparece únicamente para administrador central en menú y herramientas", async () => {
+  for (const identity of [
+    { rolNombre: "ADMIN", perfilTipo: "ADMINISTRADOR", allowed: true },
+    { rolNombre: "ADMIN", perfilTipo: null, allowed: true },
+    { rolNombre: "ADMIN", perfilTipo: "AUDITOR", allowed: false },
+    { rolNombre: "AUDITOR", perfilTipo: "ADMINISTRADOR", allowed: false },
+    { rolNombre: "ADMIN", perfilTipo: "SUPERVISOR_TIENDA", allowed: false },
+    { rolNombre: "SUPERVISOR", perfilTipo: "SUPERVISOR_TIENDA", allowed: false },
+  ]) {
+    const result = await runPage({ ...baseSession, ...identity });
+    assert.equal(result.props.canManageInvoices, identity.allowed);
+    const navigation = operationsNavigation(result.props);
+    for (const key of ["sidebar", "catalog"]) {
+      assert.equal(navigation[key].filter(item => item.href === "/pago-facturas").length, identity.allowed ? 1 : 0);
+    }
+  }
+});
+
 test("ADMIN y AUDITOR conservan extensiones y retiran ficha y seguimiento de menú, acciones y catálogo", async () => {
   for (const identity of [
     { rolNombre: "AUDITOR", perfilTipo: "AUDITOR", perfilTipoLabel: "Auditor" },

@@ -227,6 +227,57 @@ model Usuario {
   updatedAt                DateTime                    @updatedAt
 }
 
+// Central administrative invoice register. It is intentionally independent of
+// the supplier due-date workflow, cash ledger and inventory purchases.
+model FacturaAdministrativa {
+  id                 Int      @id @default(autoincrement())
+  number             String
+  numberNormalized   String
+  provider           String
+  providerNormalized String
+  date               DateTime @db.Date
+  amount             Decimal  @db.Decimal(14, 2)
+  paidAmount         Decimal  @default(0) @db.Decimal(14, 2)
+  status             String   @default("PENDIENTE")
+  version            Int      @default(1)
+  createRequestId    String   @unique
+  createRequestHash  String
+  createResult       Json?
+  createdById        Int
+  createdByProfileId Int?
+  createdBy          String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  payments           PagoFacturaAdministrativa[]
+
+  @@unique([providerNormalized, numberNormalized])
+  @@index([date, status, id])
+}
+
+model PagoFacturaAdministrativa {
+  id                    Int      @id @default(autoincrement())
+  invoiceId             Int
+  requestId             String   @unique
+  requestHash           String
+  responseSnapshot      Json
+  date                  DateTime @db.Date
+  mode                  String
+  reference             String?
+  amount                Decimal  @db.Decimal(14, 2)
+  balanceBefore         Decimal  @db.Decimal(14, 2)
+  balanceAfter          Decimal  @db.Decimal(14, 2)
+  invoiceNumberSnapshot String
+  providerSnapshot      String
+  invoiceAmountSnapshot Decimal  @db.Decimal(14, 2)
+  createdById           Int
+  createdByProfileId    Int?
+  createdBy             String
+  createdAt             DateTime @default(now())
+  invoice               FacturaAdministrativa @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId, createdAt, id])
+}
+
 model FacturaProveedor {
   id                       Int                     @id @default(autoincrement())
   aliado                   String

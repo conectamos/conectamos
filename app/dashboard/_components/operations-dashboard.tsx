@@ -839,6 +839,7 @@ export default function OperationsDashboard({
   puedeVerFacturacion,
   puedeVerReporteSiigo,
   puedeVerExtensionesPayJoy = false,
+  canManageInvoices = false,
   rolUsuario,
   sedeId,
   sedes,
@@ -865,6 +866,7 @@ export default function OperationsDashboard({
   puedeVerFacturacion: boolean;
   puedeVerReporteSiigo: boolean;
   puedeVerExtensionesPayJoy?: boolean;
+  canManageInvoices?: boolean;
   rolUsuario: string;
   sedeId: number | null;
   sedes: SedeOption[];
@@ -883,6 +885,9 @@ export default function OperationsDashboard({
   const payJoyExtensionLinks: NavigationItem[] = puedeVerExtensionesPayJoy ? [
     { href: "/vendedor/payjoy/extensiones", icon: "clock", label: "Extensiones PayJoy" },
   ] : [];
+  const invoicePaymentLinks: NavigationItem[] = canManageInvoices
+    ? [{ href: "/pago-facturas", icon: "document", label: "Pago de facturas" }]
+    : [];
   const defaultToolGroups: OperationsToolGroup[] = [
     {
       title: "Inventario y préstamos",
@@ -904,6 +909,7 @@ export default function OperationsDashboard({
       description: "Cierres, arqueo, cartera y control financiero.",
       icon: "cash",
       links: [
+        ...invoicePaymentLinks,
         { href: "/cierre", label: "CIERRE", description: "Créditos efectivos por financiera y periodo.", icon: "reports" },
         { href: "/caja/cierre-dia", label: "Cierre del día" },
         { href: "/caja/gestion", label: "Ingresos / gastos" },
@@ -1122,7 +1128,7 @@ export default function OperationsDashboard({
         },
       ];
   const quickActions = [...roleQuickActions, ...payJoyExtensionLinks];
-  const visibleNavigation = [...navigationItems, ...payJoyExtensionLinks.filter(link => !navigationItems.some(item => item.href === link.href))];
+  const visibleNavigation = [...navigationItems, ...[...payJoyExtensionLinks, ...invoicePaymentLinks].filter(link => !navigationItems.some(item => item.href === link.href))];
 
   const context = `${periodLabel} · ${coverageLabel}`;
   const unavailable = <p className={styles.empty}>Datos comerciales no disponibles. Reintenta la actualización.</p>;

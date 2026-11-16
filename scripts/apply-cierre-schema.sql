@@ -2,6 +2,43 @@
 BEGIN;
 SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '120s';
+-- Standalone central invoice register. Payments record accounting facts only;
+-- these tables have no triggers into inventory, supplier notifications or cash.
+CREATE TABLE IF NOT EXISTS "FacturaAdministrativa" (
+ "id" SERIAL PRIMARY KEY, "number" TEXT NOT NULL, "numberNormalized" TEXT NOT NULL,
+ "provider" TEXT NOT NULL, "providerNormalized" TEXT NOT NULL, "date" DATE NOT NULL,
+ "amount" DECIMAL(14,2) NOT NULL, "paidAmount" DECIMAL(14,2) NOT NULL DEFAULT 0,
+ "status" TEXT NOT NULL DEFAULT 'PENDIENTE', "version" INTEGER NOT NULL DEFAULT 1,
+ "createRequestId" TEXT NOT NULL, "createRequestHash" TEXT NOT NULL, "createResult" JSONB,
+ "createdById" INTEGER NOT NULL, "createdByProfileId" INTEGER, "createdBy" TEXT NOT NULL,
+ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CONSTRAINT "FacturaAdministrativa_amount_check" CHECK ("amount" > 0 AND "paidAmount" >= 0 AND "paidAmount" <= "amount"),
+ CONSTRAINT "FacturaAdministrativa_status_check" CHECK (
+   ("status" = 'PENDIENTE' AND "paidAmount" < "amount") OR ("status" = 'PAGADA' AND "paidAmount" = "amount")
+ ),
+ CONSTRAINT "FacturaAdministrativa_version_check" CHECK ("version" > 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "FacturaAdministrativa_createRequestId_key" ON "FacturaAdministrativa" ("createRequestId");
+CREATE UNIQUE INDEX IF NOT EXISTS "FacturaAdministrativa_providerNormalized_numberNormalized_key"
+ ON "FacturaAdministrativa" ("providerNormalized", "numberNormalized");
+CREATE INDEX IF NOT EXISTS "FacturaAdministrativa_date_status_id_idx" ON "FacturaAdministrativa" ("date", "status", "id");
+CREATE TABLE IF NOT EXISTS "PagoFacturaAdministrativa" (
+ "id" SERIAL PRIMARY KEY, "invoiceId" INTEGER NOT NULL REFERENCES "FacturaAdministrativa" ("id") ON DELETE RESTRICT,
+ "requestId" TEXT NOT NULL, "requestHash" TEXT NOT NULL, "responseSnapshot" JSONB NOT NULL,
+ "date" DATE NOT NULL, "mode" TEXT NOT NULL, "reference" TEXT, "amount" DECIMAL(14,2) NOT NULL,
+ "balanceBefore" DECIMAL(14,2) NOT NULL, "balanceAfter" DECIMAL(14,2) NOT NULL,
+ "invoiceNumberSnapshot" TEXT NOT NULL, "providerSnapshot" TEXT NOT NULL, "invoiceAmountSnapshot" DECIMAL(14,2) NOT NULL,
+ "createdById" INTEGER NOT NULL, "createdByProfileId" INTEGER, "createdBy" TEXT NOT NULL,
+ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CONSTRAINT "PagoFacturaAdministrativa_mode_check" CHECK ("mode" IN ('partial', 'full')),
+ CONSTRAINT "PagoFacturaAdministrativa_amount_check" CHECK (
+   "amount" > 0 AND "balanceBefore" >= "amount" AND "balanceAfter" = "balanceBefore" - "amount"
+ )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "PagoFacturaAdministrativa_requestId_key" ON "PagoFacturaAdministrativa" ("requestId");
+CREATE INDEX IF NOT EXISTS "PagoFacturaAdministrativa_invoiceId_createdAt_id_idx"
+ ON "PagoFacturaAdministrativa" ("invoiceId", "createdAt", "id");
 -- Administrative accounting overlays, separate from all provider evidence.
 CREATE TABLE IF NOT EXISTS "CierreAjuste" (
  "key" TEXT PRIMARY KEY, "financial" TEXT NOT NULL,

@@ -6,6 +6,7 @@ import { consultarPermisoIngresoInventario } from "@/lib/inventory-intake-policy
 import { puedeConsultarExtensionesPayJoy } from "@/lib/payjoy-extensions-access";
 import prisma from "@/lib/prisma";
 import {
+  esAdministradorCentral,
   esPerfilApoyoOperativo,
   esPerfilFacturador,
   esPerfilRegistroVenta,
@@ -945,6 +946,7 @@ export default async function DashboardPage({
             ) : null
           }
           esAdmin={esAdmin}
+          canManageInvoices={esAdministradorCentral(session)}
           esStand={esStand}
           esStandSoloInventario={esStandSoloInventario}
           esSupervisor={esSupervisor}
