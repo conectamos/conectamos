@@ -15,7 +15,7 @@
     "db:apply-cierre": "prisma db execute --file scripts/apply-cierre-schema.sql",
     "test:proveedores": "node --experimental-strip-types --test tests/proveedores-pagos.test.mjs tests/proveedores-contract.test.mjs tests/proveedores-ui-contract.test.mjs tests/proveedores-payment-modal.test.mjs tests/proveedores-recibo.test.cjs tests/proveedores-recibo-history.test.mjs",
     "test:proveedores:build": "node tests/proveedores-recibo-build.cjs",
-    "test:invoice-payments": "node --test tests/invoice-payments-server.test.mjs tests/invoice-payments-ui.test.mjs",
+    "test:invoice-payments": "node --test tests/invoice-payments-server.test.mjs tests/invoice-admin-changes.test.mjs tests/invoice-provider-integration.test.mjs tests/invoice-providers-server.test.mjs tests/invoice-payments-ui.test.mjs",
     "test:inventario-imeis": "node --experimental-strip-types --test tests/inventory-imei-input.test.mjs",
     "test:login": "node --experimental-strip-types --test tests/login-resilience-contract.test.mjs",
     "test:bodega": "node --test tests/bodega-*.test.mjs",

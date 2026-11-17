@@ -20,9 +20,31 @@ CREATE TABLE IF NOT EXISTS "FacturaAdministrativa" (
  CONSTRAINT "FacturaAdministrativa_version_check" CHECK ("version" > 0)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "FacturaAdministrativa_createRequestId_key" ON "FacturaAdministrativa" ("createRequestId");
-CREATE UNIQUE INDEX IF NOT EXISTS "FacturaAdministrativa_providerNormalized_numberNormalized_key"
- ON "FacturaAdministrativa" ("providerNormalized", "numberNormalized");
 CREATE INDEX IF NOT EXISTS "FacturaAdministrativa_date_status_id_idx" ON "FacturaAdministrativa" ("date", "status", "id");
+ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "dueDate" DATE;
+ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
+ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "deletedById" INTEGER;
+ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "deletedByProfileId" INTEGER;
+ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "deletedBy" TEXT;
+DO $invoice_due_date$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FacturaAdministrativa_dueDate_check'
+   AND conrelid = '"FacturaAdministrativa"'::regclass) THEN
+   ALTER TABLE "FacturaAdministrativa" ADD CONSTRAINT "FacturaAdministrativa_dueDate_check"
+    CHECK ("dueDate" IS NULL OR "dueDate" >= "date");
+ END IF;
+END $invoice_due_date$;
+CREATE INDEX IF NOT EXISTS "FacturaAdministrativa_deletedAt_date_status_id_idx" ON "FacturaAdministrativa" ("deletedAt", "date", "status", "id");
+CREATE INDEX IF NOT EXISTS "FacturaAdministrativa_deletedAt_status_dueDate_idx" ON "FacturaAdministrativa" ("deletedAt", "status", "dueDate");
+CREATE TABLE IF NOT EXISTS "InvoiceAdminEvent" (
+ "id" SERIAL PRIMARY KEY, "invoiceId" INTEGER NOT NULL REFERENCES "FacturaAdministrativa" ("id") ON DELETE RESTRICT,
+ "action" TEXT NOT NULL CHECK ("action" IN ('EDIT', 'DELETE', 'RESTORE')),
+ "requestId" TEXT NOT NULL, "requestHash" TEXT NOT NULL, "snapshot" JSONB NOT NULL, "responseSnapshot" JSONB NOT NULL,
+ "createdById" INTEGER NOT NULL, "createdByProfileId" INTEGER, "createdBy" TEXT NOT NULL,
+ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "InvoiceAdminEvent_requestId_key" ON "InvoiceAdminEvent" ("requestId");
+CREATE INDEX IF NOT EXISTS "InvoiceAdminEvent_invoiceId_createdAt_id_idx" ON "InvoiceAdminEvent" ("invoiceId", "createdAt", "id");
 CREATE TABLE IF NOT EXISTS "PagoFacturaAdministrativa" (
  "id" SERIAL PRIMARY KEY, "invoiceId" INTEGER NOT NULL REFERENCES "FacturaAdministrativa" ("id") ON DELETE RESTRICT,
  "requestId" TEXT NOT NULL, "requestHash" TEXT NOT NULL, "responseSnapshot" JSONB NOT NULL,
@@ -139,4 +161,89 @@ WITH first_install AS (
 INSERT INTO "CierreVentaPendiente" ("ventaId", "snapshot")
 SELECT v.id, to_jsonb(v) FROM "Venta" v WHERE EXISTS (SELECT 1 FROM first_install)
 ON CONFLICT DO NOTHING;
+-- Stable provider catalog. Names on invoices/payments remain historical facts.
+CREATE TABLE IF NOT EXISTS "ProveedorAdministrativo" (
+ "id" SERIAL PRIMARY KEY, "name" TEXT NOT NULL, "nameNormalized" TEXT NOT NULL,
+ "active" BOOLEAN NOT NULL DEFAULT true, "version" INTEGER NOT NULL DEFAULT 1 CHECK ("version" > 0),
+ "createdById" INTEGER, "createdByProfileId" INTEGER, "createdBy" TEXT NOT NULL DEFAULT 'Importado de facturas',
+ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CHECK (length("name") > 0 AND length("nameNormalized") > 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "ProveedorAdministrativo_nameNormalized_key" ON "ProveedorAdministrativo" ("nameNormalized");
+CREATE TABLE IF NOT EXISTS "ProveedorAdministrativoAlias" (
+ "nameNormalized" TEXT PRIMARY KEY,
+ "providerId" INTEGER NOT NULL REFERENCES "ProveedorAdministrativo" ("id") ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS "ProveedorAdministrativoAlias_providerId_idx" ON "ProveedorAdministrativoAlias" ("providerId");
+CREATE TABLE IF NOT EXISTS "ProveedorAdministrativoEvento" (
+ "id" SERIAL PRIMARY KEY, "providerId" INTEGER NOT NULL REFERENCES "ProveedorAdministrativo" ("id") ON DELETE RESTRICT,
+ "action" TEXT NOT NULL CHECK ("action" IN ('CREATE', 'RENAME', 'DEACTIVATE', 'REACTIVATE')),
+ "requestId" TEXT NOT NULL, "requestHash" TEXT NOT NULL, "snapshot" JSONB NOT NULL, "responseSnapshot" JSONB NOT NULL,
+ "createdById" INTEGER NOT NULL, "createdByProfileId" INTEGER, "createdBy" TEXT NOT NULL,
+ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "ProveedorAdministrativoEvento_requestId_key" ON "ProveedorAdministrativoEvento" ("requestId");
+CREATE INDEX IF NOT EXISTS "ProveedorAdministrativoEvento_providerId_createdAt_id_idx" ON "ProveedorAdministrativoEvento" ("providerId", "createdAt", "id");
+ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "providerId" INTEGER;
+DROP TRIGGER IF EXISTS invoice_provider_identity ON "FacturaAdministrativa";
+-- Preserve aliases across renames and reruns; never reactivate a catalog entry
+-- merely because its old name still occurs in a historical invoice.
+INSERT INTO "ProveedorAdministrativoAlias" ("nameNormalized", "providerId")
+SELECT "nameNormalized", "id" FROM "ProveedorAdministrativo" ON CONFLICT DO NOTHING;
+INSERT INTO "ProveedorAdministrativo" ("name", "nameNormalized")
+SELECT min(f."provider"), f."providerNormalized" FROM "FacturaAdministrativa" f
+WHERE f."providerId" IS NULL AND NOT EXISTS (
+ SELECT 1 FROM "ProveedorAdministrativoAlias" a WHERE a."nameNormalized" = f."providerNormalized"
+)
+GROUP BY f."providerNormalized" ON CONFLICT ("nameNormalized") DO NOTHING;
+INSERT INTO "ProveedorAdministrativoAlias" ("nameNormalized", "providerId")
+SELECT "nameNormalized", "id" FROM "ProveedorAdministrativo" ON CONFLICT DO NOTHING;
+UPDATE "FacturaAdministrativa" f SET "providerId" = a."providerId"
+FROM "ProveedorAdministrativoAlias" a WHERE f."providerId" IS NULL AND a."nameNormalized" = f."providerNormalized";
+DO $invoice_provider_fk$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FacturaAdministrativa_providerId_fkey'
+   AND conrelid = '"FacturaAdministrativa"'::regclass) THEN
+  ALTER TABLE "FacturaAdministrativa" ADD CONSTRAINT "FacturaAdministrativa_providerId_fkey"
+   FOREIGN KEY ("providerId") REFERENCES "ProveedorAdministrativo" ("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ END IF;
+END $invoice_provider_fk$;
+CREATE UNIQUE INDEX IF NOT EXISTS "FacturaAdministrativa_providerId_numberNormalized_key"
+ ON "FacturaAdministrativa" ("providerId", "numberNormalized");
+DROP INDEX IF EXISTS "FacturaAdministrativa_providerNormalized_numberNormalized_key";
+CREATE UNIQUE INDEX IF NOT EXISTS "FacturaAdministrativa_legacy_provider_number_key"
+ ON "FacturaAdministrativa" ("providerNormalized", "numberNormalized") WHERE "providerId" IS NULL;
+-- The previous deployed app can still submit text-only invoices while the new
+-- image starts. Assign their identity in this same transaction, without changing
+-- their snapshots or allowing a deactivated provider to create a new invoice.
+CREATE OR REPLACE FUNCTION invoice_assign_provider_identity() RETURNS trigger AS $$
+DECLARE resolved_id INTEGER; is_active BOOLEAN;
+BEGIN
+ IF TG_OP = 'UPDATE' AND NEW."providerId" IS NOT DISTINCT FROM OLD."providerId"
+   AND NEW."providerNormalized" IS DISTINCT FROM OLD."providerNormalized" THEN
+  NEW."providerId" := NULL;
+ END IF;
+ IF NEW."providerId" IS NULL THEN
+  SELECT a."providerId" INTO resolved_id FROM "ProveedorAdministrativoAlias" a WHERE a."nameNormalized" = NEW."providerNormalized";
+  IF resolved_id IS NULL THEN
+   INSERT INTO "ProveedorAdministrativo" ("name", "nameNormalized", "createdById", "createdByProfileId", "createdBy")
+   VALUES (NEW."provider", NEW."providerNormalized", NEW."createdById", NEW."createdByProfileId", NEW."createdBy")
+   ON CONFLICT ("nameNormalized") DO UPDATE SET "nameNormalized" = EXCLUDED."nameNormalized"
+   RETURNING "id" INTO resolved_id;
+   INSERT INTO "ProveedorAdministrativoAlias" ("nameNormalized", "providerId") VALUES (NEW."providerNormalized", resolved_id)
+   ON CONFLICT ("nameNormalized") DO NOTHING;
+   SELECT a."providerId" INTO resolved_id FROM "ProveedorAdministrativoAlias" a WHERE a."nameNormalized" = NEW."providerNormalized";
+  END IF;
+  NEW."providerId" := resolved_id;
+ END IF;
+ SELECT p."active" INTO is_active FROM "ProveedorAdministrativo" p WHERE p."id" = NEW."providerId" FOR UPDATE;
+ IF is_active IS NULL THEN RAISE EXCEPTION 'Provider identity not found' USING ERRCODE = '23503'; END IF;
+ IF NOT is_active AND (TG_OP = 'INSERT' OR NEW."providerId" IS DISTINCT FROM OLD."providerId") THEN
+  RAISE EXCEPTION 'Provider is inactive' USING ERRCODE = '23514';
+ END IF;
+ RETURN NEW;
+END; $$ LANGUAGE plpgsql;
+CREATE TRIGGER invoice_provider_identity BEFORE INSERT OR UPDATE OF "provider", "providerNormalized", "providerId" ON "FacturaAdministrativa"
+FOR EACH ROW EXECUTE FUNCTION invoice_assign_provider_identity();
 COMMIT;

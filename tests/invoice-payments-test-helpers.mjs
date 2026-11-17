@@ -35,8 +35,9 @@ export function modules(prisma, options = {}) {
 }
 
 export function invoice(id, changes = {}) {
-  return { id, number: `FACT-${id}`, numberNormalized: `FACT-${id}`, provider: "Proveedor QA", providerNormalized: "PROVEEDOR QA",
-    date: new Date("2026-10-15T00:00:00.000Z"), amount: "1000000.00", paidAmount: "0.00", status: "PENDIENTE", version: 1,
+  return { id, number: `FACT-${id}`, numberNormalized: `FACT-${id}`, provider: "Proveedor QA", providerId: null, providerNormalized: "PROVEEDOR QA",
+    date: new Date("2026-10-15T00:00:00.000Z"), dueDate: null, deletedAt: null, deletedById: null, deletedByProfileId: null, deletedBy: null,
+    amount: "1000000.00", paidAmount: "0.00", status: "PENDIENTE", version: 1,
     createRequestId: `seed-${id}`, createRequestHash: "seed", createResult: null,
     createdById: 7, createdByProfileId: 11, createdBy: "Administrador QA", createdAt: new Date("2026-10-15T18:00:00Z"),
     updatedAt: new Date("2026-10-15T18:00:00Z"), ...changes };
@@ -50,9 +51,9 @@ export function payment(id, invoiceId, changes = {}) {
 function matches(row, where = {}) {
   return Object.entries(where).every(([field, rule]) => {
     if (field === "OR") return rule.some((item) => matches(row, item));
-    const value = row[field];
+    const value = row[field] ?? null;
     if (rule && typeof rule === "object" && !(rule instanceof Date)) {
-      return Object.entries(rule).every(([operator, target]) => operator === "gte" ? value >= target : operator === "lt" ? value < target
+      return Object.entries(rule).every(([operator, target]) => operator === "not" ? value !== target : operator === "gte" ? value !== null && value >= target : operator === "lt" ? value !== null && value < target
         : operator === "contains" ? String(value).includes(target) : (() => { throw Error(`Unsupported ${operator}`); })());
     }
     return value instanceof Date && rule instanceof Date ? value.getTime() === rule.getTime() : value === rule;
@@ -60,7 +61,13 @@ function matches(row, where = {}) {
 }
 function ordered(rows, orderBy) {
   return [...rows].sort((a, b) => {
-    for (const order of orderBy || []) for (const [field, direction] of Object.entries(order)) {
+    for (const order of orderBy || []) for (const [field, config] of Object.entries(order)) {
+      const direction = typeof config === "string" ? config : config.sort;
+      const nulls = typeof config === "object" ? config.nulls : direction === "asc" ? "last" : "first";
+      if (a[field] == null || b[field] == null) {
+        if (a[field] == null && b[field] == null) continue;
+        return a[field] == null ? nulls === "last" ? 1 : -1 : nulls === "last" ? -1 : 1;
+      }
       if (a[field] < b[field]) return direction === "asc" ? -1 : 1;
       if (a[field] > b[field]) return direction === "asc" ? 1 : -1;
     }
@@ -73,11 +80,28 @@ const conflict = () => Object.assign(new Error("Unique constraint"), { code: "P2
 // Transactions can interleave. Only SELECT FOR UPDATE serializes competing
 // invoice payments; this fixture would reveal duplicate consumption without it.
 export function database(seed = {}, options = {}) {
-  const tables = { facturaAdministrativa: clone(seed.facturaAdministrativa || []), pagoFacturaAdministrativa: clone(seed.pagoFacturaAdministrativa || []) };
+  const tables = { facturaAdministrativa: clone(seed.facturaAdministrativa || []), pagoFacturaAdministrativa: clone(seed.pagoFacturaAdministrativa || []), invoiceAdminEvent: clone(seed.invoiceAdminEvent || []),
+    proveedorAdministrativo: clone(seed.proveedorAdministrativo || []), proveedorAdministrativoAlias: clone(seed.proveedorAdministrativoAlias || []), proveedorAdministrativoEvento: clone(seed.proveedorAdministrativoEvento || []) };
+  // Mirror the additive migration backfill so seeded historical invoices have
+  // stable provider identities. Tests still exercise the real catalog resolver.
+  for (const row of tables.facturaAdministrativa) {
+    let provider = tables.proveedorAdministrativo.find((item) => row.providerId ? item.id === row.providerId : item.nameNormalized === row.providerNormalized);
+    if (!provider) {
+      provider = { id: row.providerId || Math.max(0, ...tables.proveedorAdministrativo.map((item) => item.id)) + 1,
+        name: row.provider, nameNormalized: row.providerNormalized, active: true, version: 1 };
+      tables.proveedorAdministrativo.push(provider);
+    }
+    row.providerId = provider.id;
+  }
+  for (const row of tables.proveedorAdministrativo) if (!tables.proveedorAdministrativoAlias.some((alias) => alias.nameNormalized === row.nameNormalized)) {
+    tables.proveedorAdministrativoAlias.push({ id: tables.proveedorAdministrativoAlias.length + 1, nameNormalized: row.nameNormalized, providerId: row.id });
+  }
   const calls = [];
   const locks = new Map();
   let invoiceSequence = Math.max(0, ...tables.facturaAdministrativa.map((row) => row.id));
   let paymentSequence = Math.max(0, ...tables.pagoFacturaAdministrativa.map((row) => row.id));
+  let eventSequence = Math.max(0, ...tables.invoiceAdminEvent.map((row) => row.id));
+  const otherSequences = Object.fromEntries(Object.entries(tables).map(([name, rows]) => [name, Math.max(0, ...rows.map((row) => row.id || 0))]));
   let txSequence = 0;
   async function acquire(key, ctx) {
     if (ctx.held.has(key)) return;
@@ -96,6 +120,7 @@ export function database(seed = {}, options = {}) {
       const payments = source.pagoFacturaAdministrativa.filter((item) => item.invoiceId === row.id);
       if (args.include?._count) result._count = { payments: payments.length };
       if (args.include?.payments) result.payments = clone(ordered(payments, args.include.payments.orderBy));
+      if (args.include?.events) result.events = clone(ordered(source.invoiceAdminEvent.filter((event) => event.invoiceId === row.id), args.include.events.orderBy));
       return result;
     }
     const api = {};
@@ -103,6 +128,7 @@ export function database(seed = {}, options = {}) {
       const rows = source[table];
       const methods = {
         findUnique: async (args) => decorate(rows.find((row) => matches(row, args.where)), args),
+        findFirst: async (args) => decorate(rows.find((row) => matches(row, args.where)), args),
         findUniqueOrThrow: async (args) => { const row = decorate(rows.find((row) => matches(row, args.where)), args); if (!row) throw Error("Missing row"); return row; },
         findMany: async (args = {}) => ordered(rows.filter((row) => matches(row, args.where)), args.orderBy)
           .slice(args.skip || 0, args.take === undefined ? undefined : (args.skip || 0) + args.take).map((row) => decorate(row, args)),
@@ -116,15 +142,20 @@ export function database(seed = {}, options = {}) {
           if (!ctx) throw Error("Write outside transaction");
           if (table === "facturaAdministrativa") {
             await acquire(`create:${data.createRequestId}`, ctx);
-            await acquire(`number:${data.providerNormalized}:${data.numberNormalized}`, ctx);
+            await acquire(`number:${data.providerId ?? data.providerNormalized}:${data.numberNormalized}`, ctx);
             if (tables[table].some((row) => row.createRequestId === data.createRequestId ||
-              row.providerNormalized === data.providerNormalized && row.numberNormalized === data.numberNormalized)) throw conflict();
+              (data.providerId ? row.providerId === data.providerId : !row.providerId && row.providerNormalized === data.providerNormalized) && row.numberNormalized === data.numberNormalized)) throw conflict();
+          } else if (table === "proveedorAdministrativo" || table === "proveedorAdministrativoAlias") {
+            await acquire(`${table}:${data.nameNormalized}`, ctx);
+            if (tables[table].some((row) => row.nameNormalized === data.nameNormalized)) throw conflict();
           } else {
-            await acquire(`payment:${data.requestId}`, ctx);
+            await acquire(`${table}:${data.requestId}`, ctx);
             if (tables[table].some((row) => row.requestId === data.requestId)) throw conflict();
-            if (options.failPaymentWrite) throw Error("Synthetic storage failure");
+            if (table === "pagoFacturaAdministrativa" && options.failPaymentWrite || table === "invoiceAdminEvent" && options.failEventWrite) throw Error("Synthetic storage failure");
           }
-          const row = table === "facturaAdministrativa" ? invoice(++invoiceSequence, clone(data)) : payment(++paymentSequence, data.invoiceId, clone(data));
+          const row = table === "facturaAdministrativa" ? invoice(++invoiceSequence, clone(data)) : table === "pagoFacturaAdministrativa"
+            ? payment(++paymentSequence, data.invoiceId, clone(data)) : { id: table === "invoiceAdminEvent" ? ++eventSequence : ++otherSequences[table],
+              createdAt: new Date(), ...(table === "proveedorAdministrativo" ? { active: true, version: 1 } : {}), ...clone(data) };
           tables[table].push(row);
           ctx.undo.push(() => { const index = tables[table].findIndex((item) => item.id === row.id); if (index >= 0) tables[table].splice(index, 1); });
           return clone(row);
@@ -133,11 +164,26 @@ export function database(seed = {}, options = {}) {
           if (!ctx) throw Error("Write outside transaction");
           const row = tables[table].find((item) => matches(item, where));
           if (!row) throw Error("Missing row");
+          if (table === "facturaAdministrativa" && (data.providerId !== undefined || data.providerNormalized !== undefined || data.numberNormalized !== undefined)) {
+            const provider = data.providerId ?? row.providerId ?? data.providerNormalized ?? row.providerNormalized;
+            const number = data.numberNormalized ?? row.numberNormalized;
+            await acquire(`number:${provider}:${number}`, ctx);
+            if (tables[table].some((other) => other.id !== row.id && (other.providerId ?? other.providerNormalized) === provider && other.numberNormalized === number)) throw conflict();
+          } else if (table === "proveedorAdministrativo" && data.nameNormalized !== undefined) {
+            await acquire(`${table}:${data.nameNormalized}`, ctx);
+            if (tables[table].some((other) => other.id !== row.id && other.nameNormalized === data.nameNormalized)) throw conflict();
+          }
           const before = clone(row);
           ctx.undo.push(() => Object.assign(row, before));
           for (const [field, value] of Object.entries(data)) row[field] = value && typeof value === "object" && "increment" in value ? row[field] + value.increment : clone(value);
           row.updatedAt = new Date();
           return clone(row);
+        },
+        upsert: async ({ where, create, update }) => {
+          if (!ctx) throw Error("Write outside transaction");
+          await acquire(`${table}:${where.nameNormalized}`, ctx);
+          const row = tables[table].find((item) => matches(item, where));
+          return row ? methods.update({ where, data: update }) : methods.create({ data: create });
         },
       };
       api[table] = Object.fromEntries(Object.entries(methods).map(([method, run]) => [method, async (args) => {
@@ -146,14 +192,18 @@ export function database(seed = {}, options = {}) {
     }
     api.$queryRaw = async (strings, id) => {
       if (!ctx) throw Error("Lock outside transaction");
-      assertLock(strings.join("?"));
+      const target = assertLock(strings.join("?"));
       calls.push({ table: "$queryRaw", id, tx: ctx.id });
-      await acquire(`invoice:${id}`, ctx);
-      return tables.facturaAdministrativa.some((row) => row.id === id) ? [{ id }] : [];
+      await acquire(`${target}:${id}`, ctx);
+      return tables[target].some((row) => row.id === id) ? [{ id }] : [];
     };
     return api;
   }
-  function assertLock(sql) { if (!/SELECT "id" FROM "FacturaAdministrativa" WHERE "id" = \? FOR UPDATE/.test(sql)) throw Error(`Unexpected SQL ${sql}`); }
+  function assertLock(sql) {
+    const match = sql.match(/SELECT "id" FROM "(FacturaAdministrativa|ProveedorAdministrativo)" WHERE "id" = \? FOR UPDATE/);
+    if (!match) throw Error(`Unexpected SQL ${sql}`);
+    return match[1] === "FacturaAdministrativa" ? "facturaAdministrativa" : "proveedorAdministrativo";
+  }
   const prisma = client(null);
   prisma.$transaction = async (run, transactionOptions = {}) => {
     const ctx = { id: ++txSequence, held: new Set(), releases: [], undo: [], snapshot: transactionOptions.isolationLevel === "RepeatableRead" ? clone(tables) : null };

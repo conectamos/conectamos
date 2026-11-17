@@ -5,7 +5,7 @@
 .breadcrumb a:hover { color: #e30613; }
 .header h1 { margin: 0; font-size: 30px; font-weight: 900; line-height: 1.2; letter-spacing: -.6px; }
 .header p { margin-top: 6px; color: #64748b; font-size: 14px; }
-.headerActions { display: flex; align-items: center; gap: 18px; }
+.headerActions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .identity { display: flex; align-items: center; gap: 8px; max-width: 210px; color: #475569; font-size: 13px; overflow-wrap: anywhere; }
 .identity svg { flex-shrink: 0; }
 .primaryButton, .secondaryButton, .payButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 16px; border: 1px solid #e30613; border-radius: 10px; background: #e30613; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
@@ -16,7 +16,7 @@
 .filters label, .formGrid label { display: flex; min-width: 0; flex-direction: column; gap: 7px; font-size: 14px; font-weight: 700; color: #334155; }
 .filters > label { flex: 0 1 230px; }
 .filters .search { flex: 1; }
-.filters input, .formGrid input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #0f172a; font-size: 14px; font-weight: 400; }
+.filters input, .formGrid input, .formGrid select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #0f172a; font-size: 14px; font-weight: 400; }
 .filters input::placeholder, .formGrid input::placeholder { color: #64748b; }
 .filterNote { display: flex; justify-content: space-between; flex-wrap: wrap; flex-basis: 100%; gap: 5px 16px; color: #64748b; font-size: 12px; line-height: 1.5; }
 .filterNote span { color: #92400e; }
@@ -50,6 +50,38 @@
 .badgePaid { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
 .invoice h3 { margin-top: 8px; font-size: 16px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
 .invoiceDate { display: flex; align-items: center; gap: 5px; margin-top: 6px; color: #64748b; font-size: 12px; }
+.dueLine { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 9px; font-size: 12px; color: #475569; }
+.dueBadge { display: inline-flex; padding: 3px 7px; border: 1px solid; border-radius: 6px; font-weight: 700; }
+.overdueBadge { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.upcomingBadge { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.dueSummary { display: flex; gap: 12px 24px; flex-wrap: wrap; margin: -8px 0 14px; color: #475569; font-size: 13px; }
+.overdueSummary { color: #991b1b; }
+.orderNote { margin: 0 0 12px; color: #64748b; font-size: 12px; }
+.managementActions { display: flex; justify-content: flex-end; gap: 16px; margin-top: 10px; padding-top: 4px; border-top: 1px solid #f1f5f9; }
+.managementActions button, .providerCatalog button { min-height: 44px; padding: 8px; color: #475569; font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.managementActions .deleteLink, .providerCatalog .deleteLink { color: #b91c1c; }
+.deletedSection { margin-top: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; overflow: hidden; }
+.deletedToggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 52px; padding: 14px 20px; color: #475569; font-size: 14px; font-weight: 700; cursor: pointer; }
+.deletedHelp { padding: 0 20px 18px; color: #64748b; font-size: 13px; line-height: 1.5; }
+.deletedList article { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 20px; border-top: 1px solid #e2e8f0; }
+.deletedList article > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.deletedList strong { font-size: 14px; }
+.deletedList p { margin: 6px 0; font-size: 14px; }
+.deletedList small { color: #64748b; font-size: 12px; line-height: 1.5; }
+.deletedActions { display: flex; flex-shrink: 0; align-items: center; gap: 16px; }
+.confirmation { padding: 22px 24px; }
+.confirmation h3 { margin-bottom: 10px; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.confirmation p { margin-bottom: 14px; font-size: 14px; line-height: 1.6; color: #475569; }
+.confirmation label { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.confirmation input { width: 18px; height: 18px; flex-shrink: 0; accent-color: #e30613; }
+.providerCatalog { padding: 0 24px; }
+.providerCatalog ul { max-height: 280px; overflow-y: auto; list-style: none; padding: 0; }
+.providerCatalog li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
+.providerCatalog li strong { min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.providerCatalog li > div { display: flex; flex-shrink: 0; gap: 8px; }
+.providerCatalog > p { padding: 20px 0 0; font-size: 14px; color: #64748b; }
+.catalogReset { padding: 0 24px 20px; }
+.catalogNotice { margin: 18px 24px 8px; padding: 12px 14px; border: 1px solid #a7f3d0; border-radius: 10px; background: #ecfdf5; color: #047857; font-size: 14px; line-height: 1.5; }
 .invoiceAmounts, .detailAmounts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
 .invoiceAmounts dt, .detailAmounts dt { margin-bottom: 5px; color: #64748b; font-size: 12px; }
 .invoiceAmounts dd, .detailAmounts dd { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -77,7 +109,7 @@
 .closeButton:hover { background: #f1f5f9; }
 .formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 24px; }
 .fullField { grid-column: 1 / -1; }
-.formGrid input { font-size: 16px; }
+.formGrid input, .formGrid select { font-size: 16px; }
 .detailAmounts { margin: 0; padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #fafbfc; }
 .detailAmounts dd { font-size: 16px; }
 .dialogFooter { display: flex; justify-content: flex-end; gap: 12px; position: sticky; bottom: 0; z-index: 1; padding: 18px 24px; border-top: 1px solid #e2e8f0; background: #fff; }
@@ -106,9 +138,10 @@
 .paymentHistory .emptyHistory { margin: 0; padding: 28px 0; text-align: center; }
 .shell :is(button, input, select, a, summary, [tabindex]):focus-visible { outline: 3px solid #e30613; outline-offset: 3px; }
 .shell button:disabled { opacity: .55; cursor: not-allowed; }
-.shell input:disabled { background: #f8fafc; color: #64748b; }
+.shell input:disabled, .shell select:disabled { background: #f8fafc; color: #64748b; }
 @media (min-width: 1024px) { .workspace { padding-left: 252px; } }
 @media (max-width: 1280px) { .main { padding-inline: 24px; } .identity { display: none; } .metrics article { padding: 18px 16px; gap: 9px; } .metricIcon { width: 30px; height: 30px; } .metrics strong { font-size: 23px; } .columns { gap: 18px; } .columnHeader, .invoice, .pagination { padding-inline: 16px; } .columnHeader h2 { font-size: 14px; } }
 @media (max-width: 1100px) and (min-width: 1024px) { .metrics { gap: 12px; } .metricIcon { display: none; } .columns { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .main { padding: 20px 16px 32px; } .header { align-items: flex-start; flex-wrap: wrap; gap: 16px; } .header h1 { font-size: 28px; } .headerActions { margin-left: auto; } .filters { padding: 16px; gap: 12px; } .filters > label { flex: 1 1 200px; } .filters .search { flex: 1 1 250px; } .metrics { gap: 12px; } .metrics article { padding: 16px 14px; } .metricIcon { display: none; } .metrics strong { font-size: 22px; } .columns { grid-template-columns: 1fr; } .periodHeading { align-items: flex-start; } .periodHeading > span { text-align: right; } .dialog { width: calc(100% - 24px); max-height: calc(100dvh - 24px); } .dialogHeader, .detailAmounts, .formGrid, .dialogFooter { padding-inline: 18px; } .paymentMode, .balancePreview, .help, .formError { margin-inline: 18px; } .paymentHistory { padding-inline: 18px; } }
 @media (max-width: 480px) { .header h1 { font-size: 25px; } .headerActions, .headerActions button { width: 100%; } .filters > label, .filters .search { flex-basis: 100%; } .filters > button { width: 100%; } .metrics { grid-template-columns: 1fr; } .metrics article { padding: 18px; } .metrics strong { font-size: 28px; } .metricIcon { display: grid; width: 38px; height: 38px; } .metrics article > div { flex: 1; } .periodHeading { flex-direction: column; gap: 5px; } .periodHeading > span { text-align: left; } .columnHeader { gap: 8px; } .columnHeader h2 { font-size: 13px; } .invoiceAmounts { gap: 7px; } .invoiceAmounts dd { font-size: 13px; } .formGrid { grid-template-columns: 1fr; } .dialogFooter { gap: 8px; } .dialogFooter button { flex: 1; padding-inline: 12px; } .detailAmounts { gap: 6px; } .detailAmounts dd { font-size: 14px; } .balancePreview { flex-wrap: wrap; gap: 7px; } .error { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 760px) { .deletedList article { align-items: flex-start; flex-direction: column; } .deletedActions { width: 100%; justify-content: space-between; } .confirmation, .providerCatalog { padding-inline: 18px; } }

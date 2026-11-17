@@ -2,7 +2,12 @@ export type InvoiceItem = {
   id: number;
   number: string;
   provider: string;
+  providerId?: number | null;
   date: string;
+  dueDate?: string | null;
+  dueStatus?: "SIN_FECHA" | "AL_DIA" | "PROXIMA" | "HOY" | "VENCIDA" | "PAGADA";
+  deletedAt?: string | null;
+  deletedBy?: string | null;
   amount: number;
   paidAmount: number;
   balance: number;
@@ -10,6 +15,8 @@ export type InvoiceItem = {
   paymentCount: number;
   version: number;
 };
+
+export type InvoiceProvider = { id: number; name: string; version: number; active: boolean };
 
 export type InvoicePayment = {
   id: number | string;
@@ -40,6 +47,8 @@ export type InvoiceReport = {
     balance: number;
     pendingCount: number;
     paidCount: number;
+    overdueCount?: number;
+    dueSoonCount?: number;
   };
   pending: InvoicePage;
   paid: InvoicePage;

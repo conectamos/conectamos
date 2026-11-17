@@ -22,7 +22,8 @@ const payPath = "app/api/pago-facturas/[id]/payments/route.ts";
 test("alta guarda factura independiente, fecha civil, dinero decimal e identidad del administrador", async () => {
   const { db, service } = setup();
   const result = await service.createAdministrativeInvoice(createInput({ amount: 1234567.29 }), admin);
-  assert.deepEqual(result.invoice, { id: 1, number: "FAC-001", provider: "Proveedor QA", date: "2026-10-31", amount: 1234567.29,
+  assert.deepEqual(result.invoice, { id: 1, number: "FAC-001", provider: "Proveedor QA", providerId: 1, date: "2026-10-31", amount: 1234567.29,
+    dueDate: null, dueStatus: "SIN_FECHA", deletedAt: null, deletedBy: null,
     paidAmount: 0, balance: 1234567.29, status: "PENDIENTE", paymentCount: 0, version: 1 });
   const saved = db.tables.facturaAdministrativa[0];
   assert.equal(saved.amount, "1234567.29");
@@ -139,7 +140,7 @@ test("resumen completo, dos paginaciones y búsqueda comparten el mes de factura
   rows.push(invoice(900, { date: new Date("2026-09-30T00:00:00Z") }), invoice(901, { date: new Date("2026-11-01T00:00:00Z") }));
   const { service } = setup({ facturaAdministrativa: rows });
   const result = await service.readInvoicePayments(new URLSearchParams("month=2026-10&pendingPage=2&paidPage=2"), admin);
-  assert.deepEqual(result.summary, { invoiceCount: 35, totalAmount: 3500, paidAmount: 1775, balance: 1725, pendingCount: 23, paidCount: 12 });
+  assert.deepEqual(result.summary, { invoiceCount: 35, totalAmount: 3500, paidAmount: 1775, balance: 1725, pendingCount: 23, paidCount: 12, overdueCount: 0, dueSoonCount: 0 });
   assert.equal(result.pending.page, 2); assert.equal(result.pending.items.length, 10); assert.equal(result.pending.total, 23);
   assert.equal(result.paid.page, 2); assert.equal(result.paid.items.length, 2); assert.equal(result.paid.total, 12);
   const clamped = await service.readInvoicePayments(new URLSearchParams("month=2026-10&pendingPage=999&paidPage=999"), admin);

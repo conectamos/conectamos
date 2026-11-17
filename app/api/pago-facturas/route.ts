@@ -1,6 +1,6 @@
 import { getSessionUser } from "@/lib/auth";
 import { assertInvoicePaymentsAccess, assertInvoiceWriteRequest, createAdministrativeInvoice, invoiceErrorResponse,
-  invoiceJson, readInvoiceJson, readInvoicePayments } from "@/lib/invoice-payments";
+  invoiceJson, readInvoiceJson, readInvoicePayments, readDeletedAdministrativeInvoices } from "@/lib/invoice-payments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const session = await getSessionUser();
-    return invoiceJson(await readInvoicePayments(new URL(request.url).searchParams, session));
+    const params = new URL(request.url).searchParams;
+    return invoiceJson(await (params.get("deleted") === "1" ? readDeletedAdministrativeInvoices(params, session) : readInvoicePayments(params, session)));
   } catch (error) { return invoiceErrorResponse(error); }
 }
 

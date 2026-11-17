@@ -229,13 +229,58 @@ model Usuario {
 
 // Central administrative invoice register. It is intentionally independent of
 // the supplier due-date workflow, cash ledger and inventory purchases.
+model ProveedorAdministrativo {
+  id                 Int      @id @default(autoincrement())
+  name               String
+  nameNormalized     String   @unique
+  active             Boolean  @default(true)
+  version            Int      @default(1)
+  createdById        Int?
+  createdByProfileId Int?
+  createdBy          String   @default("Importado de facturas")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  aliases            ProveedorAdministrativoAlias[]
+  events             ProveedorAdministrativoEvento[]
+  invoices           FacturaAdministrativa[]
+}
+
+// Previous names remain reserved so cached forms resolve the same identity.
+model ProveedorAdministrativoAlias {
+  nameNormalized String @id
+  providerId     Int
+  provider       ProveedorAdministrativo @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@index([providerId])
+}
+
+model ProveedorAdministrativoEvento {
+  id                 Int      @id @default(autoincrement())
+  providerId         Int
+  action             String
+  requestId          String   @unique
+  requestHash        String
+  snapshot           Json
+  responseSnapshot   Json
+  createdById        Int
+  createdByProfileId Int?
+  createdBy          String
+  createdAt          DateTime @default(now())
+  provider           ProveedorAdministrativo @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@index([providerId, createdAt, id])
+}
+
 model FacturaAdministrativa {
   id                 Int      @id @default(autoincrement())
   number             String
   numberNormalized   String
   provider           String
   providerNormalized String
+  providerId         Int?
+  providerIdentity   ProveedorAdministrativo? @relation(fields: [providerId], references: [id], onDelete: Restrict)
   date               DateTime @db.Date
+  dueDate            DateTime? @db.Date
   amount             Decimal  @db.Decimal(14, 2)
   paidAmount         Decimal  @default(0) @db.Decimal(14, 2)
   status             String   @default("PENDIENTE")
@@ -248,10 +293,34 @@ model FacturaAdministrativa {
   createdBy          String
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  deletedAt          DateTime?
+  deletedById        Int?
+  deletedByProfileId Int?
+  deletedBy          String?
   payments           PagoFacturaAdministrativa[]
+  events             InvoiceAdminEvent[]
 
-  @@unique([providerNormalized, numberNormalized])
+  @@unique([providerId, numberNormalized])
   @@index([date, status, id])
+  @@index([deletedAt, date, status, id])
+  @@index([deletedAt, status, dueDate])
+}
+
+model InvoiceAdminEvent {
+  id                 Int      @id @default(autoincrement())
+  invoiceId          Int
+  action             String
+  requestId          String   @unique
+  requestHash        String
+  snapshot           Json
+  responseSnapshot   Json
+  createdById        Int
+  createdByProfileId Int?
+  createdBy          String
+  createdAt          DateTime @default(now())
+  invoice            FacturaAdministrativa @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId, createdAt, id])
 }
 
 model PagoFacturaAdministrativa {

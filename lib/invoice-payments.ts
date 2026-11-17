@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { esAdministradorCentral } from "@/lib/access-control";
 import { getDateKeyInColombia } from "@/lib/credit-date-utils";
 import { decimalProveedorACentavos, centavosADecimalProveedor } from "@/lib/proveedores-pagos";
+import { resolveInvoiceProvider, InvoiceProviderError } from "@/lib/invoice-providers";
 
 export class InvoicePaymentsError extends Error {
   constructor(message: string, public status = 400, public code = "INVALID_INPUT") { super(message); }
@@ -13,11 +14,14 @@ type InvoiceSession = { id: number; perfilId?: number | null; perfilNombre?: str
   nombre?: string | null; usuario?: string; rolNombre?: unknown; perfilTipo?: unknown };
 type DecimalLike = number | string | { toString(): string };
 type InvoiceRecord = {
-  id: number; number: string; provider: string; date: Date; amount: DecimalLike; paidAmount: DecimalLike;
+  id: number; number: string; provider: string; providerId?: number | null; date: Date; amount: DecimalLike; paidAmount: DecimalLike;
+  dueDate?: Date | null; deletedAt?: Date | null; deletedBy?: string | null;
   status: string; version: number; _count?: { payments: number };
 };
+export type InvoiceDueStatus = "SIN_FECHA" | "AL_DIA" | "PROXIMA" | "HOY" | "VENCIDA" | "PAGADA";
 export type AdministrativeInvoice = {
-  id: number; number: string; provider: string; date: string; amount: number; paidAmount: number;
+  id: number; number: string; provider: string; providerId: number | null; date: string; amount: number; paidAmount: number;
+  dueDate: string | null; dueStatus: InvoiceDueStatus; deletedAt: string | null; deletedBy: string | null;
   balance: number; status: "PENDIENTE" | "PAGADA"; paymentCount: number; version: number;
 };
 const PAGE_SIZE = 10;
@@ -71,6 +75,22 @@ function validDate(value: unknown, label = "La fecha") {
   return date;
 }
 
+function optionalDueDate(value: unknown, invoiceDate: Date) {
+  if (value === undefined || value === null) return null;
+  const date = validDate(value, "La fecha de vencimiento");
+  if (date < invoiceDate) throw new InvoicePaymentsError("El vencimiento no puede ser anterior a la fecha de la factura.");
+  return date;
+}
+
+export function invoiceDueStatus(dueDate: string | null, paid: boolean, today = getDateKeyInColombia()): InvoiceDueStatus {
+  if (paid) return "PAGADA";
+  if (!dueDate) return "SIN_FECHA";
+  if (dueDate < today) return "VENCIDA";
+  if (dueDate === today) return "HOY";
+  const days = (validDate(dueDate).getTime() - validDate(today).getTime()) / 86_400_000;
+  return days <= 7 ? "PROXIMA" : "AL_DIA";
+}
+
 function moneyCents(value: unknown, label = "El valor") {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new InvoicePaymentsError(`${label} debe ser un importe válido.`);
   const cents = decimalProveedorACentavos(value);
@@ -93,11 +113,14 @@ function decimal(cents: number) {
 function digest(value: object) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function uniqueConflict(error: unknown) { return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002"); }
 
-function invoiceDto(row: InvoiceRecord, paymentCount = row._count?.payments ?? 0): AdministrativeInvoice {
+function invoiceDto(row: InvoiceRecord, paymentCount = row._count?.payments ?? 0, today = getDateKeyInColombia()): AdministrativeInvoice {
   const amount = storedCents(row.amount);
   const paid = storedCents(row.paidAmount);
   if (paid > amount) throw new InvoicePaymentsError("El saldo registrado requiere revisión.", 503, "INVALID_STORED_BALANCE");
-  return { id: row.id, number: row.number, provider: row.provider, date: row.date.toISOString().slice(0, 10),
+  const dueDate = row.dueDate?.toISOString().slice(0, 10) ?? null;
+  return { id: row.id, number: row.number, provider: row.provider, providerId: row.providerId ?? null, date: row.date.toISOString().slice(0, 10),
+    dueDate, dueStatus: invoiceDueStatus(dueDate, paid === amount, today),
+    deletedAt: row.deletedAt?.toISOString() ?? null, deletedBy: row.deletedBy ?? null,
     amount: amount / 100, paidAmount: paid / 100, balance: (amount - paid) / 100,
     status: paid === amount ? "PAGADA" : "PENDIENTE", paymentCount, version: row.version };
 }
@@ -107,17 +130,28 @@ function replayResult(hash: string, expected: string, response: unknown) {
   if (!response || typeof response !== "object" || !("invoice" in response)) {
     throw new InvoicePaymentsError("El intento anterior no tiene un resultado verificable.", 503, "INCOMPLETE_REQUEST");
   }
-  return { invoice: (response as { invoice: AdministrativeInvoice }).invoice, replayed: true };
+  const invoice = (response as { invoice: AdministrativeInvoice }).invoice;
+  // Older request snapshots predate optional due dates and reversible removal.
+  // Keep their financial/version result while supplying the new nullable fields.
+  return { invoice: { ...invoice, providerId: invoice.providerId ?? null, dueDate: invoice.dueDate ?? null,
+    dueStatus: invoice.dueStatus ?? invoiceDueStatus(invoice.dueDate ?? null, invoice.status === "PAGADA"),
+    deletedAt: invoice.deletedAt ?? null, deletedBy: invoice.deletedBy ?? null }, replayed: true };
 }
 
 export function parseAdministrativeInvoice(value: unknown) {
-  const body = record(value, ["requestId", "number", "provider", "date", "amount"]);
+  const body = record(value, ["requestId", "number", "provider", "providerId", "date", "dueDate", "amount"]);
   const number = inputText(body.number, "El número de factura", 160);
-  const provider = inputText(body.provider, "El proveedor", 160);
+  const providerId = body.providerId === undefined || body.providerId === null ? null : body.providerId;
+  if (providerId !== null && (typeof providerId !== "number" || !Number.isSafeInteger(providerId) || providerId < 1 || providerId > 2_147_483_647)) {
+    throw new InvoicePaymentsError("Selecciona un proveedor válido.");
+  }
+  const provider = inputText(body.provider, "El proveedor", 160, providerId !== null) || undefined;
   const date = validDate(body.date);
+  const dueDate = optionalDueDate(body.dueDate, date);
   const cents = moneyCents(body.amount);
-  return { requestId: requestId(body.requestId), number, provider, date, cents,
-    requestHash: digest({ number, provider, date: body.date, cents }) };
+  return { requestId: requestId(body.requestId), number, provider, providerId, date, dueDate, cents,
+    // Null/omitted dueDate retains the exact hash of earlier create requests.
+    requestHash: digest({ number, ...(providerId === null ? { provider } : { providerId }), date: body.date, cents, ...(dueDate ? { dueDate: body.dueDate } : {}) }) };
 }
 
 export function parseAdministrativePayment(value: unknown, invoiceId: number) {
@@ -145,32 +179,42 @@ function pageNumber(params: URLSearchParams, field: string) {
   return Number(value);
 }
 
-export async function readInvoicePayments(params: URLSearchParams, session: InvoiceSession | null) {
-  assertInvoicePaymentsAccess(session);
+function invoiceListFilters(params: URLSearchParams) {
   const today = getDateKeyInColombia();
   const month = params.get("month") || today.slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(month)) throw new InvoicePaymentsError("Selecciona un mes válido.");
   const from = validDate(`${month}-01`);
   const until = new Date(from); until.setUTCMonth(until.getUTCMonth() + 1);
-  const pendingPage = pageNumber(params, "pendingPage");
-  const paidPage = pageNumber(params, "paidPage");
   const search = normalized(inputText(params.get("search") || "", "La búsqueda", 160, true));
   const where: Prisma.FacturaAdministrativaWhereInput = { date: { gte: from, lt: until }, ...(search ? { OR: [
     { providerNormalized: { contains: search } }, { numberNormalized: { contains: search.replace(/\s+/g, "") } },
   ] } : {}) };
+  return { today, month, where };
+}
+
+export async function readInvoicePayments(params: URLSearchParams, session: InvoiceSession | null) {
+  assertInvoicePaymentsAccess(session);
+  const { today, month, where: monthWhere } = invoiceListFilters(params);
+  const pendingPage = pageNumber(params, "pendingPage");
+  const paidPage = pageNumber(params, "paidPage");
+  const where = { ...monthWhere, deletedAt: null };
+  const todayDate = validDate(today);
+  const afterSoon = new Date(todayDate); afterSoon.setUTCDate(afterSoon.getUTCDate() + 8);
   return prisma.$transaction(async (tx) => {
-    const [summary, pendingCount, paidCount] = await Promise.all([
+    const [summary, pendingCount, paidCount, overdueCount, dueSoonCount] = await Promise.all([
       tx.facturaAdministrativa.aggregate({ where, _sum: { amount: true, paidAmount: true }, _count: { _all: true } }),
       tx.facturaAdministrativa.count({ where: { ...where, status: "PENDIENTE" } }),
       tx.facturaAdministrativa.count({ where: { ...where, status: "PAGADA" } }),
+      tx.facturaAdministrativa.count({ where: { ...where, status: "PENDIENTE", dueDate: { lt: todayDate } } }),
+      tx.facturaAdministrativa.count({ where: { ...where, status: "PENDIENTE", dueDate: { gte: todayDate, lt: afterSoon } } }),
     ]);
     async function group(status: "PENDIENTE" | "PAGADA", requested: number, total: number) {
       const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
       const page = Math.min(requested, pages);
       const rows = await tx.facturaAdministrativa.findMany({ where: { ...where, status },
-        orderBy: [{ date: "desc" }, { id: "desc" }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE,
+        orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { date: "asc" }, { id: "asc" }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE,
         include: { _count: { select: { payments: true } } } });
-      return { items: rows.map((row) => invoiceDto(row)), page, pageSize: PAGE_SIZE, total, pages };
+      return { items: rows.map((row) => invoiceDto(row, row._count.payments, today)), page, pageSize: PAGE_SIZE, total, pages };
     }
     const [pending, paid] = await Promise.all([group("PENDIENTE", pendingPage, pendingCount), group("PAGADA", paidPage, paidCount)]);
     // Decimal aggregate strings may exceed the per-invoice limit, so sum values
@@ -185,7 +229,22 @@ export async function readInvoicePayments(params: URLSearchParams, session: Invo
     const total = sumCents(summary._sum.amount);
     const collected = sumCents(summary._sum.paidAmount);
     return { month, today, summary: { invoiceCount: summary._count._all, totalAmount: total / 100,
-      paidAmount: collected / 100, balance: (total - collected) / 100, pendingCount, paidCount }, pending, paid };
+      paidAmount: collected / 100, balance: (total - collected) / 100, pendingCount, paidCount, overdueCount, dueSoonCount }, pending, paid };
+  }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
+}
+
+export async function readDeletedAdministrativeInvoices(params: URLSearchParams, session: InvoiceSession | null) {
+  assertInvoicePaymentsAccess(session);
+  const { where: monthWhere, today } = invoiceListFilters(params);
+  const requestedPage = pageNumber(params, "page");
+  const where = { ...monthWhere, deletedAt: { not: null } };
+  return prisma.$transaction(async (tx) => {
+    const total = await tx.facturaAdministrativa.count({ where });
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const page = Math.min(requestedPage, pages);
+    const rows = await tx.facturaAdministrativa.findMany({ where, orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { date: "asc" }, { id: "asc" }],
+      skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE, include: { _count: { select: { payments: true } } } });
+    return { items: rows.map((row) => invoiceDto(row, row._count.payments, today)), page, pageSize: PAGE_SIZE, total, pages };
   }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
 }
 
@@ -193,26 +252,39 @@ export async function readAdministrativeInvoice(id: number, session: InvoiceSess
   assertInvoicePaymentsAccess(session);
   return prisma.$transaction(async (tx) => {
     const row = await tx.facturaAdministrativa.findUnique({ where: { id },
-      include: { payments: { orderBy: [{ date: "desc" }, { id: "desc" }] } } });
+      include: { payments: { orderBy: [{ date: "desc" }, { id: "desc" }] }, events: { orderBy: [{ createdAt: "desc" }, { id: "desc" }] } } });
     if (!row) throw new InvoicePaymentsError("Factura no encontrada.", 404, "NOT_FOUND");
     return { invoice: { ...invoiceDto(row, row.payments.length), payments: row.payments.map((payment) => ({
       id: payment.id, date: payment.date.toISOString().slice(0, 10), amount: storedCents(payment.amount) / 100,
       reference: payment.reference, createdBy: payment.createdBy, createdAt: payment.createdAt.toISOString(),
-    })) } };
+    })), events: row.events.map((event) => ({ id: event.id, action: event.action, createdBy: event.createdBy,
+      createdAt: event.createdAt.toISOString(), snapshot: event.snapshot })) } };
   }, { isolationLevel: "RepeatableRead", timeout: 15_000 });
+}
+
+async function throwDuplicateInvoice(providerId: number | null, provider: string | undefined, number: string): Promise<never> {
+  const duplicate = await prisma.facturaAdministrativa.findFirst({ where: {
+    ...(providerId === null ? { providerNormalized: normalized(provider || "") } : { providerId }),
+    numberNormalized: normalized(number).replace(/\s+/g, ""),
+  } });
+  if (duplicate?.deletedAt) throw new InvoicePaymentsError("La factura está eliminada. Restáurala desde Facturas eliminadas para corregirla.", 409, "DUPLICATE_DELETED_INVOICE");
+  throw new InvoicePaymentsError("Ya existe una factura con ese número para el proveedor indicado.", 409, "DUPLICATE_INVOICE");
 }
 
 export async function createAdministrativeInvoice(value: unknown, session: InvoiceSession | null) {
   assertInvoicePaymentsAccess(session);
   const input = parseAdministrativeInvoice(value);
   const creator = actor(session);
+  let resolvedProviderId = input.providerId;
   try {
     return await prisma.$transaction(async (tx) => {
       const previous = await tx.facturaAdministrativa.findUnique({ where: { createRequestId: input.requestId } });
       if (previous) return replayResult(previous.createRequestHash, input.requestHash, previous.createResult);
+      const provider = await resolveInvoiceProvider(tx, input);
+      resolvedProviderId = provider.id;
       const created = await tx.facturaAdministrativa.create({ data: { number: input.number,
-        numberNormalized: normalized(input.number).replace(/\s+/g, ""), provider: input.provider,
-        providerNormalized: normalized(input.provider), date: input.date, amount: decimal(input.cents),
+        numberNormalized: normalized(input.number).replace(/\s+/g, ""), provider: provider.name, providerId: provider.id,
+        providerNormalized: normalized(provider.name), date: input.date, dueDate: input.dueDate, amount: decimal(input.cents),
         createRequestId: input.requestId, createRequestHash: input.requestHash, ...creator } });
       const invoice = invoiceDto(created);
       await tx.facturaAdministrativa.update({ where: { id: created.id }, data: { createResult: { invoice } } });
@@ -222,8 +294,88 @@ export async function createAdministrativeInvoice(value: unknown, session: Invoi
     if (!uniqueConflict(error)) throw error;
     const previous = await prisma.facturaAdministrativa.findUnique({ where: { createRequestId: input.requestId } });
     if (previous) return replayResult(previous.createRequestHash, input.requestHash, previous.createResult);
-    throw new InvoicePaymentsError("Ya existe una factura con ese número para el proveedor indicado.", 409, "DUPLICATE_INVOICE");
+    return throwDuplicateInvoice(resolvedProviderId, input.provider, input.number);
   }
+}
+
+type InvoiceAdminAction = "EDIT" | "DELETE" | "RESTORE";
+
+function administrativeChangeInput(id: number, action: InvoiceAdminAction, value: unknown) {
+  const body = record(value, action === "EDIT" ? ["requestId", "version", "number", "provider", "providerId", "date", "dueDate", "amount"] : ["requestId", "version"]);
+  if (typeof body.version !== "number" || !Number.isSafeInteger(body.version) || body.version < 1) {
+    throw new InvoicePaymentsError("Actualiza y revisa la factura antes de guardar el cambio.");
+  }
+  const key = requestId(body.requestId);
+  const fields = action === "EDIT" ? parseAdministrativeInvoice({ requestId: key, number: body.number,
+    provider: body.provider, providerId: body.providerId, date: body.date, dueDate: body.dueDate, amount: body.amount }) : null;
+  const dueDateProvided = Object.hasOwn(body, "dueDate");
+  return { requestId: key, version: body.version, fields, dueDateProvided,
+    requestHash: digest({ action, id, version: body.version, ...(fields ? { number: fields.number,
+      ...(fields.providerId === null ? { provider: fields.provider } : { providerId: fields.providerId }), date: body.date, cents: fields.cents,
+      dueDate: dueDateProvided ? body.dueDate : "PRESERVE" } : {}) }) };
+}
+
+async function changeAdministrativeInvoice(id: number, value: unknown, action: InvoiceAdminAction, session: InvoiceSession | null) {
+  assertInvoicePaymentsAccess(session);
+  const input = administrativeChangeInput(id, action, value);
+  const creator = actor(session);
+  let resolvedProviderId = input.fields?.providerId ?? null;
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Edits, removal, restoration and payments use the same invoice row lock.
+      // No operation may approve an amount from a stale view of its balance.
+      const locked = await tx.$queryRaw<Array<{ id: number }>>`SELECT "id" FROM "FacturaAdministrativa" WHERE "id" = ${id} FOR UPDATE`;
+      if (!locked.length) throw new InvoicePaymentsError("Factura no encontrada.", 404, "NOT_FOUND");
+      const previous = await tx.invoiceAdminEvent.findUnique({ where: { requestId: input.requestId } });
+      if (previous) return replayResult(previous.requestHash, input.requestHash, previous.responseSnapshot);
+      const invoice = await tx.facturaAdministrativa.findUniqueOrThrow({ where: { id }, include: { _count: { select: { payments: true } } } });
+      if (invoice.version !== input.version) throw new InvoicePaymentsError("La factura cambió. Actualiza y revisa los datos antes de guardar.", 409, "STALE_VERSION");
+      const before = invoiceDto(invoice);
+      let data: Prisma.FacturaAdministrativaUncheckedUpdateInput;
+      if (action === "EDIT") {
+        if (invoice.deletedAt) throw new InvoicePaymentsError("La factura está eliminada. Restáurala para corregirla.", 409, "INVOICE_DELETED");
+        const fields = input.fields!;
+        const paid = storedCents(invoice.paidAmount);
+        if (fields.cents < paid) throw new InvoicePaymentsError("El valor de la factura no puede ser menor que el total pagado.", 409, "AMOUNT_BELOW_PAID");
+        const dueDate = input.dueDateProvided ? fields.dueDate : invoice.dueDate;
+        if (dueDate && dueDate < fields.date) throw new InvoicePaymentsError("El vencimiento no puede ser anterior a la fecha de la factura.");
+        const provider = await resolveInvoiceProvider(tx, { ...fields, existing: invoice });
+        resolvedProviderId = provider.id;
+        data = { number: fields.number, numberNormalized: normalized(fields.number).replace(/\s+/g, ""),
+          provider: provider.name, providerId: provider.id, providerNormalized: normalized(provider.name), date: fields.date, dueDate,
+          amount: decimal(fields.cents), status: fields.cents === paid ? "PAGADA" : "PENDIENTE", version: { increment: 1 } };
+      } else if (action === "DELETE") {
+        if (invoice.deletedAt) throw new InvoicePaymentsError("La factura ya está en Facturas eliminadas.", 409, "ALREADY_DELETED");
+        data = { deletedAt: new Date(), deletedById: creator.createdById, deletedByProfileId: creator.createdByProfileId,
+          deletedBy: creator.createdBy, version: { increment: 1 } };
+      } else {
+        if (!invoice.deletedAt) throw new InvoicePaymentsError("La factura ya está activa.", 409, "NOT_DELETED");
+        data = { deletedAt: null, deletedById: null, deletedByProfileId: null, deletedBy: null, version: { increment: 1 } };
+      }
+      const updated = await tx.facturaAdministrativa.update({ where: { id }, data });
+      const after = invoiceDto(updated, invoice._count.payments);
+      const response = { invoice: after };
+      await tx.invoiceAdminEvent.create({ data: { invoiceId: id, action, requestId: input.requestId,
+        requestHash: input.requestHash, snapshot: { before, after }, responseSnapshot: response, ...creator } });
+      return { ...response, replayed: false };
+    }, { timeout: 15_000 });
+  } catch (error) {
+    if (!uniqueConflict(error)) throw error;
+    const previous = await prisma.invoiceAdminEvent.findUnique({ where: { requestId: input.requestId } });
+    if (previous) return replayResult(previous.requestHash, input.requestHash, previous.responseSnapshot);
+    if (input.fields) return throwDuplicateInvoice(resolvedProviderId, input.fields.provider, input.fields.number);
+    throw new InvoicePaymentsError("No fue posible confirmar este intento. Reintenta con los mismos datos.", 409, "IDEMPOTENCY_CONFLICT");
+  }
+}
+
+export function editAdministrativeInvoice(id: number, value: unknown, session: InvoiceSession | null) {
+  return changeAdministrativeInvoice(id, value, "EDIT", session);
+}
+export function deleteAdministrativeInvoice(id: number, value: unknown, session: InvoiceSession | null) {
+  return changeAdministrativeInvoice(id, value, "DELETE", session);
+}
+export function restoreAdministrativeInvoice(id: number, value: unknown, session: InvoiceSession | null) {
+  return changeAdministrativeInvoice(id, value, "RESTORE", session);
 }
 
 export async function recordAdministrativeInvoicePayment(id: number, value: unknown, session: InvoiceSession | null) {
@@ -239,6 +391,7 @@ export async function recordAdministrativeInvoicePayment(id: number, value: unkn
       const previous = await tx.pagoFacturaAdministrativa.findUnique({ where: { requestId: input.requestId } });
       if (previous) return replayResult(previous.requestHash, input.requestHash, previous.responseSnapshot);
       const invoice = await tx.facturaAdministrativa.findUniqueOrThrow({ where: { id }, include: { _count: { select: { payments: true } } } });
+      if (invoice.deletedAt) throw new InvoicePaymentsError("La factura está eliminada. Restáurala antes de registrar pagos.", 409, "INVOICE_DELETED");
       if (invoice.version !== input.version) throw new InvoicePaymentsError("La factura cambió. Actualiza y revisa el saldo antes de registrar el pago.", 409, "STALE_VERSION");
       const total = storedCents(invoice.amount);
       const alreadyPaid = storedCents(invoice.paidAmount);
@@ -291,6 +444,6 @@ export function invoiceJson(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "Cache-Control": "private, no-store" } });
 }
 export function invoiceErrorResponse(error: unknown) {
-  return error instanceof InvoicePaymentsError ? invoiceJson({ error: error.message, code: error.code }, error.status)
+  return error instanceof InvoicePaymentsError || error instanceof InvoiceProviderError ? invoiceJson({ error: error.message, code: error.code }, error.status)
     : invoiceJson({ error: "No fue posible completar la operación. Intenta de nuevo.", code: "UNAVAILABLE" }, 503);
 }
