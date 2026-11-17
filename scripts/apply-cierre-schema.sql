@@ -246,4 +246,25 @@ BEGIN
 END; $$ LANGUAGE plpgsql;
 CREATE TRIGGER invoice_provider_identity BEFORE INSERT OR UPDATE OF "provider", "providerNormalized", "providerId" ON "FacturaAdministrativa"
 FOR EACH ROW EXECUTE FUNCTION invoice_assign_provider_identity();
+-- External reminders remain disabled until their WhatsApp transport is ready.
+-- A delivery is separate from its invoice and never changes accounting totals.
+CREATE TABLE IF NOT EXISTS "InvoiceReminderDelivery" (
+ "id" TEXT PRIMARY KEY, "invoiceId" INTEGER NOT NULL REFERENCES "FacturaAdministrativa" ("id") ON DELETE RESTRICT,
+ "dueDate" DATE NOT NULL, "channel" TEXT NOT NULL DEFAULT 'WHATSAPP' CHECK ("channel" = 'WHATSAPP'),
+ "recipientHash" TEXT NOT NULL, "recipient" TEXT NOT NULL,
+ "state" TEXT NOT NULL DEFAULT 'PENDING' CHECK ("state" IN ('PENDING','PROCESSING','RETRY','SENT','FAILED','UNKNOWN','CANCELLED')),
+ "attempts" INTEGER NOT NULL DEFAULT 0 CHECK ("attempts" >= 0),
+ "nextAttempt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ "leaseToken" TEXT, "leaseUntil" TIMESTAMP(3), "dispatchClaimedAt" TIMESTAMP(3),
+ "payloadSnapshot" JSONB, "providerMessageId" TEXT, "sentAt" TIMESTAMP(3), "errorCode" TEXT,
+ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CHECK ("state" <> 'SENT' OR ("sentAt" IS NOT NULL AND "providerMessageId" IS NOT NULL)),
+ CHECK ("state" <> 'PROCESSING' OR ("leaseToken" IS NOT NULL AND "leaseUntil" IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "InvoiceReminderDelivery_invoiceId_dueDate_recipientHash_key"
+ ON "InvoiceReminderDelivery" ("invoiceId", "dueDate", "recipientHash");
+CREATE INDEX IF NOT EXISTS "InvoiceReminderDelivery_state_nextAttempt_dueDate_idx"
+ ON "InvoiceReminderDelivery" ("state", "nextAttempt", "dueDate");
+CREATE INDEX IF NOT EXISTS "InvoiceReminderDelivery_state_leaseUntil_idx" ON "InvoiceReminderDelivery" ("state", "leaseUntil");
 COMMIT;

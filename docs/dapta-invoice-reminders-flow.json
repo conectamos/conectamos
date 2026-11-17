@@ -1,0 +1,629 @@
+{
+  "timeout": 45,
+  "api_nodes": [
+    {
+      "id": "start",
+      "name": "Trigger",
+      "type": "trigger",
+      "x": 400,
+      "y": 50,
+      "childRef": "normI",
+      "api_trigger": {
+        "trigger_options": "http",
+        "trigger_type": "post",
+        "trigger_params": [
+          {
+            "id": "p0",
+            "key": "delivery_id",
+            "origin": "body",
+            "type": "text",
+            "required": true
+          },
+          {
+            "id": "p1",
+            "key": "authorization_token",
+            "origin": "body",
+            "type": "text",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "normI",
+      "name": "Normalizar entrada",
+      "type": "action",
+      "parentRefs": [
+        "start"
+      ],
+      "childRef": "gateI",
+      "x": 400,
+      "y": 160,
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "const body=params.trigger?.body;\nconst uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nconst valid=body&&typeof body==='object'&&!Array.isArray(body)&&Object.keys(body).length===2&&\n Object.keys(body).every(k=>['delivery_id','authorization_token'].includes(k))&&\n typeof body.delivery_id==='string'&&uuid.test(body.delivery_id)&&\n typeof body.authorization_token==='string'&&uuid.test(body.authorization_token);\nmodule.exports=valid?{valid:'yes',deliveryId:body.delivery_id.toLowerCase(),payload:JSON.stringify({deliveryId:body.delivery_id.toLowerCase(),token:body.authorization_token})}:{valid:'no'};"
+        },
+        "response": [
+          {
+            "variable_name": "valid",
+            "response_value_path": "valid"
+          },
+          {
+            "variable_name": "deliveryId",
+            "response_value_path": "deliveryId"
+          },
+          {
+            "variable_name": "payload",
+            "response_value_path": "payload"
+          }
+        ]
+      }
+    },
+    {
+      "id": "gateI",
+      "name": "Entrada valida",
+      "type": "conditional",
+      "parentRefs": [
+        "normI"
+      ],
+      "childTrue": "claim",
+      "childFalse": "badIR",
+      "x": 400,
+      "y": 270,
+      "api_conditional": {
+        "conditionalGroups": [
+          {
+            "conditionals": [
+              {
+                "partOne": "{{normalizar_entrada.valid}}",
+                "partTwo": "yes",
+                "dataType": "string",
+                "operator": "eq"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "badIR",
+      "name": "Rechazar entrada",
+      "type": "response",
+      "parentRefs": [
+        "gateI"
+      ],
+      "x": 680,
+      "y": 380,
+      "api_response": {
+        "response_type": "text",
+        "response_text": "{\"accepted\":false,\"uncertain\":false}",
+        "response_params": [],
+        "response_redirect_to": ""
+      }
+    },
+    {
+      "id": "claim",
+      "name": "Autorizar envio",
+      "type": "action",
+      "parentRefs": [
+        "gateI"
+      ],
+      "childRef": "normD",
+      "x": 240,
+      "y": 380,
+      "api_action": {
+        "action_type": "api",
+        "on_error": "continue",
+        "external_api_action": {
+          "url": "https://conectamos.app/api/pago-facturas/reminders/dispatch",
+          "request_type": "post",
+          "body_format": "raw",
+          "body": "{{normalizar_entrada.payload}}",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "authorization": {
+            "type": ""
+          },
+          "selfsignedCertificate": "false"
+        },
+        "response": [
+          {
+            "variable_name": "response",
+            "response_value_path": "response"
+          }
+        ]
+      }
+    },
+    {
+      "id": "normD",
+      "name": "Validar autorizacion",
+      "type": "action",
+      "parentRefs": [
+        "claim"
+      ],
+      "childRef": "allow",
+      "x": 240,
+      "y": 490,
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "const expected=params.normalizar_entrada;\nconst denied=(uncertain)=>({allowed:'no',result:JSON.stringify({accepted:false,uncertain})});\nconst parsed=value=>{if(typeof value!=='string')return value;if(value.length>32768)return null;try{return JSON.parse(value);}catch{return null;}};\nlet root=parsed(params.autorizar_envio?.response);\nfor(let i=0;i<4&&root&&typeof root==='object'&&root.allowed===undefined;i++)root=parsed(root.response??root.body??root.data);\nif(!root||typeof root!=='object'||Array.isArray(root)){module.exports=denied(true);}\nelse if(root.allowed===false){module.exports=denied(false);}\nelse{\n const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\n const text=value=>typeof value==='string'&&value.trim()&&value.length<=300&&!/[\\u0000-\\u001f\\u007f]/.test(value);\n const recipient=typeof root.recipient==='string'?root.recipient:'';\n const date=typeof root.dueDate==='string'&&/^\\d{4}-\\d{2}-\\d{2}$/.test(root.dueDate)?new Date(root.dueDate+'T12:00:00Z'):null;\n const validDate=date&&Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===root.dueDate;\n const value=(typeof root.balance==='number'&&Number.isFinite(root.balance))||typeof root.balance==='string'?String(root.balance):'';\n const money=/^(0|[1-9]\\d{0,11})(?:\\.(\\d{1,2}))?$/.exec(value);\n const cents=money?BigInt(money[1])*100n+BigInt((money[2]||'').padEnd(2,'0')):0n;\n const valid=root.allowed===true&&typeof root.deliveryId==='string'&&uuid.test(root.deliveryId)&&\n root.deliveryId.toLowerCase()===expected.deliveryId&&/^\\+?573\\d{9}$/.test(recipient)&&\n text(root.number)&&text(root.provider)&&validDate&&money&&cents>0n&&cents<=99999999999999n;\n if(!valid){module.exports=denied(true);}\n else{\n  const whole=String(cents/100n).replace(/\\B(?=(\\d{3})+(?!\\d))/g,'.');\n  const fraction=String(cents%100n).padStart(2,'0');\n  const [year,month,day]=root.dueDate.split('-');\n  module.exports={allowed:'yes',deliveryId:expected.deliveryId,recipient:recipient.startsWith('+')?recipient:'+'+recipient,\n   numero_factura:root.number,proveedor:root.provider,fecha_vencimiento:day+'/'+month+'/'+year,\n   saldo_pendiente:'$ '+whole+(fraction==='00'?'':','+fraction)};\n }\n}"
+        },
+        "response": [
+          {
+            "variable_name": "allowed",
+            "response_value_path": "allowed"
+          },
+          {
+            "variable_name": "result",
+            "response_value_path": "result"
+          },
+          {
+            "variable_name": "deliveryId",
+            "response_value_path": "deliveryId"
+          },
+          {
+            "variable_name": "recipient",
+            "response_value_path": "recipient"
+          },
+          {
+            "variable_name": "numero_factura",
+            "response_value_path": "numero_factura"
+          },
+          {
+            "variable_name": "proveedor",
+            "response_value_path": "proveedor"
+          },
+          {
+            "variable_name": "fecha_vencimiento",
+            "response_value_path": "fecha_vencimiento"
+          },
+          {
+            "variable_name": "saldo_pendiente",
+            "response_value_path": "saldo_pendiente"
+          }
+        ]
+      }
+    },
+    {
+      "id": "allow",
+      "name": "Envio autorizado",
+      "type": "conditional",
+      "parentRefs": [
+        "normD"
+      ],
+      "childTrue": "sndWa",
+      "childFalse": "denyR",
+      "x": 240,
+      "y": 600,
+      "api_conditional": {
+        "conditionalGroups": [
+          {
+            "conditionals": [
+              {
+                "partOne": "{{validar_autorizacion.allowed}}",
+                "partTwo": "yes",
+                "dataType": "string",
+                "operator": "eq"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "denyR",
+      "name": "Omitir envio",
+      "type": "response",
+      "parentRefs": [
+        "allow"
+      ],
+      "x": 680,
+      "y": 710,
+      "api_response": {
+        "response_type": "text",
+        "response_text": "{{validar_autorizacion.result}}",
+        "response_params": [],
+        "response_redirect_to": ""
+      }
+    },
+    {
+      "id": "sndWa",
+      "name": "Enviar recordatorio",
+      "type": "action",
+      "from_template": true,
+      "template_id": "b289c001-25c2-45da-8dc6-bec6df4f7feb",
+      "parentRefs": [
+        "allow"
+      ],
+      "childRef": "rcptC",
+      "x": 240,
+      "y": 710,
+      "api_action": {
+        "on_error": "continue",
+        "action_type": "custom.dapta_send_whatsapp_templatev2",
+        "code_action": null,
+        "custom_action": {
+          "type": "external_api_action",
+          "view": "simple",
+          "values": {
+            "to_number": "{{validar_autorizacion.recipient}}",
+            "template_id": "d6813518-b9c2-446e-8e6f-3ad2cda0f780",
+            "agent_channel_id": "6933b28b-b0a1-400c-aa1e-54f75bfbbd91",
+            "variables": [
+              {
+                "key": "numero_factura",
+                "value": "{{validar_autorizacion.numero_factura}}"
+              },
+              {
+                "key": "proveedor",
+                "value": "{{validar_autorizacion.proveedor}}"
+              },
+              {
+                "key": "fecha_vencimiento",
+                "value": "{{validar_autorizacion.fecha_vencimiento}}"
+              },
+              {
+                "key": "saldo_pendiente",
+                "value": "{{validar_autorizacion.saldo_pendiente}}"
+              }
+            ]
+          },
+          "version": 1,
+          "attributes": [
+            {
+              "name": "agent_channel_id",
+              "type": "select",
+              "displayName": "WhatsApp Line",
+              "dynamicLoad": {
+                "dependencies": {},
+                "custom_action": {
+                  "attributes": [
+                    {
+                      "name": "workspace_id",
+                      "type": "input",
+                      "displayName": "Workspace ID",
+                      "external_api_action": {
+                        "body": {
+                          "workspace_id": "{{value}}"
+                        },
+                        "body_format": "raw"
+                      }
+                    }
+                  ]
+                },
+                "resultMapping": {
+                  "type": "selector",
+                  "array": "response.channels",
+                  "value": "id",
+                  "displayName": "sender_label"
+                },
+                "useUserContext": {
+                  "workspace_id": "{{userContext.organization_id}}"
+                },
+                "noOptionsAction": {
+                  "type": "redirect",
+                  "label": "Add WhatsApp Line",
+                  "enabled": true,
+                  "queryParams": {
+                    "create": true
+                  },
+                  "redirectUrl": "/agents-studio/channels"
+                },
+                "external_api_action": {
+                  "url": "https://agents-v2.dapta.ai/text-agent-v2/api/v2/whatsapp-templates/workspace-channels",
+                  "body": "",
+                  "headers": [],
+                  "body_format": "raw",
+                  "body_params": [],
+                  "path_params": [],
+                  "query_params": [],
+                  "request_type": "post",
+                  "authorization": {
+                    "type": "",
+                    "token": "",
+                    "password": "",
+                    "username": "",
+                    "credential": ""
+                  },
+                  "selfsignedCertificate": "false"
+                }
+              },
+              "isDynamicLoading": true,
+              "external_api_action": {
+                "body": {
+                  "agent_channel_id": "{{value}}"
+                },
+                "body_format": "raw"
+              }
+            },
+            {
+              "name": "to_number",
+              "type": "input",
+              "displayName": "To Number",
+              "external_api_action": {
+                "body": {
+                  "to_phone_number": "{{value}}"
+                },
+                "body_format": "raw"
+              }
+            },
+            {
+              "name": "template_id",
+              "type": "select",
+              "displayName": "Template",
+              "dynamicLoad": {
+                "dependencies": {
+                  "agent_channel_id": {
+                    "inheritConfig": true
+                  }
+                },
+                "custom_action": {
+                  "attributes": [
+                    {
+                      "name": "account_id",
+                      "type": "input",
+                      "displayName": "Account ID",
+                      "external_api_action": {
+                        "body": {
+                          "account_id": "{{value}}"
+                        },
+                        "body_format": "raw"
+                      }
+                    }
+                  ]
+                },
+                "resultMapping": {
+                  "type": "selector",
+                  "array": "response.templates",
+                  "value": "id",
+                  "displayName": "friendly_name"
+                },
+                "useUserContext": {
+                  "account_id": "{{userContext.account_id}}"
+                },
+                "external_api_action": {
+                  "url": "https://agents-v2.dapta.ai/text-agent-v2/api/v2/whatsapp-templates/templates",
+                  "body": "",
+                  "headers": [],
+                  "body_format": "raw",
+                  "body_params": [],
+                  "path_params": [],
+                  "query_params": [],
+                  "request_type": "post",
+                  "authorization": {
+                    "type": "",
+                    "token": "",
+                    "password": "",
+                    "username": "",
+                    "credential": ""
+                  },
+                  "selfsignedCertificate": "false"
+                }
+              },
+              "dynamicOptions": [],
+              "isDynamicLoading": true,
+              "external_api_action": {
+                "body": {
+                  "template_id": "{{value}}"
+                },
+                "body_format": "raw"
+              }
+            },
+            {
+              "name": "variables",
+              "type": "key-value",
+              "displayName": " Template Variables",
+              "dynamicLoad": {
+                "dependencies": {
+                  "template_id": {
+                    "inheritConfig": true
+                  }
+                },
+                "custom_action": {
+                  "attributes": [
+                    {
+                      "name": "template_id",
+                      "type": "input",
+                      "displayName": "Template ID",
+                      "external_api_action": {
+                        "body": {
+                          "template_id": "{{value}}"
+                        },
+                        "body_format": "raw"
+                      }
+                    }
+                  ]
+                },
+                "resultMapping": {
+                  "type": "selector",
+                  "array": "response.variables",
+                  "value": "key",
+                  "displayName": "key"
+                },
+                "useUserContext": {
+                  "account_id": "{{userContext.organization_id}}"
+                },
+                "external_api_action": {
+                  "url": "https://agents-v2.dapta.ai/text-agent-v2/api/v2/whatsapp-templates/template-variables",
+                  "body": "",
+                  "headers": [],
+                  "body_format": "raw",
+                  "body_params": [],
+                  "path_params": [],
+                  "query_params": [],
+                  "request_type": "post",
+                  "authorization": {
+                    "type": "",
+                    "token": "",
+                    "password": "",
+                    "username": "",
+                    "credential": ""
+                  },
+                  "selfsignedCertificate": "false"
+                }
+              },
+              "isDynamicLoading": true,
+              "external_api_action": {
+                "body": {
+                  "variables": "{{value}}"
+                },
+                "body_format": "raw"
+              }
+            },
+            {
+              "name": "conversation_variables",
+              "type": "key-value",
+              "displayName": "Conversation Variables",
+              "dynamicLoad": {
+                "dependencies": {
+                  "agent_channel_id": {
+                    "inheritConfig": true
+                  }
+                },
+                "custom_action": {
+                  "attributes": [
+                    {
+                      "name": "agent_channel_id",
+                      "type": "input",
+                      "displayName": "WhatsApp Line",
+                      "external_api_action": {
+                        "body": {
+                          "agent_channel_id": "{{value}}"
+                        },
+                        "body_format": "raw"
+                      }
+                    }
+                  ]
+                },
+                "resultMapping": {
+                  "type": "selector",
+                  "array": "response.variables",
+                  "value": "key",
+                  "displayName": "key"
+                },
+                "useUserContext": {
+                  "account_id": "{{userContext.organization_id}}"
+                },
+                "external_api_action": {
+                  "url": "https://agents-v2.dapta.ai/text-agent-v2/api/v2/whatsapp-templates/agent-variables",
+                  "body": "",
+                  "headers": [],
+                  "body_format": "raw",
+                  "body_params": [],
+                  "path_params": [],
+                  "query_params": [],
+                  "request_type": "post",
+                  "authorization": {
+                    "type": "",
+                    "token": "",
+                    "password": "",
+                    "username": "",
+                    "credential": ""
+                  },
+                  "selfsignedCertificate": "false"
+                }
+              },
+              "isDynamicLoading": true,
+              "external_api_action": {
+                "body": {
+                  "conversation_variables": "{{value}}"
+                },
+                "body_format": "raw"
+              }
+            },
+            {
+              "name": "header_media_url",
+              "type": "input",
+              "displayName": "Header Media URL",
+              "external_api_action": {
+                "body": {
+                  "header_media_url": "{{value}}"
+                },
+                "body_format": "raw"
+              }
+            }
+          ]
+        },
+        "notion_action": null,
+        "openai_action": null,
+        "webflow_action": null,
+        "database_action": null,
+        "external_api_action": {
+          "url": "https://agents-v2.dapta.ai/text-agent-v2/api/v2/whatsapp-templates/send",
+          "body": "",
+          "headers": [],
+          "body_format": "raw",
+          "body_params": [],
+          "path_params": [],
+          "query_params": [],
+          "request_type": "post",
+          "authorization": {
+            "type": "",
+            "token": "",
+            "password": "",
+            "username": "",
+            "credential": ""
+          },
+          "selfsignedCertificate": "false"
+        },
+        "communication_action": null,
+        "generate_file_action": null,
+        "google_sheets_action": null,
+        "response": [
+          {
+            "variable_name": "response",
+            "response_value_path": "response"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rcptC",
+      "name": "Confirmar recibo",
+      "type": "action",
+      "parentRefs": [
+        "sndWa"
+      ],
+      "childRef": "respR",
+      "x": 240,
+      "y": 820,
+      "api_action": {
+        "action_type": "code",
+        "on_error": "stop",
+        "code_action": {
+          "code": "const context=params.validar_autorizacion;\nconst parsed=value=>{if(typeof value!=='string'||value.length>65536||!/^\\s*[\\[{]/.test(value))return value;try{return JSON.parse(value);}catch{return value;}};\nlet count=0,rejected=false;const seen=new Set(),receipts=new Set();\nconst populated=x=>x!==undefined&&x!==null&&x!==false&&x!==''&&!(Array.isArray(x)&&x.length===0);\nconst visit=(original,depth)=>{\n if(depth>8||count++>200){rejected=true;return;}\n const value=parsed(original);if(!value||typeof value!=='object'||seen.has(value))return;seen.add(value);\n if(value.ok===false||value.success===false||value.suppressed===true||value.scheduled===true||populated(value.error)||populated(value.errors)||['failed','error','rejected','suppressed','scheduled'].includes(String(value.status||'').toLowerCase()))rejected=true;\n if(value.success===true&&value.status==='sent'&&value.suppressed===false&&value.scheduled!==true&&typeof value.provider_message_id==='string'&&/^wamid\\.[A-Za-z0-9+/=_-]{8,500}$/.test(value.provider_message_id))receipts.add(value.provider_message_id);\n for(const child of Object.values(value))if(child&&(typeof child==='object'||typeof child==='string'))visit(child,depth+1);\n};\nvisit(params.enviar_recordatorio,0);\nconst accepted=context?.allowed==='yes'&&!rejected&&receipts.size===1;\nmodule.exports={result:JSON.stringify(accepted?{accepted:true,deliveryId:context.deliveryId,messageId:[...receipts][0]}:{accepted:false,uncertain:true})};"
+        },
+        "response": [
+          {
+            "variable_name": "result",
+            "response_value_path": "result"
+          }
+        ]
+      }
+    },
+    {
+      "id": "respR",
+      "name": "Respuesta comprobada",
+      "type": "response",
+      "parentRefs": [
+        "rcptC"
+      ],
+      "x": 240,
+      "y": 930,
+      "api_response": {
+        "response_type": "text",
+        "response_text": "{{confirmar_recibo.result}}",
+        "response_params": [],
+        "response_redirect_to": ""
+      }
+    }
+  ]
+}

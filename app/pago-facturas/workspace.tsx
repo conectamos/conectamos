@@ -7,6 +7,7 @@ import { DashboardSidebar, type NavigationItem } from "@/app/dashboard/_componen
 import { formatoPesos } from "@/lib/monthly-reports-view";
 import { triggerLiveRefresh } from "@/lib/use-live-refresh";
 import type { InvoiceDetail, InvoiceItem, InvoicePage, InvoiceProvider, InvoiceReport } from "./types";
+import InvoiceReminderStatus from "./reminder-status";
 import styles from "./pago-facturas.module.css";
 
 const navigation: NavigationItem[] = [
@@ -290,6 +291,7 @@ export default function InvoicePaymentsWorkspace({ today, userName }: { today: s
 
   return <div className={styles.shell}><DashboardSidebar activeHref="/pago-facturas" coverageLabel="Administración central" items={navigation} /><div className={styles.workspace}><main className={styles.main}>
     <header className={styles.header}><div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><span>/</span><span>Pago de facturas</span></nav><h1>PAGO DE FACTURAS</h1><p>Control mensual de facturas, abonos y pagos.</p></div><div className={styles.headerActions}><span className={styles.identity}><DashboardIcon name="user" />{userName}</span><button type="button" className={styles.secondaryButton} onClick={(event) => openProviders(event.currentTarget)}>Gestionar proveedores</button><button type="button" className={styles.primaryButton} onClick={(event) => openCreate(event.currentTarget)}><DashboardIcon name="document-add" />Nueva factura</button></div></header>
+    <InvoiceReminderStatus />
     <form className={styles.filters} onSubmit={applyFilters}><label>Mes de pagadas y eliminadas<input type="month" value={filters.month} min="1900-01" max="2100-12" required onChange={(event) => setFilters((value) => ({ ...value, month: event.target.value }))} /></label><label className={styles.search}>Buscar factura o proveedor<input type="search" value={filters.search} maxLength={160} placeholder="Número o proveedor" onChange={(event) => setFilters((value) => ({ ...value, search: event.target.value }))} /></label><button type="submit" className={styles.secondaryButton} disabled={loading}><DashboardIcon name="search" />Consultar</button><p className={styles.filterNote}>Las pendientes incluyen todos los meses. El mes filtra pagadas y eliminadas por fecha de factura.{unapplied && <span>Filtros sin aplicar · pulsa Consultar.</span>}</p></form>
     {notice && <p className={styles.notice} role="status">{notice}</p>}
     {loadError && <div className={styles.error} role="alert"><p>{loadError}{report && " Se conservan los últimos datos consultados."}</p><button type="button" className={styles.secondaryButton} onClick={refreshReport} disabled={loading}>Reintentar</button></div>}

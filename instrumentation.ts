@@ -6,6 +6,28 @@ export async function register() {
   // Next awaits register before serving requests; additive schema precedes Prisma model reads.
   const { ensureVendorProfilesSchema } = await import("@/lib/vendor-profile-schema");
   await ensureVendorProfilesSchema();
+  // Invoice reminders run on the server even with no browser open. Their
+  // durable delivery claims are independent of the credit-sync scheduler.
+  if (process.env.INVOICE_REMINDERS_ENABLED === "1") {
+    const reminderState = globalThis as typeof globalThis & { invoiceReminderTimer?: ReturnType<typeof setTimeout>; invoiceReminderRunning?: boolean };
+    if (!reminderState.invoiceReminderTimer && !reminderState.invoiceReminderRunning) {
+      const { runInvoiceReminderBatch } = await import("@/lib/invoice-reminders");
+      const runReminders = async () => {
+        if (reminderState.invoiceReminderRunning) return;
+        reminderState.invoiceReminderRunning = true;
+        try { await runInvoiceReminderBatch(); }
+        catch { console.error("INVOICE_REMINDERS: no fue posible verificar los recordatorios pendientes."); }
+        finally {
+          reminderState.invoiceReminderRunning = false;
+          reminderState.invoiceReminderTimer = setTimeout(() => { void runReminders(); }, 60_000);
+          reminderState.invoiceReminderTimer.unref();
+        }
+      };
+      // Startup registration must finish before an external flow can call back.
+      reminderState.invoiceReminderTimer = setTimeout(() => { void runReminders(); }, 5_000);
+      reminderState.invoiceReminderTimer.unref();
+    }
+  }
   if (process.env.CIERRE_SYNC_ENABLED !== "1") return;
   const state = globalThis as typeof globalThis & { cierreTimer?: ReturnType<typeof setTimeout>; cierreRunning?: boolean };
   if (state.cierreTimer || state.cierreRunning) return;

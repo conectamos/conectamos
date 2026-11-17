@@ -4,7 +4,7 @@ Ruta: `/pago-facturas`. El administrador central accede desde el menú principal
 
 ## Registro y meses
 
-Cada factura conserva número, proveedor, fecha y valor en pesos colombianos. El mes se determina por la fecha de la factura, no por la fecha de un abono. El selector permite consultar meses anteriores. El número se identifica junto con el proveedor para impedir un registro duplicado.
+Cada factura conserva número, proveedor, fecha y valor en pesos colombianos. Las pendientes se muestran de todos los meses; el selector «Mes de pagadas y eliminadas» limita únicamente esos dos grupos por fecha de factura, no por fecha del abono. Permite consultar meses anteriores. Una nueva factura inicia con la fecha de hoy en Colombia, independientemente del mes que se esté consultando; puede cambiarse a la fecha real. El número se identifica junto con el proveedor para impedir un registro duplicado.
 
 ## Proveedores
 
@@ -12,9 +12,27 @@ El formulario selecciona el proveedor desde un catálogo desplegable. «Gestiona
 
 El proveedor tiene una identidad estable, de modo que cambiar su nombre no permite registrar dos veces el mismo número de factura para ese proveedor. Los registros antiguos se vinculan al catálogo conservando su información.
 
-La vista muestra «FACTURAS PENDIENTES» y «FACTURAS PAGAS», con paginación independiente. Ambas columnas se ordenan por fecha de vencimiento ascendente antes de paginar; las facturas sin vencimiento van al final. Los empates se resuelven por fecha de factura e identificador. El resumen considera todas las facturas del mes y búsqueda elegidos, incluidas las que no están en la página visible. Una factura pagada en un mes posterior permanece en el mes de su fecha original.
+La vista muestra «FACTURAS PENDIENTES» y «FACTURAS PAGAS», con paginación independiente. Ambas columnas se ordenan por fecha de vencimiento ascendente antes de paginar; las facturas sin vencimiento van al final. Los empates se resuelven por fecha de factura e identificador. La búsqueda se aplica a ambos grupos. El resumen reúne todas las pendientes y las pagadas del mes consultado que coincidan con la búsqueda, incluidas las que no están en la página visible. El saldo considera todas las pendientes de la búsqueda. Una factura pagada en un mes posterior se consulta en pagadas por el mes de su fecha original; el mensaje de confirmación indica ese mes.
 
-La fecha de vencimiento es opcional y no se deduce para facturas antiguas. El estado se calcula usando el día de Colombia: vencida si es anterior a hoy, vence hoy si coincide, próxima a vencer en los siete días siguientes. Una factura pagada no genera alerta de vencimiento. Los contadores del mes consideran todas las facturas activas del filtro.
+La fecha de vencimiento es opcional y no se deduce para facturas antiguas. El estado se calcula usando el día de Colombia: vencida si es anterior a hoy, vence hoy si coincide, próxima a vencer en los siete días siguientes. Una factura pagada no genera alerta de vencimiento. Los contadores consideran todas las pendientes de la búsqueda, sin limitarse al mes ni a la página visible.
+
+## Avisos en la aplicación y por WhatsApp
+
+El administrador central ve avisos de vencimiento en Inicio y Pago de facturas. Incluyen todas las pendientes vencidas, las que vencen hoy y las de los siete días siguientes, aunque sean de meses anteriores. La campana permite volver a abrirlos. Al registrar pagos, editar, eliminar o restaurar una factura, las operaciones confirmadas actualizan los avisos.
+
+El recordatorio externo por WhatsApp se programa para el día del vencimiento a las 8:00 a. m. en `America/Bogota`. Lo procesa el servidor, por lo que no depende de mantener la aplicación abierta. No incluye correo electrónico. La tarjeta «Recordatorios por WhatsApp» consulta `GET /api/pago-facturas/reminders` cada 60 segundos y después de cambios confirmados; esa consulta solo lee el estado y nunca envía mensajes.
+
+El estado solo se presenta como activo cuando el servidor confirma que está habilitado y configurado. Si falta configuración, muestra «WhatsApp pendiente de activar». El destino se obtiene del servidor, sin fijar teléfonos ni credenciales en el código del navegador. Se muestran los registros pendientes, fallidos y por confirmar; una respuesta fallida no se convierte en ceros. «Último envío aceptado por el proveedor» indica aceptación de la solicitud, no entrega al teléfono ni lectura por el destinatario.
+
+Configuración privada del servicio de producción:
+
+- `INVOICE_REMINDERS_ENABLED=1`: habilita el trabajador de recordatorios cuando la conexión está lista.
+- `INVOICE_REMINDER_TEMPLATE_APPROVED=1`: confirma que la plantilla de WhatsApp ya está aprobada por Meta. Mantener deshabilitado hasta verificar la aprobación; guardar un borrador no permite activar envíos.
+- `INVOICE_REMINDER_WHATSAPP_TO`: único destino autorizado en formato aceptado por el adaptador de WhatsApp.
+- `INVOICE_REMINDER_DAPTA_URL`: URL del flujo de Dapta configurado para los recordatorios. Puede contener una clave en la consulta; debe guardarse como secreto del servidor y no exponerse en registros, respuestas de API ni variables `NEXT_PUBLIC_*`.
+- `INVOICE_REMINDER_START_DATE`: fecha inicial opcional `YYYY-MM-DD`, para comenzar desde las 8:00 de ese día y evitar un envío inicial nocturno. Una fecha inválida bloquea la configuración.
+
+La hora es fija: 8:00 a. m. de Colombia. La activación requiere una conexión válida al flujo de WhatsApp, el destino autorizado y la plantilla aprobada por Meta. Si falta esa aprobación, el estado permanece pendiente de activar. No basta con que aparezca la tarjeta, se guarde un borrador de plantilla o se consulten facturas para que se realicen envíos.
 
 ## Corregir y eliminar
 
@@ -34,10 +52,12 @@ Las solicitudes llevan una clave de idempotencia y la versión de la factura par
 
 ## Acceso y almacenamiento
 
-La página y todas las API requieren `esAdministradorCentral(session)`. Un rol administrativo con perfil de auditor, supervisor, vendedor o facturador no obtiene acceso. Los datos se guardan en tablas propias, independientes del módulo de proveedores y de los créditos de CIERRE.
+La página y las API de administración requieren `esAdministradorCentral(session)`. Un rol administrativo con perfil de auditor, supervisor, vendedor o facturador no obtiene acceso. La única excepción es `POST /api/pago-facturas/reminders/dispatch`, llamada por el flujo del servidor: exige un token aleatorio de entrega, de un solo uso y con vencimiento. No permite elegir otra factura, destinatario ni plantilla. Los datos se guardan en tablas propias, independientes del módulo de proveedores y de los créditos de CIERRE.
+
+El flujo reproducible está en `docs/dapta-invoice-reminders-flow.json`. Su creación requiere revisar y aprobar el cambio de Dapta. Usa una plantilla propia de recordatorio de facturas; guardar el flujo o su borrador no acredita aprobación de Meta. El trabajador conserva las entregas en `InvoiceReminderDelivery`, valida factura, saldo y día antes de autorizar el envío y no repite resultados inciertos. Los procesos con navegador cerrado requieren que el servicio Node permanezca activo.
 
 El SQL aditivo de `scripts/apply-cierre-schema.sql` se ejecuta en el paso previo de publicación ya configurado. El despliegue debe completar esa migración antes de activar las nuevas rutas.
 
 ## Verificación
 
-`npm run test:invoice-payments` valida el dominio, las rutas y el formulario con datos simulados. Incluye saldo exacto, pago parcial/total, historial, periodos históricos, paginación independiente y totales, permisos centrales, reintentos, cambios simultáneos, edición, eliminación recuperable, restauración y límites de vencimiento. `npm run test:operations-dashboard` verifica que el acceso aparezca únicamente para el administrador central.
+`npm run test:invoice-payments` valida el dominio, las rutas y el formulario con datos simulados. Incluye saldo exacto, pago parcial/total, historial, pendientes de todos los meses, consulta histórica de pagadas y eliminadas, paginación independiente y totales, permisos centrales, reintentos, cambios simultáneos, edición, eliminación recuperable, restauración y límites de vencimiento. `node --test tests/invoice-reminder-status-ui.test.mjs` verifica los estados de la tarjeta de WhatsApp sin enviar mensajes. `npm run test:operations-dashboard` verifica que el acceso aparezca únicamente para el administrador central.

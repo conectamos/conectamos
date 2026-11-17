@@ -133,6 +133,7 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
     "@/app/dashboard/_components/operations-dashboard": { DashboardSidebar: "sidebar" },
     "@/lib/monthly-reports-view": { formatoPesos: money },
     "@/lib/use-live-refresh": { triggerLiveRefresh: (source) => refreshEvents.push(source) },
+    "./reminder-status": { __esModule: true, default: "invoice-reminder-status" },
     "./pago-facturas.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) },
   };
   const mod = { exports: {} };

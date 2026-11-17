@@ -299,11 +299,38 @@ model FacturaAdministrativa {
   deletedBy          String?
   payments           PagoFacturaAdministrativa[]
   events             InvoiceAdminEvent[]
+  reminders          InvoiceReminderDelivery[]
 
   @@unique([providerId, numberNormalized])
   @@index([date, status, id])
   @@index([deletedAt, date, status, id])
   @@index([deletedAt, status, dueDate])
+}
+
+model InvoiceReminderDelivery {
+  id                String   @id
+  invoiceId         Int
+  dueDate           DateTime @db.Date
+  channel           String   @default("WHATSAPP")
+  recipientHash     String
+  recipient         String
+  state             String   @default("PENDING")
+  attempts          Int      @default(0)
+  nextAttempt       DateTime @default(now())
+  leaseToken        String?
+  leaseUntil        DateTime?
+  dispatchClaimedAt DateTime?
+  payloadSnapshot   Json?
+  providerMessageId String?
+  sentAt            DateTime?
+  errorCode         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  invoice           FacturaAdministrativa @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([invoiceId, dueDate, recipientHash])
+  @@index([state, nextAttempt, dueDate])
+  @@index([state, leaseUntil])
 }
 
 model InvoiceAdminEvent {
