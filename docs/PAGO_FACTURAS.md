@@ -50,6 +50,16 @@ Cada abono conserva fecha, importe, referencia opcional y usuario que lo registr
 
 Las solicitudes llevan una clave de idempotencia y la versión de la factura para impedir pagos duplicados por reintentos o dos cambios simultáneos. Este módulo registra pagos realizados; no ejecuta transferencias bancarias ni modifica la caja de una sede.
 
+## Comprobantes PDF de pagos
+
+Al registrar un abono o pago completo se puede seleccionar un comprobante PDF de hasta 5 MiB. El nombre y tamaño se muestran antes de guardar; puede cambiarse o quitarse en ese momento. Si ocurre un error, los datos del pago y el archivo seleccionado se conservan. Cuando el resultado es incierto se bloquean los cambios y el reintento utiliza la misma clave, los mismos datos y el mismo archivo, evitando registrar otro pago.
+
+Con archivo, el pago y el comprobante se guardan juntos en una sola solicitud `multipart/form-data` a `POST /api/pago-facturas/[invoiceId]/payments`, con `payload` como JSON y `receipt` como archivo. Sin archivo permanece disponible el contrato JSON anterior. El servidor valida tipo y contenido PDF, tamaño y permisos; una carga rechazada no deja el pago guardado sin su comprobante.
+
+En «Ver pagos», los pagos anteriores sin documento muestran «Adjuntar PDF». Esta acción usa `POST /api/pago-facturas/[invoiceId]/payments/[paymentId]/receipt` con `payload: {requestId}` y `receipt`; agrega el documento sin cambiar importes, saldo ni historial de pagos. La confirmación solo aparece después de recibir del servidor la factura actualizada con los metadatos del comprobante.
+
+«Descargar PDF» utiliza `GET` en esa misma ruta, con autorización de administrador central. El documento se conserva en la base de datos privada y permanece disponible después de publicar una nueva versión. Las consultas de facturas e historial incluyen únicamente `id`, `filename` y `size` del comprobante; no incluyen su contenido binario. Después de guardado, no se ofrecen acciones para borrar o reemplazar el comprobante.
+
 ## Acceso y almacenamiento
 
 La página y las API de administración requieren `esAdministradorCentral(session)`. Un rol administrativo con perfil de auditor, supervisor, vendedor o facturador no obtiene acceso. La única excepción es `POST /api/pago-facturas/reminders/dispatch`, llamada por el flujo del servidor: exige un token aleatorio de entrega, de un solo uso y con vencimiento. No permite elegir otra factura, destinatario ni plantilla. Los datos se guardan en tablas propias, independientes del módulo de proveedores y de los créditos de CIERRE.
@@ -60,4 +70,4 @@ El SQL aditivo de `scripts/apply-cierre-schema.sql` se ejecuta en el paso previo
 
 ## Verificación
 
-`npm run test:invoice-payments` valida el dominio, las rutas y el formulario con datos simulados. Incluye saldo exacto, pago parcial/total, historial, pendientes de todos los meses, consulta histórica de pagadas y eliminadas, paginación independiente y totales, permisos centrales, reintentos, cambios simultáneos, edición, eliminación recuperable, restauración y límites de vencimiento. `node --test tests/invoice-reminder-status-ui.test.mjs` verifica los estados de la tarjeta de WhatsApp sin enviar mensajes. `npm run test:operations-dashboard` verifica que el acceso aparezca únicamente para el administrador central.
+`npm run test:invoice-payments` valida el dominio, las rutas y el formulario con datos simulados. Incluye saldo exacto, pago parcial/total, historial, pendientes de todos los meses, consulta histórica de pagadas y eliminadas, paginación independiente y totales, permisos centrales, reintentos, cambios simultáneos, edición, eliminación recuperable, restauración y límites de vencimiento. También cubre comprobantes PDF opcionales, envío conjunto con el pago, adjuntos a pagos anteriores, descarga protegida y conservación del archivo durante errores y reintentos. `node --test tests/invoice-reminder-status-ui.test.mjs` verifica los estados de la tarjeta de WhatsApp sin enviar mensajes. `npm run test:operations-dashboard` verifica que el acceso aparezca únicamente para el administrador central.

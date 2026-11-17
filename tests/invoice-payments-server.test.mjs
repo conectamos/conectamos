@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { modules, database, admin, invoice } from "./invoice-payments-test-helpers.mjs";
 
 const createInput = (changes = {}) => ({ requestId: "create-request-001", number: "FAC-001", provider: "Proveedor QA", date: "2026-10-31", amount: 100, ...changes });
@@ -18,6 +19,10 @@ function request(path, body, changes = {}) {
 const context = (id) => ({ params: Promise.resolve({ id: String(id) }) });
 const detailPath = "app/api/pago-facturas/[id]/route.ts";
 const payPath = "app/api/pago-facturas/[id]/payments/route.ts";
+const receiptFile = (name = "comprobante.pdf", contents = "%PDF-1.7\n1 0 obj <<>> endobj\n%%EOF\n") => {
+  const bytes = new Uint8Array(Buffer.from(contents));
+  return { name, bytes, size: bytes.byteLength, sha256: createHash("sha256").update(bytes).digest("hex") };
+};
 
 test("alta guarda factura independiente, fecha civil, dinero decimal e identidad del administrador", async () => {
   const { db, service } = setup();
@@ -232,4 +237,90 @@ test("esquema independiente y migración aditiva mantienen restricciones de dine
   assert.match(sql, /"balanceAfter" = "balanceBefore" - "amount"/);
   assert.match(sql, /"invoiceId" INTEGER NOT NULL REFERENCES "FacturaAdministrativa" \("id"\) ON DELETE RESTRICT/);
   assert.match(schema, /model PagoFacturaAdministrativa[\s\S]*?requestId\s+String\s+@unique/);
+});
+
+test("pago con PDF guarda importe y archivo atómicos; detalle y snapshots sólo contienen metadata", async () => {
+  const { db, service } = setup({ facturaAdministrativa: [invoice(1, { amount: "100.00" })] });
+  const file = receiptFile();
+  const result = await service.recordAdministrativeInvoicePayment(1, payInput(), admin, file);
+  assert.equal(result.invoice.balance, 60);
+  assert.equal(db.tables.invoicePaymentReceipt.length, 1);
+  const stored = db.tables.invoicePaymentReceipt[0];
+  assert.equal(stored.paymentId, db.tables.pagoFacturaAdministrativa[0].id);
+  assert.equal(stored.createdById, admin.id); assert.equal(stored.sha256, file.sha256); assert.deepEqual(stored.bytes, file.bytes);
+  assert.doesNotMatch(JSON.stringify(db.tables.pagoFacturaAdministrativa[0].responseSnapshot), /bytes|sha256|%PDF|comprobante/);
+  const detail = await service.readAdministrativeInvoice(1, admin);
+  assert.deepEqual(detail.invoice.payments[0].receipt, { id: stored.id, filename: file.name, size: file.size });
+  assert.doesNotMatch(JSON.stringify(detail), /bytes|sha256|%PDF/);
+  const query = db.calls.findLast((call) => call.table === "facturaAdministrativa" && call.args.include?.payments);
+  assert.deepEqual(query.args.include.payments.include.receipt.select, { id: true, filename: true, size: true });
+  const reportStart = db.calls.length;
+  await service.readInvoicePayments(new URLSearchParams("month=2026-10"), admin);
+  assert.ok(db.calls.slice(reportStart).every((call) => call.table !== "invoicePaymentReceipt"));
+});
+
+test("hash JSON anterior se conserva y reintentos con PDF vinculan exactamente el contenido y nombre normalizado", async () => {
+  const { db, service } = setup({ facturaAdministrativa: [invoice(1, { amount: "100.00" })] });
+  const input = payInput();
+  const legacyHash = createHash("sha256").update(JSON.stringify({ invoiceId: 1, version: 1, date: input.date, mode: input.mode, cents: 4000, reference: input.reference })).digest("hex");
+  assert.equal(service.parseAdministrativePayment(input, 1).requestHash, legacyHash);
+  const file = receiptFile("  recibo-e\u0301.pdf  ");
+  const first = await service.recordAdministrativeInvoicePayment(1, input, admin, file);
+  const again = await service.recordAdministrativeInvoicePayment(1, input, admin, { ...file, name: "recibo-é.pdf" });
+  assert.equal(again.replayed, true); assert.deepEqual(again.invoice, first.invoice);
+  assert.equal(db.tables.invoicePaymentReceipt[0].filename, "recibo-é.pdf");
+  for (const changed of [undefined, receiptFile("otro.pdf"), receiptFile("recibo-é.pdf", "%PDF-1.7\ntexto diferente\n%%EOF\n")]) {
+    await assert.rejects(service.recordAdministrativeInvoicePayment(1, input, admin, changed), (error) => error.code === "IDEMPOTENCY_CONFLICT");
+  }
+  assert.equal(db.tables.pagoFacturaAdministrativa.length, 1); assert.equal(db.tables.invoicePaymentReceipt.length, 1);
+  const legacy = setup({ facturaAdministrativa: [invoice(1, { amount: "100.00" })] });
+  await legacy.service.recordAdministrativeInvoicePayment(1, input, admin);
+  assert.equal(legacy.db.tables.pagoFacturaAdministrativa[0].requestHash, legacyHash);
+  await assert.rejects(legacy.service.recordAdministrativeInvoicePayment(1, input, admin, receiptFile()), (error) => error.code === "IDEMPOTENCY_CONFLICT");
+});
+
+test("fallo al guardar PDF revierte pago, saldo, versión y archivo; comprobante incoherente se rechaza antes de BD", async () => {
+  const { db, service } = setup({ facturaAdministrativa: [invoice(1, { amount: "100.00" })] }, admin, { failReceiptWrite: true });
+  await assert.rejects(service.recordAdministrativeInvoicePayment(1, payInput(), admin, receiptFile()), /storage/);
+  assert.equal(db.tables.facturaAdministrativa[0].paidAmount, "0.00"); assert.equal(db.tables.facturaAdministrativa[0].version, 1);
+  assert.equal(db.tables.pagoFacturaAdministrativa.length, 0); assert.equal(db.tables.invoicePaymentReceipt.length, 0);
+  const before = db.calls.length;
+  for (const change of [{ size: 999 }, { sha256: "0".repeat(64) }, { name: "recibo.exe" }]) {
+    await assert.rejects(service.recordAdministrativeInvoicePayment(1, payInput(), admin, { ...receiptFile(), ...change }));
+  }
+  assert.equal(db.calls.length, before);
+});
+
+test("dos reintentos simultáneos del pago con PDF guardan un pago y un archivo", async () => {
+  const { db, service } = setup({ facturaAdministrativa: [invoice(1, { amount: "100.00" })] });
+  const results = await Promise.all([service.recordAdministrativeInvoicePayment(1, payInput(), admin, receiptFile()), service.recordAdministrativeInvoicePayment(1, payInput(), admin, receiptFile())]);
+  assert.equal(results.filter((result) => result.replayed).length, 1); assert.deepEqual(results[0].invoice, results[1].invoice);
+  assert.equal(db.tables.pagoFacturaAdministrativa.length, 1); assert.equal(db.tables.invoicePaymentReceipt.length, 1);
+  assert.equal(db.tables.facturaAdministrativa[0].paidAmount, "40.00");
+});
+
+test("adjuntar después de un pago JSON devuelve detalle completo y conserva historia financiera", async () => {
+  const { db, service } = setup({ facturaAdministrativa: [invoice(1, { amount: "100.00" })] });
+  await service.recordAdministrativeInvoicePayment(1, payInput(), admin);
+  const before = structuredClone(db.tables.pagoFacturaAdministrativa);
+  const command = { requestId: "attach-request-001", receipt: receiptFile() };
+  const result = await service.attachInvoicePaymentReceipt(1, 1, command, admin);
+  assert.equal(result.replayed, false); assert.equal(result.invoice.balance, 60); assert.equal(result.invoice.payments.length, 1);
+  assert.equal(result.invoice.payments[0].receipt.filename, "comprobante.pdf");
+  assert.deepEqual(db.tables.pagoFacturaAdministrativa, before);
+  const replay = await service.attachInvoicePaymentReceipt(1, 1, command, admin); assert.equal(replay.replayed, true);
+  assert.deepEqual(replay.invoice, result.invoice);
+  await assert.rejects(service.attachInvoicePaymentReceipt(1, 1, { requestId: "attach-request-002", receipt: receiptFile("otro.pdf") }, admin), (error) => error.code === "RECEIPT_EXISTS");
+  const beforeInvalid = db.calls.length;
+  for (const invalid of [null, [], { ...command, paymentId: 2 }, { receipt: receiptFile() }]) await assert.rejects(service.attachInvoicePaymentReceipt(1, 1, invalid, admin), (error) => error.status === 400);
+  assert.equal(db.calls.length, beforeInvalid);
+});
+
+test("multipart sólo se permite por opción explícita y mantiene el control de origen", () => {
+  const { service } = setup();
+  const form = new Request("https://conectamos.test/api/pago-facturas/1/payments", { method: "POST", headers: { Origin: "https://conectamos.test", "Content-Type": "multipart/form-data; boundary=qa" } });
+  assert.throws(() => service.assertInvoiceWriteRequest(form), (error) => error.status === 415);
+  assert.doesNotThrow(() => service.assertInvoiceWriteRequest(form, { allowMultipart: true }));
+  const foreign = new Request(form.url, { method: "POST", headers: { Origin: "https://foreign.test", "Content-Type": "multipart/form-data; boundary=qa" } });
+  assert.throws(() => service.assertInvoiceWriteRequest(foreign, { allowMultipart: true }), (error) => error.status === 403);
 });

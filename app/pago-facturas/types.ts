@@ -25,6 +25,7 @@ export type InvoicePayment = {
   reference: string | null;
   createdBy: string;
   createdAt: string;
+  receipt?: { id: string; filename: string; size: number } | null;
 };
 
 export type InvoiceDetail = InvoiceItem & { payments: InvoicePayment[] };

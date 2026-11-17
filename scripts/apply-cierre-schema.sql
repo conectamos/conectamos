@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS "PagoFacturaAdministrativa" (
 CREATE UNIQUE INDEX IF NOT EXISTS "PagoFacturaAdministrativa_requestId_key" ON "PagoFacturaAdministrativa" ("requestId");
 CREATE INDEX IF NOT EXISTS "PagoFacturaAdministrativa_invoiceId_createdAt_id_idx"
  ON "PagoFacturaAdministrativa" ("invoiceId", "createdAt", "id");
+-- One immutable private PDF per payment; no file content is copied to JSON.
+CREATE TABLE IF NOT EXISTS "InvoicePaymentReceipt" (
+ "id" TEXT PRIMARY KEY, "paymentId" INTEGER NOT NULL REFERENCES "PagoFacturaAdministrativa" ("id") ON DELETE RESTRICT,
+ "requestId" TEXT NOT NULL, "requestHash" TEXT NOT NULL, "filename" TEXT NOT NULL,
+ "size" INTEGER NOT NULL, "sha256" TEXT NOT NULL, "bytes" BYTEA NOT NULL,
+ "createdById" INTEGER NOT NULL, "createdByProfileId" INTEGER, "createdBy" TEXT NOT NULL,
+ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CHECK ("size" > 0 AND "size" <= 5242880 AND octet_length("bytes") = "size"),
+ CHECK ("sha256" ~ '^[0-9a-f]{64}$'), CHECK (length("filename") BETWEEN 1 AND 255)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "InvoicePaymentReceipt_paymentId_key" ON "InvoicePaymentReceipt" ("paymentId");
+CREATE UNIQUE INDEX IF NOT EXISTS "InvoicePaymentReceipt_requestId_key" ON "InvoicePaymentReceipt" ("requestId");
 -- Administrative accounting overlays, separate from all provider evidence.
 CREATE TABLE IF NOT EXISTS "CierreAjuste" (
  "key" TEXT PRIMARY KEY, "financial" TEXT NOT NULL,

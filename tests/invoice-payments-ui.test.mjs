@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { File } from "node:buffer";
 import test from "node:test";
 import ts from "typescript";
 
@@ -63,11 +64,14 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
   }
   const mockFetch = async (path, options = {}) => {
     const url = new URL(path, "http://localhost");
-    const body = options.body ? JSON.parse(options.body) : null;
-    calls.push({ path: String(path), method: options.method || "GET", body, signal: options.signal });
+    const multipart = options.body instanceof FormData;
+    const body = options.body ? JSON.parse(multipart ? options.body.get("payload") : options.body) : null;
+    const receipt = multipart ? options.body.get("receipt") : null;
+    calls.push({ path: String(path), method: options.method || "GET", body, receipt, multipart, headers: options.headers, signal: options.signal });
     if (["POST","PATCH","DELETE"].includes(options.method)) {
       const outcome = postOutcomes[postIndex++];
       if (outcome === "503") return result({ error: "Servicio temporalmente no disponible." }, 503);
+      if (outcome === "422") return result({ error: "No se pudo guardar el comprobante. Revisa el PDF.", code: "INVALID_RECEIPT" }, 422);
       if (replay.has(body.requestId)) return result(replay.get(body.requestId));
       if(url.pathname.includes("/providers")){
         const existing=providers.find(p=>p.id===Number(url.pathname.split("/")[4]));
@@ -93,6 +97,15 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
         data.push(saved);
       } else {
         saved = data.find((item) => item.id === Number(url.pathname.split("/")[3]));
+        if (url.pathname.endsWith("/receipt")) {
+          const payment = saved.payments.find((item) => item.id === Number(url.pathname.split("/")[5]));
+          if (payment.receipt) return result({ error: "Este pago ya tiene comprobante.", code: "RECEIPT_EXISTS" }, 409);
+          if (!receipt) return result({ error: "Selecciona el comprobante PDF." }, 400);
+          payment.receipt = { id: `receipt-${saved.id}-${payment.id}`, filename: receipt.name, size: receipt.size };
+          replay.set(body.requestId, { invoice: structuredClone(saved) });
+          if (outcome === "commit-network") throw new Error("Connection lost after attachment commit");
+          return result({ invoice: saved });
+        }
         if (saved.version !== body.version) return result({ error: "La factura cambió. Actualiza sus datos.", code: "STALE_VERSION" }, 409);
         if(options.method==="DELETE"){saved.deletedAt="2026-11-16T18:00:00Z";saved.version++;}
         else if(options.method==="PATCH"){
@@ -108,7 +121,7 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
         saved.status = saved.balance === 0 ? "PAGADA" : "PENDIENTE";
         saved.version++;
         saved.paymentCount++;
-        saved.payments.push({ id: saved.paymentCount, date: body.date, amount, reference: body.reference, createdBy: "Administración QA", createdAt: "2026-11-16T16:30:00Z" });
+        saved.payments.push({ id: saved.paymentCount, date: body.date, amount, reference: body.reference, receipt: receipt ? { id: `receipt-${saved.id}-${saved.paymentCount}`, filename: receipt.name, size: receipt.size } : null, createdBy: "Administración QA", createdAt: "2026-11-16T16:30:00Z" });
         }
       }
       replay.set(body.requestId, {invoice:structuredClone(saved)});
@@ -144,10 +157,11 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
   function byLabel(label) { const node = nodes(tree).find((item) => item.props["aria-label"] === label); assert.ok(node, `Missing label: ${label}`); return node; }
   function field(label) { const wrapper = nodes(tree).find((node) => node.type === "label" && [node.props.children].flat().filter((child) => typeof child === "string").join("") === label); const input = nodes(wrapper).find((node) => ["input","select"].includes(node.type)); assert.ok(input, `Missing field ${label}`); return input; }
   async function setControl(label, value) {const control=field(label);if(control.type==="select"&&label==="Proveedor")value=String(providers.find(p=>p.name===value)?.id??value);control.props.onChange({ target: { value,checked:Boolean(value) } }); await settle(); }
+  async function selectFile(label, file) { const control = field(label); control.props.onChange({ currentTarget: { files: file ? [file] : [], value: file?.name || "" } }); await settle(); }
   async function click(button) { button.props.onClick({ currentTarget: { focus() {} } }); await settle(); }
   async function submit() { const form = nodes(find("dialog")).find((node) => node.type === "form"); assert.ok(form); await form.props.onSubmit({ preventDefault() {} }); await settle(); }
   async function apply() { await find("form").props.onSubmit({ preventDefault() {} }); await settle(); }
-  return { data,providers, calls, refreshEvents, pendingLists, dialogs, settle, find, byLabel, field, setControl, click, submit, apply, text: () => textOf(tree), nodes: () => nodes(tree), unmount: () => slots.forEach((slot) => slot?.cleanup?.()) };
+  return { data,providers, calls, refreshEvents, pendingLists, dialogs, settle, find, byLabel, field, setControl, selectFile, click, submit, apply, text: () => textOf(tree), nodes: () => nodes(tree), unmount: () => slots.forEach((slot) => slot?.cleanup?.()) };
 }
 
 test("invoice provider is selected from the catalog and sent by stable ID with its due date", async () => {
@@ -480,4 +494,77 @@ test("global pending totals and due counts include every page and stay stable wh
   assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Saldo pendiente\$ 13\.000/);
   await ui.setControl("Mes de pagadas y eliminadas", "2020-01"); await ui.apply();
   assert.match(ui.text(), /FACTURAS PENDIENTES13/); assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Saldo pendiente\$ 13\.000/); assert.match(textOf(ui.byLabel("Resumen de vencimientos")), /12 vencidas/); ui.unmount();
+});
+
+const pdfFile = (name = "comprobante.pdf", text = "%PDF-1.4\nComprobante sintético QA\n%%EOF") => new File([text], name, { type: "application/pdf", lastModified: 1794924000000 });
+
+test("payment and optional PDF are saved in a single multipart request and history exposes only the protected download", async () => {
+  const ui = harness(); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar"));
+  assert.equal(ui.field("Comprobante PDF (opcional)").props.accept, ".pdf,application/pdf");
+  await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "400,25"); await ui.setControl("Referencia o comprobante (opcional)", "Transferencia QA");
+  const file = pdfFile(); await ui.selectFile("Comprobante PDF (opcional)", file); assert.match(textOf(ui.find("dialog")), /comprobante\.pdf/); await ui.submit();
+  const writes = ui.calls.filter((call) => call.method === "POST"); assert.equal(writes.length, 1); const write = writes[0];
+  assert.equal(write.path, "/api/pago-facturas/1/payments"); assert.equal(write.multipart, true); assert.equal(write.headers, undefined); assert.equal(write.body.amount, 400.25); assert.equal(write.body.reference, "Transferencia QA"); assert.equal(write.receipt.name, file.name); assert.equal(await write.receipt.text(), await file.text());
+  assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].balance, 599.75); assert.deepEqual(ui.data[0].payments[0].receipt, { id: "receipt-1-1", filename: file.name, size: file.size });
+  await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); const link = ui.byLabel("Descargar comprobante PDF del pago 1");
+  assert.equal(link.props.href, "/api/pago-facturas/1/payments/1/receipt"); assert.equal(link.props.target, "_blank"); assert.match(link.props.rel, /noopener/); assert.doesNotMatch(textOf(ui.find("dialog")), /Adjuntar PDF|Reemplazar|Eliminar comprobante/);
+  assert.equal(ui.calls.some((call) => call.path.endsWith("/receipt")), false, "Opening history must not fetch binary data"); ui.unmount();
+});
+
+test("payment without a receipt remains the existing JSON request", async () => {
+  const ui = harness(); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar")); await ui.submit();
+  const write = ui.calls.find((call) => call.method === "POST"); assert.equal(write.multipart, false); assert.deepEqual(write.headers, { "Content-Type": "application/json" }); assert.equal(write.receipt, null); assert.equal(write.body.mode, "full"); assert.equal(ui.data[0].payments[0].receipt, null); ui.unmount();
+});
+
+test("PDF selection validates size and type, preserves existing file and fields, and permits replacing or removing before submission", async () => {
+  const ui = harness(); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar")); await ui.setControl("Referencia o comprobante (opcional)", "Referencia conservada");
+  const first = pdfFile("primero.pdf"); await ui.selectFile("Comprobante PDF (opcional)", first);
+  for (const file of [new File(["image"], "imagen.png", { type: "image/png" }), new File(["fake"], "documento.pdf", { type: "text/plain" }), new File([], "vacio.pdf", { type: "application/pdf" }), new File([new Uint8Array(5 * 1024 * 1024 + 1)], "grande.pdf", { type: "application/pdf" })]) {
+    await ui.selectFile("Comprobante PDF (opcional)", file); await ui.submit(); assert.match(textOf(ui.find("dialog")), /primero\.pdf/); assert.equal(ui.field("Referencia o comprobante (opcional)").props.value, "Referencia conservada"); assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
+  }
+  await ui.selectFile("Comprobante PDF (opcional)", pdfFile("segundo.pdf")); assert.match(textOf(ui.find("dialog")), /segundo\.pdf/); assert.doesNotMatch(textOf(ui.find("dialog")), /primero\.pdf/);
+  await ui.click(ui.find("button", "Quitar archivo")); assert.doesNotMatch(textOf(ui.find("dialog")), /segundo\.pdf/); await ui.submit();
+  assert.equal(ui.calls.find((call) => call.method === "POST").multipart, false); ui.unmount();
+});
+
+test("ambiguous payment with a PDF locks the selected file and replays exactly the same payment once", async () => {
+  const ui = harness({ postOutcomes: ["commit-network"] }); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar"));
+  await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "250"); await ui.selectFile("Comprobante PDF (opcional)", pdfFile()); await ui.submit();
+  assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.field("Comprobante PDF (opcional)").props.disabled, true); assert.equal(ui.find("button", "Quitar archivo").props.disabled, true); assert.equal(ui.find("button", "Cancelar").props.disabled, true);
+  await ui.submit(); const writes = ui.calls.filter((call) => call.method === "POST"); assert.equal(writes.length, 2); assert.deepEqual(writes[1].body, writes[0].body); assert.equal(writes[1].receipt.name, writes[0].receipt.name); assert.deepEqual(await writes[1].receipt.arrayBuffer(), await writes[0].receipt.arrayBuffer());
+  assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].paidAmount, 250); assert.equal(ui.data[0].balance, 750); ui.unmount();
+});
+
+test("an earlier payment can receive a PDF without registering another payment or changing its balance", async () => {
+  const oldPayment = { id: 7, date: "2026-11-10", amount: 1000, reference: "Antiguo", receipt: null, createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
+  const ui = harness({ invoices: [invoice(1, { paidAmount: 1000, balance: 0, status: "PAGADA", paymentCount: 1, payments: [oldPayment] })] }); await ui.settle();
+  await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); await ui.click(ui.byLabel("Adjuntar PDF al pago 7")); await ui.submit();
+  assert.match(textOf(ui.find("dialog")), /Selecciona el PDF/); assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
+  await ui.selectFile("Comprobante PDF", pdfFile("anterior.pdf")); await ui.submit();
+  const write = ui.calls.find((call) => call.method === "POST"); assert.equal(write.path, "/api/pago-facturas/1/payments/7/receipt"); assert.deepEqual(Object.keys(write.body), ["requestId"]); assert.equal(write.multipart, true);
+  assert.equal(ui.data[0].paidAmount, 1000); assert.equal(ui.data[0].balance, 0); assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].version, 1); assert.equal(ui.data[0].payments[0].date, oldPayment.date);
+  assert.match(textOf(ui.find("dialog")), /Historial de pagos.*Comprobante PDF guardado/); assert.equal(ui.byLabel("Descargar comprobante PDF del pago 7").props.href, "/api/pago-facturas/1/payments/7/receipt"); ui.unmount();
+});
+
+test("ambiguous attachment keeps its own request and file until confirmed, then refreshes history without a duplicate", async () => {
+  const payment = { id: 1, date: "2026-11-10", amount: 400, reference: null, createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
+  const ui = harness({ invoices: [invoice(1, { paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })], postOutcomes: ["commit-network"] }); await ui.settle(); await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); await ui.click(ui.byLabel("Adjuntar PDF al pago 1")); await ui.selectFile("Comprobante PDF", pdfFile()); await ui.submit();
+  assert.equal(ui.find("button", "Volver al historial").props.disabled, true); assert.equal(ui.field("Comprobante PDF").props.disabled, true); assert.match(textOf(ui.find("dialog")), /Reintentar registro/);
+  await ui.submit(); const writes = ui.calls.filter((call) => call.method === "POST"); assert.equal(writes.length, 2); assert.deepEqual(writes[1].body, writes[0].body); assert.equal(await writes[1].receipt.text(), await writes[0].receipt.text());
+  assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].paidAmount, 400); assert.equal(ui.data[0].balance, 600); assert.match(textOf(ui.find("dialog")), /Descargar PDF/); ui.unmount();
+});
+
+test("a rejected receipt leaves all payment fields and the PDF available for correction and retry", async () => {
+  const ui = harness({ postOutcomes: ["422"] }); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar")); await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "200,50"); await ui.setControl("Referencia o comprobante (opcional)", "Referencia QA"); await ui.selectFile("Comprobante PDF (opcional)", pdfFile()); await ui.submit();
+  assert.equal(ui.data[0].paymentCount, 0); assert.equal(ui.field("Valor del abono (COP)").props.value, "200,50"); assert.equal(ui.field("Referencia o comprobante (opcional)").props.value, "Referencia QA"); assert.match(textOf(ui.find("dialog")), /comprobante\.pdf/); assert.equal(ui.field("Comprobante PDF (opcional)").props.disabled, false);
+  await ui.submit(); const writes = ui.calls.filter((call) => call.method === "POST"); assert.deepEqual(writes[1].body, writes[0].body); assert.equal(await writes[1].receipt.text(), await writes[0].receipt.text()); assert.equal(ui.data[0].paymentCount, 1); ui.unmount();
+});
+
+test("a concurrent receipt attachment cannot be replaced and refreshed history exposes the existing proof", async () => {
+  const payment = { id: 1, date: "2026-11-10", amount: 400, reference: null, receipt: null, createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
+  const ui = harness({ invoices: [invoice(1, { paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })] }); await ui.settle(); await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); await ui.click(ui.byLabel("Adjuntar PDF al pago 1")); await ui.selectFile("Comprobante PDF", pdfFile("seleccionado.pdf"));
+  ui.data[0].payments[0].receipt = { id: "existing-receipt", filename: "guardado-por-otro-admin.pdf", size: 100 };
+  await ui.submit(); assert.match(textOf(ui.find("dialog")), /ya tiene comprobante/); assert.match(textOf(ui.find("dialog")), /seleccionado\.pdf/);
+  await ui.click(ui.find("button", "Actualizar factura y revisar")); assert.equal(ui.find("button", "Guardar comprobante").props.disabled, true); assert.equal(ui.field("Comprobante PDF").props.disabled, true);
+  await ui.click(ui.find("button", "Volver al historial")); assert.match(textOf(ui.find("dialog")), /guardado-por-otro-admin\.pdf/); assert.doesNotMatch(textOf(ui.find("dialog")), /Adjuntar PDF/); assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].payments[0].receipt.id, "existing-receipt"); ui.unmount();
 });

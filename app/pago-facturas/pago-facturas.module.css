@@ -137,6 +137,22 @@
 .paymentHistory p { margin-top: 8px; color: #475569; font-size: 14px; overflow-wrap: anywhere; }
 .paymentHistory small { display: block; margin-top: 8px; color: #64748b; font-size: 12px; line-height: 1.5; }
 .paymentHistory .emptyHistory { margin: 0; padding: 28px 0; text-align: center; }
+.receiptInput { margin: 0 24px 22px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fafbfc; }
+.receiptInput label { display: flex; flex-direction: column; gap: 10px; color: #334155; font-size: 14px; font-weight: 700; }
+.receiptInput input { display: block; min-height: 44px; width: 100%; min-width: 0; padding: 7px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; font-size: 13px; font-weight: 400; }
+.receiptInput input::file-selector-button { min-height: 30px; margin-right: 8px; padding: 5px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155; font-weight: 700; cursor: pointer; }
+.receiptInput > p { margin-top: 8px; font-size: 12px; line-height: 1.5; color: #64748b; }
+.receiptInput .receiptError { color: #991b1b; }
+.selectedReceipt { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; margin-top: 12px; font-size: 13px; color: #475569; }
+.selectedReceipt strong { min-width: 0; overflow-wrap: anywhere; color: #0f172a; }
+.attachReceiptButton { min-height: 44px; padding: 8px 0; font-size: 13px; font-weight: 700; color: #475569; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.attachReceiptButton:hover { color: #e30613; }
+.savedReceipt { flex-wrap: wrap; margin-top: 10px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
+.savedReceipt > span { min-width: 0; font-size: 12px; overflow-wrap: anywhere; color: #475569; }
+.savedReceipt a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.attachmentContext { padding: 20px 24px 16px; color: #475569; font-size: 14px; line-height: 1.5; }
+.attachmentContext p + p { margin-top: 10px; font-size: 12px; }
+@media (max-width: 760px) { .receiptInput { margin-inline: 18px; } .attachmentContext { padding-inline: 18px; } }
 .shell :is(button, input, select, a, summary, [tabindex]):focus-visible { outline: 3px solid #e30613; outline-offset: 3px; }
 .shell button:disabled { opacity: .55; cursor: not-allowed; }
 .shell input:disabled, .shell select:disabled { background: #f8fafc; color: #64748b; }

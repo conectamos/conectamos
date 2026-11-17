@@ -5,6 +5,8 @@ import { esAdministradorCentral } from "@/lib/access-control";
 import { getDateKeyInColombia } from "@/lib/credit-date-utils";
 import { decimalProveedorACentavos, centavosADecimalProveedor } from "@/lib/proveedores-pagos";
 import { resolveInvoiceProvider, InvoiceProviderError } from "@/lib/invoice-providers";
+import { attachStoredInvoicePaymentReceipt, persistInvoicePaymentReceipt, InvoicePaymentReceiptError } from "@/lib/invoice-payment-receipts";
+import { validateInvoiceReceiptFile, InvoiceReceiptFileError, type InvoiceReceiptFile } from "@/lib/invoice-receipt-files";
 
 export class InvoicePaymentsError extends Error {
   constructor(message: string, public status = 400, public code = "INVALID_INPUT") { super(message); }
@@ -286,11 +288,14 @@ export async function readAdministrativeInvoice(id: number, session: InvoiceSess
   assertInvoicePaymentsAccess(session);
   return prisma.$transaction(async (tx) => {
     const row = await tx.facturaAdministrativa.findUnique({ where: { id },
-      include: { payments: { orderBy: [{ date: "desc" }, { id: "desc" }] }, events: { orderBy: [{ createdAt: "desc" }, { id: "desc" }] } } });
+      include: { payments: { orderBy: [{ date: "desc" }, { id: "desc" }],
+        include: { receipt: { select: { id: true, filename: true, size: true } } } },
+      events: { orderBy: [{ createdAt: "desc" }, { id: "desc" }] } } });
     if (!row) throw new InvoicePaymentsError("Factura no encontrada.", 404, "NOT_FOUND");
     return { invoice: { ...invoiceDto(row, row.payments.length), payments: row.payments.map((payment) => ({
       id: payment.id, date: payment.date.toISOString().slice(0, 10), amount: storedCents(payment.amount) / 100,
       reference: payment.reference, createdBy: payment.createdBy, createdAt: payment.createdAt.toISOString(),
+      receipt: payment.receipt ? { id: payment.receipt.id, filename: payment.receipt.filename, size: payment.receipt.size } : null,
     })), events: row.events.map((event) => ({ id: event.id, action: event.action, createdBy: event.createdBy,
       createdAt: event.createdAt.toISOString(), snapshot: event.snapshot })) } };
   }, { isolationLevel: "RepeatableRead", timeout: 15_000 });
@@ -412,9 +417,13 @@ export function restoreAdministrativeInvoice(id: number, value: unknown, session
   return changeAdministrativeInvoice(id, value, "RESTORE", session);
 }
 
-export async function recordAdministrativeInvoicePayment(id: number, value: unknown, session: InvoiceSession | null) {
+export async function recordAdministrativeInvoicePayment(id: number, value: unknown, session: InvoiceSession | null, receiptFile?: InvoiceReceiptFile) {
   assertInvoicePaymentsAccess(session);
   const input = parseAdministrativePayment(value, id);
+  const checked = receiptFile === undefined ? undefined : validateInvoiceReceiptFile(receiptFile);
+  const receipt = checked ? { ...checked, bytes: new Uint8Array(checked.bytes) } : undefined;
+  // Keep the original request hash exactly unchanged for JSON-only payments.
+  if (receipt) input.requestHash = digest({ paymentHash: input.requestHash, receipt: { sha256: receipt.sha256, filename: receipt.name } });
   const creator = actor(session);
   try {
     return await prisma.$transaction(async (tx) => {
@@ -437,11 +446,13 @@ export async function recordAdministrativeInvoicePayment(id: number, value: unkn
       const updated = await tx.facturaAdministrativa.update({ where: { id }, data: { paidAmount: decimal(alreadyPaid + cents),
         status: afterBalance === 0 ? "PAGADA" : "PENDIENTE", version: { increment: 1 } } });
       const result = { invoice: invoiceDto(updated, invoice._count.payments + 1) };
-      await tx.pagoFacturaAdministrativa.create({ data: { invoiceId: id, requestId: input.requestId,
+      const payment = await tx.pagoFacturaAdministrativa.create({ data: { invoiceId: id, requestId: input.requestId,
         requestHash: input.requestHash, responseSnapshot: result, date: input.date, mode: input.mode,
         amount: decimal(cents), balanceBefore: decimal(balance), balanceAfter: decimal(afterBalance),
         invoiceNumberSnapshot: invoice.number, providerSnapshot: invoice.provider, invoiceAmountSnapshot: decimal(total),
         reference: input.reference, ...creator } });
+      if (receipt) await persistInvoicePaymentReceipt(tx, { invoiceId: id, paymentId: payment.id,
+        requestId: input.requestId, receipt, actor: creator });
       return { ...result, replayed: false };
     }, { timeout: 15_000 });
   } catch (error) {
@@ -452,7 +463,14 @@ export async function recordAdministrativeInvoicePayment(id: number, value: unkn
   }
 }
 
-export function assertInvoiceWriteRequest(request: Request) {
+export async function attachInvoicePaymentReceipt(invoiceId: number, paymentId: number,
+  input: unknown, session: InvoiceSession | null) {
+  assertInvoicePaymentsAccess(session);
+  const result = await attachStoredInvoicePaymentReceipt(invoiceId, paymentId, input, session);
+  return { ...await readAdministrativeInvoice(invoiceId, session), replayed: result.replayed };
+}
+
+export function assertInvoiceWriteRequest(request: Request, options: { allowMultipart?: boolean } = {}) {
   const origin = request.headers.get("origin");
   const url = new URL(request.url);
   const configured = [process.env.APP_URL, process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null];
@@ -466,8 +484,10 @@ export function assertInvoiceWriteRequest(request: Request) {
   if (!origin || origin === "null" || request.headers.get("sec-fetch-site") === "cross-site" || (!sameOrigin && !allowed.includes(origin))) {
     throw new InvoicePaymentsError("Origen de la solicitud no permitido.", 403, "FORBIDDEN_ORIGIN");
   }
-  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
-    throw new InvoicePaymentsError("Envía los datos como JSON.", 415, "INVALID_CONTENT_TYPE");
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  const multipart = options.allowMultipart && /^multipart\/form-data\s*;[^\r\n]*\bboundary=(?:"[^"]+"|[^;\s]+)/.test(contentType);
+  if (!contentType.startsWith("application/json") && !multipart) {
+    throw new InvoicePaymentsError(options.allowMultipart ? "Envía los datos como JSON o formulario con comprobante." : "Envía los datos como JSON.", 415, "INVALID_CONTENT_TYPE");
   }
 }
 
@@ -478,6 +498,6 @@ export function invoiceJson(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "Cache-Control": "private, no-store" } });
 }
 export function invoiceErrorResponse(error: unknown) {
-  return error instanceof InvoicePaymentsError || error instanceof InvoiceProviderError ? invoiceJson({ error: error.message, code: error.code }, error.status)
+  return error instanceof InvoicePaymentsError || error instanceof InvoiceProviderError || error instanceof InvoicePaymentReceiptError || error instanceof InvoiceReceiptFileError ? invoiceJson({ error: error.message, code: error.code }, error.status)
     : invoiceJson({ error: "No fue posible completar la operación. Intenta de nuevo.", code: "UNAVAILABLE" }, 503);
 }

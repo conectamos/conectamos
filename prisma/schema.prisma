@@ -370,8 +370,26 @@ model PagoFacturaAdministrativa {
   createdBy             String
   createdAt             DateTime @default(now())
   invoice               FacturaAdministrativa @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  receipt               InvoicePaymentReceipt?
 
   @@index([invoiceId, createdAt, id])
+}
+
+// Private PDF bytes are read only by the authorized payment attachment route.
+model InvoicePaymentReceipt {
+  id                 String   @id
+  paymentId          Int      @unique
+  requestId          String   @unique
+  requestHash        String
+  filename           String
+  size               Int
+  sha256             String
+  bytes              Bytes
+  createdById        Int
+  createdByProfileId Int?
+  createdBy          String
+  createdAt          DateTime @default(now())
+  payment            PagoFacturaAdministrativa @relation(fields: [paymentId], references: [id], onDelete: Restrict)
 }
 
 model FacturaProveedor {
