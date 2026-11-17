@@ -36,7 +36,7 @@ function assertFailure(error, mod, code, uncertain) {
 
 test("configuration requires an approved template, Dapta URL and a Colombian mobile destination; enable flag stays independent", () => {
   const mod = adapter();
-  assert.deepEqual(mod.getInvoiceReminderConfig(environment()), { enabled: true, configured: true, recipient, sendHour: 8, timeZone: "America/Bogota" });
+  assert.deepEqual(mod.getInvoiceReminderConfig(environment()), { enabled: true, configured: true, recipient, sendHour: 10, timeZone: "America/Bogota" });
   for (const local of ["3000000000", "573000000000", "+573000000000", "  +573000000000  "]) assert.equal(mod.getInvoiceReminderConfig(environment({ INVOICE_REMINDER_WHATSAPP_TO: local })).recipient, recipient);
   for (const invalid of [undefined, "", "+14150000000", "5710000000", "57300000000", "5730000000000", "300 000 0000", "recipient@example.test", "++573000000000"]) {
     const config = mod.getInvoiceReminderConfig(environment({ INVOICE_REMINDER_WHATSAPP_TO: invalid })); assert.equal(config.configured, false); assert.equal(config.recipient, null);

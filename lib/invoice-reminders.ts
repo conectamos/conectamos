@@ -20,7 +20,7 @@ const MAX_ATTEMPTS = 3;
 const recipientHash = (recipient: string) => createHash("sha256").update(recipient).digest("hex");
 const dateKey = (value: Date) => value.toISOString().slice(0, 10);
 const colombiaHour = new Intl.DateTimeFormat("en", { timeZone: "America/Bogota", hour: "2-digit", hourCycle: "h23" });
-const permittedTime = (now: Date, today: string) => Number(colombiaHour.format(now)) >= 8 && getDateKeyInColombia(now) === today;
+const permittedTime = (now: Date, today: string) => Number(colombiaHour.format(now)) >= 10 && getDateKeyInColombia(now) === today;
 const started = (settings: Config, today: string) => !settings.startDate || today >= settings.startDate;
 const ready = (config: Config): config is Config & { recipient: string } => config.enabled && config.configured && Boolean(config.recipient);
 function balance(invoice: LiveInvoice) {
@@ -211,7 +211,7 @@ export function createInvoiceReminderService(dependencies: {
     const row = rows[0];
     if (!row) throw new Error("Reminder status unavailable");
     return { enabled: settings.enabled, configured: settings.configured, recipient: settings.recipient,
-      hour: 8 as const, timeZone: "America/Bogota" as const, lastSentAt: row.lastSentAt?.toISOString() ?? null,
+      hour: 10 as const, timeZone: "America/Bogota" as const, lastSentAt: row.lastSentAt?.toISOString() ?? null,
       pending: Number(row.pending), failed: Number(row.failed), uncertain: Number(row.uncertain) };
   }
   return { runBatch, authorize, status };

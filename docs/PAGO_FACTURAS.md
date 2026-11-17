@@ -20,7 +20,7 @@ La fecha de vencimiento es opcional y no se deduce para facturas antiguas. El es
 
 El administrador central ve avisos de vencimiento en Inicio y Pago de facturas. Incluyen todas las pendientes vencidas, las que vencen hoy y las de los siete días siguientes, aunque sean de meses anteriores. La campana permite volver a abrirlos. Al registrar pagos, editar, eliminar o restaurar una factura, las operaciones confirmadas actualizan los avisos.
 
-El recordatorio externo por WhatsApp se programa para el día del vencimiento a las 8:00 a. m. en `America/Bogota`. Lo procesa el servidor, por lo que no depende de mantener la aplicación abierta. No incluye correo electrónico. La tarjeta «Recordatorios por WhatsApp» consulta `GET /api/pago-facturas/reminders` cada 60 segundos y después de cambios confirmados; esa consulta solo lee el estado y nunca envía mensajes.
+El recordatorio externo por WhatsApp se programa para el día del vencimiento a las 10:00 a. m. en `America/Bogota`. Lo procesa el servidor, por lo que no depende de mantener la aplicación abierta. No incluye correo electrónico. La tarjeta «Recordatorios por WhatsApp» consulta `GET /api/pago-facturas/reminders` cada 60 segundos y después de cambios confirmados; esa consulta solo lee el estado y nunca envía mensajes.
 
 El estado solo se presenta como activo cuando el servidor confirma que está habilitado y configurado. Si falta configuración, muestra «WhatsApp pendiente de activar». El destino se obtiene del servidor, sin fijar teléfonos ni credenciales en el código del navegador. Se muestran los registros pendientes, fallidos y por confirmar; una respuesta fallida no se convierte en ceros. «Último envío aceptado por el proveedor» indica aceptación de la solicitud, no entrega al teléfono ni lectura por el destinatario.
 
@@ -30,9 +30,9 @@ Configuración privada del servicio de producción:
 - `INVOICE_REMINDER_TEMPLATE_APPROVED=1`: confirma que la plantilla de WhatsApp ya está aprobada por Meta. Mantener deshabilitado hasta verificar la aprobación; guardar un borrador no permite activar envíos.
 - `INVOICE_REMINDER_WHATSAPP_TO`: único destino autorizado en formato aceptado por el adaptador de WhatsApp.
 - `INVOICE_REMINDER_DAPTA_URL`: URL del flujo de Dapta configurado para los recordatorios. Puede contener una clave en la consulta; debe guardarse como secreto del servidor y no exponerse en registros, respuestas de API ni variables `NEXT_PUBLIC_*`.
-- `INVOICE_REMINDER_START_DATE`: fecha inicial opcional `YYYY-MM-DD`, para comenzar desde las 8:00 de ese día y evitar un envío inicial nocturno. Una fecha inválida bloquea la configuración.
+- `INVOICE_REMINDER_START_DATE`: fecha inicial opcional `YYYY-MM-DD`, para comenzar desde las 10:00 de ese día y evitar un envío inicial nocturno. Una fecha inválida bloquea la configuración.
 
-La hora es fija: 8:00 a. m. de Colombia. La activación requiere una conexión válida al flujo de WhatsApp, el destino autorizado y la plantilla aprobada por Meta. Si falta esa aprobación, el estado permanece pendiente de activar. No basta con que aparezca la tarjeta, se guarde un borrador de plantilla o se consulten facturas para que se realicen envíos.
+La hora es fija: 10:00 a. m. de Colombia. La activación requiere una conexión válida al flujo de WhatsApp, el destino autorizado y la plantilla aprobada por Meta. Si falta esa aprobación, el estado permanece pendiente de activar. No basta con que aparezca la tarjeta, se guarde un borrador de plantilla o se consulten facturas para que se realicen envíos.
 
 ## Corregir y eliminar
 

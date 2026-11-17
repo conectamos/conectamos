@@ -9,7 +9,7 @@ type ReminderStatus = {
   enabled: boolean;
   configured: boolean;
   recipient: string | null;
-  hour: 8;
+  hour: 10;
   timeZone: "America/Bogota";
   lastSentAt: string | null;
   pending: number;
@@ -22,7 +22,7 @@ function validStatus(value: unknown): value is ReminderStatus {
   const item = value as Record<string, unknown>;
   return typeof item.enabled === "boolean" && typeof item.configured === "boolean"
     && (item.recipient === null || typeof item.recipient === "string")
-    && item.hour === 8 && item.timeZone === "America/Bogota"
+    && item.hour === 10 && item.timeZone === "America/Bogota"
     && (item.lastSentAt === null || (typeof item.lastSentAt === "string" && Number.isFinite(Date.parse(item.lastSentAt))))
     && [item.pending, item.failed, item.uncertain].every((count) => typeof count === "number" && Number.isSafeInteger(count) && count >= 0);
 }
@@ -70,7 +70,7 @@ export default function InvoiceReminderStatus() {
     <span className={`${styles.icon} ${active && !failed ? styles.activeIcon : ""}`}><DashboardIcon name="bell" /></span>
     <div className={styles.content}>
       <h2>{title}</h2>
-      <p>{active ? "El día del vencimiento, a las 8:00 a. m. de Colombia, aunque la aplicación esté cerrada." : "Programación: día del vencimiento, 8:00 a. m. de Colombia."}{status?.recipient && <span className={styles.recipient}>Destino: {status.recipient}</span>}</p>
+      <p>{active ? "El día del vencimiento, a las 10:00 a. m. de Colombia, aunque la aplicación esté cerrada." : "Programación: día del vencimiento, 10:00 a. m. de Colombia."}{status?.recipient && <span className={styles.recipient}>Destino: {status.recipient}</span>}</p>
       {status && !active && !failed && <p className={styles.secondary}>Los envíos se habilitan cuando la configuración esté activa.</p>}
       {failed && <p className={styles.error} role="status">No se pudo consultar el estado actual.{status && " Se muestra la última información recibida."} <button type="button" onClick={() => void refresh()}>Reintentar</button></p>}
       {status && <div className={styles.details}><span>{status.lastSentAt ? `Último envío aceptado por el proveedor: ${dateLabel(status.lastSentAt)}.` : "Sin envíos aceptados por el proveedor."}</span><div className={styles.counts}><span>{status.pending.toLocaleString("es-CO")} pendientes</span><span className={status.failed ? styles.problem : undefined}>{status.failed.toLocaleString("es-CO")} fallidos</span><span className={status.uncertain ? styles.problem : undefined}>{status.uncertain.toLocaleString("es-CO")} por confirmar</span></div></div>}

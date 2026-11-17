@@ -7,7 +7,7 @@ import { modules, admin } from "./invoice-payments-test-helpers.mjs";
 
 const migration = readFileSync(new URL("../scripts/apply-cierre-schema.sql", import.meta.url), "utf8");
 const recipient = "573000000001";
-const config = { enabled: true, configured: true, recipient, sendHour: 8, timeZone: "America/Bogota" };
+const config = { enabled: true, configured: true, recipient, sendHour: 10, timeZone: "America/Bogota" };
 const receipt = { messageId: "wamid.SYNTHETIC_QA_001" };
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 function adapter(pg, calls = []) {
@@ -27,7 +27,7 @@ async function setup(options = {}) {
   const calls = [];
   const db = adapter(pg, calls);
   const transport = modules({}).load("lib/invoice-reminder-transport.ts");
-  let clock = new Date(options.at || "2026-11-16T13:00:00Z");
+  let clock = new Date(options.at || "2026-11-16T15:00:00Z");
   let settings = { ...config, ...options.config };
   let sendCount = 0;
   let service;
@@ -52,15 +52,15 @@ async function invoice(pg, id, overrides = {}) {
 }
 async function delivery(pg, invoiceId, overrides = {}) {
   const row = { id: randomUUID(), state: "PROCESSING", dueDate: "2026-11-16", recipient,
-    token: randomUUID(), leaseUntil: "2026-11-16T13:02:00Z", dispatchClaimedAt: null, attempts: 1, ...overrides };
+    token: randomUUID(), leaseUntil: "2026-11-16T15:02:00Z", dispatchClaimedAt: null, attempts: 1, ...overrides };
   await pg.query(`INSERT INTO "InvoiceReminderDelivery" ("id","invoiceId","dueDate","recipientHash","recipient","state","attempts","leaseToken","leaseUntil","dispatchClaimedAt","nextAttempt")
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'2026-11-16T13:00:00Z')`,
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'2026-11-16T15:00:00Z')`,
   [row.id, invoiceId, row.dueDate, hash(row.recipient), row.recipient, row.state, row.attempts, row.token, row.leaseUntil, row.dispatchClaimedAt]);
   return row;
 }
 const jobs = async (pg) => (await pg.query('SELECT * FROM "InvoiceReminderDelivery" ORDER BY "invoiceId"')).rows;
 
-test("cola de hoy desde08 Bogotá envía saldo exacto una vez y conserva snapshot/recibo sin credenciales", async () => {
+test("cola de hoy desde las 10:00 Bogotá envía saldo exacto una vez y conserva snapshot/recibo sin credenciales", async () => {
   const x = await setup();
   try {
     await invoice(x.pg, 1); await invoice(x.pg, 2, { dueDate: "2026-11-15" }); await invoice(x.pg, 3, { dueDate: "2026-11-17" });
@@ -72,30 +72,43 @@ test("cola de hoy desde08 Bogotá envía saldo exacto una vez y conserva snapsho
     assert.equal(row.payloadSnapshot.recipient, undefined); assert.equal(row.payloadSnapshot.authorizationToken, undefined);
     assert.equal((await x.service.runBatch()).processed, 0); assert.equal(x.sent(), 1);
     const status = await x.service.status(admin); assert.equal(status.pending, 0); assert.equal(status.failed, 0); assert.equal(status.uncertain, 0); assert.ok(status.lastSentAt);
+    assert.equal(status.hour, 10); assert.equal(status.timeZone, "America/Bogota");
     await x.pg.exec(migration); assert.equal((await jobs(x.pg)).length, 1);
   } finally { await x.pg.close(); }
 });
 
-test("horario y configuración bloquean envíos antes08, apagado o sin plantilla/flujo configurados", async () => {
-  const x = await setup({ at: "2026-11-16T12:59:59Z" });
+test("horario y configuración bloquean envíos antes de las 10:00, apagado o sin plantilla/flujo configurados", async () => {
+  const x = await setup({ at: "2026-11-16T14:59:59Z" });
   try {
     await invoice(x.pg, 1);
     assert.equal((await x.service.runBatch()).enqueued, 0);
-    x.setTime("2026-11-16T13:00:00Z"); x.setConfig({ enabled: false }); assert.equal((await x.service.runBatch()).processed, 0);
+    x.setTime("2026-11-16T15:00:00Z"); x.setConfig({ enabled: false }); assert.equal((await x.service.runBatch()).processed, 0);
     x.setConfig({ enabled: true, configured: false }); assert.equal((await x.service.runBatch()).processed, 0);
     x.setConfig({ configured: true }); assert.equal((await x.service.runBatch()).sent, 1); assert.equal(x.sent(), 1);
   } finally { await x.pg.close(); }
 });
 
-test("fecha de activación futura bloquea cola y dispatch; el día inicial desde08 sí permite enviar", async () => {
+test("09:59:59 Bogotá no permite dispatch ni consume token; exactamente a las 10:00 autoriza con la misma fecha", async () => {
+  const x = await setup({ at: "2026-11-16T14:59:59Z" });
+  try {
+    await invoice(x.pg, 1); const row = await delivery(x.pg, 1);
+    const denied = await x.service.authorize({ deliveryId: row.id, token: row.token });
+    assert.equal(denied.allowed, false); assert.equal((await jobs(x.pg))[0].dispatchClaimedAt, null);
+    x.setTime("2026-11-16T15:00:00Z");
+    const allowed = await x.service.authorize({ deliveryId: row.id, token: row.token });
+    assert.equal(allowed.allowed, true); assert.equal(allowed.dueDate, "2026-11-16");
+  } finally { await x.pg.close(); }
+});
+
+test("fecha de activación futura bloquea cola y dispatch; el día inicial desde las 10:00 sí permite enviar", async () => {
   const x = await setup({ config: { startDate: "2026-11-17" } });
   try {
     await invoice(x.pg, 1); await invoice(x.pg, 2, { dueDate: "2026-11-17" });
     const todayJob = await delivery(x.pg, 1);
     assert.equal((await x.service.authorize({ deliveryId: todayJob.id, token: todayJob.token })).allowed, false);
     assert.equal((await x.service.runBatch()).enqueued, 0); assert.equal(x.sent(), 0);
-    x.setTime("2026-11-17T12:59:59Z"); assert.equal((await x.service.runBatch()).sent, 0);
-    x.setTime("2026-11-17T13:00:00Z"); assert.equal((await x.service.runBatch()).sent, 1); assert.equal(x.sent(), 1);
+    x.setTime("2026-11-17T14:59:59Z"); assert.equal((await x.service.runBatch()).sent, 0);
+    x.setTime("2026-11-17T15:00:00Z"); assert.equal((await x.service.runBatch()).sent, 1); assert.equal(x.sent(), 1);
     assert.equal((await jobs(x.pg)).find((row) => row.invoiceId === 1).state, "UNKNOWN");
   } finally { await x.pg.close(); }
 });
@@ -118,13 +131,13 @@ test("dispatch es de un solo uso y rechaza token incorrecto, vencido, UNKNOWN, o
     const allowed = await x.service.authorize({ deliveryId: row.id, token: row.token });
     assert.equal(allowed.allowed, true); assert.equal(allowed.balance, 90.19); assert.equal(allowed.recipient, recipient);
     assert.deepEqual(await x.service.authorize({ deliveryId: row.id, token: row.token }), { allowed: false, code: "DISPATCH_NOT_ALLOWED" });
-    for (const [id, changes] of [[2, { leaseUntil: "2026-11-16T12:59:59Z" }], [3, { state: "UNKNOWN" }], [4, { recipient: "573000000002" }]]) {
+    for (const [id, changes] of [[2, { leaseUntil: "2026-11-16T14:59:59Z" }], [3, { state: "UNKNOWN" }], [4, { recipient: "573000000002" }]]) {
       await invoice(x.pg, id); const item = await delivery(x.pg, id, changes);
       assert.equal((await x.service.authorize({ deliveryId: item.id, token: item.token })).allowed, false);
     }
-    await invoice(x.pg, 5); const late = await delivery(x.pg, 5, { leaseUntil: "2026-11-17T13:00:00Z" });
+    await invoice(x.pg, 5); const late = await delivery(x.pg, 5, { leaseUntil: "2026-11-17T15:00:00Z" });
     x.setTime("2026-11-17T05:00:00Z"); assert.equal((await x.service.authorize({ deliveryId: late.id, token: late.token })).allowed, false);
-    x.setTime("2026-11-16T12:59:59Z"); assert.equal((await x.service.authorize({ deliveryId: late.id, token: late.token })).allowed, false);
+    x.setTime("2026-11-16T14:59:59Z"); assert.equal((await x.service.authorize({ deliveryId: late.id, token: late.token })).allowed, false);
   } finally { await x.pg.close(); }
 });
 
@@ -160,10 +173,10 @@ test("revalidación dispatch respeta abonos recientes y cancela pagadas, elimina
 test("crash con lease vencido queda UNKNOWN sin reenviar, incluso durante siguientes días", async () => {
   const x = await setup();
   try {
-    await invoice(x.pg, 1); await delivery(x.pg, 1, { leaseUntil: "2026-11-16T12:59:59Z" });
+    await invoice(x.pg, 1); await delivery(x.pg, 1, { leaseUntil: "2026-11-16T14:59:59Z" });
     assert.equal((await x.service.status(admin)).uncertain, 1);
     await x.service.runBatch(); assert.equal((await jobs(x.pg))[0].state, "UNKNOWN"); assert.equal(x.sent(), 0);
-    x.setTime("2026-11-17T13:00:00Z"); await x.service.runBatch(); assert.equal(x.sent(), 0); assert.equal((await jobs(x.pg))[0].state, "UNKNOWN");
+    x.setTime("2026-11-17T15:00:00Z"); await x.service.runBatch(); assert.equal(x.sent(), 0); assert.equal((await jobs(x.pg))[0].state, "UNKNOWN");
   } finally { await x.pg.close(); }
 });
 
@@ -179,7 +192,7 @@ test("fallo seguro transitorio reintenta con nuevo token; incierto no reintenta 
     try {
       await invoice(x.pg, 1); await x.service.runBatch();
       const first = (await jobs(x.pg))[0]; assert.equal(first.state, kind === "retry" ? "RETRY" : kind === "uncertain" ? "UNKNOWN" : "FAILED");
-      x.setTime("2026-11-16T13:05:00Z"); await x.service.runBatch();
+      x.setTime("2026-11-16T15:05:00Z"); await x.service.runBatch();
       assert.equal(x.sent(), kind === "retry" ? 2 : 1);
       if (kind === "retry") { const last = (await jobs(x.pg))[0]; assert.equal(last.state, "SENT"); assert.notEqual(last.leaseToken, first.leaseToken); }
     } finally { await x.pg.close(); }

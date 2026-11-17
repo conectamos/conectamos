@@ -9,7 +9,7 @@ const code = ts.transpileModule(readFileSync(new URL("../app/pago-facturas/remin
 const jsx = (type, props) => ({ type, props: props || {} });
 const textOf = (node) => node == null || typeof node === "boolean" ? "" : typeof node !== "object" ? String(node) : Array.isArray(node) ? node.map(textOf).join("") : textOf(node.props?.children);
 const nodes = (node) => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
-const state = (extra = {}) => ({ enabled: true, configured: true, recipient: "+57 DESTINO QA", hour: 8, timeZone: "America/Bogota", lastSentAt: "2026-11-16T13:03:00Z", pending: 2, failed: 1, uncertain: 3, ...extra });
+const state = (extra = {}) => ({ enabled: true, configured: true, recipient: "+57 DESTINO QA", hour: 10, timeZone: "America/Bogota", lastSentAt: "2026-11-16T13:03:00Z", pending: 2, failed: 1, uncertain: 3, ...extra });
 
 function harness(responses = [state()]) {
   const queue = [...responses], slots = [], effects = [], calls = [], pending = [];
@@ -49,7 +49,7 @@ test("reminder status only reads the local status every minute and labels provid
   assert.match(ui.text(), /Consultando recordatorios/); assert.doesNotMatch(ui.text(), /0 pendientes|Sin envíos/);
   assert.deepEqual(ui.options(), { enabled: true, intervalMs: 60000, runOnMount: true });
   await ui.poll();
-  assert.match(ui.text(), /Recordatorio por WhatsApp activo/); assert.match(ui.text(), /8:00 a\. m\. de Colombia, aunque la aplicación esté cerrada/);
+  assert.match(ui.text(), /Recordatorio por WhatsApp activo/); assert.match(ui.text(), /10:00 a\. m\. de Colombia, aunque la aplicación esté cerrada/);
   assert.match(ui.text(), /Destino: \+57 DESTINO QA/); assert.match(ui.text(), /Último envío aceptado por el proveedor/);
   assert.match(ui.text(), /2 pendientes1 fallidos3 por confirmar/); assert.doesNotMatch(ui.text(), /entregado|leído|correo|email/i);
   assert.equal(ui.calls.length, 1); assert.equal(ui.calls[0].path, "/api/pago-facturas/reminders"); assert.equal(ui.calls[0].method ?? "GET", "GET"); assert.equal(ui.calls[0].body, undefined); ui.unmount();

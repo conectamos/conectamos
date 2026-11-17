@@ -3,7 +3,7 @@ export type InvoiceReminderConfig = {
   configured: boolean;
   recipient: string | null;
   startDate?: string | null;
-  sendHour: 8;
+  sendHour: 10;
   timeZone: "America/Bogota";
 };
 export type InvoiceReminderPayload = {
@@ -47,7 +47,7 @@ export function getInvoiceReminderConfig(env: ReminderEnvironment = process.env)
   return {
     enabled: env.INVOICE_REMINDERS_ENABLED === "1",
     configured: Boolean(validStart && recipient && daptaEndpoint(env.INVOICE_REMINDER_DAPTA_URL) && env.INVOICE_REMINDER_TEMPLATE_APPROVED === "1"),
-    recipient, ...(start ? { startDate: validStart ? start : null } : {}), sendHour: 8, timeZone: "America/Bogota",
+    recipient, ...(start ? { startDate: validStart ? start : null } : {}), sendHour: 10, timeZone: "America/Bogota",
   };
 }
 
