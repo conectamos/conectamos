@@ -24,7 +24,7 @@
 .error { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 18px 0; padding: 14px 16px; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: 14px; line-height: 1.5; }
 .error button { flex-shrink: 0; }
 .periodHeading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin: 24px 0 14px; }
-.periodHeading h2 { text-transform: capitalize; font-size: 20px; font-weight: 800; }
+.periodHeading h2 { min-width: 0; font-size: 20px; font-weight: 800; line-height: 1.4; }
 .periodHeading > span { color: #64748b; font-size: 12px; }
 .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; }
 .metrics article { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 20px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; box-shadow: 0 4px 16px #0f172a03; }
@@ -38,6 +38,7 @@
 .columnHeader, .columnHeader > div { display: flex; align-items: center; gap: 10px; }
 .columnHeader { justify-content: space-between; min-height: 78px; padding: 18px 20px; border-bottom: 1px solid #e2e8f0; }
 .columnHeader h2 { font-size: 15px; font-weight: 800; letter-spacing: .25px; }
+.columnScope { padding: 10px 20px; border-bottom: 1px solid #e2e8f0; background: #fafbfc; color: #64748b; font-size: 12px; line-height: 1.5; }
 .columnIcon { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px; background: #f1f5f9; color: #475569; }
 .paidIcon { background: #ecfdf5; color: #059669; }
 .countBadge { flex-shrink: 0; min-width: 30px; padding: 5px 8px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; color: #475569; text-align: center; font-size: 13px; font-weight: 700; }

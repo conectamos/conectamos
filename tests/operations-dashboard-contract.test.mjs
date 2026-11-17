@@ -97,6 +97,7 @@ function probePage(session, failures = []) {
     "@/lib/dashboard-sales-role-summary": { getSalesRoleActivitySummary: record("activity", { pendientes: 3, registrosPeriodo: 12, convertidos: 8 }) },
     "@/lib/prestamos": { NOMBRE_SEDE_BODEGA: "BODEGA PRINCIPAL" },
     "@/lib/sedes": sedesHelpers,
+    "@/app/_components/invoice-due-notifications": defaultComponent,
   };
   for (const name of [
     "dashboard-utility-gate", "logout-button", "vendor-welcome-modal",
@@ -151,6 +152,9 @@ test("Pago de facturas aparece únicamente para administrador central en menú y
   ]) {
     const result = await runPage({ ...baseSession, ...identity });
     assert.equal(result.props.canManageInvoices, identity.allowed);
+    const invoiceNotification = findProps(result.tree, (props) => "userKey" in props);
+    assert.equal(Boolean(invoiceNotification), identity.allowed, "Los avisos no se montan para identidades sin permiso central");
+    if (identity.allowed) assert.equal(invoiceNotification.userKey, `${baseSession.id}:${baseSession.perfilId}`);
     const navigation = operationsNavigation(result.props);
     for (const key of ["sidebar", "catalog"]) {
       assert.equal(navigation[key].filter(item => item.href === "/pago-facturas").length, identity.allowed ? 1 : 0);

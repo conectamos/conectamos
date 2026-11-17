@@ -42,7 +42,7 @@ test("vencimiento opcional valida la factura y el hash de alta anterior sigue si
   assert.equal(service.parseAdministrativeInvoice({ ...input, dueDate: "2026-10-15" }).dueDate.toISOString(), "2026-10-15T00:00:00.000Z");
 });
 
-test("resumen de vencidas y próximas considera todas las páginas pero excluye pagadas, eliminadas y otro mes", async () => {
+test("resumen de vencidas y próximas incluye pendientes de cualquier mes y excluye pagadas o eliminadas", async () => {
   const overdue = Array.from({ length: 12 }, (_, index) => invoice(index + 1, { dueDate: date("2026-11-15") }));
   const rows = [...overdue, invoice(20, { dueDate: date("2026-11-16") }), invoice(21, { dueDate: date("2026-11-23") }),
     invoice(22, { dueDate: date("2026-11-24") }), invoice(23),
@@ -51,9 +51,9 @@ test("resumen de vencidas y próximas considera todas las páginas pero excluye 
     invoice(26, { date: date("2026-11-01"), dueDate: date("2026-11-15") })];
   const { service } = setup({ facturaAdministrativa: rows });
   const result = await service.readInvoicePayments(month("&pendingPage=2"), admin);
-  assert.equal(result.summary.overdueCount, 12); assert.equal(result.summary.dueSoonCount, 2);
-  assert.equal(result.summary.invoiceCount, 17);
-  assert.equal(result.pending.items.length, 6);
+  assert.equal(result.summary.overdueCount, 13); assert.equal(result.summary.dueSoonCount, 2);
+  assert.equal(result.summary.invoiceCount, 18);
+  assert.equal(result.pending.items.length, 7);
   const filtered = await service.readInvoicePayments(month("&search=FACT-20"), admin);
   assert.equal(filtered.summary.overdueCount, 0); assert.equal(filtered.summary.dueSoonCount, 1);
 });

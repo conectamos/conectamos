@@ -186,32 +186,37 @@ function invoiceListFilters(params: URLSearchParams) {
   const from = validDate(`${month}-01`);
   const until = new Date(from); until.setUTCMonth(until.getUTCMonth() + 1);
   const search = normalized(inputText(params.get("search") || "", "La búsqueda", 160, true));
-  const where: Prisma.FacturaAdministrativaWhereInput = { date: { gte: from, lt: until }, ...(search ? { OR: [
+  const searchWhere: Prisma.FacturaAdministrativaWhereInput = search ? { OR: [
     { providerNormalized: { contains: search } }, { numberNormalized: { contains: search.replace(/\s+/g, "") } },
-  ] } : {}) };
-  return { today, month, where };
+  ] } : {};
+  const where: Prisma.FacturaAdministrativaWhereInput = { date: { gte: from, lt: until }, ...searchWhere };
+  return { today, month, where, searchWhere };
 }
 
 export async function readInvoicePayments(params: URLSearchParams, session: InvoiceSession | null) {
   assertInvoicePaymentsAccess(session);
-  const { today, month, where: monthWhere } = invoiceListFilters(params);
+  const { today, month, where: monthWhere, searchWhere } = invoiceListFilters(params);
   const pendingPage = pageNumber(params, "pendingPage");
   const paidPage = pageNumber(params, "paidPage");
-  const where = { ...monthWhere, deletedAt: null };
+  const pendingWhere = { ...searchWhere, deletedAt: null, status: "PENDIENTE" };
+  const paidWhere = { ...monthWhere, deletedAt: null, status: "PAGADA" };
+  // The visible report combines all open debts with the selected month's paid
+  // invoices. Search applies to both groups; the month never hides an open debt.
+  const where = { OR: [pendingWhere, paidWhere] };
   const todayDate = validDate(today);
   const afterSoon = new Date(todayDate); afterSoon.setUTCDate(afterSoon.getUTCDate() + 8);
   return prisma.$transaction(async (tx) => {
     const [summary, pendingCount, paidCount, overdueCount, dueSoonCount] = await Promise.all([
       tx.facturaAdministrativa.aggregate({ where, _sum: { amount: true, paidAmount: true }, _count: { _all: true } }),
-      tx.facturaAdministrativa.count({ where: { ...where, status: "PENDIENTE" } }),
-      tx.facturaAdministrativa.count({ where: { ...where, status: "PAGADA" } }),
-      tx.facturaAdministrativa.count({ where: { ...where, status: "PENDIENTE", dueDate: { lt: todayDate } } }),
-      tx.facturaAdministrativa.count({ where: { ...where, status: "PENDIENTE", dueDate: { gte: todayDate, lt: afterSoon } } }),
+      tx.facturaAdministrativa.count({ where: pendingWhere }),
+      tx.facturaAdministrativa.count({ where: paidWhere }),
+      tx.facturaAdministrativa.count({ where: { ...pendingWhere, dueDate: { lt: todayDate } } }),
+      tx.facturaAdministrativa.count({ where: { ...pendingWhere, dueDate: { gte: todayDate, lt: afterSoon } } }),
     ]);
     async function group(status: "PENDIENTE" | "PAGADA", requested: number, total: number) {
       const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
       const page = Math.min(requested, pages);
-      const rows = await tx.facturaAdministrativa.findMany({ where: { ...where, status },
+      const rows = await tx.facturaAdministrativa.findMany({ where: status === "PENDIENTE" ? pendingWhere : paidWhere,
         orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { date: "asc" }, { id: "asc" }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE,
         include: { _count: { select: { payments: true } } } });
       return { items: rows.map((row) => invoiceDto(row, row._count.payments, today)), page, pageSize: PAGE_SIZE, total, pages };
@@ -228,9 +233,38 @@ export async function readInvoicePayments(params: URLSearchParams, session: Invo
     };
     const total = sumCents(summary._sum.amount);
     const collected = sumCents(summary._sum.paidAmount);
-    return { month, today, summary: { invoiceCount: summary._count._all, totalAmount: total / 100,
+    return { month, today, pendingScope: "ALL_MONTHS" as const, paidMonth: month, summary: { invoiceCount: summary._count._all, totalAmount: total / 100,
       paidAmount: collected / 100, balance: (total - collected) / 100, pendingCount, paidCount, overdueCount, dueSoonCount }, pending, paid };
   }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
+}
+
+export async function readInvoiceAlerts(session: InvoiceSession | null) {
+  assertInvoicePaymentsAccess(session);
+  const today = getDateKeyInColombia();
+  const afterSoon = validDate(today); afterSoon.setUTCDate(afterSoon.getUTCDate() + 8);
+  const rows = await prisma.facturaAdministrativa.findMany({ where: {
+    deletedAt: null, status: "PENDIENTE", dueDate: { lt: afterSoon },
+  }, orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { date: "asc" }, { id: "asc" }],
+  select: { id: true, number: true, provider: true, dueDate: true, amount: true, paidAmount: true, version: true } });
+  const counts = { overdue: 0, dueToday: 0, dueSoon: 0 };
+  let balanceCents = BigInt(0);
+  const entries = rows.map((row) => {
+    const dueDate = row.dueDate!.toISOString().slice(0, 10);
+    const dueStatus = invoiceDueStatus(dueDate, false, today);
+    const balance = storedCents(row.amount) - storedCents(row.paidAmount);
+    if (balance <= 0) throw new InvoicePaymentsError("El saldo registrado requiere revisión.", 503, "INVALID_STORED_BALANCE");
+    balanceCents += BigInt(balance);
+    if (dueStatus === "VENCIDA") counts.overdue += 1;
+    else if (dueStatus === "HOY") counts.dueToday += 1;
+    else if (dueStatus === "PROXIMA") counts.dueSoon += 1;
+    return { id: row.id, number: row.number, provider: row.provider, dueDate, balance: balance / 100, dueStatus, version: row.version };
+  });
+  if (balanceCents > BigInt(Number.MAX_SAFE_INTEGER)) throw new InvoicePaymentsError("El saldo de las alertas supera el máximo representable.", 503);
+  // Dismissal follows every relevant invoice, including those beyond page one.
+  // A new day or any edit/payment must expose the changed state to the user.
+  const fingerprint = digest({ today, invoices: entries.map(({ id, version, dueStatus }) => ({ id, version, dueStatus })) });
+  return { today, counts, total: rows.length, balance: Number(balanceCents) / 100,
+    items: entries.slice(0, PAGE_SIZE), more: rows.length > PAGE_SIZE, fingerprint };
 }
 
 export async function readDeletedAdministrativeInvoices(params: URLSearchParams, session: InvoiceSession | null) {

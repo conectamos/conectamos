@@ -134,27 +134,35 @@ test("sobreabono y fallo al guardar historial no alteran el saldo ni generan pag
   assert.equal(db.tables.pagoFacturaAdministrativa.length, 0);
 });
 
-test("resumen completo, dos paginaciones y búsqueda comparten el mes de factura", async () => {
+test("resumen completo combina todos los pendientes con pagadas del mes y búsqueda compartida", async () => {
   const rows = Array.from({ length: 23 }, (_, index) => invoice(index + 1, { amount: "100.00", paidAmount: "25.00" }));
   rows.push(...Array.from({ length: 12 }, (_, index) => invoice(index + 100, { amount: "100.00", paidAmount: "100.00", status: "PAGADA" })));
   rows.push(invoice(900, { date: new Date("2026-09-30T00:00:00Z") }), invoice(901, { date: new Date("2026-11-01T00:00:00Z") }));
   const { service } = setup({ facturaAdministrativa: rows });
   const result = await service.readInvoicePayments(new URLSearchParams("month=2026-10&pendingPage=2&paidPage=2"), admin);
-  assert.deepEqual(result.summary, { invoiceCount: 35, totalAmount: 3500, paidAmount: 1775, balance: 1725, pendingCount: 23, paidCount: 12, overdueCount: 0, dueSoonCount: 0 });
-  assert.equal(result.pending.page, 2); assert.equal(result.pending.items.length, 10); assert.equal(result.pending.total, 23);
+  assert.deepEqual(result.summary, { invoiceCount: 37, totalAmount: 2003500, paidAmount: 1775, balance: 2001725, pendingCount: 25, paidCount: 12, overdueCount: 0, dueSoonCount: 0 });
+  assert.equal(result.pendingScope, "ALL_MONTHS"); assert.equal(result.paidMonth, "2026-10");
+  assert.equal(result.pending.page, 2); assert.equal(result.pending.items.length, 10); assert.equal(result.pending.total, 25);
   assert.equal(result.paid.page, 2); assert.equal(result.paid.items.length, 2); assert.equal(result.paid.total, 12);
   const clamped = await service.readInvoicePayments(new URLSearchParams("month=2026-10&pendingPage=999&paidPage=999"), admin);
   assert.equal(clamped.pending.page, 3); assert.equal(clamped.paid.page, 2);
   const searched = await service.readInvoicePayments(new URLSearchParams("month=2026-10&search=FACT-100"), admin);
   assert.equal(searched.summary.invoiceCount, 1); assert.equal(searched.paid.total, 1); assert.equal(searched.pending.total, 0);
-  const empty = await service.readInvoicePayments(new URLSearchParams("month=2025-01"), admin);
-  assert.equal(empty.summary.totalAmount, 0); assert.equal(empty.pending.page, 1); assert.equal(empty.paid.pages, 1);
+  const otherMonth = await service.readInvoicePayments(new URLSearchParams("month=2025-01"), admin);
+  assert.equal(otherMonth.summary.totalAmount, 2002300); assert.equal(otherMonth.pending.total, 25); assert.equal(otherMonth.paid.total, 0);
+  assert.equal(otherMonth.summary.balance, result.summary.balance);
 });
 
-test("diciembre y enero se conservan separados sin depender de la fecha de creación o pago", async () => {
-  const { service } = setup({ facturaAdministrativa: [invoice(1, { date: new Date("2026-12-31T00:00:00Z") }), invoice(2, { date: new Date("2027-01-01T00:00:00Z") })] });
-  assert.equal((await service.readInvoicePayments(new URLSearchParams("month=2026-12"), admin)).pending.items[0].id, 1);
-  assert.equal((await service.readInvoicePayments(new URLSearchParams("month=2027-01"), admin)).pending.items[0].id, 2);
+test("pagadas separan diciembre y enero por fecha de factura; pendientes siguen visibles en ambos meses", async () => {
+  const { service } = setup({ facturaAdministrativa: [invoice(1, { date: new Date("2026-12-31T00:00:00Z") }), invoice(2, { date: new Date("2027-01-01T00:00:00Z") }),
+    invoice(3, { date: new Date("2026-12-31T00:00:00Z"), status: "PAGADA", paidAmount: "1000000.00" }),
+    invoice(4, { date: new Date("2027-01-01T00:00:00Z"), status: "PAGADA", paidAmount: "1000000.00" })] });
+  const december = await service.readInvoicePayments(new URLSearchParams("month=2026-12"), admin);
+  const january = await service.readInvoicePayments(new URLSearchParams("month=2027-01"), admin);
+  assert.deepEqual(december.pending.items.map(({ id }) => id), [1, 2]);
+  assert.deepEqual(january.pending.items.map(({ id }) => id), [1, 2]);
+  assert.deepEqual(december.paid.items.map(({ id }) => id), [3]);
+  assert.deepEqual(january.paid.items.map(({ id }) => id), [4]);
 });
 
 test("validaciones rechazan dinero ambiguo, fechas inexistentes, cuerpo extra y páginas inválidas", async () => {

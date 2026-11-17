@@ -21,6 +21,7 @@ import DashboardUtilityGate from "./_components/dashboard-utility-gate";
 import LogoutButton from "./_components/logout-button";
 import VendorWelcomeModal from "./_components/vendor-welcome-modal";
 import PendingLoanAlertModal from "./_components/pending-loan-alert-modal";
+import InvoiceDueNotifications from "@/app/_components/invoice-due-notifications";
 import {
   getBogotaMonthRangeFromInput,
   getCurrentBogotaMonthRange,
@@ -926,6 +927,7 @@ export default async function DashboardPage({
             sessionKey={session.sessionKey ?? `${session.id}-${session.perfilId ?? "usuario"}`}
           />
         )}
+        {esAdministradorCentral(session) && <InvoiceDueNotifications userKey={`${session.id}:${session.perfilId ?? "usuario"}`} />}
         <OperationsDashboard
           commercial={resumenComercialMensual}
           commercialAvailable={resumenComercialDisponible}

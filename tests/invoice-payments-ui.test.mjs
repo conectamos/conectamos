@@ -31,6 +31,7 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
   const providers = structuredClone(seededProviders || [...new Map(invoices.map(item => [item.providerId, { id: item.providerId, name: item.provider, active: true, version: 1 }])).values(),
     { id: 100, name: "Comercial QA", active: true, version: 1 }, { id: 101, name: "Proveedor QA", active: true, version: 1 }, { id: 102, name: "QA", active: true, version: 1 }]);
   const calls = [];
+  const refreshEvents = [];
   const pendingLists = [];
   const replay = new Map();
   const slots = [];
@@ -49,14 +50,15 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
   function list(url) {
     const month = url.searchParams.get("month");
     const search = url.searchParams.get("search").toLocaleLowerCase("es-CO");
-    const selected = data.filter((item) => item.date.startsWith(month) && Boolean(item.deletedAt) === (url.searchParams.get("deleted") === "1") && `${item.provider} ${item.number}`.toLocaleLowerCase("es-CO").includes(search))
+    const deleted = url.searchParams.get("deleted") === "1";
+    const selected = data.filter((item) => (deleted ? item.date.startsWith(month) : item.balance > 0 || item.date.startsWith(month)) && Boolean(item.deletedAt) === deleted && `${item.provider} ${item.number}`.toLocaleLowerCase("es-CO").includes(search))
       .sort((a,b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || a.date.localeCompare(b.date) || a.id-b.id);
     const pending = selected.filter((item) => item.balance > 0);
     const paid = selected.filter((item) => item.balance === 0);
     const sum = (key) => selected.reduce((cents, item) => cents + Math.round(item[key] * 100), 0) / 100;
     function page(items, field) { const pages = Math.max(1, Math.ceil(items.length / 10)); const number = Math.max(1,Math.min(pages, Number(url.searchParams.get(field))||1)); return { items: structuredClone(items.slice((number - 1) * 10, number * 10)), page: number, pageSize: 10, total: items.length, pages }; }
     if(url.searchParams.get("deleted")==="1")return page(selected,"page");
-    return { month, today: "2026-11-16", summary: { invoiceCount: selected.length, totalAmount: sum("amount"), paidAmount: sum("paidAmount"), balance: sum("balance"), pendingCount: pending.length, paidCount: paid.length,
+    return { month, pendingScope: "ALL_MONTHS", paidMonth: month, today: "2026-11-16", summary: { invoiceCount: selected.length, totalAmount: sum("amount"), paidAmount: sum("paidAmount"), balance: sum("balance"), pendingCount: pending.length, paidCount: paid.length,
       overdueCount:pending.filter(r=>r.dueDate&&r.dueDate<"2026-11-16").length,dueSoonCount:pending.filter(r=>r.dueDate&&r.dueDate>="2026-11-16"&&r.dueDate<="2026-11-23").length }, pending: page(pending, "pendingPage"), paid: page(paid, "paidPage") };
   }
   const mockFetch = async (path, options = {}) => {
@@ -130,6 +132,7 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
     "@/app/dashboard/_components/dashboard-icon": { __esModule: true, default: "icon" },
     "@/app/dashboard/_components/operations-dashboard": { DashboardSidebar: "sidebar" },
     "@/lib/monthly-reports-view": { formatoPesos: money },
+    "@/lib/use-live-refresh": { triggerLiveRefresh: (source) => refreshEvents.push(source) },
     "./pago-facturas.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) },
   };
   const mod = { exports: {} };
@@ -143,7 +146,7 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
   async function click(button) { button.props.onClick({ currentTarget: { focus() {} } }); await settle(); }
   async function submit() { const form = nodes(find("dialog")).find((node) => node.type === "form"); assert.ok(form); await form.props.onSubmit({ preventDefault() {} }); await settle(); }
   async function apply() { await find("form").props.onSubmit({ preventDefault() {} }); await settle(); }
-  return { data,providers, calls, pendingLists, dialogs, settle, find, byLabel, field, setControl, click, submit, apply, text: () => textOf(tree), nodes: () => nodes(tree), unmount: () => slots.forEach((slot) => slot?.cleanup?.()) };
+  return { data,providers, calls, refreshEvents, pendingLists, dialogs, settle, find, byLabel, field, setControl, click, submit, apply, text: () => textOf(tree), nodes: () => nodes(tree), unmount: () => slots.forEach((slot) => slot?.cleanup?.()) };
 }
 
 test("invoice provider is selected from the catalog and sent by stable ID with its due date", async () => {
@@ -214,7 +217,7 @@ test("invoice page restricts central administration before rendering any financi
   const access = { exports: {} };
   new Function("module", "exports", transpile("lib/access-control.ts"))(access, access.exports);
   for (const [session, allowed] of [
-    [{ rolNombre: "ADMIN", perfilTipo: "ADMINISTRADOR" }, true],
+    [{ rolNombre: "ADMIN", perfilTipo: "ADMINISTRADOR", perfilId: 37 }, true],
     [{ rolNombre: "ADMIN", perfilTipo: null }, true],
     [{ rolNombre: "ADMIN", perfilTipo: "SUPERVISOR_TIENDA" }, false],
     [{ rolNombre: "AUDITOR", perfilTipo: "AUDITOR" }, false],
@@ -222,10 +225,21 @@ test("invoice page restricts central administration before rendering any financi
     [{ rolNombre: "BODEGA", perfilTipo: "BODEGA" }, false],
   ]) {
     const mod = { exports: {} };
-    const imports = { "next/navigation": { redirect: (path) => { throw new Error(`Redirect ${path}`); } }, "@/lib/access-control": access.exports, "@/lib/page-access": { requireSessionPage: async () => ({ ...session, nombre: "QA" }) }, "@/lib/ventas-utils": { getTodayBogotaDateKey: () => "2026-11-16" }, "./workspace": { __esModule: true, default: "workspace" }, "react/jsx-runtime": { jsx } };
+    const rendered = [];
+    let dateCalls = 0;
+    const pageJsx = (type, props, key) => { rendered.push(type); return jsx(type, props, key); };
+    const imports = { "next/navigation": { redirect: (path) => { throw new Error(`Redirect ${path}`); } }, "@/lib/access-control": access.exports, "@/lib/page-access": { requireSessionPage: async () => ({ ...session, id: 91, nombre: "QA" }) }, "@/lib/ventas-utils": { getTodayBogotaDateKey: () => { dateCalls++; return "2026-11-16"; } }, "./workspace": { __esModule: true, default: "workspace" }, "@/app/_components/invoice-due-notifications": { __esModule: true, default: "invoice-due-notifications" }, "react/jsx-runtime": { jsx: pageJsx, jsxs: pageJsx, Fragment: "fragment" } };
     new Function("require", "module", "exports", transpile("app/pago-facturas/page.tsx"))((name) => imports[name], mod, mod.exports);
-    if (allowed) { const view = await mod.exports.default(); assert.equal(view.type, "workspace"); assert.equal(view.props.today, "2026-11-16"); }
-    else await assert.rejects(mod.exports.default(), /Redirect \/dashboard/);
+    if (allowed) {
+      const view = await mod.exports.default();
+      const workspace = nodes(view).find((node) => node.type === "workspace");
+      const notifications = nodes(view).find((node) => node.type === "invoice-due-notifications");
+      assert.ok(workspace); assert.equal(workspace.props.today, "2026-11-16"); assert.equal(workspace.props.userName, "QA");
+      assert.ok(notifications); assert.equal(notifications.props.userKey, `91:${session.perfilId ?? "usuario"}`); assert.equal(dateCalls, 1);
+    } else {
+      await assert.rejects(mod.exports.default(), /Redirect \/dashboard/);
+      assert.deepEqual(rendered, [], "Denied users never receive invoice UI or notification data"); assert.equal(dateCalls, 0);
+    }
   }
 });
 
@@ -233,21 +247,21 @@ test("monthly columns paginate independently while summaries include all filtere
   const invoices = [...Array.from({ length: 12 }, (_, i) => invoice(i + 1)), ...Array.from({ length: 11 }, (_, i) => invoice(i + 13, { paidAmount: 1000, balance: 0, status: "PAGADA", paymentCount: 1 }))];
   const ui = harness({ invoices }); await ui.settle();
   assert.match(ui.text(), /FACTURAS PENDIENTES12/); assert.match(ui.text(), /FACTURAS PAGAS11/);
-  assert.match(textOf(ui.byLabel("Resumen de facturas del mes")), /Total facturas\$ 23\.00023 facturas.*Abonado\$ 11\.000.*Saldo pendiente\$ 12\.000/);
+  assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 23\.00023 facturas.*Abonado\$ 11\.000.*Saldo pendiente\$ 12\.000/);
   assert.equal(ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice").length, 20);
   await ui.click(ui.byLabel("Página siguiente de pendientes"));
   assert.match(ui.calls.at(-1).path, /pendingPage=2&paidPage=1/);
-  assert.match(textOf(ui.byLabel("Resumen de facturas del mes")), /\$ 23\.000/);
+  assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /\$ 23\.000/);
   await ui.click(ui.byLabel("Página siguiente de pagas"));
   assert.match(ui.calls.at(-1).path, /pendingPage=2&paidPage=2/);
   assert.equal(ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice").length, 3);
   ui.unmount();
 });
 
-test("historical months and searches only apply on Consultar and reset both page numbers", async () => {
+test("historical paid months and searches only apply on Consultar; new invoices default to today", async () => {
   const ui = harness({ invoices: [invoice(1), invoice(2, { date: "2025-02-01", provider: "Proveedor histórico" })] }); await ui.settle();
   const before = ui.calls.length;
-  await ui.setControl("Mes de la factura", "2025-02"); await ui.setControl("Buscar factura o proveedor", "histórico");
+  await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.setControl("Buscar factura o proveedor", "histórico");
   assert.equal(ui.calls.length, before); assert.match(ui.text(), /Filtros sin aplicar/);
   await ui.apply();
   const url = new URL(ui.calls.at(-1).path, "http://localhost");
@@ -255,7 +269,7 @@ test("historical months and searches only apply on Consultar and reset both page
   assert.equal(url.searchParams.get("pendingPage"), "1"); assert.equal(url.searchParams.get("paidPage"), "1");
   assert.match(ui.text(), /Proveedor histórico/); assert.doesNotMatch(ui.text(), /Proveedor 1/);
   await ui.click(ui.find("button", "Nueva factura"));
-  assert.equal(ui.field("Fecha de la factura").props.value, "2025-02-01"); ui.unmount();
+  assert.equal(ui.field("Fecha de la factura").props.value, "2026-11-16"); ui.unmount();
 });
 
 test("new invoices preserve full COP amounts and refresh both columns and summaries", async () => {
@@ -266,7 +280,7 @@ test("new invoices preserve full COP amounts and refresh both columns and summar
   const write = ui.calls.find((call) => call.method === "POST");
   assert.equal(write.path, "/api/pago-facturas"); assert.equal(write.body.amount, 1250000.5); assert.equal(write.body.date, "2026-11-16"); assert.match(write.body.requestId, /^[a-f\d-]{36}$/i);
   assert.equal(ui.data.length, 1); assert.equal(ui.nodes().filter((node) => node.type === "dialog").length, 0);
-  assert.match(ui.text(), /Factura FACT-001 registrada/); assert.match(ui.text(), /Comercial QA/); assert.match(textOf(ui.byLabel("Resumen de facturas del mes")), /1\.250\.000,5/);
+  assert.match(ui.text(), /Factura FACT-001 registrada/); assert.match(ui.text(), /Comercial QA/); assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /1\.250\.000,5/);
   assert.match(ui.calls.at(-1).path, /\/api\/pago-facturas\?/); ui.unmount();
 });
 
@@ -291,11 +305,13 @@ test("ambiguous payment result locks intent and retry uses the same key and body
   const ui = harness({ postOutcomes: ["commit-network"] }); await ui.settle();
   await ui.click(ui.find("button", "Abonar / pagar")); await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "300"); await ui.submit();
   assert.equal(ui.data[0].paymentCount, 1); assert.match(textOf(ui.find("dialog")), /Reintentar pago/);
+  assert.deepEqual(ui.refreshEvents, [], "Unconfirmed writes must not announce a successful refresh");
   assert.equal(ui.field("Valor del abono (COP)").props.disabled, true); assert.equal(ui.find("button", "Cancelar").props.disabled, true);
   const first = ui.calls.find((call) => call.method === "POST");
   await ui.submit();
   const writes = ui.calls.filter((call) => call.method === "POST"); assert.deepEqual(writes[1].body, first.body);
   assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].paidAmount, 300); assert.equal(ui.data[0].balance, 700);
+  assert.deepEqual(ui.refreshEvents, ["invoice-payments"], "Confirmed payment refreshes the due notifications immediately");
   assert.equal(ui.nodes().filter((node) => node.type === "dialog").length, 0); ui.unmount();
 });
 
@@ -325,9 +341,9 @@ test("invalid invoices and overpayments are rejected locally and retain entered 
   assert.match(textOf(ui.find("dialog")), /no superar el saldo/); assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0); ui.unmount();
 });
 
-test("late list response cannot replace the newly selected historical month", async () => {
-  const ui = harness({ delayLists: true, invoices: [invoice(1), invoice(2, { date: "2025-02-01", provider: "Histórico QA" })] }); await ui.settle();
-  await ui.setControl("Mes de la factura", "2025-02"); await ui.apply();
+test("late list response cannot replace the newly selected historical paid month", async () => {
+  const ui = harness({ delayLists: true, invoices: [invoice(1, { balance: 0, paidAmount: 1000, status: "PAGADA" }), invoice(2, { date: "2025-02-01", provider: "Histórico QA", balance: 0, paidAmount: 1000, status: "PAGADA" })] }); await ui.settle();
+  await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.apply();
   assert.equal(ui.pendingLists.length, 2); assert.equal(ui.pendingLists[0].signal.aborted, true);
   ui.pendingLists[1].resolve(); await ui.settle(); assert.match(ui.text(), /Histórico QA/);
   ui.pendingLists[0].resolve(); await ui.settle(); assert.match(ui.text(), /Histórico QA/); assert.doesNotMatch(ui.text(), /Proveedor 1/); ui.unmount();
@@ -338,7 +354,7 @@ test("failed initial query never presents zero invoice counts as confirmed data 
   assert.match(ui.text(), /No fue posible consultar el mes/);
   assert.match(ui.text(), /FACTURAS PENDIENTES—/); assert.match(ui.text(), /FACTURAS PAGAS—/);
   assert.match(ui.text(), /Sin datos confirmados/); assert.doesNotMatch(ui.text(), /0 facturas/);
-  assert.doesNotMatch(textOf(ui.byLabel("Resumen de facturas del mes")), /\$ 0/);
+  assert.doesNotMatch(textOf(ui.byLabel("Resumen de facturas consultadas")), /\$ 0/);
   await ui.click(ui.find("button", "Reintentar"));
   assert.match(ui.text(), /FACTURAS PENDIENTES1/); assert.match(ui.text(), /FACTURAS PAGAS0/);
   assert.match(ui.text(), /Proveedor 1/); ui.unmount();
@@ -377,7 +393,7 @@ test("invoice deletion requires explicit confirmation, preserves payment history
   await ui.click(ui.find("button", "Cancelar")); assert.equal(ui.data[0].deletedAt ?? null, null);
   await ui.click(ui.byLabel("Eliminar factura FAC-1")); await ui.setControl("Confirmo eliminar esta factura del reporte", true); await ui.submit();
   assert.ok(ui.data[0].deletedAt); assert.deepEqual(ui.data[0].payments, [payment]);
-  assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(textOf(ui.byLabel("Resumen de facturas del mes")), /Total facturas\$ 0/);
+  assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 0/);
   await ui.click(ui.find("button", "Facturas eliminadas")); assert.match(textOf(ui.byLabel("Facturas eliminadas")), /Proveedor 1/);
   const deletedQuery = ui.calls.findLast((call) => call.path.includes("deleted=1")); assert.match(deletedQuery.path, /month=2026-11/);
   await ui.click(ui.byLabel("Restaurar factura FAC-1")); assert.match(textOf(ui.find("dialog")), /Referencia conservada/); await ui.submit();
@@ -394,7 +410,7 @@ test("ambiguous invoice edit, deletion and restore replay the original method an
     await ui.submit(); assert.match(textOf(ui.find("dialog")), /Reintentar registro/); assert.equal(ui.find("button", "Cancelar").props.disabled, true);
     const version = ui.data[0].version;
     await ui.submit(); const writes = ui.calls.filter((call) => call.method !== "GET");
-    assert.equal(writes.length, 2); assert.equal(writes[1].method, writes[0].method); assert.deepEqual(writes[1].body, writes[0].body); assert.equal(ui.data[0].version, version); ui.unmount();
+    assert.equal(writes.length, 2); assert.equal(writes[1].method, writes[0].method); assert.deepEqual(writes[1].body, writes[0].body); assert.equal(ui.data[0].version, version); assert.deepEqual(ui.refreshEvents, ["invoice-payments"]); ui.unmount();
   }
 });
 
@@ -414,4 +430,53 @@ test("due date labels distinguish overdue, today, soon, unknown and paid without
   assert.match(ui.text(), /Ordenadas por vencimiento · sin fecha al final/);
   const paidCard = ui.nodes().find((node) => node.type === "article" && node.props.className === "invoice" && textOf(node).includes("Factura FAC-5"));
   assert.doesNotMatch(textOf(paidCard), /Vencida|Vence hoy|Próxima a vencer/); ui.unmount();
+});
+
+test("pending invoices from every month remain visible while month limits paid and deleted invoices", async () => {
+  const ui = harness({ invoices: [
+    invoice(1, { date: "2024-01-02", amount: 2500, paidAmount: 500, balance: 2000, dueDate: "2024-02-01", dueStatus: "VENCIDA" }),
+    invoice(2, { date: "2025-02-03", amount: 400, balance: 400, dueDate: "2026-11-16", dueStatus: "HOY" }),
+    invoice(3, { date: "2025-02-04", amount: 600, paidAmount: 600, balance: 0, status: "PAGADA" }),
+    invoice(4, { date: "2026-11-05", amount: 800, paidAmount: 800, balance: 0, status: "PAGADA" }),
+    invoice(5, { date: "2025-02-06", deletedAt: "2026-11-16T18:00:00Z" }),
+    invoice(6, { date: "2026-11-06", deletedAt: "2026-11-16T18:00:00Z" }),
+  ] }); await ui.settle();
+  assert.match(ui.text(), /Las pendientes incluyen todos los meses/);
+  assert.match(ui.text(), /FACTURAS PENDIENTES2/); assert.match(ui.text(), /FACTURAS PAGAS1/);
+  assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 3\.7003 facturas.*Abonado\$ 1\.300.*Saldo pendiente\$ 2\.400/);
+  assert.match(textOf(ui.byLabel("Resumen de vencimientos")), /1 vencidas1 vencen hoy/);
+  let cards = ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice").map(textOf).join(" ");
+  assert.match(cards, /Factura FAC-1/); assert.match(cards, /Factura FAC-2/); assert.match(cards, /Factura FAC-4/); assert.doesNotMatch(cards, /Factura FAC-3/);
+  await ui.click(ui.find("button", "Facturas eliminadas")); assert.match(textOf(ui.byLabel("Facturas eliminadas")), /Factura FAC-6/); assert.doesNotMatch(textOf(ui.byLabel("Facturas eliminadas")), /Factura FAC-5/);
+  await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.apply();
+  cards = ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice").map(textOf).join(" ");
+  assert.match(cards, /Factura FAC-1/); assert.match(cards, /Factura FAC-2/); assert.match(cards, /Factura FAC-3/); assert.doesNotMatch(cards, /Factura FAC-4/);
+  assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 3\.5003 facturas.*Abonado\$ 1\.100.*Saldo pendiente\$ 2\.400/);
+  assert.match(textOf(ui.byLabel("Facturas eliminadas")), /Factura FAC-5/); assert.doesNotMatch(textOf(ui.byLabel("Facturas eliminadas")), /Factura FAC-6/); ui.unmount();
+});
+
+test("search applies to pending invoices across all months and to paid invoices in the selected month", async () => {
+  const ui = harness({ invoices: [invoice(1, { provider: "BUSCADO antiguo", date: "2020-01-01" }), invoice(2, { provider: "BUSCADO pagado", paidAmount: 1000, balance: 0, status: "PAGADA" }), invoice(3, { provider: "BUSCADO fuera del mes", date: "2025-02-01", paidAmount: 1000, balance: 0, status: "PAGADA" }), invoice(4)] }); await ui.settle();
+  await ui.setControl("Buscar factura o proveedor", "BUSCADO"); await ui.apply();
+  assert.match(ui.text(), /BUSCADO antiguo/); assert.match(ui.text(), /BUSCADO pagado/); assert.doesNotMatch(ui.text(), /BUSCADO fuera del mes|Proveedor 4/);
+  assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 2\.0002 facturas.*Saldo pendiente\$ 1\.000/); ui.unmount();
+});
+
+test("paying an old pending invoice removes it globally and identifies its paid month without losing its payment", async () => {
+  const ui = harness({ invoices: [invoice(1, { date: "2025-02-01", dueDate: "2025-03-01", dueStatus: "VENCIDA" })] }); await ui.settle();
+  await ui.click(ui.find("button", "Abonar / pagar")); await ui.submit();
+  assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].paidAmount, 1000); assert.equal(ui.data[0].date, "2025-02-01");
+  assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(ui.text(), /FACTURAS PAGAS0/); assert.match(ui.text(), /Disponible en pagadas de febrero de 2025/);
+  await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.apply();
+  assert.match(ui.text(), /FACTURAS PAGAS1/); await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); assert.match(textOf(ui.find("dialog")), /16 de nov de 2026\$ 1\.000/); ui.unmount();
+});
+
+test("global pending totals and due counts include every page and stay stable when only paid month changes", async () => {
+  const invoices = Array.from({ length: 13 }, (_, i) => invoice(i + 1, { date: `202${i % 6}-01-01`, dueDate: i < 12 ? `2026-10-${String(i + 1).padStart(2, "0")}` : null }));
+  const ui = harness({ invoices }); await ui.settle();
+  assert.match(ui.text(), /FACTURAS PENDIENTES13/); assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 13\.000/); assert.match(textOf(ui.byLabel("Resumen de vencimientos")), /12 vencidas/);
+  await ui.click(ui.byLabel("Página siguiente de pendientes")); assert.equal(ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice").length, 3);
+  assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Saldo pendiente\$ 13\.000/);
+  await ui.setControl("Mes de pagadas y eliminadas", "2020-01"); await ui.apply();
+  assert.match(ui.text(), /FACTURAS PENDIENTES13/); assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Saldo pendiente\$ 13\.000/); assert.match(textOf(ui.byLabel("Resumen de vencimientos")), /12 vencidas/); ui.unmount();
 });

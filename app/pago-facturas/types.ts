@@ -39,6 +39,8 @@ export type InvoicePage = {
 
 export type InvoiceReport = {
   month: string;
+  pendingScope: "ALL_MONTHS";
+  paidMonth: string;
   today: string;
   summary: {
     invoiceCount: number;

@@ -1,0 +1,43 @@
+.bell { position:fixed; bottom:24px; right:24px; z-index:45; display:flex; align-items:center; gap:10px; min-height:48px; max-width:calc(100vw - 32px); padding:10px 16px; border:1px solid #e2e8f0; border-radius:14px; background:#11161d; color:#fff; box-shadow:0 8px 24px #0f172a26; font:700 14px Arial,Helvetica,sans-serif; cursor:pointer; }
+.bell svg { width:22px; height:22px; flex-shrink:0; }
+.bell strong { display:grid; place-items:center; min-width:26px; height:26px; padding:0 6px; border-radius:8px; background:#e30613; font-size:12px; }
+.bell:hover { background:#2c343e; }
+.modal { width:min(720px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); padding:0; margin:auto; border:1px solid #e2e8f0; border-top:4px solid #e30613; border-radius:16px; color:#0f172a; background:#fff; box-shadow:0 24px 80px #11161d40; overflow:hidden; font-family:Arial,Helvetica,sans-serif; }
+.modal[open] { display:flex; flex-direction:column; }
+.modal::backdrop { background:#11161da3; }
+.modal *, .bell { box-sizing:border-box; }
+.modal :is(button,a):focus-visible, .bell:focus-visible { outline:3px solid #e30613; outline-offset:3px; }
+.header { display:flex; gap:16px; justify-content:space-between; padding:24px; }
+.eyebrow { margin:0 0 8px; color:#64748b; font-size:12px; font-weight:700; letter-spacing:.1em; }
+.header h2 { margin:0; font-size:26px; font-weight:800; line-height:1.25; }
+.header p:last-child { margin:10px 0 0; color:#64748b; font-size:14px; line-height:1.5; }
+.close { display:grid; place-items:center; width:44px; height:44px; flex-shrink:0; border:1px solid #e2e8f0; border-radius:10px; background:#fff; cursor:pointer; }
+.close svg { width:20px; height:20px; }
+.close:hover { background:#f5f6f8; }
+.summary { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; margin:0 24px 16px; padding:18px; border-radius:12px; background:#f5f6f8; }
+.summary div { display:grid; gap:6px; min-width:0; }
+.summary span { font-size:13px; color:#475569; }
+.summary strong { font-size:24px; font-weight:800; overflow-wrap:anywhere; }
+.content { min-height:0; overflow:auto; overscroll-behavior:contain; padding:0 24px 20px; }
+.counts { display:flex; flex-wrap:wrap; gap:8px 16px; margin:0 0 14px; font-size:12px; color:#475569; }
+.items { margin:0; padding:0; list-style:none; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
+.items li { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px; }
+.items li + li { border-top:1px solid #e2e8f0; }
+.items li > div { min-width:0; }
+.items strong { font-size:14px; overflow-wrap:anywhere; }
+.items p { margin:5px 0; font-size:14px; overflow-wrap:anywhere; }
+.items span { font-size:12px; color:#64748b; }
+.value { display:grid; gap:8px; text-align:right; justify-items:end; flex-shrink:0; }
+.value strong { font-variant-numeric:tabular-nums; }
+.value .overdue, .value .soon { padding:5px 8px; border-radius:6px; font-size:12px; color:#b91c1c; background:#fef2f2; }
+.value .soon { color:#92400e; background:#fffbeb; }
+.error, .additional { margin:12px 0; font-size:13px; line-height:1.5; color:#64748b; }
+.error { color:#b91c1c; }
+.error button { min-height:44px; padding:8px; color:inherit; text-decoration:underline; cursor:pointer; }
+.footer { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:12px; padding:18px 24px; border-top:1px solid #e2e8f0; }
+.footer button, .footer a { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:10px 16px; border:1px solid #cbd5e1; border-radius:10px; font:700 14px Arial,Helvetica,sans-serif; text-decoration:none; background:#fff; color:#334155; cursor:pointer; }
+.footer a { background:#e30613; border-color:#e30613; color:#fff; }
+.footer button:hover { background:#f5f6f8; }
+.footer a:hover { background:#c00510; }
+.footer a svg { width:18px; height:18px; }
+@media(max-width:600px) { .bell { bottom:16px; right:16px; } .header { padding:20px 16px; } .header h2 { font-size:23px; } .summary { margin:0 16px 16px; padding:16px; } .content { padding:0 16px 16px; } .items li { align-items:flex-start; flex-direction:column; gap:12px; } .value { width:100%; display:flex; justify-content:space-between; flex-wrap:wrap; align-items:center; } .footer { padding:16px; display:grid; } .footer a { grid-row:1; } }
