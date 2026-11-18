@@ -16,7 +16,7 @@
 .filters label, .formGrid label { display: flex; min-width: 0; flex-direction: column; gap: 7px; font-size: 14px; font-weight: 700; color: #334155; }
 .filters > label { flex: 0 1 230px; }
 .filters .search { flex: 1; }
-.filters input, .formGrid input, .formGrid select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #0f172a; font-size: 14px; font-weight: 400; }
+.filters input, .filters select, .formGrid input, .formGrid select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #0f172a; font-size: 14px; font-weight: 400; }
 .filters input::placeholder, .formGrid input::placeholder { color: #64748b; }
 .filterNote { display: flex; justify-content: space-between; flex-wrap: wrap; flex-basis: 100%; gap: 5px 16px; color: #64748b; font-size: 12px; line-height: 1.5; }
 .filterNote span { color: #92400e; }
@@ -27,7 +27,7 @@
 .periodHeading h2 { min-width: 0; font-size: 20px; font-weight: 800; line-height: 1.4; }
 .periodHeading > span { color: #64748b; font-size: 12px; }
 .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; }
-.metrics article { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 20px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; box-shadow: 0 4px 16px #0f172a03; }
+.metrics article { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 16px 20px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; box-shadow: 0 4px 16px #0f172a03; }
 .metrics article > div { min-width: 0; }
 .metricIcon { display: grid; place-items: center; width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px; background: #fef2f2; color: #e30613; }
 .metrics h3 { color: #475569; font-size: 13px; font-weight: 700; }
@@ -36,20 +36,28 @@
 .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 24px; }
 .column { min-width: 0; overflow: hidden; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; box-shadow: 0 4px 16px #0f172a03; }
 .columnHeader, .columnHeader > div { display: flex; align-items: center; gap: 10px; }
-.columnHeader { justify-content: space-between; min-height: 78px; padding: 18px 20px; border-bottom: 1px solid #e2e8f0; }
+.columnHeader { justify-content: space-between; min-height: 62px; padding: 14px 18px; border-bottom: 1px solid #e2e8f0; }
 .columnHeader h2 { font-size: 15px; font-weight: 800; letter-spacing: .25px; }
-.columnScope { padding: 10px 20px; border-bottom: 1px solid #e2e8f0; background: #fafbfc; color: #64748b; font-size: 12px; line-height: 1.5; }
+.columnScope { padding: 7px 18px; border-bottom: 1px solid #e2e8f0; background: #fafbfc; color: #64748b; font-size: 12px; line-height: 1.5; }
 .columnIcon { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px; background: #f1f5f9; color: #475569; }
 .paidIcon { background: #ecfdf5; color: #059669; }
 .countBadge { flex-shrink: 0; min-width: 30px; padding: 5px 8px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; color: #475569; text-align: center; font-size: 13px; font-weight: 700; }
-.invoice { padding: 20px; border-bottom: 1px solid #e2e8f0; }
+.invoice { display: grid; grid-template-columns: minmax(0, 1fr) minmax(95px, auto) auto; align-items: center; gap: 12px; padding: 13px 18px; border-bottom: 1px solid #e2e8f0; }
 .invoice:last-child { border-bottom: 0; }
+.rowIdentity { min-width: 0; }
+.rowIdentity .invoiceNumber { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-top: 4px; font-size: 12px; }
+.rowDue { display: block; margin-top: 4px; color: #64748b; font-size: 12px; line-height: 1.4; }
+.rowAmount { display: flex; min-width: 0; max-width: 160px; flex-direction: column; align-items: flex-end; gap: 5px; text-align: right; }
+.rowAmount > span:first-child { color: #64748b; font-size: 12px; }
+.rowAmount strong { max-width: 100%; font-size: 15px; line-height: 1.4; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.detailButton { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 8px 9px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #334155; font-size: 12px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.detailButton:hover { border-color: #cbd5e1; background: #f8fafc; }
 .invoiceHeading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .invoiceNumber { min-width: 0; color: #475569; font-size: 13px; overflow-wrap: anywhere; }
 .badge { display: inline-flex; flex-shrink: 0; padding: 4px 7px; border: 1px solid transparent; border-radius: 6px; font-size: 12px; line-height: 1.4; }
 .badgePending { border-color: #fde68a; background: #fffbeb; color: #92400e; }
 .badgePaid { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
-.invoice h3 { margin-top: 8px; font-size: 16px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.invoice h3 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; font-size: 14px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
 .invoiceDate { display: flex; align-items: center; gap: 5px; margin-top: 6px; color: #64748b; font-size: 12px; }
 .dueLine { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 9px; font-size: 12px; color: #475569; }
 .dueBadge { display: inline-flex; padding: 3px 7px; border: 1px solid; border-radius: 6px; font-weight: 700; }
@@ -91,7 +99,7 @@
 .payButton { padding: 9px 12px; font-size: 13px; }
 .historyButton { min-height: 44px; padding: 8px 0; color: #475569; font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .historyButton:hover { color: #e30613; }
-.empty { display: flex; min-height: 258px; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 32px 24px; color: #64748b; text-align: center; }
+.empty { display: flex; min-height: 145px; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 24px; color: #64748b; text-align: center; }
 .empty > svg { width: 28px; height: 28px; color: #94a3b8; }
 .empty strong { color: #334155; font-size: 15px; }
 .empty p { max-width: 320px; font-size: 13px; line-height: 1.5; }
@@ -113,6 +121,12 @@
 .formGrid input, .formGrid select { font-size: 16px; }
 .detailAmounts { margin: 0; padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #fafbfc; }
 .detailAmounts dd { font-size: 16px; }
+.invoiceDetailMeta { padding: 18px 24px 0; color: #475569; font-size: 13px; line-height: 1.5; }
+.invoiceDetailMeta > .badge { margin-top: 12px; }
+.detailActions { display: flex; flex-wrap: wrap; gap: 10px; padding: 18px 24px; border-bottom: 1px solid #e2e8f0; }
+.dangerButton { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border: 1px solid #fecaca; border-radius: 10px; background: #fff; color: #b91c1c; font-size: 14px; font-weight: 700; cursor: pointer; }
+.dangerButton:hover { background: #fef2f2; }
+.historyTitle { margin: 18px 24px 0; font-size: 15px; font-weight: 700; }
 .dialogFooter { display: flex; justify-content: flex-end; gap: 12px; position: sticky; bottom: 0; z-index: 1; padding: 18px 24px; border-top: 1px solid #e2e8f0; background: #fff; }
 .paymentMode { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 22px 24px 0; }
 .paymentMode legend { margin-bottom: 10px; color: #334155; font-size: 14px; font-weight: 700; }
@@ -162,3 +176,5 @@
 @media (max-width: 760px) { .main { padding: 20px 16px 32px; } .header { align-items: flex-start; flex-wrap: wrap; gap: 16px; } .header h1 { font-size: 28px; } .headerActions { margin-left: auto; } .filters { padding: 16px; gap: 12px; } .filters > label { flex: 1 1 200px; } .filters .search { flex: 1 1 250px; } .metrics { gap: 12px; } .metrics article { padding: 16px 14px; } .metricIcon { display: none; } .metrics strong { font-size: 22px; } .columns { grid-template-columns: 1fr; } .periodHeading { align-items: flex-start; } .periodHeading > span { text-align: right; } .dialog { width: calc(100% - 24px); max-height: calc(100dvh - 24px); } .dialogHeader, .detailAmounts, .formGrid, .dialogFooter { padding-inline: 18px; } .paymentMode, .balancePreview, .help, .formError { margin-inline: 18px; } .paymentHistory { padding-inline: 18px; } }
 @media (max-width: 480px) { .header h1 { font-size: 25px; } .headerActions, .headerActions button { width: 100%; } .filters > label, .filters .search { flex-basis: 100%; } .filters > button { width: 100%; } .metrics { grid-template-columns: 1fr; } .metrics article { padding: 18px; } .metrics strong { font-size: 28px; } .metricIcon { display: grid; width: 38px; height: 38px; } .metrics article > div { flex: 1; } .periodHeading { flex-direction: column; gap: 5px; } .periodHeading > span { text-align: left; } .columnHeader { gap: 8px; } .columnHeader h2 { font-size: 13px; } .invoiceAmounts { gap: 7px; } .invoiceAmounts dd { font-size: 13px; } .formGrid { grid-template-columns: 1fr; } .dialogFooter { gap: 8px; } .dialogFooter button { flex: 1; padding-inline: 12px; } .detailAmounts { gap: 6px; } .detailAmounts dd { font-size: 14px; } .balancePreview { flex-wrap: wrap; gap: 7px; } .error { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 760px) { .deletedList article { align-items: flex-start; flex-direction: column; } .deletedActions { width: 100%; justify-content: space-between; } .confirmation, .providerCatalog { padding-inline: 18px; } }
+@media (max-width: 760px) { .invoiceDetailMeta, .detailActions { padding-inline: 18px; } .historyTitle { margin-inline: 18px; } }
+@media (max-width: 480px) { .invoice { grid-template-columns: minmax(0, 1fr) minmax(100px, auto); gap: 10px 14px; padding: 12px 14px; } .detailButton { grid-column: 1 / -1; justify-self: end; } .rowAmount { max-width: 150px; } .detailActions > button { flex: 1; } }

@@ -187,12 +187,29 @@ function invoiceListFilters(params: URLSearchParams) {
   if (!/^\d{4}-\d{2}$/.test(month)) throw new InvoicePaymentsError("Selecciona un mes válido.");
   const from = validDate(`${month}-01`);
   const until = new Date(from); until.setUTCMonth(until.getUTCMonth() + 1);
+  const providerValues = params.getAll("providerId");
+  if (providerValues.length > 1) throw new InvoicePaymentsError("Selecciona un proveedor válido.");
+  const providerValue = providerValues[0] || "";
+  const providerId = providerValue === "" ? null : Number(providerValue);
+  if (providerId !== null && (!/^\d+$/.test(providerValue) || !Number.isSafeInteger(providerId) || providerId <= 0 || providerId > 2_147_483_647)) {
+    throw new InvoicePaymentsError("Selecciona un proveedor válido.");
+  }
   const search = normalized(inputText(params.get("search") || "", "La búsqueda", 160, true));
-  const searchWhere: Prisma.FacturaAdministrativaWhereInput = search ? { OR: [
-    { providerNormalized: { contains: search } }, { numberNormalized: { contains: search.replace(/\s+/g, "") } },
-  ] } : {};
+  const searchWhere: Prisma.FacturaAdministrativaWhereInput = {
+    ...(search ? { OR: [
+      { providerNormalized: { contains: search } }, { numberNormalized: { contains: search.replace(/\s+/g, "") } },
+    ] } : {}),
+    ...(providerId === null ? {} : { providerId }),
+  };
   const where: Prisma.FacturaAdministrativaWhereInput = { date: { gte: from, lt: until }, ...searchWhere };
   return { today, month, where, searchWhere };
+}
+
+function invoiceProviderOptions(tx: Prisma.TransactionClient) {
+  // Inactive and renamed providers remain selectable for their historical debts.
+  // The catalog name is only a filter label; invoice snapshots remain unchanged.
+  return tx.proveedorAdministrativo.findMany({ select: { id: true, name: true, active: true },
+    orderBy: [{ name: "asc" }, { id: "asc" }] });
 }
 
 export async function readInvoicePayments(params: URLSearchParams, session: InvoiceSession | null) {
@@ -203,17 +220,19 @@ export async function readInvoicePayments(params: URLSearchParams, session: Invo
   const pendingWhere = { ...searchWhere, deletedAt: null, status: "PENDIENTE" };
   const paidWhere = { ...monthWhere, deletedAt: null, status: "PAGADA" };
   // The visible report combines all open debts with the selected month's paid
-  // invoices. Search applies to both groups; the month never hides an open debt.
+  // invoices. Search and stable provider identity apply to both groups; the
+  // month never hides an open debt.
   const where = { OR: [pendingWhere, paidWhere] };
   const todayDate = validDate(today);
   const afterSoon = new Date(todayDate); afterSoon.setUTCDate(afterSoon.getUTCDate() + 8);
   return prisma.$transaction(async (tx) => {
-    const [summary, pendingCount, paidCount, overdueCount, dueSoonCount] = await Promise.all([
+    const [summary, pendingCount, paidCount, overdueCount, dueSoonCount, providerOptions] = await Promise.all([
       tx.facturaAdministrativa.aggregate({ where, _sum: { amount: true, paidAmount: true }, _count: { _all: true } }),
       tx.facturaAdministrativa.count({ where: pendingWhere }),
       tx.facturaAdministrativa.count({ where: paidWhere }),
       tx.facturaAdministrativa.count({ where: { ...pendingWhere, dueDate: { lt: todayDate } } }),
       tx.facturaAdministrativa.count({ where: { ...pendingWhere, dueDate: { gte: todayDate, lt: afterSoon } } }),
+      invoiceProviderOptions(tx),
     ]);
     async function group(status: "PENDIENTE" | "PAGADA", requested: number, total: number) {
       const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -236,7 +255,7 @@ export async function readInvoicePayments(params: URLSearchParams, session: Invo
     const total = sumCents(summary._sum.amount);
     const collected = sumCents(summary._sum.paidAmount);
     return { month, today, pendingScope: "ALL_MONTHS" as const, paidMonth: month, summary: { invoiceCount: summary._count._all, totalAmount: total / 100,
-      paidAmount: collected / 100, balance: (total - collected) / 100, pendingCount, paidCount, overdueCount, dueSoonCount }, pending, paid };
+      paidAmount: collected / 100, balance: (total - collected) / 100, pendingCount, paidCount, overdueCount, dueSoonCount }, pending, paid, providerOptions };
   }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
 }
 
@@ -275,12 +294,12 @@ export async function readDeletedAdministrativeInvoices(params: URLSearchParams,
   const requestedPage = pageNumber(params, "page");
   const where = { ...monthWhere, deletedAt: { not: null } };
   return prisma.$transaction(async (tx) => {
-    const total = await tx.facturaAdministrativa.count({ where });
+    const [total, providerOptions] = await Promise.all([tx.facturaAdministrativa.count({ where }), invoiceProviderOptions(tx)]);
     const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     const page = Math.min(requestedPage, pages);
     const rows = await tx.facturaAdministrativa.findMany({ where, orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { date: "asc" }, { id: "asc" }],
       skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE, include: { _count: { select: { payments: true } } } });
-    return { items: rows.map((row) => invoiceDto(row, row._count.payments, today)), page, pageSize: PAGE_SIZE, total, pages };
+    return { items: rows.map((row) => invoiceDto(row, row._count.payments, today)), page, pageSize: PAGE_SIZE, total, pages, providerOptions };
   }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
 }
 

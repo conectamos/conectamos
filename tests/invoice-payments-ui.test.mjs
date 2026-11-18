@@ -26,14 +26,17 @@ function textOf(node) {
 const money = (amount) => `${amount < 0 ? "-" : ""}$ ${Math.abs(amount).toLocaleString("es-CO", { maximumFractionDigits: 2 })}`;
 const invoice = (id, extra = {}) => ({ id, providerId: id, number: `FAC-${id}`, provider: `Proveedor ${id}`, date: "2026-11-01", dueDate: null, dueStatus: "SIN_FECHA", deletedAt: null, amount: 1000, paidAmount: 0, balance: 1000, status: "PENDIENTE", paymentCount: 0, version: 1, payments: [], ...extra });
 const result = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => structuredClone(body) });
+const invoiceRows = (ui) => ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice");
+const invoiceRowsText = (ui) => invoiceRows(ui).map(textOf).join(" ");
 
-function harness({ invoices = [invoice(1)], providers: seededProviders, postOutcomes = [], delayLists = false, listFailures = 0, providerFailures = 0 } = {}) {
+function harness({ invoices = [invoice(1)], providers: seededProviders, postOutcomes = [], delayLists = false, listFailures = 0, providerFailures = 0, detailFailures = 0, delayDetails = false } = {}) {
   const data = structuredClone(invoices);
   const providers = structuredClone(seededProviders || [...new Map(invoices.map(item => [item.providerId, { id: item.providerId, name: item.provider, active: true, version: 1 }])).values(),
     { id: 100, name: "Comercial QA", active: true, version: 1 }, { id: 101, name: "Proveedor QA", active: true, version: 1 }, { id: 102, name: "QA", active: true, version: 1 }]);
   const calls = [];
   const refreshEvents = [];
   const pendingLists = [];
+  const pendingDetails = [];
   const replay = new Map();
   const slots = [];
   const effects = [];
@@ -41,7 +44,7 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
   let dirty = true;
   let tree;
   let postIndex = 0;
-  const dialogs = { opened: 0, closed: 0 };
+  const dialogs = { opened: 0, closed: 0, triggerFocused: 0, titleFocused: 0, pageFocused: 0 };
   const dialogElement = { showModal() { dialogs.opened++; }, close() { dialogs.closed++; } };
   const hooks = {
     useState(initial) { const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial; return [slots[index], (value) => { const next = typeof value === "function" ? value(slots[index]) : value; if (!Object.is(next, slots[index])) { slots[index] = next; dirty = true; } }]; },
@@ -52,14 +55,16 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
     const month = url.searchParams.get("month");
     const search = url.searchParams.get("search").toLocaleLowerCase("es-CO");
     const deleted = url.searchParams.get("deleted") === "1";
-    const selected = data.filter((item) => (deleted ? item.date.startsWith(month) : item.balance > 0 || item.date.startsWith(month)) && Boolean(item.deletedAt) === deleted && `${item.provider} ${item.number}`.toLocaleLowerCase("es-CO").includes(search))
+    const providerId = Number(url.searchParams.get("providerId")) || null;
+    const providerOptions = providers.map(({ id, name, active }) => ({ id, name, active }));
+    const selected = data.filter((item) => (!providerId || item.providerId === providerId) && (deleted ? item.date.startsWith(month) : item.balance > 0 || item.date.startsWith(month)) && Boolean(item.deletedAt) === deleted && `${item.provider} ${item.number}`.toLocaleLowerCase("es-CO").includes(search))
       .sort((a,b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || a.date.localeCompare(b.date) || a.id-b.id);
     const pending = selected.filter((item) => item.balance > 0);
     const paid = selected.filter((item) => item.balance === 0);
     const sum = (key) => selected.reduce((cents, item) => cents + Math.round(item[key] * 100), 0) / 100;
     function page(items, field) { const pages = Math.max(1, Math.ceil(items.length / 10)); const number = Math.max(1,Math.min(pages, Number(url.searchParams.get(field))||1)); return { items: structuredClone(items.slice((number - 1) * 10, number * 10)), page: number, pageSize: 10, total: items.length, pages }; }
-    if(url.searchParams.get("deleted")==="1")return page(selected,"page");
-    return { month, pendingScope: "ALL_MONTHS", paidMonth: month, today: "2026-11-16", summary: { invoiceCount: selected.length, totalAmount: sum("amount"), paidAmount: sum("paidAmount"), balance: sum("balance"), pendingCount: pending.length, paidCount: paid.length,
+    if(url.searchParams.get("deleted")==="1")return { ...page(selected,"page"), providerOptions };
+    return { month, pendingScope: "ALL_MONTHS", paidMonth: month, providerOptions, today: "2026-11-16", summary: { invoiceCount: selected.length, totalAmount: sum("amount"), paidAmount: sum("paidAmount"), balance: sum("balance"), pendingCount: pending.length, paidCount: paid.length,
       overdueCount:pending.filter(r=>r.dueDate&&r.dueDate<"2026-11-16").length,dueSoonCount:pending.filter(r=>r.dueDate&&r.dueDate>="2026-11-16"&&r.dueDate<="2026-11-23").length }, pending: page(pending, "pendingPage"), paid: page(paid, "paidPage") };
   }
   const mockFetch = async (path, options = {}) => {
@@ -138,7 +143,10 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
       if (delayLists) return new Promise((resolve) => pendingLists.push({ resolve: () => resolve(result(snapshot)), signal: options.signal }));
       return result(snapshot);
     }
-    return result({ invoice: data.find((item) => item.id === Number(url.pathname.split("/")[3])) });
+    if (detailFailures > 0) { detailFailures--; return result({ error: "No fue posible consultar el detalle." }, 503); }
+    const detail = structuredClone({ invoice: data.find((item) => item.id === Number(url.pathname.split("/")[3])) });
+    if (delayDetails) return new Promise((resolve) => pendingDetails.push({ resolve: () => resolve(result(detail)), signal: options.signal }));
+    return result(detail);
   };
   const imports = {
     react: hooks, "react/jsx-runtime": { jsx, jsxs: jsx }, "next/link": { __esModule: true, default: "a" },
@@ -151,17 +159,19 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
   };
   const mod = { exports: {} };
   new Function("require", "module", "exports", "fetch", "document", code)((name) => { assert.ok(name in imports, `Unexpected import ${name}`); return imports[name]; }, mod, mod.exports, mockFetch, { body: { style: { overflow: "" } } });
-  function render() { cursor = 0; dirty = false; tree = mod.exports.default({ today: "2026-11-16", userName: "Administración QA" }); for (const node of nodes(tree)) if (node.type === "dialog") node.props.ref.current = dialogElement; while (effects.length) effects.shift()(); }
+  function render() { cursor = 0; dirty = false; tree = mod.exports.default({ today: "2026-11-16", userName: "Administración QA" }); for (const node of nodes(tree)) { if (node.type === "dialog") node.props.ref.current = dialogElement; if (node.type === "h1" && node.props.ref) node.props.ref.current = { focus: () => dialogs.pageFocused++ }; if (node.type === "h2" && node.props.ref) node.props.ref.current = { focus: () => dialogs.titleFocused++ }; } while (effects.length) effects.shift()(); }
   async function settle() { for (let i = 0; i < 12; i++) { if (dirty) render(); await new Promise((resolve) => setImmediate(resolve)); } }
   function find(type, text) { const node = nodes(tree).find((item) => item.type === type && (text === undefined || textOf(item).includes(text))); assert.ok(node, `Missing ${type}: ${text}`); return node; }
   function byLabel(label) { const node = nodes(tree).find((item) => item.props["aria-label"] === label); assert.ok(node, `Missing label: ${label}`); return node; }
-  function field(label) { const wrapper = nodes(tree).find((node) => node.type === "label" && [node.props.children].flat().filter((child) => typeof child === "string").join("") === label); const input = nodes(wrapper).find((node) => ["input","select"].includes(node.type)); assert.ok(input, `Missing field ${label}`); return input; }
+  function field(label) { const scope = nodes(tree).find((node) => node.type === "dialog") || tree; const wrapper = nodes(scope).find((node) => node.type === "label" && [node.props.children].flat().filter((child) => typeof child === "string").join("") === label); const input = nodes(wrapper).find((node) => ["input","select"].includes(node.type)); assert.ok(input, `Missing field ${label}`); return input; }
   async function setControl(label, value) {const control=field(label);if(control.type==="select"&&label==="Proveedor")value=String(providers.find(p=>p.name===value)?.id??value);control.props.onChange({ target: { value,checked:Boolean(value) } }); await settle(); }
   async function selectFile(label, file) { const control = field(label); control.props.onChange({ currentTarget: { files: file ? [file] : [], value: file?.name || "" } }); await settle(); }
-  async function click(button) { button.props.onClick({ currentTarget: { focus() {} } }); await settle(); }
+  async function click(button) { button.props.onClick({ currentTarget: { isConnected: true, focus() { dialogs.triggerFocused++; } } }); await settle(); }
+  async function openDetail(number = "FAC-1") { await click(byLabel(`Ver detalle de factura ${number}`)); }
+  async function invoiceAction(action, number = "FAC-1") { await openDetail(number); const target = nodes(find("dialog")).find((node) => node.type === "button" && (action === "pay" ? textOf(node) === "Abonar / pagar" : node.props["aria-label"]?.startsWith(`${action === "edit" ? "Editar" : "Eliminar"} factura `))); assert.ok(target, `Missing invoice action ${action}`); await click(target); }
   async function submit() { const form = nodes(find("dialog")).find((node) => node.type === "form"); assert.ok(form); await form.props.onSubmit({ preventDefault() {} }); await settle(); }
   async function apply() { await find("form").props.onSubmit({ preventDefault() {} }); await settle(); }
-  return { data,providers, calls, refreshEvents, pendingLists, dialogs, settle, find, byLabel, field, setControl, selectFile, click, submit, apply, text: () => textOf(tree), nodes: () => nodes(tree), unmount: () => slots.forEach((slot) => slot?.cleanup?.()) };
+  return { data,providers, calls, refreshEvents, pendingLists, pendingDetails, dialogs, settle, find, byLabel, field, setControl, selectFile, click, openDetail, invoiceAction, openPayment: (number) => invoiceAction("pay", number), submit, apply, text: () => textOf(tree), nodes: () => nodes(tree), unmount: () => slots.forEach((slot) => slot?.cleanup?.()) };
 }
 
 test("invoice provider is selected from the catalog and sent by stable ID with its due date", async () => {
@@ -190,7 +200,7 @@ test("catalog create rename and removal refresh the dropdown without changing hi
   assert.equal(ui.providers.find(p=>p.id===1).active,false);assert.deepEqual(ui.data,original);
   await ui.click(ui.find("button","Cerrar"));await ui.click(ui.find("button","Nueva factura"));
   assert.match(textOf(ui.field("Proveedor")),/Proveedor corregido/);assert.doesNotMatch(textOf(ui.field("Proveedor")),/Nombre histórico/);
-  await ui.click(ui.find("button","Cancelar"));await ui.click(ui.byLabel("Editar factura FAC-1"));
+  await ui.click(ui.find("button","Cancelar"));await ui.invoiceAction("edit");
   assert.equal(ui.field("Proveedor").props.value,"1");assert.match(textOf(ui.field("Proveedor")),/Nombre histórico.*fuera del catálogo activo/);
   ui.unmount();
 });
@@ -273,6 +283,92 @@ test("monthly columns paginate independently while summaries include all filtere
   ui.unmount();
 });
 
+test("compact invoice rows expose one detail action and the fresh detail retains amounts, due date, payments and actions", async () => {
+  const payment = { id: 1, date: "2026-11-10", amount: 400, reference: "Referencia previa", receipt: { id: "proof-1", filename: "pago.pdf", size: 1024 }, createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
+  const ui = harness({ invoices: [invoice(1, { dueDate: "2026-11-20", dueStatus: "PROXIMA", paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })] }); await ui.settle();
+  const row = invoiceRows(ui)[0];
+  assert.match(textOf(row), /Proveedor 1Factura FAC-1Vence 20 de nov de 2026Saldo pendiente\$ 600Próxima a vencerVer detalle/);
+  assert.equal(nodes(row).filter(node => node.type === "button").length, 1);
+  assert.doesNotMatch(textOf(row), /Abonar|Editar|Eliminar|Referencia previa|Abonado/);
+  ui.data[0].paidAmount = 500; ui.data[0].balance = 500; ui.data[0].version = 2;
+  await ui.openDetail();
+  const detail = textOf(ui.find("dialog"));
+  assert.match(detail, /Detalle de factura/);
+  assert.match(detail, /Valor factura\$ 1\.000Abonado\$ 500Saldo\$ 500/);
+  assert.match(detail, /Fecha de la factura: 01 de nov de 2026/);
+  assert.match(detail, /Historial de pagos \(1\).*Referencia previa/);
+  assert.ok(ui.byLabel("Editar factura FAC-1")); assert.ok(ui.byLabel("Eliminar factura FAC-1"));
+  assert.equal(nodes(ui.find("dialog")).find(node => node.type === "a").props.href, "/api/pago-facturas/1/payments/1/receipt");
+  assert.equal(ui.dialogs.opened, 1);
+  await ui.click(ui.find("button", "Abonar / pagar"));
+  assert.equal(ui.dialogs.opened, 1, "Changing the detail to a payment keeps the same native dialog open");
+  assert.equal(ui.dialogs.closed, 0);
+  assert.match(textOf(ui.find("dialog")), /Registrar pago/);
+  let prevented = false;
+  ui.find("dialog").props.onCancel({ preventDefault() { prevented = true; } }); await ui.settle();
+  assert.equal(prevented, true); assert.equal(ui.nodes().filter(node => node.type === "dialog").length, 0);
+  assert.ok(ui.dialogs.triggerFocused > 0, "Escape returns focus to the original detail button");
+  ui.unmount();
+});
+
+test("detail actions stay unavailable until the current invoice loads and a failed query can be retried", async () => {
+  const loading = harness({ delayDetails: true }); await loading.settle(); await loading.openDetail();
+  assert.match(textOf(loading.find("dialog")), /Consultando el estado actual/);
+  assert.ok(!nodes(loading.find("dialog")).some(node => node.props["aria-label"] === "Editar factura FAC-1"));
+  loading.pendingDetails[0].resolve(); await loading.settle();
+  assert.ok(loading.byLabel("Editar factura FAC-1")); loading.unmount();
+  const failed = harness({ detailFailures: 1 }); await failed.settle(); await failed.openDetail();
+  assert.match(textOf(failed.find("dialog")), /No fue posible consultar el detalle/);
+  assert.ok(!nodes(failed.find("dialog")).some(node => node.type === "button" && textOf(node) === "Abonar / pagar"));
+  await failed.click(failed.find("button", "Reintentar consulta"));
+  assert.ok(failed.byLabel("Editar factura FAC-1")); failed.unmount();
+});
+
+test("supplier filters apply on Consultar before pagination and keep inactive suppliers and complete totals", async () => {
+  const selected = { providerId: 7, provider: "Proveedor histórico" };
+  const invoices = [
+    ...Array.from({ length: 12 }, (_, i) => invoice(i + 1, { ...selected, date: "2020-01-01" })),
+    ...Array.from({ length: 11 }, (_, i) => invoice(i + 20, { ...selected, paidAmount: 1000, balance: 0, status: "PAGADA" })),
+    ...Array.from({ length: 11 }, (_, i) => invoice(i + 40, { ...selected, deletedAt: "2026-11-16T18:00:00Z" })),
+    invoice(90, { providerId: 8, provider: "Otro proveedor" }),
+  ];
+  const ui = harness({ invoices, providers: [{ id: 7, name: "Proveedor renombrado", active: false, version: 2 }, { id: 8, name: "Otro proveedor", active: true, version: 1 }] }); await ui.settle();
+  assert.match(textOf(ui.field("Proveedor")), /Proveedor renombrado \(inactivo\)/);
+  await ui.click(ui.byLabel("Página siguiente de pendientes")); await ui.click(ui.byLabel("Página siguiente de pagas"));
+  await ui.click(ui.find("button", "Facturas eliminadas")); await ui.click(ui.byLabel("Página siguiente de eliminadas"));
+  const before = ui.calls.length; await ui.setControl("Proveedor", "7");
+  assert.equal(ui.calls.length, before); assert.match(ui.text(), /Filtros sin aplicar/);
+  await ui.apply();
+  const reportUrl = new URL(ui.calls.findLast(call => call.path.startsWith("/api/pago-facturas?") && !call.path.includes("deleted=1")).path, "http://localhost");
+  const deletedUrl = new URL(ui.calls.findLast(call => call.path.includes("deleted=1")).path, "http://localhost");
+  assert.equal(reportUrl.searchParams.get("providerId"), "7"); assert.equal(deletedUrl.searchParams.get("providerId"), "7");
+  assert.equal(reportUrl.searchParams.get("pendingPage"), "1"); assert.equal(reportUrl.searchParams.get("paidPage"), "1"); assert.equal(deletedUrl.searchParams.get("page"), "1");
+  assert.equal(invoiceRows(ui).length, 20);
+  assert.doesNotMatch(invoiceRowsText(ui), /Otro proveedor/);
+  assert.match(invoiceRowsText(ui), /Proveedor histórico/);
+  assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 23\.00023 facturas.*Abonado\$ 11\.000.*Saldo pendiente\$ 12\.000/);
+  assert.equal(ui.field("Proveedor").props.value, "7");
+  await ui.setControl("Buscar factura o proveedor", "FAC-90"); await ui.apply();
+  assert.equal(invoiceRows(ui).length, 0, "Search and stable provider ID are combined on the server");
+  await ui.setControl("Proveedor", ""); await ui.apply();
+  assert.match(invoiceRowsText(ui), /Otro proveedor/); assert.equal(invoiceRows(ui).length, 1);
+  ui.unmount();
+});
+
+test("a delayed earlier supplier response cannot replace the newly applied supplier", async () => {
+  const ui = harness({ delayLists: true, invoices: [invoice(1), invoice(2)] }); await ui.settle();
+  ui.pendingLists[0].resolve(); await ui.settle();
+  await ui.setControl("Proveedor", "1"); await ui.apply();
+  await ui.setControl("Proveedor", "2"); await ui.apply();
+  assert.equal(ui.pendingLists[1].signal.aborted, true);
+  ui.pendingLists[2].resolve(); await ui.settle();
+  ui.pendingLists[1].resolve(); await ui.settle();
+  assert.match(invoiceRowsText(ui), /Proveedor 2/); assert.doesNotMatch(invoiceRowsText(ui), /Proveedor 1/);
+  assert.equal(ui.field("Proveedor").props.value, "2");
+  assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 1\.0001 facturas/);
+  ui.unmount();
+});
+
 test("historical paid months and searches only apply on Consultar; new invoices default to today", async () => {
   const ui = harness({ invoices: [invoice(1), invoice(2, { date: "2025-02-01", provider: "Proveedor histórico" })] }); await ui.settle();
   const before = ui.calls.length;
@@ -282,7 +378,7 @@ test("historical paid months and searches only apply on Consultar; new invoices 
   const url = new URL(ui.calls.at(-1).path, "http://localhost");
   assert.equal(url.searchParams.get("month"), "2025-02"); assert.equal(url.searchParams.get("search"), "histórico");
   assert.equal(url.searchParams.get("pendingPage"), "1"); assert.equal(url.searchParams.get("paidPage"), "1");
-  assert.match(ui.text(), /Proveedor histórico/); assert.doesNotMatch(ui.text(), /Proveedor 1/);
+  assert.match(invoiceRowsText(ui), /Proveedor histórico/); assert.doesNotMatch(invoiceRowsText(ui), /Proveedor 1/);
   await ui.click(ui.find("button", "Nueva factura"));
   assert.equal(ui.field("Fecha de la factura").props.value, "2026-11-16"); ui.unmount();
 });
@@ -301,24 +397,24 @@ test("new invoices preserve full COP amounts and refresh both columns and summar
 
 test("partial payment reduces balance and full payment moves invoice into pagas within invoice month", async () => {
   const ui = harness(); await ui.settle();
-  await ui.click(ui.find("button", "Abonar / pagar"));
+  await ui.openPayment();
   await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "400,25"); await ui.setControl("Fecha del pago", "2026-12-05"); await ui.setControl("Referencia o comprobante (opcional)", "Transferencia 001");
   assert.match(textOf(ui.find("dialog")), /Saldo después del pago\$ 599,75/);
   await ui.submit();
   assert.equal(ui.data[0].balance, 599.75); assert.equal(ui.data[0].status, "PENDIENTE"); assert.match(ui.text(), /Abono parcial/);
-  await ui.click(ui.find("button", "Abonar / pagar")); await ui.submit();
+  await ui.openPayment(); await ui.submit();
   const writes = ui.calls.filter((call) => call.method === "POST");
   assert.equal(writes[1].body.mode, "full"); assert.ok(!Object.hasOwn(writes[1].body, "amount")); assert.equal(writes[1].body.version, 2);
   assert.equal(ui.data[0].balance, 0); assert.equal(ui.data[0].paymentCount, 2); assert.equal(ui.data[0].status, "PAGADA"); assert.equal(ui.data[0].date, "2026-11-01");
   assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(ui.text(), /FACTURAS PAGAS1/);
-  await ui.click(ui.byLabel("Ver pagos de factura FAC-1"));
+  await ui.openDetail();
   assert.match(textOf(ui.find("dialog")), /05 de dic de 2026\$ 400,25Transferencia 001/); assert.match(textOf(ui.find("dialog")), /Administración QA/);
   ui.unmount();
 });
 
 test("ambiguous payment result locks intent and retry uses the same key and body without a duplicate", async () => {
   const ui = harness({ postOutcomes: ["commit-network"] }); await ui.settle();
-  await ui.click(ui.find("button", "Abonar / pagar")); await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "300"); await ui.submit();
+  await ui.openPayment(); await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "300"); await ui.submit();
   assert.equal(ui.data[0].paymentCount, 1); assert.match(textOf(ui.find("dialog")), /Reintentar pago/);
   assert.deepEqual(ui.refreshEvents, [], "Unconfirmed writes must not announce a successful refresh");
   assert.equal(ui.field("Valor del abono (COP)").props.disabled, true); assert.equal(ui.find("button", "Cancelar").props.disabled, true);
@@ -338,7 +434,7 @@ test("ambiguous invoice creation retries the original request instead of adding 
 });
 
 test("stale invoice version requires explicit refresh before a new payment intent", async () => {
-  const ui = harness(); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar"));
+  const ui = harness(); await ui.settle(); await ui.openPayment();
   ui.data[0].version = 2; ui.data[0].paidAmount = 100; ui.data[0].balance = 900;
   await ui.submit(); assert.match(textOf(ui.find("dialog")), /La factura cambió/); assert.equal(ui.data[0].paymentCount, 0);
   const first = ui.calls.find((call) => call.method === "POST");
@@ -352,7 +448,7 @@ test("invalid invoices and overpayments are rejected locally and retain entered 
   await ui.setControl("Proveedor", "QA"); await ui.setControl("Número de factura", "N-2");
   for (const value of ["-10", "0", "", "1.23", "1.000,123"]) { await ui.setControl("Valor de la factura (COP)", value); await ui.submit(); assert.equal(ui.field("Valor de la factura (COP)").props.value, value); }
   assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
-  await ui.click(ui.find("button", "Cancelar")); await ui.click(ui.find("button", "Abonar / pagar")); await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "1.000,01"); await ui.submit();
+  await ui.click(ui.find("button", "Cancelar")); await ui.openPayment(); await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "1.000,01"); await ui.submit();
   assert.match(textOf(ui.find("dialog")), /no superar el saldo/); assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0); ui.unmount();
 });
 
@@ -361,7 +457,7 @@ test("late list response cannot replace the newly selected historical paid month
   await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.apply();
   assert.equal(ui.pendingLists.length, 2); assert.equal(ui.pendingLists[0].signal.aborted, true);
   ui.pendingLists[1].resolve(); await ui.settle(); assert.match(ui.text(), /Histórico QA/);
-  ui.pendingLists[0].resolve(); await ui.settle(); assert.match(ui.text(), /Histórico QA/); assert.doesNotMatch(ui.text(), /Proveedor 1/); ui.unmount();
+  ui.pendingLists[0].resolve(); await ui.settle(); assert.match(invoiceRowsText(ui), /Histórico QA/); assert.doesNotMatch(invoiceRowsText(ui), /Proveedor 1/); ui.unmount();
 });
 
 test("failed initial query never presents zero invoice counts as confirmed data and retry recovers", async () => {
@@ -379,7 +475,7 @@ test("invoice edit loads fresh fields, validates due date and paid floor, and pr
   const payment = { id: 1, date: "2026-11-10", amount: 400, reference: "Pago previo", createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
   const ui = harness({ invoices: [invoice(1, { paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })] }); await ui.settle();
   ui.data[0].number = "FAC-ACTUAL"; ui.data[0].version = 2;
-  await ui.click(ui.byLabel("Editar factura FAC-1"));
+  await ui.invoiceAction("edit");
   assert.equal(ui.field("Número de factura").props.value, "FAC-ACTUAL");
   await ui.setControl("Vencimiento (opcional)", "2026-10-31"); await ui.submit();
   assert.match(textOf(ui.find("dialog")), /igual o posterior/);
@@ -394,7 +490,7 @@ test("invoice edit loads fresh fields, validates due date and paid floor, and pr
 
 test("paid invoices remain editable and raising value returns the remaining balance to pendientes", async () => {
   const ui = harness({ invoices: [invoice(1, { paidAmount: 1000, balance: 0, status: "PAGADA", paymentCount: 1 })] }); await ui.settle();
-  await ui.click(ui.byLabel("Editar factura FAC-1")); await ui.setControl("Valor de la factura (COP)", "1.200"); await ui.submit();
+  await ui.invoiceAction("edit"); await ui.setControl("Valor de la factura (COP)", "1.200"); await ui.submit();
   assert.equal(ui.data[0].balance, 200); assert.equal(ui.data[0].status, "PENDIENTE"); assert.equal(ui.data[0].paidAmount, 1000);
   assert.match(ui.text(), /FACTURAS PENDIENTES1/); assert.match(ui.text(), /FACTURAS PAGAS0/); ui.unmount();
 });
@@ -402,11 +498,11 @@ test("paid invoices remain editable and raising value returns the remaining bala
 test("invoice deletion requires explicit confirmation, preserves payment history and can be restored", async () => {
   const payment = { id: 1, date: "2026-11-10", amount: 400, reference: "Referencia conservada", createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
   const ui = harness({ invoices: [invoice(1, { paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })] }); await ui.settle();
-  await ui.click(ui.byLabel("Eliminar factura FAC-1"));
+  await ui.invoiceAction("delete");
   assert.match(textOf(ui.find("dialog")), /Proveedor 1.*Factura FAC-1/); assert.match(textOf(ui.find("dialog")), /Referencia conservada/);
   await ui.submit(); assert.equal(ui.calls.filter((call) => call.method === "DELETE").length, 0);
   await ui.click(ui.find("button", "Cancelar")); assert.equal(ui.data[0].deletedAt ?? null, null);
-  await ui.click(ui.byLabel("Eliminar factura FAC-1")); await ui.setControl("Confirmo eliminar esta factura del reporte", true); await ui.submit();
+  await ui.invoiceAction("delete"); await ui.setControl("Confirmo eliminar esta factura del reporte", true); await ui.submit();
   assert.ok(ui.data[0].deletedAt); assert.deepEqual(ui.data[0].payments, [payment]);
   assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 0/);
   await ui.click(ui.find("button", "Facturas eliminadas")); assert.match(textOf(ui.byLabel("Facturas eliminadas")), /Proveedor 1/);
@@ -420,8 +516,8 @@ test("ambiguous invoice edit, deletion and restore replay the original method an
   for (const kind of ["edit", "delete", "restore"]) {
     const ui = harness({ invoices: [invoice(1, kind === "restore" ? { deletedAt: "2026-11-16T18:00:00Z" } : {})], postOutcomes: ["commit-network"] }); await ui.settle();
     if (kind === "restore") { await ui.click(ui.find("button", "Facturas eliminadas")); await ui.click(ui.byLabel("Restaurar factura FAC-1")); }
-    else if (kind === "delete") { await ui.click(ui.byLabel("Eliminar factura FAC-1")); await ui.setControl("Confirmo eliminar esta factura del reporte", true); }
-    else { await ui.click(ui.byLabel("Editar factura FAC-1")); await ui.setControl("Número de factura", "CAMBIADA"); }
+    else if (kind === "delete") { await ui.invoiceAction("delete"); await ui.setControl("Confirmo eliminar esta factura del reporte", true); }
+    else { await ui.invoiceAction("edit"); await ui.setControl("Número de factura", "CAMBIADA"); }
     await ui.submit(); assert.match(textOf(ui.find("dialog")), /Reintentar registro/); assert.equal(ui.find("button", "Cancelar").props.disabled, true);
     const version = ui.data[0].version;
     await ui.submit(); const writes = ui.calls.filter((call) => call.method !== "GET");
@@ -430,7 +526,7 @@ test("ambiguous invoice edit, deletion and restore replay the original method an
 });
 
 test("stale deletion requires another review and confirmation using the updated version", async () => {
-  const ui = harness(); await ui.settle(); await ui.click(ui.byLabel("Eliminar factura FAC-1")); await ui.setControl("Confirmo eliminar esta factura del reporte", true);
+  const ui = harness(); await ui.settle(); await ui.invoiceAction("delete"); await ui.setControl("Confirmo eliminar esta factura del reporte", true);
   ui.data[0].version = 2; ui.data[0].paidAmount = 100; ui.data[0].balance = 900;
   await ui.submit(); assert.match(textOf(ui.find("dialog")), /La factura cambió/);
   await ui.click(ui.find("button", "Actualizar factura y revisar")); assert.equal(ui.field("Confirmo eliminar esta factura del reporte").props.checked, false);
@@ -473,17 +569,17 @@ test("pending invoices from every month remain visible while month limits paid a
 test("search applies to pending invoices across all months and to paid invoices in the selected month", async () => {
   const ui = harness({ invoices: [invoice(1, { provider: "BUSCADO antiguo", date: "2020-01-01" }), invoice(2, { provider: "BUSCADO pagado", paidAmount: 1000, balance: 0, status: "PAGADA" }), invoice(3, { provider: "BUSCADO fuera del mes", date: "2025-02-01", paidAmount: 1000, balance: 0, status: "PAGADA" }), invoice(4)] }); await ui.settle();
   await ui.setControl("Buscar factura o proveedor", "BUSCADO"); await ui.apply();
-  assert.match(ui.text(), /BUSCADO antiguo/); assert.match(ui.text(), /BUSCADO pagado/); assert.doesNotMatch(ui.text(), /BUSCADO fuera del mes|Proveedor 4/);
+  assert.match(invoiceRowsText(ui), /BUSCADO antiguo/); assert.match(invoiceRowsText(ui), /BUSCADO pagado/); assert.doesNotMatch(invoiceRowsText(ui), /BUSCADO fuera del mes|Proveedor 4/);
   assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 2\.0002 facturas.*Saldo pendiente\$ 1\.000/); ui.unmount();
 });
 
 test("paying an old pending invoice removes it globally and identifies its paid month without losing its payment", async () => {
   const ui = harness({ invoices: [invoice(1, { date: "2025-02-01", dueDate: "2025-03-01", dueStatus: "VENCIDA" })] }); await ui.settle();
-  await ui.click(ui.find("button", "Abonar / pagar")); await ui.submit();
+  await ui.openPayment(); await ui.submit();
   assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].paidAmount, 1000); assert.equal(ui.data[0].date, "2025-02-01");
   assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(ui.text(), /FACTURAS PAGAS0/); assert.match(ui.text(), /Disponible en pagadas de febrero de 2025/);
   await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.apply();
-  assert.match(ui.text(), /FACTURAS PAGAS1/); await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); assert.match(textOf(ui.find("dialog")), /16 de nov de 2026\$ 1\.000/); ui.unmount();
+  assert.match(ui.text(), /FACTURAS PAGAS1/); await ui.openDetail(); assert.match(textOf(ui.find("dialog")), /16 de nov de 2026\$ 1\.000/); ui.unmount();
 });
 
 test("global pending totals and due counts include every page and stay stable when only paid month changes", async () => {
@@ -499,25 +595,25 @@ test("global pending totals and due counts include every page and stay stable wh
 const pdfFile = (name = "comprobante.pdf", text = "%PDF-1.4\nComprobante sintético QA\n%%EOF") => new File([text], name, { type: "application/pdf", lastModified: 1794924000000 });
 
 test("payment and optional PDF are saved in a single multipart request and history exposes only the protected download", async () => {
-  const ui = harness(); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar"));
+  const ui = harness(); await ui.settle(); await ui.openPayment();
   assert.equal(ui.field("Comprobante PDF (opcional)").props.accept, ".pdf,application/pdf");
   await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "400,25"); await ui.setControl("Referencia o comprobante (opcional)", "Transferencia QA");
   const file = pdfFile(); await ui.selectFile("Comprobante PDF (opcional)", file); assert.match(textOf(ui.find("dialog")), /comprobante\.pdf/); await ui.submit();
   const writes = ui.calls.filter((call) => call.method === "POST"); assert.equal(writes.length, 1); const write = writes[0];
   assert.equal(write.path, "/api/pago-facturas/1/payments"); assert.equal(write.multipart, true); assert.equal(write.headers, undefined); assert.equal(write.body.amount, 400.25); assert.equal(write.body.reference, "Transferencia QA"); assert.equal(write.receipt.name, file.name); assert.equal(await write.receipt.text(), await file.text());
   assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].balance, 599.75); assert.deepEqual(ui.data[0].payments[0].receipt, { id: "receipt-1-1", filename: file.name, size: file.size });
-  await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); const link = ui.byLabel("Descargar comprobante PDF del pago 1");
+  await ui.openDetail(); const link = ui.byLabel("Descargar comprobante PDF del pago 1");
   assert.equal(link.props.href, "/api/pago-facturas/1/payments/1/receipt"); assert.equal(link.props.target, "_blank"); assert.match(link.props.rel, /noopener/); assert.doesNotMatch(textOf(ui.find("dialog")), /Adjuntar PDF|Reemplazar|Eliminar comprobante/);
   assert.equal(ui.calls.some((call) => call.path.endsWith("/receipt")), false, "Opening history must not fetch binary data"); ui.unmount();
 });
 
 test("payment without a receipt remains the existing JSON request", async () => {
-  const ui = harness(); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar")); await ui.submit();
+  const ui = harness(); await ui.settle(); await ui.openPayment(); await ui.submit();
   const write = ui.calls.find((call) => call.method === "POST"); assert.equal(write.multipart, false); assert.deepEqual(write.headers, { "Content-Type": "application/json" }); assert.equal(write.receipt, null); assert.equal(write.body.mode, "full"); assert.equal(ui.data[0].payments[0].receipt, null); ui.unmount();
 });
 
 test("PDF selection validates size and type, preserves existing file and fields, and permits replacing or removing before submission", async () => {
-  const ui = harness(); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar")); await ui.setControl("Referencia o comprobante (opcional)", "Referencia conservada");
+  const ui = harness(); await ui.settle(); await ui.openPayment(); await ui.setControl("Referencia o comprobante (opcional)", "Referencia conservada");
   const first = pdfFile("primero.pdf"); await ui.selectFile("Comprobante PDF (opcional)", first);
   for (const file of [new File(["image"], "imagen.png", { type: "image/png" }), new File(["fake"], "documento.pdf", { type: "text/plain" }), new File([], "vacio.pdf", { type: "application/pdf" }), new File([new Uint8Array(5 * 1024 * 1024 + 1)], "grande.pdf", { type: "application/pdf" })]) {
     await ui.selectFile("Comprobante PDF (opcional)", file); await ui.submit(); assert.match(textOf(ui.find("dialog")), /primero\.pdf/); assert.equal(ui.field("Referencia o comprobante (opcional)").props.value, "Referencia conservada"); assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
@@ -528,7 +624,7 @@ test("PDF selection validates size and type, preserves existing file and fields,
 });
 
 test("ambiguous payment with a PDF locks the selected file and replays exactly the same payment once", async () => {
-  const ui = harness({ postOutcomes: ["commit-network"] }); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar"));
+  const ui = harness({ postOutcomes: ["commit-network"] }); await ui.settle(); await ui.openPayment();
   await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "250"); await ui.selectFile("Comprobante PDF (opcional)", pdfFile()); await ui.submit();
   assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.field("Comprobante PDF (opcional)").props.disabled, true); assert.equal(ui.find("button", "Quitar archivo").props.disabled, true); assert.equal(ui.find("button", "Cancelar").props.disabled, true);
   await ui.submit(); const writes = ui.calls.filter((call) => call.method === "POST"); assert.equal(writes.length, 2); assert.deepEqual(writes[1].body, writes[0].body); assert.equal(writes[1].receipt.name, writes[0].receipt.name); assert.deepEqual(await writes[1].receipt.arrayBuffer(), await writes[0].receipt.arrayBuffer());
@@ -538,7 +634,7 @@ test("ambiguous payment with a PDF locks the selected file and replays exactly t
 test("an earlier payment can receive a PDF without registering another payment or changing its balance", async () => {
   const oldPayment = { id: 7, date: "2026-11-10", amount: 1000, reference: "Antiguo", receipt: null, createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
   const ui = harness({ invoices: [invoice(1, { paidAmount: 1000, balance: 0, status: "PAGADA", paymentCount: 1, payments: [oldPayment] })] }); await ui.settle();
-  await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); await ui.click(ui.byLabel("Adjuntar PDF al pago 7")); await ui.submit();
+  await ui.openDetail(); await ui.click(ui.byLabel("Adjuntar PDF al pago 7")); await ui.submit();
   assert.match(textOf(ui.find("dialog")), /Selecciona el PDF/); assert.equal(ui.calls.filter((call) => call.method === "POST").length, 0);
   await ui.selectFile("Comprobante PDF", pdfFile("anterior.pdf")); await ui.submit();
   const write = ui.calls.find((call) => call.method === "POST"); assert.equal(write.path, "/api/pago-facturas/1/payments/7/receipt"); assert.deepEqual(Object.keys(write.body), ["requestId"]); assert.equal(write.multipart, true);
@@ -548,21 +644,21 @@ test("an earlier payment can receive a PDF without registering another payment o
 
 test("ambiguous attachment keeps its own request and file until confirmed, then refreshes history without a duplicate", async () => {
   const payment = { id: 1, date: "2026-11-10", amount: 400, reference: null, createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
-  const ui = harness({ invoices: [invoice(1, { paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })], postOutcomes: ["commit-network"] }); await ui.settle(); await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); await ui.click(ui.byLabel("Adjuntar PDF al pago 1")); await ui.selectFile("Comprobante PDF", pdfFile()); await ui.submit();
+  const ui = harness({ invoices: [invoice(1, { paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })], postOutcomes: ["commit-network"] }); await ui.settle(); await ui.openDetail(); await ui.click(ui.byLabel("Adjuntar PDF al pago 1")); await ui.selectFile("Comprobante PDF", pdfFile()); await ui.submit();
   assert.equal(ui.find("button", "Volver al historial").props.disabled, true); assert.equal(ui.field("Comprobante PDF").props.disabled, true); assert.match(textOf(ui.find("dialog")), /Reintentar registro/);
   await ui.submit(); const writes = ui.calls.filter((call) => call.method === "POST"); assert.equal(writes.length, 2); assert.deepEqual(writes[1].body, writes[0].body); assert.equal(await writes[1].receipt.text(), await writes[0].receipt.text());
   assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].paidAmount, 400); assert.equal(ui.data[0].balance, 600); assert.match(textOf(ui.find("dialog")), /Descargar PDF/); ui.unmount();
 });
 
 test("a rejected receipt leaves all payment fields and the PDF available for correction and retry", async () => {
-  const ui = harness({ postOutcomes: ["422"] }); await ui.settle(); await ui.click(ui.find("button", "Abonar / pagar")); await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "200,50"); await ui.setControl("Referencia o comprobante (opcional)", "Referencia QA"); await ui.selectFile("Comprobante PDF (opcional)", pdfFile()); await ui.submit();
+  const ui = harness({ postOutcomes: ["422"] }); await ui.settle(); await ui.openPayment(); await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "200,50"); await ui.setControl("Referencia o comprobante (opcional)", "Referencia QA"); await ui.selectFile("Comprobante PDF (opcional)", pdfFile()); await ui.submit();
   assert.equal(ui.data[0].paymentCount, 0); assert.equal(ui.field("Valor del abono (COP)").props.value, "200,50"); assert.equal(ui.field("Referencia o comprobante (opcional)").props.value, "Referencia QA"); assert.match(textOf(ui.find("dialog")), /comprobante\.pdf/); assert.equal(ui.field("Comprobante PDF (opcional)").props.disabled, false);
   await ui.submit(); const writes = ui.calls.filter((call) => call.method === "POST"); assert.deepEqual(writes[1].body, writes[0].body); assert.equal(await writes[1].receipt.text(), await writes[0].receipt.text()); assert.equal(ui.data[0].paymentCount, 1); ui.unmount();
 });
 
 test("a concurrent receipt attachment cannot be replaced and refreshed history exposes the existing proof", async () => {
   const payment = { id: 1, date: "2026-11-10", amount: 400, reference: null, receipt: null, createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
-  const ui = harness({ invoices: [invoice(1, { paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })] }); await ui.settle(); await ui.click(ui.byLabel("Ver pagos de factura FAC-1")); await ui.click(ui.byLabel("Adjuntar PDF al pago 1")); await ui.selectFile("Comprobante PDF", pdfFile("seleccionado.pdf"));
+  const ui = harness({ invoices: [invoice(1, { paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })] }); await ui.settle(); await ui.openDetail(); await ui.click(ui.byLabel("Adjuntar PDF al pago 1")); await ui.selectFile("Comprobante PDF", pdfFile("seleccionado.pdf"));
   ui.data[0].payments[0].receipt = { id: "existing-receipt", filename: "guardado-por-otro-admin.pdf", size: 100 };
   await ui.submit(); assert.match(textOf(ui.find("dialog")), /ya tiene comprobante/); assert.match(textOf(ui.find("dialog")), /seleccionado\.pdf/);
   await ui.click(ui.find("button", "Actualizar factura y revisar")); assert.equal(ui.find("button", "Guardar comprobante").props.disabled, true); assert.equal(ui.field("Comprobante PDF").props.disabled, true);

@@ -17,6 +17,7 @@ export type InvoiceItem = {
 };
 
 export type InvoiceProvider = { id: number; name: string; version: number; active: boolean };
+export type InvoiceProviderOption = Pick<InvoiceProvider, "id" | "name" | "active">;
 
 export type InvoicePayment = {
   id: number | string;
@@ -36,6 +37,7 @@ export type InvoicePage = {
   pageSize: 10;
   total: number;
   pages: number;
+  providerOptions?: InvoiceProviderOption[];
 };
 
 export type InvoiceReport = {
@@ -43,6 +45,7 @@ export type InvoiceReport = {
   pendingScope: "ALL_MONTHS";
   paidMonth: string;
   today: string;
+  providerOptions?: InvoiceProviderOption[];
   summary: {
     invoiceCount: number;
     totalAmount: number;

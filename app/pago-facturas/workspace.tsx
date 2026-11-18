@@ -6,7 +6,7 @@ import DashboardIcon from "@/app/dashboard/_components/dashboard-icon";
 import { DashboardSidebar, type NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
 import { formatoPesos } from "@/lib/monthly-reports-view";
 import { triggerLiveRefresh } from "@/lib/use-live-refresh";
-import type { InvoiceDetail, InvoiceItem, InvoicePage, InvoicePayment, InvoiceProvider, InvoiceReport } from "./types";
+import type { InvoiceDetail, InvoiceItem, InvoicePage, InvoicePayment, InvoiceProvider, InvoiceProviderOption, InvoiceReport } from "./types";
 import InvoiceReminderStatus from "./reminder-status";
 import styles from "./pago-facturas.module.css";
 
@@ -81,26 +81,24 @@ function ReceiptInput({ file, error, disabled, required = false, onChange }: { f
   return <div className={styles.receiptInput}><label>{required ? "Comprobante PDF" : "Comprobante PDF (opcional)"}<input type="file" accept=".pdf,application/pdf" disabled={disabled} autoFocus={required} onChange={(event) => { const selected = event.currentTarget.files?.[0]; if (selected) onChange(selected); event.currentTarget.value = ""; }} aria-describedby="receipt-help" aria-invalid={Boolean(error)} /></label><p id="receipt-help">Solo PDF, máximo 5 MB. Queda asociado a este pago.</p>{file && <div className={styles.selectedReceipt}><strong>{file.name}</strong><span>{(file.size / 1024).toLocaleString("es-CO", { maximumFractionDigits: 1 })} KB</span></div>}{(file || error) && <button type="button" className={styles.attachReceiptButton} disabled={disabled} onClick={() => onChange(null)}>Quitar archivo</button>}{error && <p className={styles.receiptError} role="alert">{error}</p>}</div>;
 }
 
-function InvoiceColumn({ paid, month, page, loading, failed, onPage, onPayment, onHistory, onEdit, onDelete }: {
+function InvoiceColumn({ paid, month, page, loading, failed, onPage, onDetail }: {
   paid: boolean; month: string; page?: InvoicePage; loading: boolean; failed: boolean;
   onPage: (page: number) => void;
-  onPayment: (invoice: InvoiceItem, trigger: HTMLButtonElement) => void;
-  onHistory: (invoice: InvoiceItem, trigger: HTMLButtonElement) => void;
-  onEdit: (invoice: InvoiceItem, trigger: HTMLButtonElement) => void;
-  onDelete: (invoice: InvoiceItem, trigger: HTMLButtonElement) => void;
+  onDetail: (invoice: InvoiceItem, trigger: HTMLButtonElement) => void;
 }) {
   const heading = paid ? "FACTURAS PAGAS" : "FACTURAS PENDIENTES";
   return <section className={styles.column} aria-labelledby={paid ? "paid-title" : "pending-title"} aria-busy={loading}>
     <header className={styles.columnHeader}><div><span className={`${styles.columnIcon} ${paid ? styles.paidIcon : ""}`}><DashboardIcon name={paid ? "approvals" : "document"} /></span><h2 id={paid ? "paid-title" : "pending-title"}>{heading}</h2></div><span className={styles.countBadge}>{loading || !page ? "—" : count(page.total)}</span></header>
     <p className={styles.columnScope}>{paid ? `Facturas de ${monthLabel(month)}` : "Todas las pendientes, de cualquier mes"}</p>
-    {loading ? <div className={styles.empty} role="status"><DashboardIcon name="refresh" /><p>Cargando facturas…</p></div> : failed && !page ? <div className={styles.empty}><p>No fue posible cargar las facturas.</p></div> : page?.items.length ? <div className={styles.invoiceList}>{page.items.map((invoice) => <article className={styles.invoice} key={invoice.id}>
-      <div className={styles.invoiceHeading}><span className={styles.invoiceNumber}>Factura {invoice.number}</span><span className={`${styles.badge} ${paid ? styles.badgePaid : styles.badgePending}`}>{paid ? "Pagada" : invoice.paidAmount > 0 ? "Abono parcial" : "Pendiente"}</span></div>
-      <h3>{invoice.provider}</h3><p className={styles.invoiceDate}><DashboardIcon name="calendar" className="h-4 w-4" />{dateLabel(invoice.date)}</p>
-      <InvoiceDue invoice={invoice} />
-      <dl className={styles.invoiceAmounts}><div><dt>Valor factura</dt><dd>{formatoPesos(invoice.amount)}</dd></div><div><dt>Abonado</dt><dd>{formatoPesos(invoice.paidAmount)}</dd></div><div><dt>Saldo</dt><dd className={!paid ? styles.pendingBalance : undefined}>{formatoPesos(invoice.balance)}</dd></div></dl>
-      <div className={styles.invoiceActions}>{!paid && <button type="button" className={styles.payButton} onClick={(event) => onPayment(invoice, event.currentTarget)}>Abonar / pagar<DashboardIcon name="arrow" className="h-4 w-4" /></button>}<button type="button" className={styles.historyButton} onClick={(event) => onHistory(invoice, event.currentTarget)} aria-label={`Ver pagos de factura ${invoice.number}`}>Ver pagos ({count(invoice.paymentCount)})</button></div>
-      <div className={styles.managementActions}><button type="button" onClick={(event) => onEdit(invoice, event.currentTarget)} aria-label={`Editar factura ${invoice.number}`}>Editar</button><button type="button" className={styles.deleteLink} onClick={(event) => onDelete(invoice, event.currentTarget)} aria-label={`Eliminar factura ${invoice.number}`}>Eliminar</button></div>
-    </article>)}</div> : <div className={styles.empty}><DashboardIcon name={paid ? "approvals" : "document"} /><strong>{paid ? "Sin facturas pagas" : "Sin facturas pendientes"}</strong><p>{paid ? "No hay resultados para el mes y la búsqueda seleccionados." : "No hay facturas pendientes que coincidan con la búsqueda."}</p></div>}
+    {loading ? <div className={styles.empty} role="status"><DashboardIcon name="refresh" /><p>Cargando facturas…</p></div> : failed && !page ? <div className={styles.empty}><p>No fue posible cargar las facturas.</p></div> : page?.items.length ? <div className={styles.invoiceList}>{page.items.map((invoice) => {
+      const due = paid ? null : invoice.dueStatus;
+      const dueLabel = due === "VENCIDA" ? "Vencida" : due === "HOY" ? "Vence hoy" : due === "PROXIMA" ? "Próxima a vencer" : null;
+      return <article className={styles.invoice} key={invoice.id}>
+        <div className={styles.rowIdentity}><h3 title={invoice.provider}>{invoice.provider}</h3><span className={styles.invoiceNumber} title={`Factura ${invoice.number}`}>Factura {invoice.number}</span><span className={styles.rowDue}>{invoice.dueDate ? `Vence ${dateLabel(invoice.dueDate)}` : "Vencimiento sin registrar"}</span></div>
+        <div className={styles.rowAmount}><span>{paid ? "Valor factura" : "Saldo pendiente"}</span><strong className={!paid ? styles.pendingBalance : undefined}>{formatoPesos(paid ? invoice.amount : invoice.balance)}</strong><span className={`${styles.badge} ${paid ? styles.badgePaid : due === "VENCIDA" ? styles.overdueBadge : styles.badgePending}`}>{paid ? "Pagada" : dueLabel || (invoice.paidAmount > 0 ? "Abono parcial" : "Pendiente")}</span></div>
+        <button type="button" className={styles.detailButton} aria-label={`Ver detalle de factura ${invoice.number}`} onClick={(event) => onDetail(invoice, event.currentTarget)}>Ver detalle<DashboardIcon name="arrow" className="h-4 w-4" /></button>
+      </article>;
+    })}</div> : <div className={styles.empty}><DashboardIcon name={paid ? "approvals" : "document"} /><strong>{paid ? "Sin facturas pagas" : "Sin facturas pendientes"}</strong><p>{paid ? "No hay resultados para el mes y los filtros seleccionados." : "No hay facturas pendientes que coincidan con los filtros."}</p></div>}
     <footer className={styles.pagination}><span>{loading ? "Consultando…" : page ? `${count(page.total)} facturas · 10 por página` : "Sin datos confirmados"}</span><nav aria-label={`Páginas de ${paid ? "facturas pagas" : "facturas pendientes"}`}><button type="button" aria-label={`Página anterior de ${paid ? "pagas" : "pendientes"}`} disabled={loading || !page || page.page <= 1} onClick={() => onPage((page?.page ?? 1) - 1)}><DashboardIcon name="chevron" className="h-4 w-4 rotate-90" /></button><span>{page ? `Página ${page.page} de ${Math.max(1, page.pages)}` : "Página —"}</span><button type="button" aria-label={`Página siguiente de ${paid ? "pagas" : "pendientes"}`} disabled={loading || !page || page.page >= page.pages} onClick={() => onPage((page?.page ?? 1) + 1)}><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button></nav></footer>
   </section>;
 }
@@ -111,8 +109,9 @@ type InvoiceModalKind = "payment" | "history" | "edit" | "delete" | "restore";
 type Modal = { kind: "create" | "providers" } | { kind: InvoiceModalKind; invoice: InvoiceItem };
 
 export default function InvoicePaymentsWorkspace({ today, userName }: { today: string; userName: string }) {
-  const [filters, setFilters] = useState({ month: today.slice(0, 7), search: "" });
+  const [filters, setFilters] = useState({ month: today.slice(0, 7), search: "", providerId: "" });
   const [applied, setApplied] = useState(filters);
+  const [providerOptions, setProviderOptions] = useState<InvoiceProviderOption[]>([]);
   const [pendingPage, setPendingPage] = useState(1);
   const [paidPage, setPaidPage] = useState(1);
   const [report, setReport] = useState<InvoiceReport | null>(null);
@@ -149,20 +148,23 @@ export default function InvoicePaymentsWorkspace({ today, userName }: { today: s
   const requestId = useRef("");
   const savedIntent = useRef<MutationIntent | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const pageTitleRef = useRef<HTMLHeadingElement>(null);
+  const dialogTitleRef = useRef<HTMLHeadingElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const modalKind = modal?.kind;
+  const modalOpen = Boolean(modal);
   const modalInvoiceId = modal && "invoice" in modal ? modal.invoice.id : null;
   const attachingReceipt = modalKind === "history" && attachmentPaymentId !== null;
   const locked = saving || uncertain;
-  const query = new URLSearchParams({ month: applied.month, search: applied.search, pendingPage: String(pendingPage), paidPage: String(paidPage) }).toString();
-  const unapplied = filters.month !== applied.month || filters.search.trim() !== applied.search;
-  const deletedQuery = new URLSearchParams({ deleted: "1", month: applied.month, search: applied.search, page: String(deletedPage) }).toString();
+  const query = new URLSearchParams({ month: applied.month, search: applied.search, pendingPage: String(pendingPage), paidPage: String(paidPage), providerId: applied.providerId }).toString();
+  const unapplied = filters.month !== applied.month || filters.search.trim() !== applied.search || filters.providerId !== applied.providerId;
+  const deletedQuery = new URLSearchParams({ deleted: "1", month: applied.month, search: applied.search, page: String(deletedPage), providerId: applied.providerId }).toString();
   const needsProviders = modalKind === "create" || modalKind === "edit" || modalKind === "providers";
 
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/pago-facturas?${query}`, { cache: "no-store", signal: controller.signal })
-      .then(readJson<InvoiceReport>).then((value) => { if (!controller.signal.aborted) { setReport(value); setLoadError(""); } })
+      .then(readJson<InvoiceReport>).then((value) => { if (!controller.signal.aborted) { setReport(value); if (value.providerOptions) setProviderOptions(value.providerOptions); setLoadError(""); } })
       .catch((error) => { if (!controller.signal.aborted) setLoadError(error instanceof Error ? error.message : "No fue posible cargar las facturas."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -189,13 +191,15 @@ export default function InvoicePaymentsWorkspace({ today, userName }: { today: s
   }, [needsProviders, providerReload]);
 
   useEffect(() => {
-    if (!modalKind) return;
+    if (!modalOpen) return;
     const dialog = dialogRef.current;
     dialog?.showModal();
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { dialog?.close(); document.body.style.overflow = overflow; };
-  }, [modalKind, modalInvoiceId]);
+  }, [modalOpen]);
+
+  useEffect(() => { if (modalKind) dialogTitleRef.current?.focus({ preventScroll: true }); }, [modalKind, attachingReceipt]);
 
   useEffect(() => {
     if (!modalInvoiceId) return;
@@ -211,7 +215,7 @@ export default function InvoicePaymentsWorkspace({ today, userName }: { today: s
   function applyFilters(event: FormEvent) {
     event.preventDefault();
     if (!/^(?:19\d{2}|20\d{2}|2100)-(?:0[1-9]|1[0-2])$/.test(filters.month)) return;
-    setApplied({ month: filters.month, search: filters.search.trim() });
+    setApplied({ month: filters.month, search: filters.search.trim(), providerId: filters.providerId });
     setPendingPage(1); setPaidPage(1); setDeletedPage(1); setDeletedReport(null); setReport(null); setNotice(""); refreshReport();
   }
   function changePage(kind: "pending" | "paid", page: number) {
@@ -225,8 +229,10 @@ export default function InvoicePaymentsWorkspace({ today, userName }: { today: s
     setProviderLoading(true); setProviderError("");
     setModal({ kind: "create" });
   }
-  function openInvoice(kind: InvoiceModalKind, invoice: InvoiceItem, trigger: HTMLButtonElement) {
-    triggerRef.current = trigger; resetIntent(); setUncertain(false); setDetail(null); setDetailError(""); setDetailLoading(true);
+  function openInvoice(kind: InvoiceModalKind, invoice: InvoiceItem, trigger?: HTMLButtonElement) {
+    if (locked) return;
+    if (trigger) triggerRef.current = trigger;
+    resetIntent(); setUncertain(false); setDetail(null); setDetailError(""); setDetailLoading(true);
     setReceiptFile(null); setReceiptError(""); setAttachmentPaymentId(null); setReceiptNotice("");
     setConfirmedDelete(false); if (kind === "edit") { setProviderLoading(true); setProviderError(""); }
     setPaymentDraft({ date: today, mode: "full", amount: "", reference: "" }); setModal({ kind, invoice });
@@ -236,8 +242,9 @@ export default function InvoicePaymentsWorkspace({ today, userName }: { today: s
   function refreshProviders() { if (locked) return; resetIntent(); setConfirmedDelete(false); setProviderDraft({ mode: "create", provider: null, name: "" }); setProviderLoading(true); setProviderError(""); setProviderReload((value) => value + 1); }
   function closeModal() {
     if (locked) return;
-    dialogRef.current?.close(); setModal(null); triggerRef.current?.focus({ preventScroll: true });
+    dialogRef.current?.close(); setModal(null); restoreFocus();
   }
+  function restoreFocus() { if (triggerRef.current?.isConnected) triggerRef.current.focus({ preventScroll: true }); else pageTitleRef.current?.focus({ preventScroll: true }); }
   function refreshInvoice() {
     if (locked) return;
     resetIntent(); setConfirmedDelete(false); setDetailLoading(true); setDetailError(""); setDetail(null); setDetailReload((value) => value + 1);
@@ -303,13 +310,14 @@ export default function InvoicePaymentsWorkspace({ today, userName }: { today: s
       const result = await mutateRecord(intent);
       setUncertain(false); savedIntent.current = null;
       if (modal.kind === "providers") {
+        setProviderOptions((items) => [...items.filter((item) => item.id !== result.provider!.id), result.provider!].sort((a, b) => a.name.localeCompare(b.name, "es-CO")));
         setNotice(`Proveedor ${result.provider!.name} ${providerDraft.mode === "delete" ? "eliminado del catálogo activo" : "guardado"}.`);
         setProviderDraft({ mode: "create", name: "", provider: null }); setConfirmedDelete(false); resetIntent(); setProviderLoading(true); setProviderReload((value) => value + 1); return;
       }
       const invoice = result.invoice!;
       if (attachingReceipt) { setDetail(invoice as InvoiceDetail); setAttachmentPaymentId(null); setReceiptFile(null); setReceiptError(""); setReceiptNotice("Comprobante PDF guardado."); resetIntent(); return; }
       setNotice(modal.kind === "create" ? `Factura ${invoice.number} registrada para ${monthLabel(invoice.date.slice(0, 7))}.` : modal.kind === "edit" ? `Factura ${invoice.number} actualizada. Sus pagos se conservan.` : modal.kind === "delete" ? `Factura ${invoice.number} eliminada del reporte. Puedes restaurarla en Facturas eliminadas.` : modal.kind === "restore" ? `Factura ${invoice.number} restaurada${invoice.status === "PAGADA" ? ` en pagadas de ${monthLabel(invoice.date.slice(0, 7))}` : " en pendientes"}.` : invoice.status === "PAGADA" ? `Factura pagada: ${invoice.number}. Disponible en pagadas de ${monthLabel(invoice.date.slice(0, 7))}.` : `Abono registrado: ${invoice.number} · saldo ${formatoPesos(invoice.balance)}.`);
-      dialogRef.current?.close(); setModal(null); triggerRef.current?.focus({ preventScroll: true }); refreshReport();
+      dialogRef.current?.close(); setModal(null); pageTitleRef.current?.focus({ preventScroll: true }); refreshReport();
     } catch (error) {
       setUncertain(error instanceof SaveError && error.uncertain);
       setFormCode(error instanceof SaveError ? error.code : "");
@@ -320,31 +328,31 @@ export default function InvoicePaymentsWorkspace({ today, userName }: { today: s
   const modalInvoice = detail || (modal && "invoice" in modal ? modal.invoice : null);
   const partialAmount = moneyInput(paymentDraft.amount);
   const projectedBalance = detail ? paymentDraft.mode === "full" ? 0 : partialAmount === null ? null : (Math.round(detail.balance * 100) - Math.round(partialAmount * 100)) / 100 : null;
-  const heading = attachingReceipt ? "Adjuntar comprobante PDF" : modal?.kind === "create" ? "Nueva factura" : modal?.kind === "payment" ? "Registrar pago" : modal?.kind === "edit" ? "Editar factura" : modal?.kind === "delete" ? "Eliminar factura" : modal?.kind === "restore" ? "Restaurar factura" : modal?.kind === "providers" ? "Gestionar proveedores" : "Historial de pagos";
+  const heading = attachingReceipt ? "Adjuntar comprobante PDF" : modal?.kind === "create" ? "Nueva factura" : modal?.kind === "payment" ? "Registrar pago" : modal?.kind === "edit" ? "Editar factura" : modal?.kind === "delete" ? "Eliminar factura" : modal?.kind === "restore" ? "Restaurar factura" : modal?.kind === "providers" ? "Gestionar proveedores" : "Detalle de factura";
   const invoiceFieldsLocked = locked || providerLoading || Boolean(providerError) || (modal?.kind === "edit" && (detailLoading || Boolean(detailError) || !detail));
   const freshDetailUnavailable = detailLoading || Boolean(detailError) || !detail;
   const submitLabel = uncertain ? modal?.kind === "payment" ? "Reintentar pago" : "Reintentar registro" : attachingReceipt ? "Guardar comprobante" : modal?.kind === "create" ? "Registrar factura" : modal?.kind === "edit" ? "Guardar cambios" : modal?.kind === "delete" ? "Eliminar factura" : modal?.kind === "restore" ? "Restaurar factura" : modal?.kind === "providers" ? providerDraft.mode === "delete" ? "Eliminar proveedor" : providerDraft.mode === "edit" ? "Guardar proveedor" : "Crear proveedor" : "Registrar pago";
   const attachmentPayment = detail?.payments.find((payment) => payment.id === attachmentPaymentId);
 
   return <div className={styles.shell}><DashboardSidebar activeHref="/pago-facturas" coverageLabel="Administración central" items={navigation} /><div className={styles.workspace}><main className={styles.main}>
-    <header className={styles.header}><div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><span>/</span><span>Pago de facturas</span></nav><h1>PAGO DE FACTURAS</h1><p>Control mensual de facturas, abonos y pagos.</p></div><div className={styles.headerActions}><span className={styles.identity}><DashboardIcon name="user" />{userName}</span><button type="button" className={styles.secondaryButton} onClick={(event) => openProviders(event.currentTarget)}>Gestionar proveedores</button><button type="button" className={styles.primaryButton} onClick={(event) => openCreate(event.currentTarget)}><DashboardIcon name="document-add" />Nueva factura</button></div></header>
+    <header className={styles.header}><div><nav className={styles.breadcrumb} aria-label="Ruta de navegación"><Link href="/dashboard">Inicio</Link><span>/</span><span>Pago de facturas</span></nav><h1 ref={pageTitleRef} tabIndex={-1}>PAGO DE FACTURAS</h1><p>Control mensual de facturas, abonos y pagos.</p></div><div className={styles.headerActions}><span className={styles.identity}><DashboardIcon name="user" />{userName}</span><button type="button" className={styles.secondaryButton} onClick={(event) => openProviders(event.currentTarget)}>Gestionar proveedores</button><button type="button" className={styles.primaryButton} onClick={(event) => openCreate(event.currentTarget)}><DashboardIcon name="document-add" />Nueva factura</button></div></header>
     <InvoiceReminderStatus />
-    <form className={styles.filters} onSubmit={applyFilters}><label>Mes de pagadas y eliminadas<input type="month" value={filters.month} min="1900-01" max="2100-12" required onChange={(event) => setFilters((value) => ({ ...value, month: event.target.value }))} /></label><label className={styles.search}>Buscar factura o proveedor<input type="search" value={filters.search} maxLength={160} placeholder="Número o proveedor" onChange={(event) => setFilters((value) => ({ ...value, search: event.target.value }))} /></label><button type="submit" className={styles.secondaryButton} disabled={loading}><DashboardIcon name="search" />Consultar</button><p className={styles.filterNote}>Las pendientes incluyen todos los meses. El mes filtra pagadas y eliminadas por fecha de factura.{unapplied && <span>Filtros sin aplicar · pulsa Consultar.</span>}</p></form>
+    <form className={styles.filters} onSubmit={applyFilters}><label>Mes de pagadas y eliminadas<input type="month" value={filters.month} min="1900-01" max="2100-12" required onChange={(event) => setFilters((value) => ({ ...value, month: event.target.value }))} /></label><label>Proveedor<select value={filters.providerId} disabled={loading && !providerOptions.length} onChange={(event) => setFilters((value) => ({ ...value, providerId: event.target.value }))}><option value="">Todos los proveedores</option>{filters.providerId && !providerOptions.some((provider) => String(provider.id) === filters.providerId) && <option value={filters.providerId}>Proveedor seleccionado (#{filters.providerId})</option>}{providerOptions.map((provider) => <option key={provider.id} value={String(provider.id)}>{provider.name}{provider.active ? "" : " (inactivo)"}</option>)}</select></label><label className={styles.search}>Buscar factura o proveedor<input type="search" value={filters.search} maxLength={160} placeholder="Número o proveedor" onChange={(event) => setFilters((value) => ({ ...value, search: event.target.value }))} /></label><button type="submit" className={styles.secondaryButton} disabled={loading}><DashboardIcon name="search" />Consultar</button><p className={styles.filterNote}>Las pendientes incluyen todos los meses. El mes filtra pagadas y eliminadas por fecha de factura.{unapplied && <span>Filtros sin aplicar · pulsa Consultar.</span>}</p></form>
     {notice && <p className={styles.notice} role="status">{notice}</p>}
     {loadError && <div className={styles.error} role="alert"><p>{loadError}{report && " Se conservan los últimos datos consultados."}</p><button type="button" className={styles.secondaryButton} onClick={refreshReport} disabled={loading}>Reintentar</button></div>}
     <div className={styles.periodHeading}><h2>Todas las pendientes · pagadas de {monthLabel(applied.month)}</h2><span>Administración central · COP</span></div>
     <section className={styles.metrics} aria-label="Resumen de facturas consultadas" aria-busy={loading}><article><span className={styles.metricIcon}><DashboardIcon name="document" /></span><div><h3>Total facturas</h3><strong>{loading || !report ? "—" : formatoPesos(report.summary.totalAmount)}</strong><p>{loading || !report ? "Consultando…" : `${count(report.summary.invoiceCount)} facturas · pendientes y pagadas consultadas`}</p></div></article><article><span className={`${styles.metricIcon} ${styles.paidIcon}`}><DashboardIcon name="wallet" /></span><div><h3>Abonado</h3><strong>{loading || !report ? "—" : formatoPesos(report.summary.paidAmount)}</strong><p>Pagos registrados de estas facturas</p></div></article><article><span className={styles.metricIcon}><DashboardIcon name="clock" /></span><div><h3>Saldo pendiente</h3><strong>{loading || !report ? "—" : formatoPesos(report.summary.balance)}</strong><p>{loading || !report ? "Consultando…" : `${count(report.summary.pendingCount)} facturas por completar · todos los meses`}</p></div></article></section>
     {!loading && report && typeof report.summary.overdueCount === "number" && typeof report.summary.dueSoonCount === "number" && <div className={styles.dueSummary} aria-label="Resumen de vencimientos"><span className={styles.overdueSummary}><strong>{count(report.summary.overdueCount)}</strong> vencidas</span><span><strong>{count(report.summary.dueSoonCount)}</strong> vencen hoy o en los próximos 7 días</span></div>}
     <p className={styles.orderNote}>Ordenadas por vencimiento · sin fecha al final.</p>
-    <div className={styles.columns}>{([false, true] as const).map((paid) => <InvoiceColumn key={String(paid)} paid={paid} month={applied.month} page={paid ? report?.paid : report?.pending} loading={loading} failed={Boolean(loadError)} onPage={(page) => changePage(paid ? "paid" : "pending", page)} onPayment={(invoice, trigger) => openInvoice("payment", invoice, trigger)} onHistory={(invoice, trigger) => openInvoice("history", invoice, trigger)} onEdit={(invoice, trigger) => openInvoice("edit", invoice, trigger)} onDelete={(invoice, trigger) => openInvoice("delete", invoice, trigger)} />)}</div>
+    <div className={styles.columns}>{([false, true] as const).map((paid) => <InvoiceColumn key={String(paid)} paid={paid} month={applied.month} page={paid ? report?.paid : report?.pending} loading={loading} failed={Boolean(loadError)} onPage={(page) => changePage(paid ? "paid" : "pending", page)} onDetail={(invoice, trigger) => openInvoice("history", invoice, trigger)} />)}</div>
     <section className={styles.deletedSection} aria-label="Facturas eliminadas"><button type="button" className={styles.deletedToggle} aria-expanded={showDeleted} onClick={() => { if (!showDeleted) { setDeletedLoading(true); setDeletedError(""); } setShowDeleted((value) => !value); }}>Facturas eliminadas<DashboardIcon name="chevron" className={showDeleted ? "h-4 w-4 rotate-180" : "h-4 w-4"} /></button>{showDeleted && <><p className={styles.deletedHelp}>Facturas retiradas del reporte de {monthLabel(applied.month)}. Sus pagos se conservan y puedes restaurarlas.</p>{deletedError && <div className={styles.error} role="alert"><p>{deletedError}</p><button type="button" className={styles.secondaryButton} onClick={refreshReport} disabled={deletedLoading}>Reintentar consulta de eliminadas</button></div>}{deletedLoading ? <p role="status" className={styles.deletedHelp}>Consultando facturas eliminadas…</p> : deletedReport ? deletedReport.items.length ? <div className={styles.deletedList}>{deletedReport.items.map((invoice) => <article key={invoice.id}><div><strong>Factura {invoice.number}</strong><p>{invoice.provider}</p><small>{dateLabel(invoice.date)} · Valor {formatoPesos(invoice.amount)} · Abonado {formatoPesos(invoice.paidAmount)}</small></div><div className={styles.deletedActions}><button type="button" className={styles.historyButton} aria-label={`Ver pagos de factura eliminada ${invoice.number}`} onClick={(event) => openInvoice("history", invoice, event.currentTarget)}>Ver pagos ({count(invoice.paymentCount)})</button><button type="button" className={styles.secondaryButton} aria-label={`Restaurar factura ${invoice.number}`} onClick={(event) => openInvoice("restore", invoice, event.currentTarget)}>Restaurar</button></div></article>)}</div> : <p className={styles.deletedHelp}>No hay facturas eliminadas con estos filtros.</p> : null}<footer className={styles.pagination}><span>{deletedLoading ? "Consultando…" : deletedReport ? `${count(deletedReport.total)} facturas · 10 por página` : "Sin datos confirmados"}</span><nav aria-label="Páginas de facturas eliminadas"><button type="button" aria-label="Página anterior de eliminadas" disabled={deletedLoading || !deletedReport || deletedReport.page <= 1} onClick={() => { setDeletedPage((deletedReport?.page ?? 1) - 1); setDeletedLoading(true); }}><DashboardIcon name="chevron" className="h-4 w-4 rotate-90" /></button><span>{deletedReport ? `Página ${deletedReport.page} de ${Math.max(1, deletedReport.pages)}` : "Página —"}</span><button type="button" aria-label="Página siguiente de eliminadas" disabled={deletedLoading || !deletedReport || deletedReport.page >= deletedReport.pages} onClick={() => { setDeletedPage((deletedReport?.page ?? 1) + 1); setDeletedLoading(true); }}><DashboardIcon name="chevron" className="h-4 w-4 -rotate-90" /></button></nav></footer></>}</section>
   </main></div>
 
-    {modal && <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="invoice-dialog-title" aria-describedby="invoice-dialog-context" onCancel={(event) => { event.preventDefault(); closeModal(); }} onClose={() => { setModal(null); triggerRef.current?.focus({ preventScroll: true }); }}>
-      <header className={styles.dialogHeader}><div><p>Pago de facturas</p><h2 id="invoice-dialog-title">{heading}</h2><span id="invoice-dialog-context">{modal.kind === "create" ? "Registra la factura con su fecha real" : modal.kind === "providers" ? "Catálogo de proveedores para tus facturas" : `${modalInvoice?.provider} · Factura ${modalInvoice?.number}`}</span></div><button type="button" className={styles.closeButton} disabled={locked} aria-label="Cerrar ventana" onClick={closeModal}><DashboardIcon name="close" /></button></header>
+    {modal && <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="invoice-dialog-title" aria-describedby="invoice-dialog-context" onCancel={(event) => { event.preventDefault(); closeModal(); }} onClose={() => { setModal(null); restoreFocus(); }}>
+      <header className={styles.dialogHeader}><div><p>Pago de facturas</p><h2 id="invoice-dialog-title" ref={dialogTitleRef} tabIndex={-1}>{heading}</h2><span id="invoice-dialog-context">{modal.kind === "create" ? "Registra la factura con su fecha real" : modal.kind === "providers" ? "Catálogo de proveedores para tus facturas" : `${modalInvoice?.provider} · Factura ${modalInvoice?.number}`}</span></div><button type="button" className={styles.closeButton} disabled={locked} aria-label="Cerrar ventana" onClick={closeModal}><DashboardIcon name="close" /></button></header>
       {"invoice" in modal && <><dl className={styles.detailAmounts}><div><dt>Valor factura</dt><dd>{formatoPesos(modalInvoice?.amount ?? 0)}</dd></div><div><dt>Abonado</dt><dd>{formatoPesos(modalInvoice?.paidAmount ?? 0)}</dd></div><div><dt>Saldo</dt><dd>{formatoPesos(modalInvoice?.balance ?? 0)}</dd></div></dl>{detailLoading && <p role="status" className={styles.help}>Consultando el estado actual de la factura…</p>}{detailError && <div className={styles.error} role="alert"><p>{detailError}</p><button type="button" className={styles.secondaryButton} onClick={refreshInvoice} disabled={locked}>Reintentar consulta</button></div>}{detail?.deletedAt && modal.kind !== "restore" && <p className={styles.help}>Esta factura está eliminada del reporte. Se conserva su historial.</p>}</>}
       {needsProviders && <>{providerLoading && <p role="status" className={styles.help}>Consultando proveedores…</p>}{providerError && <div className={styles.error} role="alert"><p>{providerError}</p><button type="button" className={styles.secondaryButton} onClick={refreshProviders} disabled={locked}>Reintentar proveedores</button></div>}</>}
-      {modal.kind === "history" && !attachingReceipt ? <>{receiptNotice && <p className={styles.catalogNotice} role="status">{receiptNotice}</p>}{!freshDetailUnavailable && detail && <InvoicePaymentHistory invoice={detail} onAttach={beginAttachment} />}<footer className={styles.dialogFooter}><button type="button" className={styles.secondaryButton} onClick={closeModal}>Cerrar</button></footer></> : <form onSubmit={submitForm} noValidate>
+      {modal.kind === "history" && !attachingReceipt ? <>{!freshDetailUnavailable && detail && <><div className={styles.invoiceDetailMeta}><p>Fecha de la factura: <strong>{dateLabel(detail.date)}</strong></p><InvoiceDue invoice={detail} /><span className={`${styles.badge} ${detail.status === "PAGADA" ? styles.badgePaid : styles.badgePending}`}>{detail.status === "PAGADA" ? "Pagada" : detail.paidAmount > 0 ? "Abono parcial" : "Pendiente"}</span></div><div className={styles.detailActions}>{detail.deletedAt ? <button type="button" className={styles.secondaryButton} onClick={() => openInvoice("restore", detail)}>Restaurar factura</button> : <>{detail.balance > 0 && <button type="button" className={styles.primaryButton} onClick={() => openInvoice("payment", detail)}>Abonar / pagar</button>}<button type="button" className={styles.secondaryButton} aria-label={`Editar factura ${detail.number}`} onClick={() => openInvoice("edit", detail)}>Editar</button><button type="button" className={styles.dangerButton} aria-label={`Eliminar factura ${detail.number}`} onClick={() => openInvoice("delete", detail)}>Eliminar</button></>}</div><h3 className={styles.historyTitle}>Historial de pagos ({count(detail.paymentCount)})</h3>{receiptNotice && <p className={styles.catalogNotice} role="status">{receiptNotice}</p>}<InvoicePaymentHistory invoice={detail} onAttach={beginAttachment} /></>}<footer className={styles.dialogFooter}><button type="button" className={styles.secondaryButton} onClick={closeModal}>Cerrar</button></footer></> : <form onSubmit={submitForm} noValidate>
         {attachingReceipt ? <><div className={styles.attachmentContext}>{attachmentPayment && <p>Pago del {dateLabel(attachmentPayment.date)} · <strong>{formatoPesos(attachmentPayment.amount)}</strong></p>}<p>{attachmentPayment?.receipt ? "Este pago ya tiene un comprobante guardado. Vuelve al historial para descargarlo." : "El comprobante quedará asociado a este pago. Una vez guardado, se conserva sin reemplazarlo."}</p></div><ReceiptInput file={receiptFile} error={receiptError} disabled={locked || freshDetailUnavailable || Boolean(attachmentPayment?.receipt)} required onChange={updateReceipt} /></> : modal.kind === "create" || modal.kind === "edit" ? <>
           <div className={styles.formGrid}>
             <label className={styles.fullField}>Proveedor<select value={invoiceDraft.providerId} disabled={invoiceFieldsLocked} onChange={(event) => updateInvoice({ providerId: event.target.value })} autoFocus><option value="">Selecciona un proveedor</option>{modal.kind === "edit" && detail && <option value={detail.providerId ? String(detail.providerId) : "legacy"}>{detail.provider}{!providers.some((provider) => provider.id === detail.providerId && provider.active) ? " (actual · fuera del catálogo activo)" : " (actual)"}</option>}{providers.filter((provider) => provider.active && !(modal.kind === "edit" && provider.id === detail?.providerId)).map((provider) => <option key={provider.id} value={String(provider.id)}>{provider.name}</option>)}</select></label>
