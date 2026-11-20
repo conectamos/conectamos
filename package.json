@@ -37,6 +37,7 @@
     "test:payjoy-cartera": "node --test tests/payjoy-cartera-workspace.test.mjs tests/payjoy-cartera-analysis.test.mjs",
     "test:payjoy-extensiones": "node --test tests/payjoy-extension-access.test.mjs tests/payjoy-extension-provider.test.mjs tests/payjoy-extensions-provider.test.mjs tests/payjoy-extensions-device-store.test.mjs tests/payjoy-extensions-service.test.mjs tests/payjoy-extension-ui.test.mjs",
     "test:payjoy-credito": "node --test tests/payjoy-credit-*.test.mjs",
+    "test:payjoy-40-60": "node --test tests/payjoy-40-60-*.test.mjs",
     "test:payjoy-dapta": "node --test tests/payjoy-dapta-*.test.mjs",
     "db:apply-payjoy-extensiones": "prisma db execute --file scripts/apply-payjoy-extensions-schema.sql && node scripts/verify-payjoy-extensions-schema.mjs && npm run db:apply-payjoy-dapta",
     "db:apply-payjoy-dapta": "prisma db execute --file scripts/apply-payjoy-dapta-schema.sql && node scripts/verify-payjoy-dapta-schema.mjs && npm run db:apply-payjoy-voice",

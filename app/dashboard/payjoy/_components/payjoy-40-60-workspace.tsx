@@ -8,9 +8,29 @@ import { SalesProfile } from "@/app/ventas/_components/sales-dashboard-parts";
 import type { NavigationItem } from "@/app/dashboard/_components/operations-dashboard";
 import { FortySixtyAutosave, normalizeFortySixtyPayload, type FortySixtyAutosaveState, type FortySixtyPayload, type FortySixtyRecord, type StorageLike } from "@/lib/payjoy-40-60-autosave";
 import { colombiaCalendarDate, calendarDayNumber, effectiveLoanAge } from "@/lib/payjoy-40-60-age";
+import { createFortySixtyFilters, filterFortySixtyRows, isFortySixtyColumnFiltered, validateFortySixtyNumericFilter, type FortySixtyFilters, type FortySixtyFilterColumn, type FortySixtyNumericFilter } from "@/lib/payjoy-40-60-filters";
 import styles from "../payjoy-40-60.module.css";
 
 type FortySixtyStatus = "40/60 APROBADO" | "40/60 NO APROBADO";
+type ResultFilterColumn = FortySixtyFilterColumn | "status";
+type NumericColumn = "loanAgeDays" | "numberOfPayments" | "loanRepaymentBiweek";
+const resultColumns: { key: ResultFilterColumn; label: string; numeric?: boolean }[] = [
+  { key: "week", label: "WEEK" }, { key: "merchantName", label: "Comercio" },
+  { key: "deviceTag", label: "DEVICE TAG" }, { key: "loanAgeDays", label: "Edad del crédito", numeric: true },
+  { key: "numberOfPayments", label: "Pagos", numeric: true }, { key: "loanRepaymentBiweek", label: "Cuota quincenal", numeric: true },
+  { key: "cedula", label: "Cédula" }, { key: "status", label: "Resultado" },
+];
+const numericUnits = { loanAgeDays: "días", numberOfPayments: "pagos", loanRepaymentBiweek: "COP" };
+function isNumericColumn(column: ResultFilterColumn): column is NumericColumn {
+  return column === "loanAgeDays" || column === "numberOfPayments" || column === "loanRepaymentBiweek";
+}
+function filterDescription(filters: FortySixtyFilters, column: FortySixtyFilterColumn) {
+  if (!isNumericColumn(column)) return column === "week" ? formatWeekLabel(filters.week) : filters[column];
+  const value = filters[column];
+  if (value.missing === "missing") return "Sin dato";
+  const bounds = [value.min !== "" ? `Desde ${formatNumber(Number(value.min))}` : "", value.max !== "" ? `hasta ${formatNumber(Number(value.max))}` : ""].filter(Boolean);
+  return bounds.length ? bounds.join(" · ") : "Con dato";
+}
 
 type FortySixtyRow = {
   id: string;
@@ -158,6 +178,15 @@ function normalizeWeekKey(value: string) {
   return calendarDate ? calendarDate[0] : text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/^WEEK\s*/g, "").replace(/[^A-Z0-9]+/g, "");
 }
 
+function NumericColumnFields({ column, value, onChange }: { column: NumericColumn; value: FortySixtyNumericFilter; onChange: (change: Partial<FortySixtyNumericFilter>) => void }) {
+  const label = resultColumns.find(item => item.key === column)!.label;
+  return <>
+    <label className={styles.field}>Datos de {label}<select autoFocus value={value.missing} onChange={event => onChange({ missing: event.target.value as FortySixtyNumericFilter["missing"] })}><option value="all">Todos los registros</option><option value="known">Con dato registrado</option><option value="missing">Sin dato registrado</option></select></label>
+    <label className={styles.field}>Desde ({numericUnits[column]})<input type="number" min="0" step={column === "loanRepaymentBiweek" ? "0.01" : "1"} value={value.min} disabled={value.missing === "missing"} placeholder="Sin mínimo" onChange={event => onChange({ min: event.target.value })} /></label>
+    <label className={styles.field}>Hasta ({numericUnits[column]})<input type="number" min="0" step={column === "loanRepaymentBiweek" ? "0.01" : "1"} value={value.max} disabled={value.missing === "missing"} placeholder="Sin máximo" onChange={event => onChange({ max: event.target.value })} /></label>
+  </>;
+}
+
 export default function PayJoyFortySixtyWorkspace({
   puedeEliminar,
   user,
@@ -185,6 +214,13 @@ export default function PayJoyFortySixtyWorkspace({
   const [selectedStatus, setSelectedStatus] = useState<
     "TODOS" | FortySixtyStatus
   >("TODOS");
+  const [columnFilters, setColumnFilters] = useState(createFortySixtyFilters);
+  const [activeFilterColumn, setActiveFilterColumn] = useState<ResultFilterColumn | null>(null);
+  const [filterDraft, setFilterDraft] = useState(createFortySixtyFilters);
+  const [filterStatusDraft, setFilterStatusDraft] = useState<"TODOS" | FortySixtyStatus>("TODOS");
+  const [filterError, setFilterError] = useState("");
+  const filterTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const filterHeaderRefs = useRef<Partial<Record<ResultFilterColumn, HTMLButtonElement | null>>>({});
   const [loading, setLoading] = useState(false);
   const [loadingWeeks, setLoadingWeeks] = useState(false);
   const [message, setMessage] = useState("");
@@ -213,10 +249,10 @@ export default function PayJoyFortySixtyWorkspace({
   const liveSummary = summarizeRows(rows);
   const visibleRows = useMemo(
     () =>
-      rows.filter((row) =>
+      filterFortySixtyRows(rows, columnFilters, data?.ageReferenceDate ?? null, today).filter((row) =>
         selectedStatus === "TODOS" ? true : row.status === selectedStatus
       ),
-    [rows, selectedStatus]
+    [rows, selectedStatus, columnFilters, data?.ageReferenceDate, today]
   );
   const totalEvaluated = liveSummary.aprobados + liveSummary.noAprobados;
   const approvalRate =
@@ -254,7 +290,38 @@ export default function PayJoyFortySixtyWorkspace({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedStatus, rows.length]);
+  }, [selectedStatus, rows.length, columnFilters]);
+
+  const resetColumnFilters = () => {
+    setColumnFilters(createFortySixtyFilters()); setActiveFilterColumn(null); setFilterError(""); setCurrentPage(1);
+  };
+  const closeColumnFilter = () => { setActiveFilterColumn(null); setFilterError(""); (activeFilterColumn ? filterHeaderRefs.current[activeFilterColumn] : filterTriggerRef.current)?.focus({ preventScroll: true }); };
+  const openColumnFilter = (column: ResultFilterColumn, trigger: HTMLButtonElement) => {
+    if (activeFilterColumn === column) { closeColumnFilter(); return; }
+    filterTriggerRef.current = trigger; setFilterDraft(columnFilters); setFilterStatusDraft(selectedStatus); setFilterError(""); setActiveFilterColumn(column);
+  };
+  const updateNumericFilter = (column: NumericColumn, change: Partial<FortySixtyNumericFilter>) => {
+    setFilterError(""); setFilterDraft(current => ({ ...current, [column]: { ...current[column], ...change, ...(change.missing === "missing" ? { min: "", max: "" } : {}) } }));
+  };
+  const applyColumnFilter = () => {
+    if (!activeFilterColumn) return;
+    if (activeFilterColumn === "status") setSelectedStatus(filterStatusDraft);
+    else {
+      if (isNumericColumn(activeFilterColumn)) {
+        const error = validateFortySixtyNumericFilter(filterDraft[activeFilterColumn], { integer: activeFilterColumn !== "loanRepaymentBiweek", label: resultColumns.find(column => column.key === activeFilterColumn)!.label });
+        if (error) { setFilterError(error); return; }
+      }
+      if (activeFilterColumn === "cedula" && filterDraft.cedula.trim() && !/\d/.test(filterDraft.cedula)) { setFilterError("Escribe los números de la cédula."); return; }
+      setColumnFilters(current => ({ ...current, [activeFilterColumn]: filterDraft[activeFilterColumn] }));
+    }
+    setCurrentPage(1); closeColumnFilter();
+  };
+  const removeColumnFilter = () => {
+    if (!activeFilterColumn) return;
+    if (activeFilterColumn === "status") setSelectedStatus("TODOS");
+    else setColumnFilters(current => ({ ...current, [activeFilterColumn]: createFortySixtyFilters()[activeFilterColumn] }));
+    setCurrentPage(1); closeColumnFilter();
+  };
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
@@ -383,6 +450,7 @@ export default function PayJoyFortySixtyWorkspace({
     setWeek(payload.week);
     setWeekOptions(payload.week ? [payload.week] : []);
     setSelectedStatus("TODOS");
+    setColumnFilters(createFortySixtyFilters()); setActiveFilterColumn(null); setFilterError("");
     setCurrentPage(1);
     setProcessedSourceKey(null);
     setFile(null);
@@ -531,6 +599,7 @@ export default function PayJoyFortySixtyWorkspace({
       setRows(payload.rows);
       setProcessedSourceKey(nextSourceKey);
       setSelectedStatus("TODOS");
+      resetColumnFilters();
       setCurrentPage(1);
 
       if (shouldKeepActiveRecord) {
@@ -584,6 +653,7 @@ export default function PayJoyFortySixtyWorkspace({
     setPendingReferenceDate("");
     setProcessedSourceKey(null);
     setSelectedStatus("TODOS");
+    resetColumnFilters();
     setCurrentPage(1);
     if (!file) { setWeek(""); setWeekOptions([]); }
     setMessage(file ? "Nuevo corte. Selecciona la WEEK del archivo y pulsa Procesar antes de guardar." : "Nuevo corte. Selecciona un archivo y su WEEK para comenzar.");
@@ -701,6 +771,8 @@ export default function PayJoyFortySixtyWorkspace({
   const currentStep = data && !file ? 3 : file && week ? 3 : file ? 2 : 1;
   const primaryNavigation = navigationItems.filter(item => !["/dashboard/aprobaciones", "/dashboard/sedes"].includes(item.href));
   const moreNavigation = navigationItems.filter(item => ["/dashboard/aprobaciones", "/dashboard/sedes"].includes(item.href));
+  const activeColumns = resultColumns.filter(column => column.key === "status" ? selectedStatus !== "TODOS" : isFortySixtyColumnFiltered(columnFilters, column.key));
+  const activeFilterLabel = resultColumns.find(column => column.key === activeFilterColumn)?.label ?? "";
 
   return <div className={styles.page}>
     <header className={styles.topbar}>
@@ -748,7 +820,19 @@ export default function PayJoyFortySixtyWorkspace({
       {data && <>
         <section className={styles.resultsMetrics} aria-label="Resultados de la semana"><article><span>WEEK consultada</span><strong>{formatWeekLabel(data.week)}</strong><small>{formatNumber(rows.length)} filas procesadas</small></article><article><span>Aprobados</span><strong className={styles.positive}>{formatNumber(liveSummary.aprobados)}</strong></article><article><span>No aprobados</span><strong className={styles.negative}>{formatNumber(liveSummary.noAprobados)}</strong></article><article><span>Cédulas encontradas</span><strong>{formatNumber(liveSummary.cedulasEncontradas)}</strong><small>{formatNumber(liveSummary.cedulasPendientes)} pendientes</small></article><article><span>Tasa 40/60</span><strong>{formatPercent(approvalRate)}</strong></article></section>
         <section className={styles.panel} aria-labelledby="payjoy-results-title"><header className={styles.panelHeading}><div className={styles.panelTitle}><span className={styles.sectionIcon}><DashboardIcon name="sales" /></span><div><h2 id="payjoy-results-title">Registros procesados</h2><p>Archivo: {data.fileName} · Hoja: {data.sheetName}</p></div></div><span className={styles.resultsCount}>{formatNumber(visibleRows.length)} de {formatNumber(rows.length)} registros</span></header><div className={styles.statusFilters} aria-label="Filtrar resultados">{[{value:"TODOS" as const,label:"Todos"},{value:"40/60 APROBADO" as const,label:"Aprobados"},{value:"40/60 NO APROBADO" as const,label:"No aprobados"}].map(option => <button key={option.value} type="button" className={`${styles.button} ${selectedStatus === option.value ? styles.filterActive : ""}`} aria-pressed={selectedStatus === option.value} onClick={() => setSelectedStatus(option.value)}>{option.label}</button>)}</div>
-        <div className={styles.tableScroll}><table className={styles.resultsTable}><thead><tr><th>WEEK</th><th>Comercio</th><th>DEVICE TAG</th><th className={styles.numeric}>Edad del crédito</th><th className={styles.numeric}>Pagos</th><th className={styles.numeric}>Cuota quincenal</th><th>Cédula</th><th>Resultado</th></tr></thead><tbody>{visibleRows.length === 0 ? <tr><td colSpan={8} className={styles.empty}>No se encontraron registros para este filtro.</td></tr> : paginatedRows.map(row => <tr key={row.id} className={row.status === "40/60 APROBADO" ? styles.approvedRow : styles.rejectedRow}><td>{formatWeekLabel(row.week)}</td><td>{row.merchantName || "—"}</td><td><strong>{row.deviceTag || "—"}</strong></td><td className={styles.numeric}>{formatNumber(effectiveLoanAge(row.loanAgeDays, data.ageReferenceDate, today))}</td><td className={styles.numeric}>{formatNumber(row.numberOfPayments)}</td><td className={styles.numeric}>{row.loanRepaymentBiweek === null ? "—" : `$ ${formatNumber(row.loanRepaymentBiweek)}`}</td><td><input className={styles.cedulaInput} aria-label={`Cédula de ${row.deviceTag}`} value={row.cedula} disabled={editingBusy} onChange={event => updateCedula(row.id,event.target.value)} placeholder="Escribe la cédula" /></td><td><select aria-label={`Resultado de ${row.deviceTag}`} className={`${styles.statusSelect} ${row.status === "40/60 APROBADO" ? styles.statusApproved : styles.statusRejected}`} value={row.status} disabled={editingBusy} onChange={event => updateStatus(row.id,event.target.value as FortySixtyStatus)}><option value="40/60 APROBADO">40/60 APROBADO</option><option value="40/60 NO APROBADO">40/60 NO APROBADO</option></select></td></tr>)}</tbody></table></div>
+        <div className={styles.filterToolbar}><p>Pulsa un encabezado para filtrar.</p>{activeColumns.length > 0 && <><div className={styles.filterChips} aria-label="Filtros de columnas aplicados">{activeColumns.map(column => <button key={column.key} type="button" aria-label={"Editar filtro de " + column.label + ": " + (column.key === "status" ? selectedStatus === "40/60 APROBADO" ? "Aprobados" : "No aprobados" : filterDescription(columnFilters, column.key))} onClick={event => openColumnFilter(column.key, event.currentTarget)}><strong>{column.label}:</strong> {column.key === "status" ? selectedStatus === "40/60 APROBADO" ? "Aprobados" : "No aprobados" : filterDescription(columnFilters, column.key)}</button>)}</div><button type="button" className={styles.clearFilters} onClick={() => { setSelectedStatus("TODOS"); resetColumnFilters(); filterHeaderRefs.current.week?.focus({ preventScroll: true }); }}>Limpiar filtros</button></>}</div>
+        {activeFilterColumn && <form key={activeFilterColumn} id="payjoy-column-filter" className={styles.columnFilterPanel} role="region" aria-label={"Filtro de " + activeFilterLabel} noValidate onSubmit={event => { event.preventDefault(); applyColumnFilter(); }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeColumnFilter(); } }}>
+          <header><h3>Filtrar {activeFilterLabel}</h3><button type="button" className={styles.removeFile} aria-label="Cerrar filtro" onClick={closeColumnFilter}><DashboardIcon name="close" /></button></header>
+          <div className={styles.columnFilterFields}>
+            {isNumericColumn(activeFilterColumn) ? <NumericColumnFields column={activeFilterColumn} value={filterDraft[activeFilterColumn]} onChange={change => updateNumericFilter(activeFilterColumn, change)} />
+              : activeFilterColumn === "week" ? <label className={styles.field}>Filtrar WEEK<select autoFocus value={filterDraft.week} onChange={event => setFilterDraft(current => ({ ...current, week: event.target.value }))}><option value="">Todas las semanas</option>{[...new Set(rows.map(row => row.week))].sort().map(value => <option key={value} value={value}>{formatWeekLabel(value)}</option>)}</select></label>
+              : activeFilterColumn === "status" ? <label className={styles.field}>Filtrar Resultado<select autoFocus value={filterStatusDraft} onChange={event => setFilterStatusDraft(event.target.value as "TODOS" | FortySixtyStatus)}><option value="TODOS">Todos</option><option value="40/60 APROBADO">Aprobados</option><option value="40/60 NO APROBADO">No aprobados</option></select></label>
+              : <label className={styles.field}>Buscar {activeFilterLabel}<input autoFocus type="search" maxLength={160} value={filterDraft[activeFilterColumn]} inputMode={activeFilterColumn === "cedula" ? "numeric" : undefined} placeholder={activeFilterColumn === "cedula" ? "Número de cédula" : "Texto a buscar"} onChange={event => { setFilterError(""); setFilterDraft(current => ({ ...current, [activeFilterColumn]: event.target.value })); }} /></label>}
+          </div>
+          {filterError && <p className={styles.columnFilterError} role="alert">{filterError}</p>}
+          <footer><button type="button" className={styles.button} onClick={removeColumnFilter}>Quitar filtro</button><button type="submit" className={styles.button + " " + styles.primary}>Aplicar filtro</button></footer>
+        </form>}
+        <div className={styles.tableScroll}><table className={styles.resultsTable}><thead><tr>{resultColumns.map(column => <th key={column.key} scope="col" className={column.numeric ? styles.numeric : undefined}><button ref={element => { filterHeaderRefs.current[column.key] = element; }} type="button" className={[styles.headerFilter, (column.key === "status" ? selectedStatus !== "TODOS" : isFortySixtyColumnFiltered(columnFilters, column.key)) ? styles.headerFiltered : ""].join(" ")} aria-label={"Filtrar " + column.label} aria-expanded={activeFilterColumn === column.key} aria-controls="payjoy-column-filter" onClick={event => openColumnFilter(column.key, event.currentTarget)}>{column.label}<DashboardIcon name="chevron" /></button></th>)}</tr></thead><tbody>{visibleRows.length === 0 ? <tr><td colSpan={8} className={styles.empty}>No se encontraron registros para este filtro.</td></tr> : paginatedRows.map(row => <tr key={row.id} className={row.status === "40/60 APROBADO" ? styles.approvedRow : styles.rejectedRow}><td>{formatWeekLabel(row.week)}</td><td>{row.merchantName || "—"}</td><td><strong>{row.deviceTag || "—"}</strong></td><td className={styles.numeric}>{formatNumber(effectiveLoanAge(row.loanAgeDays, data.ageReferenceDate, today))}</td><td className={styles.numeric}>{formatNumber(row.numberOfPayments)}</td><td className={styles.numeric}>{row.loanRepaymentBiweek === null ? "—" : `$ ${formatNumber(row.loanRepaymentBiweek)}`}</td><td><input className={styles.cedulaInput} aria-label={`Cédula de ${row.deviceTag}`} value={row.cedula} disabled={editingBusy} onChange={event => updateCedula(row.id,event.target.value)} placeholder="Escribe la cédula" /></td><td><select aria-label={`Resultado de ${row.deviceTag}`} className={`${styles.statusSelect} ${row.status === "40/60 APROBADO" ? styles.statusApproved : styles.statusRejected}`} value={row.status} disabled={editingBusy} onChange={event => updateStatus(row.id,event.target.value as FortySixtyStatus)}><option value="40/60 APROBADO">40/60 APROBADO</option><option value="40/60 NO APROBADO">40/60 NO APROBADO</option></select></td></tr>)}</tbody></table></div>
         <footer className={styles.pagination}><p>Mostrando {visibleRows.length ? (currentPage-1)*pageSize+1 : 0}–{Math.min(currentPage*pageSize,visibleRows.length)} de {formatNumber(visibleRows.length)} registros</p><div><button type="button" className={styles.button} onClick={() => setCurrentPage(page => Math.max(1,page-1))} disabled={currentPage<=1}>Anterior</button><span>Página {currentPage} de {totalPages}</span><button type="button" className={styles.button} onClick={() => setCurrentPage(page => Math.min(totalPages,page+1))} disabled={currentPage>=totalPages}>Siguiente</button></div></footer></section>
       </>}
     </main>

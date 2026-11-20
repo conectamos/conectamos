@@ -9,12 +9,13 @@ const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.
 const rows=()=>Array.from({length:32},(_,i)=>({id:'row-'+i,week:'2026-10-19',merchantName:'Comercio QA',deviceTag:'QA'+String(i+1).padStart(6,'0'),loanAgeDays:50,numberOfPayments:4,loanRepaymentBiweek:125000,cedula:i%4?'1000000000':'',status:i%3?'40/60 APROBADO':'40/60 NO APROBADO',pay40At60:i%3?1:0,paidInFull:false}));
 const summary=items=>items.reduce((s,r)=>{s[r.status==='40/60 APROBADO'?'aprobados':'noAprobados']++;s[r.cedula?'cedulasEncontradas':'cedulasPendientes']++;return s},{aprobados:0,noAprobados:0,cedulasEncontradas:0,cedulasPendientes:0});
 // Actual component, isolated hooks and a persistent in-memory API: no network/provider/Prisma.
-function environment({auditor=false,saveError=false,holdSave=false,holdProcess=false,userId=8,perfilId=7,storage=new MemoryStorage(),sessionStorage=new MemoryStorage(),clock=fakeClock(),initialRecords=null,clientKeys=new Map()}={}){
+function environment({auditor=false,saveError=false,holdSave=false,holdProcess=false,userId=8,perfilId=7,storage=new MemoryStorage(),sessionStorage=new MemoryStorage(),clock=fakeClock(),initialRecords=null,clientKeys=new Map(),rowFactory=rows}={}){
  const controls={saveError,processError:false,emptyProcess:false,responseWeek:null,confirm:true,confirmations:[],dropAfterCommit:false};
  let slots=[],cursor=0,tree,changed=false,gateResolve;
  let processResolve;
  const effects=[],requests=[],listeners=new Map();
- const data={ok:true,fileName:'archivo-qa.xlsx',sheetName:'Transacciones',week:'2026-10-19',ageReferenceDate:'2026-10-28',totalRows:64,filteredRows:32,summary:summary(rows()),rows:rows()};
+ const inputRows=rowFactory();
+ const data={ok:true,fileName:'archivo-qa.xlsx',sheetName:'Transacciones',week:'2026-10-19',ageReferenceDate:'2026-10-28',totalRows:inputRows.length*2,filteredRows:inputRows.length,summary:summary(inputRows),rows:inputRows};
  const records=initialRecords||Array.from({length:8},(_,i)=>({...structuredClone(data),id:101+i,revision:1,recordName:'SEMANA QA '+(i+1),savedByName:'Usuario QA',savedByUser:'qa',savedAt:'2026-10-23T15:00:00Z',updatedAt:'2026-10-23T15:00:00Z'}));
  const gate=holdSave?new Promise(resolve=>{gateResolve=resolve}):Promise.resolve();
  const processGate=holdProcess?new Promise(resolve=>{processResolve=resolve}):Promise.resolve();
@@ -25,12 +26,12 @@ function environment({auditor=false,saveError=false,holdSave=false,holdProcess=f
   useCallback(callback,deps){return react.useMemo(()=>callback,deps)},
   useEffect(callback,deps){const i=cursor++;const previous=slots[i];if(!previous||deps.some((d,j)=>!Object.is(d,previous.deps[j]))){const slot={deps,cleanup:null};slots[i]=slot;effects.push(()=>{previous?.cleanup?.();slot.cleanup=callback()})}}
  };
- const jsx=(type,props,key)=>{if(typeof type==='string'&&props?.ref&&typeof props.ref==='object'){const element=props.ref.current||{value:'',click(){},focus(){}};if('value'in props)element.value=props.value??'';props.ref.current=element}return{type,props:props||{},key}};
+ const jsx=(type,props,key)=>{if(typeof type==='function')return type(props||{});if(typeof type==='string'&&props?.ref&&typeof props.ref==='object'){const element=props.ref.current||{value:'',click(){},focus(){}};if('value'in props)element.value=props.value??'';props.ref.current=element}return{type,props:props||{},key}};
  async function fetchMock(url,options={}){const method=options.method||'GET';const request={url,method,body:options.body};requests.push(request);const response=(payload,ok=true,status=ok?200:500)=>({ok,status,json:async()=>structuredClone(payload)});
   if(url.endsWith('/weeks'))return response({ok:true,fileName:options.body.get('file').name,sheetName:data.sheetName,weeks:['2026-10-19','2026-10-12']});
   if(url==='/api/payjoy/40-60'){
    await processGate;if(controls.processError)return response({error:'Error de procesamiento de prueba'},false);
-   const nextRows=controls.emptyProcess?[]:rows();const nextWeek=controls.responseWeek||options.body.get('week');
+   const nextRows=controls.emptyProcess?[]:rowFactory();const nextWeek=controls.responseWeek||options.body.get('week');
    return response({...data,fileName:options.body.get('file').name,week:nextWeek,rows:nextRows.map(row=>({...row,week:nextWeek})),filteredRows:nextRows.length,summary:summary(nextRows)});
   }
   if(method==='GET'&&url.includes('?id='))return response({ok:true,registro:records.find(r=>r.id===Number(url.split('=')[1]))});
@@ -67,6 +68,9 @@ function environment({auditor=false,saveError=false,holdSave=false,holdProcess=f
   }
   if(name==='@/lib/payjoy-40-60-age'){
    if(!modules.has(name)){const age={exports:{}};const code=ts.transpileModule(readFileSync(new URL('../lib/payjoy-40-60-age.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;new Function('module','exports','Date',code)(age,age.exports,ClockDate);modules.set(name,age.exports)}return modules.get(name);
+  }
+  if(name==='@/lib/payjoy-40-60-filters'){
+   if(!modules.has(name)){const filters={exports:{}};const code=ts.transpileModule(readFileSync(new URL('../lib/payjoy-40-60-filters.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;new Function('require','module','exports',code)(req,filters,filters.exports);modules.set(name,filters.exports)}return modules.get(name);
   }
   throw Error('Import de prueba inesperado: '+name);
  };
@@ -266,4 +270,110 @@ test('cancelar Aplicar fecha conserva la base original y las ediciones posterior
 test('fecha pendiente no se incorpora al autoguardado de otras correcciones',async()=>{
  const env=environment();await openStored(env);env.one(n=>n.type==='input'&&n.props.type==='date').props.onChange({target:{value:'2026-10-27'}});env.render();edit(env);await env.advance(1000);
  assert.equal(JSON.parse(writes(env)[0].body).ageReferenceDate,'2026-10-28');assert.equal(env.one(n=>n.type==='input'&&n.props.type==='date').props.value,'2026-10-27');assert.equal(env.controls.confirmations.length,0);env.unmount();
+});
+
+function variedRows(){
+ return Array.from({length:60},(_,i)=>({...rows()[i%32],id:'filter-'+i,deviceTag:'QA'+String(i+1).padStart(6,'0'),
+  merchantName:i>=50?'Óptica del Norte':'Comercio QA',week:i>=50?'2026-10-12':'2026-10-19',
+  numberOfPayments:i===50||i===51?0:i===52?null:i>=53?i-47:4,
+  loanAgeDays:i===50?0:i===51?null:i===52?60:i===53?70:50,
+  loanRepaymentBiweek:i===50?0:i===51?null:i===52?125000.5:i===53?250000:125000,
+  cedula:i===50?'001234567':i===51?'':i===52?'009876543':'1000000000',
+  status:i%3?'40/60 APROBADO':'40/60 NO APROBADO',pay40At60:i%3?1:0}));
+}
+function filterButton(env,label){return env.one(n=>n.type==='button'&&n.props['aria-label']==='Filtrar '+label)}
+async function openFilter(env,label){filterButton(env,label).props.onClick({currentTarget:{focus(){},isConnected:true}});await env.settle();return env.one(n=>n.props?.role==='region'&&n.props['aria-label']==='Filtro de '+label)}
+function filterControl(env,label){
+ const direct=env.all().find(n=>['input','select'].includes(n.type)&&n.props['aria-label']===label);if(direct)return direct;
+ const wrapper=env.one(n=>n.type==='label'&&env.text(n).startsWith(label));
+ const nested=env.all(wrapper).find(n=>['input','select'].includes(n.type));assert.ok(nested,'No se encontró control '+label);return nested;
+}
+async function changeFilter(env,label,value){filterControl(env,label).props.onChange({target:{value}});await env.settle()}
+async function applyFilter(env){const form=env.one(n=>n.type==='form'&&n.props.role==='region');form.props.onSubmit({preventDefault(){}});await env.settle()}
+const visibleTags=env=>env.all().filter(n=>n.type==='input'&&n.props['aria-label']?.startsWith('Cédula de ')).map(n=>n.props['aria-label'].slice('Cédula de '.length));
+async function clearFilters(env){env.button('Limpiar filtros').props.onClick();await env.settle()}
+
+test('cada encabezado abre un solo panel accesible y cerrar no altera las filas ni consulta APIs',async()=>{
+ const env=environment({rowFactory:variedRows});await openStored(env);const before=env.requests.length;
+ for(const label of ['WEEK','Comercio','DEVICE TAG','Edad del crédito','Pagos','Cuota quincenal','Cédula','Resultado']){
+  await openFilter(env,label);
+  const panels=env.all().filter(n=>n.props?.role==='region'&&n.props['aria-label']?.startsWith('Filtro de '));
+  assert.equal(panels.length,1);assert.equal(panels[0].props['aria-label'],'Filtro de '+label);
+  assert.equal(filterButton(env,label).props['aria-expanded'],true);
+ }
+ env.one(n=>n.type==='button'&&n.props['aria-label']==='Cerrar filtro').props.onClick();await env.settle();
+ assert.equal(env.all().filter(n=>n.props?.role==='region'&&n.props['aria-label']?.startsWith('Filtro de ')).length,0);
+ assert.equal(visibleTags(env).length,25);await env.advance(2000);assert.equal(env.requests.length,before);env.unmount();
+});
+
+test('filtro usa las sesenta filas antes de paginar, reinicia página y combina resultado con rango cero',async()=>{
+ const env=environment({rowFactory:variedRows});await openStored(env);
+ env.button('Siguiente').props.onClick();await env.settle();env.button('Siguiente').props.onClick();await env.settle();
+ assert.match(env.text(),/Página 3 de 3/);assert.deepEqual(visibleTags(env),variedRows().slice(50).map(row=>row.deviceTag));
+ await openFilter(env,'Pagos');await changeFilter(env,'Desde (pagos)','0');await changeFilter(env,'Hasta (pagos)','0');
+ assert.equal(visibleTags(env).length,10,'Un borrador no se aplica sin confirmar');await applyFilter(env);
+ assert.deepEqual(visibleTags(env),['QA000051','QA000052']);assert.match(env.text(),/2 de 60 registros/);assert.match(env.text(),/Página 1 de 1/);
+ env.button('Aprobados').props.onClick();await env.settle();assert.deepEqual(visibleTags(env),['QA000051']);
+ await openFilter(env,'Resultado');assert.equal(filterControl(env,'Filtrar Resultado').props.value,'40/60 APROBADO');
+ await changeFilter(env,'Filtrar Resultado','40/60 NO APROBADO');await applyFilter(env);assert.deepEqual(visibleTags(env),['QA000052']);
+ assert.equal(env.button('No aprobados').props['aria-pressed'],true);
+ await clearFilters(env);assert.equal(visibleTags(env).length,25);assert.match(env.text(),/60 de 60 registros/);assert.equal(env.button('Todos').props['aria-pressed'],true);env.unmount();
+});
+
+test('pagos sin dato no se confunden con cero y rango invertido no reemplaza un filtro confirmado',async()=>{
+ const env=environment({rowFactory:variedRows});await openStored(env);
+ await openFilter(env,'Pagos');await changeFilter(env,'Desde (pagos)','0');await changeFilter(env,'Hasta (pagos)','0');await applyFilter(env);
+ await openFilter(env,'Pagos');await changeFilter(env,'Datos de Pagos','missing');await applyFilter(env);assert.deepEqual(visibleTags(env),['QA000053']);
+ await openFilter(env,'Pagos');await changeFilter(env,'Datos de Pagos','known');await changeFilter(env,'Desde (pagos)','6');await changeFilter(env,'Hasta (pagos)','4');await applyFilter(env);
+ assert.ok(env.all().some(n=>n.props?.role==='alert'));assert.deepEqual(visibleTags(env),['QA000053']);
+ await changeFilter(env,'Desde (pagos)','4');await applyFilter(env);assert.match(env.text(),/50 de 60 registros/);
+ assert.ok(!visibleTags(env).includes('QA000051'));assert.ok(!visibleTags(env).includes('QA000053'));
+ await openFilter(env,'Pagos');env.button('Quitar filtro').props.onClick();await env.settle();assert.match(env.text(),/60 de 60 registros/);env.unmount();
+});
+
+test('edad filtra el valor efectivo mostrado sin sustituir edad desconocida por cero ni guardar el avance diario',async()=>{
+ const env=environment({rowFactory:variedRows});env.records[0].ageReferenceDate='2026-10-27';await openStored(env);const before=env.requests.length;
+ await openFilter(env,'Edad del crédito');await changeFilter(env,'Desde (días)','1');await changeFilter(env,'Hasta (días)','1');await applyFilter(env);
+ assert.deepEqual(visibleTags(env),['QA000051']);const row=env.one(n=>n.type==='tr'&&env.text(n).includes('QA000051'));
+ assert.equal(env.text(env.all(row).filter(n=>n.type==='td')[3]),'1');
+ await openFilter(env,'Edad del crédito');await changeFilter(env,'Datos de Edad del crédito','missing');await applyFilter(env);assert.deepEqual(visibleTags(env),['QA000052']);
+ await env.advance(2000);assert.equal(env.requests.length,before);assert.equal(env.records[0].rows[50].loanAgeDays,0);env.unmount();
+});
+
+test('cuota filtra cero y pesos con centavos sin incluir el importe desconocido',async()=>{
+ const env=environment({rowFactory:variedRows});await openStored(env);
+ await openFilter(env,'Cuota quincenal');await changeFilter(env,'Desde (COP)','0');await changeFilter(env,'Hasta (COP)','0');await applyFilter(env);assert.deepEqual(visibleTags(env),['QA000051']);
+ await openFilter(env,'Cuota quincenal');await changeFilter(env,'Desde (COP)','125000.50');await changeFilter(env,'Hasta (COP)','125000.50');await applyFilter(env);assert.deepEqual(visibleTags(env),['QA000053']);
+ await openFilter(env,'Cuota quincenal');await changeFilter(env,'Datos de Cuota quincenal','missing');await applyFilter(env);assert.deepEqual(visibleTags(env),['QA000052']);env.unmount();
+});
+
+test('WEEK, comercio, DEVICE TAG y cédula se intersectan sobre datos completos y conservan ceros iniciales',async()=>{
+ const env=environment({rowFactory:variedRows});await openStored(env);const before=env.requests.length;
+ await openFilter(env,'WEEK');await changeFilter(env,'Filtrar WEEK','2026-10-12');await applyFilter(env);assert.match(env.text(),/10 de 60 registros/);
+ await openFilter(env,'Comercio');await changeFilter(env,'Buscar Comercio','optica del norte');await applyFilter(env);assert.match(env.text(),/10 de 60 registros/);
+ await openFilter(env,'DEVICE TAG');await changeFilter(env,'Buscar DEVICE TAG','qa00005');await applyFilter(env);assert.equal(visibleTags(env).length,9);
+ await openFilter(env,'Cédula');await changeFilter(env,'Buscar Cédula','001234');await applyFilter(env);assert.deepEqual(visibleTags(env),['QA000051']);
+ assert.equal(cedulaField(env,'QA000051').props.value,'001234567');
+ await env.advance(2000);assert.equal(env.requests.length,before);assert.equal(writes(env).length,0);env.unmount();
+});
+
+test('guardar con filtros conserva todas las filas y las ediciones fuera de la vista; filtrar no autoguarda',async()=>{
+ const env=environment({rowFactory:variedRows});await uploadAndProcess(env);const before=env.requests.length;
+ await openFilter(env,'Pagos');await changeFilter(env,'Desde (pagos)','0');await changeFilter(env,'Hasta (pagos)','0');await applyFilter(env);await env.advance(2000);
+ assert.equal(env.requests.length,before);assert.equal(writes(env).length,0);assert.deepEqual(visibleTags(env),['QA000051','QA000052']);
+ edit(env,'QA000051','000777888');env.button('No aprobados').props.onClick();await env.settle();assert.deepEqual(visibleTags(env),['QA000052']);
+ env.button('Guardar').props.onClick();await env.settle();const payload=JSON.parse(writes(env)[0].body);
+ assert.equal(payload.rows.length,60);assert.equal(payload.filteredRows,60);assert.equal(payload.rows[50].cedula,'000777888');
+ assert.deepEqual(payload.summary,summary(payload.rows));assert.equal(payload.rows[52].numberOfPayments,null);assert.equal(payload.rows[50].numberOfPayments,0);
+ assert.equal(processing(env).length,1);env.unmount();
+});
+
+test('quitar una columna conserva el filtro de resultado y consultar otro corte reinicia toda la vista',async()=>{
+ const env=environment({rowFactory:variedRows});await openStored(env);
+ env.button('Aprobados').props.onClick();await env.settle();
+ await openFilter(env,'Pagos');await changeFilter(env,'Desde (pagos)','0');await changeFilter(env,'Hasta (pagos)','0');await applyFilter(env);assert.deepEqual(visibleTags(env),['QA000051']);
+ await openFilter(env,'Pagos');env.button('Quitar filtro').props.onClick();await env.settle();assert.match(env.text(),/40 de 60 registros/);assert.equal(env.button('Aprobados').props['aria-pressed'],true);
+ env.button('Siguiente').props.onClick();await env.settle();assert.match(env.text(),/Página 2 de 2/);
+ await openStored(env,1);assert.match(env.text(),/60 de 60 registros/);assert.match(env.text(),/Página 1 de 3/);assert.equal(env.button('Todos').props['aria-pressed'],true);
+ assert.equal(writes(env).length,0);assert.equal(processing(env).length,0);env.unmount();
 });
