@@ -21,12 +21,12 @@ function fixture(session = admin) {
     dueDate: i < 4 ? date(["2026-11-17", "2026-11-18", "2026-11-25", "2026-11-26"][i]) : null,
   }));
   const db = database({ proveedorAdministrativo: catalog, facturaAdministrativa: [...pending,
-    row(101, 1, { status: "PAGADA", amount: "200.19", paidAmount: "200.19" }),
-    row(102, 1, { status: "PAGADA", date: date("2026-10-31"), amount: "300.29", paidAmount: "300.29" }),
-    row(103, 1, { status: "PAGADA", date: date("2025-12-31"), amount: "400.39", paidAmount: "400.39" }),
-    row(104, 1, { status: "PAGADA", date: date("2026-01-01"), amount: "500.49", paidAmount: "500.49" }),
+    row(101, 1, { status: "PAGADA", paidDate: date("2026-11-19"), amount: "200.19", paidAmount: "200.19" }),
+    row(102, 1, { status: "PAGADA", paidDate: date("2026-10-31"), amount: "300.29", paidAmount: "300.29" }),
+    row(103, 1, { status: "PAGADA", paidDate: date("2025-12-31"), amount: "400.39", paidAmount: "400.39" }),
+    row(104, 1, { status: "PAGADA", paidDate: date("2026-01-01"), amount: "500.49", paidAmount: "500.49" }),
     row(201, 2, { number: "DEUDA-1", numberNormalized: "DEUDA-1", amount: "9000.00", paidAmount: "0.00", dueDate: date("2026-11-17") }),
-    row(202, 2, { status: "PAGADA", amount: "9000.00", paidAmount: "9000.00" }),
+    row(202, 2, { status: "PAGADA", paidDate: date("2026-11-19"), amount: "9000.00", paidAmount: "9000.00" }),
     row(301, 3, { date: date("2024-01-01"), amount: "60.19", paidAmount: "10.00" }),
     row(302, 3, { deletedAt: date("2026-11-17") }),
     row(303, 3, { deletedAt: date("2026-10-31"), date: date("2026-10-31") }),
@@ -45,7 +45,7 @@ test("proveedor exacto incluye toda su deuda histórica y sólo pagadas del mes,
   assert.ok(result.pending.items.every(item => item.providerId === 1));
   assert.deepEqual(result.paid.items.map(item => item.id), [101]);
   assert.deepEqual(result.summary, { invoiceCount: 13, totalAmount: 1403.67, paidAmount: 321.39, balance: 1082.28,
-    pendingCount: 12, paidCount: 1, overdueCount: 1, dueSoonCount: 2 });
+    pendingCount: 12, paidCount: 1, overdueCount: 1, dueSoonCount: 2, undatedPaidCount: 0 });
   const second = await x.read("month=2026-11&providerId=1&pendingPage=999&paidPage=999");
   assert.equal(second.pending.page, 2); assert.equal(second.pending.items.length, 2); assert.equal(second.paid.page, 1);
   assert.deepEqual(second.summary, result.summary);

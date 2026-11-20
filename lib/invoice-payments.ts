@@ -17,13 +17,13 @@ type InvoiceSession = { id: number; perfilId?: number | null; perfilNombre?: str
 type DecimalLike = number | string | { toString(): string };
 type InvoiceRecord = {
   id: number; number: string; provider: string; providerId?: number | null; date: Date; amount: DecimalLike; paidAmount: DecimalLike;
-  dueDate?: Date | null; deletedAt?: Date | null; deletedBy?: string | null;
+  dueDate?: Date | null; paidDate?: Date | null; deletedAt?: Date | null; deletedBy?: string | null;
   status: string; version: number; _count?: { payments: number };
 };
 export type InvoiceDueStatus = "SIN_FECHA" | "AL_DIA" | "PROXIMA" | "HOY" | "VENCIDA" | "PAGADA";
 export type AdministrativeInvoice = {
   id: number; number: string; provider: string; providerId: number | null; date: string; amount: number; paidAmount: number;
-  dueDate: string | null; dueStatus: InvoiceDueStatus; deletedAt: string | null; deletedBy: string | null;
+  dueDate: string | null; paidDate: string | null; dueStatus: InvoiceDueStatus; deletedAt: string | null; deletedBy: string | null;
   balance: number; status: "PENDIENTE" | "PAGADA"; paymentCount: number; version: number;
 };
 const PAGE_SIZE = 10;
@@ -121,7 +121,8 @@ function invoiceDto(row: InvoiceRecord, paymentCount = row._count?.payments ?? 0
   if (paid > amount) throw new InvoicePaymentsError("El saldo registrado requiere revisión.", 503, "INVALID_STORED_BALANCE");
   const dueDate = row.dueDate?.toISOString().slice(0, 10) ?? null;
   return { id: row.id, number: row.number, provider: row.provider, providerId: row.providerId ?? null, date: row.date.toISOString().slice(0, 10),
-    dueDate, dueStatus: invoiceDueStatus(dueDate, paid === amount, today),
+    dueDate, paidDate: paid === amount ? row.paidDate?.toISOString().slice(0, 10) ?? null : null,
+    dueStatus: invoiceDueStatus(dueDate, paid === amount, today),
     deletedAt: row.deletedAt?.toISOString() ?? null, deletedBy: row.deletedBy ?? null,
     amount: amount / 100, paidAmount: paid / 100, balance: (amount - paid) / 100,
     status: paid === amount ? "PAGADA" : "PENDIENTE", paymentCount, version: row.version };
@@ -135,7 +136,7 @@ function replayResult(hash: string, expected: string, response: unknown) {
   const invoice = (response as { invoice: AdministrativeInvoice }).invoice;
   // Older request snapshots predate optional due dates and reversible removal.
   // Keep their financial/version result while supplying the new nullable fields.
-  return { invoice: { ...invoice, providerId: invoice.providerId ?? null, dueDate: invoice.dueDate ?? null,
+  return { invoice: { ...invoice, providerId: invoice.providerId ?? null, dueDate: invoice.dueDate ?? null, paidDate: invoice.paidDate ?? null,
     dueStatus: invoice.dueStatus ?? invoiceDueStatus(invoice.dueDate ?? null, invoice.status === "PAGADA"),
     deletedAt: invoice.deletedAt ?? null, deletedBy: invoice.deletedBy ?? null }, replayed: true };
 }
@@ -202,7 +203,7 @@ function invoiceListFilters(params: URLSearchParams) {
     ...(providerId === null ? {} : { providerId }),
   };
   const where: Prisma.FacturaAdministrativaWhereInput = { date: { gte: from, lt: until }, ...searchWhere };
-  return { today, month, where, searchWhere };
+  return { today, month, where, searchWhere, from, until };
 }
 
 function invoiceProviderOptions(tx: Prisma.TransactionClient) {
@@ -214,11 +215,11 @@ function invoiceProviderOptions(tx: Prisma.TransactionClient) {
 
 export async function readInvoicePayments(params: URLSearchParams, session: InvoiceSession | null) {
   assertInvoicePaymentsAccess(session);
-  const { today, month, where: monthWhere, searchWhere } = invoiceListFilters(params);
+  const { today, month, searchWhere, from, until } = invoiceListFilters(params);
   const pendingPage = pageNumber(params, "pendingPage");
   const paidPage = pageNumber(params, "paidPage");
   const pendingWhere = { ...searchWhere, deletedAt: null, status: "PENDIENTE" };
-  const paidWhere = { ...monthWhere, deletedAt: null, status: "PAGADA" };
+  const paidWhere = { ...searchWhere, paidDate: { gte: from, lt: until }, deletedAt: null, status: "PAGADA" };
   // The visible report combines all open debts with the selected month's paid
   // invoices. Search and stable provider identity apply to both groups; the
   // month never hides an open debt.
@@ -226,13 +227,14 @@ export async function readInvoicePayments(params: URLSearchParams, session: Invo
   const todayDate = validDate(today);
   const afterSoon = new Date(todayDate); afterSoon.setUTCDate(afterSoon.getUTCDate() + 8);
   return prisma.$transaction(async (tx) => {
-    const [summary, pendingCount, paidCount, overdueCount, dueSoonCount, providerOptions] = await Promise.all([
+    const [summary, pendingCount, paidCount, overdueCount, dueSoonCount, providerOptions, undatedPaidCount] = await Promise.all([
       tx.facturaAdministrativa.aggregate({ where, _sum: { amount: true, paidAmount: true }, _count: { _all: true } }),
       tx.facturaAdministrativa.count({ where: pendingWhere }),
       tx.facturaAdministrativa.count({ where: paidWhere }),
       tx.facturaAdministrativa.count({ where: { ...pendingWhere, dueDate: { lt: todayDate } } }),
       tx.facturaAdministrativa.count({ where: { ...pendingWhere, dueDate: { gte: todayDate, lt: afterSoon } } }),
       invoiceProviderOptions(tx),
+      tx.facturaAdministrativa.count({ where: { ...searchWhere, deletedAt: null, status: "PAGADA", paidDate: null } }),
     ]);
     async function group(status: "PENDIENTE" | "PAGADA", requested: number, total: number) {
       const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -255,7 +257,7 @@ export async function readInvoicePayments(params: URLSearchParams, session: Invo
     const total = sumCents(summary._sum.amount);
     const collected = sumCents(summary._sum.paidAmount);
     return { month, today, pendingScope: "ALL_MONTHS" as const, paidMonth: month, summary: { invoiceCount: summary._count._all, totalAmount: total / 100,
-      paidAmount: collected / 100, balance: (total - collected) / 100, pendingCount, paidCount, overdueCount, dueSoonCount }, pending, paid, providerOptions };
+      paidAmount: collected / 100, balance: (total - collected) / 100, pendingCount, paidCount, overdueCount, dueSoonCount, undatedPaidCount }, pending, paid, providerOptions };
   }, { isolationLevel: "RepeatableRead", timeout: 20_000 });
 }
 
@@ -358,6 +360,17 @@ export async function createAdministrativeInvoice(value: unknown, session: Invoi
 
 type InvoiceAdminAction = "EDIT" | "DELETE" | "RESTORE";
 
+async function completedInvoicePaidDate(tx: Prisma.TransactionClient, invoiceId: number, totalCents: number,
+  incoming?: { date: Date; cents: number }) {
+  const recorded = await tx.pagoFacturaAdministrativa.aggregate({ where: { invoiceId }, _sum: { amount: true }, _max: { date: true } });
+  const recordedCents = storedCents(recorded._sum.amount ?? 0);
+  // A partial/incomplete history cannot establish when the invoice was settled.
+  // The new payment is included before its INSERT in this same locked transaction.
+  if (recordedCents + (incoming?.cents ?? 0) !== totalCents) return null;
+  const previousDate = recorded._max.date;
+  return incoming && (!previousDate || incoming.date > previousDate) ? incoming.date : previousDate;
+}
+
 function administrativeChangeInput(id: number, action: InvoiceAdminAction, value: unknown) {
   const body = record(value, action === "EDIT" ? ["requestId", "version", "number", "provider", "providerId", "date", "dueDate", "amount"] : ["requestId", "version"]);
   if (typeof body.version !== "number" || !Number.isSafeInteger(body.version) || body.version < 1) {
@@ -399,9 +412,10 @@ async function changeAdministrativeInvoice(id: number, value: unknown, action: I
         if (dueDate && dueDate < fields.date) throw new InvoicePaymentsError("El vencimiento no puede ser anterior a la fecha de la factura.");
         const provider = await resolveInvoiceProvider(tx, { ...fields, existing: invoice });
         resolvedProviderId = provider.id;
+        const paidDate = fields.cents === paid ? await completedInvoicePaidDate(tx, id, fields.cents) : null;
         data = { number: fields.number, numberNormalized: normalized(fields.number).replace(/\s+/g, ""),
           provider: provider.name, providerId: provider.id, providerNormalized: normalized(provider.name), date: fields.date, dueDate,
-          amount: decimal(fields.cents), status: fields.cents === paid ? "PAGADA" : "PENDIENTE", version: { increment: 1 } };
+          amount: decimal(fields.cents), paidDate, status: fields.cents === paid ? "PAGADA" : "PENDIENTE", version: { increment: 1 } };
       } else if (action === "DELETE") {
         if (invoice.deletedAt) throw new InvoicePaymentsError("La factura ya está en Facturas eliminadas.", 409, "ALREADY_DELETED");
         data = { deletedAt: new Date(), deletedById: creator.createdById, deletedByProfileId: creator.createdByProfileId,
@@ -462,8 +476,9 @@ export async function recordAdministrativeInvoicePayment(id: number, value: unkn
       const cents = input.cents ?? balance;
       if (cents > balance) throw new InvoicePaymentsError("El abono no puede superar el saldo de la factura.", 409, "OVERPAYMENT");
       const afterBalance = balance - cents;
+      const paidDate = afterBalance === 0 ? await completedInvoicePaidDate(tx, id, total, { date: input.date, cents }) : null;
       const updated = await tx.facturaAdministrativa.update({ where: { id }, data: { paidAmount: decimal(alreadyPaid + cents),
-        status: afterBalance === 0 ? "PAGADA" : "PENDIENTE", version: { increment: 1 } } });
+        paidDate, status: afterBalance === 0 ? "PAGADA" : "PENDIENTE", version: { increment: 1 } } });
       const result = { invoice: invoiceDto(updated, invoice._count.payments + 1) };
       const payment = await tx.pagoFacturaAdministrativa.create({ data: { invoiceId: id, requestId: input.requestId,
         requestHash: input.requestHash, responseSnapshot: result, date: input.date, mode: input.mode,

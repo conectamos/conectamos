@@ -36,7 +36,7 @@ export function modules(prisma, options = {}) {
 
 export function invoice(id, changes = {}) {
   return { id, number: `FACT-${id}`, numberNormalized: `FACT-${id}`, provider: "Proveedor QA", providerId: null, providerNormalized: "PROVEEDOR QA",
-    date: new Date("2026-10-15T00:00:00.000Z"), dueDate: null, deletedAt: null, deletedById: null, deletedByProfileId: null, deletedBy: null,
+    date: new Date("2026-10-15T00:00:00.000Z"), dueDate: null, paidDate: null, deletedAt: null, deletedById: null, deletedByProfileId: null, deletedBy: null,
     amount: "1000000.00", paidAmount: "0.00", status: "PENDIENTE", version: 1,
     createRequestId: `seed-${id}`, createRequestHash: "seed", createResult: null,
     createdById: 7, createdByProfileId: 11, createdBy: "Administrador QA", createdAt: new Date("2026-10-15T18:00:00Z"),
@@ -141,7 +141,8 @@ export function database(seed = {}, options = {}) {
         aggregate: async (args) => {
           const found = rows.filter((row) => matches(row, args.where));
           const sum = (field) => (found.reduce((total, row) => total + Math.round(Number(row[field]) * 100), 0) / 100).toFixed(2);
-          return { _count: { _all: found.length }, _sum: { amount: found.length ? sum("amount") : null, paidAmount: found.length ? sum("paidAmount") : null } };
+          return { _count: { _all: found.length }, _sum: Object.fromEntries(Object.keys(args._sum || {}).map(field => [field, found.length ? sum(field) : null])),
+            _max: Object.fromEntries(Object.keys(args._max || {}).map(field => [field, found.length ? ordered(found, [{ [field]: "desc" }])[0][field] : null])) };
         },
         create: async ({ data, select }) => {
           if (!ctx) throw Error("Write outside transaction");

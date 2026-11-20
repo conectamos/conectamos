@@ -28,7 +28,7 @@ test("alta guarda factura independiente, fecha civil, dinero decimal e identidad
   const { db, service } = setup();
   const result = await service.createAdministrativeInvoice(createInput({ amount: 1234567.29 }), admin);
   assert.deepEqual(result.invoice, { id: 1, number: "FAC-001", provider: "Proveedor QA", providerId: 1, date: "2026-10-31", amount: 1234567.29,
-    dueDate: null, dueStatus: "SIN_FECHA", deletedAt: null, deletedBy: null,
+    dueDate: null, paidDate: null, dueStatus: "SIN_FECHA", deletedAt: null, deletedBy: null,
     paidAmount: 0, balance: 1234567.29, status: "PENDIENTE", paymentCount: 0, version: 1 });
   const saved = db.tables.facturaAdministrativa[0];
   assert.equal(saved.amount, "1234567.29");
@@ -73,6 +73,7 @@ test("abonos parciales y pago total calculan saldo en servidor y conservan histo
   assert.equal(paid.invoice.paidAmount, 100.30);
   assert.equal(paid.invoice.balance, 0);
   assert.equal(paid.invoice.status, "PAGADA");
+  assert.equal(paid.invoice.paidDate, "2026-12-01");
   assert.equal(paid.invoice.version, 3);
   assert.equal(paid.invoice.paymentCount, 2);
   assert.equal(db.tables.pagoFacturaAdministrativa[1].amount, "80.20", "El cliente no determina el importe del pago total");
@@ -84,10 +85,11 @@ test("abonos parciales y pago total calculan saldo en servidor y conservan histo
   assert.deepEqual(history.invoice.payments.map((row) => row.date), ["2026-12-01", "2026-11-05"]);
   assert.equal(history.invoice.payments[0].reference, "Saldo final");
   assert.equal(history.invoice.payments[0].createdBy, admin.perfilNombre);
-  const month = await service.readInvoicePayments(new URLSearchParams("month=2026-10"), admin);
+  const month = await service.readInvoicePayments(new URLSearchParams("month=2026-12"), admin);
   assert.equal(month.pending.total, 0);
   assert.equal(month.paid.total, 1);
   assert.equal(month.paid.items[0].date, "2026-10-31");
+  assert.equal((await service.readInvoicePayments(new URLSearchParams("month=2026-10"), admin)).paid.total, 0);
   assert.equal((await service.readInvoicePayments(new URLSearchParams("month=2026-11"), admin)).summary.invoiceCount, 0);
   assert.ok(db.calls.filter((call) => call.table === "$transaction" && call.options.isolationLevel === "RepeatableRead").length >= 3);
 });
@@ -141,11 +143,11 @@ test("sobreabono y fallo al guardar historial no alteran el saldo ni generan pag
 
 test("resumen completo combina todos los pendientes con pagadas del mes y búsqueda compartida", async () => {
   const rows = Array.from({ length: 23 }, (_, index) => invoice(index + 1, { amount: "100.00", paidAmount: "25.00" }));
-  rows.push(...Array.from({ length: 12 }, (_, index) => invoice(index + 100, { amount: "100.00", paidAmount: "100.00", status: "PAGADA" })));
+  rows.push(...Array.from({ length: 12 }, (_, index) => invoice(index + 100, { amount: "100.00", paidAmount: "100.00", status: "PAGADA", paidDate: new Date("2026-10-20T00:00:00Z") })));
   rows.push(invoice(900, { date: new Date("2026-09-30T00:00:00Z") }), invoice(901, { date: new Date("2026-11-01T00:00:00Z") }));
   const { service } = setup({ facturaAdministrativa: rows });
   const result = await service.readInvoicePayments(new URLSearchParams("month=2026-10&pendingPage=2&paidPage=2"), admin);
-  assert.deepEqual(result.summary, { invoiceCount: 37, totalAmount: 2003500, paidAmount: 1775, balance: 2001725, pendingCount: 25, paidCount: 12, overdueCount: 0, dueSoonCount: 0 });
+  assert.deepEqual(result.summary, { invoiceCount: 37, totalAmount: 2003500, paidAmount: 1775, balance: 2001725, pendingCount: 25, paidCount: 12, overdueCount: 0, dueSoonCount: 0, undatedPaidCount: 0 });
   assert.equal(result.pendingScope, "ALL_MONTHS"); assert.equal(result.paidMonth, "2026-10");
   assert.equal(result.pending.page, 2); assert.equal(result.pending.items.length, 10); assert.equal(result.pending.total, 25);
   assert.equal(result.paid.page, 2); assert.equal(result.paid.items.length, 2); assert.equal(result.paid.total, 12);
@@ -158,10 +160,10 @@ test("resumen completo combina todos los pendientes con pagadas del mes y búsqu
   assert.equal(otherMonth.summary.balance, result.summary.balance);
 });
 
-test("pagadas separan diciembre y enero por fecha de factura; pendientes siguen visibles en ambos meses", async () => {
+test("pagadas separan diciembre y enero por fecha efectiva de pago; pendientes siguen visibles en ambos meses", async () => {
   const { service } = setup({ facturaAdministrativa: [invoice(1, { date: new Date("2026-12-31T00:00:00Z") }), invoice(2, { date: new Date("2027-01-01T00:00:00Z") }),
-    invoice(3, { date: new Date("2026-12-31T00:00:00Z"), status: "PAGADA", paidAmount: "1000000.00" }),
-    invoice(4, { date: new Date("2027-01-01T00:00:00Z"), status: "PAGADA", paidAmount: "1000000.00" })] });
+    invoice(3, { date: new Date("2026-10-01T00:00:00Z"), paidDate: new Date("2026-12-31T00:00:00Z"), status: "PAGADA", paidAmount: "1000000.00" }),
+    invoice(4, { date: new Date("2026-10-01T00:00:00Z"), paidDate: new Date("2027-01-01T00:00:00Z"), status: "PAGADA", paidAmount: "1000000.00" })] });
   const december = await service.readInvoicePayments(new URLSearchParams("month=2026-12"), admin);
   const january = await service.readInvoicePayments(new URLSearchParams("month=2027-01"), admin);
   assert.deepEqual(december.pending.items.map(({ id }) => id), [1, 2]);

@@ -281,6 +281,7 @@ model FacturaAdministrativa {
   providerIdentity   ProveedorAdministrativo? @relation(fields: [providerId], references: [id], onDelete: Restrict)
   date               DateTime @db.Date
   dueDate            DateTime? @db.Date
+  paidDate           DateTime? @db.Date
   amount             Decimal  @db.Decimal(14, 2)
   paidAmount         Decimal  @default(0) @db.Decimal(14, 2)
   status             String   @default("PENDIENTE")
@@ -305,6 +306,7 @@ model FacturaAdministrativa {
   @@index([date, status, id])
   @@index([deletedAt, date, status, id])
   @@index([deletedAt, status, dueDate])
+  @@index([deletedAt, status, paidDate, id])
 }
 
 model InvoiceReminderDelivery {

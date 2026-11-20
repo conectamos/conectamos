@@ -24,12 +24,12 @@ function textOf(node) {
   return typeof node.type === "function" ? textOf(node.type(node.props)) : textOf(node.props?.children);
 }
 const money = (amount) => `${amount < 0 ? "-" : ""}$ ${Math.abs(amount).toLocaleString("es-CO", { maximumFractionDigits: 2 })}`;
-const invoice = (id, extra = {}) => ({ id, providerId: id, number: `FAC-${id}`, provider: `Proveedor ${id}`, date: "2026-11-01", dueDate: null, dueStatus: "SIN_FECHA", deletedAt: null, amount: 1000, paidAmount: 0, balance: 1000, status: "PENDIENTE", paymentCount: 0, version: 1, payments: [], ...extra });
+const invoice = (id, extra = {}) => ({ id, providerId: id, number: `FAC-${id}`, provider: `Proveedor ${id}`, date: "2026-11-01", paidDate: extra.status === "PAGADA" ? "2026-11-16" : null, dueDate: null, dueStatus: "SIN_FECHA", deletedAt: null, amount: 1000, paidAmount: 0, balance: 1000, status: "PENDIENTE", paymentCount: 0, version: 1, payments: [], ...extra });
 const result = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => structuredClone(body) });
 const invoiceRows = (ui) => ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice");
 const invoiceRowsText = (ui) => invoiceRows(ui).map(textOf).join(" ");
 
-function harness({ invoices = [invoice(1)], providers: seededProviders, postOutcomes = [], delayLists = false, listFailures = 0, providerFailures = 0, detailFailures = 0, delayDetails = false } = {}) {
+function harness({ invoices = [invoice(1)], providers: seededProviders, postOutcomes = [], delayLists = false, listFailures = 0, providerFailures = 0, detailFailures = 0, delayDetails = false, legacyMutationResponse = false } = {}) {
   const data = structuredClone(invoices);
   const providers = structuredClone(seededProviders || [...new Map(invoices.map(item => [item.providerId, { id: item.providerId, name: item.provider, active: true, version: 1 }])).values(),
     { id: 100, name: "Comercial QA", active: true, version: 1 }, { id: 101, name: "Proveedor QA", active: true, version: 1 }, { id: 102, name: "QA", active: true, version: 1 }]);
@@ -57,7 +57,7 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
     const deleted = url.searchParams.get("deleted") === "1";
     const providerId = Number(url.searchParams.get("providerId")) || null;
     const providerOptions = providers.map(({ id, name, active }) => ({ id, name, active }));
-    const selected = data.filter((item) => (!providerId || item.providerId === providerId) && (deleted ? item.date.startsWith(month) : item.balance > 0 || item.date.startsWith(month)) && Boolean(item.deletedAt) === deleted && `${item.provider} ${item.number}`.toLocaleLowerCase("es-CO").includes(search))
+    const selected = data.filter((item) => (!providerId || item.providerId === providerId) && (deleted ? item.date.startsWith(month) : item.balance > 0 || item.paidDate?.startsWith(month)) && Boolean(item.deletedAt) === deleted && `${item.provider} ${item.number}`.toLocaleLowerCase("es-CO").includes(search))
       .sort((a,b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || a.date.localeCompare(b.date) || a.id-b.id);
     const pending = selected.filter((item) => item.balance > 0);
     const paid = selected.filter((item) => item.balance === 0);
@@ -65,7 +65,8 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
     function page(items, field) { const pages = Math.max(1, Math.ceil(items.length / 10)); const number = Math.max(1,Math.min(pages, Number(url.searchParams.get(field))||1)); return { items: structuredClone(items.slice((number - 1) * 10, number * 10)), page: number, pageSize: 10, total: items.length, pages }; }
     if(url.searchParams.get("deleted")==="1")return { ...page(selected,"page"), providerOptions };
     return { month, pendingScope: "ALL_MONTHS", paidMonth: month, providerOptions, today: "2026-11-16", summary: { invoiceCount: selected.length, totalAmount: sum("amount"), paidAmount: sum("paidAmount"), balance: sum("balance"), pendingCount: pending.length, paidCount: paid.length,
-      overdueCount:pending.filter(r=>r.dueDate&&r.dueDate<"2026-11-16").length,dueSoonCount:pending.filter(r=>r.dueDate&&r.dueDate>="2026-11-16"&&r.dueDate<="2026-11-23").length }, pending: page(pending, "pendingPage"), paid: page(paid, "paidPage") };
+      overdueCount:pending.filter(r=>r.dueDate&&r.dueDate<"2026-11-16").length,dueSoonCount:pending.filter(r=>r.dueDate&&r.dueDate>="2026-11-16"&&r.dueDate<="2026-11-23").length,
+      undatedPaidCount:data.filter(item => !item.deletedAt && item.balance === 0 && !item.paidDate && (!providerId || item.providerId === providerId) && `${item.provider} ${item.number}`.toLocaleLowerCase("es-CO").includes(search)).length }, pending: page(pending, "pendingPage"), paid: page(paid, "paidPage") };
   }
   const mockFetch = async (path, options = {}) => {
     const url = new URL(path, "http://localhost");
@@ -118,6 +119,7 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
           const selected=providers.find(p=>p.id===body.providerId);
           Object.assign(saved,{number:body.number,date:body.date,dueDate:body.dueDate,amount:body.amount,providerId:body.providerId??saved.providerId,provider:selected?.name??body.provider??saved.provider});
           saved.balance=(Math.round(saved.amount*100)-Math.round(saved.paidAmount*100))/100;saved.status=saved.balance===0?"PAGADA":"PENDIENTE";saved.version++;
+          saved.paidDate=saved.status==="PAGADA"?saved.payments.map(payment=>payment.date).sort().at(-1)||saved.paidDate:null;
         }else if(url.pathname.endsWith("/restore")){saved.deletedAt=null;saved.version++;}
         else{
         const amount = body.mode === "full" ? saved.balance : body.amount;
@@ -127,11 +129,13 @@ function harness({ invoices = [invoice(1)], providers: seededProviders, postOutc
         saved.version++;
         saved.paymentCount++;
         saved.payments.push({ id: saved.paymentCount, date: body.date, amount, reference: body.reference, receipt: receipt ? { id: `receipt-${saved.id}-${saved.paymentCount}`, filename: receipt.name, size: receipt.size } : null, createdBy: "Administración QA", createdAt: "2026-11-16T16:30:00Z" });
+        saved.paidDate=saved.status==="PAGADA"?saved.payments.map(payment=>payment.date).sort().at(-1):null;
         }
       }
-      replay.set(body.requestId, {invoice:structuredClone(saved)});
+      const savedResponse=structuredClone(saved);if(legacyMutationResponse)delete savedResponse.paidDate;
+      replay.set(body.requestId, {invoice:savedResponse});
       if (outcome === "commit-network") throw new Error("Connection lost after commit");
-      return result({ invoice: saved });
+      return result({ invoice: savedResponse });
     }
     if(url.pathname==="/api/pago-facturas/providers"){
       if(providerFailures>0){providerFailures--;return result({error:"No fue posible cargar proveedores."},503);}
@@ -372,7 +376,7 @@ test("a delayed earlier supplier response cannot replace the newly applied suppl
 test("historical paid months and searches only apply on Consultar; new invoices default to today", async () => {
   const ui = harness({ invoices: [invoice(1), invoice(2, { date: "2025-02-01", provider: "Proveedor histórico" })] }); await ui.settle();
   const before = ui.calls.length;
-  await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.setControl("Buscar factura o proveedor", "histórico");
+  await ui.setControl("Mes de pagos y eliminadas", "2025-02"); await ui.setControl("Buscar factura o proveedor", "histórico");
   assert.equal(ui.calls.length, before); assert.match(ui.text(), /Filtros sin aplicar/);
   await ui.apply();
   const url = new URL(ui.calls.at(-1).path, "http://localhost");
@@ -395,7 +399,7 @@ test("new invoices preserve full COP amounts and refresh both columns and summar
   assert.match(ui.calls.at(-1).path, /\/api\/pago-facturas\?/); ui.unmount();
 });
 
-test("partial payment reduces balance and full payment moves invoice into pagas within invoice month", async () => {
+test("partial payment reduces balance and full payment uses the latest payment date, including backdated registrations", async () => {
   const ui = harness(); await ui.settle();
   await ui.openPayment();
   await ui.setControl("Abono parcial", "partial"); await ui.setControl("Valor del abono (COP)", "400,25"); await ui.setControl("Fecha del pago", "2026-12-05"); await ui.setControl("Referencia o comprobante (opcional)", "Transferencia 001");
@@ -406,8 +410,10 @@ test("partial payment reduces balance and full payment moves invoice into pagas 
   const writes = ui.calls.filter((call) => call.method === "POST");
   assert.equal(writes[1].body.mode, "full"); assert.ok(!Object.hasOwn(writes[1].body, "amount")); assert.equal(writes[1].body.version, 2);
   assert.equal(ui.data[0].balance, 0); assert.equal(ui.data[0].paymentCount, 2); assert.equal(ui.data[0].status, "PAGADA"); assert.equal(ui.data[0].date, "2026-11-01");
-  assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(ui.text(), /FACTURAS PAGAS1/);
-  await ui.openDetail();
+  assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(ui.text(), /FACTURAS PAGAS0/);
+  assert.equal(ui.data[0].paidDate, "2026-12-05"); assert.match(ui.text(), /Disponible en pagadas de diciembre de 2026/);
+  await ui.setControl("Mes de pagos y eliminadas", "2026-12"); await ui.apply();
+  assert.match(ui.text(), /FACTURAS PAGAS1/); await ui.openDetail();
   assert.match(textOf(ui.find("dialog")), /05 de dic de 2026\$ 400,25Transferencia 001/); assert.match(textOf(ui.find("dialog")), /Administración QA/);
   ui.unmount();
 });
@@ -453,8 +459,8 @@ test("invalid invoices and overpayments are rejected locally and retain entered 
 });
 
 test("late list response cannot replace the newly selected historical paid month", async () => {
-  const ui = harness({ delayLists: true, invoices: [invoice(1, { balance: 0, paidAmount: 1000, status: "PAGADA" }), invoice(2, { date: "2025-02-01", provider: "Histórico QA", balance: 0, paidAmount: 1000, status: "PAGADA" })] }); await ui.settle();
-  await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.apply();
+  const ui = harness({ delayLists: true, invoices: [invoice(1, { balance: 0, paidAmount: 1000, status: "PAGADA" }), invoice(2, { date: "2024-12-01", paidDate: "2025-02-15", provider: "Histórico QA", balance: 0, paidAmount: 1000, status: "PAGADA" })] }); await ui.settle();
+  await ui.setControl("Mes de pagos y eliminadas", "2025-02"); await ui.apply();
   assert.equal(ui.pendingLists.length, 2); assert.equal(ui.pendingLists[0].signal.aborted, true);
   ui.pendingLists[1].resolve(); await ui.settle(); assert.match(ui.text(), /Histórico QA/);
   ui.pendingLists[0].resolve(); await ui.settle(); assert.match(invoiceRowsText(ui), /Histórico QA/); assert.doesNotMatch(invoiceRowsText(ui), /Proveedor 1/); ui.unmount();
@@ -547,7 +553,7 @@ test("pending invoices from every month remain visible while month limits paid a
   const ui = harness({ invoices: [
     invoice(1, { date: "2024-01-02", amount: 2500, paidAmount: 500, balance: 2000, dueDate: "2024-02-01", dueStatus: "VENCIDA" }),
     invoice(2, { date: "2025-02-03", amount: 400, balance: 400, dueDate: "2026-11-16", dueStatus: "HOY" }),
-    invoice(3, { date: "2025-02-04", amount: 600, paidAmount: 600, balance: 0, status: "PAGADA" }),
+    invoice(3, { date: "2025-01-04", paidDate: "2025-02-06", amount: 600, paidAmount: 600, balance: 0, status: "PAGADA" }),
     invoice(4, { date: "2026-11-05", amount: 800, paidAmount: 800, balance: 0, status: "PAGADA" }),
     invoice(5, { date: "2025-02-06", deletedAt: "2026-11-16T18:00:00Z" }),
     invoice(6, { date: "2026-11-06", deletedAt: "2026-11-16T18:00:00Z" }),
@@ -559,7 +565,7 @@ test("pending invoices from every month remain visible while month limits paid a
   let cards = ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice").map(textOf).join(" ");
   assert.match(cards, /Factura FAC-1/); assert.match(cards, /Factura FAC-2/); assert.match(cards, /Factura FAC-4/); assert.doesNotMatch(cards, /Factura FAC-3/);
   await ui.click(ui.find("button", "Facturas eliminadas")); assert.match(textOf(ui.byLabel("Facturas eliminadas")), /Factura FAC-6/); assert.doesNotMatch(textOf(ui.byLabel("Facturas eliminadas")), /Factura FAC-5/);
-  await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.apply();
+  await ui.setControl("Mes de pagos y eliminadas", "2025-02"); await ui.apply();
   cards = ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice").map(textOf).join(" ");
   assert.match(cards, /Factura FAC-1/); assert.match(cards, /Factura FAC-2/); assert.match(cards, /Factura FAC-3/); assert.doesNotMatch(cards, /Factura FAC-4/);
   assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 3\.5003 facturas.*Abonado\$ 1\.100.*Saldo pendiente\$ 2\.400/);
@@ -567,7 +573,7 @@ test("pending invoices from every month remain visible while month limits paid a
 });
 
 test("search applies to pending invoices across all months and to paid invoices in the selected month", async () => {
-  const ui = harness({ invoices: [invoice(1, { provider: "BUSCADO antiguo", date: "2020-01-01" }), invoice(2, { provider: "BUSCADO pagado", paidAmount: 1000, balance: 0, status: "PAGADA" }), invoice(3, { provider: "BUSCADO fuera del mes", date: "2025-02-01", paidAmount: 1000, balance: 0, status: "PAGADA" }), invoice(4)] }); await ui.settle();
+  const ui = harness({ invoices: [invoice(1, { provider: "BUSCADO antiguo", date: "2020-01-01" }), invoice(2, { provider: "BUSCADO pagado", paidAmount: 1000, balance: 0, status: "PAGADA" }), invoice(3, { provider: "BUSCADO fuera del mes", date: "2026-11-01", paidDate: "2025-02-01", paidAmount: 1000, balance: 0, status: "PAGADA" }), invoice(4)] }); await ui.settle();
   await ui.setControl("Buscar factura o proveedor", "BUSCADO"); await ui.apply();
   assert.match(invoiceRowsText(ui), /BUSCADO antiguo/); assert.match(invoiceRowsText(ui), /BUSCADO pagado/); assert.doesNotMatch(invoiceRowsText(ui), /BUSCADO fuera del mes|Proveedor 4/);
   assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 2\.0002 facturas.*Saldo pendiente\$ 1\.000/); ui.unmount();
@@ -577,9 +583,60 @@ test("paying an old pending invoice removes it globally and identifies its paid 
   const ui = harness({ invoices: [invoice(1, { date: "2025-02-01", dueDate: "2025-03-01", dueStatus: "VENCIDA" })] }); await ui.settle();
   await ui.openPayment(); await ui.submit();
   assert.equal(ui.data[0].paymentCount, 1); assert.equal(ui.data[0].paidAmount, 1000); assert.equal(ui.data[0].date, "2025-02-01");
-  assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(ui.text(), /FACTURAS PAGAS0/); assert.match(ui.text(), /Disponible en pagadas de febrero de 2025/);
-  await ui.setControl("Mes de pagadas y eliminadas", "2025-02"); await ui.apply();
-  assert.match(ui.text(), /FACTURAS PAGAS1/); await ui.openDetail(); assert.match(textOf(ui.find("dialog")), /16 de nov de 2026\$ 1\.000/); ui.unmount();
+  assert.equal(ui.data[0].paidDate, "2026-11-16");
+  assert.match(ui.text(), /FACTURAS PENDIENTES0/); assert.match(ui.text(), /FACTURAS PAGAS1/); assert.match(ui.text(), /Disponible en pagadas de noviembre de 2026/);
+  assert.match(invoiceRowsText(ui), /Pagada el 16 de nov de 2026/);
+  await ui.openDetail(); assert.match(textOf(ui.find("dialog")), /Fecha de la factura: 01 de feb de 2025/);
+  assert.match(textOf(ui.find("dialog")), /Fecha de pago completo: 16 de nov de 2026/); assert.match(textOf(ui.find("dialog")), /16 de nov de 2026\$ 1\.000/);
+  await ui.click(ui.find("button", "Cerrar")); await ui.setControl("Mes de pagos y eliminadas", "2025-02"); await ui.apply();
+  assert.match(ui.text(), /FACTURAS PAGAS0/); ui.unmount();
+});
+
+test("editing an invoice date preserves its paid month and payment history", async () => {
+  const payment = { id: 1, date: "2026-11-10", amount: 1000, reference: "Pago original", createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
+  const ui = harness({ invoices: [invoice(1, { date: "2025-02-01", paidDate: payment.date, balance: 0, paidAmount: 1000, status: "PAGADA", paymentCount: 1, payments: [payment] })] }); await ui.settle();
+  await ui.invoiceAction("edit"); assert.match(textOf(ui.find("dialog")), /fecha de la factura se conserva por separado del mes de pago/);
+  await ui.setControl("Fecha de la factura", "2024-06-01"); await ui.submit();
+  assert.equal(ui.data[0].paidDate, "2026-11-10"); assert.equal(ui.data[0].date, "2024-06-01"); assert.deepEqual(ui.data[0].payments, [payment]);
+  assert.match(ui.text(), /Disponible en pagadas de noviembre de 2026/); assert.match(ui.text(), /FACTURAS PAGAS1/);
+  assert.match(invoiceRowsText(ui), /Pagada el 10 de nov de 2026/); ui.unmount();
+});
+
+test("reducing a partially paid invoice to its paid amount uses the server paid date without creating a payment", async () => {
+  const payment = { id: 1, date: "2026-10-15", amount: 400, reference: null, createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
+  const ui = harness({ invoices: [invoice(1, { date: "2025-02-01", paidAmount: 400, balance: 600, paymentCount: 1, payments: [payment] })] }); await ui.settle();
+  await ui.invoiceAction("edit"); await ui.setControl("Valor de la factura (COP)", "400"); await ui.submit();
+  assert.equal(ui.data[0].status, "PAGADA"); assert.equal(ui.data[0].paidDate, "2026-10-15"); assert.deepEqual(ui.data[0].payments, [payment]);
+  assert.match(ui.text(), /Disponible en pagadas de octubre de 2026/); assert.match(ui.text(), /FACTURAS PAGAS0/);
+  await ui.setControl("Mes de pagos y eliminadas", "2026-10"); await ui.apply(); assert.match(ui.text(), /FACTURAS PAGAS1/);
+  ui.unmount();
+});
+
+test("restoring a paid invoice reports its payment month while deleted invoices retain their invoice-date filter", async () => {
+  const ui = harness({ invoices: [invoice(1, { date: "2025-02-01", paidDate: "2026-11-12", balance: 0, paidAmount: 1000, status: "PAGADA", deletedAt: "2026-11-16T18:00:00Z" })] }); await ui.settle();
+  await ui.click(ui.find("button", "Facturas eliminadas")); assert.match(textOf(ui.byLabel("Facturas eliminadas")), /No hay facturas eliminadas/);
+  await ui.setControl("Mes de pagos y eliminadas", "2025-02"); await ui.apply();
+  await ui.click(ui.byLabel("Restaurar factura FAC-1")); await ui.submit();
+  assert.match(ui.text(), /restaurada\. Disponible en pagadas de noviembre de 2026/); assert.match(ui.text(), /FACTURAS PAGAS0/);
+  await ui.setControl("Mes de pagos y eliminadas", "2026-11"); await ui.apply();
+  assert.match(ui.text(), /FACTURAS PAGAS1/); assert.equal(ui.data[0].date, "2025-02-01"); ui.unmount();
+});
+
+test("legacy payment replay without paidDate uses the latest known payment date and keeps the original intent", async () => {
+  const prior = { id: 1, date: "2026-12-05", amount: 400, reference: null, createdBy: "QA", createdAt: "2026-11-10T17:00:00Z" };
+  const ui = harness({ invoices: [invoice(1, { date: "2025-02-01", paidAmount: 400, balance: 600, paymentCount: 1, payments: [prior] })], postOutcomes: ["commit-network"], legacyMutationResponse: true }); await ui.settle();
+  await ui.openPayment(); await ui.setControl("Fecha del pago", "2026-11-16"); await ui.submit(); await ui.submit();
+  const writes=ui.calls.filter(call=>call.method==="POST"); assert.deepEqual(writes[0].body,writes[1].body);
+  assert.equal(ui.data[0].paymentCount, 2); assert.equal(ui.data[0].paidDate, "2026-12-05");
+  assert.match(ui.text(), /Disponible en pagadas de diciembre de 2026/); assert.doesNotMatch(ui.text(), /Disponible en pagadas de febrero/); ui.unmount();
+});
+
+test("paid invoices without a verified date stay out of month totals and display an explicit warning", async () => {
+  const ui = harness({ invoices: [invoice(1, { balance: 0, paidAmount: 1000, status: "PAGADA", paidDate: null })] }); await ui.settle();
+  assert.equal(invoiceRows(ui).length, 0); assert.match(ui.text(), /1 factura\(s\) pagada\(s\) sin fecha de pago confirmada/);
+  assert.match(ui.text(), /No se incluyen en un mes hasta verificar su historial/);
+  await ui.setControl("Mes de pagos y eliminadas", "2025-02"); await ui.apply();
+  assert.match(ui.text(), /1 factura\(s\) pagada\(s\) sin fecha de pago confirmada/); ui.unmount();
 });
 
 test("global pending totals and due counts include every page and stay stable when only paid month changes", async () => {
@@ -588,7 +645,7 @@ test("global pending totals and due counts include every page and stay stable wh
   assert.match(ui.text(), /FACTURAS PENDIENTES13/); assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Total facturas\$ 13\.000/); assert.match(textOf(ui.byLabel("Resumen de vencimientos")), /12 vencidas/);
   await ui.click(ui.byLabel("Página siguiente de pendientes")); assert.equal(ui.nodes().filter((node) => node.type === "article" && node.props.className === "invoice").length, 3);
   assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Saldo pendiente\$ 13\.000/);
-  await ui.setControl("Mes de pagadas y eliminadas", "2020-01"); await ui.apply();
+  await ui.setControl("Mes de pagos y eliminadas", "2020-01"); await ui.apply();
   assert.match(ui.text(), /FACTURAS PENDIENTES13/); assert.match(textOf(ui.byLabel("Resumen de facturas consultadas")), /Saldo pendiente\$ 13\.000/); assert.match(textOf(ui.byLabel("Resumen de vencimientos")), /12 vencidas/); ui.unmount();
 });
 

@@ -46,7 +46,7 @@ test("resumen de vencidas y próximas incluye pendientes de cualquier mes y excl
   const overdue = Array.from({ length: 12 }, (_, index) => invoice(index + 1, { dueDate: date("2026-11-15") }));
   const rows = [...overdue, invoice(20, { dueDate: date("2026-11-16") }), invoice(21, { dueDate: date("2026-11-23") }),
     invoice(22, { dueDate: date("2026-11-24") }), invoice(23),
-    invoice(24, { dueDate: date("2026-11-15"), status: "PAGADA", paidAmount: "1000000.00" }),
+    invoice(24, { dueDate: date("2026-11-15"), paidDate: date("2026-10-30"), status: "PAGADA", paidAmount: "1000000.00" }),
     invoice(25, { dueDate: date("2026-11-15"), deletedAt: new Date(), deletedBy: "Admin QA" }),
     invoice(26, { date: date("2026-11-01"), dueDate: date("2026-11-15") })];
   const { service } = setup({ facturaAdministrativa: rows });
@@ -62,7 +62,7 @@ test("orden por vencimiento se aplica antes de paginar; fechas vacías al final 
   const rows = Array.from({ length: 13 }, (_, index) => invoice(index + 1, { dueDate: date(`2026-11-${String(25 - index).padStart(2, "0")}`) }));
   rows.push(invoice(20), invoice(21, { dueDate: date("2026-11-13"), date: date("2026-10-14") }),
     invoice(22, { dueDate: date("2026-11-13"), date: date("2026-10-14") }));
-  const paid = rows.map((row) => ({ ...row, id: row.id + 100, status: "PAGADA", paidAmount: row.amount }));
+  const paid = rows.map((row) => ({ ...row, id: row.id + 100, status: "PAGADA", paidAmount: row.amount, paidDate: date("2026-10-30") }));
   const deleted = rows.map((row) => ({ ...row, id: row.id + 200, deletedAt: new Date(), deletedBy: "QA" }));
   const { service } = setup({ facturaAdministrativa: [...rows, ...paid, ...deleted] });
   const page1 = await service.readInvoicePayments(month(), admin);
@@ -75,7 +75,7 @@ test("orden por vencimiento se aplica antes de paginar; fechas vacías al final 
   assert.equal(removed.items.at(-1).id, 220); assert.equal(removed.page, 2); assert.equal(removed.total, 16);
 });
 
-test("editar conserva abonos y sus snapshots, cambia de mes y recalcula pagada sin permitir importe inferior a pagado", async () => {
+test("editar conserva abonos y sus snapshots, usa mes efectivo del pago y no permite importe inferior a pagado", async () => {
   const { db, service } = setup({ facturaAdministrativa: [invoice(1, { amount: "100.00", paidAmount: "40.00", version: 2 })],
     pagoFacturaAdministrativa: [payment(1, 1, { amount: "40.00", invoiceAmountSnapshot: "100.00" })] });
   const oldPayments = structuredClone(db.tables.pagoFacturaAdministrativa);
@@ -83,6 +83,7 @@ test("editar conserva abonos y sus snapshots, cambia de mes y recalcula pagada s
   assert.equal(db.tables.invoiceAdminEvent.length, 0);
   const paid = await service.editAdministrativeInvoice(1, change({ version: 2, amount: 40, date: "2026-11-01", number: "CORREGIDA-001" }), admin);
   assert.equal(paid.invoice.status, "PAGADA"); assert.equal(paid.invoice.dueStatus, "PAGADA"); assert.equal(paid.invoice.paymentCount, 1);
+  assert.equal(paid.invoice.paidDate, "2026-11-05");
   assert.equal((await service.readInvoicePayments(month(), admin)).summary.invoiceCount, 0);
   assert.equal((await service.readInvoicePayments(new URLSearchParams("month=2026-11"), admin)).paid.total, 1);
   const pending = await service.editAdministrativeInvoice(1, change({ requestId: "edit-request-002", version: 3, amount: 150 }), admin);

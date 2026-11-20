@@ -4,7 +4,7 @@ Ruta: `/pago-facturas`. El administrador central accede desde el menú principal
 
 ## Registro y meses
 
-Cada factura conserva número, proveedor, fecha y valor en pesos colombianos. Las pendientes se muestran de todos los meses; el selector «Mes de pagadas y eliminadas» limita únicamente esos dos grupos por fecha de factura, no por fecha del abono. Permite consultar meses anteriores. Una nueva factura inicia con la fecha de hoy en Colombia, independientemente del mes que se esté consultando; puede cambiarse a la fecha real. El número se identifica junto con el proveedor para impedir un registro duplicado.
+Cada factura conserva número, proveedor, fecha original y valor en pesos colombianos. Las pendientes se muestran de todos los meses. El selector «Mes de pagos y eliminadas» consulta las pagadas por fecha de pago completo y las eliminadas por fecha de factura; permite consultar meses anteriores. Una factura de octubre pagada completamente en noviembre aparece en las pagadas de noviembre, conservando su fecha de octubre en el detalle. Una nueva factura inicia con la fecha de hoy en Colombia, independientemente del mes consultado; puede cambiarse a la fecha real. El número se identifica junto con el proveedor para impedir un registro duplicado.
 
 ## Proveedores
 
@@ -12,11 +12,13 @@ El formulario selecciona el proveedor desde un catálogo desplegable. «Gestiona
 
 El proveedor tiene una identidad estable, de modo que cambiar su nombre no permite registrar dos veces el mismo número de factura para ese proveedor. Los registros antiguos se vinculan al catálogo conservando su información.
 
-La vista muestra «FACTURAS PENDIENTES» y «FACTURAS PAGAS» como filas compactas, con paginación independiente y diez facturas por página. Cada fila permite identificar proveedor, número, vencimiento, estado y saldo o valor pagado. «Ver detalle» abre la información completa, el historial de abonos y sus comprobantes PDF; desde allí se puede abonar, pagar, editar o eliminar la factura.
+La vista muestra «FACTURAS PENDIENTES» y «FACTURAS PAGAS» como filas compactas, con paginación independiente y diez facturas por página. Cada fila permite identificar proveedor, número, estado y saldo o valor; las pendientes muestran vencimiento y las pagadas, fecha de pago completo. «Ver detalle» conserva por separado la fecha de factura y la de pago, el historial de abonos y sus comprobantes PDF; desde allí se puede abonar, pagar, editar o eliminar la factura.
 
 El desplegable «Proveedor» ofrece «Todos los proveedores» y el catálogo, incluidos proveedores inactivos para consultar sus facturas históricas. La selección se aplica al pulsar «Consultar», junto con mes y búsqueda, y reinicia las páginas de pendientes, pagadas y eliminadas. El servidor filtra por la identidad estable del proveedor antes de calcular totales y paginar; un cambio de nombre no separa sus facturas históricas. El filtro no modifica las alertas generales de vencimiento.
 
-Ambas columnas se ordenan por fecha de vencimiento ascendente antes de paginar; las facturas sin vencimiento van al final. Los empates se resuelven por fecha de factura e identificador. La búsqueda y el proveedor se aplican a ambos grupos y a las facturas eliminadas. El resumen reúne todas las pendientes y las pagadas del mes consultado que coincidan con los filtros, incluidas las que no están en la página visible. El saldo considera todas las pendientes de esos filtros. Una factura pagada en un mes posterior se consulta en pagadas por el mes de su fecha original; el mensaje de confirmación indica ese mes.
+Ambas columnas se ordenan por fecha de vencimiento ascendente antes de paginar; las facturas sin vencimiento van al final. Los empates se resuelven por fecha de factura e identificador. La búsqueda y el proveedor se aplican a ambos grupos y a las facturas eliminadas. El resumen reúne todas las pendientes y las pagadas del mes de pago consultado que coincidan con los filtros, incluidas las que no están en la página visible. El saldo considera todas las pendientes de esos filtros. La confirmación de pago completo o restauración indica el mes del pago.
+
+`paidDate` es una fecha civil: cuando el saldo queda en cero, el servidor toma la mayor fecha real de los pagos registrados. Si un pago se registra después con fecha anterior, no retrocede el mes de una obligación cuyo historial incluye un pago posterior. Los pagos históricos permiten recuperar esta fecha sin cambiar sus importes ni fechas. Una factura pagada sin fecha de pago respaldada no se asigna a un mes inventado: el reporte informa cuántas requieren revisar su historial mediante `summary.undatedPaidCount`.
 
 La fecha de vencimiento es opcional y no se deduce para facturas antiguas. El estado se calcula usando el día de Colombia: vencida si es anterior a hoy, vence hoy si coincide, próxima a vencer en los siete días siguientes. Una factura pagada no genera alerta de vencimiento. Los contadores consideran todas las pendientes de los filtros aplicados, sin limitarse al mes ni a la página visible.
 
@@ -40,7 +42,7 @@ La hora es fija: 10:00 a. m. de Colombia. La activación requiere una conexión 
 
 ## Corregir y eliminar
 
-«Editar» permite corregir el proveedor, número, fecha, vencimiento y valor. Si cambia la fecha de factura, cambia su mes. Los abonos ya guardados se conservan; el nuevo valor no puede ser menor que el total abonado. El estado pagada/pendiente se recalcula con el valor corregido.
+«Editar» permite corregir el proveedor, número, fecha, vencimiento y valor. Cambiar la fecha de factura no modifica el mes de pago completo. Los abonos ya guardados se conservan; el nuevo valor no puede ser menor que el total abonado. El estado pagada/pendiente se recalcula con el valor corregido. Si el valor corregido coincide con lo abonado, la fecha de pago se obtiene del historial; si vuelve a tener saldo, regresa a pendientes.
 
 «Eliminar» requiere confirmar la factura concreta. Se retira de las columnas, alertas y totales sin borrar sus pagos ni el historial. «Facturas eliminadas» permite restaurarla. La combinación proveedor/número se reserva también mientras esté eliminada para evitar registrar dos veces la misma obligación; se puede restaurar y editar.
 
@@ -50,7 +52,7 @@ Las correcciones, eliminaciones y restauraciones conservan quién realizó el ca
 
 Cada abono conserva fecha, importe, referencia opcional y usuario que lo registró. Los importes se validan y calculan en centavos. El saldo es valor de la factura menos sus abonos. No se admite un abono superior al saldo.
 
-«Registrar pago total» calcula en el servidor el saldo restante y registra ese importe. Al llegar a cero, la factura aparece automáticamente en «FACTURAS PAGAS». El historial conserva los abonos previos.
+«Registrar pago total» calcula en el servidor el saldo restante y registra ese importe. Al llegar a cero, la factura aparece automáticamente en «FACTURAS PAGAS» del mes de pago completo. El historial conserva los abonos previos y la fecha original de factura permanece intacta.
 
 Las solicitudes llevan una clave de idempotencia y la versión de la factura para impedir pagos duplicados por reintentos o dos cambios simultáneos. Este módulo registra pagos realizados; no ejecuta transferencias bancarias ni modifica la caja de una sede.
 

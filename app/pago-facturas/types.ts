@@ -4,6 +4,7 @@ export type InvoiceItem = {
   provider: string;
   providerId?: number | null;
   date: string;
+  paidDate?: string | null;
   dueDate?: string | null;
   dueStatus?: "SIN_FECHA" | "AL_DIA" | "PROXIMA" | "HOY" | "VENCIDA" | "PAGADA";
   deletedAt?: string | null;
@@ -55,6 +56,7 @@ export type InvoiceReport = {
     paidCount: number;
     overdueCount?: number;
     dueSoonCount?: number;
+    undatedPaidCount?: number;
   };
   pending: InvoicePage;
   paid: InvoicePage;

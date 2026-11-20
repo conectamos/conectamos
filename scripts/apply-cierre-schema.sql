@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS "FacturaAdministrativa" (
 CREATE UNIQUE INDEX IF NOT EXISTS "FacturaAdministrativa_createRequestId_key" ON "FacturaAdministrativa" ("createRequestId");
 CREATE INDEX IF NOT EXISTS "FacturaAdministrativa_date_status_id_idx" ON "FacturaAdministrativa" ("date", "status", "id");
 ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "dueDate" DATE;
+ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "paidDate" DATE;
 ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
 ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "deletedById" INTEGER;
 ALTER TABLE "FacturaAdministrativa" ADD COLUMN IF NOT EXISTS "deletedByProfileId" INTEGER;
@@ -61,6 +62,48 @@ CREATE TABLE IF NOT EXISTS "PagoFacturaAdministrativa" (
 CREATE UNIQUE INDEX IF NOT EXISTS "PagoFacturaAdministrativa_requestId_key" ON "PagoFacturaAdministrativa" ("requestId");
 CREATE INDEX IF NOT EXISTS "PagoFacturaAdministrativa_invoiceId_createdAt_id_idx"
  ON "PagoFacturaAdministrativa" ("invoiceId", "createdAt", "id");
+-- Settlement belongs to the last effective payment date, never invoice.date or
+-- the time of synchronization. An incomplete payment history remains undated.
+CREATE INDEX IF NOT EXISTS "FacturaAdministrativa_deletedAt_status_paidDate_id_idx"
+ ON "FacturaAdministrativa" ("deletedAt", "status", "paidDate", "id");
+-- Old instances may still write between predeploy and the new application.
+-- Preserve an explicit date computed by the new app before its payment INSERT;
+-- legacy writes derive it from recorded payments, then the INSERT hook completes it.
+CREATE OR REPLACE FUNCTION invoice_settlement_date_before_write() RETURNS trigger LANGUAGE plpgsql AS $settlement_before$
+BEGIN
+ IF NEW."status" <> 'PAGADA' THEN
+  NEW."paidDate" := NULL;
+ ELSIF TG_OP = 'INSERT' THEN
+  NEW."paidDate" := NULL;
+ ELSIF NEW."paidDate" IS NOT DISTINCT FROM OLD."paidDate" OR NEW."paidDate" IS NULL THEN
+  SELECT CASE WHEN SUM(p."amount") = NEW."paidAmount" AND NEW."paidAmount" = NEW."amount" THEN MAX(p."date") ELSE NULL END
+   INTO NEW."paidDate" FROM "PagoFacturaAdministrativa" p WHERE p."invoiceId" = NEW."id";
+ END IF;
+ RETURN NEW;
+END $settlement_before$;
+DROP TRIGGER IF EXISTS invoice_settlement_date ON "FacturaAdministrativa";
+CREATE TRIGGER invoice_settlement_date BEFORE INSERT OR UPDATE OF "status", "paidAmount", "amount" ON "FacturaAdministrativa"
+ FOR EACH ROW EXECUTE FUNCTION invoice_settlement_date_before_write();
+CREATE OR REPLACE FUNCTION invoice_settlement_date_after_payment() RETURNS trigger LANGUAGE plpgsql AS $settlement_after$
+BEGIN
+ UPDATE "FacturaAdministrativa" f SET "paidDate" = (
+  SELECT CASE WHEN SUM(p."amount") = f."paidAmount" AND f."paidAmount" = f."amount" THEN MAX(p."date") ELSE NULL END
+  FROM "PagoFacturaAdministrativa" p WHERE p."invoiceId" = NEW."invoiceId"
+ ) WHERE f."id" = NEW."invoiceId" AND f."status" = 'PAGADA';
+ RETURN NEW;
+END $settlement_after$;
+DROP TRIGGER IF EXISTS invoice_settlement_payment ON "PagoFacturaAdministrativa";
+CREATE TRIGGER invoice_settlement_payment AFTER INSERT ON "PagoFacturaAdministrativa"
+ FOR EACH ROW EXECUTE FUNCTION invoice_settlement_date_after_payment();
+-- Fill only previously unknown dates after the compatibility hooks are ready.
+-- A rerun must never replace metadata established by a completed payment.
+UPDATE "FacturaAdministrativa" f SET "paidDate" = evidence."paidDate"
+FROM (
+ SELECT i."id", CASE WHEN i."status" = 'PAGADA' AND SUM(p."amount") = i."paidAmount" AND i."paidAmount" = i."amount"
+   THEN MAX(p."date") ELSE NULL END AS "paidDate"
+ FROM "FacturaAdministrativa" i LEFT JOIN "PagoFacturaAdministrativa" p ON p."invoiceId" = i."id"
+ GROUP BY i."id", i."status", i."paidAmount", i."amount"
+) evidence WHERE f."id" = evidence."id" AND f."paidDate" IS NULL AND evidence."paidDate" IS NOT NULL;
 -- One immutable private PDF per payment; no file content is copied to JSON.
 CREATE TABLE IF NOT EXISTS "InvoicePaymentReceipt" (
  "id" TEXT PRIMARY KEY, "paymentId" INTEGER NOT NULL REFERENCES "PagoFacturaAdministrativa" ("id") ON DELETE RESTRICT,
